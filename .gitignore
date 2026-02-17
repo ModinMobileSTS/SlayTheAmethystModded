@@ -1,0 +1,28 @@
+.gradle/
+.idea/
+local.properties
+*.iml
+android-ndk-r10e/
+app/build/
+build/
+runtime-pack/*
+!runtime-pack/README.txt
+
+# local reverse-engineering / patch build artifacts
+tools/desktop-1.0.jar
+tools/gdx-patch-build/
+tools/gdx-patch-classes/
+tools/gdx-patch-classes-new/
+tools/gdx-patch-classes-java8/
+
+# local temporary workspace
+_tmp/
+
+# local runtime/debug outputs
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# OS-generated files
+.DS_Store
+Thumbs.db

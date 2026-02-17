@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SlayTheAmethyst</string>
+    <string name="sts_normal_exit">Game process exited with code %1$d.</string>
+    <string name="sts_signal_exit">Game process exited by signal %1$d.</string>
+</resources>

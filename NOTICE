@@ -1,0 +1,17 @@
+# Reused Components Notice
+
+This project includes adapted/reused code and assets from:
+- Amethyst-Android (AngelAuraMC)
+- PojavLauncher upstream components
+- OpenJDK launcher bridge sources
+- LWJGL bridge classes and method injector artifacts shipped by Amethyst
+
+Reused JNI bridge modules include (non-exhaustive):
+- `jre_launcher.c`
+- `input_bridge_v3.c`
+- `egl_bridge.c`
+- `awt_bridge.c`
+- `ctxbridges/*`, `environ/*`, `jvm_hooks/*`, `native_hooks/*`
+
+Original copyright and license headers in reused source files were preserved where present.
+See `THIRD_PARTY_LICENSES.md` for attribution summary.

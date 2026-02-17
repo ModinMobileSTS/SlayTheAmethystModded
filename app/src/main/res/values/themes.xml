@@ -1,0 +1,4 @@
+<resources>
+    <style name="Theme.SlayTheAmethyst" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.SlayTheAmethyst.Dialog" parent="Theme.Material3.DayNight.Dialog.Alert" />
+</resources>

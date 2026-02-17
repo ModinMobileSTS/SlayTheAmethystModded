@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:name="io.stamethyst.StsApplication"
+        android:allowBackup="true"
+        android:appCategory="game"
+        android:allowNativeHeapPointerTagging="false"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="SlayTheAmethyst"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SlayTheAmethyst">
+
+        <activity
+            android:name="io.stamethyst.StsGameActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name="net.kdt.pojavlaunch.ExitActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
+
+        <activity
+            android:name="io.stamethyst.LauncherActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
