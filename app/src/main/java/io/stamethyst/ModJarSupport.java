@@ -54,6 +54,8 @@ public final class ModJarSupport {
             "com/codedisaster/steamworks/SteamUtils$FloatingGamepadTextInputMode.class";
     private static final String STS_PATCH_STEAM_INPUT_HELPER_CLASS =
             "com/megacrit/cardcrawl/helpers/steamInput/SteamInputHelper.class";
+    private static final String STS_PATCH_GL_FRAMEBUFFER_CLASS =
+            "com/badlogic/gdx/graphics/glutils/GLFrameBuffer.class";
     private static final String STS_PATCH_BUILD_PROPERTIES = "build.properties";
     private static final String STS_RESOURCE_SENTINEL = "build.properties";
     private static final String BASEMOD_RESOURCE_SENTINEL =
@@ -79,6 +81,7 @@ public final class ModJarSupport {
             STS_PATCH_STEAM_UTILS_CLASS,
             STS_PATCH_STEAM_UTILS_ENUM_CLASS,
             STS_PATCH_STEAM_INPUT_HELPER_CLASS,
+            STS_PATCH_GL_FRAMEBUFFER_CLASS,
             STS_PATCH_BUILD_PROPERTIES
     ));
     private static final CompatPatchRule[] COMPAT_PATCH_RULES = new CompatPatchRule[]{
@@ -306,6 +309,7 @@ public final class ModJarSupport {
                 || STS_PATCH_STEAM_UTILS_CLASS.equals(entryName)
                 || STS_PATCH_STEAM_UTILS_ENUM_CLASS.equals(entryName)
                 || STS_PATCH_STEAM_INPUT_HELPER_CLASS.equals(entryName)
+                || STS_PATCH_GL_FRAMEBUFFER_CLASS.equals(entryName)
                 || entryName.startsWith(STS_PATCH_LWJGL_GRAPHICS_PREFIX)
                 || entryName.startsWith(GDX_BRIDGE_LWJGL_INPUT_PREFIX);
     }
