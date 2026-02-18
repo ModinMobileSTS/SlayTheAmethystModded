@@ -28,6 +28,14 @@ public final class RuntimePaths {
         return new File(modsDir(context), "BaseMod.jar");
     }
 
+    public static File importedStsLibJar(Context context) {
+        return new File(modsDir(context), "StSLib.jar");
+    }
+
+    public static File enabledModsConfig(Context context) {
+        return new File(stsRoot(context), "enabled_mods.txt");
+    }
+
     public static File mtsGdxApiJar(Context context) {
         return new File(stsRoot(context), "mts-gdx-api.jar");
     }
@@ -58,6 +66,14 @@ public final class RuntimePaths {
 
     public static File latestLog(Context context) {
         return new File(stsRoot(context), "latestlog.txt");
+    }
+
+    public static File displayConfigFile(Context context) {
+        return new File(stsRoot(context), "info.displayconfig");
+    }
+
+    public static File rendererConfigFile(Context context) {
+        return new File(stsRoot(context), "renderer_backend.txt");
     }
 
     public static File componentRoot(Context context) {

@@ -5,32 +5,34 @@ import android.content.Intent;
 import android.os.Bundle;
 
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
-import io.stamethyst.R;
+import io.stamethyst.LauncherActivity;
 
 public class ExitActivity extends AppCompatActivity {
+    private static final String EXTRA_CODE = "code";
+    private static final String EXTRA_IS_SIGNAL = "isSignal";
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        int code = getIntent().getIntExtra("code", -1);
-        boolean isSignal = getIntent().getBooleanExtra("isSignal", false);
-        int messageId = isSignal ? R.string.sts_signal_exit : R.string.sts_normal_exit;
+        int code = getIntent().getIntExtra(EXTRA_CODE, -1);
+        boolean isSignal = getIntent().getBooleanExtra(EXTRA_IS_SIGNAL, false);
 
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.app_name)
-                .setMessage(getString(messageId, code))
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> finish())
-                .setOnDismissListener(dialog -> finish())
-                .show();
+        Intent launcherIntent = new Intent(this, LauncherActivity.class);
+        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true);
+        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code);
+        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL, isSignal);
+        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(launcherIntent);
+        finish();
     }
 
     public static void showExitMessage(Context context, int code, boolean isSignal) {
         Intent intent = new Intent(context, ExitActivity.class);
-        intent.putExtra("code", code);
-        intent.putExtra("isSignal", isSignal);
+        intent.putExtra(EXTRA_CODE, code);
+        intent.putExtra(EXTRA_IS_SIGNAL, isSignal);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         context.startActivity(intent);
     }

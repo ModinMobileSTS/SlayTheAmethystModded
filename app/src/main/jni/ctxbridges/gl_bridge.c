@@ -20,8 +20,27 @@
 static __thread gl_render_window_t* currentBundle;
 static EGLDisplay g_EglDisplay;
 
+static bool gl_egl_ready() {
+    return eglChooseConfig_p != NULL
+           && eglGetConfigAttrib_p != NULL
+           && eglBindAPI_p != NULL
+           && eglCreateContext_p != NULL
+           && eglGetError_p != NULL
+           && eglCreateWindowSurface_p != NULL
+           && eglCreatePbufferSurface_p != NULL
+           && eglMakeCurrent_p != NULL
+           && eglSwapBuffers_p != NULL;
+}
+
 bool gl_init() {
-    if(!dlsym_EGL()) return false;
+    if(!dlsym_EGL()) {
+        LOGE("%s", "dlsym_EGL() failed");
+        return false;
+    }
+    if (!gl_egl_ready()) {
+        LOGE("%s", "EGL core symbols are not ready");
+        return false;
+    }
     g_EglDisplay = eglGetDisplay_p(EGL_DEFAULT_DISPLAY);
     if (g_EglDisplay == EGL_NO_DISPLAY) {
         LOGE("%s", "eglGetDisplay_p(EGL_DEFAULT_DISPLAY) returned EGL_NO_DISPLAY");
@@ -55,6 +74,14 @@ static void gl4esi_get_display_dimensions(int* width, int* height) {
 }
 
 gl_render_window_t* gl_init_context(gl_render_window_t *share) {
+    if (!gl_egl_ready()) {
+        LOGE("%s", "gl_init_context aborted: EGL symbols are unavailable");
+        return NULL;
+    }
+    if (g_EglDisplay == EGL_NO_DISPLAY) {
+        LOGE("%s", "gl_init_context aborted: EGL display is not initialized");
+        return NULL;
+    }
     gl_render_window_t* bundle = malloc(sizeof(gl_render_window_t));
     memset(bundle, 0, sizeof(gl_render_window_t));
     EGLint egl_attributes[] = { EGL_BLUE_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_RED_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 24, EGL_SURFACE_TYPE, EGL_WINDOW_BIT|EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE };
@@ -77,17 +104,19 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
 
     {
         EGLBoolean bindResult;
-        if (strncmp(getenv("AMETHYST_RENDERER"), "opengles3_desktopgl", 19) == 0) {
+        const char* renderer = getenv("AMETHYST_RENDERER");
+        if (renderer != NULL && strncmp(renderer, "opengles3_desktopgl", 19) == 0) {
             printf("EGLBridge: Binding to desktop OpenGL\n");
             bindResult = eglBindAPI_p(EGL_OPENGL_API);
         } else {
             printf("EGLBridge: Binding to OpenGL ES\n");
             bindResult = eglBindAPI_p(EGL_OPENGL_ES_API);
         }
-        if (!bindResult) printf("EGLBridge: bind failed: %p\n", eglGetError_p());
+        if (!bindResult) printf("EGLBridge: bind failed: 0x%04x\n", eglGetError_p());
     }
 
-    int libgl_es = strtol(getenv("LIBGL_ES"), NULL, 0);
+    const char* libglEsValue = getenv("LIBGL_ES");
+    int libgl_es = (int) strtol(libglEsValue == NULL ? "2" : libglEsValue, NULL, 0);
     if(libgl_es < 0 || libgl_es > INT16_MAX) libgl_es = 2;
     const EGLint egl_context_attributes[] = { EGL_CONTEXT_CLIENT_VERSION, libgl_es, EGL_NONE };
     bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, share == NULL ? EGL_NO_CONTEXT : share->context, egl_context_attributes);
@@ -136,7 +165,6 @@ void gl_make_current(gl_render_window_t* bundle) {
         pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
         hasSetMainWindow = true;
     }
-    LOGI("Making current, surface=%p, nativeSurface=%p, newNativeSurface=%p", bundle->surface, bundle->nativeSurface, bundle->newNativeSurface);
     if(bundle->surface == NULL) { //it likely will be on the first run
         gl_swap_surface(bundle);
     }
@@ -181,7 +209,14 @@ void gl_setup_window() {
 
 void gl_swap_interval(int swapInterval) {
     if(pojav_environ->force_vsync) swapInterval = 1;
-
+    if (g_EglDisplay == EGL_NO_DISPLAY) {
+        LOGW("Skip swap interval update: EGL display is not ready");
+        return;
+    }
+    if (eglSwapInterval_p == NULL) {
+        LOGW("Skip swap interval update: eglSwapInterval function is unavailable");
+        return;
+    }
     eglSwapInterval_p(g_EglDisplay, swapInterval);
 }
 

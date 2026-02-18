@@ -1,60 +1,79 @@
 package io.stamethyst;
 
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import net.kdt.pojavlaunch.MainActivity;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
     public static final String EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode";
+    public static final String EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred";
+    public static final String EXTRA_CRASH_CODE = "io.stamethyst.crash_code";
+    public static final String EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.crash_is_signal";
+    public static final String EXTRA_CRASH_DETAIL = "io.stamethyst.crash_detail";
     private static final float DEFAULT_RENDER_SCALE = 0.75f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private TextView statusText;
     private TextView logPathText;
     private Button importButton;
-    private Button importMtsButton;
-    private Button importBaseModButton;
+    private Button importModsButton;
     private Button importSavesButton;
+    private Button exportDebugButton;
+    private LinearLayout modsContainer;
     private EditText renderScaleInput;
     private Button saveRenderScaleButton;
+    private Spinner rendererBackendSpinner;
     private Button launchButton;
-    private Button launchBaseModButton;
 
     private final ActivityResultLauncher<String[]> importJarLauncher =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::onJarPicked);
-    private final ActivityResultLauncher<String[]> importMtsLauncher =
-            registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::onMtsPicked);
-    private final ActivityResultLauncher<String[]> importBaseModLauncher =
-            registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::onBaseModPicked);
+    private final ActivityResultLauncher<String[]> importModsLauncher =
+            registerForActivityResult(new ActivityResultContracts.OpenMultipleDocuments(), this::onModJarsPicked);
     private final ActivityResultLauncher<String[]> importSavesLauncher =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::onSavesArchivePicked);
+    private final ActivityResultLauncher<String> exportDebugLauncher =
+            registerForActivityResult(new ActivityResultContracts.CreateDocument("application/zip"), this::onDebugExportPicked);
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -65,46 +84,87 @@ public class LauncherActivity extends AppCompatActivity {
         statusText = findViewById(R.id.statusText);
         logPathText = findViewById(R.id.logPathText);
         importButton = findViewById(R.id.importButton);
-        importMtsButton = findViewById(R.id.importMtsButton);
-        importBaseModButton = findViewById(R.id.importBaseModButton);
+        importModsButton = findViewById(R.id.importModsButton);
         importSavesButton = findViewById(R.id.importSavesButton);
+        exportDebugButton = findViewById(R.id.exportDebugButton);
+        modsContainer = findViewById(R.id.modsContainer);
         renderScaleInput = findViewById(R.id.renderScaleInput);
         saveRenderScaleButton = findViewById(R.id.saveRenderScaleButton);
+        rendererBackendSpinner = findViewById(R.id.rendererBackendSpinner);
         launchButton = findViewById(R.id.launchButton);
-        launchBaseModButton = findViewById(R.id.launchBaseModButton);
 
-        logPathText.setText("Log: " + RuntimePaths.latestLog(this).getAbsolutePath());
+        logPathText.setText(
+                "Log: " + RuntimePaths.latestLog(this).getAbsolutePath()
+                        + "\nVM: " + new File(RuntimePaths.stsRoot(this), "jvm_output.log").getAbsolutePath()
+                        + "\nCrash: " + new File(RuntimePaths.stsRoot(this), "hs_err_pid*.log").getAbsolutePath()
+        );
 
         importButton.setOnClickListener(v -> importJarLauncher.launch(new String[]{"application/java-archive", "application/octet-stream", "*/*"}));
-        importMtsButton.setOnClickListener(v -> importMtsLauncher.launch(new String[]{"application/java-archive", "application/octet-stream", "*/*"}));
-        importBaseModButton.setOnClickListener(v -> importBaseModLauncher.launch(new String[]{"application/java-archive", "application/octet-stream", "*/*"}));
+        importModsButton.setOnClickListener(v -> importModsLauncher.launch(new String[]{"application/java-archive", "application/octet-stream", "*/*"}));
         importSavesButton.setOnClickListener(v -> importSavesLauncher.launch(new String[]{"application/zip", "application/x-zip-compressed", "*/*"}));
+        exportDebugButton.setOnClickListener(v -> exportDebugLauncher.launch(buildDebugExportFileName()));
         saveRenderScaleButton.setOnClickListener(v -> saveRenderScaleFromInput(true));
 
         launchButton.setOnClickListener(v -> {
             if (!saveRenderScaleFromInput(false)) {
                 return;
             }
-            prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_VANILLA);
-        });
-
-        launchBaseModButton.setOnClickListener(v -> {
-            if (!saveRenderScaleFromInput(false)) {
+            if (!saveRendererSelection()) {
                 return;
             }
             prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD);
         });
 
+        setupRendererSpinner();
         loadRenderScaleInput();
         refreshStatus();
-        maybeLaunchFromDebugExtra(getIntent());
+        handleIncomingIntent(getIntent());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        maybeLaunchFromDebugExtra(intent);
+        handleIncomingIntent(intent);
+    }
+
+    private void handleIncomingIntent(@Nullable Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        boolean showedCrashDialog = maybeShowCrashDialog(intent);
+        if (!showedCrashDialog) {
+            maybeLaunchFromDebugExtra(intent);
+        }
+    }
+
+    private boolean maybeShowCrashDialog(Intent intent) {
+        if (!intent.getBooleanExtra(EXTRA_CRASH_OCCURRED, false)) {
+            return false;
+        }
+
+        int code = intent.getIntExtra(EXTRA_CRASH_CODE, -1);
+        boolean isSignal = intent.getBooleanExtra(EXTRA_CRASH_IS_SIGNAL, false);
+        String detail = intent.getStringExtra(EXTRA_CRASH_DETAIL);
+        String message;
+        if (detail != null && !detail.trim().isEmpty()) {
+            message = getString(R.string.sts_crash_detail_format, detail.trim());
+        } else {
+            int messageId = isSignal ? R.string.sts_signal_exit : R.string.sts_normal_exit;
+            message = getString(messageId, code);
+        }
+
+        intent.removeExtra(EXTRA_CRASH_OCCURRED);
+        intent.removeExtra(EXTRA_CRASH_CODE);
+        intent.removeExtra(EXTRA_CRASH_IS_SIGNAL);
+        intent.removeExtra(EXTRA_CRASH_DETAIL);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.sts_crash_dialog_title)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+        return true;
     }
 
     private void maybeLaunchFromDebugExtra(Intent intent) {
@@ -116,6 +176,9 @@ public class LauncherActivity extends AppCompatActivity {
         if (StsLaunchSpec.LAUNCH_MODE_VANILLA.equals(debugLaunchMode)
                 || StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(debugLaunchMode)) {
             if (!saveRenderScaleFromInput(false)) {
+                return;
+            }
+            if (!saveRendererSelection()) {
                 return;
             }
             Log.i(TAG, "Auto launching mode from debug extra: " + debugLaunchMode);
@@ -145,48 +208,118 @@ public class LauncherActivity extends AppCompatActivity {
         });
     }
 
-    private void onMtsPicked(@Nullable Uri uri) {
-        if (uri == null) {
+    private void onModJarsPicked(@Nullable List<Uri> uris) {
+        if (uris == null || uris.isEmpty()) {
             return;
         }
-        setBusy(true, "Importing ModTheSpire.jar...");
+        setBusy(true, "Importing selected mod jars...");
         executor.execute(() -> {
-            try {
-                copyUriToFile(uri, RuntimePaths.importedMtsJar(this));
-                ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Imported ModTheSpire.jar", Toast.LENGTH_SHORT).show();
-                    refreshStatus();
-                });
-            } catch (Throwable error) {
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "ModTheSpire import failed: " + error.getMessage(), Toast.LENGTH_LONG).show();
-                    refreshStatus();
-                });
+            int imported = 0;
+            List<String> errors = new ArrayList<>();
+            for (Uri uri : uris) {
+                try {
+                    String modId = importModJar(uri);
+                    if (!ModManager.isRequiredModId(modId)) {
+                        ModManager.setOptionalModEnabled(this, modId, true);
+                    }
+                    imported++;
+                } catch (Throwable error) {
+                    String name = resolveDisplayName(uri);
+                    errors.add(name + ": " + error.getMessage());
+                }
             }
+            int importedCount = imported;
+            int failedCount = errors.size();
+            String firstError = failedCount > 0 ? errors.get(0) : null;
+            runOnUiThread(() -> {
+                if (importedCount > 0 && failedCount == 0) {
+                    Toast.makeText(this, "Imported " + importedCount + " mod jar(s)", Toast.LENGTH_SHORT).show();
+                } else if (importedCount > 0) {
+                    Toast.makeText(this, "Imported " + importedCount + ", failed " + failedCount + " (" + firstError + ")", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, "Mod import failed: " + firstError, Toast.LENGTH_LONG).show();
+                }
+                refreshStatus();
+            });
         });
     }
 
-    private void onBaseModPicked(@Nullable Uri uri) {
-        if (uri == null) {
+    private String importModJar(Uri uri) throws IOException {
+        File modsDir = RuntimePaths.modsDir(this);
+        if (!modsDir.exists() && !modsDir.mkdirs()) {
+            throw new IOException("Failed to create mods directory");
+        }
+
+        File tempFile = new File(modsDir, ".import-" + System.nanoTime() + ".tmp.jar");
+        copyUriToFile(uri, tempFile);
+        try {
+            String modId = ModManager.normalizeModId(ModJarSupport.resolveModId(tempFile));
+            if (modId.isEmpty()) {
+                throw new IOException("modid is empty");
+            }
+            if (ModManager.MOD_ID_BASEMOD.equals(modId)) {
+                ModJarSupport.validateBaseModJar(tempFile);
+            } else if (ModManager.MOD_ID_STSLIB.equals(modId)) {
+                ModJarSupport.validateStsLibJar(tempFile);
+            }
+            File targetFile = ModManager.resolveStorageFileForModId(this, modId);
+            moveFileReplacing(tempFile, targetFile);
+            return modId;
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+    }
+
+    private void moveFileReplacing(File source, File target) throws IOException {
+        File parent = target.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create directory: " + parent.getAbsolutePath());
+        }
+        if (target.exists() && !target.delete()) {
+            throw new IOException("Failed to replace existing file: " + target.getAbsolutePath());
+        }
+        if (source.renameTo(target)) {
             return;
         }
-        setBusy(true, "Importing BaseMod.jar...");
-        executor.execute(() -> {
-            try {
-                copyUriToFile(uri, RuntimePaths.importedBaseModJar(this));
-                ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Imported BaseMod.jar", Toast.LENGTH_SHORT).show();
-                    refreshStatus();
-                });
-            } catch (Throwable error) {
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "BaseMod import failed: " + error.getMessage(), Toast.LENGTH_LONG).show();
-                    refreshStatus();
-                });
+        try (FileInputStream input = new FileInputStream(source);
+             FileOutputStream output = new FileOutputStream(target, false)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                output.write(buffer, 0, read);
             }
-        });
+        }
+        if (!source.delete()) {
+            throw new IOException("Failed to clean temp file: " + source.getAbsolutePath());
+        }
+    }
+
+    private String resolveDisplayName(Uri uri) {
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(uri,
+                    new String[]{OpenableColumns.DISPLAY_NAME},
+                    null,
+                    null,
+                    null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String value = cursor.getString(index);
+                    if (value != null && !value.trim().isEmpty()) {
+                        return value;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return "unknown.jar";
     }
 
     private void prepareAndLaunch(String launchMode) {
@@ -200,27 +333,50 @@ public class LauncherActivity extends AppCompatActivity {
                 Log.i(TAG, "RuntimePackInstaller.ensureInstalled done");
                 RuntimePaths.ensureBaseDirs(this);
 
+                RendererBackend preferredRenderer = RendererConfig.readPreferredBackend(this);
+                RendererConfig.ResolutionResult rendererDecision =
+                        RendererConfig.resolveEffectiveBackend(this, preferredRenderer);
+                appendRendererDecisionLog("launcher", rendererDecision);
+                Log.i(TAG, "Renderer decision: " + rendererDecision.toLogText());
+
                 File jar = RuntimePaths.importedStsJar(this);
                 StsJarValidator.validate(jar);
                 Log.i(TAG, "StsJarValidator.validate done");
                 if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
                     ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
                     ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
+                    ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(this));
                     ModJarSupport.prepareMtsClasspath(this);
-                    Log.i(TAG, "MTS/BaseMod validation + classpath prepare done");
+                    ModManager.resolveLaunchModIds(this);
+                    Log.i(TAG, "MTS/BaseMod/StSLib validation + classpath prepare done");
                 }
 
                 runOnUiThread(() -> {
                     setBusy(false, null);
+                    if (rendererDecision.isFallback()) {
+                        Toast.makeText(
+                                this,
+                                getString(R.string.renderer_fallback_toast, rendererDecision.reason),
+                                Toast.LENGTH_LONG
+                        ).show();
+                    }
                     Intent intent = new Intent(this, StsGameActivity.class);
                     intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode);
+                    intent.putExtra(StsGameActivity.EXTRA_RENDERER_BACKEND, rendererDecision.effective.rendererId());
                     Log.i(TAG, "Starting StsGameActivity, mode=" + launchMode);
                     startActivity(intent);
                 });
             } catch (Throwable error) {
                 Log.e(TAG, "prepareAndLaunch failed", error);
                 runOnUiThread(() -> {
-                    Toast.makeText(this, "Launch preparation failed: " + error.getMessage(), Toast.LENGTH_LONG).show();
+                    String detail = "Launch preparation failed: "
+                            + error.getClass().getSimpleName()
+                            + ": " + String.valueOf(error.getMessage());
+                    new AlertDialog.Builder(this)
+                            .setTitle(R.string.sts_crash_dialog_title)
+                            .setMessage(getString(R.string.sts_crash_detail_format, detail))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
                     refreshStatus();
                 });
             }
@@ -248,18 +404,188 @@ public class LauncherActivity extends AppCompatActivity {
         });
     }
 
+    private void onDebugExportPicked(@Nullable Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        setBusy(true, "Exporting debug bundle...");
+        executor.execute(() -> {
+            try {
+                int exportedCount = exportDebugBundle(uri);
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Debug bundle exported (" + exportedCount + " files)", Toast.LENGTH_LONG).show();
+                    refreshStatus();
+                });
+            } catch (Throwable error) {
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Debug export failed: " + error.getMessage(), Toast.LENGTH_LONG).show();
+                    refreshStatus();
+                });
+            }
+        });
+    }
+
+    private String buildDebugExportFileName() {
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US);
+        return "sts-debug-" + formatter.format(new Date()) + ".zip";
+    }
+
+    private int exportDebugBundle(Uri uri) throws IOException {
+        File stsRoot = RuntimePaths.stsRoot(this);
+        List<File> debugFiles = new ArrayList<>();
+        addDebugFileIfExists(debugFiles, RuntimePaths.latestLog(this));
+        addDebugFileIfExists(debugFiles, new File(stsRoot, "jvm_output.log"));
+        addDebugFileIfExists(debugFiles, RuntimePaths.enabledModsConfig(this));
+
+        File[] hsErrFiles = stsRoot.listFiles((dir, name) ->
+                name != null && name.startsWith("hs_err_pid") && name.endsWith(".log"));
+        if (hsErrFiles != null && hsErrFiles.length > 0) {
+            Arrays.sort(hsErrFiles, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            for (File hsErrFile : hsErrFiles) {
+                addDebugFileIfExists(debugFiles, hsErrFile);
+            }
+        }
+
+        try (OutputStream output = getContentResolver().openOutputStream(uri);
+             ZipOutputStream zipOutput = output == null ? null : new ZipOutputStream(output)) {
+            if (zipOutput == null) {
+                throw new IOException("Unable to open destination file");
+            }
+            int exportedCount = 0;
+            for (File file : debugFiles) {
+                writeFileToZip(zipOutput, stsRoot, file);
+                exportedCount++;
+            }
+            if (exportedCount <= 0) {
+                ZipEntry entry = new ZipEntry("sts/README.txt");
+                zipOutput.putNextEntry(entry);
+                String message = "No debug log files found yet.\n"
+                        + "Expected paths under: " + stsRoot.getAbsolutePath() + "\n"
+                        + "Files: latestlog.txt, jvm_output.log, hs_err_pid*.log\n";
+                zipOutput.write(message.getBytes(StandardCharsets.UTF_8));
+                zipOutput.closeEntry();
+            }
+            return exportedCount;
+        }
+    }
+
+    private void writeFileToZip(ZipOutputStream zipOutput, File stsRoot, File sourceFile) throws IOException {
+        String entryName = buildDebugEntryName(stsRoot, sourceFile);
+        ZipEntry entry = new ZipEntry(entryName);
+        if (sourceFile.lastModified() > 0) {
+            entry.setTime(sourceFile.lastModified());
+        }
+        zipOutput.putNextEntry(entry);
+        try (FileInputStream input = new FileInputStream(sourceFile)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                zipOutput.write(buffer, 0, read);
+            }
+        }
+        zipOutput.closeEntry();
+    }
+
+    private String buildDebugEntryName(File stsRoot, File sourceFile) throws IOException {
+        String rootPath = stsRoot.getCanonicalPath();
+        String filePath = sourceFile.getCanonicalPath();
+        String relativePath;
+        if (filePath.startsWith(rootPath + File.separator)) {
+            relativePath = filePath.substring(rootPath.length() + 1);
+        } else {
+            relativePath = sourceFile.getName();
+        }
+        return "sts/" + relativePath.replace('\\', '/');
+    }
+
+    private void addDebugFileIfExists(List<File> files, File file) {
+        if (file != null && file.isFile() && file.length() > 0) {
+            files.add(file);
+        }
+    }
+
     private void refreshStatus() {
         boolean hasJar = RuntimePaths.importedStsJar(this).exists();
         boolean hasMts = RuntimePaths.importedMtsJar(this).exists() || hasBundledAsset("components/mods/ModTheSpire.jar");
         boolean hasBaseMod = RuntimePaths.importedBaseModJar(this).exists() || hasBundledAsset("components/mods/BaseMod.jar");
+        boolean hasStsLib = RuntimePaths.importedStsLibJar(this).exists() || hasBundledAsset("components/mods/StSLib.jar");
         float renderScale = readRenderScaleValue();
+        RendererBackend selectedRenderer = rendererBackendSpinner != null
+                ? selectedRendererFromUi()
+                : RendererConfig.readPreferredBackend(this);
+        RendererConfig.ResolutionResult rendererDecision =
+                RendererConfig.resolveEffectiveBackend(this, selectedRenderer);
+        String rendererSelectedLine =
+                getString(R.string.renderer_selected_format, selectedRenderer.statusLabel());
+        String rendererEffectiveLine = rendererDecision.isFallback()
+                ? getString(
+                R.string.renderer_effective_reason_format,
+                rendererDecision.effective.statusLabel(),
+                rendererDecision.reason
+        )
+                : getString(
+                R.string.renderer_effective_format,
+                rendererDecision.effective.statusLabel()
+        );
+
+        List<ModManager.InstalledMod> mods = ModManager.listInstalledMods(this);
+        int optionalTotal = 0;
+        int optionalEnabled = 0;
+        for (ModManager.InstalledMod mod : mods) {
+            if (mod.required) {
+                continue;
+            }
+            optionalTotal++;
+            if (mod.enabled) {
+                optionalEnabled++;
+            }
+        }
+        updateModsChecklist(mods);
+
         String status = (hasJar ? "desktop-1.0.jar: OK" : "desktop-1.0.jar: missing")
                 + "\nModTheSpire.jar: " + (hasMts ? "OK (bundled)" : "missing")
-                + "\nBaseMod.jar: " + (hasBaseMod ? "OK (bundled)" : "missing")
+                + "\nBaseMod.jar: " + (hasBaseMod ? "OK (required)" : "missing (required)")
+                + "\nStSLib.jar: " + (hasStsLib ? "OK (required, bundled)" : "missing (required)")
+                + "\nOptional mods enabled: " + optionalEnabled + "/" + optionalTotal
                 + "\nRender scale: " + String.format(Locale.US, "%.2f", renderScale) + " (0.50-1.00)"
+                + "\n" + rendererSelectedLine
+                + "\n" + rendererEffectiveLine
                 + "\nRuntime pack expected at build time: runtime-pack/jre8-pojav.zip";
         setBusy(false, null);
         statusText.setText(status);
+    }
+
+    private void updateModsChecklist(List<ModManager.InstalledMod> mods) {
+        modsContainer.removeAllViews();
+        boolean hasOptional = false;
+
+        for (ModManager.InstalledMod mod : mods) {
+            CheckBox checkBox = new CheckBox(this);
+            checkBox.setText(mod.displayName);
+            checkBox.setChecked(mod.enabled);
+            checkBox.setTag(Boolean.valueOf(mod.required));
+            if (mod.required || !mod.installed) {
+                checkBox.setEnabled(false);
+            } else {
+                hasOptional = true;
+                String modId = mod.modId;
+                checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                    try {
+                        ModManager.setOptionalModEnabled(this, modId, isChecked);
+                    } catch (Throwable error) {
+                        Toast.makeText(this, "Failed to update mod selection: " + error.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                    refreshStatus();
+                });
+            }
+            modsContainer.addView(checkBox);
+        }
+
+        if (!hasOptional) {
+            TextView emptyText = new TextView(this);
+            emptyText.setText("No optional mods installed yet");
+            modsContainer.addView(emptyText);
+        }
     }
 
     private boolean hasBundledAsset(String assetPath) {
@@ -272,13 +598,22 @@ public class LauncherActivity extends AppCompatActivity {
 
     private void setBusy(boolean busy, @Nullable String message) {
         importButton.setEnabled(!busy);
-        importMtsButton.setEnabled(!busy);
-        importBaseModButton.setEnabled(!busy);
+        importModsButton.setEnabled(!busy);
         importSavesButton.setEnabled(!busy);
+        exportDebugButton.setEnabled(!busy);
         renderScaleInput.setEnabled(!busy);
         saveRenderScaleButton.setEnabled(!busy);
+        rendererBackendSpinner.setEnabled(!busy);
         launchButton.setEnabled(!busy);
-        launchBaseModButton.setEnabled(!busy);
+        for (int i = 0; i < modsContainer.getChildCount(); i++) {
+            View child = modsContainer.getChildAt(i);
+            if (!(child instanceof CheckBox)) {
+                continue;
+            }
+            Object tag = child.getTag();
+            boolean required = tag instanceof Boolean && ((Boolean) tag);
+            child.setEnabled(!busy && !required);
+        }
         if (busy && message != null) {
             statusText.setText(message);
         }
@@ -288,12 +623,64 @@ public class LauncherActivity extends AppCompatActivity {
         renderScaleInput.setText(String.format(Locale.US, "%.2f", readRenderScaleValue()));
     }
 
+    private void setupRendererSpinner() {
+        List<String> labels = Arrays.asList(
+                RendererBackend.OPENGL_ES2.selectorLabel(),
+                RendererBackend.KOPPER_ZINK.selectorLabel()
+        );
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                labels
+        );
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        rendererBackendSpinner.setAdapter(adapter);
+
+        RendererBackend preferred = RendererConfig.readPreferredBackend(this);
+        rendererBackendSpinner.setSelection(rendererToSpinnerPosition(preferred), false);
+        rendererBackendSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                refreshStatus();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+    }
+
+    private int rendererToSpinnerPosition(RendererBackend backend) {
+        return backend == RendererBackend.KOPPER_ZINK ? 1 : 0;
+    }
+
+    private RendererBackend selectedRendererFromUi() {
+        return rendererBackendSpinner.getSelectedItemPosition() == 1
+                ? RendererBackend.KOPPER_ZINK
+                : RendererBackend.OPENGL_ES2;
+    }
+
+    private boolean saveRendererSelection() {
+        RendererBackend selected = selectedRendererFromUi();
+        try {
+            RendererConfig.writePreferredBackend(this, selected);
+            return true;
+        } catch (IOException error) {
+            Toast.makeText(
+                    this,
+                    getString(R.string.renderer_save_failed, String.valueOf(error.getMessage())),
+                    Toast.LENGTH_SHORT
+            ).show();
+            return false;
+        }
+    }
+
     private float readRenderScaleValue() {
         File config = renderScaleConfigFile();
         if (!config.exists()) {
             return DEFAULT_RENDER_SCALE;
         }
-        try (InputStream input = new java.io.FileInputStream(config)) {
+        try (InputStream input = new FileInputStream(config)) {
             byte[] bytes = new byte[(int) Math.min(config.length(), 64)];
             int read = input.read(bytes);
             if (read <= 0) {
@@ -375,6 +762,23 @@ public class LauncherActivity extends AppCompatActivity {
         return new File(RuntimePaths.stsRoot(this), "render_scale.txt");
     }
 
+    private void appendRendererDecisionLog(String stage, RendererConfig.ResolutionResult decision) {
+        String line = "[Launcher/" + stage + "] " + decision.toLogText() + "\n";
+        try {
+            RuntimePaths.ensureBaseDirs(this);
+            File logFile = RuntimePaths.latestLog(this);
+            File parent = logFile.getParentFile();
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                return;
+            }
+            try (FileOutputStream output = new FileOutputStream(logFile, true)) {
+                output.write(line.getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "Failed to append renderer decision log", error);
+        }
+    }
+
     private void copyUriToFile(Uri uri, File targetFile) throws IOException {
         File parent = targetFile.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -407,8 +811,8 @@ public class LauncherActivity extends AppCompatActivity {
             if (rawInput == null) {
                 throw new IOException("Unable to open selected archive");
             }
-            try (ZipInputStream zipInput = new ZipInputStream(rawInput)) {
-                ZipEntry entry;
+            try (java.util.zip.ZipInputStream zipInput = new java.util.zip.ZipInputStream(rawInput)) {
+                java.util.zip.ZipEntry entry;
                 byte[] buffer = new byte[8192];
                 while ((entry = zipInput.getNextEntry()) != null) {
                     String mappedPath = mapArchiveEntryPath(entry.getName());

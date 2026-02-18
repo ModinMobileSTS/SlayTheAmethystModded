@@ -7,6 +7,8 @@ import android.util.Log;
 
 import net.kdt.pojavlaunch.Logger;
 
+import io.stamethyst.RendererBackend;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -68,7 +70,13 @@ public final class JREUtils {
         }
     }
 
-    public static void setJavaEnvironment(Context context, String javaHome, int windowWidth, int windowHeight) {
+    public static void setJavaEnvironment(
+            Context context,
+            String javaHome,
+            int windowWidth,
+            int windowHeight,
+            RendererBackend renderer
+    ) {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("POJAV_NATIVEDIR", context.getApplicationInfo().nativeLibraryDir);
         env.put("JAVA_HOME", javaHome);
@@ -76,15 +84,35 @@ public final class JREUtils {
         env.put("TMPDIR", context.getCacheDir().getAbsolutePath());
         env.put("LD_LIBRARY_PATH", LD_LIBRARY_PATH);
         env.put("PATH", javaHome + "/bin:" + safeGetEnv("PATH"));
-        env.put("LIBGL_ES", "2");
         env.put("FORCE_VSYNC", "false");
         env.put("LIBGL_VSYNC", "0");
-        env.put("AMETHYST_RENDERER", "opengles2");
         env.put("LIBGL_SHADERNOGLES", "1");
         env.put("LIBGL_NOHIGHP", "1");
         env.put("AWTSTUB_WIDTH", Integer.toString(Math.max(1, windowWidth)));
         env.put("AWTSTUB_HEIGHT", Integer.toString(Math.max(1, windowHeight)));
         env.put("MESA_GLSL_CACHE_DIR", context.getCacheDir().getAbsolutePath());
+
+        clearEnv("POJAVEXEC_EGL");
+        clearEnv("MESA_LOADER_DRIVER_OVERRIDE");
+        clearEnv("MESA_GL_VERSION_OVERRIDE");
+        clearEnv("MESA_GLSL_VERSION_OVERRIDE");
+        clearEnv("GALLIUM_DRIVER");
+        clearEnv("MESA_ANDROID_NO_KMS_SWRAST");
+
+        RendererBackend effectiveRenderer = renderer == null
+                ? RendererBackend.OPENGL_ES2
+                : renderer;
+        if (effectiveRenderer == RendererBackend.KOPPER_ZINK) {
+            env.put("AMETHYST_RENDERER", RendererBackend.KOPPER_ZINK.rendererId());
+            env.put("LIBGL_ES", "3");
+            env.put("POJAVEXEC_EGL", "libEGL_mesa.so");
+            env.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+            env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
+            env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
+        } else {
+            env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
+            env.put("LIBGL_ES", "2");
+        }
 
         for (Map.Entry<String, String> entry : env.entrySet()) {
             try {
@@ -98,6 +126,14 @@ public final class JREUtils {
         File serverFile = new File(javaHome + "/" + runtimeLibDir + "/server/libjvm.so");
         jvmLibraryPath = javaHome + "/" + runtimeLibDir + "/" + (serverFile.exists() ? "server" : "client");
         setLdLibraryPath(jvmLibraryPath + ":" + LD_LIBRARY_PATH);
+    }
+
+    private static void clearEnv(String key) {
+        try {
+            Os.unsetenv(key);
+            Logger.appendToLog("env unset " + key);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static void initJavaRuntime(String javaHome) {

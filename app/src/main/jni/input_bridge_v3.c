@@ -415,6 +415,7 @@ void noncritical_send_mouse_button(__attribute__((unused)) JNIEnv* env, __attrib
 void critical_send_screen_size(jint width, jint height) {
     pojav_environ->savedWidth = width;
     pojav_environ->savedHeight = height;
+    LOGI("InputBridge: screen size update from Java = %dx%d", width, height);
     // Even if there was call to pojavStartPumping that consumed the size, this call
     // might happen right after it (or right before pojavStopPumping)
     // So unmark the size as "consumed"

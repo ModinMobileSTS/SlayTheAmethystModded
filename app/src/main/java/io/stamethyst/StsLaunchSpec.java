@@ -9,6 +9,7 @@ import org.lwjgl.glfw.CallbackBridge;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -22,15 +23,26 @@ public final class StsLaunchSpec {
     }
 
     public static List<String> buildArgs(Context context, File javaHome) {
-        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA);
+        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA, RendererBackend.OPENGL_ES2);
     }
 
     public static List<String> buildArgs(Context context, File javaHome, String launchMode) {
+        return buildArgs(context, javaHome, launchMode, RendererBackend.OPENGL_ES2);
+    }
+
+    public static List<String> buildArgs(
+            Context context,
+            File javaHome,
+            String launchMode,
+            RendererBackend renderer
+    ) {
         File stsRoot = RuntimePaths.stsRoot(context);
         File stsHome = new File(stsRoot, "home");
         if (!stsHome.exists()) {
             stsHome.mkdirs();
         }
+        File hsErrFile = new File(stsRoot, "hs_err_pid%p.log");
+        File jvmOutputFile = new File(stsRoot, "jvm_output.log");
         File forceInterpreterFlag = new File(stsRoot, "compat_xint.flag");
         File classTraceFlag = new File(stsRoot, "classload_trace.flag");
         File lwjglDebugFlag = new File(stsRoot, "lwjgl_debug.flag");
@@ -54,6 +66,10 @@ public final class StsLaunchSpec {
         args.add("-XX:MaxGCPauseMillis=25");
         args.add("-XX:+DisableExplicitGC");
         args.add("-XX:+ParallelRefProcEnabled");
+        args.add("-XX:ErrorFile=" + hsErrFile.getAbsolutePath());
+        args.add("-XX:+UnlockDiagnosticVMOptions");
+        args.add("-XX:+LogVMOutput");
+        args.add("-XX:LogFile=" + jvmOutputFile.getAbsolutePath());
         if (LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
             args.add("-noverify");
@@ -74,7 +90,10 @@ public final class StsLaunchSpec {
         args.add("-Dos.name=Linux");
         args.add("-Dos.version=Android-" + Build.VERSION.RELEASE);
         args.add("-Djdk.lang.Process.launchMechanism=FORK");
-        args.add("-Dorg.lwjgl.opengl.libname=libGLESv2.so");
+        RendererBackend effectiveRenderer = renderer == null
+                ? RendererBackend.OPENGL_ES2
+                : renderer;
+        args.add("-Dorg.lwjgl.opengl.libname=" + effectiveRenderer.lwjglOpenGlLibName());
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so");
         args.add("-Dorg.lwjgl.libname=" + context.getApplicationInfo().nativeLibraryDir + "/liblwjgl.so");
         args.add("-Dorg.lwjgl.openal.libname=" + context.getApplicationInfo().nativeLibraryDir + "/libopenal.so");
@@ -106,13 +125,14 @@ public final class StsLaunchSpec {
             );
             args.add("com.evacipated.cardcrawl.modthespire.Loader");
             args.add("--skip-launcher");
+            List<String> launchMods;
             try {
-                args.add("--mods");
-                args.add(ModJarSupport.resolveModId(RuntimePaths.importedBaseModJar(context)));
+                launchMods = ModManager.resolveLaunchModIds(context);
             } catch (Exception ignored) {
-                args.add("--mods");
-                args.add("basemod");
+                launchMods = Arrays.asList(ModManager.MOD_ID_BASEMOD, ModManager.MOD_ID_STSLIB);
             }
+            args.add("--mods");
+            args.add(joinModIds(launchMods));
         } else {
             args.add(
                     RuntimePaths.gdxPatchJar(context).getAbsolutePath()
@@ -122,6 +142,24 @@ public final class StsLaunchSpec {
             args.add("com.megacrit.cardcrawl.desktop.DesktopLauncher");
         }
         return args;
+    }
+
+    private static String joinModIds(List<String> modIds) {
+        StringBuilder builder = new StringBuilder();
+        for (String modId : modIds) {
+            if (modId == null) {
+                continue;
+            }
+            String value = modId.trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(",");
+            }
+            builder.append(value);
+        }
+        return builder.toString();
     }
 
     private static void addCacioBootClasspath(List<String> args, File cacioDir) {

@@ -1,5 +1,13 @@
 <resources>
     <string name="app_name">SlayTheAmethyst</string>
-    <string name="sts_normal_exit">Game process exited with code %1$d.</string>
-    <string name="sts_signal_exit">Game process exited by signal %1$d.</string>
+    <string name="sts_crash_dialog_title">游戏已崩溃</string>
+    <string name="sts_crash_detail_format">游戏已崩溃。\n%1$s</string>
+    <string name="sts_normal_exit">游戏进程异常退出，退出码 %1$d。</string>
+    <string name="sts_signal_exit">游戏进程因信号 %1$d 崩溃退出。</string>
+    <string name="renderer_backend_label">Renderer backend</string>
+    <string name="renderer_selected_format">Renderer selected: %1$s</string>
+    <string name="renderer_effective_format">Renderer effective: %1$s</string>
+    <string name="renderer_effective_reason_format">Renderer effective: %1$s (fallback: %2$s)</string>
+    <string name="renderer_save_failed">Failed to save renderer backend: %1$s</string>
+    <string name="renderer_fallback_toast">Zink unavailable, auto-fallback to OpenGL ES2 (%1$s)</string>
 </resources>

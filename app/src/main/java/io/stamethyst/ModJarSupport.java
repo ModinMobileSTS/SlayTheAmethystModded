@@ -58,12 +58,18 @@ public final class ModJarSupport {
     private static final String STS_RESOURCE_SENTINEL = "build.properties";
     private static final String BASEMOD_RESOURCE_SENTINEL =
             "localization/basemod/eng/customMods.json";
-    private static final Set<String> BASEMOD_DISABLED_PATCH_CLASSES = new HashSet<>(Arrays.asList(
-            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch.class",
-            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch$CardGlowBorderEffectPatch.class",
-            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch$CardGlowBorderEffectPatch$Locator.class",
-            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch$MaskInfo.class"
-    ));
+    private static final String BASEMOD_MOD_ID = "basemod";
+    private static final String BASEMOD_JAR_FILE_NAME = "BaseMod.jar";
+    private static final String BASEMOD_GLOW_PATCH_JAR = "basemod-glow-fbo-compat.jar";
+    private static final String BASEMOD_GLOW_PATCH_CLASS =
+            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch.class";
+    private static final String DOWNFALL_MOD_ID = "downfall";
+    private static final String DOWNFALL_FBO_PATCH_JAR = "downfall-fbo-compat.jar";
+    private static final String DOWNFALL_FBO_PATCH_CLASS =
+            "collector/util/DoubleEnergyOrb.class";
+    private static final String STSLIB_MAIN_CLASS =
+            "com/evacipated/cardcrawl/mod/stslib/StSLib.class";
+    private static final String COMPAT_LOG_PREFIX = "[compat] ";
     private static final Set<String> REQUIRED_STS_PATCH_CLASSES = new HashSet<>(Arrays.asList(
             "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",
             STS_PATCH_PIXEL_SCALE_CLASS,
@@ -75,6 +81,52 @@ public final class ModJarSupport {
             STS_PATCH_STEAM_INPUT_HELPER_CLASS,
             STS_PATCH_BUILD_PROPERTIES
     ));
+    private static final CompatPatchRule[] COMPAT_PATCH_RULES = new CompatPatchRule[]{
+            new CompatPatchRule(
+                    BASEMOD_MOD_ID,
+                    BASEMOD_GLOW_PATCH_JAR,
+                    BASEMOD_GLOW_PATCH_CLASS,
+                    "BaseMod glow",
+                    false,
+                    BASEMOD_JAR_FILE_NAME
+            ),
+            new CompatPatchRule(
+                    DOWNFALL_MOD_ID,
+                    DOWNFALL_FBO_PATCH_JAR,
+                    DOWNFALL_FBO_PATCH_CLASS,
+                    "Downfall FBO",
+                    true,
+                    null
+            )
+    };
+
+    private enum CompatPatchApplyResult {
+        PATCHED,
+        ALREADY_PATCHED
+    }
+
+    private static final class CompatPatchRule {
+        final String modId;
+        final String patchJarName;
+        final String targetClassEntry;
+        final String label;
+        final boolean applyWhenInstalled;
+        final String fixedTargetJarName;
+
+        CompatPatchRule(String modId,
+                        String patchJarName,
+                        String targetClassEntry,
+                        String label,
+                        boolean applyWhenInstalled,
+                        String fixedTargetJarName) {
+            this.modId = modId;
+            this.patchJarName = patchJarName;
+            this.targetClassEntry = targetClassEntry;
+            this.label = label;
+            this.applyWhenInstalled = applyWhenInstalled;
+            this.fixedTargetJarName = fixedTargetJarName;
+        }
+    }
 
     private ModJarSupport() {
     }
@@ -99,6 +151,25 @@ public final class ModJarSupport {
             if (zipFile.getEntry("basemod/BaseMod.class") == null) {
                 throw new IOException("Invalid BaseMod.jar: missing basemod/BaseMod.class");
             }
+        }
+        String modId = normalizeModId(resolveModId(jarFile));
+        if (!ModManager.MOD_ID_BASEMOD.equals(modId)) {
+            throw new IOException("Invalid BaseMod.jar: modid is " + modId);
+        }
+    }
+
+    public static void validateStsLibJar(File jarFile) throws IOException {
+        if (jarFile == null || !jarFile.isFile()) {
+            throw new IOException("StSLib.jar not found");
+        }
+        try (ZipFile zipFile = new ZipFile(jarFile)) {
+            if (zipFile.getEntry(STSLIB_MAIN_CLASS) == null) {
+                throw new IOException("Invalid StSLib.jar: missing " + STSLIB_MAIN_CLASS);
+            }
+        }
+        String modId = normalizeModId(resolveModId(jarFile));
+        if (!ModManager.MOD_ID_STSLIB.equals(modId)) {
+            throw new IOException("Invalid StSLib.jar: modid is " + modId);
         }
     }
 
@@ -125,78 +196,13 @@ public final class ModJarSupport {
         File stsJar = RuntimePaths.importedStsJar(context);
         File patchJar = RuntimePaths.gdxPatchJar(context);
         File baseModJar = RuntimePaths.importedBaseModJar(context);
+        appendCompatLog(context, "prepare classpath start");
         ensurePatchedStsJar(stsJar, patchJar);
+        applyCompatPatchRules(context);
         ensureGdxApiJar(stsJar, RuntimePaths.mtsGdxApiJar(context));
         ensureStsResourceJar(stsJar, RuntimePaths.mtsStsResourcesJar(context));
-        // BaseMod's RenderGlowPatch eagerly builds FBOs and can fail on Android-backed LWJGL contexts.
-        // Removing this patch class set keeps card rendering stable while preserving core BaseMod features.
-        ensureBaseModGlowCompat(baseModJar);
         ensureBaseModResourceJar(baseModJar, RuntimePaths.mtsBaseModResourcesJar(context));
-    }
-
-    private static void ensureBaseModGlowCompat(File baseModJar) throws IOException {
-        if (baseModJar == null || !baseModJar.isFile()) {
-            throw new IOException("BaseMod jar not found");
-        }
-        if (!containsAnyEntries(baseModJar, BASEMOD_DISABLED_PATCH_CLASSES)) {
-            return;
-        }
-
-        File tempJar = new File(baseModJar.getAbsolutePath() + ".compat.tmp");
-        Set<String> seenNames = new HashSet<>();
-        int removed = 0;
-        try (FileInputStream fileInput = new FileInputStream(baseModJar);
-             ZipInputStream zipIn = new ZipInputStream(fileInput);
-             FileOutputStream outputStream = new FileOutputStream(tempJar, false);
-             ZipOutputStream zipOut = new ZipOutputStream(outputStream)) {
-            ZipEntry entry;
-            while ((entry = zipIn.getNextEntry()) != null) {
-                String name = entry.getName();
-                if (entry.isDirectory() || !seenNames.add(name)) {
-                    zipIn.closeEntry();
-                    continue;
-                }
-                if (BASEMOD_DISABLED_PATCH_CLASSES.contains(name)) {
-                    removed++;
-                    zipIn.closeEntry();
-                    continue;
-                }
-                ZipEntry outEntry = new ZipEntry(name);
-                if (entry.getTime() > 0) {
-                    outEntry.setTime(entry.getTime());
-                }
-                zipOut.putNextEntry(outEntry);
-                copyStream(zipIn, zipOut);
-                zipOut.closeEntry();
-                zipIn.closeEntry();
-            }
-        }
-
-        if (removed <= 0 || containsAnyEntries(tempJar, BASEMOD_DISABLED_PATCH_CLASSES)) {
-            if (tempJar.exists()) {
-                tempJar.delete();
-            }
-            throw new IOException("Failed to apply BaseMod glow compatibility patch");
-        }
-
-        if (baseModJar.exists() && !baseModJar.delete()) {
-            throw new IOException("Failed to replace " + baseModJar.getAbsolutePath());
-        }
-        if (!tempJar.renameTo(baseModJar)) {
-            throw new IOException("Failed to move " + tempJar.getAbsolutePath() + " -> " + baseModJar.getAbsolutePath());
-        }
-        baseModJar.setLastModified(System.currentTimeMillis());
-    }
-
-    private static boolean containsAnyEntries(File jarFile, Set<String> entryNames) throws IOException {
-        try (ZipFile zipFile = new ZipFile(jarFile)) {
-            for (String entryName : entryNames) {
-                if (zipFile.getEntry(entryName) != null) {
-                    return true;
-                }
-            }
-            return false;
-        }
+        appendCompatLog(context, "prepare classpath done");
     }
 
     private static void ensurePatchedStsJar(File stsJar, File patchJar) throws IOException {
@@ -320,6 +326,217 @@ public final class ModJarSupport {
             return true;
         } catch (Throwable ignored) {
             return false;
+        }
+    }
+
+    private static void applyCompatPatchRules(Context context) throws IOException {
+        Map<String, File> installedModsById = findInstalledModsById(context);
+        for (CompatPatchRule rule : COMPAT_PATCH_RULES) {
+            if (rule.applyWhenInstalled) {
+                File targetJar = installedModsById.get(rule.modId);
+                if (targetJar == null) {
+                    appendCompatLog(context, "rule skip not installed: " + rule.label + " (modid=" + rule.modId + ")");
+                    continue;
+                }
+                applyCompatRuleToJar(context, rule, targetJar);
+            } else {
+                File targetJar = resolveFixedTargetJar(context, rule);
+                if (targetJar == null || !targetJar.isFile()) {
+                    appendCompatLog(context, "rule missing required target: " + rule.label + " (jar="
+                            + (targetJar == null ? "null" : targetJar.getAbsolutePath()) + ")");
+                    throw new IOException(rule.label + " target jar not found");
+                }
+                applyCompatRuleToJar(context, rule, targetJar);
+            }
+        }
+    }
+
+    private static void applyCompatRuleToJar(Context context, CompatPatchRule rule, File targetJar) throws IOException {
+        File patchJar = new File(RuntimePaths.gdxPatchDir(context), rule.patchJarName);
+        appendCompatLog(context, "rule matched: " + rule.label + " target=" + targetJar.getName()
+                + " class=" + rule.targetClassEntry);
+        try {
+            CompatPatchApplyResult result = ensureJarClassCompat(targetJar, patchJar, rule.targetClassEntry, rule.label);
+            if (result == CompatPatchApplyResult.ALREADY_PATCHED) {
+                appendCompatLog(context, "rule already patched: " + rule.label);
+            } else {
+                appendCompatLog(context, "rule patched successfully: " + rule.label);
+            }
+        } catch (Throwable error) {
+            appendCompatLog(context, "rule failed: " + rule.label + " reason="
+                    + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
+            if (error instanceof IOException) {
+                throw (IOException) error;
+            }
+            throw new IOException(rule.label + " compat apply failed", error);
+        }
+    }
+
+    private static File resolveFixedTargetJar(Context context, CompatPatchRule rule) {
+        if (rule.fixedTargetJarName == null || rule.fixedTargetJarName.trim().isEmpty()) {
+            return null;
+        }
+        return new File(RuntimePaths.modsDir(context), rule.fixedTargetJarName);
+    }
+
+    private static Map<String, File> findInstalledModsById(Context context) {
+        Map<String, File> modsById = new HashMap<>();
+        File[] modFiles = RuntimePaths.modsDir(context).listFiles();
+        if (modFiles == null) {
+            return modsById;
+        }
+        for (File modFile : modFiles) {
+            if (modFile == null || !modFile.isFile()) {
+                continue;
+            }
+            String name = modFile.getName();
+            if (name == null || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".jar")) {
+                continue;
+            }
+            try {
+                String modId = normalizeModId(resolveModId(modFile));
+                if (!modId.isEmpty() && !modsById.containsKey(modId)) {
+                    modsById.put(modId, modFile);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return modsById;
+    }
+
+    private static CompatPatchApplyResult ensureJarClassCompat(File targetJar,
+                                                               File patchJar,
+                                                               String classEntry,
+                                                               String label) throws IOException {
+        if (targetJar == null || !targetJar.isFile()) {
+            throw new IOException(label + " target jar not found");
+        }
+        if (patchJar == null || !patchJar.isFile()) {
+            throw new IOException(label + " compat patch not found");
+        }
+
+        Map<String, byte[]> patchEntries = loadSinglePatchEntry(patchJar, classEntry, label);
+        if (isJarClassCompatPatched(targetJar, classEntry, patchEntries)) {
+            return CompatPatchApplyResult.ALREADY_PATCHED;
+        }
+
+        File tempJar = new File(targetJar.getAbsolutePath() + ".compat.tmp");
+        Set<String> seenNames = new HashSet<>();
+        try (FileInputStream fileInput = new FileInputStream(targetJar);
+             ZipInputStream zipIn = new ZipInputStream(fileInput);
+             FileOutputStream outputStream = new FileOutputStream(tempJar, false);
+             ZipOutputStream zipOut = new ZipOutputStream(outputStream)) {
+            ZipEntry entry;
+            while ((entry = zipIn.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (entry.isDirectory() || !seenNames.add(name)) {
+                    zipIn.closeEntry();
+                    continue;
+                }
+                ZipEntry outEntry = new ZipEntry(name);
+                if (entry.getTime() > 0) {
+                    outEntry.setTime(entry.getTime());
+                }
+                zipOut.putNextEntry(outEntry);
+                byte[] patchBytes = patchEntries.get(name);
+                if (patchBytes != null) {
+                    zipOut.write(patchBytes);
+                } else {
+                    copyStream(zipIn, zipOut);
+                }
+                zipOut.closeEntry();
+                zipIn.closeEntry();
+            }
+
+            for (Map.Entry<String, byte[]> patchEntry : patchEntries.entrySet()) {
+                String name = patchEntry.getKey();
+                if (seenNames.contains(name)) {
+                    continue;
+                }
+                ZipEntry outEntry = new ZipEntry(name);
+                zipOut.putNextEntry(outEntry);
+                zipOut.write(patchEntry.getValue());
+                zipOut.closeEntry();
+            }
+        }
+
+        if (!isJarClassCompatPatched(tempJar, classEntry, patchEntries)) {
+            if (tempJar.exists()) {
+                tempJar.delete();
+            }
+            throw new IOException("Failed to patch " + label + " class: " + classEntry);
+        }
+
+        if (targetJar.exists() && !targetJar.delete()) {
+            throw new IOException("Failed to replace " + targetJar.getAbsolutePath());
+        }
+        if (!tempJar.renameTo(targetJar)) {
+            throw new IOException("Failed to move " + tempJar.getAbsolutePath() + " -> " + targetJar.getAbsolutePath());
+        }
+        targetJar.setLastModified(System.currentTimeMillis());
+        return CompatPatchApplyResult.PATCHED;
+    }
+
+    private static Map<String, byte[]> loadSinglePatchEntry(File patchJar,
+                                                            String requiredClassEntry,
+                                                            String label) throws IOException {
+        Map<String, byte[]> entries = new HashMap<>();
+        try (FileInputStream fileInput = new FileInputStream(patchJar);
+             ZipInputStream zipIn = new ZipInputStream(fileInput)) {
+            ZipEntry entry;
+            while ((entry = zipIn.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (entry.isDirectory()
+                        || name.startsWith("META-INF/")
+                        || !requiredClassEntry.equals(name)
+                        || entries.containsKey(name)) {
+                    zipIn.closeEntry();
+                    continue;
+                }
+                entries.put(name, readAll(zipIn));
+                zipIn.closeEntry();
+            }
+        }
+        if (!entries.containsKey(requiredClassEntry)) {
+            throw new IOException(label + " compat patch is missing required class: " + requiredClassEntry);
+        }
+        return entries;
+    }
+
+    private static boolean isJarClassCompatPatched(File targetJar,
+                                                   String classEntry,
+                                                   Map<String, byte[]> patchEntries) {
+        try (ZipFile zipFile = new ZipFile(targetJar)) {
+            ZipEntry entry = zipFile.getEntry(classEntry);
+            byte[] expected = patchEntries.get(classEntry);
+            if (entry == null || expected == null) {
+                return false;
+            }
+            byte[] actual = readEntryBytes(zipFile, entry);
+            return Arrays.equals(actual, expected);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void appendCompatLog(Context context, String message) {
+        if (context == null || message == null) {
+            return;
+        }
+        try {
+            File logFile = RuntimePaths.latestLog(context);
+            File parent = logFile.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            if (!logFile.exists()) {
+                logFile.createNewFile();
+            }
+            String line = COMPAT_LOG_PREFIX + message + "\n";
+            try (FileOutputStream output = new FileOutputStream(logFile, true)) {
+                output.write(line.getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -576,6 +793,13 @@ public final class ModJarSupport {
                 .filter(entry -> entry.getName().toLowerCase(java.util.Locale.ROOT).endsWith(target))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static String normalizeModId(String modId) {
+        if (modId == null) {
+            return "";
+        }
+        return modId.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private static void copyStream(InputStream input, java.io.OutputStream output) throws IOException {

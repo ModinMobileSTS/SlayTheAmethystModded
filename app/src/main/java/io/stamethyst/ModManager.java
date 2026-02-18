@@ -10,12 +10,12 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -67,6 +67,17 @@ public final class ModManager {
 
     public static boolean isRequiredModId(String modId) {
         return REQUIRED_MOD_IDS.contains(normalizeModId(modId));
+    }
+
+    public static boolean hasBundledRequiredModAsset(Context context, String modId) {
+        String normalized = normalizeModId(modId);
+        if (MOD_ID_BASEMOD.equals(normalized)) {
+            return hasBundledAsset(context, "components/mods/BaseMod.jar");
+        }
+        if (MOD_ID_STSLIB.equals(normalized)) {
+            return hasBundledAsset(context, "components/mods/StSLib.jar");
+        }
+        return false;
     }
 
     public static File resolveStorageFileForModId(Context context, String modId) {
@@ -132,11 +143,13 @@ public final class ModManager {
         launchModIds.add(baseModId);
         launchModIds.add(stsLibId);
 
-        List<String> sortedEnabledOptional = new ArrayList<>(enabledOptional);
-        Collections.sort(sortedEnabledOptional);
-        for (String modId : sortedEnabledOptional) {
-            if (optionalModFiles.containsKey(modId)) {
-                launchModIds.add(modId);
+        for (String modId : enabledOptional) {
+            File modJar = optionalModFiles.get(modId);
+            if (modJar != null) {
+                String rawModId = resolveRawModId(modJar);
+                if (!rawModId.isEmpty()) {
+                    launchModIds.add(rawModId);
+                }
             }
         }
         return launchModIds;
@@ -152,19 +165,32 @@ public final class ModManager {
                 installed = false;
             }
         }
-        String suffix = installed ? " (required)" : " (required, missing)";
-        return new InstalledMod(expectedModId, label + suffix, jarFile, true, installed, installed);
+        boolean bundled = hasBundledRequiredModAsset(context, expectedModId);
+        boolean available = installed || bundled;
+        String suffix = installed
+                ? " (required)"
+                : (bundled ? " (required, bundled)" : " (required, missing)");
+        return new InstalledMod(expectedModId, label + suffix, jarFile, true, available, available);
+    }
+
+    private static boolean hasBundledAsset(Context context, String assetPath) {
+        try (InputStream ignored = context.getAssets().open(assetPath)) {
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static String resolveRequiredLaunchModId(File jarFile, String expectedModId, String label) throws IOException {
         if (!jarFile.isFile()) {
             throw new IOException(label + " not found");
         }
-        String resolved = normalizeModId(ModJarSupport.resolveModId(jarFile));
-        if (!expectedModId.equals(resolved)) {
-            throw new IOException(label + " has unexpected modid: " + resolved);
+        String raw = resolveRawModId(jarFile);
+        String normalized = normalizeModId(raw);
+        if (!expectedModId.equals(normalized)) {
+            throw new IOException(label + " has unexpected modid: " + raw);
         }
-        return resolved;
+        return raw;
     }
 
     private static TreeMap<String, File> findOptionalModFiles(Context context) {
@@ -238,12 +264,10 @@ public final class ModManager {
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw new IOException("Failed to create directory: " + parent.getAbsolutePath());
         }
-        List<String> sorted = new ArrayList<>(modIds);
-        Collections.sort(sorted);
         try (FileOutputStream output = new FileOutputStream(config, false);
              OutputStreamWriter writer = new OutputStreamWriter(output, StandardCharsets.UTF_8);
              BufferedWriter buffered = new BufferedWriter(writer)) {
-            for (String modId : sorted) {
+            for (String modId : modIds) {
                 String normalized = normalizeModId(modId);
                 if (normalized.isEmpty() || isRequiredModId(normalized)) {
                     continue;
@@ -295,5 +319,13 @@ public final class ModManager {
             return "mod";
         }
         return sanitized.toString();
+    }
+
+    private static String resolveRawModId(File jarFile) throws IOException {
+        String raw = ModJarSupport.resolveModId(jarFile);
+        if (raw == null) {
+            return "";
+        }
+        return raw.trim();
     }
 }

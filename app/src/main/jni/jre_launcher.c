@@ -128,12 +128,7 @@ static jint launchJVM(int margc, char** margv) {
    struct sigaction clean_sa;
    memset(&clean_sa, 0, sizeof (struct sigaction));
    for(int sigid = SIGHUP; sigid < NSIG; sigid++) {
-       // For some reason Android specifically checks if you set SIGSEGV to SIG_DFL.
-       // There's probably a good reason for that but the signal handler here is
-       // temporary and will be replaced by the Java VM's signal/crash handler.
-       // Work around the warning by using SIG_IGN for SIGSEGV
-       if(sigid == SIGSEGV) clean_sa.sa_handler = SIG_IGN;
-       else clean_sa.sa_handler = SIG_DFL;
+       clean_sa.sa_handler = SIG_DFL;
        sigaction(sigid, &clean_sa, NULL);
    }
    // Set up the thread that will abort the launcher with an user-facing dialog on a signal.

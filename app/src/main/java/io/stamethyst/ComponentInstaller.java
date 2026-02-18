@@ -10,6 +10,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 public final class ComponentInstaller {
+    private interface JarValidator {
+        void validate(File jarFile) throws IOException;
+    }
+
     private ComponentInstaller() {
     }
 
@@ -26,8 +30,24 @@ public final class ComponentInstaller {
     }
 
     private static void installBundledMods(AssetManager assets, Context context) throws IOException {
-        copyFileIfMissing(assets, "components/mods/ModTheSpire.jar", RuntimePaths.importedMtsJar(context));
-        copyFileIfMissing(assets, "components/mods/BaseMod.jar", RuntimePaths.importedBaseModJar(context));
+        ensureBundledMod(
+                assets,
+                "components/mods/ModTheSpire.jar",
+                RuntimePaths.importedMtsJar(context),
+                ModJarSupport::validateMtsJar
+        );
+        ensureBundledMod(
+                assets,
+                "components/mods/BaseMod.jar",
+                RuntimePaths.importedBaseModJar(context),
+                ModJarSupport::validateBaseModJar
+        );
+        ensureBundledMod(
+                assets,
+                "components/mods/StSLib.jar",
+                RuntimePaths.importedStsLibJar(context),
+                ModJarSupport::validateStsLibJar
+        );
     }
 
     private static void copyAssetTree(AssetManager assets, String assetPath, File targetDir) throws IOException {
@@ -74,6 +94,31 @@ public final class ComponentInstaller {
             return;
         }
         copyFile(assets, assetPath, targetFile);
+    }
+
+    private static void ensureBundledMod(AssetManager assets,
+                                         String assetPath,
+                                         File targetFile,
+                                         JarValidator validator) throws IOException {
+        if (targetFile.isFile() && targetFile.length() > 0) {
+            try {
+                validator.validate(targetFile);
+                return;
+            } catch (Throwable ignored) {
+                if (!targetFile.delete()) {
+                    throw new IOException("Failed to replace invalid mod file: " + targetFile.getAbsolutePath());
+                }
+            }
+        }
+        copyFileIfMissing(assets, assetPath, targetFile);
+        if (!targetFile.isFile() || targetFile.length() <= 0) {
+            throw new IOException("Bundled mod install failed: " + targetFile.getAbsolutePath());
+        }
+        try {
+            validator.validate(targetFile);
+        } catch (Throwable error) {
+            throw new IOException("Bundled mod validation failed: " + targetFile.getName() + ": " + error.getMessage(), error);
+        }
     }
 
     private static void ensureMtsLocalJreShim(Context context) throws IOException {
