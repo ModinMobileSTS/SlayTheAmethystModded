@@ -51,6 +51,7 @@ struct PotatoBridge {
 };
 EGLConfig config;
 struct PotatoBridge potatoBridge;
+static bool g_bridge_ready = false;
 
 #include "ctxbridges/egl_loader.h"
 #include "ctxbridges/osmesa_loader.h"
@@ -156,13 +157,19 @@ void load_vulkan() {
 }
 
 int pojavInitOpenGL() {
+    g_bridge_ready = false;
     // Only affects GL4ES as of now
     const char *forceVsync = getenv("FORCE_VSYNC");
-    if (strcmp(forceVsync, "true") == 0)
+    if (forceVsync != NULL && strcmp(forceVsync, "true") == 0)
         pojav_environ->force_vsync = true;
 
     // NOTE: Override for now.
     const char *renderer = getenv("AMETHYST_RENDERER");
+    if (renderer == NULL || renderer[0] == '\0') {
+        printf("EGLBridge: AMETHYST_RENDERER is empty, fallback to opengles2\n");
+        renderer = "opengles2";
+    }
+
     if (strncmp("opengles", renderer, 8) == 0) {
         pojav_environ->config_renderer = RENDERER_GL4ES;
         if (!strcmp(renderer, "opengles3_desktopgl_zink_kopper")) {
@@ -176,9 +183,16 @@ int pojavInitOpenGL() {
         load_vulkan();
         setenv("GALLIUM_DRIVER","zink",1);
         set_osm_bridge_tbl();
-    } else printf("EGLBridge: Renderer was not configured as a bridge. Consider adding \"opengles\" to the start of renderer name if it crashes");
+    } else {
+        printf("EGLBridge: Unknown renderer \"%s\", fallback to GL4ES bridge\n", renderer);
+        pojav_environ->config_renderer = RENDERER_GL4ES;
+        set_gl_bridge_tbl();
+    }
     if(br_init()) {
+        g_bridge_ready = true;
         br_setup_window();
+    } else {
+        printf("EGLBridge: bridge init failed for renderer \"%s\"\n", renderer);
     }
     return 0;
 }
@@ -192,9 +206,49 @@ EXTERNAL_API int pojavInit() {
         return 0;
     }
     ANativeWindow_acquire(pojav_environ->pojavWindow);
-    pojav_environ->savedWidth = ANativeWindow_getWidth(pojav_environ->pojavWindow);
-    pojav_environ->savedHeight = ANativeWindow_getHeight(pojav_environ->pojavWindow);
-    ANativeWindow_setBuffersGeometry(pojav_environ->pojavWindow,pojav_environ->savedWidth,pojav_environ->savedHeight,AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+    int nativeWidth = ANativeWindow_getWidth(pojav_environ->pojavWindow);
+    int nativeHeight = ANativeWindow_getHeight(pojav_environ->pojavWindow);
+    int javaWidth = pojav_environ->savedWidth;
+    int javaHeight = pojav_environ->savedHeight;
+    bool javaSizeValid = javaWidth > 0 && javaHeight > 0;
+    bool nativeSizeValid = nativeWidth > 0 && nativeHeight > 0;
+    bool orientationMismatch = false;
+    if (javaSizeValid && nativeSizeValid) {
+        bool javaLandscape = javaWidth >= javaHeight;
+        bool nativeLandscape = nativeWidth >= nativeHeight;
+        orientationMismatch = javaLandscape != nativeLandscape;
+    }
+    if (!javaSizeValid && nativeSizeValid) {
+        pojav_environ->savedWidth = nativeWidth;
+        pojav_environ->savedHeight = nativeHeight;
+        printf("EGLBridge: screen size from Java is invalid, fallback to ANativeWindow %dx%d\n",
+               nativeWidth, nativeHeight);
+    } else if (orientationMismatch) {
+        pojav_environ->savedWidth = nativeWidth;
+        pojav_environ->savedHeight = nativeHeight;
+        printf("EGLBridge: Java size %dx%d conflicts with ANativeWindow orientation %dx%d, fallback to ANativeWindow\n",
+               javaWidth, javaHeight, nativeWidth, nativeHeight);
+    } else {
+        printf("EGLBridge: keep Java-provided screen size %dx%d (ANativeWindow is %dx%d)\n",
+               javaWidth, javaHeight, nativeWidth, nativeHeight);
+    }
+    const char* renderer = getenv("AMETHYST_RENDERER");
+    bool isKopperRenderer = renderer != NULL &&
+            strcmp(renderer, "opengles3_desktopgl_zink_kopper") == 0;
+    if (isKopperRenderer) {
+        printf("EGLBridge: skip ANativeWindow_setBuffersGeometry for Kopper renderer\n");
+    } else {
+        int geometryResult = ANativeWindow_setBuffersGeometry(
+                pojav_environ->pojavWindow,
+                pojav_environ->savedWidth,
+                pojav_environ->savedHeight,
+                AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
+        );
+        if (geometryResult != 0) {
+            printf("EGLBridge: ANativeWindow_setBuffersGeometry(%dx%d) failed: %d\n",
+                   pojav_environ->savedWidth, pojav_environ->savedHeight, geometryResult);
+        }
+    }
     updateMonitorSize(pojav_environ->savedWidth, pojav_environ->savedHeight);
     pojavInitOpenGL();
     return 1;
@@ -219,17 +273,27 @@ EXTERNAL_API void pojavSetWindowHint(int hint, int value) {
 }
 
 EXTERNAL_API void pojavSwapBuffers() {
+    if (!g_bridge_ready || br_swap_buffers == NULL) {
+        return;
+    }
     br_swap_buffers();
 }
 
 
 EXTERNAL_API void pojavMakeCurrent(void* window) {
+    if (!g_bridge_ready || br_make_current == NULL) {
+        return;
+    }
     br_make_current((basic_render_window_t*)window);
 }
 
 EXTERNAL_API void* pojavCreateContext(void* contextSrc) {
     if (pojav_environ->config_renderer == RENDERER_VULKAN) {
         return (void *) pojav_environ->pojavWindow;
+    }
+    if (!g_bridge_ready || br_init_context == NULL) {
+        printf("EGLBridge: create context skipped, bridge is not ready\n");
+        return NULL;
     }
     return br_init_context((basic_render_window_t*)contextSrc);
 }
@@ -249,6 +313,13 @@ Java_org_lwjgl_vulkan_VK_getVulkanDriverHandle(ABI_COMPAT JNIEnv *env, ABI_COMPA
 }
 
 EXTERNAL_API void pojavSwapInterval(int interval) {
+    if (!g_bridge_ready) {
+        return;
+    }
+    if (br_swap_interval == NULL) {
+        printf("EGLBridge: Swap interval callback is unavailable, skip interval=%d\n", interval);
+        return;
+    }
     br_swap_interval(interval);
 }
 

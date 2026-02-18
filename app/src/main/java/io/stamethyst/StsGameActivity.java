@@ -1,18 +1,24 @@
 package io.stamethyst;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
+import android.graphics.SurfaceTexture;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.TextureView;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -37,18 +43,32 @@ import io.stamethyst.input.AndroidGlfwKeycode;
 public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.Callback {
     private static final String TAG = "StsGameActivity";
     public static final String EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode";
+    public static final String EXTRA_RENDERER_BACKEND = "io.stamethyst.renderer_backend";
     private static final float DEFAULT_RENDER_SCALE = 0.75f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
 
+    @Nullable
     private SurfaceView surfaceView;
+    @Nullable
+    private TextureView textureView;
+    @Nullable
+    private Surface textureSurface;
+    private View renderView;
+    private boolean useTextureViewSurface = false;
     private volatile boolean vmStarted = false;
     private int activePointerId = MotionEvent.INVALID_POINTER_ID;
     private boolean leftPressed = false;
     private int surfaceBufferWidth = 0;
     private int surfaceBufferHeight = 0;
+    private long waitingLandscapeSinceMs = -1L;
+    private boolean startCheckPosted = false;
     private float renderScale = DEFAULT_RENDER_SCALE;
     private String launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA;
+    private RendererBackend launcherRequestedRenderer = RendererBackend.OPENGL_ES2;
+    private boolean jvmLogListenerRegistered = false;
+    private final Logger.eventLogListener jvmLogcatListener =
+            text -> Log.i(TAG, "[JVM] " + text);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,19 +80,89 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(requestedMode)) {
             launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD;
         }
+        launcherRequestedRenderer = RendererBackend.fromRendererId(
+                getIntent().getStringExtra(EXTRA_RENDERER_BACKEND)
+        );
+        useTextureViewSurface = launcherRequestedRenderer == RendererBackend.KOPPER_ZINK;
 
         FrameLayout root = findViewById(R.id.gameRoot);
-        surfaceView = new SurfaceView(this);
-        root.addView(surfaceView, new ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams renderLayoutParams = new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-        ));
+        );
+        if (useTextureViewSurface) {
+            Log.i(TAG, "Using TextureView surface path for Kopper renderer");
+            TextureView view = new TextureView(this);
+            view.setOpaque(true);
+            textureView = view;
+            renderView = view;
+            root.addView(view, renderLayoutParams);
+            view.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                @Override
+                public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
+                    surfaceBufferWidth = Math.max(1, width);
+                    surfaceBufferHeight = Math.max(1, height);
+                    surface.setDefaultBufferSize(surfaceBufferWidth, surfaceBufferHeight);
+                    releaseTextureSurfaceIfNeeded();
+                    textureSurface = new Surface(surface);
+                    JREUtils.setupBridgeWindow(textureSurface);
+                    updateWindowSize();
+                    tryStartJvmWhenSurfaceReady();
+                }
 
-        surfaceView.getHolder().addCallback(this);
-        surfaceView.setFocusable(true);
-        surfaceView.setFocusableInTouchMode(true);
-        surfaceView.setOnTouchListener((v, event) -> handleTouchEvent(event));
-        surfaceView.requestFocus();
+                @Override
+                public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
+                    surfaceBufferWidth = Math.max(1, width);
+                    surfaceBufferHeight = Math.max(1, height);
+                    surface.setDefaultBufferSize(surfaceBufferWidth, surfaceBufferHeight);
+                    updateWindowSize();
+                    tryStartJvmWhenSurfaceReady();
+                }
+
+                @Override
+                public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
+                    JREUtils.releaseBridgeWindow();
+                    releaseTextureSurfaceIfNeeded();
+                    surfaceBufferWidth = 0;
+                    surfaceBufferHeight = 0;
+                    return true;
+                }
+
+                @Override
+                public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
+                }
+            });
+        } else {
+            SurfaceView view = new SurfaceView(this);
+            surfaceView = view;
+            renderView = view;
+            root.addView(view, renderLayoutParams);
+            view.getHolder().addCallback(this);
+        }
+
+        renderView.setFocusable(true);
+        renderView.setFocusableInTouchMode(true);
+        renderView.setOnTouchListener((v, event) -> handleTouchEvent(event));
+        renderView.requestFocus();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (useTextureViewSurface) {
+            try {
+                JREUtils.releaseBridgeWindow();
+            } catch (Throwable ignored) {
+            }
+        }
+        releaseTextureSurfaceIfNeeded();
+        if (jvmLogListenerRegistered) {
+            try {
+                Logger.removeLogListener(jvmLogcatListener);
+            } catch (Throwable ignored) {
+            }
+            jvmLogListenerRegistered = false;
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -83,7 +173,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         }
         JREUtils.setupBridgeWindow(holder.getSurface());
         updateWindowSize();
-        startJvmOnce();
+        tryStartJvmWhenSurfaceReady();
     }
 
     @Override
@@ -91,6 +181,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         surfaceBufferWidth = width;
         surfaceBufferHeight = height;
         updateWindowSize();
+        tryStartJvmWhenSurfaceReady();
     }
 
     @Override
@@ -104,6 +195,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         applyImmersiveMode();
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1);
+        tryStartJvmWhenSurfaceReady();
     }
 
     @Override
@@ -135,6 +227,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
                     ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
                     ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
+                    ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(this));
                     ModJarSupport.prepareMtsClasspath(this);
                 }
 
@@ -154,17 +247,40 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                     throw new IllegalStateException("Failed to create log file: " + logFile.getAbsolutePath());
                 }
                 Logger.begin(logFile.getAbsolutePath());
+                try {
+                    Logger.addLogListener(jvmLogcatListener);
+                    jvmLogListenerRegistered = true;
+                } catch (Throwable ignored) {
+                    jvmLogListenerRegistered = false;
+                }
                 Logger.appendToLog("Launching STS with java home: " + javaHome.getAbsolutePath());
                 Logger.appendToLog("Launch mode: " + launchMode);
-                Logger.appendToLog("Render scale: " + renderScale
-                        + ", surface=" + surfaceBufferWidth + "x" + surfaceBufferHeight
-                        + ", window=" + CallbackBridge.windowWidth + "x" + CallbackBridge.windowHeight);
-
+                Logger.appendToLog("Surface backend: " + (useTextureViewSurface ? "TextureView" : "SurfaceView"));
+                RendererBackend preferredRenderer = RendererConfig.readPreferredBackend(this);
+                RendererConfig.ResolutionResult rendererDecision =
+                        RendererConfig.resolveEffectiveBackend(this, preferredRenderer);
+                RendererBackend effectiveRenderer = rendererDecision.effective;
+                Logger.appendToLog("Renderer from launcher intent: " + launcherRequestedRenderer.rendererId());
+                Logger.appendToLog("Renderer decision in game: " + rendererDecision.toLogText());
+                if (launcherRequestedRenderer != effectiveRenderer) {
+                    Logger.appendToLog(
+                            "Renderer changed after re-check: launcher_effective="
+                                    + launcherRequestedRenderer.rendererId()
+                                    + ", game_effective="
+                                    + effectiveRenderer.rendererId()
+                    );
+                }
                 updateWindowSize();
+                Logger.appendToLog("Render scale: " + renderScale
+                        + ", surface(raw)=" + resolveRawPhysicalWidth() + "x" + resolveRawPhysicalHeight()
+                        + ", surface(effective)=" + resolvePhysicalWidth() + "x" + resolvePhysicalHeight()
+                        + ", window=" + CallbackBridge.windowWidth + "x" + CallbackBridge.windowHeight);
+                syncDisplayConfigToSurfaceSize();
                 JREUtils.relocateLibPath(getApplicationInfo().nativeLibraryDir, javaHome.getAbsolutePath());
                 JREUtils.setJavaEnvironment(this, javaHome.getAbsolutePath(),
                         Math.max(1, CallbackBridge.windowWidth),
-                        Math.max(1, CallbackBridge.windowHeight));
+                        Math.max(1, CallbackBridge.windowHeight),
+                        effectiveRenderer);
                 JREUtils.initJavaRuntime(javaHome.getAbsolutePath());
                 JREUtils.setupExitMethod(getApplicationContext());
                 JREUtils.initializeHooks();
@@ -175,27 +291,87 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
                 List<String> launchArgs = new ArrayList<>();
                 launchArgs.add("java");
-                launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome, launchMode));
+                launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome, launchMode, effectiveRenderer));
                 Logger.appendToLog("Launch args: " + launchArgs);
 
                 int exitCode = VMLauncher.launchJVM(launchArgs.toArray(new String[0]));
                 Logger.appendToLog("Java Exit code: " + exitCode);
-                runOnUiThread(() -> Toast.makeText(this, "Game exited with code " + exitCode, Toast.LENGTH_LONG).show());
+                if (exitCode == 0) {
+                    runOnUiThread(this::finish);
+                } else {
+                    runOnUiThread(() -> reportCrashAndReturn(exitCode, false, null));
+                }
             } catch (Throwable t) {
                 Log.e(TAG, "Launch failed", t);
                 try {
                     Logger.appendToLog("Launch failed: " + t);
                 } catch (Throwable ignored) {
                 }
-                runOnUiThread(() -> Toast.makeText(this, "Launch failed: " + t.getClass().getSimpleName() + ": " + t.getMessage(), Toast.LENGTH_LONG).show());
+                String message = t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
+                runOnUiThread(() -> reportCrashAndReturn(-1, false, message));
             }
         }, "STS-JVM-Thread");
         launchThread.start();
     }
 
+    private void tryStartJvmWhenSurfaceReady() {
+        if (vmStarted) {
+            return;
+        }
+        int rawWidth = resolveRawPhysicalWidth();
+        int rawHeight = resolveRawPhysicalHeight();
+        if (rawWidth <= 1 || rawHeight <= 1) {
+            Log.i(TAG, "Waiting for valid surface size before JVM start: " + rawWidth + "x" + rawHeight);
+            scheduleStartCheck();
+            return;
+        }
+        if (rawWidth < rawHeight) {
+            long now = SystemClock.uptimeMillis();
+            if (waitingLandscapeSinceMs < 0L) {
+                waitingLandscapeSinceMs = now;
+            }
+            long waitedMs = now - waitingLandscapeSinceMs;
+            if (waitedMs < 4000L) {
+                Log.i(TAG, "Waiting for landscape surface before JVM start: "
+                        + rawWidth + "x" + rawHeight + ", waited=" + waitedMs + "ms");
+                scheduleStartCheck();
+                return;
+            }
+            Log.w(TAG, "Surface is still portrait after wait, starting JVM anyway: "
+                    + rawWidth + "x" + rawHeight);
+        } else {
+            waitingLandscapeSinceMs = -1L;
+        }
+        startJvmOnce();
+    }
+
+    private void scheduleStartCheck() {
+        if (vmStarted || startCheckPosted) {
+            return;
+        }
+        startCheckPosted = true;
+        renderView.postDelayed(() -> {
+            startCheckPosted = false;
+            tryStartJvmWhenSurfaceReady();
+        }, 120L);
+    }
+
+    private void reportCrashAndReturn(int code, boolean isSignal, @Nullable String detail) {
+        Intent launcherIntent = new Intent(this, LauncherActivity.class);
+        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true);
+        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code);
+        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL, isSignal);
+        if (detail != null && !detail.trim().isEmpty()) {
+            launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_DETAIL, detail.trim());
+        }
+        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(launcherIntent);
+        finish();
+    }
+
     private void updateWindowSize() {
-        int physicalWidth = Math.max(1, surfaceBufferWidth > 0 ? surfaceBufferWidth : surfaceView.getWidth());
-        int physicalHeight = Math.max(1, surfaceBufferHeight > 0 ? surfaceBufferHeight : surfaceView.getHeight());
+        int physicalWidth = resolvePhysicalWidth();
+        int physicalHeight = resolvePhysicalHeight();
         int windowWidth = Math.max(1, Math.round(physicalWidth * renderScale));
         int windowHeight = Math.max(1, Math.round(physicalHeight * renderScale));
 
@@ -204,6 +380,42 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         CallbackBridge.windowWidth = windowWidth;
         CallbackBridge.windowHeight = windowHeight;
         CallbackBridge.sendUpdateWindowSize(windowWidth, windowHeight);
+    }
+
+    private int resolvePhysicalWidth() {
+        return resolveRawPhysicalWidth();
+    }
+
+    private int resolvePhysicalHeight() {
+        return resolveRawPhysicalHeight();
+    }
+
+    private int resolveRawPhysicalWidth() {
+        int viewWidth = renderView == null ? 0 : renderView.getWidth();
+        return Math.max(1, surfaceBufferWidth > 0 ? surfaceBufferWidth : viewWidth);
+    }
+
+    private int resolveRawPhysicalHeight() {
+        int viewHeight = renderView == null ? 0 : renderView.getHeight();
+        return Math.max(1, surfaceBufferHeight > 0 ? surfaceBufferHeight : viewHeight);
+    }
+
+    private void syncDisplayConfigToSurfaceSize() {
+        int physicalWidth = resolvePhysicalWidth();
+        int physicalHeight = resolvePhysicalHeight();
+        try {
+            DisplayConfigSync.syncToCurrentResolution(this, physicalWidth, physicalHeight);
+            Logger.appendToLog("Display config synced to " + Math.max(800, physicalWidth) + "x" + Math.max(450, physicalHeight));
+        } catch (Throwable error) {
+            Log.w(TAG, "Failed to sync info.displayconfig", error);
+            try {
+                Logger.appendToLog("Display config sync failed: "
+                        + error.getClass().getSimpleName()
+                        + ": "
+                        + String.valueOf(error.getMessage()));
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     private float resolveRenderScale() {
@@ -357,8 +569,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     }
 
     private float[] mapToWindowCoords(float viewX, float viewY) {
-        int viewWidth = Math.max(1, surfaceView.getWidth());
-        int viewHeight = Math.max(1, surfaceView.getHeight());
+        int rawViewWidth = renderView == null ? 0 : renderView.getWidth();
+        int rawViewHeight = renderView == null ? 0 : renderView.getHeight();
+        int viewWidth = Math.max(1, rawViewWidth);
+        int viewHeight = Math.max(1, rawViewHeight);
         int windowWidth = Math.max(1, CallbackBridge.windowWidth);
         int windowHeight = Math.max(1, CallbackBridge.windowHeight);
 
@@ -377,6 +591,16 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         }
 
         return new float[]{mappedX, mappedY};
+    }
+
+    private void releaseTextureSurfaceIfNeeded() {
+        if (textureSurface != null) {
+            try {
+                textureSurface.release();
+            } catch (Throwable ignored) {
+            }
+            textureSurface = null;
+        }
     }
 
     private void pressLeftIfNeeded() {
