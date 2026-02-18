@@ -36,6 +36,7 @@ import io.stamethyst.input.AndroidGlfwKeycode;
 
 public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.Callback {
     private static final String TAG = "StsGameActivity";
+    public static final String EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode";
     private static final float DEFAULT_RENDER_SCALE = 0.75f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
@@ -47,6 +48,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private int surfaceBufferWidth = 0;
     private int surfaceBufferHeight = 0;
     private float renderScale = DEFAULT_RENDER_SCALE;
+    private String launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +56,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         setContentView(R.layout.activity_game);
         applyImmersiveMode();
         renderScale = resolveRenderScale();
+        String requestedMode = getIntent().getStringExtra(EXTRA_LAUNCH_MODE);
+        if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(requestedMode)) {
+            launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD;
+        }
 
         FrameLayout root = findViewById(R.id.gameRoot);
         surfaceView = new SurfaceView(this);
@@ -126,6 +132,11 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 ComponentInstaller.ensureInstalled(this);
                 RuntimePackInstaller.ensureInstalled(this);
                 StsJarValidator.validate(RuntimePaths.importedStsJar(this));
+                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+                    ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
+                    ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
+                    ModJarSupport.prepareMtsClasspath(this);
+                }
 
                 File runtimeRoot = RuntimePaths.runtimeRoot(this);
                 File javaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot);
@@ -144,6 +155,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 }
                 Logger.begin(logFile.getAbsolutePath());
                 Logger.appendToLog("Launching STS with java home: " + javaHome.getAbsolutePath());
+                Logger.appendToLog("Launch mode: " + launchMode);
                 Logger.appendToLog("Render scale: " + renderScale
                         + ", surface=" + surfaceBufferWidth + "x" + surfaceBufferHeight
                         + ", window=" + CallbackBridge.windowWidth + "x" + CallbackBridge.windowHeight);
@@ -163,7 +175,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
                 List<String> launchArgs = new ArrayList<>();
                 launchArgs.add("java");
-                launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome));
+                launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome, launchMode));
                 Logger.appendToLog("Launch args: " + launchArgs);
 
                 int exitCode = VMLauncher.launchJVM(launchArgs.toArray(new String[0]));

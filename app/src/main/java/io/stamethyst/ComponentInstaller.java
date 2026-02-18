@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 public final class ComponentInstaller {
     private ComponentInstaller() {
@@ -20,6 +21,13 @@ public final class ComponentInstaller {
         copyAssetTree(assets, "components/lwjgl2_methods_injector", RuntimePaths.lwjgl2InjectorDir(context));
         copyAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context));
         copyAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context));
+        installBundledMods(assets, context);
+        ensureMtsLocalJreShim(context);
+    }
+
+    private static void installBundledMods(AssetManager assets, Context context) throws IOException {
+        copyFileIfMissing(assets, "components/mods/ModTheSpire.jar", RuntimePaths.importedMtsJar(context));
+        copyFileIfMissing(assets, "components/mods/BaseMod.jar", RuntimePaths.importedBaseModJar(context));
     }
 
     private static void copyAssetTree(AssetManager assets, String assetPath, File targetDir) throws IOException {
@@ -58,6 +66,39 @@ public final class ComponentInstaller {
             while ((read = input.read(buffer)) >= 0) {
                 output.write(buffer, 0, read);
             }
+        }
+    }
+
+    private static void copyFileIfMissing(AssetManager assets, String assetPath, File targetFile) throws IOException {
+        if (targetFile.isFile() && targetFile.length() > 0) {
+            return;
+        }
+        copyFile(assets, assetPath, targetFile);
+    }
+
+    private static void ensureMtsLocalJreShim(Context context) throws IOException {
+        File javaShim = RuntimePaths.mtsLocalJavaShim(context);
+        File parent = javaShim.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Failed to create MTS jre shim directory: " + parent);
+        }
+
+        File runtimeJava = new File(RuntimePaths.runtimeRoot(context), "bin/java");
+        String script = "#!/system/bin/sh\n"
+                + "RUNTIME_JAVA=\"" + runtimeJava.getAbsolutePath() + "\"\n"
+                + "if [ -x \"$JAVA_HOME/bin/java\" ]; then\n"
+                + "  exec \"$JAVA_HOME/bin/java\" \"$@\"\n"
+                + "fi\n"
+                + "exec \"$RUNTIME_JAVA\" \"$@\"\n";
+
+        try (FileOutputStream output = new FileOutputStream(javaShim, false)) {
+            output.write(script.getBytes(StandardCharsets.UTF_8));
+        }
+
+        javaShim.setReadable(true, false);
+        javaShim.setWritable(true, true);
+        if (!javaShim.setExecutable(true, false)) {
+            throw new IOException("Failed to mark MTS jre shim executable: " + javaShim.getAbsolutePath());
         }
     }
 }

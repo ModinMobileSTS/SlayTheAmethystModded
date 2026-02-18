@@ -19,6 +19,7 @@ package com.badlogic.gdx.backends.lwjgl;
 import java.awt.Canvas;
 import java.awt.Toolkit;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.graphics.glutils.GLVersion;
@@ -191,20 +192,27 @@ public class LwjglGraphics implements Graphics {
 				}
 			}
 			if (config.iconPaths.size > 0) {
-				ByteBuffer[] icons = new ByteBuffer[config.iconPaths.size];
+				ArrayList<ByteBuffer> icons = new ArrayList<ByteBuffer>(config.iconPaths.size);
 				for (int i = 0, n = config.iconPaths.size; i < n; i++) {
-					Pixmap pixmap = new Pixmap(Gdx.files.getFileHandle(config.iconPaths.get(i), config.iconFileTypes.get(i)));
-					if (pixmap.getFormat() != Format.RGBA8888) {
-						Pixmap rgba = new Pixmap(pixmap.getWidth(), pixmap.getHeight(), Format.RGBA8888);
-						rgba.drawPixmap(pixmap, 0, 0);
+					try {
+						Pixmap pixmap = new Pixmap(Gdx.files.getFileHandle(config.iconPaths.get(i), config.iconFileTypes.get(i)));
+						if (pixmap.getFormat() != Format.RGBA8888) {
+							Pixmap rgba = new Pixmap(pixmap.getWidth(), pixmap.getHeight(), Format.RGBA8888);
+							rgba.drawPixmap(pixmap, 0, 0);
+							pixmap.dispose();
+							pixmap = rgba;
+						}
+						ByteBuffer iconBuffer = ByteBuffer.allocateDirect(pixmap.getPixels().limit());
+						iconBuffer.put(pixmap.getPixels()).flip();
+						icons.add(iconBuffer);
 						pixmap.dispose();
-						pixmap = rgba;
+					} catch (Throwable t) {
+						System.out.println("[gdx-patch] Skip icon load failure: " + config.iconPaths.get(i) + " (" + t + ")");
 					}
-					icons[i] = ByteBuffer.allocateDirect(pixmap.getPixels().limit());
-					icons[i].put(pixmap.getPixels()).flip();
-					pixmap.dispose();
 				}
-				Display.setIcon(icons);
+				if (!icons.isEmpty()) {
+					Display.setIcon(icons.toArray(new ByteBuffer[0]));
+				}
 			}
 		}
 		Display.setTitle(config.title);

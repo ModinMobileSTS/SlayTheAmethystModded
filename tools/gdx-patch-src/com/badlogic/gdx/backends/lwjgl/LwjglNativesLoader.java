@@ -34,24 +34,7 @@ public final class LwjglNativesLoader {
         System.out.println("[gdx-patch] LwjglNativesLoader.load nativeDir=" + nativeDir
                 + " org.lwjgl.librarypath=" + System.getProperty("org.lwjgl.librarypath"));
 
-        // Preload to reduce runtime mismatch surprises.
-        preload(nativeDir, "liblwjgl.so");
-        if (!LwjglApplicationConfiguration.disableAudio) {
-            preload(nativeDir, "libopenal.so");
-        }
-
         load = false;
-    }
-
-    private static void preload(String nativeDir, String filename) {
-        try {
-            File file = new File(nativeDir, filename);
-            if (file.exists()) {
-                System.load(file.getAbsolutePath());
-            }
-        } catch (Throwable ignored) {
-            // Keep behavior non-fatal and let downstream loader report actual failures.
-        }
     }
 
     static {

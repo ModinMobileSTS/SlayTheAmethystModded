@@ -15,16 +15,25 @@ import java.util.Locale;
 import java.util.TimeZone;
 
 public final class StsLaunchSpec {
+    public static final String LAUNCH_MODE_VANILLA = "vanilla";
+    public static final String LAUNCH_MODE_MTS_BASEMOD = "mts_basemod";
+
     private StsLaunchSpec() {
     }
 
     public static List<String> buildArgs(Context context, File javaHome) {
+        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA);
+    }
+
+    public static List<String> buildArgs(Context context, File javaHome, String launchMode) {
         File stsRoot = RuntimePaths.stsRoot(context);
         File stsHome = new File(stsRoot, "home");
         if (!stsHome.exists()) {
             stsHome.mkdirs();
         }
         File forceInterpreterFlag = new File(stsRoot, "compat_xint.flag");
+        File classTraceFlag = new File(stsRoot, "classload_trace.flag");
+        File lwjglDebugFlag = new File(stsRoot, "lwjgl_debug.flag");
 
         List<String> args = new ArrayList<>();
         // Performance-first by default, with a compatibility fallback file switch.
@@ -45,7 +54,17 @@ public final class StsLaunchSpec {
         args.add("-XX:MaxGCPauseMillis=25");
         args.add("-XX:+DisableExplicitGC");
         args.add("-XX:+ParallelRefProcEnabled");
-        args.add("-XX:+UseStringDeduplication");
+        if (LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+            // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
+            args.add("-noverify");
+        }
+        if (classTraceFlag.exists()) {
+            args.add("-verbose:class");
+        }
+        if (lwjglDebugFlag.exists()) {
+            args.add("-Dorg.lwjgl.util.Debug=true");
+            args.add("-Dorg.lwjgl.util.DebugLoader=true");
+        }
         args.add("-Djava.home=" + javaHome.getAbsolutePath());
         args.add("-Djava.io.tmpdir=" + context.getCacheDir().getAbsolutePath());
         args.add("-Duser.home=" + stsHome.getAbsolutePath());
@@ -77,12 +96,31 @@ public final class StsLaunchSpec {
 
         args.add("-javaagent:" + RuntimePaths.lwjgl2InjectorJar(context).getAbsolutePath());
         args.add("-cp");
-        args.add(
-                RuntimePaths.gdxPatchJar(context).getAbsolutePath()
-                        + ":" + RuntimePaths.lwjglJar(context).getAbsolutePath()
-                        + ":" + RuntimePaths.importedStsJar(context).getAbsolutePath()
-        );
-        args.add("com.megacrit.cardcrawl.desktop.DesktopLauncher");
+        if (LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+            args.add(
+                    RuntimePaths.lwjglJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.mtsGdxApiJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.mtsStsResourcesJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.mtsBaseModResourcesJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.importedMtsJar(context).getAbsolutePath()
+            );
+            args.add("com.evacipated.cardcrawl.modthespire.Loader");
+            args.add("--skip-launcher");
+            try {
+                args.add("--mods");
+                args.add(ModJarSupport.resolveModId(RuntimePaths.importedBaseModJar(context)));
+            } catch (Exception ignored) {
+                args.add("--mods");
+                args.add("basemod");
+            }
+        } else {
+            args.add(
+                    RuntimePaths.gdxPatchJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.lwjglJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.importedStsJar(context).getAbsolutePath()
+            );
+            args.add("com.megacrit.cardcrawl.desktop.DesktopLauncher");
+        }
         return args;
     }
 

@@ -20,6 +20,20 @@
         android:text="Import desktop-1.0.jar" />
 
     <Button
+        android:id="@+id/importMtsButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Import ModTheSpire.jar" />
+
+    <Button
+        android:id="@+id/importBaseModButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Import BaseMod.jar" />
+
+    <Button
         android:id="@+id/importSavesButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -65,7 +79,14 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="Launch Slay the Spire" />
+        android:text="Launch vanilla STS" />
+
+    <Button
+        android:id="@+id/launchBaseModButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Launch BaseMod (MTS)" />
 
     <TextView
         android:id="@+id/logPathText"

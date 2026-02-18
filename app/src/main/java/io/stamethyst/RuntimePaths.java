@@ -16,6 +16,46 @@ public final class RuntimePaths {
         return new File(stsRoot(context), "desktop-1.0.jar");
     }
 
+    public static File importedMtsJar(Context context) {
+        return new File(stsRoot(context), "ModTheSpire.jar");
+    }
+
+    public static File modsDir(Context context) {
+        return new File(stsRoot(context), "mods");
+    }
+
+    public static File importedBaseModJar(Context context) {
+        return new File(modsDir(context), "BaseMod.jar");
+    }
+
+    public static File mtsGdxApiJar(Context context) {
+        return new File(stsRoot(context), "mts-gdx-api.jar");
+    }
+
+    public static File mtsStsResourcesJar(Context context) {
+        return new File(stsRoot(context), "mts-sts-resources.jar");
+    }
+
+    public static File mtsBaseModResourcesJar(Context context) {
+        return new File(stsRoot(context), "mts-basemod-resources.jar");
+    }
+
+    public static File mtsGdxBridgeJar(Context context) {
+        return new File(stsRoot(context), "mts-gdx-bridge.jar");
+    }
+
+    public static File mtsLocalJreDir(Context context) {
+        return new File(stsRoot(context), "jre");
+    }
+
+    public static File mtsLocalJreBinDir(Context context) {
+        return new File(mtsLocalJreDir(context), "bin");
+    }
+
+    public static File mtsLocalJavaShim(Context context) {
+        return new File(mtsLocalJreBinDir(context), "java");
+    }
+
     public static File latestLog(Context context) {
         return new File(stsRoot(context), "latestlog.txt");
     }
@@ -58,6 +98,8 @@ public final class RuntimePaths {
 
     public static void ensureBaseDirs(Context context) {
         stsRoot(context).mkdirs();
+        modsDir(context).mkdirs();
+        mtsLocalJreBinDir(context).mkdirs();
         lwjglDir(context).mkdirs();
         lwjgl2InjectorDir(context).mkdirs();
         gdxPatchDir(context).mkdirs();
