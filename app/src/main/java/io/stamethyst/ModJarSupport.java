@@ -58,6 +58,12 @@ public final class ModJarSupport {
     private static final String STS_RESOURCE_SENTINEL = "build.properties";
     private static final String BASEMOD_RESOURCE_SENTINEL =
             "localization/basemod/eng/customMods.json";
+    private static final Set<String> BASEMOD_DISABLED_PATCH_CLASSES = new HashSet<>(Arrays.asList(
+            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch.class",
+            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch$CardGlowBorderEffectPatch.class",
+            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch$CardGlowBorderEffectPatch$Locator.class",
+            "basemod/helpers/CardBorderGlowManager$RenderGlowPatch$MaskInfo.class"
+    ));
     private static final Set<String> REQUIRED_STS_PATCH_CLASSES = new HashSet<>(Arrays.asList(
             "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",
             STS_PATCH_PIXEL_SCALE_CLASS,
@@ -118,10 +124,79 @@ public final class ModJarSupport {
     public static void prepareMtsClasspath(Context context) throws IOException {
         File stsJar = RuntimePaths.importedStsJar(context);
         File patchJar = RuntimePaths.gdxPatchJar(context);
+        File baseModJar = RuntimePaths.importedBaseModJar(context);
         ensurePatchedStsJar(stsJar, patchJar);
         ensureGdxApiJar(stsJar, RuntimePaths.mtsGdxApiJar(context));
         ensureStsResourceJar(stsJar, RuntimePaths.mtsStsResourcesJar(context));
-        ensureBaseModResourceJar(RuntimePaths.importedBaseModJar(context), RuntimePaths.mtsBaseModResourcesJar(context));
+        // BaseMod's RenderGlowPatch eagerly builds FBOs and can fail on Android-backed LWJGL contexts.
+        // Removing this patch class set keeps card rendering stable while preserving core BaseMod features.
+        ensureBaseModGlowCompat(baseModJar);
+        ensureBaseModResourceJar(baseModJar, RuntimePaths.mtsBaseModResourcesJar(context));
+    }
+
+    private static void ensureBaseModGlowCompat(File baseModJar) throws IOException {
+        if (baseModJar == null || !baseModJar.isFile()) {
+            throw new IOException("BaseMod jar not found");
+        }
+        if (!containsAnyEntries(baseModJar, BASEMOD_DISABLED_PATCH_CLASSES)) {
+            return;
+        }
+
+        File tempJar = new File(baseModJar.getAbsolutePath() + ".compat.tmp");
+        Set<String> seenNames = new HashSet<>();
+        int removed = 0;
+        try (FileInputStream fileInput = new FileInputStream(baseModJar);
+             ZipInputStream zipIn = new ZipInputStream(fileInput);
+             FileOutputStream outputStream = new FileOutputStream(tempJar, false);
+             ZipOutputStream zipOut = new ZipOutputStream(outputStream)) {
+            ZipEntry entry;
+            while ((entry = zipIn.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (entry.isDirectory() || !seenNames.add(name)) {
+                    zipIn.closeEntry();
+                    continue;
+                }
+                if (BASEMOD_DISABLED_PATCH_CLASSES.contains(name)) {
+                    removed++;
+                    zipIn.closeEntry();
+                    continue;
+                }
+                ZipEntry outEntry = new ZipEntry(name);
+                if (entry.getTime() > 0) {
+                    outEntry.setTime(entry.getTime());
+                }
+                zipOut.putNextEntry(outEntry);
+                copyStream(zipIn, zipOut);
+                zipOut.closeEntry();
+                zipIn.closeEntry();
+            }
+        }
+
+        if (removed <= 0 || containsAnyEntries(tempJar, BASEMOD_DISABLED_PATCH_CLASSES)) {
+            if (tempJar.exists()) {
+                tempJar.delete();
+            }
+            throw new IOException("Failed to apply BaseMod glow compatibility patch");
+        }
+
+        if (baseModJar.exists() && !baseModJar.delete()) {
+            throw new IOException("Failed to replace " + baseModJar.getAbsolutePath());
+        }
+        if (!tempJar.renameTo(baseModJar)) {
+            throw new IOException("Failed to move " + tempJar.getAbsolutePath() + " -> " + baseModJar.getAbsolutePath());
+        }
+        baseModJar.setLastModified(System.currentTimeMillis());
+    }
+
+    private static boolean containsAnyEntries(File jarFile, Set<String> entryNames) throws IOException {
+        try (ZipFile zipFile = new ZipFile(jarFile)) {
+            for (String entryName : entryNames) {
+                if (zipFile.getEntry(entryName) != null) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     private static void ensurePatchedStsJar(File stsJar, File patchJar) throws IOException {
