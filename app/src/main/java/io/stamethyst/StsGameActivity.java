@@ -5,6 +5,7 @@ import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
@@ -17,6 +18,7 @@ import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -55,9 +57,11 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     public static final String EXTRA_PRELAUNCH_PREPARED = "io.stamethyst.prelaunch_prepared";
     public static final String EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu";
     public static final String EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit";
+    public static final String EXTRA_TARGET_FPS = "io.stamethyst.target_fps";
     private static final float DEFAULT_RENDER_SCALE = 0.75f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
+    private static final int DEFAULT_TARGET_FPS = 120;
     private static final long BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L;
     private static final long BOOT_OVERLAY_READY_DELAY_MS = 700L;
     private static final long BACK_FORCE_RESTART_DELAY_MS = 120L;
@@ -80,6 +84,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private long waitingLandscapeSinceMs = -1L;
     private boolean startCheckPosted = false;
     private float renderScale = DEFAULT_RENDER_SCALE;
+    private int targetFps = DEFAULT_TARGET_FPS;
     private String launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA;
     private RendererBackend launcherRequestedRenderer = RendererBackend.OPENGL_ES2;
     private boolean prelaunchPrepared = false;
@@ -127,6 +132,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
         );
         backImmediateExit = getIntent().getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true);
+        targetFps = sanitizeTargetFps(getIntent().getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS));
         useTextureViewSurface = launcherRequestedRenderer == RendererBackend.KOPPER_ZINK;
         initBootOverlay();
 
@@ -147,7 +153,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
                     surfaceBufferWidth = Math.max(1, width);
                     surfaceBufferHeight = Math.max(1, height);
-                    surface.setDefaultBufferSize(surfaceBufferWidth, surfaceBufferHeight);
+                    applyTextureBufferSize(surface);
                     releaseTextureSurfaceIfNeeded();
                     textureSurface = new Surface(surface);
                     JREUtils.setupBridgeWindow(textureSurface);
@@ -159,7 +165,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
                     surfaceBufferWidth = Math.max(1, width);
                     surfaceBufferHeight = Math.max(1, height);
-                    surface.setDefaultBufferSize(surfaceBufferWidth, surfaceBufferHeight);
+                    applyTextureBufferSize(surface);
                     updateWindowSize();
                     tryStartJvmWhenSurfaceReady();
                 }
@@ -254,6 +260,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     protected void onResume() {
         super.onResume();
         applyImmersiveMode();
+        CallbackBridge.nativeSetAudioMuted(false);
+        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1);
+        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1);
         tryStartJvmWhenSurfaceReady();
@@ -261,6 +270,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     protected void onPause() {
+        CallbackBridge.nativeSetAudioMuted(true);
+        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1);
+        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0);
         super.onPause();
@@ -422,6 +434,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                         + ", surface(raw)=" + resolveRawPhysicalWidth() + "x" + resolveRawPhysicalHeight()
                         + ", surface(effective)=" + resolvePhysicalWidth() + "x" + resolvePhysicalHeight()
                         + ", window=" + CallbackBridge.windowWidth + "x" + CallbackBridge.windowHeight);
+                Logger.appendToLog("Target FPS limit: " + targetFps);
                 syncDisplayConfigToSurfaceSize();
                 JREUtils.relocateLibPath(getApplicationInfo().nativeLibraryDir, javaHome.getAbsolutePath());
                 JREUtils.setJavaEnvironment(this, javaHome.getAbsolutePath(),
@@ -892,6 +905,12 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         CallbackBridge.sendUpdateWindowSize(windowWidth, windowHeight);
     }
 
+    private void applyTextureBufferSize(@NonNull SurfaceTexture surface) {
+        int scaledWidth = Math.max(1, Math.round(surfaceBufferWidth * renderScale));
+        int scaledHeight = Math.max(1, Math.round(surfaceBufferHeight * renderScale));
+        surface.setDefaultBufferSize(scaledWidth, scaledHeight);
+    }
+
     private int resolvePhysicalWidth() {
         return resolveRawPhysicalWidth();
     }
@@ -911,11 +930,17 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     }
 
     private void syncDisplayConfigToSurfaceSize() {
-        int physicalWidth = resolvePhysicalWidth();
-        int physicalHeight = resolvePhysicalHeight();
+        int windowWidth = Math.max(1, CallbackBridge.windowWidth);
+        int windowHeight = Math.max(1, CallbackBridge.windowHeight);
         try {
-            DisplayConfigSync.syncToCurrentResolution(this, physicalWidth, physicalHeight);
-            Logger.appendToLog("Display config synced to " + Math.max(800, physicalWidth) + "x" + Math.max(450, physicalHeight));
+            DisplayConfigSync.syncToCurrentResolution(this, windowWidth, windowHeight, targetFps);
+            Logger.appendToLog("Display config synced to "
+                    + Math.max(800, windowWidth)
+                    + "x"
+                    + Math.max(450, windowHeight)
+                    + " @"
+                    + targetFps
+                    + "fps");
         } catch (Throwable error) {
             Log.w(TAG, "Failed to sync info.displayconfig", error);
             try {
@@ -951,7 +976,18 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         return DEFAULT_RENDER_SCALE;
     }
 
+    private int sanitizeTargetFps(int requestedFps) {
+        if (requestedFps == 60
+                || requestedFps == 90
+                || requestedFps == 120
+                || requestedFps == 240) {
+            return requestedFps;
+        }
+        return DEFAULT_TARGET_FPS;
+    }
+
     private void applyImmersiveMode() {
+        applyDisplayCutoutMode();
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
@@ -960,6 +996,18 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         }
         controller.hide(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
         controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+    }
+
+    private void applyDisplayCutoutMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return;
+        }
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        if (attributes.layoutInDisplayCutoutMode == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
+            return;
+        }
+        attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        getWindow().setAttributes(attributes);
     }
 
     @SuppressLint("ClickableViewAccessibility")

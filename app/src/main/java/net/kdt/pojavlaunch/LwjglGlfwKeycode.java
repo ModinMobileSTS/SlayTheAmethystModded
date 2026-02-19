@@ -88,6 +88,8 @@ public class LwjglGlfwKeycode {
     public static final short GLFW_MOUSE_BUTTON_RIGHT = GLFW_MOUSE_BUTTON_2;
     public static final short GLFW_MOUSE_BUTTON_MIDDLE = GLFW_MOUSE_BUTTON_3;
 
+    public static final int GLFW_FOCUSED = 0x20001;
+    public static final int GLFW_ICONIFIED = 0x20002;
     public static final int GLFW_VISIBLE = 0x20004;
     public static final int GLFW_HOVERED = 0x2000B;
 }

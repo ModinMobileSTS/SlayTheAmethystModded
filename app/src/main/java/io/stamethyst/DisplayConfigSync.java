@@ -12,6 +12,7 @@ import java.util.Locale;
 
 final class DisplayConfigSync {
     private static final int DEFAULT_FPS_LIMIT = 60;
+    private static final int FALLBACK_TARGET_FPS_LIMIT = 120;
     private static final boolean DEFAULT_FULLSCREEN = false;
     private static final boolean DEFAULT_WINDOWED_FULLSCREEN = false;
     private static final boolean DEFAULT_VSYNC = true;
@@ -21,12 +22,13 @@ final class DisplayConfigSync {
     private DisplayConfigSync() {
     }
 
-    static void syncToCurrentResolution(Context context, int width, int height) throws IOException {
+    static void syncToCurrentResolution(Context context, int width, int height, int targetFpsLimit) throws IOException {
         int safeWidth = Math.max(MIN_WIDTH, width);
         int safeHeight = Math.max(MIN_HEIGHT, height);
+        int normalizedTargetFpsLimit = normalizeTargetFpsLimit(targetFpsLimit);
 
         File configFile = RuntimePaths.displayConfigFile(context);
-        DisplayConfigState state = readExisting(configFile);
+        DisplayConfigState state = readExisting(configFile).withFpsLimit(normalizedTargetFpsLimit);
         writeConfig(configFile, safeWidth, safeHeight, state);
     }
 
@@ -90,6 +92,16 @@ final class DisplayConfigSync {
         return fallback;
     }
 
+    private static int normalizeTargetFpsLimit(int targetFpsLimit) {
+        if (targetFpsLimit == 60
+                || targetFpsLimit == 90
+                || targetFpsLimit == 120
+                || targetFpsLimit == 240) {
+            return targetFpsLimit;
+        }
+        return FALLBACK_TARGET_FPS_LIMIT;
+    }
+
     private static final class DisplayConfigState {
         private final int fpsLimit;
         private final boolean fullscreen;
@@ -101,6 +113,15 @@ final class DisplayConfigSync {
             this.fullscreen = fullscreen;
             this.windowedFullscreen = windowedFullscreen;
             this.vsync = vsync;
+        }
+
+        private DisplayConfigState withFpsLimit(int fpsLimit) {
+            return new DisplayConfigState(
+                    fpsLimit,
+                    fullscreen,
+                    windowedFullscreen,
+                    vsync
+            );
         }
 
         private static DisplayConfigState defaults() {

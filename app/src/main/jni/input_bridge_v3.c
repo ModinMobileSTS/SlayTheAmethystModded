@@ -41,6 +41,59 @@ do {                                                                       \
     }                                                                      \
 } while(0)
 
+#define AL_GAIN 0x100A
+
+typedef void* (*POJAV_alcGetCurrentContext_fn)(void);
+typedef void (*POJAV_alListenerf_fn)(int param, float value);
+typedef void (*POJAV_alGetListenerf_fn)(int param, float* value);
+
+static POJAV_alcGetCurrentContext_fn pojav_alcGetCurrentContext = NULL;
+static POJAV_alListenerf_fn pojav_alListenerf = NULL;
+static POJAV_alGetListenerf_fn pojav_alGetListenerf = NULL;
+static bool pojav_openal_resolve_attempted = false;
+static bool pojav_openal_resolved = false;
+static bool pojav_openal_no_context_logged = false;
+static bool pojav_audio_force_muted = false;
+static float pojav_saved_listener_gain = 1.0f;
+static bool pojav_saved_listener_gain_valid = false;
+
+static bool resolveOpenalSymbols(void) {
+    if (pojav_openal_resolved) {
+        return true;
+    }
+    if (pojav_openal_resolve_attempted) {
+        return false;
+    }
+    pojav_openal_resolve_attempted = true;
+
+    pojav_alcGetCurrentContext = (POJAV_alcGetCurrentContext_fn) dlsym(RTLD_DEFAULT, "alcGetCurrentContext");
+    pojav_alListenerf = (POJAV_alListenerf_fn) dlsym(RTLD_DEFAULT, "alListenerf");
+    pojav_alGetListenerf = (POJAV_alGetListenerf_fn) dlsym(RTLD_DEFAULT, "alGetListenerf");
+
+    if (pojav_alcGetCurrentContext == NULL || pojav_alListenerf == NULL) {
+        void* handle = dlopen("libopenal.so", RTLD_NOW | RTLD_GLOBAL);
+        if (handle != NULL) {
+            if (pojav_alcGetCurrentContext == NULL) {
+                pojav_alcGetCurrentContext = (POJAV_alcGetCurrentContext_fn) dlsym(handle, "alcGetCurrentContext");
+            }
+            if (pojav_alListenerf == NULL) {
+                pojav_alListenerf = (POJAV_alListenerf_fn) dlsym(handle, "alListenerf");
+            }
+            if (pojav_alGetListenerf == NULL) {
+                pojav_alGetListenerf = (POJAV_alGetListenerf_fn) dlsym(handle, "alGetListenerf");
+            }
+        }
+    }
+
+    if (pojav_alcGetCurrentContext == NULL || pojav_alListenerf == NULL) {
+        LOGW("OpenAL symbols unavailable, background mute will be ignored");
+        return false;
+    }
+
+    pojav_openal_resolved = true;
+    return true;
+}
+
 static void registerFunctions(JNIEnv *env);
 
 jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
@@ -499,6 +552,50 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestClose
         return JNI_FALSE;
     }
     return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz,
+        jboolean muted
+) {
+    if (!resolveOpenalSymbols()) {
+        return;
+    }
+
+    if (pojav_alcGetCurrentContext() == NULL) {
+        if (!pojav_openal_no_context_logged) {
+            LOGW("OpenAL context unavailable, cannot toggle audio mute yet");
+            pojav_openal_no_context_logged = true;
+        }
+        return;
+    }
+    pojav_openal_no_context_logged = false;
+
+    if (muted) {
+        if (pojav_audio_force_muted) {
+            return;
+        }
+        if (pojav_alGetListenerf != NULL) {
+            float currentGain = 1.0f;
+            pojav_alGetListenerf(AL_GAIN, &currentGain);
+            if (currentGain >= 0.0f && currentGain <= 16.0f) {
+                pojav_saved_listener_gain = currentGain;
+                pojav_saved_listener_gain_valid = true;
+            }
+        }
+        pojav_alListenerf(AL_GAIN, 0.0f);
+        pojav_audio_force_muted = true;
+        LOGI("OpenAL output muted on app background");
+        return;
+    }
+
+    if (!pojav_audio_force_muted) {
+        return;
+    }
+    pojav_alListenerf(AL_GAIN, pojav_saved_listener_gain_valid ? pojav_saved_listener_gain : 1.0f);
+    pojav_audio_force_muted = false;
+    LOGI("OpenAL output restored on app foreground");
 }
 
 const static JNINativeMethod critical_fcns[] = {

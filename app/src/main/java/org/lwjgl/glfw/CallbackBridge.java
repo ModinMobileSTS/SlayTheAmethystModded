@@ -170,6 +170,8 @@ public class CallbackBridge {
 
     public static native void nativeSetGrabbing(boolean grabbing);
 
+    public static native void nativeSetAudioMuted(boolean muted);
+
     public static native boolean nativeEnableGamepadDirectInput();
 
     public static native String nativeClipboard(int type, byte[] copySource);

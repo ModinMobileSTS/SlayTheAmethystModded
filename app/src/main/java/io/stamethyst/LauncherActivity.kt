@@ -1,9 +1,13 @@
 package io.stamethyst
 
+import android.content.ContentValues
 import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
 import android.widget.Toast
@@ -58,6 +62,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.ArrayList
@@ -74,6 +79,7 @@ class LauncherActivity : AppCompatActivity() {
         private const val TAG = "LauncherActivity"
         private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
         private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
+        private const val PREF_KEY_TARGET_FPS = "target_fps"
 
         const val EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
@@ -84,6 +90,32 @@ class LauncherActivity : AppCompatActivity() {
         private const val DEFAULT_RENDER_SCALE = 0.75f
         private const val MIN_RENDER_SCALE = 0.50f
         private const val MAX_RENDER_SCALE = 1.00f
+        private const val DEFAULT_TARGET_FPS = 120
+        private val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
+
+        private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
+            "betaPreferences",
+            "betapreferences",
+            "betaPerferences",
+            "betaperferences",
+            "preferences",
+            "perferences",
+            "saves",
+            "runs",
+            "metrics",
+            "home",
+            "sendToDevs",
+            "sendtodevs",
+            "multiplayer",
+            "multiple"
+        )
+
+        private val SAVE_EXPORT_FOLDER_MAPPINGS = arrayOf(
+            "multiplayer" to "multiple",
+            "saves" to "saves",
+            "betaPreferences" to "preferences",
+            "runs" to "runs"
+        )
     }
 
     private enum class Screen {
@@ -113,7 +145,13 @@ class LauncherActivity : AppCompatActivity() {
         val hasStsLib: Boolean = false,
         val renderScaleInput: String = String.format(Locale.US, "%.2f", DEFAULT_RENDER_SCALE),
         val selectedRenderer: RendererBackend = RendererBackend.OPENGL_ES2,
+        val selectedTargetFps: Int = DEFAULT_TARGET_FPS,
         val backImmediateExit: Boolean = true
+    )
+
+    private data class SaveImportResult(
+        val importedFiles: Int,
+        val backupLabel: String?
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -126,6 +164,8 @@ class LauncherActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), ::onModJarsPicked)
     private val importSavesLauncher: ActivityResultLauncher<Array<String>> =
         registerForActivityResult(ActivityResultContracts.OpenDocument(), ::onSavesArchivePicked)
+    private val exportSavesLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip"), ::onSavesExportPicked)
     private val exportDebugLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip"), ::onDebugExportPicked)
 
@@ -148,6 +188,7 @@ class LauncherActivity : AppCompatActivity() {
         uiState = uiState.copy(
             renderScaleInput = formatRenderScale(readRenderScaleValue()),
             selectedRenderer = RendererConfig.readPreferredBackend(this),
+            selectedTargetFps = readTargetFpsSelection(),
             backImmediateExit = readBackBehaviorSelection(),
             logPathText = buildLogPathText()
         )
@@ -345,6 +386,14 @@ class LauncherActivity : AppCompatActivity() {
             }
 
             Button(
+                onClick = { exportSavesLauncher.launch(buildSaveExportFileName()) },
+                enabled = !uiState.busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("导出存档 zip")
+            }
+
+            Button(
                 onClick = { exportDebugLauncher.launch(buildDebugExportFileName()) },
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth()
@@ -372,6 +421,16 @@ class LauncherActivity : AppCompatActivity() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("保存渲染比例")
+            }
+
+            Text(text = "刷新率上限", style = MaterialTheme.typography.bodyMedium)
+            TARGET_FPS_OPTIONS.forEach { fps ->
+                TargetFpsOptionRow(
+                    fps = fps,
+                    selected = uiState.selectedTargetFps == fps,
+                    enabled = !uiState.busy,
+                    onSelect = ::onTargetFpsSelected
+                )
             }
 
             Text(text = getString(R.string.renderer_backend_label), style = MaterialTheme.typography.bodyMedium)
@@ -459,6 +518,34 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
+    @Composable
+    private fun TargetFpsOptionRow(
+        fps: Int,
+        selected: Boolean,
+        enabled: Boolean,
+        onSelect: (Int) -> Unit
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = selected,
+                    enabled = enabled,
+                    onValueChange = { onSelect(fps) }
+                )
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                enabled = enabled
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = "$fps FPS")
+        }
+    }
+
     private fun buildMainStatusSummary(): String {
         return StringBuilder()
             .append(if (uiState.hasJar) "desktop-1.0.jar: OK" else "desktop-1.0.jar: missing")
@@ -506,6 +593,16 @@ class LauncherActivity : AppCompatActivity() {
         refreshStatus()
     }
 
+    private fun onTargetFpsSelected(targetFps: Int) {
+        if (uiState.busy) {
+            return
+        }
+        val normalizedTargetFps = normalizeTargetFps(targetFps)
+        uiState = uiState.copy(selectedTargetFps = normalizedTargetFps)
+        saveTargetFpsSelection(normalizedTargetFps)
+        refreshStatus()
+    }
+
     private fun onLaunchClicked() {
         if (!saveRenderScaleFromInput(showToast = false)) {
             return
@@ -513,6 +610,7 @@ class LauncherActivity : AppCompatActivity() {
         if (!saveRendererSelection()) {
             return
         }
+        saveTargetFpsSelection(uiState.selectedTargetFps)
         saveBackBehaviorSelection(uiState.backImmediateExit)
         prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD)
     }
@@ -569,6 +667,7 @@ class LauncherActivity : AppCompatActivity() {
         if (!saveRendererSelection()) {
             return
         }
+        saveTargetFpsSelection(uiState.selectedTargetFps)
         Log.i(TAG, "Auto launching mode from debug extra: $debugLaunchMode")
         prepareAndLaunch(debugLaunchMode)
     }
@@ -730,11 +829,13 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun prepareAndLaunch(launchMode: String) {
         val renderer = uiState.selectedRenderer
+        val targetFps = normalizeTargetFps(uiState.selectedTargetFps)
         val backImmediateExit = uiState.backImmediateExit
 
         val intent = Intent(this, StsGameActivity::class.java)
         intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode)
         intent.putExtra(StsGameActivity.EXTRA_RENDERER_BACKEND, renderer.rendererId())
+        intent.putExtra(StsGameActivity.EXTRA_TARGET_FPS, targetFps)
         intent.putExtra(StsGameActivity.EXTRA_PRELAUNCH_PREPARED, false)
         intent.putExtra(
             StsGameActivity.EXTRA_WAIT_FOR_MAIN_MENU,
@@ -743,7 +844,7 @@ class LauncherActivity : AppCompatActivity() {
         intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
         Log.i(
             TAG,
-            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, backImmediateExit=$backImmediateExit"
+            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit"
         )
         startActivity(intent)
     }
@@ -755,14 +856,40 @@ class LauncherActivity : AppCompatActivity() {
         setBusy(true, "Importing save archive...")
         executor.execute {
             try {
-                val importedCount = importSaveArchive(uri)
+                val result = importSaveArchive(uri)
                 runOnUiThread {
-                    Toast.makeText(this, "Imported $importedCount save files", Toast.LENGTH_SHORT).show()
+                    val message = if (result.backupLabel.isNullOrEmpty()) {
+                        "Imported ${result.importedFiles} save files"
+                    } else {
+                        "Imported ${result.importedFiles} save files (backup: ${result.backupLabel})"
+                    }
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                     refreshStatus()
                 }
             } catch (error: Throwable) {
                 runOnUiThread {
                     Toast.makeText(this, "Save import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus()
+                }
+            }
+        }
+    }
+
+    private fun onSavesExportPicked(uri: Uri?) {
+        if (uri == null) {
+            return
+        }
+        setBusy(true, "Exporting save archive...")
+        executor.execute {
+            try {
+                val exportedCount = exportSaveBundle(uri)
+                runOnUiThread {
+                    Toast.makeText(this, "Save archive exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                    refreshStatus()
+                }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    Toast.makeText(this, "Save export failed: ${error.message}", Toast.LENGTH_LONG).show()
                     refreshStatus()
                 }
             }
@@ -790,9 +917,85 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
+    private fun buildSaveExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-saves-export-${formatter.format(Date())}.zip"
+    }
+
     private fun buildDebugExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-debug-${formatter.format(Date())}.zip"
+    }
+
+    @Throws(IOException::class)
+    private fun exportSaveBundle(uri: Uri): Int {
+        val stsRoot = RuntimePaths.stsRoot(this)
+        contentResolver.openOutputStream(uri).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
+            ZipOutputStream(output).use { zipOutput ->
+                var exportedCount = 0
+                for ((sourceFolder, archiveFolder) in SAVE_EXPORT_FOLDER_MAPPINGS) {
+                    val sourceRoot = resolveSaveExportSourceFolder(stsRoot, sourceFolder) ?: continue
+                    exportedCount += exportSaveFolderToZip(zipOutput, sourceRoot, archiveFolder)
+                }
+                if (exportedCount <= 0) {
+                    val entry = ZipEntry("sts/README.txt")
+                    zipOutput.putNextEntry(entry)
+                    val message = "No save files found yet.\n" +
+                        "Expected folders under: ${stsRoot.absolutePath}\n" +
+                        "Folders: multiplayer, saves, betaPreferences, runs\n"
+                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
+                    zipOutput.closeEntry()
+                }
+                return exportedCount
+            }
+        }
+    }
+
+    private fun resolveSaveExportSourceFolder(stsRoot: File, sourceFolder: String): File? {
+        val candidates = when (sourceFolder.lowercase(Locale.ROOT)) {
+            "multiplayer" -> arrayOf("multiplayer", "multiple")
+            "betapreferences" -> arrayOf("betaPreferences", "betapreferences", "betaPerferences", "betaperferences")
+            else -> arrayOf(sourceFolder)
+        }
+        for (candidateName in candidates) {
+            val candidate = File(stsRoot, candidateName)
+            if (candidate.exists()) {
+                return candidate
+            }
+        }
+        return null
+    }
+
+    @Throws(IOException::class)
+    private fun exportSaveFolderToZip(zipOutput: ZipOutputStream, sourceRoot: File, archiveRoot: String): Int {
+        if (!sourceRoot.exists()) {
+            return 0
+        }
+        val sourceFiles = ArrayList<File>()
+        collectRegularFiles(sourceRoot, sourceFiles)
+        var exportedCount = 0
+        for (sourceFile in sourceFiles) {
+            val entryName = buildSaveExportEntryName(sourceRoot, archiveRoot, sourceFile)
+            writeFileToZip(zipOutput, sourceFile, entryName)
+            exportedCount++
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    private fun buildSaveExportEntryName(sourceRoot: File, archiveRoot: String, sourceFile: File): String {
+        val sourceRootPath = sourceRoot.canonicalPath
+        val sourceFilePath = sourceFile.canonicalPath
+        val relativePath = if (sourceFilePath.startsWith("$sourceRootPath${File.separator}")) {
+            sourceFilePath.substring(sourceRootPath.length + 1)
+        } else {
+            sourceFile.name
+        }
+        val normalizedRelativePath = relativePath.replace('\\', '/')
+        return "sts/$archiveRoot/$normalizedRelativePath"
     }
 
     @Throws(IOException::class)
@@ -840,6 +1043,11 @@ class LauncherActivity : AppCompatActivity() {
     @Throws(IOException::class)
     private fun writeFileToZip(zipOutput: ZipOutputStream, stsRoot: File, sourceFile: File) {
         val entryName = buildDebugEntryName(stsRoot, sourceFile)
+        writeFileToZip(zipOutput, sourceFile, entryName)
+    }
+
+    @Throws(IOException::class)
+    private fun writeFileToZip(zipOutput: ZipOutputStream, sourceFile: File, entryName: String) {
         val entry = ZipEntry(entryName)
         if (sourceFile.lastModified() > 0) {
             entry.time = sourceFile.lastModified()
@@ -884,6 +1092,7 @@ class LauncherActivity : AppCompatActivity() {
 
         val renderScale = readRenderScaleValue()
         val selectedRenderer = uiState.selectedRenderer
+        val targetFps = normalizeTargetFps(uiState.selectedTargetFps)
         val rendererDecision = RendererConfig.resolveEffectiveBackend(this, selectedRenderer)
         val rendererSelectedLine = getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
         val rendererEffectiveLine = if (rendererDecision.isFallback()) {
@@ -924,6 +1133,7 @@ class LauncherActivity : AppCompatActivity() {
             "\nStSLib.jar: " + if (hasStsLib) "OK (required, bundled)" else "missing (required)" +
             "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
             "\nRender scale: ${formatRenderScale(renderScale)} (0.50-1.00)" +
+            "\nTarget FPS: $targetFps" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
             "\nRuntime pack expected at build time: runtime-pack/jre8-pojav.zip"
@@ -1095,12 +1305,174 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     @Throws(IOException::class)
-    private fun importSaveArchive(uri: Uri): Int {
+    private fun importSaveArchive(uri: Uri): SaveImportResult {
         val stsRoot = RuntimePaths.stsRoot(this)
         if (!stsRoot.exists() && !stsRoot.mkdirs()) {
             throw IOException("Failed to create save root: ${stsRoot.absolutePath}")
         }
 
+        val importableCount = countImportableSaveEntries(uri)
+        if (importableCount <= 0) {
+            throw IOException("Archive did not contain importable save files")
+        }
+
+        val backupLabel = backupExistingSavesToDownloads(stsRoot)
+        clearExistingSaveTargets(stsRoot)
+        val importedFiles = extractSaveArchive(uri, stsRoot)
+        if (importedFiles <= 0) {
+            throw IOException("Archive did not contain importable save files")
+        }
+        return SaveImportResult(
+            importedFiles = importedFiles,
+            backupLabel = backupLabel
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun countImportableSaveEntries(uri: Uri): Int {
+        var importableFiles = 0
+        contentResolver.openInputStream(uri).use { rawInput ->
+            if (rawInput == null) {
+                throw IOException("Unable to open selected archive")
+            }
+            java.util.zip.ZipInputStream(rawInput).use { zipInput ->
+                while (true) {
+                    val entry = zipInput.nextEntry ?: break
+                    val mappedPath = resolveImportableArchivePath(entry.name)
+                    if (mappedPath.isNullOrEmpty() || entry.isDirectory) {
+                        continue
+                    }
+                    importableFiles++
+                }
+            }
+        }
+        return importableFiles
+    }
+
+    @Throws(IOException::class)
+    private fun backupExistingSavesToDownloads(stsRoot: File): String? {
+        val sourceFiles = collectSaveFilesForBackup(stsRoot)
+        if (sourceFiles.isEmpty()) {
+            return null
+        }
+
+        val backupFileName = buildSaveBackupFileName()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            backupExistingSavesToScopedDownloads(stsRoot, sourceFiles, backupFileName)
+            "Download/$backupFileName"
+        } else {
+            backupExistingSavesToLegacyDownloads(stsRoot, sourceFiles, backupFileName)
+        }
+    }
+
+    private fun collectSaveFilesForBackup(stsRoot: File): List<File> {
+        val files = ArrayList<File>()
+        for (folderName in SAVE_IMPORT_TOP_LEVEL_DIRS) {
+            collectRegularFiles(File(stsRoot, folderName), files)
+        }
+        return files
+    }
+
+    private fun collectRegularFiles(root: File, sink: MutableList<File>) {
+        if (!root.exists()) {
+            return
+        }
+        if (root.isFile) {
+            sink.add(root)
+            return
+        }
+        val children = root.listFiles() ?: return
+        for (child in children) {
+            collectRegularFiles(child, sink)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun backupExistingSavesToScopedDownloads(
+        stsRoot: File,
+        sourceFiles: List<File>,
+        backupFileName: String
+    ) {
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, backupFileName)
+            put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+
+        val backupUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IOException("Failed to create backup archive in Downloads")
+
+        var success = false
+        try {
+            contentResolver.openOutputStream(backupUri).use { output ->
+                if (output == null) {
+                    throw IOException("Unable to open backup archive destination")
+                }
+                writeSaveFilesToZip(output, stsRoot, sourceFiles)
+            }
+            success = true
+        } finally {
+            if (success) {
+                val pendingValues = ContentValues().apply {
+                    put(MediaStore.Downloads.IS_PENDING, 0)
+                }
+                contentResolver.update(backupUri, pendingValues, null, null)
+            } else {
+                contentResolver.delete(backupUri, null, null)
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    @Throws(IOException::class)
+    private fun backupExistingSavesToLegacyDownloads(
+        stsRoot: File,
+        sourceFiles: List<File>,
+        backupFileName: String
+    ): String {
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            ?: throw IOException("Downloads directory is unavailable")
+        if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
+            throw IOException("Failed to create Downloads directory: ${downloadsDir.absolutePath}")
+        }
+
+        val backupFile = File(downloadsDir, backupFileName)
+        FileOutputStream(backupFile, false).use { output ->
+            writeSaveFilesToZip(output, stsRoot, sourceFiles)
+        }
+        return backupFile.absolutePath
+    }
+
+    @Throws(IOException::class)
+    private fun writeSaveFilesToZip(output: OutputStream, stsRoot: File, sourceFiles: List<File>) {
+        ZipOutputStream(output).use { zipOutput ->
+            for (sourceFile in sourceFiles) {
+                writeFileToZip(zipOutput, stsRoot, sourceFile)
+            }
+        }
+    }
+
+    private fun buildSaveBackupFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-saves-backup-${formatter.format(Date())}.zip"
+    }
+
+    @Throws(IOException::class)
+    private fun clearExistingSaveTargets(stsRoot: File) {
+        for (folderName in SAVE_IMPORT_TOP_LEVEL_DIRS) {
+            val target = File(stsRoot, folderName)
+            if (!target.exists()) {
+                continue
+            }
+            if (!target.deleteRecursively()) {
+                throw IOException("Failed to clear old save path: ${target.absolutePath}")
+            }
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun extractSaveArchive(uri: Uri, stsRoot: File): Int {
         val rootCanonical = stsRoot.canonicalPath
         var importedFiles = 0
 
@@ -1112,14 +1484,8 @@ class LauncherActivity : AppCompatActivity() {
                 val buffer = ByteArray(8192)
                 while (true) {
                     val entry = zipInput.nextEntry ?: break
-                    val mappedPath = mapArchiveEntryPath(entry.name)
+                    val mappedPath = resolveImportableArchivePath(entry.name)
                     if (mappedPath.isNullOrEmpty()) {
-                        continue
-                    }
-                    if (mappedPath.equals("desktop-1.0.jar", ignoreCase = true)) {
-                        continue
-                    }
-                    if (mappedPath.startsWith("__MACOSX/")) {
                         continue
                     }
 
@@ -1156,11 +1522,19 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
         }
-
-        if (importedFiles == 0) {
-            throw IOException("Archive did not contain importable save files")
-        }
         return importedFiles
+    }
+
+    private fun resolveImportableArchivePath(rawEntryName: String?): String? {
+        val mappedPath = mapArchiveEntryPath(rawEntryName) ?: return null
+        val normalizedPath = normalizeImportTargetPath(mappedPath) ?: return null
+        if (normalizedPath.equals("desktop-1.0.jar", ignoreCase = true)) {
+            return null
+        }
+        if (normalizedPath.startsWith("__MACOSX/")) {
+            return null
+        }
+        return normalizedPath
     }
 
     private fun mapArchiveEntryPath(rawEntryName: String?): String? {
@@ -1220,14 +1594,51 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
+    private fun normalizeImportTargetPath(path: String): String? {
+        var normalizedPath = path.replace('\\', '/')
+        while (normalizedPath.startsWith("/")) {
+            normalizedPath = normalizedPath.substring(1)
+        }
+        if (normalizedPath.isEmpty() || normalizedPath.contains("../")) {
+            return null
+        }
+
+        val firstSlash = normalizedPath.indexOf('/')
+        val folder = if (firstSlash >= 0) {
+            normalizedPath.substring(0, firstSlash)
+        } else {
+            normalizedPath
+        }
+        val rest = if (firstSlash >= 0 && firstSlash < normalizedPath.length - 1) {
+            normalizedPath.substring(firstSlash + 1)
+        } else {
+            ""
+        }
+
+        val mappedFolder = when (folder.lowercase(Locale.ROOT)) {
+            "preferences", "perferences", "betapreferences", "betaperferences" -> "betaPreferences"
+            "multiple", "multiplayer" -> "multiplayer"
+            else -> folder
+        }
+        return if (rest.isEmpty()) {
+            mappedFolder
+        } else {
+            "$mappedFolder/$rest"
+        }
+    }
+
     private fun isLikelySaveTopLevel(folder: String): Boolean {
         return folder == "betapreferences"
             || folder == "preferences"
+            || folder == "perferences"
+            || folder == "betaperferences"
             || folder == "saves"
             || folder == "sendtodevs"
             || folder == "runs"
             || folder == "metrics"
             || folder == "home"
+            || folder == "multiplayer"
+            || folder == "multiple"
     }
 
     private fun readBackBehaviorSelection(): Boolean {
@@ -1240,6 +1651,27 @@ class LauncherActivity : AppCompatActivity() {
             .edit()
             .putBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, immediateExit)
             .apply()
+    }
+
+    private fun readTargetFpsSelection(): Int {
+        val stored = getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
+            .getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS)
+        return normalizeTargetFps(stored)
+    }
+
+    private fun saveTargetFpsSelection(targetFps: Int) {
+        getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
+            .edit()
+            .putInt(PREF_KEY_TARGET_FPS, normalizeTargetFps(targetFps))
+            .apply()
+    }
+
+    private fun normalizeTargetFps(targetFps: Int): Int {
+        return if (TARGET_FPS_OPTIONS.contains(targetFps)) {
+            targetFps
+        } else {
+            DEFAULT_TARGET_FPS
+        }
     }
 
     private fun buildLogPathText(): String {
