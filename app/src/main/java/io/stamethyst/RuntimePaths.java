@@ -36,6 +36,14 @@ public final class RuntimePaths {
         return new File(stsRoot(context), "enabled_mods.txt");
     }
 
+    public static File preferencesDir(Context context) {
+        return new File(stsRoot(context), "preferences");
+    }
+
+    public static File betaPreferencesDir(Context context) {
+        return new File(stsRoot(context), "betaPreferences");
+    }
+
     public static File mtsGdxApiJar(Context context) {
         return new File(stsRoot(context), "mts-gdx-api.jar");
     }

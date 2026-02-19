@@ -4,12 +4,21 @@ import android.content.Context;
 import android.content.res.AssetManager;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 public final class ComponentInstaller {
+    private static final String DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences";
+    private static final String PREF_FILE_PLAYER = "STSPlayer";
+    private static final String PREF_FILE_PLAYER_BACKUP = "STSPlayer.backUp";
+    private static final String PREF_FILE_SAVE_SLOTS = "STSSaveSlots";
+    private static final String PREF_FILE_SAVE_SLOTS_BACKUP = "STSSaveSlots.backUp";
+    private static final String PLAYER_REQUIRED_TOKEN = "\"name\"";
+    private static final String SAVE_SLOTS_REQUIRED_TOKEN = "\"DEFAULT_SLOT\"";
+
     private interface JarValidator {
         void validate(File jarFile) throws IOException;
     }
@@ -27,6 +36,7 @@ public final class ComponentInstaller {
         copyAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context));
         installBundledMods(assets, context);
         ensureMtsLocalJreShim(context);
+        ensureDefaultPreferencesIfMissing(assets, context);
     }
 
     private static void installBundledMods(AssetManager assets, Context context) throws IOException {
@@ -70,6 +80,30 @@ public final class ComponentInstaller {
                 copyAssetTree(assets, childAssetPath, childFile);
             } else {
                 copyFile(assets, childAssetPath, childFile);
+            }
+        }
+    }
+
+    private static void copyAssetTreeIfMissing(AssetManager assets, String assetPath, File targetDir) throws IOException {
+        String[] names = assets.list(assetPath);
+        if (names == null) {
+            throw new IOException("Asset listing failed: " + assetPath);
+        }
+        if (names.length == 0) {
+            copyFileIfMissing(assets, assetPath, new File(targetDir.getParentFile(), new File(assetPath).getName()));
+            return;
+        }
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw new IOException("Failed to create: " + targetDir);
+        }
+        for (String name : names) {
+            String childAssetPath = assetPath + "/" + name;
+            String[] childList = assets.list(childAssetPath);
+            File childFile = new File(targetDir, name);
+            if (childList != null && childList.length > 0) {
+                copyAssetTreeIfMissing(assets, childAssetPath, childFile);
+            } else {
+                copyFileIfMissing(assets, childAssetPath, childFile);
             }
         }
     }
@@ -144,6 +178,78 @@ public final class ComponentInstaller {
         javaShim.setWritable(true, true);
         if (!javaShim.setExecutable(true, false)) {
             throw new IOException("Failed to mark MTS jre shim executable: " + javaShim.getAbsolutePath());
+        }
+    }
+
+    private static void ensureDefaultPreferencesIfMissing(AssetManager assets, Context context) throws IOException {
+        if (!hasAssetChildren(assets, DEFAULT_PREFS_ASSET_DIR)) {
+            return;
+        }
+        ensureDefaultPreferencesForDir(assets, RuntimePaths.preferencesDir(context));
+        ensureDefaultPreferencesForDir(assets, RuntimePaths.betaPreferencesDir(context));
+    }
+
+    private static void ensureDefaultPreferencesForDir(AssetManager assets, File preferencesDir) throws IOException {
+        if (!shouldInstallDefaultPreferences(preferencesDir)) {
+            return;
+        }
+        copyAssetTreeIfMissing(assets, DEFAULT_PREFS_ASSET_DIR, preferencesDir);
+        repairSentinelFile(assets, preferencesDir, PREF_FILE_PLAYER, PLAYER_REQUIRED_TOKEN);
+        repairSentinelFile(assets, preferencesDir, PREF_FILE_SAVE_SLOTS, SAVE_SLOTS_REQUIRED_TOKEN);
+        copyFileIfMissing(
+                assets,
+                DEFAULT_PREFS_ASSET_DIR + "/" + PREF_FILE_PLAYER_BACKUP,
+                new File(preferencesDir, PREF_FILE_PLAYER_BACKUP)
+        );
+        copyFileIfMissing(
+                assets,
+                DEFAULT_PREFS_ASSET_DIR + "/" + PREF_FILE_SAVE_SLOTS_BACKUP,
+                new File(preferencesDir, PREF_FILE_SAVE_SLOTS_BACKUP)
+        );
+    }
+
+    private static void repairSentinelFile(AssetManager assets,
+                                           File preferencesDir,
+                                           String fileName,
+                                           String requiredToken) throws IOException {
+        File target = new File(preferencesDir, fileName);
+        if (fileContainsToken(target, requiredToken)) {
+            return;
+        }
+        copyFile(assets, DEFAULT_PREFS_ASSET_DIR + "/" + fileName, target);
+    }
+
+    private static boolean shouldInstallDefaultPreferences(File preferencesDir) {
+        return !fileContainsToken(new File(preferencesDir, PREF_FILE_PLAYER), PLAYER_REQUIRED_TOKEN)
+                || !fileContainsToken(new File(preferencesDir, PREF_FILE_SAVE_SLOTS), SAVE_SLOTS_REQUIRED_TOKEN);
+    }
+
+    private static boolean fileContainsToken(File file, String token) {
+        if (token == null || token.isEmpty()) {
+            return false;
+        }
+        if (!file.isFile() || file.length() <= 0) {
+            return false;
+        }
+        byte[] bytes = new byte[(int) Math.min(file.length(), 4096)];
+        try (FileInputStream input = new FileInputStream(file)) {
+            int read = input.read(bytes);
+            if (read <= 0) {
+                return false;
+            }
+            String text = new String(bytes, 0, read, StandardCharsets.UTF_8);
+            return text.contains(token);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean hasAssetChildren(AssetManager assets, String assetPath) {
+        try {
+            String[] names = assets.list(assetPath);
+            return names != null && names.length > 0;
+        } catch (IOException ignored) {
+            return false;
         }
     }
 }
