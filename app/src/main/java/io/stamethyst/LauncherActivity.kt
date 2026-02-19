@@ -146,6 +146,7 @@ class LauncherActivity : AppCompatActivity() {
         val renderScaleInput: String = String.format(Locale.US, "%.2f", DEFAULT_RENDER_SCALE),
         val selectedRenderer: RendererBackend = RendererBackend.OPENGL_ES2,
         val selectedTargetFps: Int = DEFAULT_TARGET_FPS,
+        val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
         val backImmediateExit: Boolean = true
     )
 
@@ -172,6 +173,7 @@ class LauncherActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MainActivity.init(applicationContext)
+        val selectedLauncherIcon = LauncherIconManager.syncSelection(this)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -189,6 +191,7 @@ class LauncherActivity : AppCompatActivity() {
             renderScaleInput = formatRenderScale(readRenderScaleValue()),
             selectedRenderer = RendererConfig.readPreferredBackend(this),
             selectedTargetFps = readTargetFpsSelection(),
+            selectedLauncherIcon = selectedLauncherIcon,
             backImmediateExit = readBackBehaviorSelection(),
             logPathText = buildLogPathText()
         )
@@ -477,6 +480,18 @@ class LauncherActivity : AppCompatActivity() {
 
             HorizontalDivider()
 
+            Text(text = "启动器图标", style = MaterialTheme.typography.titleMedium)
+            LauncherIcon.entries.forEach { icon ->
+                LauncherIconOptionRow(
+                    icon = icon,
+                    selected = uiState.selectedLauncherIcon == icon,
+                    enabled = !uiState.busy,
+                    onSelect = ::onLauncherIconSelected
+                )
+            }
+
+            HorizontalDivider()
+
             Text(text = "状态信息", style = MaterialTheme.typography.titleMedium)
             SelectionContainer {
                 Text(text = uiState.statusText, style = MaterialTheme.typography.bodySmall)
@@ -546,6 +561,40 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
+    @Composable
+    private fun LauncherIconOptionRow(
+        icon: LauncherIcon,
+        selected: Boolean,
+        enabled: Boolean,
+        onSelect: (LauncherIcon) -> Unit
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = selected,
+                    enabled = enabled,
+                    onValueChange = { onSelect(icon) }
+                )
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                enabled = enabled
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(text = icon.title)
+                Text(
+                    text = icon.description,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+
     private fun buildMainStatusSummary(): String {
         return StringBuilder()
             .append(if (uiState.hasJar) "desktop-1.0.jar: OK" else "desktop-1.0.jar: missing")
@@ -600,6 +649,16 @@ class LauncherActivity : AppCompatActivity() {
         val normalizedTargetFps = normalizeTargetFps(targetFps)
         uiState = uiState.copy(selectedTargetFps = normalizedTargetFps)
         saveTargetFpsSelection(normalizedTargetFps)
+        refreshStatus()
+    }
+
+    private fun onLauncherIconSelected(icon: LauncherIcon) {
+        if (uiState.busy || uiState.selectedLauncherIcon == icon) {
+            return
+        }
+        LauncherIconManager.applySelection(this, icon)
+        uiState = uiState.copy(selectedLauncherIcon = icon)
+        Toast.makeText(this, "已切换启动器图标为：${icon.title}", Toast.LENGTH_SHORT).show()
         refreshStatus()
     }
 
@@ -1093,6 +1152,7 @@ class LauncherActivity : AppCompatActivity() {
         val renderScale = readRenderScaleValue()
         val selectedRenderer = uiState.selectedRenderer
         val targetFps = normalizeTargetFps(uiState.selectedTargetFps)
+        val selectedLauncherIcon = LauncherIconManager.readSelection(this)
         val rendererDecision = RendererConfig.resolveEffectiveBackend(this, selectedRenderer)
         val rendererSelectedLine = getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
         val rendererEffectiveLine = if (rendererDecision.isFallback()) {
@@ -1134,6 +1194,7 @@ class LauncherActivity : AppCompatActivity() {
             "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
             "\nRender scale: ${formatRenderScale(renderScale)} (0.50-1.00)" +
             "\nTarget FPS: $targetFps" +
+            "\nLauncher icon: ${selectedLauncherIcon.title}" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
             "\nRuntime pack expected at build time: runtime-pack/jre8-pojav.zip"
@@ -1148,6 +1209,7 @@ class LauncherActivity : AppCompatActivity() {
             hasStsLib = hasStsLib,
             optionalEnabledCount = optionalEnabled,
             optionalTotalCount = optionalTotal,
+            selectedLauncherIcon = selectedLauncherIcon,
             mods = modItems
         )
     }
