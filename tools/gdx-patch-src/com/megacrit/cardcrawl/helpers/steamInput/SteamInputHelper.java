@@ -1,10 +1,12 @@
 package com.megacrit.cardcrawl.helpers.steamInput;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.controllers.Controller;
 import com.badlogic.gdx.utils.Array;
 import com.codedisaster.steamworks.SteamController;
 import com.codedisaster.steamworks.SteamControllerActionSetHandle;
 import com.codedisaster.steamworks.SteamControllerHandle;
+import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.helpers.Hitbox;
 import com.megacrit.cardcrawl.helpers.controller.CInputHelper;
 
@@ -40,7 +42,16 @@ public class SteamInputHelper {
     }
 
     public static void setCursor(Hitbox hb) {
-        // No-op.
+        if (hb == null) {
+            return;
+        }
+        int cursorY = Settings.HEIGHT - (int) hb.cY;
+        if (cursorY < 0) {
+            cursorY = 0;
+        } else if (cursorY > Settings.HEIGHT) {
+            cursorY = Settings.HEIGHT;
+        }
+        Gdx.input.setCursorPosition((int) hb.cX, cursorY);
     }
 
     public static boolean isJustPressed(int actionIndex) {

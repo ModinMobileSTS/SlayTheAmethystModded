@@ -6,6 +6,7 @@ import com.badlogic.gdx.controllers.ControllerListener;
 import com.badlogic.gdx.controllers.ControllerManager;
 import com.badlogic.gdx.controllers.PovDirection;
 import com.badlogic.gdx.math.Vector3;
+import com.megacrit.cardcrawl.core.GameCursor;
 import com.badlogic.gdx.utils.Array;
 
 import org.lwjgl.glfw.CallbackBridge;
@@ -27,6 +28,14 @@ public class DesktopControllerManager implements ControllerManager {
     private static final float AXIS_EPSILON = 0.0001f;
     private static final byte BUTTON_RELEASE = 0;
     private static final byte BUTTON_PRESS = 1;
+
+    // Raw axis order in CallbackBridge gamepad buffers (GLFW standard)
+    private static final int RAW_AXIS_LEFT_X = 0;
+    private static final int RAW_AXIS_LEFT_Y = 1;
+    private static final int RAW_AXIS_RIGHT_X = 2;
+    private static final int RAW_AXIS_RIGHT_Y = 3;
+    private static final int RAW_AXIS_LEFT_TRIGGER = 4;
+    private static final int RAW_AXIS_RIGHT_TRIGGER = 5;
 
     private static final int BUTTON_DPAD_UP = 11;
     private static final int BUTTON_DPAD_RIGHT = 12;
@@ -101,6 +110,11 @@ public class DesktopControllerManager implements ControllerManager {
             }
             hasSeenInput = true;
         }
+
+        // Diagnostic: keep the in-game cursor visible while controller input is active
+        // so we can verify whether controller navigation is drifting the mouse position.
+        GameCursor.hidden = false;
+
         if (!connectedNotified) {
             handleConnectedIfNeeded();
         }
@@ -205,8 +219,9 @@ public class DesktopControllerManager implements ControllerManager {
     }
 
     private void dispatchAxisEvents() {
+        float[] mappedAxes = mapAxesForSts();
         for (int axis = 0; axis < AXIS_COUNT; axis++) {
-            float value = readAxisState(axis);
+            float value = mappedAxes[axis];
             if (Math.abs(value - lastAxes[axis]) <= AXIS_EPSILON) {
                 continue;
             }
@@ -214,6 +229,63 @@ public class DesktopControllerManager implements ControllerManager {
             controller.axisStates[axis] = value;
             forEachListenerAxisMoved(axis, value);
         }
+    }
+
+    /**
+     * STS controller defaults are tuned for legacy OIS ordering:
+     * axis0/1 = LS Y/X, axis2/3 = RS Y/X, axis4 = LT(+)/RT(-).
+     */
+    private float[] mapAxesForSts() {
+        float leftX = readAxisState(RAW_AXIS_LEFT_X);
+        float leftY = readAxisState(RAW_AXIS_LEFT_Y);
+        float rightX = readAxisState(RAW_AXIS_RIGHT_X);
+        float rightY = readAxisState(RAW_AXIS_RIGHT_Y);
+        float leftTrigger = readAxisState(RAW_AXIS_LEFT_TRIGGER);
+        float rightTrigger = readAxisState(RAW_AXIS_RIGHT_TRIGGER);
+
+        float dpadX = 0f;
+        if (readButtonState(BUTTON_DPAD_LEFT) == BUTTON_PRESS
+                && readButtonState(BUTTON_DPAD_RIGHT) != BUTTON_PRESS) {
+            dpadX = -1f;
+        } else if (readButtonState(BUTTON_DPAD_RIGHT) == BUTTON_PRESS
+                && readButtonState(BUTTON_DPAD_LEFT) != BUTTON_PRESS) {
+            dpadX = 1f;
+        }
+
+        float dpadY = 0f;
+        if (readButtonState(BUTTON_DPAD_UP) == BUTTON_PRESS
+                && readButtonState(BUTTON_DPAD_DOWN) != BUTTON_PRESS) {
+            dpadY = -1f;
+        } else if (readButtonState(BUTTON_DPAD_DOWN) == BUTTON_PRESS
+                && readButtonState(BUTTON_DPAD_UP) != BUTTON_PRESS) {
+            dpadY = 1f;
+        }
+
+        // If the stick is idle, make DPad act like the primary movement stick.
+        float lsY = Math.abs(leftY) > AXIS_EPSILON ? leftY : dpadY;
+        float lsX = Math.abs(leftX) > AXIS_EPSILON ? leftX : dpadX;
+
+        float[] mapped = new float[AXIS_COUNT];
+        mapped[0] = lsY;
+        mapped[1] = lsX;
+        mapped[2] = rightY;
+        mapped[3] = rightX;
+        mapped[4] = clampAxis(leftTrigger - rightTrigger);
+        mapped[5] = rightTrigger;
+        return mapped;
+    }
+
+    private float clampAxis(float value) {
+        if (value > 1f) {
+            return 1f;
+        }
+        if (value < -1f) {
+            return -1f;
+        }
+        if (Math.abs(value) < AXIS_EPSILON) {
+            return 0f;
+        }
+        return value;
     }
 
     private void dispatchPovEvent() {
