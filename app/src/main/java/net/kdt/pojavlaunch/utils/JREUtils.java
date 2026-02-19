@@ -96,22 +96,33 @@ public final class JREUtils {
         clearEnv("MESA_LOADER_DRIVER_OVERRIDE");
         clearEnv("MESA_GL_VERSION_OVERRIDE");
         clearEnv("MESA_GLSL_VERSION_OVERRIDE");
+        clearEnv("LIBGL_GLES");
         clearEnv("GALLIUM_DRIVER");
         clearEnv("MESA_ANDROID_NO_KMS_SWRAST");
 
         RendererBackend effectiveRenderer = renderer == null
                 ? RendererBackend.OPENGL_ES2
                 : renderer;
-        if (effectiveRenderer == RendererBackend.KOPPER_ZINK) {
-            env.put("AMETHYST_RENDERER", RendererBackend.KOPPER_ZINK.rendererId());
-            env.put("LIBGL_ES", "3");
-            env.put("POJAVEXEC_EGL", "libEGL_mesa.so");
-            env.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
-            env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
-            env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
-        } else {
-            env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
-            env.put("LIBGL_ES", "2");
+        switch (effectiveRenderer) {
+            case KOPPER_ZINK:
+                env.put("AMETHYST_RENDERER", RendererBackend.KOPPER_ZINK.rendererId());
+                env.put("LIBGL_ES", "3");
+                env.put("POJAVEXEC_EGL", "libEGL_mesa.so");
+                env.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+                env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
+                env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
+                break;
+            case ANGLE:
+                env.put("AMETHYST_RENDERER", RendererBackend.ANGLE.rendererId());
+                env.put("LIBGL_ES", "2");
+                env.put("LIBGL_GLES", "libGLESv2_angle.so");
+                env.put("POJAVEXEC_EGL", "libEGL_angle.so");
+                break;
+            case OPENGL_ES2:
+            default:
+                env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
+                env.put("LIBGL_ES", "2");
+                break;
         }
 
         for (Map.Entry<String, String> entry : env.entrySet()) {

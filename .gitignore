@@ -1,3 +1,5 @@
+_tmp*
+.tmp*
 .gradle/
 .idea/
 local.properties

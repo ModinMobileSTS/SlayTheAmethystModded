@@ -20,6 +20,8 @@ public final class RendererConfig {
     private static final String LIB_GLX_SHIM = "libglxshim.so";
     private static final String LIB_EGL_MESA = "libEGL_mesa.so";
     private static final String LIB_GLAPI = "libglapi.so";
+    private static final String LIB_EGL_ANGLE = "libEGL_angle.so";
+    private static final String LIB_GLESV2_ANGLE = "libGLESv2_angle.so";
 
     private RendererConfig() {
     }
@@ -58,36 +60,51 @@ public final class RendererConfig {
 
     @NonNull
     public static ResolutionResult resolveEffectiveBackend(Context context, RendererBackend preferred) {
-        if (preferred != RendererBackend.KOPPER_ZINK) {
-            return new ResolutionResult(preferred, preferred, null);
+        RendererBackend safePreferred = preferred == null
+                ? RendererBackend.OPENGL_ES2
+                : preferred;
+        if (safePreferred == RendererBackend.OPENGL_ES2) {
+            return new ResolutionResult(safePreferred, safePreferred, null);
         }
 
         List<String> reasons = new ArrayList<>();
-        if (!supportsVulkan(context)) {
-            reasons.add("Device Vulkan feature is unavailable");
-        }
-
         File nativeLibDir = new File(context.getApplicationInfo().nativeLibraryDir);
-        File glxShim = new File(nativeLibDir, LIB_GLX_SHIM);
-        if (!glxShim.isFile()) {
-            reasons.add("Missing " + LIB_GLX_SHIM);
-        }
+        if (safePreferred == RendererBackend.KOPPER_ZINK) {
+            if (!supportsVulkan(context)) {
+                reasons.add("Device Vulkan feature is unavailable");
+            }
 
-        File mesaEgl = new File(nativeLibDir, LIB_EGL_MESA);
-        if (!mesaEgl.isFile()) {
-            reasons.add("Missing " + LIB_EGL_MESA);
-        }
+            File glxShim = new File(nativeLibDir, LIB_GLX_SHIM);
+            if (!glxShim.isFile()) {
+                reasons.add("Missing " + LIB_GLX_SHIM);
+            }
 
-        File glapi = new File(nativeLibDir, LIB_GLAPI);
-        if (!glapi.isFile()) {
-            reasons.add("Missing " + LIB_GLAPI);
+            File mesaEgl = new File(nativeLibDir, LIB_EGL_MESA);
+            if (!mesaEgl.isFile()) {
+                reasons.add("Missing " + LIB_EGL_MESA);
+            }
+
+            File glapi = new File(nativeLibDir, LIB_GLAPI);
+            if (!glapi.isFile()) {
+                reasons.add("Missing " + LIB_GLAPI);
+            }
+        } else if (safePreferred == RendererBackend.ANGLE) {
+            File angleEgl = new File(nativeLibDir, LIB_EGL_ANGLE);
+            if (!angleEgl.isFile()) {
+                reasons.add("Missing " + LIB_EGL_ANGLE);
+            }
+
+            File angleGlesv2 = new File(nativeLibDir, LIB_GLESV2_ANGLE);
+            if (!angleGlesv2.isFile()) {
+                reasons.add("Missing " + LIB_GLESV2_ANGLE);
+            }
         }
 
         if (reasons.isEmpty()) {
-            return new ResolutionResult(preferred, preferred, null);
+            return new ResolutionResult(safePreferred, safePreferred, null);
         }
 
-        return new ResolutionResult(preferred, RendererBackend.OPENGL_ES2, joinReasons(reasons));
+        return new ResolutionResult(safePreferred, RendererBackend.OPENGL_ES2, joinReasons(reasons));
     }
 
     @NonNull

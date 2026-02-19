@@ -373,7 +373,7 @@ class LauncherActivity : AppCompatActivity() {
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("导入可选模组 (.jar)")
+                Text("导入模组")
             }
 
             Button(
@@ -385,7 +385,7 @@ class LauncherActivity : AppCompatActivity() {
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("导入存档 zip")
+                Text("导入存档")
             }
 
             Button(
@@ -393,7 +393,7 @@ class LauncherActivity : AppCompatActivity() {
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("导出存档 zip")
+                Text("导出存档")
             }
 
             Button(
@@ -401,7 +401,7 @@ class LauncherActivity : AppCompatActivity() {
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("导出调试日志 (.zip)")
+                Text("导出调试日志")
             }
 
             HorizontalDivider()
@@ -448,6 +448,13 @@ class LauncherActivity : AppCompatActivity() {
                 backend = RendererBackend.KOPPER_ZINK,
                 label = RendererBackend.KOPPER_ZINK.selectorLabel(),
                 selected = uiState.selectedRenderer == RendererBackend.KOPPER_ZINK,
+                enabled = !uiState.busy,
+                onSelect = ::onRendererSelected
+            )
+            RendererOptionRow(
+                backend = RendererBackend.ANGLE,
+                label = RendererBackend.ANGLE.selectorLabel(),
+                selected = uiState.selectedRenderer == RendererBackend.ANGLE,
                 enabled = !uiState.busy,
                 onSelect = ::onRendererSelected
             )
@@ -608,7 +615,7 @@ class LauncherActivity : AppCompatActivity() {
             .append("StSLib.jar: ")
             .append(if (uiState.hasStsLib) "OK (required, bundled)" else "missing (required)")
             .append('\n')
-            .append("Optional mods enabled: ")
+            .append("Mods enabled: ")
             .append(uiState.optionalEnabledCount)
             .append('/')
             .append(uiState.optionalTotalCount)

@@ -2,6 +2,7 @@ package io.stamethyst;
 
 public enum RendererBackend {
     OPENGL_ES2("opengles2", "OpenGL ES2 (default)", "OpenGL ES2"),
+    ANGLE("opengles2_angle", "ANGLE (OpenGL ES2)", "ANGLE"),
     KOPPER_ZINK("opengles3_desktopgl_zink_kopper", "Mesa Zink (Kopper)", "Mesa Zink (Kopper)");
 
     private final String rendererId;
@@ -27,7 +28,15 @@ public enum RendererBackend {
     }
 
     public String lwjglOpenGlLibName() {
-        return this == KOPPER_ZINK ? "libglxshim.so" : "libGLESv2.so";
+        switch (this) {
+            case KOPPER_ZINK:
+                return "libglxshim.so";
+            case ANGLE:
+                return "libGLESv2_angle.so";
+            case OPENGL_ES2:
+            default:
+                return "libGLESv2.so";
+        }
     }
 
     public static RendererBackend fromRendererId(String value) {
