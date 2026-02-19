@@ -26,6 +26,11 @@ public final class RuntimePackInstaller {
     }
 
     public static void ensureInstalled(Context context) throws IOException {
+        ensureInstalled(context, null);
+    }
+
+    public static void ensureInstalled(Context context, StartupProgressCallback progressCallback) throws IOException {
+        reportProgress(progressCallback, 2, "Checking runtime pack...");
         RuntimePaths.ensureBaseDirs(context);
 
         File runtimeRoot = RuntimePaths.runtimeRoot(context);
@@ -36,41 +41,54 @@ public final class RuntimePackInstaller {
             String installedVersion = new String(Files.readAllBytes(markerFile.toPath()), StandardCharsets.UTF_8).trim();
             File javaHome = locateJavaHome(runtimeRoot);
             if (installedVersion.equals(bundledVersion) && javaHome != null && isRuntimeReady(javaHome)) {
+                reportProgress(progressCallback, 100, "Runtime pack already up to date");
                 return;
             }
         }
 
+        reportProgress(progressCallback, 10, "Preparing runtime directory...");
         deleteRecursively(runtimeRoot);
         if (!runtimeRoot.mkdirs()) {
             throw new IOException("Failed to create runtime root: " + runtimeRoot);
         }
 
         File stagingDir = new File(context.getCacheDir(), "runtime-staging");
+        reportProgress(progressCallback, 18, "Preparing runtime staging...");
         deleteRecursively(stagingDir);
         if (!stagingDir.mkdirs()) {
             throw new IOException("Failed to create staging directory: " + stagingDir);
         }
 
         AssetManager assets = context.getAssets();
-        for (String required : REQUIRED_FILES) {
+        reportProgress(progressCallback, 26, "Copying runtime archives...");
+        for (int i = 0; i < REQUIRED_FILES.length; i++) {
+            String required = REQUIRED_FILES[i];
             copyAssetToFile(assets, "components/jre/" + required, new File(stagingDir, required));
+            int copiedPercent = 26 + Math.round(((i + 1) * 14f) / REQUIRED_FILES.length);
+            reportProgress(progressCallback, copiedPercent, "Copied " + required);
         }
 
+        reportProgress(progressCallback, 42, "Extracting universal runtime...");
         extractTarXz(new File(stagingDir, "universal.tar.xz"), runtimeRoot);
+        reportProgress(progressCallback, 62, "Extracting architecture runtime...");
         extractTarXz(new File(stagingDir, "bin-aarch64.tar.xz"), runtimeRoot);
 
-        unpackPack200Files(context, runtimeRoot);
+        reportProgress(progressCallback, 78, "Unpacking runtime pack200 files...");
+        unpackPack200Files(context, runtimeRoot, progressCallback);
 
         File javaHome = locateJavaHome(runtimeRoot);
         if (javaHome == null) {
             throw new IOException("Runtime install failed: libjli.so not found under " + runtimeRoot.getAbsolutePath());
         }
+        reportProgress(progressCallback, 92, "Finalizing runtime setup...");
         postPrepareRuntime(context, javaHome);
         if (!isRuntimeReady(javaHome)) {
             throw new IOException("Runtime install failed: missing core Java classes under " + javaHome.getAbsolutePath());
         }
 
+        reportProgress(progressCallback, 98, "Writing runtime install marker...");
         Files.write(markerFile.toPath(), bundledVersion.getBytes(StandardCharsets.UTF_8));
+        reportProgress(progressCallback, 100, "Runtime pack ready");
     }
 
     public static File locateJavaHome(File runtimeRoot) {
@@ -164,7 +182,9 @@ public final class RuntimePackInstaller {
         return new File(libDir, "rt.jar").exists() || new File(libDir, "modules").exists();
     }
 
-    private static void unpackPack200Files(Context context, File runtimeRoot) throws IOException {
+    private static void unpackPack200Files(Context context,
+                                           File runtimeRoot,
+                                           StartupProgressCallback progressCallback) throws IOException {
         List<File> packFiles = new ArrayList<>();
         collectPackFiles(runtimeRoot, packFiles);
         if (packFiles.isEmpty()) {
@@ -177,7 +197,14 @@ public final class RuntimePackInstaller {
         }
 
         ProcessBuilder processBuilder = new ProcessBuilder().directory(new File(context.getApplicationInfo().nativeLibraryDir));
-        for (File packFile : packFiles) {
+        for (int i = 0; i < packFiles.size(); i++) {
+            File packFile = packFiles.get(i);
+            int startPercent = 78 + Math.round((i * 10f) / packFiles.size());
+            reportProgress(
+                    progressCallback,
+                    startPercent,
+                    "Unpacking " + packFile.getName() + " (" + (i + 1) + "/" + packFiles.size() + ")..."
+            );
             String name = packFile.getName();
             File unpackedJar = new File(packFile.getParentFile(), name.substring(0, name.length() - ".pack".length()));
             Process process = processBuilder.command(
@@ -201,6 +228,12 @@ public final class RuntimePackInstaller {
             if (exitCode != 0 || !unpackedJar.exists()) {
                 throw new IOException("unpack200 failed for " + packFile.getName() + " (exit=" + exitCode + "): " + output);
             }
+            int endPercent = 78 + Math.round(((i + 1) * 10f) / packFiles.size());
+            reportProgress(
+                    progressCallback,
+                    endPercent,
+                    "Unpacked " + packFile.getName() + " (" + (i + 1) + "/" + packFiles.size() + ")"
+            );
         }
     }
 
@@ -309,5 +342,13 @@ public final class RuntimePackInstaller {
             }
         }
         file.delete();
+    }
+
+    private static void reportProgress(StartupProgressCallback callback, int percent, String message) {
+        if (callback == null) {
+            return;
+        }
+        int bounded = Math.max(0, Math.min(100, percent));
+        callback.onProgress(bounded, message);
     }
 }

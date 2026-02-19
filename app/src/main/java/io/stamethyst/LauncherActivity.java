@@ -323,64 +323,12 @@ public class LauncherActivity extends AppCompatActivity {
     }
 
     private void prepareAndLaunch(String launchMode) {
-        setBusy(true, "Preparing runtime/components...");
-        executor.execute(() -> {
-            try {
-                Log.i(TAG, "prepareAndLaunch begin, mode=" + launchMode);
-                ComponentInstaller.ensureInstalled(this);
-                Log.i(TAG, "ComponentInstaller.ensureInstalled done");
-                RuntimePackInstaller.ensureInstalled(this);
-                Log.i(TAG, "RuntimePackInstaller.ensureInstalled done");
-                RuntimePaths.ensureBaseDirs(this);
-
-                RendererBackend preferredRenderer = RendererConfig.readPreferredBackend(this);
-                RendererConfig.ResolutionResult rendererDecision =
-                        RendererConfig.resolveEffectiveBackend(this, preferredRenderer);
-                appendRendererDecisionLog("launcher", rendererDecision);
-                Log.i(TAG, "Renderer decision: " + rendererDecision.toLogText());
-
-                File jar = RuntimePaths.importedStsJar(this);
-                StsJarValidator.validate(jar);
-                Log.i(TAG, "StsJarValidator.validate done");
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
-                    ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
-                    ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
-                    ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(this));
-                    ModJarSupport.prepareMtsClasspath(this);
-                    ModManager.resolveLaunchModIds(this);
-                    Log.i(TAG, "MTS/BaseMod/StSLib validation + classpath prepare done");
-                }
-
-                runOnUiThread(() -> {
-                    setBusy(false, null);
-                    if (rendererDecision.isFallback()) {
-                        Toast.makeText(
-                                this,
-                                getString(R.string.renderer_fallback_toast, rendererDecision.reason),
-                                Toast.LENGTH_LONG
-                        ).show();
-                    }
-                    Intent intent = new Intent(this, StsGameActivity.class);
-                    intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode);
-                    intent.putExtra(StsGameActivity.EXTRA_RENDERER_BACKEND, rendererDecision.effective.rendererId());
-                    Log.i(TAG, "Starting StsGameActivity, mode=" + launchMode);
-                    startActivity(intent);
-                });
-            } catch (Throwable error) {
-                Log.e(TAG, "prepareAndLaunch failed", error);
-                runOnUiThread(() -> {
-                    String detail = "Launch preparation failed: "
-                            + error.getClass().getSimpleName()
-                            + ": " + String.valueOf(error.getMessage());
-                    new AlertDialog.Builder(this)
-                            .setTitle(R.string.sts_crash_dialog_title)
-                            .setMessage(getString(R.string.sts_crash_detail_format, detail))
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show();
-                    refreshStatus();
-                });
-            }
-        });
+        RendererBackend renderer = selectedRendererFromUi();
+        Intent intent = new Intent(this, LaunchLoadingActivity.class);
+        intent.putExtra(LaunchLoadingActivity.EXTRA_LAUNCH_MODE, launchMode);
+        intent.putExtra(LaunchLoadingActivity.EXTRA_RENDERER_BACKEND, renderer.rendererId());
+        Log.i(TAG, "Forward launch to LaunchLoadingActivity, mode=" + launchMode + ", renderer=" + renderer.rendererId());
+        startActivity(intent);
     }
 
     private void onSavesArchivePicked(@Nullable Uri uri) {

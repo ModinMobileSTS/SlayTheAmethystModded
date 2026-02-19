@@ -16,6 +16,8 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -37,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import io.stamethyst.input.AndroidGlfwKeycode;
 
@@ -44,9 +47,14 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private static final String TAG = "StsGameActivity";
     public static final String EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode";
     public static final String EXTRA_RENDERER_BACKEND = "io.stamethyst.renderer_backend";
+    public static final String EXTRA_PRELAUNCH_PREPARED = "io.stamethyst.prelaunch_prepared";
+    public static final String EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu";
     private static final float DEFAULT_RENDER_SCALE = 0.75f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
+    private static final long BOOT_OVERLAY_FAILSAFE_MS = 45000L;
+    private static final long BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L;
+    private static final long BOOT_OVERLAY_READY_DELAY_MS = 700L;
 
     @Nullable
     private SurfaceView surfaceView;
@@ -66,9 +74,21 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private float renderScale = DEFAULT_RENDER_SCALE;
     private String launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA;
     private RendererBackend launcherRequestedRenderer = RendererBackend.OPENGL_ES2;
+    private boolean prelaunchPrepared = false;
+    private boolean waitForMainMenu = false;
     private boolean jvmLogListenerRegistered = false;
+    private View bootOverlay;
+    private ProgressBar bootOverlayProgressBar;
+    private TextView bootOverlayStatusText;
+    private int bootOverlayProgress = 0;
+    private String bootOverlayMessage = "";
+    private long bootOverlayShownAtMs = -1L;
+    private boolean bootOverlayDismissed = false;
+    private boolean mainMenuReadySignaled = false;
+    private final Runnable bootOverlayFailsafeRunnable = () ->
+            signalMainMenuReady("Startup timeout reached, continue to game");
     private final Logger.eventLogListener jvmLogcatListener =
-            text -> Log.i(TAG, "[JVM] " + text);
+            this::onJvmLogMessage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,7 +103,13 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         launcherRequestedRenderer = RendererBackend.fromRendererId(
                 getIntent().getStringExtra(EXTRA_RENDERER_BACKEND)
         );
+        prelaunchPrepared = getIntent().getBooleanExtra(EXTRA_PRELAUNCH_PREPARED, false);
+        waitForMainMenu = getIntent().getBooleanExtra(
+                EXTRA_WAIT_FOR_MAIN_MENU,
+                StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
+        );
         useTextureViewSurface = launcherRequestedRenderer == RendererBackend.KOPPER_ZINK;
+        initBootOverlay();
 
         FrameLayout root = findViewById(R.id.gameRoot);
         ViewGroup.LayoutParams renderLayoutParams = new ViewGroup.LayoutParams(
@@ -148,6 +174,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     protected void onDestroy() {
+        if (bootOverlay != null) {
+            bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
+        }
         if (useTextureViewSurface) {
             try {
                 JREUtils.releaseBridgeWindow();
@@ -218,17 +247,28 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             return;
         }
         vmStarted = true;
+        updateBootOverlayProgress(8, "Starting JVM...");
 
         Thread launchThread = new Thread(() -> {
             try {
-                ComponentInstaller.ensureInstalled(this);
-                RuntimePackInstaller.ensureInstalled(this);
-                StsJarValidator.validate(RuntimePaths.importedStsJar(this));
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
-                    ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
-                    ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
-                    ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(this));
-                    ModJarSupport.prepareMtsClasspath(this);
+                if (prelaunchPrepared) {
+                    Log.i(TAG, "Skip prelaunch prepare steps in game activity (already prepared)");
+                    updateBootOverlayProgress(12, "Prelaunch checks already done");
+                } else {
+                    updateBootOverlayProgress(12, "Installing runtime components...");
+                    ComponentInstaller.ensureInstalled(this);
+                    updateBootOverlayProgress(16, "Preparing Java runtime...");
+                    RuntimePackInstaller.ensureInstalled(this);
+                    updateBootOverlayProgress(20, "Validating game files...");
+                    StsJarValidator.validate(RuntimePaths.importedStsJar(this));
+                    if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+                        updateBootOverlayProgress(22, "Validating MTS dependencies...");
+                        ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
+                        ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
+                        ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(this));
+                        updateBootOverlayProgress(24, "Preparing MTS classpath...");
+                        ModJarSupport.prepareMtsClasspath(this);
+                    }
                 }
 
                 File runtimeRoot = RuntimePaths.runtimeRoot(this);
@@ -292,6 +332,11 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 List<String> launchArgs = new ArrayList<>();
                 launchArgs.add("java");
                 launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome, launchMode, effectiveRenderer));
+                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+                    updateBootOverlayProgress(28, "Launching ModTheSpire...");
+                } else {
+                    updateBootOverlayProgress(85, "Launching game...");
+                }
                 Logger.appendToLog("Launch args: " + launchArgs);
 
                 int exitCode = VMLauncher.launchJVM(launchArgs.toArray(new String[0]));
@@ -354,6 +399,166 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             startCheckPosted = false;
             tryStartJvmWhenSurfaceReady();
         }, 120L);
+    }
+
+    private void initBootOverlay() {
+        bootOverlay = findViewById(R.id.bootOverlay);
+        bootOverlayProgressBar = findViewById(R.id.bootOverlayProgressBar);
+        bootOverlayStatusText = findViewById(R.id.bootOverlayStatusText);
+        if (bootOverlay == null || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
+            waitForMainMenu = false;
+            return;
+        }
+        if (!waitForMainMenu) {
+            bootOverlay.setVisibility(View.GONE);
+            bootOverlayDismissed = true;
+            return;
+        }
+        bootOverlay.setVisibility(View.VISIBLE);
+        bootOverlay.setOnTouchListener((v, event) -> true);
+        bootOverlayShownAtMs = SystemClock.uptimeMillis();
+        updateBootOverlayProgress(1, "Starting launch pipeline...");
+        bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
+        bootOverlay.postDelayed(bootOverlayFailsafeRunnable, BOOT_OVERLAY_FAILSAFE_MS);
+    }
+
+    private void onJvmLogMessage(String text) {
+        Log.i(TAG, "[JVM] " + text);
+        if (!waitForMainMenu || bootOverlayDismissed || text == null) {
+            return;
+        }
+        String[] lines = text.split("\\r?\\n");
+        for (String raw : lines) {
+            if (raw == null) {
+                continue;
+            }
+            String line = raw.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            applyBootProgressHintFromLog(line);
+        }
+    }
+
+    private void applyBootProgressHintFromLog(String line) {
+        String lower = line.toLowerCase(Locale.ROOT);
+
+        if (lower.contains("searching for workshop items")) {
+            updateBootOverlayProgress(30, "ModTheSpire: reading workshop/mod list...");
+            return;
+        }
+        if (lower.contains("begin patching")) {
+            updateBootOverlayProgress(38, "ModTheSpire: begin patching...");
+            return;
+        }
+        if (lower.contains("patching enums")) {
+            updateBootOverlayProgress(46, "ModTheSpire: patching enums...");
+            return;
+        }
+        if (lower.contains("finding core patches")) {
+            updateBootOverlayProgress(54, "ModTheSpire: finding core patches...");
+            return;
+        }
+        if (lower.contains("finding patches")) {
+            updateBootOverlayProgress(60, "ModTheSpire: finding mod patches...");
+            return;
+        }
+        if (lower.contains("patching overrides")) {
+            updateBootOverlayProgress(68, "ModTheSpire: patching overrides...");
+            return;
+        }
+        if (lower.contains("injecting patches")) {
+            updateBootOverlayProgress(76, "ModTheSpire: injecting patches...");
+            return;
+        }
+        if (lower.contains("compiling patched classes")) {
+            updateBootOverlayProgress(84, "ModTheSpire: compiling patched classes...");
+            return;
+        }
+        if (lower.contains("busting enums")) {
+            updateBootOverlayProgress(88, "ModTheSpire: finalizing enum patches...");
+            return;
+        }
+        if (lower.contains("adding modthespire to version")) {
+            updateBootOverlayProgress(90, "ModTheSpire: applying version metadata...");
+            return;
+        }
+        if (lower.contains("desktop.desktoplauncher> launching application")) {
+            updateBootOverlayProgress(93, "Starting Slay the Spire...");
+            return;
+        }
+        if (lower.contains("core.cardcrawlgame> no migration")) {
+            updateBootOverlayProgress(95, "Initializing game data...");
+            return;
+        }
+        if (lower.contains("begin editing localization strings")) {
+            updateBootOverlayProgress(96, "BaseMod: loading localization...");
+            return;
+        }
+        if (lower.contains("publishpostinitialize")) {
+            updateBootOverlayProgress(98, "BaseMod: running post-initialize...");
+            return;
+        }
+        if (lower.contains("loading character stats")) {
+            updateBootOverlayProgress(99, "Loading main menu data...");
+            return;
+        }
+        if (lower.contains("publishaddcustommodemods")) {
+            signalMainMenuReady("Main menu is ready");
+        }
+    }
+
+    private void signalMainMenuReady(String message) {
+        if (!waitForMainMenu || mainMenuReadySignaled) {
+            return;
+        }
+        mainMenuReadySignaled = true;
+        updateBootOverlayProgress(100, message);
+        long now = SystemClock.uptimeMillis();
+        long elapsed = bootOverlayShownAtMs <= 0L ? BOOT_OVERLAY_MIN_VISIBLE_MS : (now - bootOverlayShownAtMs);
+        long minDelay = Math.max(0L, BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed);
+        long delay = Math.max(minDelay, BOOT_OVERLAY_READY_DELAY_MS);
+        runOnUiThread(() -> {
+            if (bootOverlay == null) {
+                return;
+            }
+            bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
+            bootOverlay.postDelayed(this::dismissBootOverlay, delay);
+        });
+    }
+
+    private void dismissBootOverlay() {
+        if (bootOverlayDismissed || bootOverlay == null) {
+            return;
+        }
+        bootOverlayDismissed = true;
+        bootOverlay.setVisibility(View.GONE);
+        bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
+    }
+
+    private void updateBootOverlayProgress(int percent, String message) {
+        if (!waitForMainMenu) {
+            return;
+        }
+        int bounded = Math.max(0, Math.min(100, percent));
+        String normalizedMessage = message == null ? "" : message.trim();
+        if (bounded < bootOverlayProgress) {
+            return;
+        }
+        if (bounded == bootOverlayProgress && normalizedMessage.equals(bootOverlayMessage)) {
+            return;
+        }
+        bootOverlayProgress = bounded;
+        bootOverlayMessage = normalizedMessage;
+        runOnUiThread(() -> {
+            if (bootOverlayDismissed || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
+                return;
+            }
+            bootOverlayProgressBar.setProgress(bootOverlayProgress);
+            if (!normalizedMessage.isEmpty()) {
+                bootOverlayStatusText.setText(normalizedMessage + " (" + bootOverlayProgress + "%)");
+            }
+        });
     }
 
     private void reportCrashAndReturn(int code, boolean isSignal, @Nullable String detail) {

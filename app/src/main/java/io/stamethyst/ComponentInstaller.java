@@ -27,16 +27,28 @@ public final class ComponentInstaller {
     }
 
     public static void ensureInstalled(Context context) throws IOException {
+        ensureInstalled(context, null);
+    }
+
+    public static void ensureInstalled(Context context, StartupProgressCallback progressCallback) throws IOException {
         RuntimePaths.ensureBaseDirs(context);
         AssetManager assets = context.getAssets();
 
+        reportProgress(progressCallback, 5, "Installing LWJGL bridge...");
         copyAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context));
+        reportProgress(progressCallback, 20, "Installing LWJGL2 injector...");
         copyAssetTree(assets, "components/lwjgl2_methods_injector", RuntimePaths.lwjgl2InjectorDir(context));
+        reportProgress(progressCallback, 35, "Installing gdx patches...");
         copyAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context));
+        reportProgress(progressCallback, 50, "Installing Caciocavallo runtime...");
         copyAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context));
+        reportProgress(progressCallback, 70, "Installing bundled mods...");
         installBundledMods(assets, context);
+        reportProgress(progressCallback, 85, "Preparing local java shim...");
         ensureMtsLocalJreShim(context);
+        reportProgress(progressCallback, 95, "Checking default preferences...");
         ensureDefaultPreferencesIfMissing(assets, context);
+        reportProgress(progressCallback, 100, "Components ready");
     }
 
     private static void installBundledMods(AssetManager assets, Context context) throws IOException {
@@ -251,5 +263,13 @@ public final class ComponentInstaller {
         } catch (IOException ignored) {
             return false;
         }
+    }
+
+    private static void reportProgress(StartupProgressCallback callback, int percent, String message) {
+        if (callback == null) {
+            return;
+        }
+        int bounded = Math.max(0, Math.min(100, percent));
+        callback.onProgress(bounded, message);
     }
 }
