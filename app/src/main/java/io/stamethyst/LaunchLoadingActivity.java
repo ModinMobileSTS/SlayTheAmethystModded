@@ -20,6 +20,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
 
     public static final String EXTRA_LAUNCH_MODE = "io.stamethyst.loading_launch_mode";
     public static final String EXTRA_RENDERER_BACKEND = "io.stamethyst.loading_renderer_backend";
+    public static final String EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.loading_back_immediate_exit";
 
     private final java.util.concurrent.ExecutorService executor =
             java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -30,6 +31,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
     private volatile boolean destroyed = false;
     private String launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA;
     private RendererBackend requestedRenderer = RendererBackend.OPENGL_ES2;
+    private boolean backImmediateExit = true;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -48,6 +50,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
         requestedRenderer = RendererBackend.fromRendererId(
                 sourceIntent.getStringExtra(EXTRA_RENDERER_BACKEND)
         );
+        backImmediateExit = sourceIntent.getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true);
 
         postProgress(0, "Preparing runtime/components...");
         startPrepare();
@@ -145,6 +148,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                         StsGameActivity.EXTRA_WAIT_FOR_MAIN_MENU,
                         StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
                 );
+                intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit);
                 Log.i(TAG, "Starting StsGameActivity, mode=" + launchMode + ", delayMs=" + delay);
                 startActivity(intent);
                 finish();

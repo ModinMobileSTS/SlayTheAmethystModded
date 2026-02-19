@@ -1,4 +1,6 @@
 import java.util.zip.ZipFile
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.jvm.tasks.Jar
 
 plugins {
     id("com.android.application")
@@ -9,6 +11,8 @@ val runtimePackPath = providers.environmentVariable("STS_JRE8_PACK")
     .orElse("runtime-pack/jre8-pojav.zip")
 val runtimePackFile = rootProject.layout.projectDirectory.file(runtimePackPath.get()).asFile
 val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
+val bootBridgeSourceDir = rootProject.layout.projectDirectory.dir("tools/boot-bridge-src")
+val bootBridgeClassesDir = layout.buildDirectory.dir("generated/boot-bridge/classes")
 
 val prepareEmbeddedJrePack by tasks.registering {
     outputs.dir(generatedRuntimeAssetsDir)
@@ -61,6 +65,29 @@ val prepareEmbeddedJrePack by tasks.registering {
             }
         }
     }
+}
+
+val compileBootBridgeJava by tasks.registering(JavaCompile::class) {
+    source = fileTree(bootBridgeSourceDir) {
+        include("**/*.java")
+    }
+    classpath = files()
+    destinationDirectory.set(bootBridgeClassesDir)
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.encoding = "UTF-8"
+    doFirst {
+        if (source.files.isEmpty()) {
+            throw GradleException("Missing boot bridge sources under ${bootBridgeSourceDir.asFile.absolutePath}")
+        }
+    }
+}
+
+val packageBootBridgeJar by tasks.registering(Jar::class) {
+    dependsOn(compileBootBridgeJava)
+    archiveFileName.set("boot-bridge.jar")
+    destinationDirectory.set(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
+    from(bootBridgeClassesDir)
 }
 
 android {
@@ -129,6 +156,7 @@ android {
 
 tasks.named("preBuild").configure {
     dependsOn(prepareEmbeddedJrePack)
+    dependsOn(packageBootBridgeJar)
 }
 
 dependencies {

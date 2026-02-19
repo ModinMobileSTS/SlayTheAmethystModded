@@ -104,6 +104,18 @@ public final class RuntimePaths {
         return new File(lwjgl2InjectorDir(context), "lwjgl2_methods_injector.jar");
     }
 
+    public static File bootBridgeDir(Context context) {
+        return new File(componentRoot(context), "boot_bridge");
+    }
+
+    public static File bootBridgeJar(Context context) {
+        return new File(bootBridgeDir(context), "boot-bridge.jar");
+    }
+
+    public static File bootBridgeEventsFile(Context context) {
+        return new File(stsRoot(context), "boot_bridge_events.log");
+    }
+
     public static File gdxPatchDir(Context context) {
         return new File(componentRoot(context), "gdx_patch");
     }
@@ -126,6 +138,7 @@ public final class RuntimePaths {
         mtsLocalJreBinDir(context).mkdirs();
         lwjglDir(context).mkdirs();
         lwjgl2InjectorDir(context).mkdirs();
+        bootBridgeDir(context).mkdirs();
         gdxPatchDir(context).mkdirs();
         cacioDir(context).mkdirs();
         runtimeRoot(context).mkdirs();

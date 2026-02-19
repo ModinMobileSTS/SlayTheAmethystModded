@@ -114,6 +114,22 @@
             android:layout_marginTop="8dp"
             android:text="Launch STS (MTS + selected mods)" />
 
+        <CheckBox
+            android:id="@+id/backBehaviorCheckBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:checked="true"
+            android:text="Back key: immediate exit to main menu" />
+
+        <TextView
+            android:id="@+id/backBehaviorHintText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Unchecked = disable Back key while game is running."
+            android:textSize="12sp" />
+
         <TextView
             android:id="@+id/logPathText"
             android:layout_width="match_parent"

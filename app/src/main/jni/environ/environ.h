@@ -49,6 +49,7 @@ struct pojav_environ_s {
     jmethodID method_onGrabStateChanged;
     jmethodID method_onDirectInputEnable;
     jmethodID method_glftSetWindowAttrib;
+    jmethodID method_glfwSetWindowShouldClose;
     jmethodID method_internalWindowSizeChanged;
     jmethodID method_internalChangeMonitorSize;
     jclass bridgeClazz;

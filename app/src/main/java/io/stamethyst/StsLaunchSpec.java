@@ -110,6 +110,9 @@ public final class StsLaunchSpec {
         args.add("-Dswing.defaultlaf=javax.swing.plaf.metal.MetalLookAndFeel");
         args.add("-Dawt.toolkit=net.java.openjdk.cacio.ctc.CTCToolkit");
         args.add("-Djava.awt.graphicsenv=net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment");
+        args.add("-Damethyst.bridge.events=" + RuntimePaths.bootBridgeEventsFile(context).getAbsolutePath());
+        args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader");
+        args.add("-Damethyst.bridge.mode=" + launchMode);
 
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context));
 
@@ -117,13 +120,14 @@ public final class StsLaunchSpec {
         args.add("-cp");
         if (LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
             args.add(
-                    RuntimePaths.lwjglJar(context).getAbsolutePath()
+                    RuntimePaths.bootBridgeJar(context).getAbsolutePath()
+                            + ":" + RuntimePaths.lwjglJar(context).getAbsolutePath()
                             + ":" + RuntimePaths.mtsGdxApiJar(context).getAbsolutePath()
                             + ":" + RuntimePaths.mtsStsResourcesJar(context).getAbsolutePath()
                             + ":" + RuntimePaths.mtsBaseModResourcesJar(context).getAbsolutePath()
                             + ":" + RuntimePaths.importedMtsJar(context).getAbsolutePath()
             );
-            args.add("com.evacipated.cardcrawl.modthespire.Loader");
+            args.add("io.stamethyst.bridge.BootBridgeLauncher");
             args.add("--skip-launcher");
             List<String> launchMods;
             try {

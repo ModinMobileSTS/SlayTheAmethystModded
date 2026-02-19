@@ -45,6 +45,38 @@
             android:text="Starting JVM..."
             android:textColor="#FFFFFFFF"
             android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/bootOverlayLogTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="JVM Logs"
+            android:textColor="#CCFFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <ScrollView
+            android:id="@+id/bootOverlayLogScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="8dp"
+            android:layout_weight="1"
+            android:background="#33000000"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/bootOverlayLogText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="2dp"
+                android:padding="10dp"
+                android:text=""
+                android:textColor="#FFECECEC"
+                android:textIsSelectable="false"
+                android:textSize="11sp"
+                android:typeface="monospace" />
+        </ScrollView>
     </LinearLayout>
 
 </FrameLayout>

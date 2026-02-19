@@ -36,17 +36,19 @@ public final class ComponentInstaller {
 
         reportProgress(progressCallback, 5, "Installing LWJGL bridge...");
         copyAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context));
-        reportProgress(progressCallback, 20, "Installing LWJGL2 injector...");
+        reportProgress(progressCallback, 15, "Installing startup bridge...");
+        copyAssetTree(assets, "components/boot_bridge", RuntimePaths.bootBridgeDir(context));
+        reportProgress(progressCallback, 25, "Installing LWJGL2 injector...");
         copyAssetTree(assets, "components/lwjgl2_methods_injector", RuntimePaths.lwjgl2InjectorDir(context));
-        reportProgress(progressCallback, 35, "Installing gdx patches...");
+        reportProgress(progressCallback, 40, "Installing gdx patches...");
         copyAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context));
-        reportProgress(progressCallback, 50, "Installing Caciocavallo runtime...");
+        reportProgress(progressCallback, 55, "Installing Caciocavallo runtime...");
         copyAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context));
-        reportProgress(progressCallback, 70, "Installing bundled mods...");
+        reportProgress(progressCallback, 72, "Installing bundled mods...");
         installBundledMods(assets, context);
-        reportProgress(progressCallback, 85, "Preparing local java shim...");
+        reportProgress(progressCallback, 87, "Preparing local java shim...");
         ensureMtsLocalJreShim(context);
-        reportProgress(progressCallback, 95, "Checking default preferences...");
+        reportProgress(progressCallback, 96, "Checking default preferences...");
         ensureDefaultPreferencesIfMissing(assets, context);
         reportProgress(progressCallback, 100, "Components ready");
     }

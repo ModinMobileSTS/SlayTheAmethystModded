@@ -164,6 +164,8 @@ public class CallbackBridge {
 
     public static native void nativeSetWindowAttrib(int attrib, int value);
 
+    public static native boolean nativeRequestCloseWindow();
+
     public static native boolean nativeSetInputReady(boolean inputReady);
 
     public static native void nativeSetGrabbing(boolean grabbing);

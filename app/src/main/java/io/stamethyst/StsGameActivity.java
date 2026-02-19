@@ -1,6 +1,8 @@
 package io.stamethyst;
 
 import android.annotation.SuppressLint;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
@@ -17,6 +19,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -35,8 +38,10 @@ import net.kdt.pojavlaunch.utils.JREUtils;
 import org.lwjgl.glfw.CallbackBridge;
 
 import java.io.File;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -49,12 +54,14 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     public static final String EXTRA_RENDERER_BACKEND = "io.stamethyst.renderer_backend";
     public static final String EXTRA_PRELAUNCH_PREPARED = "io.stamethyst.prelaunch_prepared";
     public static final String EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu";
+    public static final String EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit";
     private static final float DEFAULT_RENDER_SCALE = 0.75f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
-    private static final long BOOT_OVERLAY_FAILSAFE_MS = 45000L;
     private static final long BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L;
     private static final long BOOT_OVERLAY_READY_DELAY_MS = 700L;
+    private static final long BACK_FORCE_RESTART_DELAY_MS = 120L;
+    private static final int BOOT_LOG_MAX_LINES = 220;
 
     @Nullable
     private SurfaceView surfaceView;
@@ -65,6 +72,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private View renderView;
     private boolean useTextureViewSurface = false;
     private volatile boolean vmStarted = false;
+    private volatile boolean backExitRequested = false;
     private int activePointerId = MotionEvent.INVALID_POINTER_ID;
     private boolean leftPressed = false;
     private int surfaceBufferWidth = 0;
@@ -76,17 +84,27 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private RendererBackend launcherRequestedRenderer = RendererBackend.OPENGL_ES2;
     private boolean prelaunchPrepared = false;
     private boolean waitForMainMenu = false;
+    private boolean backImmediateExit = true;
     private boolean jvmLogListenerRegistered = false;
     private View bootOverlay;
     private ProgressBar bootOverlayProgressBar;
     private TextView bootOverlayStatusText;
+    private ScrollView bootOverlayLogScroll;
+    private TextView bootOverlayLogText;
     private int bootOverlayProgress = 0;
     private String bootOverlayMessage = "";
     private long bootOverlayShownAtMs = -1L;
     private boolean bootOverlayDismissed = false;
     private boolean mainMenuReadySignaled = false;
-    private final Runnable bootOverlayFailsafeRunnable = () ->
-            signalMainMenuReady("Startup timeout reached, continue to game");
+    private boolean launchFailureSignaled = false;
+    private volatile boolean earlyOverlayDismissOnNextFrame = false;
+    private volatile long lastTextureFrameTimestampNs = 0L;
+    private volatile long earlyOverlayDismissRequestFrameTimestampNs = 0L;
+    @Nullable
+    private volatile Thread jvmLaunchThread;
+    private Thread bootBridgeReaderThread;
+    private volatile boolean bootBridgeReaderStop = false;
+    private final ArrayDeque<String> bootLogLines = new ArrayDeque<>();
     private final Logger.eventLogListener jvmLogcatListener =
             this::onJvmLogMessage;
 
@@ -108,6 +126,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 EXTRA_WAIT_FOR_MAIN_MENU,
                 StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
         );
+        backImmediateExit = getIntent().getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true);
         useTextureViewSurface = launcherRequestedRenderer == RendererBackend.KOPPER_ZINK;
         initBootOverlay();
 
@@ -156,6 +175,15 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
                 @Override
                 public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
+                    lastTextureFrameTimestampNs = surface.getTimestamp();
+                    if (earlyOverlayDismissOnNextFrame
+                            && lastTextureFrameTimestampNs > earlyOverlayDismissRequestFrameTimestampNs) {
+                        earlyOverlayDismissOnNextFrame = false;
+                        runOnUiThread(() -> {
+                            updateBootOverlayProgress(Math.max(bootOverlayProgress, 99), "Game frame ready");
+                            dismissBootOverlay();
+                        });
+                    }
                 }
             });
         } else {
@@ -174,8 +202,12 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     protected void onDestroy() {
-        if (bootOverlay != null) {
-            bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
+        earlyOverlayDismissOnNextFrame = false;
+        stopBootBridgeReaderIfRunning();
+        Thread launchThread = jvmLaunchThread;
+        jvmLaunchThread = null;
+        if (launchThread != null) {
+            launchThread.interrupt();
         }
         if (useTextureViewSurface) {
             try {
@@ -242,8 +274,75 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         }
     }
 
+    @Override
+    public void onBackPressed() {
+        if (!backImmediateExit) {
+            Log.i(TAG, "Android back pressed: disabled by launcher setting");
+            return;
+        }
+        requestBackExitToLauncher();
+    }
+
+    private void requestBackExitToLauncher() {
+        if (backExitRequested) {
+            return;
+        }
+        backExitRequested = true;
+        stopBootBridgeReaderIfRunning();
+        updateBootOverlayProgress(100, "Stopping game...");
+        Log.i(TAG, "Android back pressed: force restart to launcher");
+
+        Thread launchThread = jvmLaunchThread;
+        if (launchThread != null) {
+            launchThread.interrupt();
+        }
+        try {
+            CallbackBridge.nativeSetInputReady(false);
+        } catch (Throwable ignored) {
+        }
+        requestJvmCloseSignal();
+        scheduleLauncherRestartAndKillProcess();
+    }
+
+    private boolean requestJvmCloseSignal() {
+        try {
+            boolean requested = CallbackBridge.nativeRequestCloseWindow();
+            if (requested) {
+                Log.i(TAG, "Sent glfwSetWindowShouldClose=true");
+            }
+            return requested;
+        } catch (Throwable error) {
+            Log.w(TAG, "Failed to request JVM window close", error);
+            return false;
+        }
+    }
+
+    private void scheduleLauncherRestartAndKillProcess() {
+        Intent launcherIntent = new Intent(this, LauncherActivity.class);
+        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        int flags = PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0x71A7, launcherIntent, flags);
+        AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+        long triggerAt = SystemClock.elapsedRealtime() + BACK_FORCE_RESTART_DELAY_MS;
+        if (alarmManager != null) {
+            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent);
+        } else {
+            try {
+                pendingIntent.send();
+            } catch (PendingIntent.CanceledException ignored) {
+            }
+        }
+        finishAffinity();
+        android.os.Process.killProcess(android.os.Process.myPid());
+        System.exit(0);
+    }
+
     private void startJvmOnce() {
         if (vmStarted) {
+            return;
+        }
+        if (backExitRequested) {
+            finish();
             return;
         }
         vmStarted = true;
@@ -251,6 +350,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
         Thread launchThread = new Thread(() -> {
             try {
+                if (backExitRequested) {
+                    runOnUiThread(this::finish);
+                    return;
+                }
                 if (prelaunchPrepared) {
                     Log.i(TAG, "Skip prelaunch prepare steps in game activity (already prepared)");
                     updateBootOverlayProgress(12, "Prelaunch checks already done");
@@ -293,6 +396,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 } catch (Throwable ignored) {
                     jvmLogListenerRegistered = false;
                 }
+                if (waitForMainMenu && StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+                    startBootBridgeReader();
+                    updateBootOverlayProgress(26, "Waiting for structured boot events...");
+                }
                 Logger.appendToLog("Launching STS with java home: " + javaHome.getAbsolutePath());
                 Logger.appendToLog("Launch mode: " + launchMode);
                 Logger.appendToLog("Surface backend: " + (useTextureViewSurface ? "TextureView" : "SurfaceView"));
@@ -332,6 +439,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 List<String> launchArgs = new ArrayList<>();
                 launchArgs.add("java");
                 launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome, launchMode, effectiveRenderer));
+                if (backExitRequested) {
+                    runOnUiThread(this::finish);
+                    return;
+                }
                 if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
                     updateBootOverlayProgress(28, "Launching ModTheSpire...");
                 } else {
@@ -341,8 +452,23 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
                 int exitCode = VMLauncher.launchJVM(launchArgs.toArray(new String[0]));
                 Logger.appendToLog("Java Exit code: " + exitCode);
-                if (exitCode == 0) {
+                if (backExitRequested) {
                     runOnUiThread(this::finish);
+                    return;
+                }
+                if (exitCode == 0) {
+                    if (waitForMainMenu
+                            && StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
+                            && !mainMenuReadySignaled
+                            && !bootOverlayDismissed) {
+                        runOnUiThread(() -> reportCrashAndReturn(
+                                -3,
+                                false,
+                                "JVM exited before reaching main menu"
+                        ));
+                    } else {
+                        runOnUiThread(this::finish);
+                    }
                 } else {
                     runOnUiThread(() -> reportCrashAndReturn(exitCode, false, null));
                 }
@@ -352,14 +478,24 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                     Logger.appendToLog("Launch failed: " + t);
                 } catch (Throwable ignored) {
                 }
+                if (backExitRequested) {
+                    runOnUiThread(this::finish);
+                    return;
+                }
                 String message = t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
                 runOnUiThread(() -> reportCrashAndReturn(-1, false, message));
+            } finally {
+                jvmLaunchThread = null;
             }
         }, "STS-JVM-Thread");
+        jvmLaunchThread = launchThread;
         launchThread.start();
     }
 
     private void tryStartJvmWhenSurfaceReady() {
+        if (backExitRequested) {
+            return;
+        }
         if (vmStarted) {
             return;
         }
@@ -405,6 +541,8 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         bootOverlay = findViewById(R.id.bootOverlay);
         bootOverlayProgressBar = findViewById(R.id.bootOverlayProgressBar);
         bootOverlayStatusText = findViewById(R.id.bootOverlayStatusText);
+        bootOverlayLogScroll = findViewById(R.id.bootOverlayLogScroll);
+        bootOverlayLogText = findViewById(R.id.bootOverlayLogText);
         if (bootOverlay == null || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
             waitForMainMenu = false;
             return;
@@ -414,12 +552,16 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             bootOverlayDismissed = true;
             return;
         }
+        synchronized (bootLogLines) {
+            bootLogLines.clear();
+        }
+        if (bootOverlayLogText != null) {
+            bootOverlayLogText.setText("");
+        }
         bootOverlay.setVisibility(View.VISIBLE);
         bootOverlay.setOnTouchListener((v, event) -> true);
         bootOverlayShownAtMs = SystemClock.uptimeMillis();
         updateBootOverlayProgress(1, "Starting launch pipeline...");
-        bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
-        bootOverlay.postDelayed(bootOverlayFailsafeRunnable, BOOT_OVERLAY_FAILSAFE_MS);
     }
 
     private void onJvmLogMessage(String text) {
@@ -433,86 +575,212 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 continue;
             }
             String line = raw.trim();
-            if (line.isEmpty()) {
-                continue;
+            appendBootOverlayLog(raw);
+            if (!launchFailureSignaled) {
+                String fatal = detectFatalStartupLog(line);
+                if (fatal != null) {
+                    signalLaunchFailure(fatal);
+                    continue;
+                }
             }
-            applyBootProgressHintFromLog(line);
+            if (!bootOverlayDismissed && shouldDismissOverlayEarlyLog(line)) {
+                runOnUiThread(() -> {
+                    updateBootOverlayProgress(Math.max(bootOverlayProgress, 98), "Starting game...");
+                    requestEarlyOverlayDismiss();
+                });
+            }
         }
     }
 
-    private void applyBootProgressHintFromLog(String line) {
+    @Nullable
+    private String detectFatalStartupLog(String line) {
+        if (line == null || line.isEmpty()) {
+            return null;
+        }
         String lower = line.toLowerCase(Locale.ROOT);
+        if (lower.contains("com.evacipated.cardcrawl.modthespire.patcher.patchingexception")) {
+            return "MTS patching failed: " + line;
+        }
+        if (lower.contains("missingdependencyexception")) {
+            return "MTS missing dependency: " + line;
+        }
+        if (lower.contains("duplicatemodidexception")) {
+            return "MTS duplicate mod id: " + line;
+        }
+        if (lower.contains("missingmodidexception")) {
+            return "MTS missing mod id: " + line;
+        }
+        if (lower.contains("illegal patch parameter")) {
+            return "MTS illegal patch parameter: " + line;
+        }
+        return null;
+    }
 
-        if (lower.contains("searching for workshop items")) {
-            updateBootOverlayProgress(30, "ModTheSpire: reading workshop/mod list...");
-            return;
+    private boolean shouldDismissOverlayEarlyLog(String line) {
+        if (line == null || line.isEmpty()) {
+            return false;
         }
-        if (lower.contains("begin patching")) {
-            updateBootOverlayProgress(38, "ModTheSpire: begin patching...");
-            return;
+        String lower = line.toLowerCase(Locale.ROOT);
+        // Delay until CardCrawlGame init starts to avoid hiding slightly before logo appears.
+        if (lower.contains("core.cardcrawlgame> distributorplatform=")) {
+            return true;
         }
-        if (lower.contains("patching enums")) {
-            updateBootOverlayProgress(46, "ModTheSpire: patching enums...");
-            return;
-        }
-        if (lower.contains("finding core patches")) {
-            updateBootOverlayProgress(54, "ModTheSpire: finding core patches...");
-            return;
-        }
-        if (lower.contains("finding patches")) {
-            updateBootOverlayProgress(60, "ModTheSpire: finding mod patches...");
-            return;
-        }
-        if (lower.contains("patching overrides")) {
-            updateBootOverlayProgress(68, "ModTheSpire: patching overrides...");
-            return;
-        }
-        if (lower.contains("injecting patches")) {
-            updateBootOverlayProgress(76, "ModTheSpire: injecting patches...");
-            return;
-        }
-        if (lower.contains("compiling patched classes")) {
-            updateBootOverlayProgress(84, "ModTheSpire: compiling patched classes...");
-            return;
-        }
-        if (lower.contains("busting enums")) {
-            updateBootOverlayProgress(88, "ModTheSpire: finalizing enum patches...");
-            return;
-        }
-        if (lower.contains("adding modthespire to version")) {
-            updateBootOverlayProgress(90, "ModTheSpire: applying version metadata...");
-            return;
-        }
-        if (lower.contains("desktop.desktoplauncher> launching application")) {
-            updateBootOverlayProgress(93, "Starting Slay the Spire...");
-            return;
+        if (lower.contains("core.cardcrawlgame> ismodded=")) {
+            return true;
         }
         if (lower.contains("core.cardcrawlgame> no migration")) {
-            updateBootOverlayProgress(95, "Initializing game data...");
-            return;
+            return true;
         }
-        if (lower.contains("begin editing localization strings")) {
-            updateBootOverlayProgress(96, "BaseMod: loading localization...");
-            return;
-        }
-        if (lower.contains("publishpostinitialize")) {
-            updateBootOverlayProgress(98, "BaseMod: running post-initialize...");
-            return;
-        }
-        if (lower.contains("loading character stats")) {
-            updateBootOverlayProgress(99, "Loading main menu data...");
-            return;
-        }
+        // BaseMod lifecycle reaches this stage only after the game is effectively at main-menu flow.
         if (lower.contains("publishaddcustommodemods")) {
-            signalMainMenuReady("Main menu is ready");
+            return true;
+        }
+        // If the player already entered an event, startup is definitely complete.
+        return lower.contains("events.heartevent>");
+    }
+
+    private void requestEarlyOverlayDismiss() {
+        if (bootOverlayDismissed || bootOverlay == null) {
+            return;
+        }
+        if (useTextureViewSurface && textureView != null) {
+            earlyOverlayDismissRequestFrameTimestampNs = lastTextureFrameTimestampNs;
+            earlyOverlayDismissOnNextFrame = true;
+            return;
+        }
+        dismissBootOverlay();
+    }
+
+    private void startBootBridgeReader() {
+        stopBootBridgeReaderIfRunning();
+        File eventsFile = RuntimePaths.bootBridgeEventsFile(this);
+        File parent = eventsFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        try (java.io.FileOutputStream ignored = new java.io.FileOutputStream(eventsFile, false)) {
+            // Truncate old events.
+        } catch (Throwable error) {
+            Log.w(TAG, "Failed to reset boot bridge events file", error);
+        }
+
+        bootBridgeReaderStop = false;
+        bootBridgeReaderThread = new Thread(() -> runBootBridgeReader(eventsFile), "BootBridge-Reader");
+        bootBridgeReaderThread.setDaemon(true);
+        bootBridgeReaderThread.start();
+    }
+
+    private void stopBootBridgeReaderIfRunning() {
+        bootBridgeReaderStop = true;
+        Thread thread = bootBridgeReaderThread;
+        bootBridgeReaderThread = null;
+        if (thread != null) {
+            thread.interrupt();
         }
     }
+
+    private void runBootBridgeReader(File eventsFile) {
+        long offset = 0L;
+        while (!bootBridgeReaderStop) {
+            try {
+                if (!eventsFile.exists()) {
+                    sleepQuietly(80L);
+                    continue;
+                }
+                try (RandomAccessFile raf = new RandomAccessFile(eventsFile, "r")) {
+                    long length = raf.length();
+                    if (length < offset) {
+                        offset = 0L;
+                    }
+                    if (length > offset) {
+                        raf.seek(offset);
+                        String raw;
+                        while (!bootBridgeReaderStop && (raw = raf.readLine()) != null) {
+                            String line = new String(raw.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+                            onBootBridgeEventLine(line);
+                        }
+                        offset = raf.getFilePointer();
+                    }
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "Boot bridge reader error", error);
+            }
+            sleepQuietly(80L);
+        }
+    }
+
+    private void onBootBridgeEventLine(String line) {
+        if (line == null) {
+            return;
+        }
+        String trimmed = line.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+        appendBootOverlayLog("[bridge] " + trimmed);
+
+        String[] parts = trimmed.split("\\t", 3);
+        String type = parts.length > 0 ? parts[0].trim().toUpperCase(Locale.ROOT) : "";
+        int percent = parts.length > 1 ? parseSafeInt(parts[1], -1) : -1;
+        String message = parts.length > 2 ? parts[2].trim() : "";
+
+        switch (type) {
+            case "PHASE":
+                if (percent >= 0) {
+                    updateBootOverlayProgress(percent, message.isEmpty() ? "Loading..." : message);
+                }
+                break;
+            case "READY":
+                signalMainMenuReady(message.isEmpty() ? "Main menu is ready" : message);
+                break;
+            case "FAIL":
+                signalLaunchFailure(message.isEmpty() ? "Bridge reported startup failure" : message);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private int parseSafeInt(String value, int fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void signalLaunchFailure(String detail) {
+        if (backExitRequested) {
+            runOnUiThread(this::finish);
+            return;
+        }
+        if (launchFailureSignaled) {
+            return;
+        }
+        launchFailureSignaled = true;
+        stopBootBridgeReaderIfRunning();
+        Log.e(TAG, "Detected startup failure from boot bridge: " + detail);
+        runOnUiThread(() -> reportCrashAndReturn(-2, false, detail));
+    }
+
 
     private void signalMainMenuReady(String message) {
         if (!waitForMainMenu || mainMenuReadySignaled) {
             return;
         }
         mainMenuReadySignaled = true;
+        stopBootBridgeReaderIfRunning();
         updateBootOverlayProgress(100, message);
         long now = SystemClock.uptimeMillis();
         long elapsed = bootOverlayShownAtMs <= 0L ? BOOT_OVERLAY_MIN_VISIBLE_MS : (now - bootOverlayShownAtMs);
@@ -522,7 +790,6 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             if (bootOverlay == null) {
                 return;
             }
-            bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
             bootOverlay.postDelayed(this::dismissBootOverlay, delay);
         });
     }
@@ -532,8 +799,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             return;
         }
         bootOverlayDismissed = true;
+        earlyOverlayDismissOnNextFrame = false;
+        earlyOverlayDismissRequestFrameTimestampNs = 0L;
         bootOverlay.setVisibility(View.GONE);
-        bootOverlay.removeCallbacks(bootOverlayFailsafeRunnable);
     }
 
     private void updateBootOverlayProgress(int percent, String message) {
@@ -561,7 +829,44 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         });
     }
 
+    private void appendBootOverlayLog(String rawLine) {
+        if (!waitForMainMenu || rawLine == null) {
+            return;
+        }
+        String line = rawLine.replace('\r', ' ').trim();
+        if (line.isEmpty()) {
+            return;
+        }
+        synchronized (bootLogLines) {
+            bootLogLines.addLast(line);
+            while (bootLogLines.size() > BOOT_LOG_MAX_LINES) {
+                bootLogLines.removeFirst();
+            }
+        }
+        runOnUiThread(this::renderBootOverlayLogs);
+    }
+
+    private void renderBootOverlayLogs() {
+        if (bootOverlayDismissed || bootOverlayLogText == null) {
+            return;
+        }
+        StringBuilder builder = new StringBuilder(4096);
+        synchronized (bootLogLines) {
+            for (String line : bootLogLines) {
+                builder.append(line).append('\n');
+            }
+        }
+        bootOverlayLogText.setText(builder.toString());
+        if (bootOverlayLogScroll != null) {
+            bootOverlayLogScroll.post(() -> bootOverlayLogScroll.fullScroll(View.FOCUS_DOWN));
+        }
+    }
+
     private void reportCrashAndReturn(int code, boolean isSignal, @Nullable String detail) {
+        if (backExitRequested) {
+            finish();
+            return;
+        }
         Intent launcherIntent = new Intent(this, LauncherActivity.class);
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true);
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code);

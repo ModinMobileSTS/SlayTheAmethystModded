@@ -62,6 +62,7 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         (*vm)->GetEnv(vm, (void**) &vmEnv, JNI_VERSION_1_4);
         pojav_environ->vmGlfwClass = (*vmEnv)->NewGlobalRef(vmEnv, (*vmEnv)->FindClass(vmEnv, "org/lwjgl/glfw/GLFW"));
         pojav_environ->method_glftSetWindowAttrib = (*vmEnv)->GetStaticMethodID(vmEnv, pojav_environ->vmGlfwClass, "glfwSetWindowAttrib", "(JII)V");
+        pojav_environ->method_glfwSetWindowShouldClose = (*vmEnv)->GetStaticMethodID(vmEnv, pojav_environ->vmGlfwClass, "glfwSetWindowShouldClose", "(JZ)V");
         pojav_environ->method_internalWindowSizeChanged = (*vmEnv)->GetStaticMethodID(vmEnv, pojav_environ->vmGlfwClass, "internalWindowSizeChanged", "(J)V");
         pojav_environ->method_internalChangeMonitorSize = (*vmEnv)->GetStaticMethodID(vmEnv, pojav_environ->vmGlfwClass, "internalChangeMonitorSize", "(II)V");
         jfieldID field_keyDownBuffer = (*vmEnv)->GetStaticFieldID(vmEnv, pojav_environ->vmGlfwClass, "keyDownBuffer", "Ljava/nio/ByteBuffer;");
@@ -475,6 +476,31 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetWindowAttrib(
 
     // Attaching every time is annoying, so stick the attachment to the Android GUI thread around
 }
+
+JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestCloseWindow(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
+    if (!pojav_environ->showingWindow || pojav_environ->runtimeJavaVMPtr == NULL) {
+        return JNI_FALSE;
+    }
+    if (pojav_environ->vmGlfwClass == NULL || pojav_environ->method_glfwSetWindowShouldClose == NULL) {
+        return JNI_FALSE;
+    }
+
+    TRY_ATTACH_ENV(jvm_env, pojav_environ->runtimeJavaVMPtr, "nativeRequestCloseWindow failed: attach env\n", return JNI_FALSE;);
+
+    (*jvm_env)->CallStaticVoidMethod(
+            jvm_env,
+            pojav_environ->vmGlfwClass,
+            pojav_environ->method_glfwSetWindowShouldClose,
+            (jlong) pojav_environ->showingWindow,
+            JNI_TRUE
+    );
+    if ((*jvm_env)->ExceptionCheck(jvm_env)) {
+        (*jvm_env)->ExceptionClear(jvm_env);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
 const static JNINativeMethod critical_fcns[] = {
         {"nativeSetUseInputStackQueue", "(Z)V", critical_set_stackqueue},
         {"nativeSendChar", "(C)Z", critical_send_char},

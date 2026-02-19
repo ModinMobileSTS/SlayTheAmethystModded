@@ -43,6 +43,8 @@ import java.util.zip.ZipOutputStream;
 
 public class LauncherActivity extends AppCompatActivity {
     private static final String TAG = "LauncherActivity";
+    private static final String PREF_NAME_LAUNCHER = "sts_launcher_prefs";
+    private static final String PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit";
     public static final String EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode";
     public static final String EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred";
     public static final String EXTRA_CRASH_CODE = "io.stamethyst.crash_code";
@@ -65,6 +67,7 @@ public class LauncherActivity extends AppCompatActivity {
     private Button saveRenderScaleButton;
     private Spinner rendererBackendSpinner;
     private Button launchButton;
+    private CheckBox backBehaviorCheckBox;
 
     private final ActivityResultLauncher<String[]> importJarLauncher =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::onJarPicked);
@@ -92,6 +95,7 @@ public class LauncherActivity extends AppCompatActivity {
         saveRenderScaleButton = findViewById(R.id.saveRenderScaleButton);
         rendererBackendSpinner = findViewById(R.id.rendererBackendSpinner);
         launchButton = findViewById(R.id.launchButton);
+        backBehaviorCheckBox = findViewById(R.id.backBehaviorCheckBox);
 
         logPathText.setText(
                 "Log: " + RuntimePaths.latestLog(this).getAbsolutePath()
@@ -112,10 +116,12 @@ public class LauncherActivity extends AppCompatActivity {
             if (!saveRendererSelection()) {
                 return;
             }
+            saveBackBehaviorSelection(readBackImmediateExitFromUi());
             prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD);
         });
 
         setupRendererSpinner();
+        setupBackBehaviorToggle();
         loadRenderScaleInput();
         refreshStatus();
         handleIncomingIntent(getIntent());
@@ -324,11 +330,64 @@ public class LauncherActivity extends AppCompatActivity {
 
     private void prepareAndLaunch(String launchMode) {
         RendererBackend renderer = selectedRendererFromUi();
-        Intent intent = new Intent(this, LaunchLoadingActivity.class);
-        intent.putExtra(LaunchLoadingActivity.EXTRA_LAUNCH_MODE, launchMode);
-        intent.putExtra(LaunchLoadingActivity.EXTRA_RENDERER_BACKEND, renderer.rendererId());
-        Log.i(TAG, "Forward launch to LaunchLoadingActivity, mode=" + launchMode + ", renderer=" + renderer.rendererId());
+        boolean backImmediateExit = readBackImmediateExitFromUi();
+        Intent intent = new Intent(this, StsGameActivity.class);
+        intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode);
+        intent.putExtra(StsGameActivity.EXTRA_RENDERER_BACKEND, renderer.rendererId());
+        intent.putExtra(StsGameActivity.EXTRA_PRELAUNCH_PREPARED, false);
+        intent.putExtra(
+                StsGameActivity.EXTRA_WAIT_FOR_MAIN_MENU,
+                StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
+        );
+        intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit);
+        Log.i(TAG,
+                "Start StsGameActivity directly, mode=" + launchMode
+                        + ", renderer=" + renderer.rendererId()
+                        + ", backImmediateExit=" + backImmediateExit);
         startActivity(intent);
+    }
+
+    private void setupBackBehaviorToggle() {
+        if (backBehaviorCheckBox == null) {
+            return;
+        }
+        boolean immediateExit = readBackBehaviorSelection();
+        backBehaviorCheckBox.setChecked(immediateExit);
+        updateBackBehaviorText(immediateExit);
+        backBehaviorCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            updateBackBehaviorText(isChecked);
+            saveBackBehaviorSelection(isChecked);
+        });
+    }
+
+    private boolean readBackImmediateExitFromUi() {
+        if (backBehaviorCheckBox != null) {
+            return backBehaviorCheckBox.isChecked();
+        }
+        return readBackBehaviorSelection();
+    }
+
+    private boolean readBackBehaviorSelection() {
+        return getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
+                .getBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, true);
+    }
+
+    private void saveBackBehaviorSelection(boolean immediateExit) {
+        getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, immediateExit)
+                .apply();
+    }
+
+    private void updateBackBehaviorText(boolean immediateExit) {
+        if (backBehaviorCheckBox == null) {
+            return;
+        }
+        if (immediateExit) {
+            backBehaviorCheckBox.setText("Back key: immediate exit to main menu");
+        } else {
+            backBehaviorCheckBox.setText("Back key: disabled");
+        }
     }
 
     private void onSavesArchivePicked(@Nullable Uri uri) {
