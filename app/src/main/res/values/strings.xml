@@ -10,4 +10,10 @@
     <string name="renderer_effective_reason_format">Renderer effective: %1$s (fallback: %2$s)</string>
     <string name="renderer_save_failed">Failed to save renderer backend: %1$s</string>
     <string name="renderer_fallback_toast">Selected renderer unavailable, auto-fallback to OpenGL ES2 (%1$s)</string>
+    <string name="compat_settings_title">兼容性设置</string>
+    <string name="compat_settings_open">打开兼容性设置</string>
+    <string name="compat_original_fbo_title">原版 FBO 兼容补丁</string>
+    <string name="compat_original_fbo_desc">控制 GLFrameBuffer fallback（amethyst.gdx.fbo_fallback）。关闭后更接近原版行为，但可能更容易在部分设备崩溃。</string>
+    <string name="compat_downfall_fbo_title">Downfall FBO 兼容补丁</string>
+    <string name="compat_downfall_fbo_desc">控制 Downfall 的 DoubleEnergyOrb FBO 兼容补丁是否在启动前注入。</string>
 </resources>

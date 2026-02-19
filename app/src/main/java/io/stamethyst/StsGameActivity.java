@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import io.stamethyst.input.AndroidGamepadGlfwMapper;
 import io.stamethyst.input.AndroidGlfwKeycode;
 
 public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.Callback {
@@ -79,6 +80,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private volatile boolean backExitRequested = false;
     private int activePointerId = MotionEvent.INVALID_POINTER_ID;
     private boolean leftPressed = false;
+    private boolean gamepadDirectInputEnableAttempted = false;
     private int surfaceBufferWidth = 0;
     private int surfaceBufferHeight = 0;
     private long waitingLandscapeSinceMs = -1L;
@@ -133,7 +135,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         );
         backImmediateExit = getIntent().getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true);
         targetFps = sanitizeTargetFps(getIntent().getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS));
-        useTextureViewSurface = launcherRequestedRenderer == RendererBackend.KOPPER_ZINK;
+        useTextureViewSurface = shouldUseTextureViewSurface(launcherRequestedRenderer, renderScale);
         initBootOverlay();
 
         FrameLayout root = findViewById(R.id.gameRoot);
@@ -142,7 +144,11 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 ViewGroup.LayoutParams.MATCH_PARENT
         );
         if (useTextureViewSurface) {
-            Log.i(TAG, "Using TextureView surface path for Kopper renderer");
+            if (launcherRequestedRenderer == RendererBackend.KOPPER_ZINK) {
+                Log.i(TAG, "Using TextureView surface path for Kopper renderer");
+            } else {
+                Log.i(TAG, "Using TextureView surface path for scaled rendering: renderScale=" + renderScale);
+            }
             TextureView view = new TextureView(this);
             view.setOpaque(true);
             textureView = view;
@@ -208,6 +214,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     protected void onDestroy() {
+        resetGamepadState();
         earlyOverlayDismissOnNextFrame = false;
         stopBootBridgeReaderIfRunning();
         Thread launchThread = jvmLaunchThread;
@@ -260,6 +267,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     protected void onResume() {
         super.onResume();
         applyImmersiveMode();
+        resetGamepadState();
         CallbackBridge.nativeSetAudioMuted(false);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0);
@@ -270,6 +278,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     protected void onPause() {
+        resetGamepadState();
         CallbackBridge.nativeSetAudioMuted(true);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0);
@@ -415,12 +424,17 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 Logger.appendToLog("Launching STS with java home: " + javaHome.getAbsolutePath());
                 Logger.appendToLog("Launch mode: " + launchMode);
                 Logger.appendToLog("Surface backend: " + (useTextureViewSurface ? "TextureView" : "SurfaceView"));
+                boolean originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this);
+                boolean downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this);
+                Logger.appendToLog("Compat settings: originalFboPatch=" + originalFboPatchEnabled
+                        + ", downfallFboPatch=" + downfallFboPatchEnabled);
                 RendererBackend preferredRenderer = RendererConfig.readPreferredBackend(this);
                 RendererConfig.ResolutionResult rendererDecision =
                         RendererConfig.resolveEffectiveBackend(this, preferredRenderer);
                 RendererBackend effectiveRenderer = rendererDecision.effective;
                 Logger.appendToLog("Renderer from launcher intent: " + launcherRequestedRenderer.rendererId());
                 Logger.appendToLog("Renderer decision in game: " + rendererDecision.toLogText());
+                Logger.appendToLog("Renderer GL library expected: " + effectiveRenderer.lwjglOpenGlLibName());
                 if (launcherRequestedRenderer != effectiveRenderer) {
                     Logger.appendToLog(
                             "Renderer changed after re-check: launcher_effective="
@@ -428,6 +442,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                                     + ", game_effective="
                                     + effectiveRenderer.rendererId()
                     );
+                }
+                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
+                    ModJarSupport.appendCompatDiagnosticSnapshot(this, "game_pre_jvm");
                 }
                 updateWindowSize();
                 Logger.appendToLog("Render scale: " + renderScale
@@ -461,6 +478,12 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 } else {
                     updateBootOverlayProgress(85, "Launching game...");
                 }
+                Logger.appendToLog("Launch arg check: "
+                        + findLaunchArgValue(launchArgs, "-Dorg.lwjgl.opengl.libname=")
+                        + ", "
+                        + findLaunchArgValue(launchArgs, "-Damethyst.gdx.fbo_fallback=")
+                        + ", "
+                        + findLaunchArgValue(launchArgs, "-Dorg.lwjgl.librarypath="));
                 Logger.appendToLog("Launch args: " + launchArgs);
 
                 int exitCode = VMLauncher.launchJVM(launchArgs.toArray(new String[0]));
@@ -911,6 +934,13 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         surface.setDefaultBufferSize(scaledWidth, scaledHeight);
     }
 
+    private boolean shouldUseTextureViewSurface(RendererBackend requestedRenderer, float scale) {
+        if (requestedRenderer == RendererBackend.KOPPER_ZINK) {
+            return true;
+        }
+        return scale < MAX_RENDER_SCALE;
+    }
+
     private int resolvePhysicalWidth() {
         return resolveRawPhysicalWidth();
     }
@@ -986,6 +1016,18 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         return DEFAULT_TARGET_FPS;
     }
 
+    private String findLaunchArgValue(List<String> args, String keyPrefix) {
+        if (args == null || keyPrefix == null || keyPrefix.isEmpty()) {
+            return keyPrefix + "<invalid>";
+        }
+        for (String arg : args) {
+            if (arg != null && arg.startsWith(keyPrefix)) {
+                return arg;
+            }
+        }
+        return keyPrefix + "<missing>";
+    }
+
     private void applyImmersiveMode() {
         applyDisplayCutoutMode();
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -1018,6 +1060,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
+        if (isGamepadMotionEvent(event)) {
+            return handleGamepadMotionEvent(event);
+        }
         int source = event.getSource();
         if ((source & InputDevice.SOURCE_MOUSE) != 0 || (source & InputDevice.SOURCE_TOUCHPAD) != 0) {
             switch (event.getActionMasked()) {
@@ -1037,6 +1082,69 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             }
         }
         return super.onGenericMotionEvent(event);
+    }
+
+    private boolean isGamepadKeyEvent(@Nullable KeyEvent event) {
+        if (event == null) {
+            return false;
+        }
+        int source = event.getSource();
+        if ((source & InputDevice.SOURCE_GAMEPAD) != 0 || (source & InputDevice.SOURCE_JOYSTICK) != 0) {
+            return true;
+        }
+        InputDevice device = event.getDevice();
+        if (device != null) {
+            int deviceSources = device.getSources();
+            return (deviceSources & InputDevice.SOURCE_GAMEPAD) != 0
+                    || (deviceSources & InputDevice.SOURCE_JOYSTICK) != 0;
+        }
+        return false;
+    }
+
+    private boolean isGamepadMotionEvent(@Nullable MotionEvent event) {
+        if (event == null || event.getActionMasked() != MotionEvent.ACTION_MOVE) {
+            return false;
+        }
+        int source = event.getSource();
+        return (source & InputDevice.SOURCE_JOYSTICK) != 0
+                || (source & InputDevice.SOURCE_GAMEPAD) != 0;
+    }
+
+    private boolean handleGamepadKeyEvent(@NonNull KeyEvent event) {
+        ensureGamepadDirectInputEnabled();
+        int action = event.getAction();
+        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
+            return true;
+        }
+        AndroidGamepadGlfwMapper.writeKeyEvent(event.getKeyCode(), action == KeyEvent.ACTION_DOWN);
+        return true;
+    }
+
+    private boolean handleGamepadMotionEvent(@NonNull MotionEvent event) {
+        ensureGamepadDirectInputEnabled();
+        AndroidGamepadGlfwMapper.writeMotionEvent(event);
+        return true;
+    }
+
+    private void ensureGamepadDirectInputEnabled() {
+        if (gamepadDirectInputEnableAttempted) {
+            return;
+        }
+        gamepadDirectInputEnableAttempted = true;
+        try {
+            boolean enabled = CallbackBridge.nativeEnableGamepadDirectInput();
+            Log.i(TAG, "Requested gamepad direct input: " + enabled);
+        } catch (Throwable error) {
+            Log.w(TAG, "Failed to enable gamepad direct input", error);
+        }
+    }
+
+    private void resetGamepadState() {
+        try {
+            AndroidGamepadGlfwMapper.resetState();
+        } catch (Throwable error) {
+            Log.w(TAG, "Failed to reset gamepad state", error);
+        }
     }
 
     private boolean sendMouseButton(int androidButton, boolean down) {
@@ -1183,6 +1291,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (isGamepadKeyEvent(event)) {
+            return handleGamepadKeyEvent(event);
+        }
+
         if (event.getAction() == KeyEvent.ACTION_MULTIPLE) {
             return true;
         }

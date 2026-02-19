@@ -110,6 +110,8 @@ public final class StsLaunchSpec {
         args.add("-Dswing.defaultlaf=javax.swing.plaf.metal.MetalLookAndFeel");
         args.add("-Dawt.toolkit=net.java.openjdk.cacio.ctc.CTCToolkit");
         args.add("-Djava.awt.graphicsenv=net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment");
+        args.add("-Damethyst.gdx.fbo_fallback="
+                + (CompatibilitySettings.isOriginalFboPatchEnabled(context) ? "true" : "false"));
         args.add("-Damethyst.bridge.events=" + RuntimePaths.bootBridgeEventsFile(context).getAbsolutePath());
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader");
         args.add("-Damethyst.bridge.mode=" + launchMode);
@@ -128,6 +130,9 @@ public final class StsLaunchSpec {
                             + ":" + RuntimePaths.importedMtsJar(context).getAbsolutePath()
             );
             args.add("io.stamethyst.bridge.BootBridgeLauncher");
+            // Prevent ModTheSpire from attempting desktop-style self-restart via jre1.8.0_51
+            // and exiting the Android process immediately.
+            args.add("--jre51");
             args.add("--skip-launcher");
             List<String> launchMods;
             try {

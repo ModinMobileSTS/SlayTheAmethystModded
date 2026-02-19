@@ -22,6 +22,7 @@ public final class RendererConfig {
     private static final String LIB_GLAPI = "libglapi.so";
     private static final String LIB_EGL_ANGLE = "libEGL_angle.so";
     private static final String LIB_GLESV2_ANGLE = "libGLESv2_angle.so";
+    private static final String LIB_MOBILEGLUES = "libmobileglues.so";
 
     private RendererConfig() {
     }
@@ -97,6 +98,11 @@ public final class RendererConfig {
             File angleGlesv2 = new File(nativeLibDir, LIB_GLESV2_ANGLE);
             if (!angleGlesv2.isFile()) {
                 reasons.add("Missing " + LIB_GLESV2_ANGLE);
+            }
+        } else if (safePreferred == RendererBackend.MOBILEGLUES) {
+            File mobileGlues = new File(nativeLibDir, LIB_MOBILEGLUES);
+            if (!mobileGlues.isFile()) {
+                reasons.add("Missing " + LIB_MOBILEGLUES);
             }
         }
 

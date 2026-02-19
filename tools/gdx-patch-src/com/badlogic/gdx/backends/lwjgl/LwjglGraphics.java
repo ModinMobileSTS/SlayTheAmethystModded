@@ -203,7 +203,8 @@ public class LwjglGraphics implements Graphics {
 							pixmap = rgba;
 						}
 						ByteBuffer iconBuffer = ByteBuffer.allocateDirect(pixmap.getPixels().limit());
-						iconBuffer.put(pixmap.getPixels()).flip();
+						iconBuffer.put(pixmap.getPixels());
+						iconBuffer.flip();
 						icons.add(iconBuffer);
 						pixmap.dispose();
 					} catch (Throwable t) {
