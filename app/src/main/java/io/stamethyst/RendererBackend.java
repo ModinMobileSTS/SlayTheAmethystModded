@@ -3,6 +3,7 @@ package io.stamethyst;
 public enum RendererBackend {
     OPENGL_ES2("opengles2", "OpenGL ES2 (default)", "OpenGL ES2"),
     ANGLE("opengles2_angle", "ANGLE (OpenGL ES2)", "ANGLE"),
+    MOBILEGLUES("opengles3_mobileglues", "MobileGlues (OpenGL ES3)", "MobileGlues"),
     KOPPER_ZINK("opengles3_desktopgl_zink_kopper", "Mesa Zink (Kopper)", "Mesa Zink (Kopper)");
 
     private final String rendererId;
@@ -33,6 +34,8 @@ public enum RendererBackend {
                 return "libglxshim.so";
             case ANGLE:
                 return "libGLESv2_angle.so";
+            case MOBILEGLUES:
+                return "libmobileglues.so";
             case OPENGL_ES2:
             default:
                 return "libGLESv2.so";

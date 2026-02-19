@@ -14,6 +14,12 @@ val runtimePackFile = rootProject.layout.projectDirectory.file(runtimePackPath.g
 val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
 val bootBridgeSourceDir = rootProject.layout.projectDirectory.dir("tools/boot-bridge-src")
 val bootBridgeClassesDir = layout.buildDirectory.dir("generated/boot-bridge/classes")
+val gdxPatchSourceDir = rootProject.layout.projectDirectory.dir("tools/gdx-patch-src")
+val gdxPatchClassesDir = layout.buildDirectory.dir("generated/gdx-patch/classes")
+val gdxPatchOutputDir = project.layout.projectDirectory.dir("src/main/assets/components/gdx_patch")
+val desktopJarFile = rootProject.layout.projectDirectory.file("tools/desktop-1.0.jar").asFile
+val lwjglGlfwClassesJarFile =
+    project.layout.projectDirectory.file("src/main/assets/components/lwjgl3/lwjgl-glfw-classes.jar").asFile
 
 val prepareEmbeddedJrePack by tasks.registering {
     outputs.dir(generatedRuntimeAssetsDir)
@@ -89,6 +95,39 @@ val packageBootBridgeJar by tasks.registering(Jar::class) {
     archiveFileName.set("boot-bridge.jar")
     destinationDirectory.set(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
     from(bootBridgeClassesDir)
+}
+
+val compileGdxPatchJava by tasks.registering(JavaCompile::class) {
+    source = fileTree(gdxPatchSourceDir) {
+        include("**/*.java")
+    }
+    classpath = files(desktopJarFile, lwjglGlfwClassesJarFile)
+    destinationDirectory.set(gdxPatchClassesDir)
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+    options.encoding = "UTF-8"
+    options.compilerArgs.addAll(listOf("-proc:none", "-g:source,lines,vars", "-Xlint:-options"))
+    doFirst {
+        if (source.files.isEmpty()) {
+            throw GradleException("Missing gdx patch sources under ${gdxPatchSourceDir.asFile.absolutePath}")
+        }
+        if (!desktopJarFile.exists()) {
+            throw GradleException("Missing desktop jar: ${desktopJarFile.absolutePath}")
+        }
+        if (!lwjglGlfwClassesJarFile.exists()) {
+            throw GradleException("Missing lwjgl bridge jar: ${lwjglGlfwClassesJarFile.absolutePath}")
+        }
+    }
+}
+
+val packageGdxPatchJar by tasks.registering(Jar::class) {
+    dependsOn(compileGdxPatchJava)
+    archiveFileName.set("gdx-patch.jar")
+    destinationDirectory.set(gdxPatchOutputDir)
+    from(gdxPatchClassesDir)
+    from(gdxPatchSourceDir) {
+        include("build.properties")
+    }
 }
 
 android {
@@ -167,6 +206,7 @@ android {
 tasks.named("preBuild").configure {
     dependsOn(prepareEmbeddedJrePack)
     dependsOn(packageBootBridgeJar)
+    dependsOn(packageGdxPatchJar)
 }
 
 dependencies {

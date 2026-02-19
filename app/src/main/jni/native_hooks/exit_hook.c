@@ -16,6 +16,9 @@
 static _Atomic bool exit_tripped = false;
 
 static int exit_code = 0;
+// bytehook returns 3 when it is already initialized in current process.
+// Treat this as a usable state and still install hooks.
+#define BYTEHOOK_STATUS_CODE_ALREADY_INIT 3
 
 typedef void (*exit_func)(int);
 // Use the exit hook *only* to store the exit code.
@@ -59,7 +62,10 @@ static bool init_hooks() {
         goto dlerror;
     }
     int bhook_status = bytehook_init_p(BYTEHOOK_MODE_AUTOMATIC, false);
-    if(bhook_status == BYTEHOOK_STATUS_CODE_OK) {
+    if(bhook_status == BYTEHOOK_STATUS_CODE_OK || bhook_status == BYTEHOOK_STATUS_CODE_ALREADY_INIT) {
+        if(bhook_status == BYTEHOOK_STATUS_CODE_ALREADY_INIT) {
+            LOGW("bytehook already initialized, continue creating hooks");
+        }
         create_hooks(bytehook_hook_all_p);
         return true;
     } else {

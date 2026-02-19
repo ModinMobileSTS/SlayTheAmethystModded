@@ -33,20 +33,29 @@ public final class ModManager {
 
     public static final class InstalledMod {
         public final String modId;
-        public final String displayName;
+        public final String manifestModId;
+        public final String name;
+        public final String version;
+        public final String description;
         public final File jarFile;
         public final boolean required;
         public final boolean installed;
         public final boolean enabled;
 
         private InstalledMod(String modId,
-                             String displayName,
+                             String manifestModId,
+                             String name,
+                             String version,
+                             String description,
                              File jarFile,
                              boolean required,
                              boolean installed,
                              boolean enabled) {
             this.modId = modId;
-            this.displayName = displayName;
+            this.manifestModId = manifestModId;
+            this.name = name;
+            this.version = version;
+            this.description = description;
             this.jarFile = jarFile;
             this.required = required;
             this.installed = installed;
@@ -119,9 +128,25 @@ public final class ModManager {
 
         for (String modId : optionalModFiles.keySet()) {
             File jarFile = optionalModFiles.get(modId);
+            String manifestModId = modId;
+            String name = modId;
+            String version = "";
+            String description = "";
+            try {
+                ModJarSupport.ModManifestInfo manifest = ModJarSupport.readModManifest(jarFile);
+                manifestModId = defaultIfBlank(manifest.modId, modId);
+                name = defaultIfBlank(manifest.name, manifestModId);
+                version = trimToEmpty(manifest.version);
+                description = trimToEmpty(manifest.description);
+            } catch (Throwable ignored) {
+                name = modId;
+            }
             result.add(new InstalledMod(
                     modId,
-                    modId + " (" + jarFile.getName() + ")",
+                    manifestModId,
+                    name,
+                    version,
+                    description,
                     jarFile,
                     false,
                     true,
@@ -157,20 +182,37 @@ public final class ModManager {
 
     private static InstalledMod buildRequiredEntry(Context context, String expectedModId, String label, File jarFile) {
         boolean installed = false;
+        String manifestModId = expectedModId;
+        String name = label;
+        String version = "";
+        String description = "";
         if (jarFile.isFile()) {
             try {
-                String resolved = normalizeModId(ModJarSupport.resolveModId(jarFile));
-                installed = expectedModId.equals(resolved);
+                ModJarSupport.ModManifestInfo manifest = ModJarSupport.readModManifest(jarFile);
+                installed = expectedModId.equals(manifest.normalizedModId);
+                if (installed) {
+                    manifestModId = defaultIfBlank(manifest.modId, expectedModId);
+                    name = defaultIfBlank(manifest.name, label);
+                    version = trimToEmpty(manifest.version);
+                    description = trimToEmpty(manifest.description);
+                }
             } catch (Throwable ignored) {
                 installed = false;
             }
         }
         boolean bundled = hasBundledRequiredModAsset(context, expectedModId);
         boolean available = installed || bundled;
-        String suffix = installed
-                ? " (required)"
-                : (bundled ? " (required, bundled)" : " (required, missing)");
-        return new InstalledMod(expectedModId, label + suffix, jarFile, true, available, available);
+        return new InstalledMod(
+                expectedModId,
+                manifestModId,
+                name,
+                version,
+                description,
+                jarFile,
+                true,
+                available,
+                available
+        );
     }
 
     private static boolean hasBundledAsset(Context context, String assetPath) {
@@ -319,6 +361,18 @@ public final class ModManager {
             return "mod";
         }
         return sanitized.toString();
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static String defaultIfBlank(String value, String fallback) {
+        String trimmed = trimToEmpty(value);
+        if (!trimmed.isEmpty()) {
+            return trimmed;
+        }
+        return trimToEmpty(fallback);
     }
 
     private static String resolveRawModId(File jarFile) throws IOException {

@@ -3,6 +3,7 @@ package io.stamethyst
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.pm.ApplicationInfo
 import android.util.Log
 
 object LauncherIconManager {
@@ -11,15 +12,16 @@ object LauncherIconManager {
     private const val PREF_KEY_LAUNCHER_ICON = "launcher_icon"
     private val defaultIcon = LauncherIcon.AMBER
 
-    fun applySelection(context: Context, icon: LauncherIcon) {
+    fun applySelection(context: Context, icon: LauncherIcon): LauncherIcon {
         setAliasState(context, icon)
         saveSelection(context, icon)
+        return effectiveSelection(context, icon)
     }
 
     fun syncSelection(context: Context): LauncherIcon {
         val selected = readSelection(context)
         setAliasState(context, selected)
-        return selected
+        return effectiveSelection(context, selected)
     }
 
     fun readSelection(context: Context): LauncherIcon {
@@ -27,6 +29,10 @@ object LauncherIconManager {
             .getString(PREF_KEY_LAUNCHER_ICON, defaultIcon.name)
         return runCatching { LauncherIcon.valueOf(rawValue ?: "") }
             .getOrDefault(defaultIcon)
+    }
+
+    fun readEffectiveSelection(context: Context): LauncherIcon {
+        return effectiveSelection(context, readSelection(context))
     }
 
     private fun saveSelection(context: Context, icon: LauncherIcon) {
@@ -37,9 +43,14 @@ object LauncherIconManager {
     }
 
     private fun setAliasState(context: Context, selected: LauncherIcon) {
+        val debugBuild = isDebugBuild(context)
+        val effectiveSelected = if (debugBuild) LauncherIcon.AMBER else selected
+        if (debugBuild && selected != effectiveSelected) {
+            Log.i(TAG, "debug build: force launcher alias to $effectiveSelected (requested=$selected)")
+        }
         val packageManager = context.packageManager
         LauncherIcon.entries.forEach { candidate ->
-            val desiredState = if (candidate == selected) {
+            val desiredState = if (candidate == effectiveSelected) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             } else {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED
@@ -56,5 +67,17 @@ object LauncherIconManager {
                 Log.w(TAG, "set launcher alias failed: $aliasClassName state=$desiredState", error)
             }
         }
+    }
+
+    private fun effectiveSelection(context: Context, selected: LauncherIcon): LauncherIcon {
+        return if (isDebugBuild(context)) {
+            LauncherIcon.AMBER
+        } else {
+            selected
+        }
+    }
+
+    private fun isDebugBuild(context: Context): Boolean {
+        return (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
 }

@@ -36,6 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -56,8 +58,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.kdt.pojavlaunch.MainActivity
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -91,6 +96,9 @@ class LauncherActivity : AppCompatActivity() {
         private const val MIN_RENDER_SCALE = 0.50f
         private const val MAX_RENDER_SCALE = 1.00f
         private const val DEFAULT_TARGET_FPS = 120
+        private const val DEFAULT_TOUCHSCREEN_ENABLED = true
+        private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
+        private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
         private val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
 
         private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
@@ -120,12 +128,16 @@ class LauncherActivity : AppCompatActivity() {
 
     private enum class Screen {
         MAIN,
-        SETTINGS
+        SETTINGS,
+        COMPATIBILITY
     }
 
     private data class ModItemUi(
         val modId: String,
-        val displayName: String,
+        val manifestModId: String,
+        val name: String,
+        val version: String,
+        val description: String,
         val required: Boolean,
         val installed: Boolean,
         val enabled: Boolean
@@ -147,7 +159,10 @@ class LauncherActivity : AppCompatActivity() {
         val selectedRenderer: RendererBackend = RendererBackend.OPENGL_ES2,
         val selectedTargetFps: Int = DEFAULT_TARGET_FPS,
         val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
-        val backImmediateExit: Boolean = true
+        val backImmediateExit: Boolean = true,
+        val touchscreenEnabled: Boolean = true,
+        val originalFboPatchEnabled: Boolean = true,
+        val downfallFboPatchEnabled: Boolean = true
     )
 
     private data class SaveImportResult(
@@ -177,10 +192,7 @@ class LauncherActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (screen == Screen.SETTINGS) {
-                    screen = Screen.MAIN
-                    return
-                }
+                if (handleSettingsBackNavigation()) return
                 isEnabled = false
                 onBackPressedDispatcher.onBackPressed()
                 isEnabled = true
@@ -193,6 +205,9 @@ class LauncherActivity : AppCompatActivity() {
             selectedTargetFps = readTargetFpsSelection(),
             selectedLauncherIcon = selectedLauncherIcon,
             backImmediateExit = readBackBehaviorSelection(),
+            touchscreenEnabled = readTouchscreenEnabledSelection(),
+            originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this),
+            downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this),
             logPathText = buildLogPathText()
         )
 
@@ -224,11 +239,17 @@ class LauncherActivity : AppCompatActivity() {
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(if (screen == Screen.MAIN) "SlayTheAmethyst" else "设置")
+                        Text(
+                            when (screen) {
+                                Screen.MAIN -> "SlayTheAmethyst"
+                                Screen.SETTINGS -> "设置"
+                                Screen.COMPATIBILITY -> getString(R.string.compat_settings_title)
+                            }
+                        )
                     },
                     navigationIcon = {
-                        if (screen == Screen.SETTINGS) {
-                            IconButton(onClick = { screen = Screen.MAIN }) {
+                        if (screen != Screen.MAIN) {
+                            IconButton(onClick = { handleSettingsBackNavigation() }) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "返回"
@@ -249,15 +270,22 @@ class LauncherActivity : AppCompatActivity() {
                 )
             }
         ) { paddingValues ->
-            if (screen == Screen.MAIN) {
-                MainScreen(
+            when (screen) {
+                Screen.MAIN -> MainScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
                         .padding(16.dp)
                 )
-            } else {
-                SettingsScreen(
+
+                Screen.SETTINGS -> SettingsScreen(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp)
+                )
+
+                Screen.COMPATIBILITY -> CompatibilitySettingsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
@@ -301,28 +329,11 @@ class LauncherActivity : AppCompatActivity() {
                 )
             } else {
                 optionalMods.forEach { mod ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                enabled = !uiState.busy && mod.installed,
-                                value = mod.enabled,
-                                onValueChange = { checked -> onModChecked(mod, checked) }
-                            )
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = mod.enabled,
-                            onCheckedChange = null,
-                            enabled = !uiState.busy && mod.installed
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = mod.displayName,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
+                    OptionalModCard(
+                        mod = mod,
+                        controlsEnabled = !uiState.busy && mod.installed,
+                        onCheckedChange = { checked -> onModChecked(mod, checked) }
+                    )
                 }
             }
 
@@ -334,6 +345,67 @@ class LauncherActivity : AppCompatActivity() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("启动游戏")
+            }
+        }
+    }
+
+    @Composable
+    private fun OptionalModCard(
+        mod: ModItemUi,
+        controlsEnabled: Boolean,
+        onCheckedChange: (Boolean) -> Unit
+    ) {
+        val resolvedName = mod.name.ifBlank { mod.manifestModId.ifBlank { mod.modId } }
+        val resolvedModId = mod.manifestModId.ifBlank { mod.modId }
+        val resolvedVersion = mod.version.ifBlank { "未知" }
+        val resolvedDescription = mod.description.ifBlank { "暂无简介" }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    enabled = controlsEnabled,
+                    value = mod.enabled,
+                    onValueChange = onCheckedChange
+                ),
+            colors = CardDefaults.cardColors(
+                containerColor = if (mod.enabled) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = mod.enabled,
+                        onCheckedChange = null,
+                        enabled = controlsEnabled
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = resolvedName,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+                Text(
+                    text = "modid: $resolvedModId",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "版本: $resolvedVersion",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "简介: $resolvedDescription",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -445,6 +517,13 @@ class LauncherActivity : AppCompatActivity() {
                 onSelect = ::onRendererSelected
             )
             RendererOptionRow(
+                backend = RendererBackend.MOBILEGLUES,
+                label = RendererBackend.MOBILEGLUES.selectorLabel(),
+                selected = uiState.selectedRenderer == RendererBackend.MOBILEGLUES,
+                enabled = !uiState.busy,
+                onSelect = ::onRendererSelected
+            )
+            RendererOptionRow(
                 backend = RendererBackend.KOPPER_ZINK,
                 label = RendererBackend.KOPPER_ZINK.selectorLabel(),
                 selected = uiState.selectedRenderer == RendererBackend.KOPPER_ZINK,
@@ -485,6 +564,40 @@ class LauncherActivity : AppCompatActivity() {
                 style = MaterialTheme.typography.bodySmall
             )
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Switch(
+                    checked = uiState.touchscreenEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = ::onTouchscreenEnabledToggled
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = if (uiState.touchscreenEnabled) {
+                        "触屏输入：启用"
+                    } else {
+                        "触屏输入：禁用"
+                    }
+                )
+            }
+            Text(
+                text = "同步写入 STSGameplaySettings 的 Touchscreen Enabled。",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            HorizontalDivider()
+
+            Text(text = getString(R.string.compat_settings_title), style = MaterialTheme.typography.titleMedium)
+            Button(
+                onClick = { screen = Screen.COMPATIBILITY },
+                enabled = !uiState.busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = getString(R.string.compat_settings_open))
+            }
+
             HorizontalDivider()
 
             Text(text = "启动器图标", style = MaterialTheme.typography.titleMedium)
@@ -507,6 +620,76 @@ class LauncherActivity : AppCompatActivity() {
             Text(text = "日志路径", style = MaterialTheme.typography.titleMedium)
             SelectionContainer {
                 Text(text = uiState.logPathText, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+
+    @Composable
+    private fun CompatibilitySettingsScreen(modifier: Modifier = Modifier) {
+        val scrollState = rememberScrollState()
+        Column(
+            modifier = modifier.verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (uiState.busy) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                uiState.busyMessage?.let {
+                    Text(text = it, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            CompatibilitySwitchRow(
+                title = getString(R.string.compat_original_fbo_title),
+                description = getString(R.string.compat_original_fbo_desc),
+                checked = uiState.originalFboPatchEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = ::onOriginalFboPatchToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = getString(R.string.compat_downfall_fbo_title),
+                description = getString(R.string.compat_downfall_fbo_desc),
+                checked = uiState.downfallFboPatchEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = ::onDownfallFboPatchToggled
+            )
+        }
+    }
+
+    @Composable
+    private fun CompatibilitySwitchRow(
+        title: String,
+        description: String,
+        checked: Boolean,
+        enabled: Boolean,
+        onCheckedChange: (Boolean) -> Unit
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = checked,
+                        enabled = enabled,
+                        onCheckedChange = onCheckedChange
+                    )
+                }
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
@@ -622,6 +805,22 @@ class LauncherActivity : AppCompatActivity() {
             .toString()
     }
 
+    private fun handleSettingsBackNavigation(): Boolean {
+        return when (screen) {
+            Screen.COMPATIBILITY -> {
+                screen = Screen.SETTINGS
+                true
+            }
+
+            Screen.SETTINGS -> {
+                screen = Screen.MAIN
+                true
+            }
+
+            Screen.MAIN -> false
+        }
+    }
+
     private fun onModChecked(mod: ModItemUi, enabled: Boolean) {
         if (uiState.busy || mod.required) {
             return
@@ -635,6 +834,24 @@ class LauncherActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+        refreshStatus()
+    }
+
+    private fun onOriginalFboPatchToggled(enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(originalFboPatchEnabled = enabled)
+        CompatibilitySettings.setOriginalFboPatchEnabled(this, enabled)
+        refreshStatus()
+    }
+
+    private fun onDownfallFboPatchToggled(enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(downfallFboPatchEnabled = enabled)
+        CompatibilitySettings.setDownfallFboPatchEnabled(this, enabled)
         refreshStatus()
     }
 
@@ -663,9 +880,28 @@ class LauncherActivity : AppCompatActivity() {
         if (uiState.busy || uiState.selectedLauncherIcon == icon) {
             return
         }
-        LauncherIconManager.applySelection(this, icon)
-        uiState = uiState.copy(selectedLauncherIcon = icon)
-        Toast.makeText(this, "已切换启动器图标为：${icon.title}", Toast.LENGTH_SHORT).show()
+        val effectiveIcon = LauncherIconManager.applySelection(this, icon)
+        uiState = uiState.copy(selectedLauncherIcon = effectiveIcon)
+        if (effectiveIcon == icon) {
+            Toast.makeText(this, "已切换启动器图标为：${icon.title}", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(
+                this,
+                "Debug 构建固定使用观者图标，已保存你的选择",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        refreshStatus()
+    }
+
+    private fun onTouchscreenEnabledToggled(enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        if (!saveTouchscreenEnabledSelection(enabled)) {
+            return
+        }
+        uiState = uiState.copy(touchscreenEnabled = enabled)
         refreshStatus()
     }
 
@@ -678,6 +914,11 @@ class LauncherActivity : AppCompatActivity() {
         }
         saveTargetFpsSelection(uiState.selectedTargetFps)
         saveBackBehaviorSelection(uiState.backImmediateExit)
+        if (!saveTouchscreenEnabledSelection(uiState.touchscreenEnabled)) {
+            return
+        }
+        CompatibilitySettings.setOriginalFboPatchEnabled(this, uiState.originalFboPatchEnabled)
+        CompatibilitySettings.setDownfallFboPatchEnabled(this, uiState.downfallFboPatchEnabled)
         prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD)
     }
 
@@ -734,6 +975,9 @@ class LauncherActivity : AppCompatActivity() {
             return
         }
         saveTargetFpsSelection(uiState.selectedTargetFps)
+        if (!saveTouchscreenEnabledSelection(uiState.touchscreenEnabled)) {
+            return
+        }
         Log.i(TAG, "Auto launching mode from debug extra: $debugLaunchMode")
         prepareAndLaunch(debugLaunchMode)
     }
@@ -1159,7 +1403,10 @@ class LauncherActivity : AppCompatActivity() {
         val renderScale = readRenderScaleValue()
         val selectedRenderer = uiState.selectedRenderer
         val targetFps = normalizeTargetFps(uiState.selectedTargetFps)
-        val selectedLauncherIcon = LauncherIconManager.readSelection(this)
+        val touchscreenEnabled = readTouchscreenEnabledSelection()
+        val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(this)
+        val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this)
+        val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this)
         val rendererDecision = RendererConfig.resolveEffectiveBackend(this, selectedRenderer)
         val rendererSelectedLine = getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
         val rendererEffectiveLine = if (rendererDecision.isFallback()) {
@@ -1187,7 +1434,10 @@ class LauncherActivity : AppCompatActivity() {
             }
             ModItemUi(
                 modId = mod.modId,
-                displayName = mod.displayName,
+                manifestModId = mod.manifestModId,
+                name = mod.name,
+                version = mod.version,
+                description = mod.description,
                 required = mod.required,
                 installed = mod.installed,
                 enabled = mod.enabled
@@ -1201,7 +1451,10 @@ class LauncherActivity : AppCompatActivity() {
             "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
             "\nRender scale: ${formatRenderScale(renderScale)} (0.50-1.00)" +
             "\nTarget FPS: $targetFps" +
+            "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
             "\nLauncher icon: ${selectedLauncherIcon.title}" +
+            "\nOriginal FBO patch: " + if (originalFboPatchEnabled) "ON" else "OFF" +
+            "\nDownfall FBO patch: " + if (downfallFboPatchEnabled) "ON" else "OFF" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
             "\nRuntime pack expected at build time: runtime-pack/jre8-pojav.zip"
@@ -1217,6 +1470,9 @@ class LauncherActivity : AppCompatActivity() {
             optionalEnabledCount = optionalEnabled,
             optionalTotalCount = optionalTotal,
             selectedLauncherIcon = selectedLauncherIcon,
+            touchscreenEnabled = touchscreenEnabled,
+            originalFboPatchEnabled = originalFboPatchEnabled,
+            downfallFboPatchEnabled = downfallFboPatchEnabled,
             mods = modItems
         )
     }
@@ -1740,6 +1996,103 @@ class LauncherActivity : AppCompatActivity() {
             targetFps
         } else {
             DEFAULT_TARGET_FPS
+        }
+    }
+
+    private fun readTouchscreenEnabledSelection(): Boolean {
+        val files = arrayOf(
+            File(RuntimePaths.betaPreferencesDir(this), GAMEPLAY_SETTINGS_FILE_NAME),
+            File(RuntimePaths.preferencesDir(this), GAMEPLAY_SETTINGS_FILE_NAME)
+        )
+        for (file in files) {
+            val value = readGameplaySettingsBoolean(file, GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN)
+            if (value != null) {
+                return value
+            }
+        }
+        return DEFAULT_TOUCHSCREEN_ENABLED
+    }
+
+    private fun saveTouchscreenEnabledSelection(enabled: Boolean): Boolean {
+        val value = if (enabled) "true" else "false"
+        return try {
+            writeGameplaySettingsValue(
+                File(RuntimePaths.betaPreferencesDir(this), GAMEPLAY_SETTINGS_FILE_NAME),
+                GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN,
+                value
+            )
+            writeGameplaySettingsValue(
+                File(RuntimePaths.preferencesDir(this), GAMEPLAY_SETTINGS_FILE_NAME),
+                GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN,
+                value
+            )
+            true
+        } catch (error: IOException) {
+            Toast.makeText(
+                this,
+                "Failed to save touchscreen setting: ${error.message}",
+                Toast.LENGTH_SHORT
+            ).show()
+            false
+        }
+    }
+
+    private fun readGameplaySettingsBoolean(file: File, key: String): Boolean? {
+        val objectValue = readJsonObject(file) ?: return null
+        if (!objectValue.has(key)) {
+            return null
+        }
+        return parseBooleanLike(objectValue.opt(key), DEFAULT_TOUCHSCREEN_ENABLED)
+    }
+
+    @Throws(IOException::class)
+    private fun writeGameplaySettingsValue(file: File, key: String, value: String) {
+        val parent = file.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        val root = readJsonObject(file) ?: JSONObject()
+        root.put(key, value)
+        FileOutputStream(file, false).use { out ->
+            out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
+            out.write('\n'.code)
+        }
+    }
+
+    private fun readJsonObject(file: File): JSONObject? {
+        if (!file.isFile) {
+            return null
+        }
+        return try {
+            val text = file.readText(StandardCharsets.UTF_8).trim()
+            if (text.isEmpty()) {
+                return JSONObject()
+            }
+            val parsed = JSONTokener(text).nextValue()
+            if (parsed is JSONObject) {
+                parsed
+            } else {
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun parseBooleanLike(value: Any?, fallback: Boolean): Boolean {
+        return when (value) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            is String -> {
+                val normalized = value.trim()
+                when {
+                    normalized.equals("true", ignoreCase = true) || normalized == "1" -> true
+                    normalized.equals("false", ignoreCase = true) || normalized == "0" -> false
+                    else -> fallback
+                }
+            }
+
+            else -> fallback
         }
     }
 

@@ -8,6 +8,7 @@ import android.util.Log;
 import net.kdt.pojavlaunch.Logger;
 
 import io.stamethyst.RendererBackend;
+import io.stamethyst.RuntimePaths;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -96,9 +97,13 @@ public final class JREUtils {
         clearEnv("MESA_LOADER_DRIVER_OVERRIDE");
         clearEnv("MESA_GL_VERSION_OVERRIDE");
         clearEnv("MESA_GLSL_VERSION_OVERRIDE");
+        clearEnv("LIBGL_EGL");
         clearEnv("LIBGL_GLES");
         clearEnv("GALLIUM_DRIVER");
         clearEnv("MESA_ANDROID_NO_KMS_SWRAST");
+        clearEnv("POJAV_RENDERER");
+        clearEnv("MG_PLUGIN_STATUS");
+        clearEnv("MG_DIR_PATH");
 
         RendererBackend effectiveRenderer = renderer == null
                 ? RendererBackend.OPENGL_ES2
@@ -117,6 +122,19 @@ public final class JREUtils {
                 env.put("LIBGL_ES", "2");
                 env.put("LIBGL_GLES", "libGLESv2_angle.so");
                 env.put("POJAVEXEC_EGL", "libEGL_angle.so");
+                break;
+            case MOBILEGLUES:
+                env.put("AMETHYST_RENDERER", RendererBackend.MOBILEGLUES.rendererId());
+                env.put("LIBGL_ES", "3");
+                env.put("POJAV_RENDERER", "opengles3");
+                env.put("POJAVEXEC_EGL", "libmobileglues.so");
+                env.put("LIBGL_EGL", "libmobileglues.so");
+                env.put("MG_PLUGIN_STATUS", "1");
+                File mobileGluesDir = new File(RuntimePaths.stsRoot(context), "mg");
+                if (!mobileGluesDir.exists() && !mobileGluesDir.mkdirs()) {
+                    Log.w(TAG, "Failed to create MobileGlues dir: " + mobileGluesDir.getAbsolutePath());
+                }
+                env.put("MG_DIR_PATH", mobileGluesDir.getAbsolutePath());
                 break;
             case OPENGL_ES2:
             default:
