@@ -76,6 +76,12 @@ final public class LwjglInput implements Input {
 	long currentEventTimeStamp;
 	float deltaTime;
 	long lastTime;
+	private boolean hasSyntheticCursorPosition = false;
+	private int syntheticCursorX = 0;
+	private int syntheticCursorY = 0;
+	private static long lastCursorDebugLogMs = 0L;
+	private static int lastCursorDebugReqX = Integer.MIN_VALUE;
+	private static int lastCursorDebugReqY = Integer.MIN_VALUE;
 
 	Pool<KeyEvent> usedKeyEvents = new Pool<KeyEvent>(16, 1000) {
 		protected KeyEvent newObject () {
@@ -209,10 +215,16 @@ final public class LwjglInput implements Input {
 	}
 
 	public int getX () {
+		if (hasSyntheticCursorPosition) {
+			return syntheticCursorX;
+		}
 		return (int)(Mouse.getX() * PixelScaleCompat.factor());
 	}
 
 	public int getY () {
+		if (hasSyntheticCursorPosition) {
+			return syntheticCursorY;
+		}
 		return Gdx.graphics.getHeight() - 1 - (int)(Mouse.getY() * PixelScaleCompat.factor());
 	}
 
@@ -800,6 +812,7 @@ final public class LwjglInput implements Input {
 				events++;
 				int x = (int)(Mouse.getEventX() * PixelScaleCompat.factor());
 				int y = Gdx.graphics.getHeight() - (int)(Mouse.getEventY() * PixelScaleCompat.factor()) - 1;
+				hasSyntheticCursorPosition = false;
 				int button = Mouse.getEventButton();
 				int gdxButton = toGdxButton(button);
 				if (button != -1 && gdxButton == -1) continue; // Ignore unknown button.
@@ -1046,7 +1059,50 @@ final public class LwjglInput implements Input {
 
 	@Override
 	public void setCursorPosition (int x, int y) {
-		Mouse.setCursorPosition(x, Gdx.graphics.getHeight() - 1 - y);
+		int width = Math.max(1, Gdx.graphics.getWidth());
+		int height = Math.max(1, Gdx.graphics.getHeight());
+		int boundedX = x < 0 ? 0 : Math.min(x, width - 1);
+		int boundedY = y < 0 ? 0 : Math.min(y, height - 1);
+
+		hasSyntheticCursorPosition = true;
+		syntheticCursorX = boundedX;
+		syntheticCursorY = boundedY;
+
+		float pixelScale = PixelScaleCompat.factor();
+		if (Float.isNaN(pixelScale) || Float.isInfinite(pixelScale) || pixelScale <= 0f) {
+			pixelScale = 1f;
+		}
+
+		// getX()/getY() multiply raw mouse coordinates by pixelScale, so writing
+		// cursor position must apply the inverse scale to stay in logical coords.
+		int scaledX = Math.round(boundedX / pixelScale);
+		int scaledY = Math.round((height - 1 - boundedY) / pixelScale);
+		Mouse.setCursorPosition(scaledX, scaledY);
+
+		// Controller cursor diagnostics: trace requested vs effective logical cursor.
+		long now = System.currentTimeMillis();
+		if ((boundedX != lastCursorDebugReqX || boundedY != lastCursorDebugReqY) && now - lastCursorDebugLogMs >= 120L) {
+			boolean controllerMode = false;
+			boolean touchScreen = false;
+			try {
+				controllerMode = com.megacrit.cardcrawl.core.Settings.isControllerMode;
+				touchScreen = com.megacrit.cardcrawl.core.Settings.isTouchScreen;
+			} catch (Throwable ignored) {
+			}
+			int logicalX = (int)(Mouse.getX() * pixelScale);
+			int logicalY = height - 1 - (int)(Mouse.getY() * pixelScale);
+			System.out.println("[gdx-pad-debug] setCursorPosition req=(" + x + "," + y
+				+ ") bounded=(" + boundedX + "," + boundedY
+				+ ") raw=(" + scaledX + "," + scaledY
+				+ ") logical=(" + logicalX + "," + logicalY
+				+ ") synth=(" + syntheticCursorX + "," + syntheticCursorY + ")"
+				+ ") mode=" + controllerMode
+				+ " touch=" + touchScreen
+				+ " scale=" + pixelScale + ")");
+			lastCursorDebugLogMs = now;
+			lastCursorDebugReqX = boundedX;
+			lastCursorDebugReqY = boundedY;
+		}
 	}
 
 	@Override
