@@ -2,7 +2,7 @@
   "Summed Damage": "false",
   "Blocked Damage": "false",
   "Hand Confirmation": "false",
-  "Upload Data": "true",
+  "Upload Data": "false",
   "Particle Effects": "false",
   "Fast Mode": "true",
   "Show Card keys": "false",
