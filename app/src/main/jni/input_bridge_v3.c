@@ -506,8 +506,11 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_GLFW_nglfwSetShowingWindow(__attribut
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetWindowAttrib(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jint attrib, jint value) {
     // Check for stack queue no longer necessary here as the JVM crash's origin is resolved
-    if (!pojav_environ->showingWindow) {
+    if (!pojav_environ->showingWindow || pojav_environ->runtimeJavaVMPtr == NULL) {
         // If the window is not shown, there is nothing to do yet.
+        return;
+    }
+    if (pojav_environ->vmGlfwClass == NULL || pojav_environ->method_glftSetWindowAttrib == NULL) {
         return;
     }
 
@@ -519,7 +522,7 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetWindowAttrib(
     // in environ for the Android UI thread but this is the only place that uses it
     // (very rarely, only in lifecycle callbacks) so i dont care
 
-    TRY_ATTACH_ENV(jvm_env, pojav_environ->runtimeJavaVMPtr, "nativeSetWindowAttrib failed: %i", return;);
+    TRY_ATTACH_ENV(jvm_env, pojav_environ->runtimeJavaVMPtr, "nativeSetWindowAttrib failed\n", return;);
 
     (*jvm_env)->CallStaticVoidMethod(
             jvm_env, pojav_environ->vmGlfwClass,

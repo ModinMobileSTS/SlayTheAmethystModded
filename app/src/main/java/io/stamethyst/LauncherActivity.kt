@@ -70,9 +70,12 @@ import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
+import java.util.ArrayDeque
 import java.util.ArrayList
 import java.util.Arrays
 import java.util.Date
+import java.util.LinkedHashMap
+import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -138,6 +141,7 @@ class LauncherActivity : AppCompatActivity() {
         val name: String,
         val version: String,
         val description: String,
+        val dependencies: List<String>,
         val required: Boolean,
         val installed: Boolean,
         val enabled: Boolean
@@ -168,6 +172,11 @@ class LauncherActivity : AppCompatActivity() {
     private data class SaveImportResult(
         val importedFiles: Int,
         val backupLabel: String?
+    )
+
+    private data class DependencyEnableResult(
+        val autoEnabledModNames: List<String>,
+        val missingDependencies: List<String>
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -359,6 +368,10 @@ class LauncherActivity : AppCompatActivity() {
         val resolvedModId = mod.manifestModId.ifBlank { mod.modId }
         val resolvedVersion = mod.version.ifBlank { "未知" }
         val resolvedDescription = mod.description.ifBlank { "暂无简介" }
+        val resolvedDependencies = mod.dependencies
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
 
         Card(
             modifier = Modifier
@@ -406,6 +419,12 @@ class LauncherActivity : AppCompatActivity() {
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (resolvedDependencies.isNotEmpty()) {
+                    Text(
+                        text = "前置: ${resolvedDependencies.joinToString(", ")}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         }
     }
@@ -826,7 +845,21 @@ class LauncherActivity : AppCompatActivity() {
             return
         }
         try {
-            ModManager.setOptionalModEnabled(this, mod.modId, enabled)
+            if (enabled) {
+                val result = enableModWithDependencies(mod)
+                if (result.autoEnabledModNames.isNotEmpty()) {
+                    Toast.makeText(
+                        this,
+                        "已自动启用前置模组：${result.autoEnabledModNames.joinToString(", ")}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                if (result.missingDependencies.isNotEmpty()) {
+                    showMissingDependencyDialog(mod, result.missingDependencies)
+                }
+            } else {
+                ModManager.setOptionalModEnabled(this, mod.modId, false)
+            }
         } catch (error: Throwable) {
             Toast.makeText(
                 this,
@@ -835,6 +868,143 @@ class LauncherActivity : AppCompatActivity() {
             ).show()
         }
         refreshStatus()
+    }
+
+    private fun enableModWithDependencies(rootMod: ModItemUi): DependencyEnableResult {
+        val optionalMods = uiState.mods.filter { !it.required && it.installed }
+        val modById = LinkedHashMap<String, ModItemUi>()
+        val enabledIds = LinkedHashSet<String>()
+        optionalMods.forEach { mod ->
+            val normalizedModId = normalizeModId(mod.modId)
+            if (normalizedModId.isNotEmpty()) {
+                modById[normalizedModId] = mod
+                if (mod.enabled) {
+                    enabledIds.add(normalizedModId)
+                }
+            }
+            val normalizedManifestId = normalizeModId(mod.manifestModId)
+            if (normalizedManifestId.isNotEmpty() && !modById.containsKey(normalizedManifestId)) {
+                modById[normalizedManifestId] = mod
+            }
+            if (mod.enabled && normalizedManifestId.isNotEmpty()) {
+                enabledIds.add(normalizedManifestId)
+            }
+        }
+
+        val queue = ArrayDeque<ModItemUi>()
+        val visited = LinkedHashSet<String>()
+        val autoEnabledModNames = LinkedHashSet<String>()
+        val missingDependencies = LinkedHashSet<String>()
+        queue.add(rootMod)
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            val currentKey = normalizeModId(current.modId).ifBlank {
+                normalizeModId(current.manifestModId)
+            }
+            if (currentKey.isNotEmpty() && !visited.add(currentKey)) {
+                continue
+            }
+
+            val wasEnabled = isModIdEnabled(enabledIds, current)
+            ModManager.setOptionalModEnabled(this, current.modId, true)
+
+            val normalizedCurrentModId = normalizeModId(current.modId)
+            if (normalizedCurrentModId.isNotEmpty()) {
+                enabledIds.add(normalizedCurrentModId)
+            }
+            val normalizedCurrentManifestId = normalizeModId(current.manifestModId)
+            if (normalizedCurrentManifestId.isNotEmpty()) {
+                enabledIds.add(normalizedCurrentManifestId)
+            }
+
+            if (!wasEnabled && current.modId != rootMod.modId) {
+                autoEnabledModNames.add(resolveModDisplayName(current))
+            }
+
+            val dependencies = current.dependencies
+                .asSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .toList()
+            for (dependency in dependencies) {
+                val normalizedDependency = normalizeModId(dependency)
+                if (normalizedDependency.isEmpty() || normalizedDependency == currentKey) {
+                    continue
+                }
+                if (ModManager.isRequiredModId(normalizedDependency)) {
+                    if (!isRequiredDependencyAvailable(normalizedDependency)) {
+                        missingDependencies.add(dependency)
+                    }
+                    continue
+                }
+                val dependencyMod = modById[normalizedDependency]
+                if (dependencyMod == null || !dependencyMod.installed) {
+                    missingDependencies.add(dependency)
+                    continue
+                }
+                queue.add(dependencyMod)
+            }
+        }
+
+        return DependencyEnableResult(
+            autoEnabledModNames = ArrayList(autoEnabledModNames),
+            missingDependencies = ArrayList(missingDependencies)
+        )
+    }
+
+    private fun showMissingDependencyDialog(rootMod: ModItemUi, missingDependencies: List<String>) {
+        val missing = missingDependencies
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toList()
+        if (missing.isEmpty()) {
+            return
+        }
+        val message = buildString {
+            append("已启用「")
+            append(resolveModDisplayName(rootMod))
+            append("」，但缺少以下前置模组：\n")
+            missing.forEach { dep ->
+                append("- ").append(dep).append('\n')
+            }
+            append("\n请先导入缺失前置，否则游戏可能无法正常启动。")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("检测到缺失前置模组")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun normalizeModId(modId: String?): String {
+        return ModManager.normalizeModId(modId)
+    }
+
+    private fun isModIdEnabled(enabledIds: Set<String>, mod: ModItemUi): Boolean {
+        val normalizedModId = normalizeModId(mod.modId)
+        if (normalizedModId.isNotEmpty() && enabledIds.contains(normalizedModId)) {
+            return true
+        }
+        val normalizedManifestId = normalizeModId(mod.manifestModId)
+        return normalizedManifestId.isNotEmpty() && enabledIds.contains(normalizedManifestId)
+    }
+
+    private fun isRequiredDependencyAvailable(normalizedDependency: String): Boolean {
+        return when (normalizedDependency) {
+            ModManager.MOD_ID_BASEMOD -> uiState.hasBaseMod
+            ModManager.MOD_ID_STSLIB -> uiState.hasStsLib
+            else -> true
+        }
+    }
+
+    private fun resolveModDisplayName(mod: ModItemUi): String {
+        return mod.name.ifBlank {
+            mod.manifestModId.ifBlank { mod.modId }
+        }
     }
 
     private fun onOriginalFboPatchToggled(enabled: Boolean) {
@@ -940,6 +1110,7 @@ class LauncherActivity : AppCompatActivity() {
         val code = intent.getIntExtra(EXTRA_CRASH_CODE, -1)
         val isSignal = intent.getBooleanExtra(EXTRA_CRASH_IS_SIGNAL, false)
         val detail = intent.getStringExtra(EXTRA_CRASH_DETAIL)
+        val crashReport = buildCrashReportText(code, isSignal, detail)
         val message = if (!detail.isNullOrBlank()) {
             getString(R.string.sts_crash_detail_format, detail.trim())
         } else {
@@ -955,9 +1126,113 @@ class LauncherActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
+            .setNeutralButton(R.string.sts_share_crash_report) { _, _ ->
+                shareCrashReportText(crashReport)
+            }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
+    }
+
+    private fun shareCrashReportText(report: String) {
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.sts_crash_dialog_title))
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        val chooser = Intent.createChooser(shareIntent, getString(R.string.sts_share_crash_chooser_title))
+        try {
+            startActivity(chooser)
+        } catch (_: Throwable) {
+            Toast.makeText(this, R.string.sts_share_crash_report_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun buildCrashReportText(code: Int, isSignal: Boolean, detail: String?): String {
+        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val reason = if (isSignal) "signal=$code" else "exit_code=$code"
+        val stsRoot = RuntimePaths.stsRoot(this)
+        val latestLogFile = RuntimePaths.latestLog(this)
+        val jvmOutputFile = File(stsRoot, "jvm_output.log")
+        val latestHsErrFile = stsRoot.listFiles { _, name ->
+            name != null && name.startsWith("hs_err_pid") && name.endsWith(".log")
+        }?.maxByOrNull { file -> file.lastModified() }
+
+        val builder = StringBuilder(10_240)
+        builder.append("SlayTheAmethyst crash report").append('\n')
+        builder.append("time=").append(now).append('\n')
+        builder.append("package=").append(packageName).append('\n')
+        builder.append("version=").append(resolveAppVersionText()).append('\n')
+        builder.append("android=").append(Build.VERSION.RELEASE)
+            .append(" (api ").append(Build.VERSION.SDK_INT).append(")").append('\n')
+        builder.append("device=").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n')
+        builder.append("reason=").append(reason).append('\n')
+        if (!detail.isNullOrBlank()) {
+            builder.append("detail=").append(detail.trim()).append('\n')
+        }
+
+        builder.append('\n').append("paths").append('\n')
+        builder.append("latestlog=").append(latestLogFile.absolutePath).append('\n')
+        builder.append("jvm_output=").append(jvmOutputFile.absolutePath).append('\n')
+        builder.append("hs_err=").append(latestHsErrFile?.absolutePath ?: "(missing)").append('\n')
+
+        appendLogTail(builder, "latestlog tail", latestLogFile, 80, 3500)
+        appendLogTail(builder, "jvm_output tail", jvmOutputFile, 80, 3500)
+        if (latestHsErrFile != null) {
+            appendLogTail(builder, "hs_err tail", latestHsErrFile, 60, 3000)
+        }
+
+        return builder.toString()
+    }
+
+    private fun resolveAppVersionText(): String {
+        return try {
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            val versionName = packageInfo.versionName ?: "unknown"
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toLong()
+            }
+            "$versionName($versionCode)"
+        } catch (_: Throwable) {
+            "unknown"
+        }
+    }
+
+    private fun appendLogTail(
+        builder: StringBuilder,
+        sectionTitle: String,
+        file: File,
+        maxLines: Int,
+        maxChars: Int
+    ) {
+        builder.append('\n').append('[').append(sectionTitle).append(']').append('\n')
+        if (!file.isFile) {
+            builder.append("(missing)").append('\n')
+            return
+        }
+
+        val content = try {
+            file.readText(StandardCharsets.UTF_8)
+        } catch (error: Throwable) {
+            builder.append("(read_failed: ").append(error.message ?: "unknown").append(')').append('\n')
+            return
+        }
+
+        val normalized = content.replace("\r\n", "\n")
+        val lines = normalized.split('\n')
+        val start = maxOf(0, lines.size - maxLines)
+        var tailText = lines.subList(start, lines.size).joinToString("\n").trim()
+        if (tailText.length > maxChars) {
+            tailText = tailText.substring(tailText.length - maxChars)
+        }
+        if (tailText.isEmpty()) {
+            builder.append("(empty)").append('\n')
+        } else {
+            builder.append(tailText).append('\n')
+        }
     }
 
     private fun maybeLaunchFromDebugExtra(intent: Intent) {
@@ -1438,6 +1713,7 @@ class LauncherActivity : AppCompatActivity() {
                 name = mod.name,
                 version = mod.version,
                 description = mod.description,
+                dependencies = mod.dependencies,
                 required = mod.required,
                 installed = mod.installed,
                 enabled = mod.enabled

@@ -36,24 +36,33 @@ val prepareEmbeddedJrePack by tasks.registering {
 
         ZipFile(runtimePackFile).use { zip ->
             val required = setOf("universal.tar.xz", "version")
-            val archCandidates = listOf("bin-aarch64.tar.xz", "bin-arm64.tar.xz")
+            val archCandidates = mapOf(
+                "bin-aarch64.tar.xz" to listOf("bin-aarch64.tar.xz", "bin-arm64.tar.xz"),
+                "bin-arm.tar.xz" to listOf("bin-arm.tar.xz", "bin-armeabi-v7a.tar.xz")
+            )
             val matched = mutableMapOf<String, java.util.zip.ZipEntry>()
-            var matchedArch: java.util.zip.ZipEntry? = null
+            val matchedArch = mutableMapOf<String, java.util.zip.ZipEntry>()
             zip.entries().asSequence().forEach { entry ->
                 if (entry.isDirectory) return@forEach
                 val name = entry.name.replace('\\', '/')
                 val shortName = name.substringAfterLast('/')
                 if (shortName in required && shortName !in matched) {
                     matched[shortName] = entry
-                } else if (matchedArch == null && shortName in archCandidates) {
-                    matchedArch = entry
+                    return@forEach
+                }
+                archCandidates.forEach { (canonicalName, candidates) ->
+                    if (canonicalName !in matchedArch && shortName in candidates) {
+                        matchedArch[canonicalName] = entry
+                    }
                 }
             }
 
             val missing = mutableListOf<String>()
             required.filterTo(missing) { it !in matched.keys }
-            if (matchedArch == null) {
-                missing += "bin-aarch64.tar.xz/bin-arm64.tar.xz"
+            archCandidates.forEach { (canonicalName, candidates) ->
+                if (canonicalName !in matchedArch) {
+                    missing += candidates.joinToString("/")
+                }
             }
             if (missing.isNotEmpty()) {
                 throw GradleException("Invalid runtime pack, missing: ${missing.joinToString(", ")}")
@@ -66,9 +75,11 @@ val prepareEmbeddedJrePack by tasks.registering {
                 }
             }
 
-            val outArchFile = File(targetDir, "bin-aarch64.tar.xz")
-            zip.getInputStream(matchedArch!!).use { input ->
-                outArchFile.outputStream().use { output -> input.copyTo(output) }
+            matchedArch.forEach { (canonicalName, entry) ->
+                val outArchFile = File(targetDir, canonicalName)
+                zip.getInputStream(entry).use { input ->
+                    outArchFile.outputStream().use { output -> input.copyTo(output) }
+                }
             }
         }
     }
@@ -142,7 +153,7 @@ android {
         versionName = "0.0.3"
 
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
 
         externalNativeBuild {

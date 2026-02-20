@@ -3,7 +3,7 @@
 Minimal Android launcher that boots Slay the Spire (`desktop-1.0.jar`) with:
 - LibGDX desktop runtime bridge
 - Amethyst/Pojav JavaSE launch chain
-- arm64-v8a only
+- arm64-v8a + armeabi-v7a
 
 ## Scope
 - Vanilla STS startup to main menu
@@ -12,10 +12,12 @@ Minimal Android launcher that boots Slay the Spire (`desktop-1.0.jar`) with:
 
 ## Required Inputs
 1. Runtime pack zip at `runtime-pack/jre8-pojav.zip`
-   - must contain: `universal.tar.xz`, `bin-aarch64.tar.xz`, `version`
+   - must contain: `universal.tar.xz`, `bin-aarch64.tar.xz` (or `bin-arm64.tar.xz`), `bin-arm.tar.xz`, `version`
    - optional override: set env `STS_JRE8_PACK=/absolute/path/to/jre8-pojav.zip`
 2. STS desktop jar imported from app UI
    - stored as `files/sts/desktop-1.0.jar`
+3. Native `.so` under `app/src/main/jniLibs/armeabi-v7a`
+   - mirror all runtime-critical libs that currently exist in `app/src/main/jniLibs/arm64-v8a`
 
 ## Build
 ```bash

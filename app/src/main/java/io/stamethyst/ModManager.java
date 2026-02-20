@@ -37,6 +37,7 @@ public final class ModManager {
         public final String name;
         public final String version;
         public final String description;
+        public final List<String> dependencies;
         public final File jarFile;
         public final boolean required;
         public final boolean installed;
@@ -47,6 +48,7 @@ public final class ModManager {
                              String name,
                              String version,
                              String description,
+                             List<String> dependencies,
                              File jarFile,
                              boolean required,
                              boolean installed,
@@ -56,6 +58,7 @@ public final class ModManager {
             this.name = name;
             this.version = version;
             this.description = description;
+            this.dependencies = dependencies == null ? new ArrayList<>() : dependencies;
             this.jarFile = jarFile;
             this.required = required;
             this.installed = installed;
@@ -132,12 +135,14 @@ public final class ModManager {
             String name = modId;
             String version = "";
             String description = "";
+            List<String> dependencies = new ArrayList<>();
             try {
                 ModJarSupport.ModManifestInfo manifest = ModJarSupport.readModManifest(jarFile);
                 manifestModId = defaultIfBlank(manifest.modId, modId);
                 name = defaultIfBlank(manifest.name, manifestModId);
                 version = trimToEmpty(manifest.version);
                 description = trimToEmpty(manifest.description);
+                dependencies = new ArrayList<>(manifest.dependencies);
             } catch (Throwable ignored) {
                 name = modId;
             }
@@ -147,6 +152,7 @@ public final class ModManager {
                     name,
                     version,
                     description,
+                    dependencies,
                     jarFile,
                     false,
                     true,
@@ -186,6 +192,7 @@ public final class ModManager {
         String name = label;
         String version = "";
         String description = "";
+        List<String> dependencies = new ArrayList<>();
         if (jarFile.isFile()) {
             try {
                 ModJarSupport.ModManifestInfo manifest = ModJarSupport.readModManifest(jarFile);
@@ -195,6 +202,7 @@ public final class ModManager {
                     name = defaultIfBlank(manifest.name, label);
                     version = trimToEmpty(manifest.version);
                     description = trimToEmpty(manifest.description);
+                    dependencies = new ArrayList<>(manifest.dependencies);
                 }
             } catch (Throwable ignored) {
                 installed = false;
@@ -208,6 +216,7 @@ public final class ModManager {
                 name,
                 version,
                 description,
+                dependencies,
                 jarFile,
                 true,
                 available,

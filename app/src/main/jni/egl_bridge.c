@@ -84,14 +84,28 @@ EXTERNAL_API void pojavTerminate() {
 }
 
 JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow(JNIEnv* env, ABI_COMPAT jclass clazz, jobject surface) {
-    pojav_environ->pojavWindow = ANativeWindow_fromSurface(env, surface);
-    if(br_setup_window != NULL) br_setup_window();
+    ANativeWindow* previousWindow = pojav_environ->pojavWindow;
+    ANativeWindow* nextWindow = NULL;
+    if (surface != NULL) {
+        nextWindow = ANativeWindow_fromSurface(env, surface);
+    }
+    pojav_environ->pojavWindow = nextWindow;
+    if (previousWindow != NULL) {
+        ANativeWindow_release(previousWindow);
+    }
+    if (nextWindow != NULL && br_setup_window != NULL) {
+        br_setup_window();
+    }
 }
 
 
 JNIEXPORT void JNICALL
 Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(ABI_COMPAT JNIEnv *env, ABI_COMPAT jclass clazz) {
-    ANativeWindow_release(pojav_environ->pojavWindow);
+    ANativeWindow* window = pojav_environ->pojavWindow;
+    pojav_environ->pojavWindow = NULL;
+    if (window != NULL) {
+        ANativeWindow_release(window);
+    }
 }
 
 EXTERNAL_API void* pojavGetCurrentContext() {
