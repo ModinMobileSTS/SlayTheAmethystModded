@@ -24,6 +24,7 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -59,7 +60,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     public static final String EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu";
     public static final String EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit";
     public static final String EXTRA_TARGET_FPS = "io.stamethyst.target_fps";
-    private static final float DEFAULT_RENDER_SCALE = 0.75f;
+    private static final float DEFAULT_RENDER_SCALE = 1.0f;
     private static final float MIN_RENDER_SCALE = 0.50f;
     private static final float MAX_RENDER_SCALE = 1.00f;
     private static final int DEFAULT_TARGET_FPS = 120;
@@ -113,6 +114,12 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private Thread bootBridgeReaderThread;
     private volatile boolean bootBridgeReaderStop = false;
     private final ArrayDeque<String> bootLogLines = new ArrayDeque<>();
+    private final OnBackPressedCallback gameBackPressedCallback = new OnBackPressedCallback(true) {
+        @Override
+        public void handleOnBackPressed() {
+            handleAndroidBackPressed();
+        }
+    };
     private final Logger.eventLogListener jvmLogcatListener =
             this::onJvmLogMessage;
 
@@ -138,6 +145,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         targetFps = sanitizeTargetFps(getIntent().getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS));
         useTextureViewSurface = shouldUseTextureViewSurface(launcherRequestedRenderer, renderScale);
         initBootOverlay();
+        getOnBackPressedDispatcher().addCallback(this, gameBackPressedCallback);
 
         FrameLayout root = findViewById(R.id.gameRoot);
         ViewGroup.LayoutParams renderLayoutParams = new ViewGroup.LayoutParams(
@@ -303,6 +311,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     public void onBackPressed() {
+        handleAndroidBackPressed();
+    }
+
+    private void handleAndroidBackPressed() {
         if (!backImmediateExit) {
             Log.i(TAG, "Android back pressed: disabled by launcher setting");
             return;
@@ -310,11 +322,20 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         requestBackExitToLauncher();
     }
 
+    private boolean handleAndroidBackKeyEvent(@NonNull KeyEvent event) {
+        int action = event.getAction();
+        if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            getOnBackPressedDispatcher().onBackPressed();
+        }
+        return true;
+    }
+
     private void requestBackExitToLauncher() {
         if (backExitRequested) {
             return;
         }
         backExitRequested = true;
+        BackExitNotice.markExpectedBackExit(this);
         stopBootBridgeReaderIfRunning();
         updateBootOverlayProgress(100, "Stopping game...");
         Log.i(TAG, "Android back pressed: force restart to launcher");
@@ -1302,6 +1323,9 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            return handleAndroidBackKeyEvent(event);
+        }
         if (isGamepadKeyEvent(event)) {
             return handleGamepadKeyEvent(event);
         }
