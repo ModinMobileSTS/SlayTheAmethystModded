@@ -60,7 +60,11 @@ public final class JREUtils {
         StringBuilder ldPath = new StringBuilder();
         ldPath.append(javaHome).append("/").append(runtimeLibDir).append("/jli").append(":");
         ldPath.append(javaHome).append("/").append(runtimeLibDir).append(":");
-        ldPath.append("/system/lib64:/vendor/lib64:/vendor/lib64/hw:");
+        if (is64BitRuntimeLibDir(runtimeLibDir)) {
+            ldPath.append("/system/lib64:/vendor/lib64:/vendor/lib64/hw:");
+        } else {
+            ldPath.append("/system/lib:/vendor/lib:/vendor/lib/hw:");
+        }
         ldPath.append(nativeLibDir);
         LD_LIBRARY_PATH = ldPath.toString();
 
@@ -189,6 +193,9 @@ public final class JREUtils {
         String[] candidates = {
                 "lib/aarch64",
                 "lib/arm64",
+                "lib/aarch32",
+                "lib/arm32",
+                "lib/armeabi-v7a",
                 "lib/arm",
                 "lib"
         };
@@ -203,6 +210,13 @@ public final class JREUtils {
             }
         }
         throw new IllegalStateException("Could not find runtime lib directory in " + javaHome);
+    }
+
+    private static boolean is64BitRuntimeLibDir(String runtimeDir) {
+        if (runtimeDir == null) {
+            return false;
+        }
+        return runtimeDir.contains("aarch64") || runtimeDir.contains("arm64") || runtimeDir.contains("x86_64");
     }
 
     private static String safeGetEnv(String key) {

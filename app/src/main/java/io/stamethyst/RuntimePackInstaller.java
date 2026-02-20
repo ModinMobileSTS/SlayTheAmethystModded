@@ -20,7 +20,10 @@ import java.util.List;
 import java.nio.file.Files;
 
 public final class RuntimePackInstaller {
-    private static final String[] REQUIRED_FILES = {"universal.tar.xz", "bin-aarch64.tar.xz", "version"};
+    private static final String ARCHIVE_UNIVERSAL = "universal.tar.xz";
+    private static final String ARCHIVE_VERSION = "version";
+    private static final String ARCHIVE_AARCH64 = "bin-aarch64.tar.xz";
+    private static final String ARCHIVE_ARM32 = "bin-arm.tar.xz";
 
     private RuntimePackInstaller() {
     }
@@ -32,46 +35,45 @@ public final class RuntimePackInstaller {
     public static void ensureInstalled(Context context, StartupProgressCallback progressCallback) throws IOException {
         reportProgress(progressCallback, 2, "Checking runtime pack...");
         RuntimePaths.ensureBaseDirs(context);
+        AssetManager assets = context.getAssets();
+        String archArchive = resolveArchArchive(assets);
 
         File runtimeRoot = RuntimePaths.runtimeRoot(context);
         File markerFile = new File(runtimeRoot, ".installed-version");
-        String bundledVersion = readAssetAsString(context.getAssets(), "components/jre/version").trim();
+        String bundledVersion = readAssetAsString(assets, "components/jre/" + ARCHIVE_VERSION).trim();
+        String bundledMarker = bundledVersion + "|" + archArchive;
 
         if (markerFile.exists()) {
-            String installedVersion = new String(Files.readAllBytes(markerFile.toPath()), StandardCharsets.UTF_8).trim();
+            String installedMarker = new String(Files.readAllBytes(markerFile.toPath()), StandardCharsets.UTF_8).trim();
+            boolean markerMatched = installedMarker.equals(bundledMarker)
+                    || (installedMarker.equals(bundledVersion) && ARCHIVE_AARCH64.equals(archArchive));
             File javaHome = locateJavaHome(runtimeRoot);
-            if (installedVersion.equals(bundledVersion) && javaHome != null && isRuntimeReady(javaHome)) {
+            if (markerMatched && javaHome != null && isRuntimeReady(javaHome)) {
                 reportProgress(progressCallback, 100, "Runtime pack already up to date");
                 return;
             }
         }
 
         reportProgress(progressCallback, 10, "Preparing runtime directory...");
-        deleteRecursively(runtimeRoot);
-        if (!runtimeRoot.mkdirs()) {
-            throw new IOException("Failed to create runtime root: " + runtimeRoot);
-        }
+        prepareCleanDirectory(runtimeRoot, "runtime root");
 
         File stagingDir = new File(context.getCacheDir(), "runtime-staging");
         reportProgress(progressCallback, 18, "Preparing runtime staging...");
-        deleteRecursively(stagingDir);
-        if (!stagingDir.mkdirs()) {
-            throw new IOException("Failed to create staging directory: " + stagingDir);
-        }
+        prepareCleanDirectory(stagingDir, "staging directory");
 
-        AssetManager assets = context.getAssets();
+        String[] requiredFiles = {ARCHIVE_UNIVERSAL, archArchive, ARCHIVE_VERSION};
         reportProgress(progressCallback, 26, "Copying runtime archives...");
-        for (int i = 0; i < REQUIRED_FILES.length; i++) {
-            String required = REQUIRED_FILES[i];
+        for (int i = 0; i < requiredFiles.length; i++) {
+            String required = requiredFiles[i];
             copyAssetToFile(assets, "components/jre/" + required, new File(stagingDir, required));
-            int copiedPercent = 26 + Math.round(((i + 1) * 14f) / REQUIRED_FILES.length);
+            int copiedPercent = 26 + Math.round(((i + 1) * 14f) / requiredFiles.length);
             reportProgress(progressCallback, copiedPercent, "Copied " + required);
         }
 
         reportProgress(progressCallback, 42, "Extracting universal runtime...");
-        extractTarXz(new File(stagingDir, "universal.tar.xz"), runtimeRoot);
+        extractTarXz(new File(stagingDir, ARCHIVE_UNIVERSAL), runtimeRoot);
         reportProgress(progressCallback, 62, "Extracting architecture runtime...");
-        extractTarXz(new File(stagingDir, "bin-aarch64.tar.xz"), runtimeRoot);
+        extractTarXz(new File(stagingDir, archArchive), runtimeRoot);
 
         reportProgress(progressCallback, 78, "Unpacking runtime pack200 files...");
         unpackPack200Files(context, runtimeRoot, progressCallback);
@@ -87,7 +89,7 @@ public final class RuntimePackInstaller {
         }
 
         reportProgress(progressCallback, 98, "Writing runtime install marker...");
-        Files.write(markerFile.toPath(), bundledVersion.getBytes(StandardCharsets.UTF_8));
+        Files.write(markerFile.toPath(), bundledMarker.getBytes(StandardCharsets.UTF_8));
         reportProgress(progressCallback, 100, "Runtime pack ready");
     }
 
@@ -257,8 +259,8 @@ public final class RuntimePackInstaller {
     }
 
     private static void postPrepareRuntime(Context context, File javaHome) throws IOException {
-        File archLibDir = new File(new File(javaHome, "lib"), "aarch64");
-        if (!archLibDir.exists()) {
+        File archLibDir = findRuntimeArchLibDir(javaHome);
+        if (archLibDir == null) {
             return;
         }
 
@@ -273,6 +275,41 @@ public final class RuntimePackInstaller {
         File appAwtXawt = new File(context.getApplicationInfo().nativeLibraryDir, "libawt_xawt.so");
         if (appAwtXawt.exists()) {
             copyFile(appAwtXawt, new File(archLibDir, "libawt_xawt.so"));
+        }
+    }
+
+    private static String resolveArchArchive(AssetManager assets) throws IOException {
+        boolean is64BitProcess = android.os.Process.is64Bit();
+        String required = is64BitProcess ? ARCHIVE_AARCH64 : ARCHIVE_ARM32;
+        if (assetExists(assets, "components/jre/" + required)) {
+            return required;
+        }
+        throw new IOException(
+                "Runtime pack missing required architecture archive: "
+                        + required
+                        + " (process="
+                        + (is64BitProcess ? "64-bit" : "32-bit")
+                        + ")"
+        );
+    }
+
+    private static File findRuntimeArchLibDir(File javaHome) {
+        File libRoot = new File(javaHome, "lib");
+        String[] candidates = {"aarch64", "arm64", "aarch32", "arm32", "armeabi-v7a", "arm"};
+        for (String candidate : candidates) {
+            File dir = new File(libRoot, candidate);
+            if (dir.isDirectory()) {
+                return dir;
+            }
+        }
+        return null;
+    }
+
+    private static boolean assetExists(AssetManager assets, String assetPath) {
+        try (InputStream ignored = assets.open(assetPath)) {
+            return true;
+        } catch (IOException ignored) {
+            return false;
         }
     }
 
@@ -329,19 +366,63 @@ public final class RuntimePackInstaller {
         }
     }
 
-    private static void deleteRecursively(File file) {
-        if (file == null || !file.exists()) {
+    private static void prepareCleanDirectory(File directory, String label) throws IOException {
+        File parent = directory.getParentFile();
+        if (parent != null) {
+            if (parent.exists() && !parent.isDirectory()) {
+                throw new IOException(label + " parent is not a directory: " + parent.getAbsolutePath());
+            }
+            if (!parent.exists() && !parent.mkdirs()) {
+                throw new IOException("Failed to create " + label + " parent: " + parent.getAbsolutePath());
+            }
+        }
+
+        deleteRecursively(directory);
+        if (!directory.exists()) {
+            if (!directory.mkdirs() && !directory.isDirectory()) {
+                throw new IOException("Failed to create " + label + ": " + directory.getAbsolutePath());
+            }
             return;
         }
+
+        if (!directory.isDirectory()) {
+            throw new IOException(label + " path is not a directory: " + directory.getAbsolutePath());
+        }
+
+        File[] remaining = directory.listFiles();
+        if (remaining == null) {
+            throw new IOException("Failed to inspect " + label + ": " + directory.getAbsolutePath());
+        }
+        if (remaining.length == 0) {
+            return;
+        }
+
+        for (File child : remaining) {
+            deleteRecursively(child);
+        }
+        File[] stillRemaining = directory.listFiles();
+        if (stillRemaining == null || stillRemaining.length > 0) {
+            throw new IOException("Failed to clean " + label + ": " + directory.getAbsolutePath());
+        }
+    }
+
+    private static boolean deleteRecursively(File file) {
+        if (file == null || !file.exists()) {
+            return true;
+        }
+        boolean deleted = true;
         if (file.isDirectory()) {
             File[] children = file.listFiles();
             if (children != null) {
                 for (File child : children) {
-                    deleteRecursively(child);
+                    deleted &= deleteRecursively(child);
                 }
             }
         }
-        file.delete();
+        if (!file.delete() && file.exists()) {
+            deleted = false;
+        }
+        return deleted;
     }
 
     private static void reportProgress(StartupProgressCallback callback, int percent, String message) {

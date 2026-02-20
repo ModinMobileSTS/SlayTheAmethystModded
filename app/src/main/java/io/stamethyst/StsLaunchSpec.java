@@ -46,6 +46,7 @@ public final class StsLaunchSpec {
         File forceInterpreterFlag = new File(stsRoot, "compat_xint.flag");
         File classTraceFlag = new File(stsRoot, "classload_trace.flag");
         File lwjglDebugFlag = new File(stsRoot, "lwjgl_debug.flag");
+        boolean is64BitRuntime = is64BitRuntime(javaHome);
 
         List<String> args = new ArrayList<>();
         // Performance-first by default, with a compatibility fallback file switch.
@@ -55,17 +56,21 @@ public final class StsLaunchSpec {
         } else {
             args.add("-XX:+TieredCompilation");
         }
-        // Some OpenJDK 8 aarch64 builds crash in VM init with compressed pointers on newer Android stacks.
-        // Disable compressed pointers to prefer startup stability over peak performance.
-        args.add("-XX:-UseCompressedOops");
-        args.add("-XX:-UseCompressedClassPointers");
+        if (is64BitRuntime) {
+            // Some OpenJDK 8 aarch64 builds crash in VM init with compressed pointers on newer Android stacks.
+            // Disable compressed pointers to prefer startup stability over peak performance.
+            args.add("-XX:-UseCompressedOops");
+            args.add("-XX:-UseCompressedClassPointers");
+        }
         args.add("-Xms512M");
         args.add("-Xmx1024M");
-        // Reduce periodic frame hitching from stop-the-world pauses.
-        args.add("-XX:+UseG1GC");
-        args.add("-XX:MaxGCPauseMillis=25");
         args.add("-XX:+DisableExplicitGC");
-        args.add("-XX:+ParallelRefProcEnabled");
+        if (is64BitRuntime) {
+            // Reduce periodic frame hitching from stop-the-world pauses.
+            args.add("-XX:+UseG1GC");
+            args.add("-XX:MaxGCPauseMillis=25");
+            args.add("-XX:+ParallelRefProcEnabled");
+        }
         args.add("-XX:ErrorFile=" + hsErrFile.getAbsolutePath());
         args.add("-XX:+UnlockDiagnosticVMOptions");
         args.add("-XX:+LogVMOutput");
@@ -192,5 +197,11 @@ public final class StsLaunchSpec {
             boot.append(":").append(jar.getAbsolutePath());
         }
         args.add(boot.toString());
+    }
+
+    private static boolean is64BitRuntime(File javaHome) {
+        return new File(javaHome, "lib/aarch64").isDirectory()
+                || new File(javaHome, "lib/arm64").isDirectory()
+                || new File(javaHome, "lib/x86_64").isDirectory();
     }
 }

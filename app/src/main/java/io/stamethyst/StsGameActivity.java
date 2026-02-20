@@ -77,6 +77,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private View renderView;
     private boolean useTextureViewSurface = false;
     private volatile boolean vmStarted = false;
+    private volatile boolean runtimeLifecycleReady = false;
     private volatile boolean backExitRequested = false;
     private int activePointerId = MotionEvent.INVALID_POINTER_ID;
     private boolean leftPressed = false;
@@ -215,6 +216,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     @Override
     protected void onDestroy() {
         resetGamepadState();
+        runtimeLifecycleReady = false;
         earlyOverlayDismissOnNextFrame = false;
         stopBootBridgeReaderIfRunning();
         Thread launchThread = jvmLaunchThread;
@@ -268,22 +270,26 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         super.onResume();
         applyImmersiveMode();
         resetGamepadState();
-        CallbackBridge.nativeSetAudioMuted(false);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1);
+        if (runtimeLifecycleReady) {
+            CallbackBridge.nativeSetAudioMuted(false);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1);
+        }
         tryStartJvmWhenSurfaceReady();
     }
 
     @Override
     protected void onPause() {
         resetGamepadState();
-        CallbackBridge.nativeSetAudioMuted(true);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0);
-        CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0);
+        if (runtimeLifecycleReady) {
+            CallbackBridge.nativeSetAudioMuted(true);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0);
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0);
+        }
         super.onPause();
     }
 
@@ -367,6 +373,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             return;
         }
         vmStarted = true;
+        runtimeLifecycleReady = false;
         updateBootOverlayProgress(8, "Starting JVM...");
 
         Thread launchThread = new Thread(() -> {
@@ -462,6 +469,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 JREUtils.setupExitMethod(getApplicationContext());
                 JREUtils.initializeHooks();
                 JREUtils.chdir(RuntimePaths.stsRoot(this).getAbsolutePath());
+                runtimeLifecycleReady = true;
 
                 CallbackBridge.nativeSetUseInputStackQueue(true);
                 CallbackBridge.nativeSetInputReady(true);
@@ -509,6 +517,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                     runOnUiThread(() -> reportCrashAndReturn(exitCode, false, null));
                 }
             } catch (Throwable t) {
+                runtimeLifecycleReady = false;
                 Log.e(TAG, "Launch failed", t);
                 try {
                     Logger.appendToLog("Launch failed: " + t);
@@ -521,6 +530,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 String message = t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
                 runOnUiThread(() -> reportCrashAndReturn(-1, false, message));
             } finally {
+                runtimeLifecycleReady = false;
                 jvmLaunchThread = null;
             }
         }, "STS-JVM-Thread");
@@ -903,6 +913,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             finish();
             return;
         }
+        runtimeLifecycleReady = false;
         Intent launcherIntent = new Intent(this, LauncherActivity.class);
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true);
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code);

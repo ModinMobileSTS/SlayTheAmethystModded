@@ -14,12 +14,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -54,6 +57,15 @@ public final class ModJarSupport {
             "Description",
             "detail",
             "Detail"
+    };
+    private static final String[] MOD_DEPENDENCIES_JSON_KEYS = new String[]{
+            "dependencies",
+            "Dependencies",
+            "depends",
+            "DependsOn",
+            "requiredMods",
+            "RequiredMods",
+            "required_mods"
     };
     private static final Pattern MOD_ID_PATTERN = Pattern.compile(
             "\"(?:modid|modId|id|ID|mod_id)\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\""
@@ -212,17 +224,20 @@ public final class ModJarSupport {
         public final String name;
         public final String version;
         public final String description;
+        public final List<String> dependencies;
 
         private ModManifestInfo(String modId,
                                 String normalizedModId,
                                 String name,
                                 String version,
-                                String description) {
+                                String description,
+                                List<String> dependencies) {
             this.modId = modId;
             this.normalizedModId = normalizedModId;
             this.name = name;
             this.version = version;
             this.description = description;
+            this.dependencies = dependencies == null ? new ArrayList<>() : dependencies;
         }
     }
 
@@ -1167,6 +1182,7 @@ public final class ModJarSupport {
         String name = readManifestText(object, json, MOD_NAME_JSON_KEYS, MOD_NAME_PATTERN);
         String version = readManifestText(object, json, MOD_VERSION_JSON_KEYS, MOD_VERSION_PATTERN);
         String description = readManifestText(object, json, MOD_DESCRIPTION_JSON_KEYS, MOD_DESCRIPTION_PATTERN);
+        List<String> dependencies = readManifestDependencies(object);
 
         String resolvedName = sanitizeManifestText(name);
         if (resolvedName.isEmpty()) {
@@ -1177,8 +1193,56 @@ public final class ModJarSupport {
                 normalizedModId,
                 resolvedName,
                 sanitizeManifestText(version),
-                sanitizeManifestText(description)
+                sanitizeManifestText(description),
+                dependencies
         );
+    }
+
+    private static List<String> readManifestDependencies(JSONObject object) {
+        if (object == null) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<String> dependencies = new LinkedHashSet<>();
+        for (String key : MOD_DEPENDENCIES_JSON_KEYS) {
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            if (object.has(key) && !object.isNull(key)) {
+                addManifestDependenciesFromValue(object.opt(key), dependencies);
+            }
+            String matchedKey = findJsonKeyIgnoreCase(object, key);
+            if (matchedKey != null && !matchedKey.equals(key) && object.has(matchedKey) && !object.isNull(matchedKey)) {
+                addManifestDependenciesFromValue(object.opt(matchedKey), dependencies);
+            }
+        }
+        return new ArrayList<>(dependencies);
+    }
+
+    private static void addManifestDependenciesFromValue(Object value, Set<String> output) {
+        if (output == null || value == null || value == JSONObject.NULL) {
+            return;
+        }
+        if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.length(); i++) {
+                addManifestDependenciesFromValue(array.opt(i), output);
+            }
+            return;
+        }
+        if (value instanceof JSONObject) {
+            return;
+        }
+        String text = sanitizeManifestText(String.valueOf(value));
+        if (text.isEmpty()) {
+            return;
+        }
+        String[] parts = text.split("[,;\\n]");
+        for (String part : parts) {
+            String normalized = sanitizeManifestText(part);
+            if (!normalized.isEmpty()) {
+                output.add(normalized);
+            }
+        }
     }
 
     private static JSONObject tryParseManifestObject(String json) {
