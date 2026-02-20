@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -95,13 +96,15 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.crash_is_signal"
         const val EXTRA_CRASH_DETAIL = "io.stamethyst.crash_detail"
 
-        private const val DEFAULT_RENDER_SCALE = 0.75f
+        private const val DEFAULT_RENDER_SCALE = 1.0f
         private const val MIN_RENDER_SCALE = 0.50f
         private const val MAX_RENDER_SCALE = 1.00f
         private const val DEFAULT_TARGET_FPS = 120
         private const val DEFAULT_TOUCHSCREEN_ENABLED = true
         private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
         private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
+        private const val GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH =
+            "components/default_saves/preferences/STSGameplaySettings"
         private val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
 
         private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
@@ -858,7 +861,16 @@ class LauncherActivity : AppCompatActivity() {
                     showMissingDependencyDialog(mod, result.missingDependencies)
                 }
             } else {
-                ModManager.setOptionalModEnabled(this, mod.modId, false)
+                val dependentModNames = findEnabledDependentModNames(mod)
+                if (dependentModNames.isNotEmpty()) {
+                    Toast.makeText(
+                        this,
+                        "无法取消「${resolveModDisplayName(mod)}」，请先取消依赖它的模组：${dependentModNames.joinToString(", ")}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    ModManager.setOptionalModEnabled(this, mod.modId, false)
+                }
             }
         } catch (error: Throwable) {
             Toast.makeText(
@@ -952,6 +964,44 @@ class LauncherActivity : AppCompatActivity() {
             autoEnabledModNames = ArrayList(autoEnabledModNames),
             missingDependencies = ArrayList(missingDependencies)
         )
+    }
+
+    private fun findEnabledDependentModNames(targetMod: ModItemUi): List<String> {
+        val targetIds = LinkedHashSet<String>()
+        val normalizedModId = normalizeModId(targetMod.modId)
+        if (normalizedModId.isNotEmpty()) {
+            targetIds.add(normalizedModId)
+        }
+        val normalizedManifestId = normalizeModId(targetMod.manifestModId)
+        if (normalizedManifestId.isNotEmpty()) {
+            targetIds.add(normalizedManifestId)
+        }
+        if (targetIds.isEmpty()) {
+            return emptyList()
+        }
+
+        val dependentNames = LinkedHashSet<String>()
+        uiState.mods.forEach { mod ->
+            if (!mod.enabled) {
+                return@forEach
+            }
+            val candidateModId = normalizeModId(mod.modId)
+            if (candidateModId.isNotEmpty() && targetIds.contains(candidateModId)) {
+                return@forEach
+            }
+            val candidateManifestId = normalizeModId(mod.manifestModId)
+            if (candidateManifestId.isNotEmpty() && targetIds.contains(candidateManifestId)) {
+                return@forEach
+            }
+            val dependsOnTarget = mod.dependencies.any { dependency ->
+                val normalizedDependency = normalizeModId(dependency)
+                normalizedDependency.isNotEmpty() && targetIds.contains(normalizedDependency)
+            }
+            if (dependsOnTarget) {
+                dependentNames.add(resolveModDisplayName(mod))
+            }
+        }
+        return ArrayList(dependentNames)
     }
 
     private fun showMissingDependencyDialog(rootMod: ModItemUi, missingDependencies: List<String>) {
@@ -1096,7 +1146,17 @@ class LauncherActivity : AppCompatActivity() {
         if (intent == null) {
             return
         }
-        val showedCrashDialog = maybeShowCrashDialog(intent)
+        val expectedBackExit = BackExitNotice.consumeExpectedBackExitIfRecent(this)
+        if (expectedBackExit) {
+            clearCrashExtras(intent)
+            showExpectedBackExitDialog()
+        }
+
+        val showedCrashDialog = if (expectedBackExit) {
+            false
+        } else {
+            maybeShowCrashDialog(intent)
+        }
         if (!showedCrashDialog) {
             maybeLaunchFromDebugExtra(intent)
         }
@@ -1110,7 +1170,6 @@ class LauncherActivity : AppCompatActivity() {
         val code = intent.getIntExtra(EXTRA_CRASH_CODE, -1)
         val isSignal = intent.getBooleanExtra(EXTRA_CRASH_IS_SIGNAL, false)
         val detail = intent.getStringExtra(EXTRA_CRASH_DETAIL)
-        val crashReport = buildCrashReportText(code, isSignal, detail)
         val message = if (!detail.isNullOrBlank()) {
             getString(R.string.sts_crash_detail_format, detail.trim())
         } else {
@@ -1118,120 +1177,70 @@ class LauncherActivity : AppCompatActivity() {
             getString(messageId, code)
         }
 
-        intent.removeExtra(EXTRA_CRASH_OCCURRED)
-        intent.removeExtra(EXTRA_CRASH_CODE)
-        intent.removeExtra(EXTRA_CRASH_IS_SIGNAL)
-        intent.removeExtra(EXTRA_CRASH_DETAIL)
+        clearCrashExtras(intent)
 
         AlertDialog.Builder(this)
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
             .setNeutralButton(R.string.sts_share_crash_report) { _, _ ->
-                shareCrashReportText(crashReport)
+                shareCrashReportBundle()
             }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
     }
 
-    private fun shareCrashReportText(report: String) {
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, getString(R.string.sts_crash_dialog_title))
-            putExtra(Intent.EXTRA_TEXT, report)
-        }
-        val chooser = Intent.createChooser(shareIntent, getString(R.string.sts_share_crash_chooser_title))
-        try {
-            startActivity(chooser)
-        } catch (_: Throwable) {
-            Toast.makeText(this, R.string.sts_share_crash_report_failed, Toast.LENGTH_SHORT).show()
-        }
+    private fun clearCrashExtras(intent: Intent) {
+        intent.removeExtra(EXTRA_CRASH_OCCURRED)
+        intent.removeExtra(EXTRA_CRASH_CODE)
+        intent.removeExtra(EXTRA_CRASH_IS_SIGNAL)
+        intent.removeExtra(EXTRA_CRASH_DETAIL)
     }
 
-    private fun buildCrashReportText(code: Int, isSignal: Boolean, detail: String?): String {
-        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-        val reason = if (isSignal) "signal=$code" else "exit_code=$code"
-        val stsRoot = RuntimePaths.stsRoot(this)
-        val latestLogFile = RuntimePaths.latestLog(this)
-        val jvmOutputFile = File(stsRoot, "jvm_output.log")
-        val latestHsErrFile = stsRoot.listFiles { _, name ->
-            name != null && name.startsWith("hs_err_pid") && name.endsWith(".log")
-        }?.maxByOrNull { file -> file.lastModified() }
-
-        val builder = StringBuilder(10_240)
-        builder.append("SlayTheAmethyst crash report").append('\n')
-        builder.append("time=").append(now).append('\n')
-        builder.append("package=").append(packageName).append('\n')
-        builder.append("version=").append(resolveAppVersionText()).append('\n')
-        builder.append("android=").append(Build.VERSION.RELEASE)
-            .append(" (api ").append(Build.VERSION.SDK_INT).append(")").append('\n')
-        builder.append("device=").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n')
-        builder.append("reason=").append(reason).append('\n')
-        if (!detail.isNullOrBlank()) {
-            builder.append("detail=").append(detail.trim()).append('\n')
-        }
-
-        builder.append('\n').append("paths").append('\n')
-        builder.append("latestlog=").append(latestLogFile.absolutePath).append('\n')
-        builder.append("jvm_output=").append(jvmOutputFile.absolutePath).append('\n')
-        builder.append("hs_err=").append(latestHsErrFile?.absolutePath ?: "(missing)").append('\n')
-
-        appendLogTail(builder, "latestlog tail", latestLogFile, 80, 3500)
-        appendLogTail(builder, "jvm_output tail", jvmOutputFile, 80, 3500)
-        if (latestHsErrFile != null) {
-            appendLogTail(builder, "hs_err tail", latestHsErrFile, 60, 3000)
-        }
-
-        return builder.toString()
+    private fun showExpectedBackExitDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("已返回启动器")
+            .setMessage(
+                "这是预期内的结果：你触发了「Back 键：立即退出到主界面」。\n\n" +
+                    "如不需要该行为，可在设置中关闭此开关。"
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
-    private fun resolveAppVersionText(): String {
-        return try {
-            val packageInfo = packageManager.getPackageInfo(packageName, 0)
-            val versionName = packageInfo.versionName ?: "unknown"
-            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                packageInfo.longVersionCode
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.versionCode.toLong()
+    private fun shareCrashReportBundle() {
+        setBusy(true, "Preparing debug bundle for sharing...")
+        executor.execute {
+            try {
+                val shareFile = createShareDebugBundleFile()
+                val uri = FileProvider.getUriForFile(
+                    this,
+                    "${packageName}.fileprovider",
+                    shareFile
+                )
+                runOnUiThread {
+                    refreshStatus()
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_SUBJECT, getString(R.string.sts_crash_dialog_title))
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        clipData = android.content.ClipData.newUri(contentResolver, shareFile.name, uri)
+                    }
+                    val chooser = Intent.createChooser(shareIntent, getString(R.string.sts_share_crash_chooser_title))
+                    chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    try {
+                        startActivity(chooser)
+                    } catch (_: Throwable) {
+                        Toast.makeText(this, R.string.sts_share_crash_report_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    Toast.makeText(this, "Debug share failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus()
+                }
             }
-            "$versionName($versionCode)"
-        } catch (_: Throwable) {
-            "unknown"
-        }
-    }
-
-    private fun appendLogTail(
-        builder: StringBuilder,
-        sectionTitle: String,
-        file: File,
-        maxLines: Int,
-        maxChars: Int
-    ) {
-        builder.append('\n').append('[').append(sectionTitle).append(']').append('\n')
-        if (!file.isFile) {
-            builder.append("(missing)").append('\n')
-            return
-        }
-
-        val content = try {
-            file.readText(StandardCharsets.UTF_8)
-        } catch (error: Throwable) {
-            builder.append("(read_failed: ").append(error.message ?: "unknown").append(')').append('\n')
-            return
-        }
-
-        val normalized = content.replace("\r\n", "\n")
-        val lines = normalized.split('\n')
-        val start = maxOf(0, lines.size - maxLines)
-        var tailText = lines.subList(start, lines.size).joinToString("\n").trim()
-        if (tailText.length > maxChars) {
-            tailText = tailText.substring(tailText.length - maxChars)
-        }
-        if (tailText.isEmpty()) {
-            builder.append("(empty)").append('\n')
-        } else {
-            builder.append(tailText).append('\n')
         }
     }
 
@@ -1513,6 +1522,22 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     @Throws(IOException::class)
+    private fun createShareDebugBundleFile(): File {
+        val shareDir = File(cacheDir, "share")
+        if (!shareDir.exists() && !shareDir.mkdirs()) {
+            throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
+        }
+        val shareFile = File(shareDir, buildDebugExportFileName())
+        val stsRoot = RuntimePaths.stsRoot(this)
+        FileOutputStream(shareFile, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                writeDebugBundleToZip(zipOutput, stsRoot)
+            }
+        }
+        return shareFile
+    }
+
+    @Throws(IOException::class)
     private fun exportSaveBundle(uri: Uri): Int {
         val stsRoot = RuntimePaths.stsRoot(this)
         contentResolver.openOutputStream(uri).use { output ->
@@ -1586,6 +1611,17 @@ class LauncherActivity : AppCompatActivity() {
     @Throws(IOException::class)
     private fun exportDebugBundle(uri: Uri): Int {
         val stsRoot = RuntimePaths.stsRoot(this)
+        contentResolver.openOutputStream(uri).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
+            ZipOutputStream(output).use { zipOutput ->
+                return writeDebugBundleToZip(zipOutput, stsRoot)
+            }
+        }
+    }
+
+    private fun collectDebugBundleFiles(stsRoot: File): List<File> {
         val debugFiles = ArrayList<File>()
         addDebugFileIfExists(debugFiles, RuntimePaths.latestLog(this))
         addDebugFileIfExists(debugFiles, File(stsRoot, "jvm_output.log"))
@@ -1600,29 +1636,27 @@ class LauncherActivity : AppCompatActivity() {
                 addDebugFileIfExists(debugFiles, hsErrFile)
             }
         }
+        return debugFiles
+    }
 
-        contentResolver.openOutputStream(uri).use { output ->
-            if (output == null) {
-                throw IOException("Unable to open destination file")
-            }
-            ZipOutputStream(output).use { zipOutput ->
-                var exportedCount = 0
-                for (file in debugFiles) {
-                    writeFileToZip(zipOutput, stsRoot, file)
-                    exportedCount++
-                }
-                if (exportedCount <= 0) {
-                    val entry = ZipEntry("sts/README.txt")
-                    zipOutput.putNextEntry(entry)
-                    val message = "No debug log files found yet.\n" +
-                        "Expected paths under: ${stsRoot.absolutePath}\n" +
-                        "Files: latestlog.txt, jvm_output.log, hs_err_pid*.log\n"
-                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
-                    zipOutput.closeEntry()
-                }
-                return exportedCount
-            }
+    @Throws(IOException::class)
+    private fun writeDebugBundleToZip(zipOutput: ZipOutputStream, stsRoot: File): Int {
+        val debugFiles = collectDebugBundleFiles(stsRoot)
+        var exportedCount = 0
+        for (file in debugFiles) {
+            writeFileToZip(zipOutput, stsRoot, file)
+            exportedCount++
         }
+        if (exportedCount <= 0) {
+            val entry = ZipEntry("sts/README.txt")
+            zipOutput.putNextEntry(entry)
+            val message = "No debug log files found yet.\n" +
+                "Expected paths under: ${stsRoot.absolutePath}\n" +
+                "Files: latestlog.txt, jvm_output.log, hs_err_pid*.log\n"
+            zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
+            zipOutput.closeEntry()
+        }
+        return exportedCount
     }
 
     @Throws(IOException::class)
@@ -2327,12 +2361,50 @@ class LauncherActivity : AppCompatActivity() {
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-        val root = readJsonObject(file) ?: JSONObject()
+        val root = mergeJsonObjects(
+            readBundledGameplaySettingsDefaults(),
+            readJsonObject(file)
+        )
         root.put(key, value)
         FileOutputStream(file, false).use { out ->
             out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
             out.write('\n'.code)
         }
+    }
+
+    private fun readBundledGameplaySettingsDefaults(): JSONObject? {
+        return try {
+            assets.open(GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH).use { input ->
+                val text = input.readBytes().toString(StandardCharsets.UTF_8).trim()
+                if (text.isEmpty()) {
+                    JSONObject()
+                } else {
+                    val parsed = JSONTokener(text).nextValue()
+                    if (parsed is JSONObject) parsed else JSONObject()
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun mergeJsonObjects(base: JSONObject?, override: JSONObject?): JSONObject {
+        val merged = JSONObject()
+        if (base != null) {
+            val keys = base.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                merged.put(key, base.opt(key))
+            }
+        }
+        if (override != null) {
+            val keys = override.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                merged.put(key, override.opt(key))
+            }
+        }
+        return merged
     }
 
     private fun readJsonObject(file: File): JSONObject? {
