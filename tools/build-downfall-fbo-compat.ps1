@@ -27,7 +27,7 @@ if (-not (Test-Path $PortalStubSource)) {
 
 $buildDir = "tools/compat-patch-classes-downfall"
 if (Test-Path $buildDir) {
-    cmd /c "rmdir /s /q $buildDir" | Out-Null
+    cmd /c "rmdir /s /q `"$buildDir`"" | Out-Null
 }
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
@@ -40,5 +40,21 @@ javac --release 8 -proc:none -cp $classpath -d $buildDir `
 $doubleOrbEntry = "collector/util/DoubleEnergyOrb.class"
 $npcEntry = "downfall/vfx/CustomAnimatedNPC.class"
 jar cf $OutputJar -C $buildDir $doubleOrbEntry -C $buildDir $npcEntry
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead($OutputJar)
+try {
+    $entrySet = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($entry in $zip.Entries) {
+        [void]$entrySet.Add($entry.FullName)
+    }
+    foreach ($required in @($doubleOrbEntry, $npcEntry)) {
+        if (-not $entrySet.Contains($required)) {
+            throw "Build output missing required class entry: $required"
+        }
+    }
+} finally {
+    $zip.Dispose()
+}
 
 Write-Host "Built $OutputJar"
