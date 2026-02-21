@@ -1298,10 +1298,7 @@ class LauncherActivity : AppCompatActivity() {
             val errors = ArrayList<String>()
             for (uri in uris) {
                 try {
-                    val modId = importModJar(uri)
-                    if (!ModManager.isRequiredModId(modId)) {
-                        ModManager.setOptionalModEnabled(this, modId, true)
-                    }
+                    importModJar(uri)
                     imported++
                 } catch (error: Throwable) {
                     val name = resolveDisplayName(uri)

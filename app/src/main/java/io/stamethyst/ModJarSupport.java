@@ -509,6 +509,13 @@ public final class ModJarSupport {
                 appendCompatLog(context, "rule patched successfully: " + rule.label);
             }
         } catch (Throwable error) {
+            if (shouldSkipMissingDownfallCompatClass(rule, error)) {
+                appendCompatLog(context, "rule skip missing patch class: " + rule.label
+                        + " class=" + rule.targetClassEntry
+                        + " reason=" + error.getClass().getSimpleName()
+                        + ": " + String.valueOf(error.getMessage()));
+                return;
+            }
             appendCompatLog(context, "rule failed: " + rule.label + " reason="
                     + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
             if (error instanceof IOException) {
@@ -516,6 +523,14 @@ public final class ModJarSupport {
             }
             throw new IOException(rule.label + " compat apply failed", error);
         }
+    }
+
+    private static boolean shouldSkipMissingDownfallCompatClass(CompatPatchRule rule, Throwable error) {
+        if (!isDownfallFboRule(rule) || !(error instanceof IOException)) {
+            return false;
+        }
+        String message = String.valueOf(error.getMessage());
+        return message != null && message.contains("compat patch is missing required class");
     }
 
     private static void tryBackupCompatRule(Context context,
