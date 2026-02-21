@@ -1139,6 +1139,7 @@ class LauncherActivity : AppCompatActivity() {
         }
         CompatibilitySettings.setOriginalFboPatchEnabled(this, uiState.originalFboPatchEnabled)
         CompatibilitySettings.setDownfallFboPatchEnabled(this, uiState.downfallFboPatchEnabled)
+        CrashReportStore.clear(this)
         prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD)
     }
 
@@ -1177,6 +1178,7 @@ class LauncherActivity : AppCompatActivity() {
             getString(messageId, code)
         }
 
+        CrashReportStore.recordLaunchResult(this, "launcher_intent_crash", code, isSignal, detail)
         clearCrashExtras(intent)
 
         AlertDialog.Builder(this)
@@ -1263,6 +1265,7 @@ class LauncherActivity : AppCompatActivity() {
             return
         }
         Log.i(TAG, "Auto launching mode from debug extra: $debugLaunchMode")
+        CrashReportStore.clear(this)
         prepareAndLaunch(debugLaunchMode)
     }
 
@@ -1622,6 +1625,7 @@ class LauncherActivity : AppCompatActivity() {
         val debugFiles = ArrayList<File>()
         addDebugFileIfExists(debugFiles, RuntimePaths.latestLog(this))
         addDebugFileIfExists(debugFiles, File(stsRoot, "jvm_output.log"))
+        addDebugFileIfExists(debugFiles, RuntimePaths.lastCrashReport(this))
         addDebugFileIfExists(debugFiles, RuntimePaths.enabledModsConfig(this))
 
         val hsErrFiles = stsRoot.listFiles { _, name ->
@@ -1649,7 +1653,7 @@ class LauncherActivity : AppCompatActivity() {
             zipOutput.putNextEntry(entry)
             val message = "No debug log files found yet.\n" +
                 "Expected paths under: ${stsRoot.absolutePath}\n" +
-                "Files: latestlog.txt, jvm_output.log, hs_err_pid*.log\n"
+                "Files: latestlog.txt, jvm_output.log, hs_err_pid*.log, last_crash_report.txt\n"
             zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
             zipOutput.closeEntry()
         }
@@ -2444,6 +2448,7 @@ class LauncherActivity : AppCompatActivity() {
     private fun buildLogPathText(): String {
         return "Log: ${RuntimePaths.latestLog(this).absolutePath}\n" +
             "VM: ${File(RuntimePaths.stsRoot(this), "jvm_output.log").absolutePath}\n" +
-            "Crash: ${File(RuntimePaths.stsRoot(this), "hs_err_pid*.log").absolutePath}"
+            "Crash: ${File(RuntimePaths.stsRoot(this), "hs_err_pid*.log").absolutePath}\n" +
+            "Last: ${RuntimePaths.lastCrashReport(this).absolutePath}"
     }
 }

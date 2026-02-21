@@ -76,6 +76,10 @@ public final class RuntimePaths {
         return new File(stsRoot(context), "latestlog.txt");
     }
 
+    public static File lastCrashReport(Context context) {
+        return new File(stsRoot(context), "last_crash_report.txt");
+    }
+
     public static File displayConfigFile(Context context) {
         return new File(stsRoot(context), "info.displayconfig");
     }

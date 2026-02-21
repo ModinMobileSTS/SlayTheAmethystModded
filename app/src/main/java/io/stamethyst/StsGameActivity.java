@@ -398,6 +398,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         vmStarted = true;
         runtimeLifecycleReady = false;
         updateBootOverlayProgress(8, "Starting JVM...");
+        CrashReportStore.clear(this);
 
         Thread launchThread = new Thread(() -> {
             try {
@@ -542,6 +543,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             } catch (Throwable t) {
                 runtimeLifecycleReady = false;
                 Log.e(TAG, "Launch failed", t);
+                CrashReportStore.recordThrowable(this, "game_launch_thread", t);
                 try {
                     Logger.appendToLog("Launch failed: " + t);
                 } catch (Throwable ignored) {
@@ -937,6 +939,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             return;
         }
         runtimeLifecycleReady = false;
+        CrashReportStore.recordLaunchResult(this, "game_report_crash_and_return", code, isSignal, detail);
         Intent launcherIntent = new Intent(this, LauncherActivity.class);
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true);
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code);

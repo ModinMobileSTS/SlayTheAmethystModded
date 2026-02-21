@@ -64,6 +64,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
     }
 
     private void startPrepare() {
+        CrashReportStore.clear(this);
         executor.execute(() -> {
             try {
                 Log.i(TAG, "startPrepare begin, mode=" + launchMode + ", rendererRequest=" + requestedRenderer.rendererId());
@@ -101,6 +102,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                 postProgress(100, "Launch preparation complete");
                 continueLaunchAfterMinimumVisible(rendererDecision);
             } catch (Throwable error) {
+                CrashReportStore.recordThrowable(this, "loading_prepare", error);
                 Log.e(TAG, "startPrepare failed", error);
                 runOnUiThread(() -> {
                     if (destroyed) {
