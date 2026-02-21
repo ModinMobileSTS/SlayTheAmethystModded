@@ -5,7 +5,7 @@
     <string name="sts_normal_exit">游戏进程异常退出，退出码 %1$d。</string>
     <string name="sts_signal_exit">游戏进程因信号 %1$d 崩溃退出。</string>
     <string name="sts_share_crash_report">分享错误报告</string>
-    <string name="sts_share_crash_chooser_title">分享错误报告到</string>
+    <string name="sts_share_crash_chooser_title">分享到 QQ / WeChat 等</string>
     <string name="sts_share_crash_report_failed">没有可用应用可分享错误报告。</string>
     <string name="renderer_backend_label">Renderer backend</string>
     <string name="renderer_selected_format">Renderer selected: %1$s</string>

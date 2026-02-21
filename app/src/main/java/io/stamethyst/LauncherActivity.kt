@@ -491,11 +491,11 @@ class LauncherActivity : AppCompatActivity() {
             }
 
             Button(
-                onClick = { exportDebugLauncher.launch(buildDebugExportFileName()) },
+                onClick = { shareCrashReportBundle() },
                 enabled = !uiState.busy,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("导出调试日志")
+                Text(getString(R.string.sts_share_crash_report))
             }
 
             HorizontalDivider()
@@ -1209,7 +1209,7 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun shareCrashReportBundle() {
-        setBusy(true, "Preparing debug bundle for sharing...")
+        setBusy(true, "Preparing error report for sharing...")
         executor.execute {
             try {
                 val shareFile = createShareDebugBundleFile()
