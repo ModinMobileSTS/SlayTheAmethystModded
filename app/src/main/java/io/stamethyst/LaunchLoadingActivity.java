@@ -21,6 +21,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
     public static final String EXTRA_LAUNCH_MODE = "io.stamethyst.loading_launch_mode";
     public static final String EXTRA_RENDERER_BACKEND = "io.stamethyst.loading_renderer_backend";
     public static final String EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.loading_back_immediate_exit";
+    public static final String EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.loading_manual_dismiss_boot_overlay";
 
     private final java.util.concurrent.ExecutorService executor =
             java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -32,6 +33,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
     private String launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA;
     private RendererBackend requestedRenderer = RendererBackend.OPENGL_ES2;
     private boolean backImmediateExit = true;
+    private boolean manualDismissBootOverlay = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -51,6 +53,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                 sourceIntent.getStringExtra(EXTRA_RENDERER_BACKEND)
         );
         backImmediateExit = sourceIntent.getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true);
+        manualDismissBootOverlay = sourceIntent.getBooleanExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, false);
 
         postProgress(0, "Preparing runtime/components...");
         startPrepare();
@@ -151,6 +154,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                         StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
                 );
                 intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit);
+                intent.putExtra(StsGameActivity.EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay);
                 Log.i(TAG, "Starting StsGameActivity, mode=" + launchMode + ", delayMs=" + delay);
                 startActivity(intent);
                 finish();

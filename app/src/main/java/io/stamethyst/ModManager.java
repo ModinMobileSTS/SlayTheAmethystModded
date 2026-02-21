@@ -120,6 +120,26 @@ public final class ModManager {
         }
     }
 
+    public static boolean deleteOptionalMod(Context context, String modId) throws IOException {
+        String normalized = normalizeModId(modId);
+        if (normalized.isEmpty() || isRequiredModId(normalized)) {
+            return false;
+        }
+
+        TreeMap<String, File> optionalModFiles = findOptionalModFiles(context);
+        File target = optionalModFiles.get(normalized);
+
+        setOptionalModEnabled(context, normalized, false);
+
+        if (target == null || !target.isFile()) {
+            return false;
+        }
+        if (!target.delete()) {
+            throw new IOException("Failed to delete mod file: " + target.getAbsolutePath());
+        }
+        return true;
+    }
+
     public static List<InstalledMod> listInstalledMods(Context context) {
         List<InstalledMod> result = new ArrayList<>();
         result.add(buildRequiredEntry(context, MOD_ID_BASEMOD, "BaseMod", RuntimePaths.importedBaseModJar(context)));

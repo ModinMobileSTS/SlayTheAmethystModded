@@ -19,4 +19,6 @@
     <string name="compat_original_fbo_desc">控制 GLFrameBuffer fallback（amethyst.gdx.fbo_fallback）。关闭后更接近原版行为，但可能更容易在部分设备崩溃。</string>
     <string name="compat_downfall_fbo_title">Downfall FBO 兼容补丁</string>
     <string name="compat_downfall_fbo_desc">控制 Downfall 的 DoubleEnergyOrb FBO 兼容补丁是否在启动前注入。</string>
+    <string name="compat_virtual_fbo_poc_title">Virtual FBO PoC</string>
+    <string name="compat_virtual_fbo_poc_desc">启用 GLFrameBuffer 的 Virtual FBO 实验路径（amethyst.gdx.virtual_fbo_poc）。用于规避 unknown framebuffer status 崩溃，可能影响后处理效果。</string>
 </resources>

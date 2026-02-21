@@ -117,6 +117,8 @@ public final class StsLaunchSpec {
         args.add("-Djava.awt.graphicsenv=net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment");
         args.add("-Damethyst.gdx.fbo_fallback="
                 + (CompatibilitySettings.isOriginalFboPatchEnabled(context) ? "true" : "false"));
+        args.add("-Damethyst.gdx.virtual_fbo_poc="
+                + (CompatibilitySettings.isVirtualFboPocEnabled(context) ? "true" : "false"));
         args.add("-Damethyst.bridge.events=" + RuntimePaths.bootBridgeEventsFile(context).getAbsolutePath());
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader");
         args.add("-Damethyst.bridge.mode=" + launchMode);

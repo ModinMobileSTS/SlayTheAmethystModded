@@ -54,7 +54,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static int GL_DEPTH24_STENCIL8_OES = 0x88F0;
 	private final static String FBO_FALLBACK_ENV = "AMETHYST_GDX_FBO_FALLBACK";
 	private final static String FBO_FALLBACK_PROP = "amethyst.gdx.fbo_fallback";
+	private final static String VIRTUAL_FBO_ENV = "AMETHYST_GDX_VIRTUAL_FBO_POC";
+	private final static String VIRTUAL_FBO_PROP = "amethyst.gdx.virtual_fbo_poc";
 	private static boolean fboFallbackLogged = false;
+	private static boolean virtualFboLogged = false;
 
 	/** the color buffer texture **/
 	protected T colorTexture;
@@ -66,6 +69,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** the framebuffer handle **/
 	private int framebufferHandle;
+	/** if true, this FBO was virtualized due to unstable driver status. **/
+	private boolean virtualFramebufferActive;
+	/** if true, capture backbuffer into colorTexture when ending this FBO. **/
+	private boolean virtualCapturePending;
 
 	/** the depthbuffer render object handle **/
 	private int depthbufferHandle;
@@ -134,6 +141,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	private void build () {
 		GL20 gl = Gdx.gl20;
+		virtualFramebufferActive = false;
+		virtualCapturePending = false;
 
 		// iOS uses a different framebuffer handle! (not necessarily 0)
 		if (!defaultFramebufferHandleInitialized) {
@@ -213,6 +222,14 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		}
 
 		if (result != GL20.GL_FRAMEBUFFER_COMPLETE) {
+			if (isUnknownFramebufferStatus(result) && isVirtualFboEnabled()) {
+				int originalStatus = result;
+				int originalError = gl.glGetError();
+				result = tryRecoverUnknownFramebufferStatus(gl);
+				int recoveredError = gl.glGetError();
+				activateVirtualFramebuffer(gl, originalStatus, originalError, result, recoveredError);
+				return;
+			}
 			if (isUnknownFramebufferStatus(result) && isFboFallbackEnabled()) {
 				int originalStatus = result;
 				int originalError = gl.glGetError();
@@ -295,6 +312,92 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
 	}
 
+	private void activateVirtualFramebuffer (GL20 gl,
+		int originalStatus,
+		int originalError,
+		int recoveredStatus,
+		int recoveredError) {
+		String caller = describeVirtualFboCaller();
+		String trace = buildVirtualFboTraceSample(5);
+		if (depthbufferHandle != 0) {
+			gl.glDeleteRenderbuffer(depthbufferHandle);
+			depthbufferHandle = 0;
+		}
+		if (stencilbufferHandle != 0) {
+			gl.glDeleteRenderbuffer(stencilbufferHandle);
+			stencilbufferHandle = 0;
+		}
+		if (depthStencilPackedBufferHandle != 0) {
+			gl.glDeleteRenderbuffer(depthStencilPackedBufferHandle);
+			depthStencilPackedBufferHandle = 0;
+		}
+		hasDepthStencilPackedBuffer = false;
+
+		if (framebufferHandle != 0 && framebufferHandle != defaultFramebufferHandle) {
+			gl.glDeleteFramebuffer(framebufferHandle);
+		}
+		framebufferHandle = defaultFramebufferHandle;
+		virtualFramebufferActive = true;
+		virtualCapturePending = false;
+
+		if (!virtualFboLogged) {
+			virtualFboLogged = true;
+			System.out.println("[gdx-patch] GLFrameBuffer virtual-fbo active: status="
+				+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), glError=0x"
+				+ Integer.toHexString(originalError) + ", recoveredStatus=" + recoveredStatus
+				+ " (0x" + Integer.toHexString(recoveredStatus) + "), recovery glError=0x"
+				+ Integer.toHexString(recoveredError)
+				+ ", caller=" + caller
+				+ ", fbo=" + width + "x" + height
+				+ ", depth=" + hasDepth + ", stencil=" + hasStencil
+				+ ", trace=" + trace);
+		}
+		gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, defaultFramebufferHandle);
+	}
+
+	private static String describeVirtualFboCaller () {
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		for (int i = 0; i < stack.length; i++) {
+			StackTraceElement frame = stack[i];
+			if (frame == null) continue;
+			String className = frame.getClassName();
+			if (className == null) continue;
+			if (className.equals(GLFrameBuffer.class.getName())) continue;
+			if (className.startsWith("java.lang.Thread")) continue;
+			return formatFrame(frame);
+		}
+		return "unknown";
+	}
+
+	private static String buildVirtualFboTraceSample (int maxFrames) {
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		if (stack == null || stack.length == 0) return "n/a";
+		StringBuilder out = new StringBuilder();
+		int collected = 0;
+		for (int i = 0; i < stack.length; i++) {
+			StackTraceElement frame = stack[i];
+			if (frame == null) continue;
+			String className = frame.getClassName();
+			if (className == null) continue;
+			if (className.equals(GLFrameBuffer.class.getName())) continue;
+			if (className.startsWith("java.lang.Thread")) continue;
+			if (collected > 0) out.append(" <- ");
+			out.append(formatFrame(frame));
+			collected++;
+			if (collected >= maxFrames) break;
+		}
+		return collected == 0 ? "n/a" : out.toString();
+	}
+
+	private static String formatFrame (StackTraceElement frame) {
+		String className = frame.getClassName();
+		int split = className == null ? -1 : className.lastIndexOf('.');
+		String shortClass = (className == null || split < 0 || split == className.length() - 1)
+			? String.valueOf(className)
+			: className.substring(split + 1);
+		return shortClass + "#" + frame.getMethodName() + ":" + frame.getLineNumber();
+	}
+
 	private static boolean isUnknownFramebufferStatus (int status) {
 		return status != GL20.GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT
 			&& status != GL20.GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS
@@ -328,6 +431,18 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return !"0".equals(value) && !"false".equalsIgnoreCase(value) && !"off".equalsIgnoreCase(value);
 	}
 
+	private static boolean isVirtualFboEnabled () {
+		String value = System.getProperty(VIRTUAL_FBO_PROP);
+		if (value == null) {
+			value = System.getenv(VIRTUAL_FBO_ENV);
+		}
+		if (value == null) {
+			return false;
+		}
+		value = value.trim();
+		return !"0".equals(value) && !"false".equalsIgnoreCase(value) && !"off".equalsIgnoreCase(value);
+	}
+
 	/** Releases all resources associated with the FrameBuffer. */
 	@Override
 	public void dispose () {
@@ -342,13 +457,20 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			if (hasStencil) gl.glDeleteRenderbuffer(stencilbufferHandle);
 		}
 
-		gl.glDeleteFramebuffer(framebufferHandle);
+		if (framebufferHandle != 0 && framebufferHandle != defaultFramebufferHandle) {
+			gl.glDeleteFramebuffer(framebufferHandle);
+		}
 
 		if (buffers.get(Gdx.app) != null) buffers.get(Gdx.app).removeValue(this, true);
 	}
 
 	/** Makes the frame buffer current so everything gets drawn to it. */
 	public void bind () {
+		if (virtualFramebufferActive) {
+			virtualCapturePending = true;
+			Gdx.gl20.glBindFramebuffer(GL20.GL_FRAMEBUFFER, defaultFramebufferHandle);
+			return;
+		}
 		Gdx.gl20.glBindFramebuffer(GL20.GL_FRAMEBUFFER, framebufferHandle);
 	}
 
@@ -381,7 +503,29 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	 * @param height the height of the viewport in pixels */
 	public void end (int x, int y, int width, int height) {
 		unbind();
+		if (virtualFramebufferActive && virtualCapturePending) {
+			captureVirtualFramebufferTexture();
+			virtualCapturePending = false;
+		}
 		Gdx.gl20.glViewport(x, y, width, height);
+	}
+
+	private void captureVirtualFramebufferTexture () {
+		if (colorTexture == null || Gdx.graphics == null || Gdx.gl20 == null) {
+			return;
+		}
+		int copyWidth = Math.min(colorTexture.getWidth(), Gdx.graphics.getBackBufferWidth());
+		int copyHeight = Math.min(colorTexture.getHeight(), Gdx.graphics.getBackBufferHeight());
+		if (copyWidth <= 0 || copyHeight <= 0) {
+			return;
+		}
+		Gdx.gl20.glBindTexture(colorTexture.glTarget, colorTexture.getTextureObjectHandle());
+		try {
+			Gdx.gl20.glCopyTexSubImage2D(colorTexture.glTarget, 0, 0, 0, 0, 0, copyWidth, copyHeight);
+		} catch (Throwable ignored) {
+		} finally {
+			Gdx.gl20.glBindTexture(colorTexture.glTarget, 0);
+		}
 	}
 
 	/** @return the gl texture */

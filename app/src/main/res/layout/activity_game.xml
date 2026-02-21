@@ -77,6 +77,15 @@
                 android:textSize="11sp"
                 android:typeface="monospace" />
         </ScrollView>
+
+        <Button
+            android:id="@+id/bootOverlayDismissButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="10dp"
+            android:text="关闭遮幕"
+            android:visibility="gone" />
     </LinearLayout>
 
 </FrameLayout>

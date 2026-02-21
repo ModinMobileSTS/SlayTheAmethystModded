@@ -20,6 +20,7 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -60,6 +61,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     public static final String EXTRA_PRELAUNCH_PREPARED = "io.stamethyst.prelaunch_prepared";
     public static final String EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu";
     public static final String EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit";
+    public static final String EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay";
     public static final String EXTRA_TARGET_FPS = "io.stamethyst.target_fps";
     private static final float DEFAULT_RENDER_SCALE = 1.0f;
     private static final float MIN_RENDER_SCALE = 0.50f;
@@ -95,12 +97,14 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     private boolean prelaunchPrepared = false;
     private boolean waitForMainMenu = false;
     private boolean backImmediateExit = true;
+    private boolean manualDismissBootOverlay = false;
     private boolean jvmLogListenerRegistered = false;
     private View bootOverlay;
     private ProgressBar bootOverlayProgressBar;
     private TextView bootOverlayStatusText;
     private ScrollView bootOverlayLogScroll;
     private TextView bootOverlayLogText;
+    private Button bootOverlayDismissButton;
     private int bootOverlayProgress = 0;
     private String bootOverlayMessage = "";
     private long bootOverlayShownAtMs = -1L;
@@ -144,6 +148,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
         );
         backImmediateExit = getIntent().getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true);
+        manualDismissBootOverlay = getIntent().getBooleanExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, false);
         targetFps = sanitizeTargetFps(getIntent().getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS));
         useTextureViewSurface = shouldUseTextureViewSurface(launcherRequestedRenderer, renderScale);
         initBootOverlay();
@@ -457,8 +462,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                 Logger.appendToLog("Surface backend: " + (useTextureViewSurface ? "TextureView" : "SurfaceView"));
                 boolean originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this);
                 boolean downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this);
+                boolean virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this);
                 Logger.appendToLog("Compat settings: originalFboPatch=" + originalFboPatchEnabled
-                        + ", downfallFboPatch=" + downfallFboPatchEnabled);
+                        + ", downfallFboPatch=" + downfallFboPatchEnabled
+                        + ", virtualFboPoc=" + virtualFboPocEnabled);
                 RendererBackend preferredRenderer = RendererConfig.readPreferredBackend(this);
                 RendererConfig.ResolutionResult rendererDecision =
                         RendererConfig.resolveEffectiveBackend(this, preferredRenderer);
@@ -514,6 +521,8 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
                         + findLaunchArgValue(launchArgs, "-Dorg.lwjgl.opengl.libname=")
                         + ", "
                         + findLaunchArgValue(launchArgs, "-Damethyst.gdx.fbo_fallback=")
+                        + ", "
+                        + findLaunchArgValue(launchArgs, "-Damethyst.gdx.virtual_fbo_poc=")
                         + ", "
                         + findLaunchArgValue(launchArgs, "-Dorg.lwjgl.librarypath="));
                 Logger.appendToLog("Launch args: " + launchArgs);
@@ -614,6 +623,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         bootOverlayStatusText = findViewById(R.id.bootOverlayStatusText);
         bootOverlayLogScroll = findViewById(R.id.bootOverlayLogScroll);
         bootOverlayLogText = findViewById(R.id.bootOverlayLogText);
+        bootOverlayDismissButton = findViewById(R.id.bootOverlayDismissButton);
         if (bootOverlay == null || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
             waitForMainMenu = false;
             return;
@@ -621,6 +631,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         if (!waitForMainMenu) {
             bootOverlay.setVisibility(View.GONE);
             bootOverlayDismissed = true;
+            if (bootOverlayDismissButton != null) {
+                bootOverlayDismissButton.setVisibility(View.GONE);
+                bootOverlayDismissButton.setOnClickListener(null);
+            }
             return;
         }
         synchronized (bootLogLines) {
@@ -629,10 +643,38 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         if (bootOverlayLogText != null) {
             bootOverlayLogText.setText("");
         }
+        if (bootOverlayDismissButton != null) {
+            if (manualDismissBootOverlay) {
+                bootOverlayDismissButton.setVisibility(View.VISIBLE);
+                bootOverlayDismissButton.setEnabled(true);
+                bootOverlayDismissButton.setText("关闭遮幕");
+                bootOverlayDismissButton.setOnClickListener(v -> {
+                    updateBootOverlayProgress(Math.max(bootOverlayProgress, 99), "Manual dismiss requested");
+                    dismissBootOverlay();
+                });
+            } else {
+                bootOverlayDismissButton.setVisibility(View.GONE);
+                bootOverlayDismissButton.setOnClickListener(null);
+            }
+        }
         bootOverlay.setVisibility(View.VISIBLE);
-        bootOverlay.setOnTouchListener((v, event) -> true);
+        if (manualDismissBootOverlay) {
+            bootOverlay.setOnTouchListener(null);
+            bootOverlay.setClickable(true);
+            bootOverlay.setFocusable(true);
+            bootOverlay.setOnClickListener(v -> {
+                // Consume background taps but keep dismiss button clickable.
+            });
+        } else {
+            bootOverlay.setOnClickListener(null);
+            bootOverlay.setOnTouchListener((v, event) -> true);
+        }
         bootOverlayShownAtMs = SystemClock.uptimeMillis();
-        updateBootOverlayProgress(1, "Starting launch pipeline...");
+        if (manualDismissBootOverlay) {
+            updateBootOverlayProgress(1, "Starting launch pipeline... (manual overlay dismiss)");
+        } else {
+            updateBootOverlayProgress(1, "Starting launch pipeline...");
+        }
     }
 
     private void onJvmLogMessage(String text) {
@@ -712,6 +754,16 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     private void requestEarlyOverlayDismiss() {
         if (bootOverlayDismissed || bootOverlay == null) {
+            return;
+        }
+        if (manualDismissBootOverlay) {
+            updateBootOverlayProgress(Math.max(bootOverlayProgress, 98), "Game ready, tap Close Overlay");
+            runOnUiThread(() -> {
+                if (bootOverlayDismissButton != null) {
+                    bootOverlayDismissButton.setText("进入游戏");
+                    bootOverlayDismissButton.setEnabled(true);
+                }
+            });
             return;
         }
         if (useTextureViewSurface && textureView != null) {
@@ -852,6 +904,16 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         }
         mainMenuReadySignaled = true;
         stopBootBridgeReaderIfRunning();
+        if (manualDismissBootOverlay) {
+            updateBootOverlayProgress(100, message + " (tap Close Overlay)");
+            runOnUiThread(() -> {
+                if (bootOverlayDismissButton != null) {
+                    bootOverlayDismissButton.setText("进入游戏");
+                    bootOverlayDismissButton.setEnabled(true);
+                }
+            });
+            return;
+        }
         updateBootOverlayProgress(100, message);
         long now = SystemClock.uptimeMillis();
         long elapsed = bootOverlayShownAtMs <= 0L ? BOOT_OVERLAY_MIN_VISIBLE_MS : (now - bootOverlayShownAtMs);
@@ -872,6 +934,10 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         bootOverlayDismissed = true;
         earlyOverlayDismissOnNextFrame = false;
         earlyOverlayDismissRequestFrameTimestampNs = 0L;
+        if (bootOverlayDismissButton != null) {
+            bootOverlayDismissButton.setVisibility(View.GONE);
+            bootOverlayDismissButton.setOnClickListener(null);
+        }
         bootOverlay.setVisibility(View.GONE);
     }
 

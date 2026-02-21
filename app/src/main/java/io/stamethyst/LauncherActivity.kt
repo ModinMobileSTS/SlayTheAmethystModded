@@ -21,22 +21,26 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -46,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -89,6 +94,7 @@ class LauncherActivity : AppCompatActivity() {
         private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
         private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
         private const val PREF_KEY_TARGET_FPS = "target_fps"
+        private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
 
         const val EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
@@ -167,9 +173,11 @@ class LauncherActivity : AppCompatActivity() {
         val selectedTargetFps: Int = DEFAULT_TARGET_FPS,
         val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
         val backImmediateExit: Boolean = true,
+        val manualDismissBootOverlay: Boolean = false,
         val touchscreenEnabled: Boolean = true,
         val originalFboPatchEnabled: Boolean = true,
-        val downfallFboPatchEnabled: Boolean = true
+        val downfallFboPatchEnabled: Boolean = true,
+        val virtualFboPocEnabled: Boolean = false
     )
 
     private data class SaveImportResult(
@@ -217,9 +225,11 @@ class LauncherActivity : AppCompatActivity() {
             selectedTargetFps = readTargetFpsSelection(),
             selectedLauncherIcon = selectedLauncherIcon,
             backImmediateExit = readBackBehaviorSelection(),
+            manualDismissBootOverlay = readManualDismissBootOverlaySelection(),
             touchscreenEnabled = readTouchscreenEnabledSelection(),
             originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this),
             downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this),
+            virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this),
             logPathText = buildLogPathText()
         )
 
@@ -344,6 +354,8 @@ class LauncherActivity : AppCompatActivity() {
                     OptionalModCard(
                         mod = mod,
                         controlsEnabled = !uiState.busy && mod.installed,
+                        deleteEnabled = !uiState.busy && mod.installed,
+                        onDeleteClick = { onDeleteModRequested(mod) },
                         onCheckedChange = { checked -> onModChecked(mod, checked) }
                     )
                 }
@@ -365,6 +377,8 @@ class LauncherActivity : AppCompatActivity() {
     private fun OptionalModCard(
         mod: ModItemUi,
         controlsEnabled: Boolean,
+        deleteEnabled: Boolean,
+        onDeleteClick: () -> Unit,
         onCheckedChange: (Boolean) -> Unit
     ) {
         val resolvedName = mod.name.ifBlank { mod.manifestModId.ifBlank { mod.modId } }
@@ -427,6 +441,23 @@ class LauncherActivity : AppCompatActivity() {
                         text = "前置: ${resolvedDependencies.joinToString(", ")}",
                         style = MaterialTheme.typography.bodySmall
                     )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onDeleteClick,
+                        enabled = deleteEnabled,
+                        modifier = Modifier.heightIn(min = 30.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("删除", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
@@ -591,6 +622,29 @@ class LauncherActivity : AppCompatActivity() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Switch(
+                    checked = uiState.manualDismissBootOverlay,
+                    enabled = !uiState.busy,
+                    onCheckedChange = ::onManualDismissBootOverlayToggled
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = if (uiState.manualDismissBootOverlay) {
+                        "加载遮幕：手动关闭"
+                    } else {
+                        "加载遮幕：自动关闭"
+                    }
+                )
+            }
+            Text(
+                text = "启用后，启动时加载遮幕不会自动消失，需要点击遮幕上的按钮手动关闭。",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Switch(
                     checked = uiState.touchscreenEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = ::onTouchscreenEnabledToggled
@@ -674,6 +728,14 @@ class LauncherActivity : AppCompatActivity() {
                 checked = uiState.downfallFboPatchEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = ::onDownfallFboPatchToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = getString(R.string.compat_virtual_fbo_poc_title),
+                description = getString(R.string.compat_virtual_fbo_poc_desc),
+                checked = uiState.virtualFboPocEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = ::onVirtualFboPocToggled
             )
         }
     }
@@ -882,6 +944,53 @@ class LauncherActivity : AppCompatActivity() {
         refreshStatus()
     }
 
+    private fun onDeleteModRequested(mod: ModItemUi) {
+        if (uiState.busy || mod.required || !mod.installed) {
+            return
+        }
+        val dependentModNames = findEnabledDependentModNames(mod)
+        if (dependentModNames.isNotEmpty()) {
+            Toast.makeText(
+                this,
+                "无法删除「${resolveModDisplayName(mod)}」，请先取消依赖它的模组：${dependentModNames.joinToString(", ")}",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val displayName = resolveModDisplayName(mod)
+        AlertDialog.Builder(this)
+            .setTitle("删除模组")
+            .setMessage("确认删除「$displayName」？\n删除后需要重新导入才能再次使用。")
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton("删除") { _, _ ->
+                setBusy(true, "正在删除模组...")
+                executor.execute {
+                    try {
+                        val deleted = ModManager.deleteOptionalMod(this, mod.modId)
+                        runOnUiThread {
+                            if (deleted) {
+                                Toast.makeText(this, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this, "模组不存在或已被删除：$displayName", Toast.LENGTH_SHORT).show()
+                            }
+                            refreshStatus()
+                        }
+                    } catch (error: Throwable) {
+                        runOnUiThread {
+                            Toast.makeText(
+                                this,
+                                "删除模组失败：${error.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            refreshStatus()
+                        }
+                    }
+                }
+            }
+            .show()
+    }
+
     private fun enableModWithDependencies(rootMod: ModItemUi): DependencyEnableResult {
         val optionalMods = uiState.mods.filter { !it.required && it.installed }
         val modById = LinkedHashMap<String, ModItemUi>()
@@ -1075,6 +1184,15 @@ class LauncherActivity : AppCompatActivity() {
         refreshStatus()
     }
 
+    private fun onVirtualFboPocToggled(enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(virtualFboPocEnabled = enabled)
+        CompatibilitySettings.setVirtualFboPocEnabled(this, enabled)
+        refreshStatus()
+    }
+
     private fun onRendererSelected(backend: RendererBackend) {
         if (uiState.busy) {
             return
@@ -1125,6 +1243,15 @@ class LauncherActivity : AppCompatActivity() {
         refreshStatus()
     }
 
+    private fun onManualDismissBootOverlayToggled(enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(manualDismissBootOverlay = enabled)
+        saveManualDismissBootOverlaySelection(enabled)
+        refreshStatus()
+    }
+
     private fun onLaunchClicked() {
         if (!saveRenderScaleFromInput(showToast = false)) {
             return
@@ -1134,11 +1261,13 @@ class LauncherActivity : AppCompatActivity() {
         }
         saveTargetFpsSelection(uiState.selectedTargetFps)
         saveBackBehaviorSelection(uiState.backImmediateExit)
+        saveManualDismissBootOverlaySelection(uiState.manualDismissBootOverlay)
         if (!saveTouchscreenEnabledSelection(uiState.touchscreenEnabled)) {
             return
         }
         CompatibilitySettings.setOriginalFboPatchEnabled(this, uiState.originalFboPatchEnabled)
         CompatibilitySettings.setDownfallFboPatchEnabled(this, uiState.downfallFboPatchEnabled)
+        CompatibilitySettings.setVirtualFboPocEnabled(this, uiState.virtualFboPocEnabled)
         CrashReportStore.clear(this)
         prepareAndLaunch(StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD)
     }
@@ -1425,6 +1554,7 @@ class LauncherActivity : AppCompatActivity() {
         val renderer = uiState.selectedRenderer
         val targetFps = normalizeTargetFps(uiState.selectedTargetFps)
         val backImmediateExit = uiState.backImmediateExit
+        val manualDismissBootOverlay = uiState.manualDismissBootOverlay
 
         val intent = Intent(this, StsGameActivity::class.java)
         intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode)
@@ -1436,9 +1566,10 @@ class LauncherActivity : AppCompatActivity() {
             StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
         )
         intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
+        intent.putExtra(StsGameActivity.EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
         Log.i(
             TAG,
-            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit"
+            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay"
         )
         startActivity(intent)
     }
@@ -1717,6 +1848,7 @@ class LauncherActivity : AppCompatActivity() {
         val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(this)
         val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this)
         val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this)
+        val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this)
         val rendererDecision = RendererConfig.resolveEffectiveBackend(this, selectedRenderer)
         val rendererSelectedLine = getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
         val rendererEffectiveLine = if (rendererDecision.isFallback()) {
@@ -1763,9 +1895,11 @@ class LauncherActivity : AppCompatActivity() {
             "\nRender scale: ${formatRenderScale(renderScale)} (0.50-1.00)" +
             "\nTarget FPS: $targetFps" +
             "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
+            "\nManual dismiss boot overlay: " + if (uiState.manualDismissBootOverlay) "ON" else "OFF" +
             "\nLauncher icon: ${selectedLauncherIcon.title}" +
             "\nOriginal FBO patch: " + if (originalFboPatchEnabled) "ON" else "OFF" +
             "\nDownfall FBO patch: " + if (downfallFboPatchEnabled) "ON" else "OFF" +
+            "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
             "\nRuntime pack expected at build time: runtime-pack/jre8-pojav.zip"
@@ -1784,6 +1918,7 @@ class LauncherActivity : AppCompatActivity() {
             touchscreenEnabled = touchscreenEnabled,
             originalFboPatchEnabled = originalFboPatchEnabled,
             downfallFboPatchEnabled = downfallFboPatchEnabled,
+            virtualFboPocEnabled = virtualFboPocEnabled,
             mods = modItems
         )
     }
@@ -2286,6 +2421,18 @@ class LauncherActivity : AppCompatActivity() {
         getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
             .edit()
             .putBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, immediateExit)
+            .apply()
+    }
+
+    private fun readManualDismissBootOverlaySelection(): Boolean {
+        return getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
+            .getBoolean(PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY, false)
+    }
+
+    private fun saveManualDismissBootOverlaySelection(enabled: Boolean) {
+        getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY, enabled)
             .apply()
     }
 
