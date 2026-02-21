@@ -5,6 +5,7 @@ import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -127,6 +128,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_game);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         applyImmersiveMode();
         renderScale = resolveRenderScale();
         String requestedMode = getIntent().getStringExtra(EXTRA_LAUNCH_MODE);
@@ -1323,8 +1325,14 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
             return handleAndroidBackKeyEvent(event);
+        }
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                || keyCode == KeyEvent.KEYCODE_VOLUME_MUTE) {
+            return handleVolumeKeyEvent(event);
         }
         if (isGamepadKeyEvent(event)) {
             return handleGamepadKeyEvent(event);
@@ -1334,7 +1342,7 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             return true;
         }
 
-        int glfwKey = AndroidGlfwKeycode.toGlfw(event.getKeyCode());
+        int glfwKey = AndroidGlfwKeycode.toGlfw(keyCode);
         if (glfwKey == AndroidGlfwKeycode.GLFW_KEY_UNKNOWN) {
             return super.dispatchKeyEvent(event);
         }
@@ -1346,6 +1354,36 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
         int unicode = event.getUnicodeChar();
         if (isDown && unicode > 0 && !Character.isISOControl(unicode)) {
             CallbackBridge.sendChar((char) unicode, CallbackBridge.getCurrentMods());
+        }
+        return true;
+    }
+
+    private boolean handleVolumeKeyEvent(@NonNull KeyEvent event) {
+        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (audioManager == null) {
+            return false;
+        }
+
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int direction;
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_VOLUME_UP:
+                    direction = AudioManager.ADJUST_RAISE;
+                    break;
+                case KeyEvent.KEYCODE_VOLUME_DOWN:
+                    direction = AudioManager.ADJUST_LOWER;
+                    break;
+                case KeyEvent.KEYCODE_VOLUME_MUTE:
+                    direction = AudioManager.ADJUST_TOGGLE_MUTE;
+                    break;
+                default:
+                    return false;
+            }
+            audioManager.adjustStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    direction,
+                    AudioManager.FLAG_SHOW_UI
+            );
         }
         return true;
     }
