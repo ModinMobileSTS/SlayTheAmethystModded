@@ -27,8 +27,8 @@ android {
         }
 
         externalNativeBuild {
-            ndkBuild {
-                arguments += listOf("APP_SHORT_COMMANDS=true")
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
     }
@@ -58,8 +58,9 @@ android {
     }
 
     externalNativeBuild {
-        ndkBuild {
-            path = file("src/main/jni/Android.mk")
+        cmake {
+            path = file("src/main/jni/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

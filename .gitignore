@@ -10,6 +10,7 @@ build/
 runtime-pack/*
 !runtime-pack/README.txt
 .kotlin
+.cxx
 
 # local temporary workspace
 _tmp/
