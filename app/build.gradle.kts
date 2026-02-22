@@ -1,4 +1,5 @@
-import java.util.zip.ZipFile
+import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.Sync
 import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -8,139 +9,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val runtimePackPath = providers.environmentVariable("STS_JRE8_PACK")
-    .orElse(providers.gradleProperty("sts.jre8.pack"))
-    .orElse("runtime-pack/jre8-pojav.zip")
-val runtimePackFile = rootProject.layout.projectDirectory.file(runtimePackPath.get()).asFile
 val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
-val bootBridgeSourceDir = rootProject.layout.projectDirectory.dir("tools/boot-bridge-src")
-val bootBridgeClassesDir = layout.buildDirectory.dir("generated/boot-bridge/classes")
-val gdxPatchSourceDir = rootProject.layout.projectDirectory.dir("tools/gdx-patch-src")
-val gdxPatchClassesDir = layout.buildDirectory.dir("generated/gdx-patch/classes")
-val gdxPatchOutputDir = project.layout.projectDirectory.dir("src/main/assets/components/gdx_patch")
-val desktopJarFile = rootProject.layout.projectDirectory.file("tools/desktop-1.0.jar").asFile
-val lwjglGlfwClassesJarFile =
-    project.layout.projectDirectory.file("src/main/assets/components/lwjgl3/lwjgl-glfw-classes.jar").asFile
-
-val prepareEmbeddedJrePack by tasks.registering {
-    outputs.dir(generatedRuntimeAssetsDir)
-
-    doLast {
-        if (!runtimePackFile.exists()) {
-            throw GradleException("Missing runtime pack: ${runtimePackFile.absolutePath}. Please place jre8-pojav.zip there.")
-        }
-
-        val outDir = generatedRuntimeAssetsDir.get().asFile
-        val targetDir = File(outDir, "components/jre")
-        targetDir.deleteRecursively()
-        targetDir.mkdirs()
-
-        ZipFile(runtimePackFile).use { zip ->
-            val required = setOf("universal.tar.xz", "version")
-            val archCandidates = mapOf(
-                "bin-aarch64.tar.xz" to listOf("bin-aarch64.tar.xz", "bin-arm64.tar.xz"),
-                "bin-arm.tar.xz" to listOf("bin-arm.tar.xz", "bin-armeabi-v7a.tar.xz")
-            )
-            val matched = mutableMapOf<String, java.util.zip.ZipEntry>()
-            val matchedArch = mutableMapOf<String, java.util.zip.ZipEntry>()
-            zip.entries().asSequence().forEach { entry ->
-                if (entry.isDirectory) return@forEach
-                val name = entry.name.replace('\\', '/')
-                val shortName = name.substringAfterLast('/')
-                if (shortName in required && shortName !in matched) {
-                    matched[shortName] = entry
-                    return@forEach
-                }
-                archCandidates.forEach { (canonicalName, candidates) ->
-                    if (canonicalName !in matchedArch && shortName in candidates) {
-                        matchedArch[canonicalName] = entry
-                    }
-                }
-            }
-
-            val missing = mutableListOf<String>()
-            required.filterTo(missing) { it !in matched.keys }
-            archCandidates.forEach { (canonicalName, candidates) ->
-                if (canonicalName !in matchedArch) {
-                    missing += candidates.joinToString("/")
-                }
-            }
-            if (missing.isNotEmpty()) {
-                throw GradleException("Invalid runtime pack, missing: ${missing.joinToString(", ")}")
-            }
-
-            matched.forEach { (shortName, entry) ->
-                val outFile = File(targetDir, shortName)
-                zip.getInputStream(entry).use { input ->
-                    outFile.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-
-            matchedArch.forEach { (canonicalName, entry) ->
-                val outArchFile = File(targetDir, canonicalName)
-                zip.getInputStream(entry).use { input ->
-                    outArchFile.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-        }
-    }
-}
-
-val compileBootBridgeJava by tasks.registering(JavaCompile::class) {
-    source = fileTree(bootBridgeSourceDir) {
-        include("**/*.java")
-    }
-    classpath = files()
-    destinationDirectory.set(bootBridgeClassesDir)
-    sourceCompatibility = "1.8"
-    targetCompatibility = "1.8"
-    options.encoding = "UTF-8"
-    doFirst {
-        if (source.files.isEmpty()) {
-            throw GradleException("Missing boot bridge sources under ${bootBridgeSourceDir.asFile.absolutePath}")
-        }
-    }
-}
-
-val packageBootBridgeJar by tasks.registering(Jar::class) {
-    dependsOn(compileBootBridgeJava)
-    archiveFileName.set("boot-bridge.jar")
-    destinationDirectory.set(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
-    from(bootBridgeClassesDir)
-}
-
-val compileGdxPatchJava by tasks.registering(JavaCompile::class) {
-    source = fileTree(gdxPatchSourceDir) {
-        include("**/*.java")
-    }
-    classpath = files(desktopJarFile, lwjglGlfwClassesJarFile)
-    destinationDirectory.set(gdxPatchClassesDir)
-    sourceCompatibility = "1.8"
-    targetCompatibility = "1.8"
-    options.encoding = "UTF-8"
-    options.compilerArgs.addAll(listOf("-proc:none", "-g:source,lines,vars", "-Xlint:-options"))
-    doFirst {
-        if (source.files.isEmpty()) {
-            throw GradleException("Missing gdx patch sources under ${gdxPatchSourceDir.asFile.absolutePath}")
-        }
-        if (!desktopJarFile.exists()) {
-            throw GradleException("Missing desktop jar: ${desktopJarFile.absolutePath}")
-        }
-        if (!lwjglGlfwClassesJarFile.exists()) {
-            throw GradleException("Missing lwjgl bridge jar: ${lwjglGlfwClassesJarFile.absolutePath}")
-        }
-    }
-}
-
-val packageGdxPatchJar by tasks.registering(Jar::class) {
-    dependsOn(compileGdxPatchJava)
-    archiveFileName.set("gdx-patch.jar")
-    destinationDirectory.set(gdxPatchOutputDir)
-    from(gdxPatchClassesDir)
-    from(gdxPatchSourceDir) {
-        include("build.properties")
-    }
-}
 
 android {
     namespace = "io.stamethyst"
@@ -195,9 +64,7 @@ android {
     }
 
     packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
+        jniLibs.useLegacyPackaging = true
         jniLibs.pickFirsts += setOf("**/libbytehook.so")
     }
 
@@ -213,12 +80,6 @@ kotlin {
     }
 }
 
-tasks.named("preBuild").configure {
-    dependsOn(prepareEmbeddedJrePack)
-    dependsOn(packageBootBridgeJar)
-    dependsOn(packageGdxPatchJar)
-}
-
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-compose:1.12.4")
@@ -232,4 +93,34 @@ dependencies {
     implementation("com.bytedance:bytehook:1.0.9")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+val installBootBridgeJar by tasks.registering(Copy::class) {
+    val dep = project(":boot-bridge").tasks.named<Jar>("jar")
+    dependsOn(dep)
+    from(dep.flatMap { it.archiveFile })
+    into(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
+}
+
+val patchProjectPaths = listOf(
+    ":patchs:gdx-patch",
+    ":patchs:downfall-fbo-patch",
+    ":patchs:basemod-fbo-patch",
+    ":patchs:basemod-glow-fbo-compat"
+)
+
+val installPatchJars by tasks.registering(Sync::class) {
+    val patchJarTasks = patchProjectPaths.map { projectPath ->
+        project(projectPath).tasks.named<Jar>("jar")
+    }
+    dependsOn(patchJarTasks)
+    patchProjectPaths.forEach { projectPath ->
+        from(project(projectPath).tasks.named<Jar>("jar").flatMap { it.archiveFile })
+    }
+    into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_patch") })
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(installBootBridgeJar)
+    dependsOn(installPatchJars)
 }

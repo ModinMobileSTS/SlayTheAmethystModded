@@ -1902,7 +1902,7 @@ class LauncherActivity : AppCompatActivity() {
             "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
-            "\nRuntime pack expected at build time: runtime-pack/jre8-pojav.zip"
+            "\nBundled JRE path: app/src/main/assets/components/jre"
 
         uiState = uiState.copy(
             busy = false,

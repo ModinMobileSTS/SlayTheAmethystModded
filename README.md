@@ -11,11 +11,15 @@ Minimal Android launcher that boots Slay the Spire (`desktop-1.0.jar`) with:
 - No ModTheSpire in this phase
 
 ## Required Inputs
-1. Runtime pack zip at `runtime-pack/jre8-pojav.zip`
-   - must contain: `universal.tar.xz`, `bin-aarch64.tar.xz` (or `bin-arm64.tar.xz`), `bin-arm.tar.xz`, `version`
-   - optional override: set env `STS_JRE8_PACK=/absolute/path/to/jre8-pojav.zip`
-2. STS desktop jar imported from app UI
-   - stored as `files/sts/desktop-1.0.jar`
+1. Set environment variable `STEAM_PATH`
+   - example: `export STEAM_PATH='~/Library/Application Support/Steam/steamapps/'`
+   - required files are loaded from:
+     - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
+     - `${STEAM_PATH}/workshop/content/646570/1605833019/BaseMod.jar`
+     - `${STEAM_PATH}/workshop/content/646570/1610056683/Downfall.jar`
+2. Place JRE runtime files in `app/src/main/assets/components/jre`
+   - required files: `universal.tar.xz`, `bin-aarch64.tar.xz`, `bin-arm.tar.xz`, `version`
+   - if your source files are named `bin-arm64.tar.xz` or `bin-armeabi-v7a.tar.xz`, rename them to the required filenames above
 3. Native `.so` under `app/src/main/jniLibs/armeabi-v7a`
    - mirror all runtime-critical libs that currently exist in `app/src/main/jniLibs/arm64-v8a`
 
@@ -23,8 +27,6 @@ Minimal Android launcher that boots Slay the Spire (`desktop-1.0.jar`) with:
 ```bash
 ./gradlew :app:assembleDebug
 ```
-
-If `runtime-pack/jre8-pojav.zip` is missing, build fails with a clear error.
 
 ## App Flow
 1. Open app.
