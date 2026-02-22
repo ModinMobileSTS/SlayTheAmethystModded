@@ -36,9 +36,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,6 +63,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.stamethyst.ui.Icons
+import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.Settings
 import net.kdt.pojavlaunch.MainActivity
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -273,7 +273,7 @@ class LauncherActivity : AppCompatActivity() {
                         if (screen != Screen.MAIN) {
                             IconButton(onClick = { handleSettingsBackNavigation() }) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    imageVector = Icons.ArrowBack,
                                     contentDescription = "返回"
                                 )
                             }
@@ -283,7 +283,7 @@ class LauncherActivity : AppCompatActivity() {
                         if (screen == Screen.MAIN) {
                             IconButton(onClick = { screen = Screen.SETTINGS }) {
                                 Icon(
-                                    imageVector = Icons.Filled.Settings,
+                                    imageVector = Icons.Settings,
                                     contentDescription = "设置"
                                 )
                             }
