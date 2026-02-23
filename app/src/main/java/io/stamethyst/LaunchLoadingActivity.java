@@ -113,7 +113,7 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                     }
                     String detail = "Launch preparation failed: "
                             + error.getClass().getSimpleName()
-                            + ": " + String.valueOf(error.getMessage());
+                            + ": " + error.getMessage();
                     new AlertDialog.Builder(this)
                             .setTitle(R.string.sts_crash_dialog_title)
                             .setMessage(getString(R.string.sts_crash_detail_format, detail))
@@ -145,18 +145,15 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                             Toast.LENGTH_LONG
                     ).show();
                 }
-                Intent intent = new Intent(this, StsGameActivity.class);
-                intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode);
-                intent.putExtra(StsGameActivity.EXTRA_RENDERER_BACKEND, rendererDecision.effective.rendererId());
-                intent.putExtra(StsGameActivity.EXTRA_PRELAUNCH_PREPARED, true);
-                intent.putExtra(
-                        StsGameActivity.EXTRA_WAIT_FOR_MAIN_MENU,
-                        StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
-                );
-                intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit);
-                intent.putExtra(StsGameActivity.EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay);
                 Log.i(TAG, "Starting StsGameActivity, mode=" + launchMode + ", delayMs=" + delay);
-                startActivity(intent);
+                StsGameActivity.launch(
+                        this,
+                        launchMode,
+                        rendererDecision.effective,
+                        true,
+                        backImmediateExit,
+                        manualDismissBootOverlay
+                );
                 finish();
             };
 

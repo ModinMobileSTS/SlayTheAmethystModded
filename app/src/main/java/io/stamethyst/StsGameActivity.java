@@ -3,6 +3,7 @@ package io.stamethyst;
 import android.annotation.SuppressLint;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.media.AudioManager;
@@ -1455,5 +1456,26 @@ public class StsGameActivity extends AppCompatActivity implements SurfaceHolder.
             );
         }
         return true;
+    }
+
+    public static void launch(
+            @NonNull Context context,
+            @NonNull String launchMode,
+            @NonNull RendererBackend rendererBackend,
+            boolean prelaunchPrepared,
+            boolean backImmediateExit,
+            boolean manualDismissBootOverlay
+    ) {
+        Intent intent = new Intent(context, StsGameActivity.class);
+        intent.putExtra(EXTRA_LAUNCH_MODE, launchMode);
+        intent.putExtra(EXTRA_RENDERER_BACKEND, rendererBackend.rendererId());
+        intent.putExtra(EXTRA_PRELAUNCH_PREPARED, prelaunchPrepared);
+        intent.putExtra(
+                EXTRA_WAIT_FOR_MAIN_MENU,
+                StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)
+        );
+        intent.putExtra(EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit);
+        intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay);
+        context.startActivity(intent);
     }
 }
