@@ -1,8 +1,9 @@
 # Third Party Licenses (Summary)
 
-## Amethyst-Android / PojavLauncher
+## Amethyst-Android
 - Source: https://github.com/AngelAuraMC/Amethyst-Android
-- License: Refer to upstream repository license files.
+- Local reused package: `app/src/main/java/net/kdt/pojavlaunch/**`
+- License: GNU Lesser General Public License v3.0 (LGPL-3.0)
 - Usage: JavaSE launch bridge integration, JNI bridge, component assets.
 
 ## OpenJDK Launcher Bridge Snippets
