@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
 import android.util.Log
+import androidx.core.content.edit
 
 object LauncherIconManager {
     private const val TAG = "LauncherIconManager"
@@ -37,9 +38,9 @@ object LauncherIconManager {
 
     private fun saveSelection(context: Context, icon: LauncherIcon) {
         context.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
-            .edit()
-            .putString(PREF_KEY_LAUNCHER_ICON, icon.name)
-            .apply()
+            .edit {
+                putString(PREF_KEY_LAUNCHER_ICON, icon.name)
+            }
     }
 
     private fun setAliasState(context: Context, selected: LauncherIcon) {
