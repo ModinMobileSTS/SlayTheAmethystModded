@@ -26,6 +26,7 @@ public class DesktopControllerManager implements ControllerManager {
     private static final int BUTTON_COUNT = 15;
     private static final int AXIS_COUNT = 6;
     private static final float AXIS_EPSILON = 0.0001f;
+    private static final float TRIGGER_CONNECT_THRESHOLD = 0.05f;
     private static final byte BUTTON_RELEASE = 0;
     private static final byte BUTTON_PRESS = 1;
 
@@ -52,6 +53,7 @@ public class DesktopControllerManager implements ControllerManager {
     private final float[] lastAxes = new float[AXIS_COUNT];
     private PovDirection lastPovDirection = PovDirection.center;
     private boolean connectedNotified = false;
+    private boolean controllerRegistered = false;
     private boolean hasSeenInput = false;
 
     public DesktopControllerManager() {
@@ -59,7 +61,6 @@ public class DesktopControllerManager implements ControllerManager {
         axisBuffer = createAxisBuffer();
         Arrays.fill(lastButtons, BUTTON_RELEASE);
         Arrays.fill(lastAxes, 0f);
-        controllers.add(controller);
         if (Gdx.app != null) {
             Gdx.app.postRunnable(new PollRunnable());
         }
@@ -157,11 +158,35 @@ public class DesktopControllerManager implements ControllerManager {
             }
         }
         for (int axis = 0; axis < AXIS_COUNT; axis++) {
-            if (Math.abs(readAxisState(axis)) > AXIS_EPSILON) {
+            float value = readAxisState(axis);
+            if (axis == RAW_AXIS_LEFT_TRIGGER || axis == RAW_AXIS_RIGHT_TRIGGER) {
+                // Android motion triggers can report [-1, 1] at rest; normalize before
+                // deciding whether a controller is really active.
+                float normalized = normalizeTriggerForConnection(value);
+                if (normalized > TRIGGER_CONNECT_THRESHOLD) {
+                    return true;
+                }
+                continue;
+            }
+            if (Math.abs(value) > AXIS_EPSILON) {
                 return true;
             }
         }
         return false;
+    }
+
+    private float normalizeTriggerForConnection(float rawValue) {
+        float normalized = rawValue;
+        if (normalized < 0f) {
+            normalized = (normalized + 1f) * 0.5f;
+        }
+        if (normalized < 0f) {
+            return 0f;
+        }
+        if (normalized > 1f) {
+            return 1f;
+        }
+        return normalized;
     }
 
     private byte readButtonState(int button) {
@@ -196,6 +221,10 @@ public class DesktopControllerManager implements ControllerManager {
     private void handleConnectedIfNeeded() {
         if (connectedNotified) {
             return;
+        }
+        if (!controllerRegistered) {
+            controllers.add(controller);
+            controllerRegistered = true;
         }
         connectedNotified = true;
         forEachListenerConnected();

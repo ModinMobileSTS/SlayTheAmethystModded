@@ -24,7 +24,7 @@ dependencyResolutionManagement {
 rootProject.name = "SlayTheAmethyst"
 include(":app")
 include(":boot-bridge")
-include(":patchs:gdx-patch")
-include(":patchs:downfall-fbo-patch")
-include(":patchs:basemod-fbo-patch")
-include(":patchs:basemod-glow-fbo-compat")
+include(":patches:gdx-patch")
+include(":patches:downfall-fbo-patch")
+include(":patches:basemod-fbo-patch")
+include(":patches:basemod-glow-fbo-compat")

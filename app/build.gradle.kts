@@ -108,10 +108,10 @@ val installBootBridgeJar by tasks.registering(Copy::class) {
 }
 
 val patchProjectPaths = listOf(
-    ":patchs:gdx-patch",
-    ":patchs:downfall-fbo-patch",
-    ":patchs:basemod-fbo-patch",
-    ":patchs:basemod-glow-fbo-compat"
+    ":patches:gdx-patch",
+    ":patches:downfall-fbo-patch",
+    ":patches:basemod-fbo-patch",
+    ":patches:basemod-glow-fbo-compat"
 )
 val runtimePackZip = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
 
