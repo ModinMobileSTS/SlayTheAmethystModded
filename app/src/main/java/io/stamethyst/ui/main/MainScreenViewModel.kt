@@ -14,11 +14,11 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.CrashReportStore
 import io.stamethyst.LauncherActivity
+import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.render.RendererConfig
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.R
-import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import java.io.IOException
@@ -463,22 +463,18 @@ class MainScreenViewModel : ViewModel() {
         val backImmediateExit = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
 
-        val intent = Intent(host, StsGameActivity::class.java)
-        intent.putExtra(StsGameActivity.EXTRA_LAUNCH_MODE, launchMode)
-        intent.putExtra(StsGameActivity.EXTRA_RENDERER_BACKEND, renderer.rendererId())
-        intent.putExtra(StsGameActivity.EXTRA_TARGET_FPS, targetFps)
-        intent.putExtra(StsGameActivity.EXTRA_PRELAUNCH_PREPARED, false)
-        intent.putExtra(
-            StsGameActivity.EXTRA_WAIT_FOR_MAIN_MENU,
-            StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
-        )
-        intent.putExtra(StsGameActivity.EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
-        intent.putExtra(StsGameActivity.EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
         Log.i(
             TAG,
             "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay"
         )
-        host.startActivity(intent)
+        StsGameActivity.launch(
+            host,
+            launchMode,
+            renderer,
+            targetFps,
+            backImmediateExit,
+            manualDismissBootOverlay
+        )
     }
 
     private fun loadModItems(host: Activity): List<ModItemUi> {

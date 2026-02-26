@@ -19,10 +19,6 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
-            android:name="io.stamethyst.LaunchLoadingActivity"
-            android:exported="false" />
-
-        <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"
             android:exported="false"
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />

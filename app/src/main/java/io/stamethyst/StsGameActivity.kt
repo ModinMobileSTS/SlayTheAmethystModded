@@ -26,6 +26,7 @@ import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
@@ -67,7 +68,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         private const val TAG = "StsGameActivity"
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
         const val EXTRA_RENDERER_BACKEND = "io.stamethyst.renderer_backend"
-        const val EXTRA_PRELAUNCH_PREPARED = "io.stamethyst.prelaunch_prepared"
         const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
@@ -86,14 +86,14 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             @NonNull context: Context,
             @NonNull launchMode: String,
             @NonNull rendererBackend: RendererBackend,
-            prelaunchPrepared: Boolean,
+            targetFps: Int,
             backImmediateExit: Boolean,
             manualDismissBootOverlay: Boolean
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
             intent.putExtra(EXTRA_RENDERER_BACKEND, rendererBackend.rendererId())
-            intent.putExtra(EXTRA_PRELAUNCH_PREPARED, prelaunchPrepared)
+            intent.putExtra(EXTRA_TARGET_FPS, targetFps)
             intent.putExtra(
                 EXTRA_WAIT_FOR_MAIN_MENU,
                 StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
@@ -123,6 +123,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var runtimeLifecycleReady = false
 
     @Volatile
+    private var bridgeSurfaceReady = false
+
+    @Volatile
     private var backExitRequested = false
 
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
@@ -136,7 +139,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var targetFps = DEFAULT_TARGET_FPS
     private var launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA
     private var launcherRequestedRenderer = RendererBackend.OPENGL_ES2
-    private var prelaunchPrepared = false
     private var waitForMainMenu = false
     private var backImmediateExit = true
     private var manualDismissBootOverlay = false
@@ -193,10 +195,17 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == requestedMode) {
             launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
         }
-        launcherRequestedRenderer = RendererBackend.fromRendererId(
-            intent.getStringExtra(EXTRA_RENDERER_BACKEND)
-        )
-        prelaunchPrepared = intent.getBooleanExtra(EXTRA_PRELAUNCH_PREPARED, false)
+        val requestedRenderer = RendererBackend.fromRendererId(intent.getStringExtra(EXTRA_RENDERER_BACKEND))
+        val rendererDecision = RendererConfig.resolveEffectiveBackend(this, requestedRenderer)
+        launcherRequestedRenderer = rendererDecision.effective
+        appendRendererDecisionLog("game_entry", rendererDecision)
+        if (rendererDecision.isFallback) {
+            Toast.makeText(
+                this,
+                getString(R.string.renderer_fallback_toast, rendererDecision.reason),
+                Toast.LENGTH_LONG
+            ).show()
+        }
         waitForMainMenu = intent.getBooleanExtra(
             EXTRA_WAIT_FOR_MAIN_MENU,
             StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
@@ -239,6 +248,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     releaseTextureSurfaceIfNeeded()
                     textureSurface = Surface(surface)
                     JREUtils.setupBridgeWindow(textureSurface)
+                    bridgeSurfaceReady = true
                     updateWindowSize()
                     tryStartJvmWhenSurfaceReady()
                 }
@@ -256,6 +266,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 }
 
                 override fun onSurfaceTextureDestroyed(@NonNull surface: SurfaceTexture): Boolean {
+                    bridgeSurfaceReady = false
                     JREUtils.releaseBridgeWindow()
                     releaseTextureSurfaceIfNeeded()
                     surfaceBufferWidth = 0
@@ -293,6 +304,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onDestroy() {
         resetGamepadState()
         runtimeLifecycleReady = false
+        bridgeSurfaceReady = false
         earlyOverlayDismissOnNextFrame = false
         stopBootBridgeReaderIfRunning()
         val launchThread = jvmLaunchThread
@@ -322,6 +334,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             surfaceBufferHeight = frame.height()
         }
         JREUtils.setupBridgeWindow(holder.surface)
+        bridgeSurfaceReady = true
         updateWindowSize()
         tryStartJvmWhenSurfaceReady()
     }
@@ -334,6 +347,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceDestroyed(@NonNull holder: SurfaceHolder) {
+        bridgeSurfaceReady = false
         JREUtils.releaseBridgeWindow()
     }
 
@@ -462,13 +476,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     runOnUiThread { finish() }
                     return@Thread
                 }
-                if (prelaunchPrepared) {
-                    Log.i(TAG, "Skip prelaunch prepare steps in game activity (already prepared)")
-                    updateBootOverlayProgress(12, "Prelaunch checks already done")
-                } else {
-                    LaunchPreparationService.prepare(this, launchMode) { percent, message ->
-                        updateBootOverlayProgress(mapBootOverlayPreparationProgress(percent), message)
-                    }
+                LaunchPreparationService.prepare(this, launchMode) { percent, message ->
+                    updateBootOverlayProgress(mapBootOverlayPreparationProgress(percent), message)
                 }
 
                 val runtimeRoot = RuntimePaths.runtimeRoot(this)
@@ -538,10 +547,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 JREUtils.setupExitMethod(applicationContext)
                 JREUtils.initializeHooks()
                 JREUtils.chdir(RuntimePaths.stsRoot(this).absolutePath)
-                runtimeLifecycleReady = true
-
                 CallbackBridge.nativeSetUseInputStackQueue(true)
                 CallbackBridge.nativeSetInputReady(true)
+                runtimeLifecycleReady = true
 
                 val launchArgs = ArrayList<String>()
                 launchArgs.add("java")
@@ -713,6 +721,23 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             updateBootOverlayProgress(1, "Starting launch pipeline... (manual overlay dismiss)")
         } else {
             updateBootOverlayProgress(1, "Starting launch pipeline...")
+        }
+    }
+
+    private fun appendRendererDecisionLog(stage: String, decision: RendererConfig.ResolutionResult) {
+        val line = "[StsGameActivity/$stage] ${decision.toLogText()}\n"
+        try {
+            RuntimePaths.ensureBaseDirs(this)
+            val logFile = RuntimePaths.latestLog(this)
+            val parent = logFile.parentFile
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                return
+            }
+            FileOutputStream(logFile, true).use { output ->
+                output.write(line.toByteArray(StandardCharsets.UTF_8))
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "Failed to append renderer decision log", error)
         }
     }
 
@@ -1225,6 +1250,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun handleGamepadKeyEvent(@NonNull event: KeyEvent): Boolean {
+        if (!isNativeInputDispatchReady()) {
+            return true
+        }
         ensureGamepadDirectInputEnabled()
         val action = event.action
         if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
@@ -1235,6 +1263,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun handleGamepadMotionEvent(@NonNull event: MotionEvent): Boolean {
+        if (!isNativeInputDispatchReady()) {
+            return true
+        }
         ensureGamepadDirectInputEnabled()
         AndroidGamepadGlfwMapper.writeMotionEvent(event)
         return true
@@ -1262,6 +1293,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun sendMouseButton(androidButton: Int, down: Boolean): Boolean {
+        if (!isNativeInputDispatchReady()) {
+            return true
+        }
         val glfwButton = when (androidButton) {
             MotionEvent.BUTTON_PRIMARY -> LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LEFT.toInt()
             MotionEvent.BUTTON_SECONDARY -> LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt()
@@ -1273,6 +1307,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun handleTouchEvent(event: MotionEvent): Boolean {
+        if (!isNativeInputDispatchReady()) {
+            return false
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = event.getPointerId(0)
@@ -1340,6 +1377,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun moveCursor(x: Float, y: Float) {
+        if (!isNativeInputDispatchReady()) {
+            return
+        }
         val mapped = mapToWindowCoords(x, y)
         CallbackBridge.sendCursorPos(mapped[0], mapped[1])
     }
@@ -1368,6 +1408,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun pressLeftIfNeeded() {
+        if (!isNativeInputDispatchReady()) {
+            return
+        }
         if (leftPressed) {
             return
         }
@@ -1376,6 +1419,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun releaseLeftIfNeeded() {
+        if (!isNativeInputDispatchReady()) {
+            leftPressed = false
+            return
+        }
         if (!leftPressed) {
             return
         }
@@ -1401,6 +1448,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (isGamepadKeyEvent(event)) {
             return handleGamepadKeyEvent(event)
         }
+        if (!isNativeInputDispatchReady()) {
+            return super.dispatchKeyEvent(event)
+        }
 
         if (event.action == KeyEvent.ACTION_MULTIPLE) {
             return true
@@ -1420,6 +1470,19 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             CallbackBridge.sendChar(unicode.toChar(), CallbackBridge.getCurrentMods())
         }
         return true
+    }
+
+    private fun isNativeInputDispatchReady(): Boolean {
+        if (backExitRequested) {
+            return false
+        }
+        if (!runtimeLifecycleReady) {
+            return false
+        }
+        if (!bridgeSurfaceReady) {
+            return false
+        }
+        return CallbackBridge.windowWidth > 0 && CallbackBridge.windowHeight > 0
     }
 
     private fun handleVolumeKeyEvent(@NonNull event: KeyEvent): Boolean {
