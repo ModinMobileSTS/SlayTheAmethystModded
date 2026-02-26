@@ -113,6 +113,7 @@ val patchProjectPaths = listOf(
     ":patchs:basemod-fbo-patch",
     ":patchs:basemod-glow-fbo-compat"
 )
+val runtimePackZip = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
 
 val installPatchJars by tasks.registering(Sync::class) {
     val patchJarTasks = patchProjectPaths.map { projectPath ->
@@ -125,7 +126,22 @@ val installPatchJars by tasks.registering(Sync::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_patch") })
 }
 
+val installRuntimePackAssets by tasks.registering(Sync::class) {
+    doFirst {
+        val runtimePackFile = runtimePackZip.asFile
+        if (!runtimePackFile.isFile) {
+            throw GradleException(
+                "Missing runtime pack zip: ${runtimePackFile.absolutePath}. " +
+                    "Expected runtime-pack/jre8-pojav.zip."
+            )
+        }
+    }
+    from(zipTree(runtimePackZip))
+    into(generatedRuntimeAssetsDir.map { it.dir("components/jre") })
+}
+
 tasks.named("preBuild").configure {
     dependsOn(installBootBridgeJar)
     dependsOn(installPatchJars)
+    dependsOn(installRuntimePackAssets)
 }

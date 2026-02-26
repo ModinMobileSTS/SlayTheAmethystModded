@@ -1,44 +1,57 @@
-# SlayTheAmethyst (Minimal)
+# SlayTheAmethyst
 
-Minimal Android launcher that boots Slay the Spire (`desktop-1.0.jar`) with:
+Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
 - LibGDX desktop runtime bridge
 - Amethyst/Pojav JavaSE launch chain
-- arm64-v8a + armeabi-v7a
+- arm64-v8a + armeabi-v7a support
 
-## Scope
-- Vanilla STS startup to main menu
-- External keyboard/mouse first
-- No ModTheSpire in this phase
+## Current Scope (Verified 2026-02-26)
+- Main-screen launch defaults to `mts_basemod` mode.
+- Bundled mod components include `ModTheSpire.jar`, `BaseMod.jar`, and `StSLib.jar`.
+- Vanilla mode (`com.megacrit.cardcrawl.desktop.DesktopLauncher`) still exists for debug launch entry.
 
-## Required Inputs
-1. Set environment variable `STEAM_PATH`
-   - example: `export STEAM_PATH='~/Library/Application Support/Steam/steamapps/'`
-   - required files are loaded from:
-     - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
-     - `${STEAM_PATH}/workshop/content/646570/1605833019/BaseMod.jar`
-     - `${STEAM_PATH}/workshop/content/646570/1610056683/Downfall.jar`
-2. Place JRE runtime files in `app/src/main/assets/components/jre`
-   - required files: `universal.tar.xz`, `bin-aarch64.tar.xz`, `bin-arm.tar.xz`, `version`
-   - if your source files are named `bin-arm64.tar.xz` or `bin-armeabi-v7a.tar.xz`, rename them to the required filenames above
-3. Native `.so` under `app/src/main/jniLibs/armeabi-v7a`
-   - mirror all runtime-critical libs that currently exist in `app/src/main/jniLibs/arm64-v8a`
+## Build Prerequisites (Developers)
+1. Set environment variable `STEAM_PATH` (or Gradle property `steam.path`) to Steam root or `steamapps`.
+2. Required build-time jars are resolved from Steam/Workshop:
+   - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
+   - `${STEAM_PATH}/workshop/content/646570/1605833019/BaseMod.jar`
+   - `${STEAM_PATH}/workshop/content/646570/1610056683/Downfall.jar`
+3. Ensure runtime pack zip exists at `runtime-pack/jre8-pojav.zip` (auto-expanded into APK assets during `preBuild`).
+   Required entries inside zip:
+   - `universal.tar.xz`
+   - `bin-arm64.tar.xz` (or legacy `bin-aarch64.tar.xz`)
+   - `bin-arm.tar.xz`
+   - `version`
+4. When adding/updating runtime-critical native libs, keep both ABI folders in sync:
+   - `app/src/main/jniLibs/arm64-v8a`
+   - `app/src/main/jniLibs/armeabi-v7a`
 
 ## Build
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-## App Flow
-1. Open app.
-2. Tap `Import desktop-1.0.jar`.
-3. Tap `Launch Slay the Spire`.
-4. App installs runtime/components and starts `com.megacrit.cardcrawl.desktop.DesktopLauncher`.
+## Runtime Setup (Device)
+1. Open app settings.
+2. Import `desktop-1.0.jar`.
+3. Optionally import extra mod jars and save archive.
+4. Return to main screen and tap Launch.
 
-## Storage Paths
-- STS jar: `files/sts/desktop-1.0.jar`
-- Runtime: `files/runtimes/Internal/...`
-- LWJGL classes: `files/lwjgl3/lwjgl-glfw-classes.jar`
-- Log file: `files/sts/latestlog.txt`
+## Runtime Paths (`filesDir`)
+- `files/sts/desktop-1.0.jar`
+- `files/sts/ModTheSpire.jar`
+- `files/sts/mods/BaseMod.jar`
+- `files/sts/mods/StSLib.jar`
+- `files/runtimes/Internal/...`
+- `files/lwjgl3/lwjgl-glfw-classes.jar`
+- `files/sts/latestlog.txt`
+- `files/sts/jvm_output.log`
+- `files/sts/boot_bridge_events.log`
+
+## Documentation Map
+- Entry guide and prerequisites: `README.md`
+- Backend launch chain: `docs/backend-startup-chain.md`
+- Agent-only workflow constraints: `requirement.md`
 
 ## Credits
 This repository reuses parts of Amethyst-Android/PojavLauncher native and Java bridge code.

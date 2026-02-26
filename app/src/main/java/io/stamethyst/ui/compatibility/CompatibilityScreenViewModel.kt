@@ -6,7 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-import io.stamethyst.CompatibilitySettings
+import io.stamethyst.backend.CompatibilitySettings
 
 @Stable
 class CompatibilityScreenViewModel : ViewModel() {

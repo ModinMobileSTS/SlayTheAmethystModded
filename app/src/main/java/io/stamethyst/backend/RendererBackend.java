@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 public enum RendererBackend {
     OPENGL_ES2("opengles2", "OpenGL ES2 (default)", "OpenGL ES2"),

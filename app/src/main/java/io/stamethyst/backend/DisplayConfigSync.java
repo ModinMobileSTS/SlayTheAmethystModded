@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 import android.content.Context;
 
@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-final class DisplayConfigSync {
+public final class DisplayConfigSync {
     private static final int DEFAULT_FPS_LIMIT = 60;
     private static final int FALLBACK_TARGET_FPS_LIMIT = 120;
     private static final boolean DEFAULT_FULLSCREEN = false;
@@ -22,7 +22,7 @@ final class DisplayConfigSync {
     private DisplayConfigSync() {
     }
 
-    static void syncToCurrentResolution(Context context, int width, int height, int targetFpsLimit) throws IOException {
+    public static void syncToCurrentResolution(Context context, int width, int height, int targetFpsLimit) throws IOException {
         int safeWidth = Math.max(MIN_WIDTH, width);
         int safeHeight = Math.max(MIN_HEIGHT, height);
         int normalizedTargetFpsLimit = normalizeTargetFpsLimit(targetFpsLimit);

@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 import android.content.Context;
 
@@ -323,7 +323,7 @@ public final class ModJarSupport {
         appendCompatLog(context, "prepare classpath done");
     }
 
-    static void appendCompatDiagnosticSnapshot(Context context, String stage) {
+    public static void appendCompatDiagnosticSnapshot(Context context, String stage) {
         appendCompatDiagnostics(context, stage);
     }
 

@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -23,6 +23,7 @@ public final class RuntimePackInstaller {
     private static final String ARCHIVE_UNIVERSAL = "universal.tar.xz";
     private static final String ARCHIVE_VERSION = "version";
     private static final String ARCHIVE_AARCH64 = "bin-aarch64.tar.xz";
+    private static final String ARCHIVE_ARM64 = "bin-arm64.tar.xz";
     private static final String ARCHIVE_ARM32 = "bin-arm.tar.xz";
 
     private RuntimePackInstaller() {
@@ -46,7 +47,11 @@ public final class RuntimePackInstaller {
         if (markerFile.exists()) {
             String installedMarker = new String(Files.readAllBytes(markerFile.toPath()), StandardCharsets.UTF_8).trim();
             boolean markerMatched = installedMarker.equals(bundledMarker)
-                    || (installedMarker.equals(bundledVersion) && ARCHIVE_AARCH64.equals(archArchive));
+                    || (installedMarker.equals(bundledVersion) && isArm64Archive(archArchive))
+                    || (installedMarker.equals(bundledVersion + "|" + ARCHIVE_AARCH64)
+                    && ARCHIVE_ARM64.equals(archArchive))
+                    || (installedMarker.equals(bundledVersion + "|" + ARCHIVE_ARM64)
+                    && ARCHIVE_AARCH64.equals(archArchive));
             File javaHome = locateJavaHome(runtimeRoot);
             if (markerMatched && javaHome != null && isRuntimeReady(javaHome)) {
                 reportProgress(progressCallback, 100, "Runtime pack already up to date");
@@ -280,17 +285,59 @@ public final class RuntimePackInstaller {
 
     private static String resolveArchArchive(AssetManager assets) throws IOException {
         boolean is64BitProcess = android.os.Process.is64Bit();
-        String required = is64BitProcess ? ARCHIVE_AARCH64 : ARCHIVE_ARM32;
-        if (assetExists(assets, "components/jre/" + required)) {
-            return required;
+        if (is64BitProcess) {
+            if (assetExists(assets, "components/jre/" + ARCHIVE_AARCH64)) {
+                return ARCHIVE_AARCH64;
+            }
+            if (assetExists(assets, "components/jre/" + ARCHIVE_ARM64)) {
+                return ARCHIVE_ARM64;
+            }
+            throw new IOException(
+                    "Runtime pack missing required architecture archive: "
+                            + ARCHIVE_AARCH64
+                            + " or "
+                            + ARCHIVE_ARM64
+                            + " (process=64-bit, available="
+                            + listRuntimeArchives(assets)
+                            + ")"
+            );
         }
+
+        if (assetExists(assets, "components/jre/" + ARCHIVE_ARM32)) {
+            return ARCHIVE_ARM32;
+        }
+
         throw new IOException(
                 "Runtime pack missing required architecture archive: "
-                        + required
+                        + ARCHIVE_ARM32
                         + " (process="
-                        + (is64BitProcess ? "64-bit" : "32-bit")
+                        + "32-bit, available="
+                        + listRuntimeArchives(assets)
                         + ")"
         );
+    }
+
+    private static boolean isArm64Archive(String archiveName) {
+        return ARCHIVE_AARCH64.equals(archiveName) || ARCHIVE_ARM64.equals(archiveName);
+    }
+
+    private static String listRuntimeArchives(AssetManager assets) {
+        try {
+            String[] names = assets.list("components/jre");
+            if (names == null || names.length == 0) {
+                return "<empty>";
+            }
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < names.length; i++) {
+                if (i > 0) {
+                    builder.append(',');
+                }
+                builder.append(names[i]);
+            }
+            return builder.toString();
+        } catch (Throwable ignored) {
+            return "<unavailable>";
+        }
     }
 
     private static File findRuntimeArchLibDir(File javaHome) {

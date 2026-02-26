@@ -12,6 +12,13 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import io.stamethyst.backend.CrashReportStore;
+import io.stamethyst.backend.LaunchPreparationService;
+import io.stamethyst.backend.RendererBackend;
+import io.stamethyst.backend.RendererConfig;
+import io.stamethyst.backend.RuntimePaths;
+import io.stamethyst.backend.StsLaunchSpec;
+
 import java.io.File;
 
 public class LaunchLoadingActivity extends AppCompatActivity {
@@ -71,38 +78,13 @@ public class LaunchLoadingActivity extends AppCompatActivity {
         executor.execute(() -> {
             try {
                 Log.i(TAG, "startPrepare begin, mode=" + launchMode + ", rendererRequest=" + requestedRenderer.rendererId());
-                postProgress(3, "Installing launcher components...");
-                ComponentInstaller.ensureInstalled(this, mapProgressRange(5, 35));
-                Log.i(TAG, "ComponentInstaller.ensureInstalled done");
-
-                postProgress(36, "Preparing Java runtime...");
-                RuntimePackInstaller.ensureInstalled(this, mapProgressRange(36, 76));
-                Log.i(TAG, "RuntimePackInstaller.ensureInstalled done");
-
-                postProgress(78, "Ensuring runtime directories...");
-                RuntimePaths.ensureBaseDirs(this);
-
-                postProgress(82, "Resolving renderer backend...");
+                postProgress(2, "Resolving renderer backend...");
                 RendererConfig.ResolutionResult rendererDecision =
                         RendererConfig.resolveEffectiveBackend(this, requestedRenderer);
                 appendRendererDecisionLog("loading", rendererDecision);
                 Log.i(TAG, "Renderer decision: " + rendererDecision.toLogText());
 
-                postProgress(86, "Validating desktop-1.0.jar...");
-                File jar = RuntimePaths.importedStsJar(this);
-                StsJarValidator.validate(jar);
-
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD.equals(launchMode)) {
-                    postProgress(90, "Validating required mod jars...");
-                    ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(this));
-                    ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(this));
-                    ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(this));
-                    postProgress(95, "Preparing MTS classpath...");
-                    ModJarSupport.prepareMtsClasspath(this);
-                    ModManager.resolveLaunchModIds(this);
-                }
-
-                postProgress(100, "Launch preparation complete");
+                LaunchPreparationService.prepare(this, launchMode, this::postProgress);
                 continueLaunchAfterMinimumVisible(rendererDecision);
             } catch (Throwable error) {
                 CrashReportStore.recordThrowable(this, "loading_prepare", error);
@@ -163,19 +145,6 @@ public class LaunchLoadingActivity extends AppCompatActivity {
                 launchAction.run();
             }
         });
-    }
-
-    private StartupProgressCallback mapProgressRange(int startPercent, int endPercent) {
-        int safeStart = clampPercent(startPercent);
-        int safeEnd = clampPercent(endPercent);
-        return (percent, message) ->
-                postProgress(mapRangeProgress(percent, safeStart, safeEnd), message);
-    }
-
-    private int mapRangeProgress(int percent, int startPercent, int endPercent) {
-        int bounded = clampPercent(percent);
-        float ratio = bounded / 100f;
-        return startPercent + Math.round((endPercent - startPercent) * ratio);
     }
 
     private int clampPercent(int value) {

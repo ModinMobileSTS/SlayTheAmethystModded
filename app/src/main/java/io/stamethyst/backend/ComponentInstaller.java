@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 import android.content.Context;
 import android.content.res.AssetManager;

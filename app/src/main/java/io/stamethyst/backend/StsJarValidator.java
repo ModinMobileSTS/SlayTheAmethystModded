@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;

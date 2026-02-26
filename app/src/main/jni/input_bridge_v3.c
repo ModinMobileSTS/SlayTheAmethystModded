@@ -433,13 +433,14 @@ void critical_send_cursor_pos(jfloat x, jfloat y) {
 void noncritical_send_cursor_pos(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz,  jfloat x, jfloat y) {
     critical_send_cursor_pos(x, y);
 }
-#define max(a,b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
 void critical_send_key(jint key, jint scancode, jint action, jint mods) {
     if (pojav_environ->GLFW_invoke_Key && pojav_environ->isInputReady) {
-        pojav_environ->keyDownBuffer[max(0, key-31)] = (jbyte) action;
+        // Guard buffer writes: some JVM/GLFW combinations may expose a smaller
+        // key-state buffer than expected and out-of-range writes can crash native code.
+        int key_index = key - 31;
+        if (pojav_environ->keyDownBuffer != NULL && key_index >= 0 && key_index < 512) {
+            pojav_environ->keyDownBuffer[key_index] = (jbyte) action;
+        }
         if (pojav_environ->isUseStackQueueCall) {
             sendData(EVENT_TYPE_KEY, key, scancode, action, mods);
         } else {
@@ -453,7 +454,14 @@ void noncritical_send_key(__attribute__((unused)) JNIEnv* env, __attribute__((un
 
 void critical_send_mouse_button(jint button, jint action, jint mods) {
     if (pojav_environ->GLFW_invoke_MouseButton && pojav_environ->isInputReady) {
-        pojav_environ->mouseDownBuffer[max(0, button)] = (jbyte) action;
+        // GLFW mouse buttons are in [0..7]. Reject anything outside to avoid
+        // invalid native buffer writes when ABI quirks scramble critical-native args.
+        if (button < 0 || button > 7) {
+            return;
+        }
+        if (pojav_environ->mouseDownBuffer != NULL) {
+            pojav_environ->mouseDownBuffer[button] = (jbyte) action;
+        }
         if (pojav_environ->isUseStackQueueCall) {
             sendData(EVENT_TYPE_MOUSE_BUTTON, button, action, mods, 0);
         } else {
@@ -654,10 +662,11 @@ static bool tryCriticalNative(JNIEnv *env) {
 }
 
 static void registerFunctions(JNIEnv *env) {
-    bool use_critical_cc = tryCriticalNative(env);
+    bool critical_supported = tryCriticalNative(env);
+    bool use_critical_cc = false;
     jclass bridge_class = (*env)->FindClass(env, "org/lwjgl/glfw/CallbackBridge");
-    if(use_critical_cc) {
-        LOGI("CriticalNative is available. Enjoy the 4.6x times faster input!");
+    if (critical_supported) {
+        LOGI("CriticalNative detected, but disabled by stability guard");
     }else{
         LOGI("CriticalNative is not available. Upgrade, maybe?");
     }

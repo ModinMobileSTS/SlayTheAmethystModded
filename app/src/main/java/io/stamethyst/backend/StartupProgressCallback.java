@@ -1,4 +1,4 @@
-package io.stamethyst;
+package io.stamethyst.backend;
 
 @FunctionalInterface
 public interface StartupProgressCallback {
