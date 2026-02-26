@@ -6,8 +6,8 @@ import com.badlogic.gdx.controllers.ControllerListener;
 import com.badlogic.gdx.controllers.ControllerManager;
 import com.badlogic.gdx.controllers.PovDirection;
 import com.badlogic.gdx.math.Vector3;
-import com.megacrit.cardcrawl.core.GameCursor;
 import com.badlogic.gdx.utils.Array;
+import com.megacrit.cardcrawl.core.Settings;
 
 import org.lwjgl.glfw.CallbackBridge;
 
@@ -55,12 +55,16 @@ public class DesktopControllerManager implements ControllerManager {
     private boolean connectedNotified = false;
     private boolean controllerRegistered = false;
     private boolean hasSeenInput = false;
+    private boolean directInputEnableAttempted = false;
 
     public DesktopControllerManager() {
         buttonBuffer = createButtonBuffer();
         axisBuffer = createAxisBuffer();
+        resetBufferedState();
         Arrays.fill(lastButtons, BUTTON_RELEASE);
         Arrays.fill(lastAxes, 0f);
+        registerControllerIfNeeded();
+        tryEnableDirectInput();
         if (Gdx.app != null) {
             Gdx.app.postRunnable(new PollRunnable());
         }
@@ -105,16 +109,16 @@ public class DesktopControllerManager implements ControllerManager {
     }
 
     private void pollAndDispatch() {
+        if (!directInputEnableAttempted) {
+            tryEnableDirectInput();
+        }
         if (!hasSeenInput) {
+            enforceTouchModeUntilFirstGamepadInput();
             if (!hasLiveInput()) {
                 return;
             }
             hasSeenInput = true;
         }
-
-        // Diagnostic: keep the in-game cursor visible while controller input is active
-        // so we can verify whether controller navigation is drifting the mouse position.
-        GameCursor.hidden = false;
 
         if (!connectedNotified) {
             handleConnectedIfNeeded();
@@ -122,6 +126,41 @@ public class DesktopControllerManager implements ControllerManager {
         dispatchButtonEvents();
         dispatchAxisEvents();
         dispatchPovEvent();
+    }
+
+    private void enforceTouchModeUntilFirstGamepadInput() {
+        try {
+            if (Settings.isControllerMode || !Settings.isTouchScreen) {
+                Settings.isControllerMode = false;
+                Settings.isTouchScreen = true;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void registerControllerIfNeeded() {
+        if (controllerRegistered) {
+            return;
+        }
+        controllers.add(controller);
+        controllerRegistered = true;
+    }
+
+    private void resetBufferedState() {
+        for (int i = 0; i < BUTTON_COUNT; i++) {
+            try {
+                buttonBuffer.put(i, BUTTON_RELEASE);
+            } catch (Throwable ignored) {
+                break;
+            }
+        }
+        for (int i = 0; i < AXIS_COUNT; i++) {
+            try {
+                axisBuffer.put(i, 0f);
+            } catch (Throwable ignored) {
+                break;
+            }
+        }
     }
 
     private ByteBuffer createButtonBuffer() {
@@ -149,6 +188,20 @@ public class DesktopControllerManager implements ControllerManager {
         return ByteBuffer.allocateDirect(AXIS_COUNT * 4)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .asFloatBuffer();
+    }
+
+    private void tryEnableDirectInput() {
+        if (directInputEnableAttempted) {
+            return;
+        }
+        directInputEnableAttempted = true;
+        try {
+            java.lang.reflect.Method method =
+                    CallbackBridge.class.getDeclaredMethod("nativeEnableGamepadDirectInput");
+            method.setAccessible(true);
+            method.invoke(null);
+        } catch (Throwable ignored) {
+        }
     }
 
     private boolean hasLiveInput() {
@@ -222,10 +275,7 @@ public class DesktopControllerManager implements ControllerManager {
         if (connectedNotified) {
             return;
         }
-        if (!controllerRegistered) {
-            controllers.add(controller);
-            controllerRegistered = true;
-        }
+        registerControllerIfNeeded();
         connectedNotified = true;
         forEachListenerConnected();
     }
