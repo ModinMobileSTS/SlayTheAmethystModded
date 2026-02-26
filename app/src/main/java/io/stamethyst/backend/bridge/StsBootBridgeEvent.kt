@@ -1,4 +1,4 @@
-package io.stamethyst.backend
+package io.stamethyst.backend.bridge
 
 import java.util.Locale
 

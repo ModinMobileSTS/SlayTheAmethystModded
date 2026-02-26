@@ -1,6 +1,7 @@
-package io.stamethyst.backend;
+package io.stamethyst.backend.mods;
 
 import android.content.Context;
+import io.stamethyst.backend.core.RuntimePaths;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -32,7 +33,7 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
-public final class ModJarSupport {
+final class ModJarSupportLegacy {
     private static final String[] MOD_ID_JSON_KEYS = new String[]{
             "modid",
             "modId",
@@ -241,7 +242,7 @@ public final class ModJarSupport {
         }
     }
 
-    private ModJarSupport() {
+    private ModJarSupportLegacy() {
     }
 
     public static void validateMtsJar(File jarFile) throws IOException {

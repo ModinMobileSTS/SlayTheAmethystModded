@@ -38,7 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.stamethyst.LauncherIcon
 import io.stamethyst.R
-import io.stamethyst.backend.RendererBackend
+import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons

@@ -14,8 +14,8 @@ import android.util.Log;
 
 import net.kdt.pojavlaunch.Logger;
 
-import io.stamethyst.backend.RendererBackend;
-import io.stamethyst.backend.RuntimePaths;
+import io.stamethyst.backend.render.RendererBackend;
+import io.stamethyst.backend.core.RuntimePaths;
 
 import java.io.File;
 import java.util.ArrayList;

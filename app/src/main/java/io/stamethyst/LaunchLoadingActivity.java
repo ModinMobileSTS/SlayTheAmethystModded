@@ -12,12 +12,12 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
-import io.stamethyst.backend.CrashReportStore;
-import io.stamethyst.backend.LaunchPreparationService;
-import io.stamethyst.backend.RendererBackend;
-import io.stamethyst.backend.RendererConfig;
-import io.stamethyst.backend.RuntimePaths;
-import io.stamethyst.backend.StsLaunchSpec;
+import io.stamethyst.backend.launch.CrashReportStore;
+import io.stamethyst.backend.launch.LaunchPreparationService;
+import io.stamethyst.backend.render.RendererBackend;
+import io.stamethyst.backend.render.RendererConfig;
+import io.stamethyst.backend.core.RuntimePaths;
+import io.stamethyst.backend.launch.StsLaunchSpec;
 
 import java.io.File;
 
