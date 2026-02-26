@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <dlfcn.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <environ/environ.h>
 #include "gl_bridge.h"
 #include "egl_loader.h"
@@ -19,6 +20,53 @@
 
 static __thread gl_render_window_t* currentBundle;
 static EGLDisplay g_EglDisplay;
+
+#ifndef EGL_CONTEXT_LOST
+#define EGL_CONTEXT_LOST 0x300E
+#endif
+
+static int gl_get_context_client_version() {
+    const char* libglEsValue = getenv("LIBGL_ES");
+    int libgl_es = (int)strtol(libglEsValue == NULL ? "2" : libglEsValue, NULL, 0);
+    if (libgl_es < 0 || libgl_es > INT16_MAX) libgl_es = 2;
+    return libgl_es;
+}
+
+static bool gl_create_context_for_bundle(gl_render_window_t* bundle, EGLContext sharedContext, const char* reason) {
+    if (bundle == NULL) return false;
+    const EGLint egl_context_attributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, gl_get_context_client_version(),
+        EGL_NONE
+    };
+    bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, sharedContext, egl_context_attributes);
+    if (bundle->context == EGL_NO_CONTEXT) {
+        LOGE("eglCreateContext failed (%s): %04x", reason == NULL ? "unknown" : reason, eglGetError_p());
+        return false;
+    }
+    return true;
+}
+
+static bool gl_recreate_context(gl_render_window_t* bundle, const char* reason) {
+    if (bundle == NULL) return false;
+
+    // Detach current context before replacing it.
+    eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+
+    if (bundle->context != NULL && bundle->context != EGL_NO_CONTEXT) {
+        if (!eglDestroyContext_p(g_EglDisplay, bundle->context)) {
+            LOGW("eglDestroyContext failed while recovering (%s): %04x",
+                 reason == NULL ? "unknown" : reason, eglGetError_p());
+        }
+    }
+    bundle->context = EGL_NO_CONTEXT;
+    if (!gl_create_context_for_bundle(bundle, EGL_NO_CONTEXT, reason)) {
+        return false;
+    }
+    LOGI("Recreated EGL context (%s)", reason == NULL ? "unknown" : reason);
+    return true;
+}
+
+static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char* reason);
 
 static bool gl_egl_ready() {
     return eglChooseConfig_p != NULL
@@ -115,14 +163,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
         if (!bindResult) printf("EGLBridge: bind failed: 0x%04x\n", eglGetError_p());
     }
 
-    const char* libglEsValue = getenv("LIBGL_ES");
-    int libgl_es = (int) strtol(libglEsValue == NULL ? "2" : libglEsValue, NULL, 0);
-    if(libgl_es < 0 || libgl_es > INT16_MAX) libgl_es = 2;
-    const EGLint egl_context_attributes[] = { EGL_CONTEXT_CLIENT_VERSION, libgl_es, EGL_NONE };
-    bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, share == NULL ? EGL_NO_CONTEXT : share->context, egl_context_attributes);
-
-    if (bundle->context == EGL_NO_CONTEXT) {
-        LOGE("eglCreateContext_p() finished with error: %04x", eglGetError_p());
+    if (!gl_create_context_for_bundle(bundle, share == NULL ? EGL_NO_CONTEXT : share->context, "initial create")) {
         free(bundle);
         return NULL;
     }
@@ -130,10 +171,19 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
 }
 
 void gl_swap_surface(gl_render_window_t* bundle) {
+    if (bundle == NULL) {
+        return;
+    }
     if(bundle->nativeSurface != NULL) {
         ANativeWindow_release(bundle->nativeSurface);
+        bundle->nativeSurface = NULL;
     }
-    if(bundle->surface != NULL) eglDestroySurface_p(g_EglDisplay, bundle->surface);
+    if(bundle->surface != NULL && bundle->surface != EGL_NO_SURFACE) {
+        if (!eglDestroySurface_p(g_EglDisplay, bundle->surface)) {
+            LOGW("eglDestroySurface failed: %04x", eglGetError_p());
+        }
+    }
+    bundle->surface = EGL_NO_SURFACE;
     if(bundle->newNativeSurface != NULL) {
         LOGI("Switching to new native surface");
         bundle->nativeSurface = bundle->newNativeSurface;
@@ -147,7 +197,49 @@ void gl_swap_surface(gl_render_window_t* bundle) {
         const EGLint pbuffer_attrs[] = {EGL_WIDTH, 1 , EGL_HEIGHT, 1, EGL_NONE};
         bundle->surface = eglCreatePbufferSurface_p(g_EglDisplay, bundle->config, pbuffer_attrs);
     }
-    //eglMakeCurrent_p(g_EglDisplay, bundle->surface, bundle->surface, bundle->context);
+    if (bundle->surface == EGL_NO_SURFACE || bundle->surface == NULL) {
+        LOGE("Failed to create EGL surface: %04x", eglGetError_p());
+    }
+}
+
+static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char* reason) {
+    if (bundle == NULL) {
+        return false;
+    }
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (bundle->surface == NULL || bundle->surface == EGL_NO_SURFACE) {
+            gl_swap_surface(bundle);
+            if (bundle->surface == NULL || bundle->surface == EGL_NO_SURFACE) {
+                return false;
+            }
+        }
+
+        if (eglMakeCurrent_p(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
+            currentBundle = bundle;
+            return true;
+        }
+
+        EGLint makeCurrentErr = eglGetError_p();
+        if (makeCurrentErr == EGL_BAD_SURFACE) {
+            LOGW("eglMakeCurrent failed with EGL_BAD_SURFACE (%s), recreating surface",
+                 reason == NULL ? "unknown" : reason);
+            gl_swap_surface(bundle);
+            continue;
+        }
+        if (makeCurrentErr == EGL_CONTEXT_LOST || makeCurrentErr == EGL_BAD_CONTEXT) {
+            LOGW("eglMakeCurrent failed with context error (%04x, %s), recreating context",
+                 makeCurrentErr, reason == NULL ? "unknown" : reason);
+            if (!gl_recreate_context(bundle, reason)) {
+                return false;
+            }
+            gl_swap_surface(bundle);
+            continue;
+        }
+        LOGE("eglMakeCurrent failed (%s): %04x", reason == NULL ? "unknown" : reason, makeCurrentErr);
+        return false;
+    }
+    LOGE("eglMakeCurrent recovery exhausted (%s)", reason == NULL ? "unknown" : reason);
+    return false;
 }
 
 void gl_make_current(gl_render_window_t* bundle) {
@@ -168,33 +260,60 @@ void gl_make_current(gl_render_window_t* bundle) {
     if(bundle->surface == NULL) { //it likely will be on the first run
         gl_swap_surface(bundle);
     }
-    if(eglMakeCurrent_p(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
-        currentBundle = bundle;
-    }else {
+    if(!gl_make_current_with_recovery(bundle, "gl_make_current")) {
         if(hasSetMainWindow) {
             pojav_environ->mainWindowBundle->newNativeSurface = NULL;
             gl_swap_surface((gl_render_window_t*)pojav_environ->mainWindowBundle);
             pojav_environ->mainWindowBundle = NULL;
         }
-        LOGE("eglMakeCurrent returned with error: %04x", eglGetError_p());
     }
 
 }
 
 void gl_swap_buffers() {
+    if (currentBundle == NULL) {
+        return;
+    }
     if(currentBundle->state == STATE_RENDERER_NEW_WINDOW) {
-        eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); //detach everything to destroy the old EGLSurface
+        // Detach everything to destroy the old EGLSurface safely.
+        eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         gl_swap_surface(currentBundle);
-        eglMakeCurrent_p(g_EglDisplay, currentBundle->surface, currentBundle->surface, currentBundle->context);
+        if (!gl_make_current_with_recovery(currentBundle, "window switch")) {
+            return;
+        }
         currentBundle->state = STATE_RENDERER_ALIVE;
     }
-    if(currentBundle->surface != NULL)
-        if(!eglSwapBuffers_p(g_EglDisplay, currentBundle->surface) && eglGetError_p() == EGL_BAD_SURFACE) {
-            eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-            currentBundle->newNativeSurface = NULL;
-            gl_swap_surface(currentBundle);
-            eglMakeCurrent_p(g_EglDisplay, currentBundle->surface, currentBundle->surface, currentBundle->context);
-            LOGI("The window has died, awaiting window change");
+
+    // If context was silently dropped/unbound, recover before swap.
+    if (eglGetCurrentContext_p != NULL && eglGetCurrentContext_p() != currentBundle->context) {
+        if (!gl_make_current_with_recovery(currentBundle, "swap preflight")) {
+            return;
+        }
+    }
+
+    if(currentBundle->surface != NULL && currentBundle->surface != EGL_NO_SURFACE) {
+        if(!eglSwapBuffers_p(g_EglDisplay, currentBundle->surface)) {
+            EGLint swapErr = eglGetError_p();
+            if (swapErr == EGL_BAD_SURFACE) {
+                eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+                currentBundle->newNativeSurface = NULL;
+                gl_swap_surface(currentBundle);
+                if (gl_make_current_with_recovery(currentBundle, "swap bad surface")) {
+                    LOGI("The window surface died, switched to fallback surface");
+                }
+                return;
+            }
+            if (swapErr == EGL_CONTEXT_LOST || swapErr == EGL_BAD_CONTEXT) {
+                LOGW("eglSwapBuffers context error: %04x", swapErr);
+                if (gl_recreate_context(currentBundle, "swap context loss")) {
+                    gl_swap_surface(currentBundle);
+                    gl_make_current_with_recovery(currentBundle, "swap context loss");
+                }
+                return;
+            }
+            LOGE("eglSwapBuffers failed: %04x", swapErr);
+            return;
+        }
     }
 
 }

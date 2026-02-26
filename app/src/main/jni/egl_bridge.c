@@ -103,6 +103,10 @@ JNIEXPORT void JNICALL
 Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(ABI_COMPAT JNIEnv *env, ABI_COMPAT jclass clazz) {
     ANativeWindow* window = pojav_environ->pojavWindow;
     pojav_environ->pojavWindow = NULL;
+    if (br_setup_window != NULL) {
+        // Notify renderer bridge that the window is gone so it can switch to pbuffer early.
+        br_setup_window();
+    }
     if (window != NULL) {
         ANativeWindow_release(window);
     }
