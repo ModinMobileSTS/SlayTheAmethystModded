@@ -98,6 +98,23 @@ object ModManager {
 
     @JvmStatic
     @Throws(IOException::class)
+    fun replaceEnabledOptionalModIds(context: Context, modIds: Collection<String>) {
+        val selected: MutableSet<String> = LinkedHashSet()
+        for (modId in modIds) {
+            val normalized = normalizeModId(modId)
+            if (normalized.isNotEmpty() && !isRequiredModId(normalized)) {
+                selected.add(normalized)
+            }
+        }
+        if (selected.isNotEmpty()) {
+            val optionalModFiles = findOptionalModFiles(context)
+            selected.retainAll(optionalModFiles.keys)
+        }
+        writeEnabledOptionalModIds(context, selected)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
     fun deleteOptionalMod(context: Context, modId: String): Boolean {
         val normalized = normalizeModId(modId)
         if (normalized.isEmpty() || isRequiredModId(normalized)) {

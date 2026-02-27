@@ -55,6 +55,9 @@ class MainScreenViewModel : ViewModel() {
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val optionalModsSnapshot = ArrayList<ModItemUi>()
+    private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
+    private var pendingSelectionInitialized = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -67,22 +70,19 @@ class MainScreenViewModel : ViewModel() {
 
         val mods = loadModItems(host)
         val optionalMods = mods.filter { !it.required }
-        val optionalTotal = optionalMods.size
-        val optionalEnabled = optionalMods.count { it.enabled }
 
-        uiState = uiState.copy(
-            busy = false,
-            busyMessage = null,
-            statusSummary = buildMainStatusSummary(
-                hasJar = hasJar,
-                hasMts = hasMts,
-                hasBaseMod = hasBaseMod,
-                hasStsLib = hasStsLib,
-                optionalEnabledCount = optionalEnabled,
-                optionalTotalCount = optionalTotal
-            ),
-            optionalMods = optionalMods,
-            controlsEnabled = true
+        if (!pendingSelectionInitialized) {
+            initializePendingSelection(optionalMods)
+            pendingSelectionInitialized = true
+        }
+        optionalModsSnapshot.clear()
+        optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
+        prunePendingSelectionToInstalled()
+        publishUiState(
+            hasJar = hasJar,
+            hasMts = hasMts,
+            hasBaseMod = hasBaseMod,
+            hasStsLib = hasStsLib
         )
     }
 
@@ -156,7 +156,11 @@ class MainScreenViewModel : ViewModel() {
         }
         try {
             if (enabled) {
-                val result = enableModWithDependencies(host, mod)
+                val result = enableModWithDependencies(
+                    host = host,
+                    rootMod = mod,
+                    optionalMods = resolveOptionalModsWithPendingSelection()
+                )
                 if (result.autoEnabledModNames.isNotEmpty()) {
                     Toast.makeText(
                         host,
@@ -168,7 +172,10 @@ class MainScreenViewModel : ViewModel() {
                     showMissingDependencyDialog(host, mod, result.missingDependencies)
                 }
             } else {
-                val dependentModNames = findEnabledDependentModNames(host, mod)
+                val dependentModNames = findEnabledDependentModNames(
+                    targetMod = mod,
+                    optionalMods = resolveOptionalModsWithPendingSelection()
+                )
                 if (dependentModNames.isNotEmpty()) {
                     Toast.makeText(
                         host,
@@ -176,7 +183,7 @@ class MainScreenViewModel : ViewModel() {
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
-                    ModManager.setOptionalModEnabled(host, mod.modId, false)
+                    setPendingOptionalModEnabled(mod, false)
                 }
             }
         } catch (error: Throwable) {
@@ -186,14 +193,22 @@ class MainScreenViewModel : ViewModel() {
                 Toast.LENGTH_LONG
             ).show()
         }
-        refresh(host)
+        publishUiState(
+            hasJar = RuntimePaths.importedStsJar(host).exists(),
+            hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
+            hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
+            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
+        )
     }
 
     private fun onDeleteModRequested(host: Activity, mod: ModItemUi) {
         if (uiState.busy || mod.required || !mod.installed) {
             return
         }
-        val dependentModNames = findEnabledDependentModNames(host, mod)
+        val dependentModNames = findEnabledDependentModNames(
+            targetMod = mod,
+            optionalMods = resolveOptionalModsWithPendingSelection()
+        )
         if (dependentModNames.isNotEmpty()) {
             Toast.makeText(
                 host,
@@ -214,6 +229,7 @@ class MainScreenViewModel : ViewModel() {
                     try {
                         val deleted = ModManager.deleteOptionalMod(host, mod.modId)
                         host.runOnUiThread {
+                            clearPendingSelectionForMod(mod)
                             if (deleted) {
                                 Toast.makeText(host, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
                             } else {
@@ -238,9 +254,9 @@ class MainScreenViewModel : ViewModel() {
 
     private fun enableModWithDependencies(
         host: Activity,
-        rootMod: ModItemUi
+        rootMod: ModItemUi,
+        optionalMods: List<ModItemUi>
     ): DependencyEnableResult {
-        val optionalMods = loadModItems(host).filter { !it.required && it.installed }
         val modById = LinkedHashMap<String, ModItemUi>()
         val enabledIds = LinkedHashSet<String>()
         optionalMods.forEach { mod ->
@@ -276,7 +292,7 @@ class MainScreenViewModel : ViewModel() {
             }
 
             val wasEnabled = isModIdEnabled(enabledIds, current)
-            ModManager.setOptionalModEnabled(host, current.modId, true)
+            setPendingOptionalModEnabled(current, true)
 
             val normalizedCurrentModId = normalizeModId(current.modId)
             if (normalizedCurrentModId.isNotEmpty()) {
@@ -324,8 +340,8 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun findEnabledDependentModNames(
-        host: Activity,
-        targetMod: ModItemUi
+        targetMod: ModItemUi,
+        optionalMods: List<ModItemUi>
     ): List<String> {
         val targetIds = LinkedHashSet<String>()
         val normalizedModId = normalizeModId(targetMod.modId)
@@ -341,7 +357,7 @@ class MainScreenViewModel : ViewModel() {
         }
 
         val dependentNames = LinkedHashSet<String>()
-        loadModItems(host).forEach { mod ->
+        optionalMods.forEach { mod ->
             if (!mod.enabled) {
                 return@forEach
             }
@@ -458,6 +474,17 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun prepareAndLaunch(host: Activity, launchMode: String) {
+        ensurePendingSelectionInitialized(host)
+        try {
+            ModManager.replaceEnabledOptionalModIds(host, pendingEnabledOptionalModIds)
+        } catch (error: Throwable) {
+            Toast.makeText(
+                host,
+                "Failed to apply mod selection: ${error.message}",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
         val renderer = RendererConfig.readPreferredBackend(host)
         val targetFps = normalizeTargetFps(readTargetFpsSelection(host))
         val backImmediateExit = readBackBehaviorSelection(host)
@@ -560,6 +587,114 @@ class MainScreenViewModel : ViewModel() {
         } else {
             DEFAULT_TARGET_FPS
         }
+    }
+
+    private fun initializePendingSelection(optionalMods: List<ModItemUi>) {
+        pendingEnabledOptionalModIds.clear()
+        optionalMods.forEach { mod ->
+            if (!mod.enabled) {
+                return@forEach
+            }
+            resolveStoredOptionalModId(mod)?.let { pendingEnabledOptionalModIds.add(it) }
+        }
+    }
+
+    private fun ensurePendingSelectionInitialized(host: Activity) {
+        if (pendingSelectionInitialized) {
+            return
+        }
+        val optionalMods = loadModItems(host).filter { !it.required }
+        initializePendingSelection(optionalMods)
+        optionalModsSnapshot.clear()
+        optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
+        prunePendingSelectionToInstalled()
+        pendingSelectionInitialized = true
+    }
+
+    private fun resolveOptionalModsWithPendingSelection(): List<ModItemUi> {
+        return optionalModsSnapshot.map { mod ->
+            mod.copy(enabled = isPendingOptionalModEnabled(mod))
+        }
+    }
+
+    private fun isPendingOptionalModEnabled(mod: ModItemUi): Boolean {
+        val storedId = resolveStoredOptionalModId(mod)
+        if (storedId != null && pendingEnabledOptionalModIds.contains(storedId)) {
+            return true
+        }
+        val normalizedManifestId = normalizeModId(mod.manifestModId)
+        return normalizedManifestId.isNotEmpty() && pendingEnabledOptionalModIds.contains(normalizedManifestId)
+    }
+
+    private fun setPendingOptionalModEnabled(mod: ModItemUi, enabled: Boolean) {
+        val storedId = resolveStoredOptionalModId(mod)
+        if (storedId != null) {
+            if (enabled) {
+                pendingEnabledOptionalModIds.add(storedId)
+            } else {
+                pendingEnabledOptionalModIds.remove(storedId)
+            }
+        }
+        val normalizedManifestId = normalizeModId(mod.manifestModId)
+        if (normalizedManifestId.isNotEmpty() && !enabled) {
+            pendingEnabledOptionalModIds.remove(normalizedManifestId)
+        }
+    }
+
+    private fun clearPendingSelectionForMod(mod: ModItemUi) {
+        setPendingOptionalModEnabled(mod, false)
+    }
+
+    private fun resolveStoredOptionalModId(mod: ModItemUi): String? {
+        val normalizedModId = normalizeModId(mod.modId)
+        if (normalizedModId.isNotEmpty()) {
+            return normalizedModId
+        }
+        val normalizedManifestId = normalizeModId(mod.manifestModId)
+        return normalizedManifestId.ifEmpty { null }
+    }
+
+    private fun prunePendingSelectionToInstalled() {
+        if (pendingEnabledOptionalModIds.isEmpty()) {
+            return
+        }
+        val installedIds = LinkedHashSet<String>()
+        optionalModsSnapshot.forEach { mod ->
+            val storedId = resolveStoredOptionalModId(mod)
+            if (storedId != null) {
+                installedIds.add(storedId)
+            }
+            val normalizedManifestId = normalizeModId(mod.manifestModId)
+            if (normalizedManifestId.isNotEmpty()) {
+                installedIds.add(normalizedManifestId)
+            }
+        }
+        pendingEnabledOptionalModIds.retainAll(installedIds)
+    }
+
+    private fun publishUiState(
+        hasJar: Boolean,
+        hasMts: Boolean,
+        hasBaseMod: Boolean,
+        hasStsLib: Boolean
+    ) {
+        val optionalMods = resolveOptionalModsWithPendingSelection()
+        val optionalTotal = optionalMods.size
+        val optionalEnabled = optionalMods.count { it.enabled }
+        uiState = uiState.copy(
+            busy = false,
+            busyMessage = null,
+            statusSummary = buildMainStatusSummary(
+                hasJar = hasJar,
+                hasMts = hasMts,
+                hasBaseMod = hasBaseMod,
+                hasStsLib = hasStsLib,
+                optionalEnabledCount = optionalEnabled,
+                optionalTotalCount = optionalTotal
+            ),
+            optionalMods = optionalMods,
+            controlsEnabled = true
+        )
     }
 
     private fun setBusy(busy: Boolean, message: String?) {
