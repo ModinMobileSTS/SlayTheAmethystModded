@@ -6,10 +6,10 @@
  * - Works with some bugs:
  *  + Modded versions gives broken stuff..
  *
- * 
+ *
  * - Implements glfwSetCursorPos() to handle grab camera pos correctly.
  */
- 
+
 #include <assert.h>
 #include <dlfcn.h>
 #include <jni.h>
@@ -147,7 +147,7 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         registerFunctions(env);
     }
     pojav_environ->isGrabbing = JNI_FALSE;
-    
+
     return JNI_VERSION_1_4;
 }
 
@@ -266,7 +266,7 @@ void pojavStopPumping() {
 
 JNIEXPORT void JNICALL
 Java_org_lwjgl_glfw_GLFW_nglfwGetCursorPos(JNIEnv *env, __attribute__((unused)) jclass clazz, __attribute__((unused)) jlong window, jobject xpos,
-                                          jobject ypos) {
+                                           jobject ypos) {
     *(double*)(*env)->GetDirectBufferAddress(env, xpos) = pojav_environ->cursorX;
     *(double*)(*env)->GetDirectBufferAddress(env, ypos) = pojav_environ->cursorY;
 }
