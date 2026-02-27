@@ -19,10 +19,12 @@ package com.badlogic.gdx.backends.lwjgl;
 import java.awt.Canvas;
 import java.awt.Toolkit;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.graphics.glutils.GLVersion;
+import org.lwjgl.glfw.GLFW;
 import org.lwjgl.LWJGLException;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.ContextAttribs;
@@ -49,6 +51,7 @@ public class LwjglGraphics implements Graphics {
 	/** The suppored OpenGL extensions */
 	static Array<String> extensions;
 	static GLVersion glVersion;
+	static boolean isGLESContext;
 
 	GL20 gl20;
 	GL30 gl30;
@@ -239,17 +242,43 @@ public class LwjglGraphics implements Graphics {
 		String versionString = org.lwjgl.opengl.GL11.glGetString(GL11.GL_VERSION);
 		String vendorString = org.lwjgl.opengl.GL11.glGetString(GL11.GL_VENDOR);
 		String rendererString = org.lwjgl.opengl.GL11.glGetString(GL11.GL_RENDERER);
-		glVersion = new GLVersion(Application.ApplicationType.Desktop, versionString, vendorString, rendererString);
+		isGLESContext = versionString != null && versionString.toLowerCase().contains("opengl es");
+		Application.ApplicationType applicationType = isGLESContext ? Application.ApplicationType.Android
+			: Application.ApplicationType.Desktop;
+		glVersion = new GLVersion(applicationType, versionString, vendorString, rendererString);
+		System.out.println("[gdx-patch] GL context detected: type=" + applicationType + ", version=" + versionString
+			+ ", vendor=" + vendorString + ", renderer=" + rendererString);
 	}
 
 	private static void extractExtensions () {
 		extensions = new Array<String>();
-		if (glVersion.isVersionEqualToOrHigher(3, 2)) {
+		if (!isGLESContext && glVersion.isVersionEqualToOrHigher(3, 2) && addExtensionsFromStringi()) return;
+		addExtensionsFromLegacyString();
+		if (extensions.size == 0) addExtensionsFromStringi();
+	}
+
+	private static void addExtensionsFromLegacyString () {
+		String extensionString = org.lwjgl.opengl.GL11.glGetString(GL20.GL_EXTENSIONS);
+		if (extensionString == null || extensionString.length() == 0) return;
+		String[] parts = extensionString.split(" ");
+		for (int i = 0; i < parts.length; i++) {
+			String part = parts[i];
+			if (part != null && part.length() > 0) extensions.add(part);
+		}
+	}
+
+	private static boolean addExtensionsFromStringi () {
+		try {
 			int numExtensions = GL11.glGetInteger(GL30.GL_NUM_EXTENSIONS);
-			for (int i = 0; i < numExtensions; ++i)
-				extensions.add(org.lwjgl.opengl.GL30.glGetStringi(GL20.GL_EXTENSIONS, i));
-		} else {
-			extensions.addAll(org.lwjgl.opengl.GL11.glGetString(GL20.GL_EXTENSIONS).split(" "));
+			if (numExtensions <= 0) return false;
+			for (int i = 0; i < numExtensions; ++i) {
+				String extension = org.lwjgl.opengl.GL30.glGetStringi(GL20.GL_EXTENSIONS, i);
+				if (extension != null && extension.length() > 0) extensions.add(extension);
+			}
+			return true;
+		} catch (Throwable t) {
+			System.out.println("[gdx-patch] glGetStringi extension probe failed: " + t);
+			return false;
 		}
 	}
 
@@ -267,13 +296,30 @@ public class LwjglGraphics implements Graphics {
 	}
 
 	private static boolean supportsFBO () {
+		if (isGLESContext && glVersion.isVersionEqualToOrHigher(2, 0)) return true;
 		// FBO is in core since OpenGL 3.0, see https://www.opengl.org/wiki/Framebuffer_Object
 		return glVersion.isVersionEqualToOrHigher(3, 0) || extensions.contains("GL_EXT_framebuffer_object", false)
 			|| extensions.contains("GL_ARB_framebuffer_object", false);
 	}
 
+	private static void applyGLESWindowHints (boolean useGL30, int gles30ContextMajor, int gles30ContextMinor) {
+		try {
+			GLFW.glfwWindowHint(GLFW.GLFW_CLIENT_API, GLFW.GLFW_OPENGL_ES_API);
+			if (useGL30) {
+				GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, Math.max(3, gles30ContextMajor));
+				GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, Math.max(0, gles30ContextMinor));
+			} else {
+				GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 2);
+				GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 0);
+			}
+		} catch (Throwable t) {
+			System.out.println("[gdx-patch] Failed to set GLFW GLES hints: " + t);
+		}
+	}
+
 	private void createDisplayPixelFormat (boolean useGL30, int gles30ContextMajor, int gles30ContextMinor) {
 		try {
+			applyGLESWindowHints(useGL30, gles30ContextMajor, gles30ContextMinor);
 			if (useGL30) {
 				ContextAttribs context = new ContextAttribs(gles30ContextMajor, gles30ContextMinor).withForwardCompatible(false)
 					.withProfileCore(true);
@@ -303,6 +349,7 @@ public class LwjglGraphics implements Graphics {
 			} catch (InterruptedException ignored) {
 			}
 			try {
+				applyGLESWindowHints(false, gles30ContextMajor, gles30ContextMinor);
 				Display.create(new PixelFormat(0, 16, 8));
 				if (getDisplayMode().bitsPerPixel == 16) {
 					bufferFormat = new BufferFormat(5, 6, 5, 0, 16, 8, 0, false);
@@ -320,6 +367,7 @@ public class LwjglGraphics implements Graphics {
 				} catch (InterruptedException ignored) {
 				}
 				try {
+					applyGLESWindowHints(false, gles30ContextMajor, gles30ContextMinor);
 					Display.create(new PixelFormat());
 				} catch (Exception ex3) {
 					if (!softwareMode && config.allowSoftwareMode) {
@@ -348,7 +396,7 @@ public class LwjglGraphics implements Graphics {
 			gl30 = new LwjglGL30();
 			gl20 = gl30;
 		} else {
-			gl20 = new LwjglGL20();
+			gl20 = isGLESContext ? new LwjglGL20FboStatusCompat() : new LwjglGL20();
 		}
 
 		if (!glVersion.isVersionEqualToOrHigher(2, 0))
@@ -363,6 +411,238 @@ public class LwjglGraphics implements Graphics {
 		Gdx.gl = gl20;
 		Gdx.gl20 = gl20;
 		Gdx.gl30 = gl30;
+	}
+
+	/**
+	 * On GLES-backed contexts, EXTFramebufferObject entry points are often missing.
+	 * Prefer GL30 core FBO functions and keep legacy EXT fallback.
+	 */
+	private static class LwjglGL20FboStatusCompat extends LwjglGL20 {
+		private static IntBuffer limitBuffer (IntBuffer source, int count) {
+			IntBuffer duplicate = source.duplicate();
+			int cappedCount = Math.min(Math.max(count, 0), duplicate.remaining());
+			duplicate.limit(duplicate.position() + cappedCount);
+			return duplicate;
+		}
+
+		private static boolean canUseCorePath () {
+			try {
+				return Display.isCreated() && Display.isCurrent();
+			} catch (Throwable ignored) {
+				return false;
+			}
+		}
+
+		@Override
+		public void glBindFramebuffer (int target, int framebuffer) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glBindFramebuffer(target, framebuffer);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glBindFramebuffer(target, framebuffer);
+		}
+
+		@Override
+		public void glBindRenderbuffer (int target, int renderbuffer) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glBindRenderbuffer(target, renderbuffer);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glBindRenderbuffer(target, renderbuffer);
+		}
+
+		@Override
+		public int glCheckFramebufferStatus (int target) {
+			try {
+				if (canUseCorePath()) {
+					return org.lwjgl.opengl.GL30.glCheckFramebufferStatus(target);
+				}
+			} catch (Throwable ignored) {
+			}
+			return super.glCheckFramebufferStatus(target);
+		}
+
+		@Override
+		public void glDeleteFramebuffers (int n, IntBuffer framebuffers) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glDeleteFramebuffers(limitBuffer(framebuffers, n));
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glDeleteFramebuffers(n, framebuffers);
+		}
+
+		@Override
+		public void glDeleteFramebuffer (int framebuffer) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glDeleteFramebuffers(framebuffer);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glDeleteFramebuffer(framebuffer);
+		}
+
+		@Override
+		public void glDeleteRenderbuffers (int n, IntBuffer renderbuffers) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glDeleteRenderbuffers(limitBuffer(renderbuffers, n));
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glDeleteRenderbuffers(n, renderbuffers);
+		}
+
+		@Override
+		public void glDeleteRenderbuffer (int renderbuffer) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glDeleteRenderbuffers(renderbuffer);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glDeleteRenderbuffer(renderbuffer);
+		}
+
+		@Override
+		public void glFramebufferRenderbuffer (int target, int attachment, int renderbuffertarget, int renderbuffer) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer);
+		}
+
+		@Override
+		public void glFramebufferTexture2D (int target, int attachment, int textarget, int texture, int level) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glFramebufferTexture2D(target, attachment, textarget, texture, level);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glFramebufferTexture2D(target, attachment, textarget, texture, level);
+		}
+
+		@Override
+		public void glGenFramebuffers (int n, IntBuffer framebuffers) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glGenFramebuffers(limitBuffer(framebuffers, n));
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glGenFramebuffers(n, framebuffers);
+		}
+
+		@Override
+		public int glGenFramebuffer () {
+			try {
+				if (canUseCorePath()) {
+					return org.lwjgl.opengl.GL30.glGenFramebuffers();
+				}
+			} catch (Throwable ignored) {
+			}
+			return super.glGenFramebuffer();
+		}
+
+		@Override
+		public void glGenRenderbuffers (int n, IntBuffer renderbuffers) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glGenRenderbuffers(limitBuffer(renderbuffers, n));
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glGenRenderbuffers(n, renderbuffers);
+		}
+
+		@Override
+		public int glGenRenderbuffer () {
+			try {
+				if (canUseCorePath()) {
+					return org.lwjgl.opengl.GL30.glGenRenderbuffers();
+				}
+			} catch (Throwable ignored) {
+			}
+			return super.glGenRenderbuffer();
+		}
+
+		@Override
+		public void glGetFramebufferAttachmentParameteriv (int target, int attachment, int pname, IntBuffer params) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glGetFramebufferAttachmentParameter(target, attachment, pname, params);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glGetFramebufferAttachmentParameteriv(target, attachment, pname, params);
+		}
+
+		@Override
+		public void glGetRenderbufferParameteriv (int target, int pname, IntBuffer params) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glGetRenderbufferParameter(target, pname, params);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glGetRenderbufferParameteriv(target, pname, params);
+		}
+
+		@Override
+		public boolean glIsFramebuffer (int framebuffer) {
+			try {
+				if (canUseCorePath()) {
+					return org.lwjgl.opengl.GL30.glIsFramebuffer(framebuffer);
+				}
+			} catch (Throwable ignored) {
+			}
+			return super.glIsFramebuffer(framebuffer);
+		}
+
+		@Override
+		public boolean glIsRenderbuffer (int renderbuffer) {
+			try {
+				if (canUseCorePath()) {
+					return org.lwjgl.opengl.GL30.glIsRenderbuffer(renderbuffer);
+				}
+			} catch (Throwable ignored) {
+			}
+			return super.glIsRenderbuffer(renderbuffer);
+		}
+
+		@Override
+		public void glRenderbufferStorage (int target, int internalformat, int width, int height) {
+			try {
+				if (canUseCorePath()) {
+					org.lwjgl.opengl.GL30.glRenderbufferStorage(target, internalformat, width, height);
+					return;
+				}
+			} catch (Throwable ignored) {
+			}
+			super.glRenderbufferStorage(target, internalformat, width, height);
+		}
 	}
 
 	@Override
@@ -652,6 +932,10 @@ public class LwjglGraphics implements Graphics {
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException("Couldn't set system cursor");
 		}
+	}
+
+	static boolean isGLESContextActive () {
+		return isGLESContext;
 	}
 
 	private class LwjglDisplayMode extends DisplayMode {

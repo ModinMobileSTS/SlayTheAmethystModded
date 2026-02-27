@@ -92,6 +92,10 @@ object StsLaunchSpec {
         args.add("-Djdk.lang.Process.launchMechanism=FORK")
         val effectiveRenderer = renderer ?: RendererBackend.OPENGL_ES2
         args.add("-Dorg.lwjgl.opengl.libname=${effectiveRenderer.lwjglOpenGlLibName()}")
+        if (effectiveRenderer == RendererBackend.OPENGL_ES2) {
+            // Avoid desktop OpenGL 3.3 capability probing on GLES backends.
+            args.add("-Dorg.lwjgl.opengl.maxVersion=3.2")
+        }
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
         args.add("-Dorg.lwjgl.libname=${context.applicationInfo.nativeLibraryDir}/liblwjgl.so")
         args.add("-Dorg.lwjgl.openal.libname=${context.applicationInfo.nativeLibraryDir}/libopenal.so")
