@@ -13,8 +13,8 @@ class CompatibilityScreenViewModel : ViewModel() {
     data class UiState(
         val busy: Boolean = false,
         val busyMessage: String? = null,
-        val originalFboPatchEnabled: Boolean = true,
-        val downfallFboPatchEnabled: Boolean = true,
+        val originalFboPatchEnabled: Boolean = false,
+        val downfallFboPatchEnabled: Boolean = false,
         val virtualFboPocEnabled: Boolean = false
     )
 

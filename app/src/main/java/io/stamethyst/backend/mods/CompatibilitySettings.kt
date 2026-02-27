@@ -11,7 +11,7 @@ object CompatibilitySettings {
 
     @JvmStatic
     fun isOriginalFboPatchEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_ORIGINAL_FBO_PATCH, true)
+        return prefs(context).getBoolean(PREF_KEY_ORIGINAL_FBO_PATCH, false)
     }
 
     @JvmStatic
@@ -21,7 +21,7 @@ object CompatibilitySettings {
 
     @JvmStatic
     fun isDownfallFboPatchEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_DOWNFALL_FBO_PATCH, true)
+        return prefs(context).getBoolean(PREF_KEY_DOWNFALL_FBO_PATCH, false)
     }
 
     @JvmStatic
