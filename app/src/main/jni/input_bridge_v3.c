@@ -42,6 +42,15 @@ do {                                                                       \
 } while(0)
 
 #define AL_GAIN 0x100A
+#define MIN_VALID_SCREEN_SIZE 1
+#define MAX_VALID_SCREEN_SIZE 32768
+
+static bool isValidScreenSize(int width, int height) {
+    return width >= MIN_VALID_SCREEN_SIZE &&
+           height >= MIN_VALID_SCREEN_SIZE &&
+           width <= MAX_VALID_SCREEN_SIZE &&
+           height <= MAX_VALID_SCREEN_SIZE;
+}
 
 typedef void* (*POJAV_alcGetCurrentContext_fn)(void);
 typedef void (*POJAV_alListenerf_fn)(int param, float value);
@@ -158,6 +167,10 @@ ADD_CALLBACK_WWIN(Scroll)
 #undef ADD_CALLBACK_WWIN
 
 void updateMonitorSize(int width, int height) {
+    if (!isValidScreenSize(width, height)) {
+        LOGW("InputBridge: ignored invalid monitor size update %dx%d", width, height);
+        return;
+    }
     (*pojav_environ->glfwThreadVmEnv)->CallStaticVoidMethod(pojav_environ->glfwThreadVmEnv, pojav_environ->vmGlfwClass, pojav_environ->method_internalChangeMonitorSize, width, height);
 }
 void updateWindowSize(void* window) {
@@ -475,6 +488,10 @@ void noncritical_send_mouse_button(__attribute__((unused)) JNIEnv* env, __attrib
 }
 
 void critical_send_screen_size(jint width, jint height) {
+    if (!isValidScreenSize(width, height)) {
+        LOGW("InputBridge: rejected invalid screen size from Java = %dx%d", width, height);
+        return;
+    }
     pojav_environ->savedWidth = width;
     pojav_environ->savedHeight = height;
     LOGI("InputBridge: screen size update from Java = %dx%d", width, height);
@@ -663,10 +680,10 @@ static bool tryCriticalNative(JNIEnv *env) {
 
 static void registerFunctions(JNIEnv *env) {
     bool critical_supported = tryCriticalNative(env);
-    bool use_critical_cc = critical_supported;
+    bool use_critical_cc = false;
     jclass bridge_class = (*env)->FindClass(env, "org/lwjgl/glfw/CallbackBridge");
     if (critical_supported) {
-        LOGI("CriticalNative is available. Enabling critical callbacks.");
+        LOGI("CriticalNative is available, but input bridge forces noncritical callbacks to avoid ABI argument corruption");
     }else{
         LOGI("CriticalNative is not available. Upgrade, maybe?");
     }

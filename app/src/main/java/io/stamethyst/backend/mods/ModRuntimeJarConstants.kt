@@ -81,6 +81,10 @@ internal const val GDX_BRIDGE_LWJGL_INPUT_PREFIX =
 
 internal const val STS_PATCH_LWJGL_GRAPHICS_PREFIX =
     "com/badlogic/gdx/backends/lwjgl/LwjglGraphics"
+internal const val STS_PATCH_LWJGL_APPLICATION_PREFIX =
+    "com/badlogic/gdx/backends/lwjgl/LwjglApplication"
+internal const val STS_PATCH_LWJGL_APPLICATION_CLASS =
+    "com/badlogic/gdx/backends/lwjgl/LwjglApplication.class"
 internal const val STS_PATCH_PIXEL_SCALE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/PixelScaleCompat.class"
 internal const val STS_PATCH_LWJGL_INPUT_CLASS =
@@ -131,6 +135,7 @@ internal const val COMPAT_LOG_PREFIX = "[compat] "
 
 internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
     Arrays.asList(
+        STS_PATCH_LWJGL_APPLICATION_CLASS,
         "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",
         STS_PATCH_PIXEL_SCALE_CLASS,
         STS_PATCH_LWJGL_INPUT_CLASS,
