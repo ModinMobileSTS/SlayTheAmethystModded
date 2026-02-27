@@ -136,6 +136,9 @@ public final class BootBridgeLauncher {
         if (mappedPercent >= 0) {
             emitPhase(mappedPercent, line);
         }
+        if (isReadyConsoleLine(line)) {
+            emitReady("Startup reached interactive phase");
+        }
     }
 
     private static boolean isKnownFatalConsoleLine(String line) {
@@ -186,6 +189,20 @@ public final class BootBridgeLauncher {
         return -1;
     }
 
+    private static boolean isReadyConsoleLine(String line) {
+        String lower = line.toLowerCase();
+        if (lower.contains("basemod.basemod> publishaddcustommodemods")) {
+            return true;
+        }
+        if (lower.contains("stats.statsscreen> loading character stats.")) {
+            return true;
+        }
+        if (lower.contains("core.displayconfig> displayconfig successfully read.")) {
+            return true;
+        }
+        return lower.contains("characters.charactermanager> successfully recreated");
+    }
+
     private static void startMainMenuWatcher() {
         Thread watcher = new Thread(() -> {
             while (!READY_SENT.get() && !FAIL_SENT.get()) {
@@ -195,15 +212,13 @@ public final class BootBridgeLauncher {
                         sleepQuietly(120L);
                         continue;
                     }
-                    String modeName = String.valueOf(mode);
-                    if ("MAIN_MENU".equals(modeName)) {
-                        emitReady("Main menu ready");
+                    String modeName = readModeName(mode);
+                    if (isReadyGameMode(modeName)) {
+                        emitReady("Game mode ready: " + modeName);
                         return;
                     }
                     if ("SPLASH".equals(modeName)) {
                         emitPhase(94, "Game splash");
-                    } else if ("CHAR_SELECT".equals(modeName)) {
-                        emitPhase(98, "Character select");
                     }
                 } catch (Throwable ignored) {
                 }
@@ -215,18 +230,51 @@ public final class BootBridgeLauncher {
     }
 
     private static Object readGameMode() throws Exception {
-        ClassLoader loader = Thread.currentThread().getContextClassLoader();
-        Class<?> cardCrawlGameClass = Class.forName(
-                "com.megacrit.cardcrawl.core.CardCrawlGame",
-                false,
-                loader
-        );
+        Class<?> cardCrawlGameClass = loadCardCrawlGameClass();
         Field modeField = cardCrawlGameClass.getDeclaredField("mode");
         if (!Modifier.isStatic(modeField.getModifiers())) {
             return null;
         }
         modeField.setAccessible(true);
         return modeField.get(null);
+    }
+
+    private static Class<?> loadCardCrawlGameClass() throws ClassNotFoundException {
+        ClassLoader[] candidates = new ClassLoader[]{
+                Thread.currentThread().getContextClassLoader(),
+                BootBridgeLauncher.class.getClassLoader(),
+                ClassLoader.getSystemClassLoader()
+        };
+        ClassNotFoundException last = null;
+        for (ClassLoader loader : candidates) {
+            if (loader == null) {
+                continue;
+            }
+            try {
+                return Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame", false, loader);
+            } catch (ClassNotFoundException error) {
+                last = error;
+            }
+        }
+        if (last != null) {
+            throw last;
+        }
+        return Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame");
+    }
+
+    private static String readModeName(Object mode) {
+        if (mode instanceof Enum<?>) {
+            return ((Enum<?>) mode).name();
+        }
+        return String.valueOf(mode);
+    }
+
+    private static boolean isReadyGameMode(String modeName) {
+        if (modeName == null || modeName.isEmpty()) {
+            return false;
+        }
+        // Splash is still pre-render warmup; any other mode means the game UI is ready.
+        return !"SPLASH".equals(modeName);
     }
 
     private static void invokeDelegate(String delegateClass, String[] args) throws Throwable {

@@ -7,6 +7,8 @@
 #include <dlfcn.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <pthread.h>
 #include <environ/environ.h>
 #include "gl_bridge.h"
 #include "egl_loader.h"
@@ -20,6 +22,8 @@
 
 static __thread gl_render_window_t* currentBundle;
 static EGLDisplay g_EglDisplay;
+static pthread_mutex_t g_surface_mutex = PTHREAD_MUTEX_INITIALIZER;
+static uint32_t g_swap_diag_counter = 0;
 
 #ifndef EGL_CONTEXT_LOST
 #define EGL_CONTEXT_LOST 0x300E
@@ -30,6 +34,110 @@ static int gl_get_context_client_version() {
     int libgl_es = (int)strtol(libglEsValue == NULL ? "2" : libglEsValue, NULL, 0);
     if (libgl_es < 0 || libgl_es > INT16_MAX) libgl_es = 2;
     return libgl_es;
+}
+
+static void gl_advance_context_generation(const char* reason) {
+    if (pojav_environ == NULL) return;
+    int generation = atomic_fetch_add_explicit(&pojav_environ->glContextGeneration, 1, memory_order_relaxed) + 1;
+    LOGI("GL context generation -> %d (%s)", generation, reason == NULL ? "unknown" : reason);
+}
+
+static void gl_replace_queued_surface_locked(gl_render_window_t* bundle, ANativeWindow* window) {
+    if (bundle == NULL) {
+        return;
+    }
+    if (bundle->newNativeSurface != NULL) {
+        ANativeWindow_release(bundle->newNativeSurface);
+        bundle->newNativeSurface = NULL;
+    }
+    if (window != NULL) {
+        ANativeWindow_acquire(window);
+        bundle->newNativeSurface = window;
+    }
+}
+
+static void gl_queue_surface(gl_render_window_t* bundle, ANativeWindow* window, const char* reason) {
+    if (bundle == NULL) {
+        return;
+    }
+    pthread_mutex_lock(&g_surface_mutex);
+    gl_replace_queued_surface_locked(bundle, window);
+    pthread_mutex_unlock(&g_surface_mutex);
+    LOGI("Queued %s surface update (%s)", window == NULL ? "NULL" : "native",
+         reason == NULL ? "unknown" : reason);
+}
+
+static void gl_queue_bridge_window_surface(gl_render_window_t* bundle, const char* reason) {
+    if (bundle == NULL) {
+        return;
+    }
+    bool hasWindow = false;
+    pthread_mutex_lock(&g_surface_mutex);
+    ANativeWindow* window = (pojav_environ == NULL) ? NULL : pojav_environ->pojavWindow;
+    gl_replace_queued_surface_locked(bundle, window);
+    hasWindow = window != NULL;
+    pthread_mutex_unlock(&g_surface_mutex);
+    LOGI("Queued %s bridge window (%s)", hasWindow ? "native" : "NULL",
+         reason == NULL ? "unknown" : reason);
+}
+
+static ANativeWindow* gl_take_queued_surface(gl_render_window_t* bundle) {
+    ANativeWindow* queued = NULL;
+    if (bundle == NULL) {
+        return NULL;
+    }
+    pthread_mutex_lock(&g_surface_mutex);
+    queued = bundle->newNativeSurface;
+    bundle->newNativeSurface = NULL;
+    pthread_mutex_unlock(&g_surface_mutex);
+    return queued;
+}
+
+static ANativeWindow* gl_take_queued_or_bridge_surface(gl_render_window_t* bundle) {
+    ANativeWindow* queued = gl_take_queued_surface(bundle);
+    if (queued != NULL) {
+        return queued;
+    }
+
+    pthread_mutex_lock(&g_surface_mutex);
+    bool canReuseBridgeWindow = pojav_environ != NULL &&
+        pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
+        pojav_environ->pojavWindow != NULL;
+    if (canReuseBridgeWindow) {
+        queued = pojav_environ->pojavWindow;
+        ANativeWindow_acquire(queued);
+    }
+    pthread_mutex_unlock(&g_surface_mutex);
+
+    if (queued != NULL) {
+        LOGI("No queued surface, reusing current bridge window");
+        printf("GLBridgeDiag: no queued surface, reusing bridge window\n");
+    }
+    return queued;
+}
+
+static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const char* reason) {
+    if (bundle == NULL) {
+        return false;
+    }
+    bool queued = false;
+    pthread_mutex_lock(&g_surface_mutex);
+    if (pojav_environ != NULL &&
+        pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
+        pojav_environ->pojavWindow != NULL &&
+        bundle->nativeSurface == NULL) {
+        gl_replace_queued_surface_locked(bundle, pojav_environ->pojavWindow);
+        bundle->state = STATE_RENDERER_NEW_WINDOW;
+        queued = true;
+    }
+    pthread_mutex_unlock(&g_surface_mutex);
+
+    if (queued) {
+        LOGI("Detected bridge window while on fallback surface, scheduling window restore (%s)",
+             reason == NULL ? "unknown" : reason);
+        printf("GLBridgeDiag: scheduling window restore (%s)\n", reason == NULL ? "unknown" : reason);
+    }
+    return queued;
 }
 
 static bool gl_create_context_for_bundle(gl_render_window_t* bundle, EGLContext sharedContext, const char* reason) {
@@ -43,6 +151,7 @@ static bool gl_create_context_for_bundle(gl_render_window_t* bundle, EGLContext 
         LOGE("eglCreateContext failed (%s): %04x", reason == NULL ? "unknown" : reason, eglGetError_p());
         return false;
     }
+    gl_advance_context_generation(reason);
     return true;
 }
 
@@ -174,6 +283,7 @@ void gl_swap_surface(gl_render_window_t* bundle) {
     if (bundle == NULL) {
         return;
     }
+    ANativeWindow* queuedSurface = gl_take_queued_or_bridge_surface(bundle);
     if(bundle->nativeSurface != NULL) {
         ANativeWindow_release(bundle->nativeSurface);
         bundle->nativeSurface = NULL;
@@ -184,21 +294,22 @@ void gl_swap_surface(gl_render_window_t* bundle) {
         }
     }
     bundle->surface = EGL_NO_SURFACE;
-    if(bundle->newNativeSurface != NULL) {
+    if(queuedSurface != NULL) {
         LOGI("Switching to new native surface");
-        bundle->nativeSurface = bundle->newNativeSurface;
-        bundle->newNativeSurface = NULL;
-        ANativeWindow_acquire(bundle->nativeSurface);
+        bundle->nativeSurface = queuedSurface;
         ANativeWindow_setBuffersGeometry(bundle->nativeSurface, 0, 0, bundle->format);
         bundle->surface = eglCreateWindowSurface_p(g_EglDisplay, bundle->config, bundle->nativeSurface, NULL);
+        printf("GLBridgeDiag: created WINDOW surface=%p native=%p\n", bundle->surface, bundle->nativeSurface);
     }else{
         LOGI("No new native surface, switching to 1x1 pbuffer");
         bundle->nativeSurface = NULL;
         const EGLint pbuffer_attrs[] = {EGL_WIDTH, 1 , EGL_HEIGHT, 1, EGL_NONE};
         bundle->surface = eglCreatePbufferSurface_p(g_EglDisplay, bundle->config, pbuffer_attrs);
+        printf("GLBridgeDiag: created PBUFFER surface=%p\n", bundle->surface);
     }
     if (bundle->surface == EGL_NO_SURFACE || bundle->surface == NULL) {
         LOGE("Failed to create EGL surface: %04x", eglGetError_p());
+        printf("GLBridgeDiag: surface create failed err=0x%04x\n", eglGetError_p());
     }
 }
 
@@ -251,20 +362,30 @@ void gl_make_current(gl_render_window_t* bundle) {
         return;
     }
     bool hasSetMainWindow = false;
+    pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle == NULL) {
         pojav_environ->mainWindowBundle = (basic_render_window_t*)bundle;
-        LOGI("Main window bundle is now %p", pojav_environ->mainWindowBundle);
-        pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
         hasSetMainWindow = true;
+    }
+    if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle) {
+        gl_replace_queued_surface_locked(bundle, pojav_environ->pojavWindow);
+    }
+    pthread_mutex_unlock(&g_surface_mutex);
+    if (hasSetMainWindow) {
+        LOGI("Main window bundle is now %p", pojav_environ->mainWindowBundle);
     }
     if(bundle->surface == NULL) { //it likely will be on the first run
         gl_swap_surface(bundle);
     }
     if(!gl_make_current_with_recovery(bundle, "gl_make_current")) {
         if(hasSetMainWindow) {
-            pojav_environ->mainWindowBundle->newNativeSurface = NULL;
-            gl_swap_surface((gl_render_window_t*)pojav_environ->mainWindowBundle);
-            pojav_environ->mainWindowBundle = NULL;
+            pthread_mutex_lock(&g_surface_mutex);
+            if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle) {
+                gl_replace_queued_surface_locked(bundle, NULL);
+                pojav_environ->mainWindowBundle = NULL;
+            }
+            pthread_mutex_unlock(&g_surface_mutex);
+            gl_swap_surface(bundle);
         }
     }
 
@@ -274,6 +395,11 @@ void gl_swap_buffers() {
     if (currentBundle == NULL) {
         return;
     }
+
+    // If we were forced onto a pbuffer but the Java bridge window is back,
+    // promote back to the on-screen surface automatically.
+    gl_try_restore_main_window_surface(currentBundle, "swap preflight");
+
     if(currentBundle->state == STATE_RENDERER_NEW_WINDOW) {
         // Detach everything to destroy the old EGLSurface safely.
         eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -296,7 +422,7 @@ void gl_swap_buffers() {
             EGLint swapErr = eglGetError_p();
             if (swapErr == EGL_BAD_SURFACE) {
                 eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-                currentBundle->newNativeSurface = NULL;
+                gl_queue_bridge_window_surface(currentBundle, "swap bad surface");
                 gl_swap_surface(currentBundle);
                 if (gl_make_current_with_recovery(currentBundle, "swap bad surface")) {
                     LOGI("The window surface died, switched to fallback surface");
@@ -312,17 +438,33 @@ void gl_swap_buffers() {
                 return;
             }
             LOGE("eglSwapBuffers failed: %04x", swapErr);
+            printf("GLBridgeDiag: eglSwapBuffers failed err=0x%04x surface=%p native=%p state=%d\n",
+                   swapErr, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
             return;
         }
+    }
+
+    g_swap_diag_counter++;
+    if ((g_swap_diag_counter % 600) == 0) {
+        printf("GLBridgeDiag: swap heartbeat #%u surface=%p native=%p state=%d\n",
+               g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
     }
 
 }
 
 void gl_setup_window() {
+    bool updated = false;
+    pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle != NULL) {
         LOGI("Main window bundle is not NULL, changing state");
-        pojav_environ->mainWindowBundle->state = STATE_RENDERER_NEW_WINDOW;
-        pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
+        gl_render_window_t* mainBundle = (gl_render_window_t*)pojav_environ->mainWindowBundle;
+        mainBundle->state = STATE_RENDERER_NEW_WINDOW;
+        gl_replace_queued_surface_locked(mainBundle, pojav_environ->pojavWindow);
+        updated = true;
+    }
+    pthread_mutex_unlock(&g_surface_mutex);
+    if (updated) {
+        LOGI("Queued window surface for next swap");
     }
 }
 

@@ -32,6 +32,7 @@
 /* Consider GLFW_NO_API as Vulkan API */
 #define GLFW_NO_API 0
 #define GLFW_OPENGL_API 0x30001
+#define GLFW_OPENGL_ES_API 0x30002
 
 // This means that the function is an external API and that it will be used
 #define EXTERNAL_API __attribute__((used))
@@ -223,9 +224,14 @@ EXTERNAL_API int pojavInit() {
         printf("Failed to attach Java-side JNIEnv to GLFW thread\n");
         return 0;
     }
-    ANativeWindow_acquire(pojav_environ->pojavWindow);
-    int nativeWidth = ANativeWindow_getWidth(pojav_environ->pojavWindow);
-    int nativeHeight = ANativeWindow_getHeight(pojav_environ->pojavWindow);
+    ANativeWindow* window = pojav_environ->pojavWindow;
+    if (window == NULL) {
+        printf("EGLBridge: pojavInit aborted because bridge window is NULL\n");
+        return 0;
+    }
+    ANativeWindow_acquire(window);
+    int nativeWidth = ANativeWindow_getWidth(window);
+    int nativeHeight = ANativeWindow_getHeight(window);
     int javaWidth = pojav_environ->savedWidth;
     int javaHeight = pojav_environ->savedHeight;
     bool javaSizeValid = javaWidth > 0 && javaHeight > 0;
@@ -257,7 +263,7 @@ EXTERNAL_API int pojavInit() {
         printf("EGLBridge: skip ANativeWindow_setBuffersGeometry for Kopper renderer\n");
     } else {
         int geometryResult = ANativeWindow_setBuffersGeometry(
-                pojav_environ->pojavWindow,
+                window,
                 pojav_environ->savedWidth,
                 pojav_environ->savedHeight,
                 AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
@@ -268,6 +274,7 @@ EXTERNAL_API int pojavInit() {
         }
     }
     updateMonitorSize(pojav_environ->savedWidth, pojav_environ->savedHeight);
+    ANativeWindow_release(window);
     pojavInitOpenGL();
     return 1;
 }
@@ -281,6 +288,7 @@ EXTERNAL_API void pojavSetWindowHint(int hint, int value) {
             // pojavInitVulkan();
             break;
         case GLFW_OPENGL_API:
+        case GLFW_OPENGL_ES_API:
             /* Nothing to do: initialization is called in pojavCreateContext */
             // pojavInitOpenGL();
             break;

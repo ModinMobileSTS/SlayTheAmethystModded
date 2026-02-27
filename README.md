@@ -31,6 +31,36 @@ Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
 ./gradlew :app:assembleDebug
 ```
 
+## Debug Automation (Cross-Platform)
+Use Gradle tasks so the workflow is the same on Windows/macOS/Linux.
+
+Unix/macOS:
+```bash
+./gradlew :app:stsStart
+./gradlew :app:stsStop
+./gradlew :app:stsPullLogs
+```
+
+Windows:
+```powershell
+.\gradlew.bat :app:stsStart
+.\gradlew.bat :app:stsStop
+.\gradlew.bat :app:stsPullLogs
+```
+
+Options:
+- Choose launch mode: `-PlaunchMode=mts_basemod` (default) or `-PlaunchMode=vanilla`
+- Choose device: `-PdeviceSerial=<adb-serial>`
+- Export logs to a specific directory: `-PlogsDir=<path>`
+
+`stsPullLogs` exports:
+- `latestlog.txt`
+- `jvm_output.log`
+- `boot_bridge_events.log`
+- `enabled_mods.txt`
+- `last_crash_report.txt`
+- `logcat.txt` (last 2000 lines)
+
 ## Runtime Setup (Device)
 1. Open app settings.
 2. Import `desktop-1.0.jar`.

@@ -15,6 +15,7 @@
 #include <jni.h>
 #include <libgen.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdatomic.h>
 #include <math.h>
@@ -31,6 +32,7 @@
 #define EVENT_TYPE_KEY 1005
 #define EVENT_TYPE_MOUSE_BUTTON 1006
 #define EVENT_TYPE_SCROLL 1007
+#define CLIPBOARD_CONTEXT_GENERATION_QUERY 2999
 
 #define TRY_ATTACH_ENV(env_name, vm, error_message, then) JNIEnv* env_name;\
 do {                                                                       \
@@ -322,6 +324,16 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
     LOGD("Debug: Clipboard access is going on\n", pojav_environ->isUseStackQueueCall);
 #endif
 
+    if (action == CLIPBOARD_CONTEXT_GENERATION_QUERY) {
+        int generation = 0;
+        if (pojav_environ != NULL) {
+            generation = atomic_load_explicit(&pojav_environ->glContextGeneration, memory_order_relaxed);
+        }
+        char generationString[32];
+        snprintf(generationString, sizeof(generationString), "%d", generation);
+        return (*env)->NewStringUTF(env, generationString);
+    }
+
     JNIEnv *dalvikEnv;
     (*pojav_environ->dalvikJavaVMPtr)->AttachCurrentThread(pojav_environ->dalvikJavaVMPtr, &dalvikEnv, NULL);
     assert(dalvikEnv != NULL);
@@ -466,20 +478,28 @@ void noncritical_send_key(__attribute__((unused)) JNIEnv* env, __attribute__((un
 }
 
 void critical_send_mouse_button(jint button, jint action, jint mods) {
-    if (pojav_environ->GLFW_invoke_MouseButton && pojav_environ->isInputReady) {
-        // GLFW mouse buttons are in [0..7]. Reject anything outside to avoid
-        // invalid native buffer writes when ABI quirks scramble critical-native args.
-        if (button < 0 || button > 7) {
-            return;
-        }
-        if (pojav_environ->mouseDownBuffer != NULL) {
-            pojav_environ->mouseDownBuffer[button] = (jbyte) action;
-        }
-        if (pojav_environ->isUseStackQueueCall) {
-            sendData(EVENT_TYPE_MOUSE_BUTTON, button, action, mods, 0);
-        } else {
-            pojav_environ->GLFW_invoke_MouseButton((void*) pojav_environ->showingWindow, button, action, mods);
-        }
+    GLFW_invoke_MouseButton_func* mouseButtonCallback = pojav_environ->GLFW_invoke_MouseButton;
+    jlong showingWindow = (jlong)pojav_environ->showingWindow;
+    if (mouseButtonCallback == NULL || !pojav_environ->isInputReady || showingWindow == 0) {
+        return;
+    }
+    // GLFW mouse buttons are in [0..7]. Reject anything outside to avoid
+    // invalid native buffer writes when ABI quirks scramble callback args.
+    if (button < 0 || button > 7) {
+        return;
+    }
+    // Mouse actions should be GLFW_RELEASE(0) or GLFW_PRESS(1).
+    // Ignore corrupted values to avoid propagating undefined state.
+    if (action != 0 && action != 1) {
+        return;
+    }
+    if (pojav_environ->mouseDownBuffer != NULL) {
+        pojav_environ->mouseDownBuffer[button] = (jbyte) action;
+    }
+    if (pojav_environ->isUseStackQueueCall) {
+        sendData(EVENT_TYPE_MOUSE_BUTTON, button, action, mods, 0);
+    } else {
+        mouseButtonCallback((void*) showingWindow, button, action, mods);
     }
 }
 

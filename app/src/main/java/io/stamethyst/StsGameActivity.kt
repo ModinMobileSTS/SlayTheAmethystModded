@@ -355,25 +355,13 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onResume()
         applyImmersiveMode()
         resetGamepadState()
-        if (runtimeLifecycleReady) {
-            CallbackBridge.nativeSetAudioMuted(false)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1)
-        }
+        applyForegroundWindowState()
         tryStartJvmWhenSurfaceReady()
     }
 
     override fun onPause() {
         resetGamepadState()
-        if (runtimeLifecycleReady) {
-            CallbackBridge.nativeSetAudioMuted(true)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0)
-            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0)
-        }
+        applyBackgroundWindowState()
         super.onPause()
     }
 
@@ -381,6 +369,24 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             applyImmersiveMode()
+        }
+        if (runtimeLifecycleReady) {
+            try {
+                CallbackBridge.nativeSetWindowAttrib(
+                    LwjglGlfwKeycode.GLFW_FOCUSED,
+                    if (hasFocus) 1 else 0
+                )
+                CallbackBridge.nativeSetWindowAttrib(
+                    LwjglGlfwKeycode.GLFW_HOVERED,
+                    if (hasFocus) 1 else 0
+                )
+                if (hasFocus) {
+                    CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
+                    CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
+                }
+            } catch (error: Throwable) {
+                Log.w(TAG, "Failed to sync focus window attribs", error)
+            }
         }
     }
 
@@ -550,6 +556,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 CallbackBridge.nativeSetUseInputStackQueue(true)
                 CallbackBridge.nativeSetInputReady(true)
                 runtimeLifecycleReady = true
+                runOnUiThread { applyForegroundWindowState() }
 
                 val launchArgs = ArrayList<String>()
                 launchArgs.add("java")
@@ -954,6 +961,12 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         mainMenuReadySignaled = true
         stopBootBridgeReaderIfRunning()
+        try {
+            Logger.appendToLog(
+                "Boot overlay ready signal: message=\"$message\", manualDismiss=$manualDismissBootOverlay"
+            )
+        } catch (_: Throwable) {
+        }
         if (manualDismissBootOverlay) {
             updateBootOverlayProgress(100, "$message (tap Close Overlay)")
             runOnUiThread {
@@ -970,6 +983,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val minDelay = Math.max(0L, BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed)
         val delay = Math.max(minDelay, BOOT_OVERLAY_READY_DELAY_MS)
         runOnUiThread {
+            try {
+                Logger.appendToLog("Boot overlay auto dismiss scheduled in ${delay}ms")
+            } catch (_: Throwable) {
+            }
             bootOverlay?.postDelayed({ dismissBootOverlay() }, delay)
         }
     }
@@ -981,6 +998,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         bootOverlayDismissed = true
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
+        try {
+            Logger.appendToLog("Boot overlay dismissed")
+        } catch (_: Throwable) {
+        }
         bootOverlayDismissButton?.let {
             it.visibility = View.GONE
             it.setOnClickListener(null)
@@ -1084,6 +1105,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private fun shouldUseTextureViewSurface(requestedRenderer: RendererBackend, scale: Float): Boolean {
         if (requestedRenderer == RendererBackend.KOPPER_ZINK) {
+            return true
+        }
+        if (requestedRenderer == RendererBackend.OPENGL_ES2) {
             return true
         }
         return scale < MAX_RENDER_SCALE
@@ -1483,6 +1507,39 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return false
         }
         return CallbackBridge.windowWidth > 0 && CallbackBridge.windowHeight > 0
+    }
+
+    private fun applyForegroundWindowState() {
+        if (!runtimeLifecycleReady) {
+            return
+        }
+        try {
+            CallbackBridge.nativeSetInputReady(true)
+            CallbackBridge.nativeSetAudioMuted(false)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
+            // Keep the render loop in foreground mode immediately after resume/start.
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1)
+        } catch (error: Throwable) {
+            Log.w(TAG, "Failed to apply foreground window state", error)
+        }
+    }
+
+    private fun applyBackgroundWindowState() {
+        if (!runtimeLifecycleReady) {
+            return
+        }
+        try {
+            CallbackBridge.nativeSetInputReady(false)
+            CallbackBridge.nativeSetAudioMuted(true)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0)
+            CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0)
+        } catch (error: Throwable) {
+            Log.w(TAG, "Failed to apply background window state", error)
+        }
     }
 
     private fun handleVolumeKeyEvent(@NonNull event: KeyEvent): Boolean {

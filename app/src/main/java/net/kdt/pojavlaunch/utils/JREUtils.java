@@ -7,7 +7,9 @@
 
 package net.kdt.pojavlaunch.utils;
 
+import android.app.ActivityManager;
 import android.content.Context;
+import android.content.pm.ConfigurationInfo;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
@@ -150,7 +152,7 @@ public final class JREUtils {
             case OPENGL_ES2:
             default:
                 env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
-                env.put("LIBGL_ES", "2");
+                env.put("LIBGL_ES", supportsGles3(context) ? "3" : "2");
                 break;
         }
 
@@ -232,6 +234,22 @@ public final class JREUtils {
             return value == null ? "" : value;
         } catch (Throwable t) {
             return "";
+        }
+    }
+
+    private static boolean supportsGles3(Context context) {
+        try {
+            ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (activityManager == null) {
+                return false;
+            }
+            ConfigurationInfo info = activityManager.getDeviceConfigurationInfo();
+            if (info == null) {
+                return false;
+            }
+            return info.reqGlEsVersion >= 0x00030000;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
