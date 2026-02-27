@@ -663,10 +663,10 @@ static bool tryCriticalNative(JNIEnv *env) {
 
 static void registerFunctions(JNIEnv *env) {
     bool critical_supported = tryCriticalNative(env);
-    bool use_critical_cc = false;
+    bool use_critical_cc = critical_supported;
     jclass bridge_class = (*env)->FindClass(env, "org/lwjgl/glfw/CallbackBridge");
     if (critical_supported) {
-        LOGI("CriticalNative detected, but disabled by stability guard");
+        LOGI("CriticalNative is available. Enabling critical callbacks.");
     }else{
         LOGI("CriticalNative is not available. Upgrade, maybe?");
     }
