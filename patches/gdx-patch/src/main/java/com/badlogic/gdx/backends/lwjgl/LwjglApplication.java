@@ -65,6 +65,7 @@ public class LwjglApplication implements Application {
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
+	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final String STS_ABSTRACT_CREATURE_CLASS = "com.megacrit.cardcrawl.core.AbstractCreature";
 	private static final String RING_TITLE_BACKGROUND_CLASS = "RingOfDestiny.ui.RingLoginBackground";
@@ -86,8 +87,13 @@ public class LwjglApplication implements Application {
 	private boolean ringTitleRenderCompatActive;
 	private boolean ringTitleRenderCompatErrorLogged;
 	private boolean globalTextureCompatErrorLogged;
-	private int globalTextureCompatAdjustedTotal;
+	private boolean globalTextureCompatFailureLogged;
+	private int globalTextureCompatRepairedTotal;
+	private int globalTextureCompatFailedTotal;
+	private int globalTextureCompatScanTotal;
 	private final ObjectSet<Texture> globalTextureCompatSeen = new ObjectSet<Texture>();
+	private final ObjectMap<Texture, Integer> globalTextureCompatFailureCounts = new ObjectMap<Texture, Integer>();
+	private final ObjectMap<Texture, String> globalTextureCompatSourceCache = new ObjectMap<Texture, String>();
 	protected final Array<Runnable> runnables = new Array<Runnable>();
 	protected final Array<Runnable> executedRunnables = new Array<Runnable>();
 	protected final SnapshotArray<LifecycleListener> lifecycleListeners = new SnapshotArray<LifecycleListener>(LifecycleListener.class);
@@ -245,6 +251,10 @@ public class LwjglApplication implements Application {
 			nativeContextGeneration = generation;
 			pendingNativeContextRebind = true;
 			invalidateFramebufferBindCapabilities();
+			globalTextureCompatSeen.clear();
+			globalTextureCompatFailureCounts.clear();
+			globalTextureCompatSourceCache.clear();
+			globalTextureCompatFailureLogged = false;
 			System.out.println("[gdx-patch] Native GL context generation changed to " + generation + " (" + phase + ")");
 		}
 	}
@@ -505,17 +515,87 @@ public class LwjglApplication implements Application {
 		method.invoke(renderer, Boolean.valueOf(enabled));
 	}
 
-	private boolean shouldEnableGlobalTextureCompat () {
-		String configured = System.getProperty("amethyst.gdx.global_texture_compat");
-		if (configured != null) {
-			configured = configured.trim();
-			if (configured.length() > 0) {
-				return !"false".equalsIgnoreCase(configured)
-					&& !"0".equals(configured)
-					&& !"off".equalsIgnoreCase(configured);
-			}
+	private static Object invokeNoArgMethod (Object target, String methodName) {
+		if (target == null || methodName == null || methodName.length() == 0) return null;
+		try {
+			Method method = target.getClass().getMethod(methodName);
+			method.setAccessible(true);
+			return method.invoke(target);
+		} catch (Throwable ignored) {
+			return null;
 		}
-		// Default enabled on GLES where atlas mipmap chains often produce black-edge artifacts.
+	}
+
+	private static Object readFieldQuietly (Object target, String fieldName) {
+		if (target == null || fieldName == null || fieldName.length() == 0) return null;
+		try {
+			return readField(target, fieldName);
+		} catch (Throwable ignored) {
+			return null;
+		}
+	}
+
+	private static String sanitizeForLog (String value, int maxLength) {
+		if (value == null) return "null";
+		String sanitized = value.replace('\n', ' ').replace('\r', ' ');
+		if (sanitized.length() <= maxLength) return sanitized;
+		return sanitized.substring(0, maxLength) + "...";
+	}
+
+	private static String resolveFileHandlePathHint (Object fileHandle) {
+		if (fileHandle == null) return null;
+		Object absolutePath = invokeNoArgMethod(fileHandle, "path");
+		if (absolutePath != null) return sanitizeForLog(String.valueOf(absolutePath), 240);
+		Object name = invokeNoArgMethod(fileHandle, "name");
+		if (name != null) return sanitizeForLog(String.valueOf(name), 240);
+		return sanitizeForLog(String.valueOf(fileHandle), 240);
+	}
+
+	private String resolveTextureSourceTag (Texture texture) {
+		if (texture == null) return "source=texture-null";
+		String cached = globalTextureCompatSourceCache.get(texture);
+		if (cached != null) return cached;
+
+		String sourceTag = "source=unresolved";
+		try {
+			Object textureData = Texture.class.getMethod("getTextureData").invoke(texture);
+			if (textureData == null) {
+				sourceTag = "source=textureData-null";
+			} else {
+				String dataClass = textureData.getClass().getName();
+				Object type = invokeNoArgMethod(textureData, "getType");
+				Object useMipMaps = invokeNoArgMethod(textureData, "useMipMaps");
+				Object managed = invokeNoArgMethod(textureData, "isManaged");
+				Object fileHandle = invokeNoArgMethod(textureData, "getFileHandle");
+				if (fileHandle == null) fileHandle = readFieldQuietly(textureData, "file");
+				if (fileHandle == null) fileHandle = readFieldQuietly(textureData, "fileHandle");
+				String fileHint = resolveFileHandlePathHint(fileHandle);
+
+				StringBuilder builder = new StringBuilder(192);
+				builder.append("dataClass=").append(dataClass);
+				if (type != null) builder.append(", dataType=").append(type);
+				if (managed != null) builder.append(", dataManaged=").append(managed);
+				if (useMipMaps != null) builder.append(", dataUseMipMaps=").append(useMipMaps);
+				if (fileHint != null) {
+					builder.append(", file=").append(fileHint);
+				} else {
+					Object descriptor = readFieldQuietly(textureData, "desc");
+					if (descriptor != null) {
+						builder.append(", desc=").append(sanitizeForLog(String.valueOf(descriptor), 240));
+					}
+				}
+				sourceTag = builder.toString();
+			}
+		} catch (Throwable t) {
+			sourceTag = "source=resolve-failed:" + t.getClass().getSimpleName();
+		}
+
+		globalTextureCompatSourceCache.put(texture, sourceTag);
+		return sourceTag;
+	}
+
+	private boolean shouldEnableGlobalTextureCompat () {
+		// Always enabled on GLES-backed contexts.
 		return LwjglGraphics.isGLESContextActive();
 	}
 
@@ -524,6 +604,87 @@ public class LwjglApplication implements Application {
 		// Early startup scans are more frequent because many textures are loaded then.
 		if (frame < 3600) return (frame % 120) == 0;
 		return (frame % 600) == 0;
+	}
+
+	private boolean shouldEnableGlobalTextureCompatVerboseLog () {
+		String configured = System.getProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP);
+		if (configured == null) return true;
+		configured = configured.trim();
+		if (configured.length() == 0) return true;
+		return !"false".equalsIgnoreCase(configured)
+			&& !"0".equals(configured)
+			&& !"off".equalsIgnoreCase(configured);
+	}
+
+	private static void drainGlErrors () {
+		if (Gdx.gl == null) return;
+		for (int i = 0; i < 8; i++) {
+			int error = Gdx.gl.glGetError();
+			if (error == GL20.GL_NO_ERROR) return;
+		}
+	}
+
+	private static final class MipRepairResult {
+		private final boolean repaired;
+		private final int glError;
+		private final String failureReason;
+
+		private MipRepairResult (boolean repaired, int glError, String failureReason) {
+			this.repaired = repaired;
+			this.glError = glError;
+			this.failureReason = failureReason;
+		}
+	}
+
+	private static String toGlErrorString (int glError) {
+		switch (glError) {
+		case GL20.GL_NO_ERROR:
+			return "GL_NO_ERROR";
+		case GL20.GL_INVALID_ENUM:
+			return "GL_INVALID_ENUM";
+		case GL20.GL_INVALID_VALUE:
+			return "GL_INVALID_VALUE";
+		case GL20.GL_INVALID_OPERATION:
+			return "GL_INVALID_OPERATION";
+		case GL20.GL_OUT_OF_MEMORY:
+			return "GL_OUT_OF_MEMORY";
+		default:
+			return "0x" + Integer.toHexString(glError);
+		}
+	}
+
+	private static String textureDebugInfo (Texture texture) {
+		if (texture == null) return "texture=null";
+		return "handle=" + texture.getTextureObjectHandle()
+			+ ", size=" + texture.getWidth() + "x" + texture.getHeight()
+			+ ", min=" + texture.getMinFilter()
+			+ ", mag=" + texture.getMagFilter()
+			+ ", wrap=" + texture.getUWrap() + "/" + texture.getVWrap();
+	}
+
+	private MipRepairResult tryRepairTextureMipChain (Texture texture) {
+		if (Gdx.gl == null || texture == null) {
+			return new MipRepairResult(false, GL20.GL_INVALID_OPERATION, "missing gl or texture");
+		}
+		try {
+			texture.bind();
+			drainGlErrors();
+			Gdx.gl.glGenerateMipmap(GL20.GL_TEXTURE_2D);
+			int error = Gdx.gl.glGetError();
+			return new MipRepairResult(error == GL20.GL_NO_ERROR, error, null);
+		} catch (Throwable t) {
+			String reason = t.getClass().getSimpleName() + ": " + t.getMessage();
+			return new MipRepairResult(false, GL20.GL_INVALID_OPERATION, reason);
+		}
+	}
+
+	private static boolean isPowerOfTwo (int value) {
+		return value > 0 && (value & (value - 1)) == 0;
+	}
+
+	private static boolean isNpotTexture (Texture texture) {
+		if (texture == null) return false;
+		return !isPowerOfTwo(texture.getWidth()) || !isPowerOfTwo(texture.getHeight());
 	}
 
 	private void ensureGlobalTextureCompat () {
@@ -537,26 +698,83 @@ public class LwjglApplication implements Application {
 			if (!(texturesObj instanceof Array<?>)) return;
 
 			Array<?> textures = (Array<?>)texturesObj;
-			int adjustedThisScan = 0;
+			boolean verbose = shouldEnableGlobalTextureCompatVerboseLog();
+			globalTextureCompatScanTotal++;
+
+			int mipmapCandidatesThisScan = 0;
+			int npotCandidatesThisScan = 0;
+			int skippedSeenThisScan = 0;
+			int repairedThisScan = 0;
+			int failedThisScan = 0;
 			for (int i = 0, n = textures.size; i < n; i++) {
 				Object value = textures.get(i);
 				if (!(value instanceof Texture)) continue;
 
 				Texture texture = (Texture)value;
-				if (!globalTextureCompatSeen.add(texture)) continue;
+				if (globalTextureCompatSeen.contains(texture)) {
+					skippedSeenThisScan++;
+					continue;
+				}
 
 				Texture.TextureFilter minFilter = texture.getMinFilter();
 				if (!minFilter.isMipMap()) continue;
+				mipmapCandidatesThisScan++;
+				boolean npot = isNpotTexture(texture);
+				if (npot) npotCandidatesThisScan++;
+				String sourceTag = resolveTextureSourceTag(texture);
 
-				texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-				texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
-				adjustedThisScan++;
+				MipRepairResult repair = tryRepairTextureMipChain(texture);
+				if (repair.repaired) {
+					globalTextureCompatSeen.add(texture);
+					globalTextureCompatFailureCounts.remove(texture);
+					repairedThisScan++;
+					if (verbose) {
+						System.out.println("[gdx-patch][texture-compat] repaired frame=" + graphics.frameId
+							+ ", scan=" + globalTextureCompatScanTotal
+							+ ", index=" + i
+							+ ", npot=" + npot
+							+ ", glError=" + toGlErrorString(repair.glError)
+							+ ", " + textureDebugInfo(texture)
+							+ ", " + sourceTag);
+					}
+					continue;
+				}
+
+				failedThisScan++;
+				int failureCount = globalTextureCompatFailureCounts.get(texture, 0) + 1;
+				globalTextureCompatFailureCounts.put(texture, failureCount);
+				if (verbose || failureCount <= 3 || (failureCount % 10) == 0) {
+					System.out.println("[gdx-patch][texture-compat] repair-failed frame=" + graphics.frameId
+						+ ", scan=" + globalTextureCompatScanTotal
+						+ ", index=" + i
+						+ ", failureCount=" + failureCount
+						+ ", npot=" + npot
+						+ ", glError=" + toGlErrorString(repair.glError)
+						+ (repair.failureReason == null ? "" : ", reason=" + repair.failureReason)
+						+ ", " + textureDebugInfo(texture)
+						+ ", " + sourceTag);
+				}
 			}
 
-			if (adjustedThisScan > 0) {
-				globalTextureCompatAdjustedTotal += adjustedThisScan;
-				System.out.println("[gdx-patch] Global texture compat adjusted " + adjustedThisScan
-					+ " texture(s), total=" + globalTextureCompatAdjustedTotal + " (Linear+Clamp for mipmap textures)");
+			if (repairedThisScan > 0) {
+				globalTextureCompatFailureLogged = false;
+			}
+			globalTextureCompatRepairedTotal += repairedThisScan;
+			globalTextureCompatFailedTotal += failedThisScan;
+			System.out.println("[gdx-patch] Global texture compat scan#" + globalTextureCompatScanTotal
+				+ ": managed=" + textures.size
+				+ ", mipmapCandidates=" + mipmapCandidatesThisScan
+				+ ", npotCandidates=" + npotCandidatesThisScan
+				+ ", skippedSeen=" + skippedSeenThisScan
+				+ ", repaired=" + repairedThisScan
+				+ ", failed=" + failedThisScan
+				+ ", totalRepaired=" + globalTextureCompatRepairedTotal
+				+ ", totalFailed=" + globalTextureCompatFailedTotal
+				+ ", strictRepair=true, verbose=" + verbose);
+			if (failedThisScan > 0 && !globalTextureCompatFailureLogged) {
+				globalTextureCompatFailureLogged = true;
+				System.out.println("[gdx-patch] Global texture compat could not repair " + failedThisScan
+					+ " texture(s) this scan (strict mip-repair mode)");
 			}
 		} catch (Throwable t) {
 			if (!globalTextureCompatErrorLogged) {

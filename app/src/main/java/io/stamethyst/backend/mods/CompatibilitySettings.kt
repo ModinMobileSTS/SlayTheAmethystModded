@@ -8,7 +8,7 @@ object CompatibilitySettings {
     private const val PREF_KEY_ORIGINAL_FBO_PATCH = "compat_original_fbo_patch"
     private const val PREF_KEY_DOWNFALL_FBO_PATCH = "compat_downfall_fbo_patch"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
-    private const val PREF_KEY_GLOBAL_TEXTURE_COMPAT = "compat_global_texture_compat"
+    private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
 
     @JvmStatic
     fun isOriginalFboPatchEnabled(context: Context): Boolean {
@@ -41,13 +41,13 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
-    fun isGlobalTextureCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_GLOBAL_TEXTURE_COMPAT, true)
+    fun isGlobalAtlasFilterCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT, true)
     }
 
     @JvmStatic
-    fun setGlobalTextureCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(PREF_KEY_GLOBAL_TEXTURE_COMPAT, enabled).apply()
+    fun setGlobalAtlasFilterCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT, enabled).apply()
     }
 
     private fun prefs(context: Context): SharedPreferences {

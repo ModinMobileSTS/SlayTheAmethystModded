@@ -96,11 +96,11 @@ fun LauncherCompatibilityScreen(
             )
 
             CompatibilitySwitchRow(
-                title = stringResource(R.string.compat_global_texture_compat_title),
-                description = stringResource(R.string.compat_global_texture_compat_desc),
-                checked = uiState.globalTextureCompatEnabled,
+                title = stringResource(R.string.compat_global_atlas_filter_compat_title),
+                description = stringResource(R.string.compat_global_atlas_filter_compat_desc),
+                checked = uiState.globalAtlasFilterCompatEnabled,
                 enabled = !uiState.busy,
-                onCheckedChange = { enabled -> viewModel.onGlobalTextureCompatToggled(activity, enabled) }
+                onCheckedChange = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(activity, enabled) }
             )
         }
     }

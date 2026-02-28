@@ -6,6 +6,8 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.util.ArrayList
 import java.util.HashMap
 import java.util.HashSet
 import java.util.Locale
@@ -15,6 +17,24 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 internal object ModCompatibilityPatchCoordinator {
+    private data class AtlasFilterCompatScanResult(
+        val atlasEntries: Int,
+        val mipmapFilterEntries: List<String>
+    )
+
+    private data class AtlasFilterCompatApplyResult(
+        val atlasEntries: Int,
+        val mipmapFilterEntries: Int,
+        val patchedEntries: Int,
+        val status: String,
+        val failureReason: String?
+    )
+
+    private val ATLAS_FILTER_MIPMAP_LINE_REGEX = Regex(
+        "^\\s*filter\\s*:\\s*.*mipmap.*$",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+    )
+
     @Throws(IOException::class)
     fun applyCompatPatchRules(context: Context) {
         val installedModsById = findInstalledModsById(context)
@@ -57,6 +77,7 @@ internal object ModCompatibilityPatchCoordinator {
                 applyCompatRuleToJar(context, rule, targetJar)
             }
         }
+        applyGlobalAtlasFilterCompat(context, installedModsById)
     }
 
     fun findInstalledModsById(context: Context): Map<String, File> {
@@ -89,6 +110,271 @@ internal object ModCompatibilityPatchCoordinator {
             return CompatibilitySettings.isDownfallFboPatchEnabled(context)
         }
         return true
+    }
+
+    private fun applyGlobalAtlasFilterCompat(context: Context, installedModsById: Map<String, File>) {
+        if (!CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) {
+            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                context,
+                "global atlas filter compat skip: disabled by user setting"
+            )
+            return
+        }
+        if (installedModsById.isEmpty()) {
+            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                context,
+                "global atlas filter compat skip: no installed mods"
+            )
+            return
+        }
+
+        var scanned = 0
+        var patched = 0
+        var alreadyPatched = 0
+        var noAtlas = 0
+        var failed = 0
+        var totalAtlasEntries = 0
+        var totalMipmapEntries = 0
+        var totalPatchedEntries = 0
+
+        val sortedModIds: MutableList<String> = ArrayList(installedModsById.keys)
+        sortedModIds.sort()
+        for (modId in sortedModIds) {
+            val targetJar = installedModsById[modId] ?: continue
+            scanned++
+            val result = applyGlobalAtlasFilterCompatToJar(context, modId, targetJar)
+            totalAtlasEntries += result.atlasEntries
+            totalMipmapEntries += result.mipmapFilterEntries
+            totalPatchedEntries += result.patchedEntries
+            when (result.status) {
+                "patched" -> patched++
+                "already_patched" -> alreadyPatched++
+                "no_atlas" -> noAtlas++
+                else -> failed++
+            }
+        }
+
+        ModCompatibilityDiagnosticsLogger.appendCompatLog(
+            context,
+            "global atlas filter compat summary: scanned=$scanned, patched=$patched, " +
+                "alreadyPatched=$alreadyPatched, noAtlas=$noAtlas, failed=$failed, " +
+                "atlasEntries=$totalAtlasEntries, mipmapEntries=$totalMipmapEntries, " +
+                "patchedEntries=$totalPatchedEntries"
+        )
+    }
+
+    private fun applyGlobalAtlasFilterCompatToJar(
+        context: Context,
+        modId: String,
+        targetJar: File
+    ): AtlasFilterCompatApplyResult {
+        if (!targetJar.isFile) {
+            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                context,
+                "global atlas filter compat skip: mod=$modId jar missing (${targetJar.absolutePath})"
+            )
+            return AtlasFilterCompatApplyResult(0, 0, 0, "failed", "jar_missing")
+        }
+
+        return try {
+            val scan = scanAtlasFilterCandidates(targetJar)
+            if (scan.atlasEntries <= 0) {
+                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    context,
+                    "global atlas filter compat skip: mod=$modId jar=${targetJar.name} atlasEntries=0"
+                )
+                return AtlasFilterCompatApplyResult(0, 0, 0, "no_atlas", null)
+            }
+            if (scan.mipmapFilterEntries.isEmpty()) {
+                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    context,
+                    "global atlas filter compat already patched: mod=$modId jar=${targetJar.name}, " +
+                        "atlasEntries=${scan.atlasEntries}"
+                )
+                return AtlasFilterCompatApplyResult(
+                    scan.atlasEntries,
+                    0,
+                    0,
+                    "already_patched",
+                    null
+                )
+            }
+
+            val replacementEntries = loadAtlasFilterReplacementEntries(targetJar)
+            if (replacementEntries.isEmpty()) {
+                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    context,
+                    "global atlas filter compat skip: mod=$modId jar=${targetJar.name}, " +
+                        "mipmapEntries=${scan.mipmapFilterEntries.size}, replacementEntries=0"
+                )
+                return AtlasFilterCompatApplyResult(
+                    scan.atlasEntries,
+                    scan.mipmapFilterEntries.size,
+                    0,
+                    "already_patched",
+                    null
+                )
+            }
+
+            val backupFile = resolveGlobalAtlasFilterCompatBackupFile(targetJar)
+            if (!backupFile.isFile || backupFile.length() <= 0L) {
+                JarFileIoUtils.copyFileReplacing(targetJar, backupFile)
+                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    context,
+                    "global atlas filter compat backup updated: mod=$modId jar=${targetJar.name} -> ${backupFile.name}"
+                )
+            } else {
+                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    context,
+                    "global atlas filter compat backup keep existing: mod=$modId jar=${targetJar.name} -> ${backupFile.name}"
+                )
+            }
+
+            replaceJarEntries(targetJar, replacementEntries, GLOBAL_ATLAS_FILTER_COMPAT_TEMP_SUFFIX)
+            val verify = scanAtlasFilterCandidates(targetJar)
+            if (verify.mipmapFilterEntries.isNotEmpty()) {
+                throw IOException(
+                    "remaining mipmap filter atlas entries: ${verify.mipmapFilterEntries.take(8).joinToString(",")}"
+                )
+            }
+
+            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                context,
+                "global atlas filter compat patched: mod=$modId jar=${targetJar.name}, " +
+                    "atlasEntries=${scan.atlasEntries}, patchedEntries=${replacementEntries.size}, " +
+                    "samplePatched=${scan.mipmapFilterEntries.take(6).joinToString(",")}"
+            )
+            AtlasFilterCompatApplyResult(
+                scan.atlasEntries,
+                scan.mipmapFilterEntries.size,
+                replacementEntries.size,
+                "patched",
+                null
+            )
+        } catch (error: Throwable) {
+            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                context,
+                "global atlas filter compat failed: mod=$modId jar=${targetJar.name}, " +
+                    "reason=${error.javaClass.simpleName}: ${error.message.toString()}"
+            )
+            AtlasFilterCompatApplyResult(0, 0, 0, "failed", error.message)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun scanAtlasFilterCandidates(targetJar: File): AtlasFilterCompatScanResult {
+        var atlasEntries = 0
+        val mipmapFilterEntries: MutableList<String> = ArrayList()
+        ZipFile(targetJar).use { zipFile ->
+            val entries = zipFile.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (entry.isDirectory) {
+                    continue
+                }
+                val name = entry.name
+                if (!name.lowercase(Locale.ROOT).endsWith(".atlas")) {
+                    continue
+                }
+                atlasEntries++
+                val atlasText = JarFileIoUtils.readEntry(zipFile, entry)
+                if (ATLAS_FILTER_MIPMAP_LINE_REGEX.containsMatchIn(atlasText)) {
+                    mipmapFilterEntries.add(name)
+                }
+            }
+        }
+        return AtlasFilterCompatScanResult(
+            atlasEntries = atlasEntries,
+            mipmapFilterEntries = mipmapFilterEntries
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun loadAtlasFilterReplacementEntries(targetJar: File): Map<String, ByteArray> {
+        val replacementEntries: MutableMap<String, ByteArray> = HashMap()
+        ZipFile(targetJar).use { zipFile ->
+            val entries = zipFile.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (entry.isDirectory) {
+                    continue
+                }
+                val name = entry.name
+                if (!name.lowercase(Locale.ROOT).endsWith(".atlas")) {
+                    continue
+                }
+                val atlasText = JarFileIoUtils.readEntry(zipFile, entry)
+                val replaced = ATLAS_FILTER_MIPMAP_LINE_REGEX.replace(atlasText, "filter: Linear,Linear")
+                if (replaced != atlasText) {
+                    replacementEntries[name] = replaced.toByteArray(StandardCharsets.UTF_8)
+                }
+            }
+        }
+        return replacementEntries
+    }
+
+    private fun resolveGlobalAtlasFilterCompatBackupFile(targetJar: File): File {
+        return File(targetJar.absolutePath + GLOBAL_ATLAS_FILTER_COMPAT_BACKUP_SUFFIX)
+    }
+
+    @Throws(IOException::class)
+    private fun replaceJarEntries(
+        targetJar: File,
+        replacementEntries: Map<String, ByteArray>,
+        tempSuffix: String
+    ) {
+        if (replacementEntries.isEmpty()) {
+            return
+        }
+        val tempJar = File(targetJar.absolutePath + tempSuffix)
+        if (tempJar.exists() && !tempJar.delete()) {
+            throw IOException("Failed to clean temporary compat jar: ${tempJar.absolutePath}")
+        }
+
+        val seenNames: MutableSet<String> = HashSet()
+        FileInputStream(targetJar).use { fileInput ->
+            ZipInputStream(fileInput).use { zipIn ->
+                FileOutputStream(tempJar, false).use { outputStream ->
+                    ZipOutputStream(outputStream).use { zipOut ->
+                        while (true) {
+                            val entry = zipIn.nextEntry ?: break
+                            val name = entry.name
+                            if (entry.isDirectory || !seenNames.add(name)) {
+                                zipIn.closeEntry()
+                                continue
+                            }
+                            val outEntry = ZipEntry(name)
+                            if (entry.time > 0) {
+                                outEntry.time = entry.time
+                            }
+                            zipOut.putNextEntry(outEntry)
+                            val replacement = replacementEntries[name]
+                            if (replacement != null) {
+                                zipOut.write(replacement)
+                            } else {
+                                JarFileIoUtils.copyStream(zipIn, zipOut)
+                            }
+                            zipOut.closeEntry()
+                            zipIn.closeEntry()
+                        }
+                    }
+                }
+            }
+        }
+
+        if (targetJar.exists() && !targetJar.delete()) {
+            if (tempJar.exists()) {
+                tempJar.delete()
+            }
+            throw IOException("Failed to replace ${targetJar.absolutePath}")
+        }
+        if (!tempJar.renameTo(targetJar)) {
+            if (tempJar.exists()) {
+                tempJar.delete()
+            }
+            throw IOException("Failed to move ${tempJar.absolutePath} -> ${targetJar.absolutePath}")
+        }
+        targetJar.setLastModified(System.currentTimeMillis())
     }
 
     @Throws(IOException::class)

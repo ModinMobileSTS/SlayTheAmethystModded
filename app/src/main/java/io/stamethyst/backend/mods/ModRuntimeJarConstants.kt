@@ -130,6 +130,8 @@ internal const val DOWNFALL_FBO_PATCH_CLASS =
     "collector/util/DoubleEnergyOrb.class"
 internal const val DOWNFALL_NPC_FBO_PATCH_CLASS =
     "downfall/vfx/CustomAnimatedNPC.class"
+internal const val GLOBAL_ATLAS_FILTER_COMPAT_BACKUP_SUFFIX = ".amethyst.global_atlas_filter.backup"
+internal const val GLOBAL_ATLAS_FILTER_COMPAT_TEMP_SUFFIX = ".global_atlas_filter_compat.tmp"
 
 internal const val COMPAT_LOG_PREFIX = "[compat] "
 

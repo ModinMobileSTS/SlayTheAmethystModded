@@ -516,10 +516,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this)
                 val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this)
-                val globalTextureCompatEnabled = CompatibilitySettings.isGlobalTextureCompatEnabled(this)
+                val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(this)
                 Logger.appendToLog(
                     "Compat settings: originalFboPatch=$originalFboPatchEnabled, downfallFboPatch=$downfallFboPatchEnabled, " +
-                        "virtualFboPoc=$virtualFboPocEnabled, globalTextureCompat=$globalTextureCompatEnabled"
+                        "virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled"
                 )
                 val preferredRenderer = RendererConfig.readPreferredBackend(this)
                 val rendererDecision = RendererConfig.resolveEffectiveBackend(this, preferredRenderer)
@@ -577,7 +577,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         findLaunchArgValue(launchArgs, "-Dorg.lwjgl.opengl.libname=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.fbo_fallback=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.virtual_fbo_poc=") + ", " +
-                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.global_texture_compat=") + ", " +
                         findLaunchArgValue(launchArgs, "-Dorg.lwjgl.librarypath=")
                 )
                 Logger.appendToLog("Launch args: $launchArgs")

@@ -38,8 +38,8 @@ internal object ModCompatibilityDiagnosticsLogger {
                     CompatibilitySettings.isOriginalFboPatchEnabled(context) +
                     ", downfall_fbo=" +
                     CompatibilitySettings.isDownfallFboPatchEnabled(context) +
-                    ", global_texture_compat=" +
-                    CompatibilitySettings.isGlobalTextureCompatEnabled(context)
+                    ", global_atlas_filter=" +
+                    CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)
             )
         } catch (error: Throwable) {
             appendCompatLog(

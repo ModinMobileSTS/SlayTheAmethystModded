@@ -16,7 +16,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val originalFboPatchEnabled: Boolean = false,
         val downfallFboPatchEnabled: Boolean = false,
         val virtualFboPocEnabled: Boolean = false,
-        val globalTextureCompatEnabled: Boolean = true
+        val globalAtlasFilterCompatEnabled: Boolean = true
     )
 
     var uiState by mutableStateOf(UiState())
@@ -29,7 +29,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host),
             downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host),
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
-            globalTextureCompatEnabled = CompatibilitySettings.isGlobalTextureCompatEnabled(host)
+            globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
         )
     }
 
@@ -57,11 +57,11 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(virtualFboPocEnabled = enabled)
     }
 
-    fun onGlobalTextureCompatToggled(host: Activity, enabled: Boolean) {
+    fun onGlobalAtlasFilterCompatToggled(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setGlobalTextureCompatEnabled(host, enabled)
-        uiState = uiState.copy(globalTextureCompatEnabled = enabled)
+        CompatibilitySettings.setGlobalAtlasFilterCompatEnabled(host, enabled)
+        uiState = uiState.copy(globalAtlasFilterCompatEnabled = enabled)
     }
 }

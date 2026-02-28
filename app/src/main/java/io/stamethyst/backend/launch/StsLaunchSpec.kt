@@ -127,10 +127,6 @@ object StsLaunchSpec {
             "-Damethyst.gdx.virtual_fbo_poc=" +
                 if (CompatibilitySettings.isVirtualFboPocEnabled(context)) "true" else "false"
         )
-        args.add(
-            "-Damethyst.gdx.global_texture_compat=" +
-                if (CompatibilitySettings.isGlobalTextureCompatEnabled(context)) "true" else "false"
-        )
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsFile(context).absolutePath}")
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader")
         args.add("-Damethyst.bridge.mode=$launchMode")

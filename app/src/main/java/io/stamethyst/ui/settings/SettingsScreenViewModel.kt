@@ -153,7 +153,7 @@ class SettingsScreenViewModel : ViewModel() {
         val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host)
         val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host)
         val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
-        val globalTextureCompatEnabled = CompatibilitySettings.isGlobalTextureCompatEnabled(host)
+        val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
 
         val rendererDecision = RendererConfig.resolveEffectiveBackend(host, selectedRenderer)
         val rendererSelectedLine = host.getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
@@ -195,7 +195,7 @@ class SettingsScreenViewModel : ViewModel() {
             "\nOriginal FBO patch: " + if (originalFboPatchEnabled) "ON" else "OFF" +
             "\nDownfall FBO patch: " + if (downfallFboPatchEnabled) "ON" else "OFF" +
             "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
-            "\nGlobal texture compat: " + if (globalTextureCompatEnabled) "ON" else "OFF" +
+            "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
             "\nBundled JRE path: app/src/main/assets/components/jre"
