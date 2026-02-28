@@ -81,6 +81,7 @@ public class SharedLibraryLoader {
 
     public String mapLibraryName(String libraryName) {
         if (isWindows) return libraryName + (is64Bit ? "64.dll" : ".dll");
+        if (isAndroid) return "lib" + libraryName + (isARM ? "arm" + abi : "") + (is64Bit ? "64.so" : ".so");
         if (isLinux) return "lib" + libraryName + (isARM ? "arm" + abi : "") + (is64Bit ? "64.so" : ".so");
         if (isMac) return "lib" + libraryName + (is64Bit ? "64.dylib" : ".dylib");
         return libraryName;
@@ -118,6 +119,7 @@ public class SharedLibraryLoader {
     }
 
     private boolean tryLoadFromKnownLocations(String libraryName, String platformName) {
+        if (tryLoadFromAmethystNativeDir(libraryName, platformName)) return true;
         String nativeDir = System.getenv("POJAV_NATIVEDIR");
         if (nativeDir != null && nativeDir.length() > 0) {
             if (tryLoadAbsolute(new File(nativeDir, "lib" + libraryName + ".so"))) return true;
@@ -125,6 +127,77 @@ public class SharedLibraryLoader {
         }
         if (tryLoadLibrary(libraryName)) return true;
         return false;
+    }
+
+    private boolean tryLoadFromAmethystNativeDir(String libraryName, String platformName) {
+        String nativeDir = resolveAmethystNativeDir();
+        if (nativeDir.length() == 0) return false;
+
+        File baseDir = new File(nativeDir);
+        if (!baseDir.exists() && !baseDir.mkdirs()) return false;
+
+        String[] candidateNames = buildNativeCandidateNames(libraryName, platformName);
+        for (String candidateName : candidateNames) {
+            File candidate = new File(baseDir, candidateName);
+            if (!candidate.exists()) {
+                tryExtractToFile(candidateName, candidate);
+            }
+            if (tryLoadAbsolute(candidate)) {
+                System.out.println("[gdx-patch] SharedLibraryLoader.load loaded from amethyst native dir: "
+                        + candidate.getAbsolutePath());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String resolveAmethystNativeDir() {
+        String value = System.getProperty("amethyst.gdx.native_dir");
+        if (value == null || value.trim().length() == 0) {
+            value = System.getenv("AMETHYST_GDX_NATIVE_DIR");
+        }
+        return value == null ? "" : value.trim();
+    }
+
+    private String[] buildNativeCandidateNames(String libraryName, String platformName) {
+        java.util.ArrayList<String> names = new java.util.ArrayList<String>();
+        addCandidateName(names, platformName);
+        addCandidateName(names, mapLibraryName(libraryName));
+        addCandidateName(names, "lib" + libraryName + ".so");
+        addCandidateName(names, "lib" + libraryName + "arm64.so");
+        addCandidateName(names, "lib" + libraryName + "arm.so");
+        return names.toArray(new String[0]);
+    }
+
+    private void addCandidateName(java.util.ArrayList<String> names, String candidateName) {
+        if (candidateName == null) return;
+        String value = candidateName.trim();
+        if (value.length() == 0) return;
+        if (!names.contains(value)) names.add(value);
+    }
+
+    private void tryExtractToFile(String sourcePath, File targetFile) {
+        InputStream input = null;
+        FileOutputStream output = null;
+        try {
+            input = readFile(sourcePath);
+            File parent = targetFile.getParentFile();
+            if (parent != null && !parent.exists() && !parent.mkdirs()) return;
+            output = new FileOutputStream(targetFile, false);
+            byte[] buffer = new byte[4096];
+            while (true) {
+                int length = input.read(buffer);
+                if (length == -1) break;
+                output.write(buffer, 0, length);
+            }
+            output.flush();
+            targetFile.setReadable(true, false);
+            targetFile.setExecutable(true, false);
+        } catch (Throwable ignored) {
+        } finally {
+            StreamUtils.closeQuietly(input);
+            StreamUtils.closeQuietly(output);
+        }
     }
 
     private boolean tryLoadLibrary(String libraryName) {

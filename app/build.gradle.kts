@@ -293,6 +293,23 @@ val installPatchJars by tasks.registering(Sync::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_patch") })
 }
 
+val gdxVideoNativeAssetFiles = listOf(
+    rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so"),
+    rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so")
+)
+
+val installGdxVideoNatives by tasks.registering(Sync::class) {
+    doFirst {
+        gdxVideoNativeAssetFiles.forEach { nativeFile ->
+            if (!nativeFile.asFile.isFile) {
+                throw GradleException("Missing gdx-video native asset: ${nativeFile.asFile.absolutePath}")
+            }
+        }
+    }
+    from(gdxVideoNativeAssetFiles)
+    into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_video_natives") })
+}
+
 val installRuntimePackAssets by tasks.registering(Sync::class) {
     doFirst {
         val runtimePackFile = runtimePackZip.asFile
@@ -310,6 +327,7 @@ val installRuntimePackAssets by tasks.registering(Sync::class) {
 tasks.named("preBuild").configure {
     dependsOn(installBootBridgeJar)
     dependsOn(installPatchJars)
+    dependsOn(installGdxVideoNatives)
     dependsOn(installRuntimePackAssets)
 }
 

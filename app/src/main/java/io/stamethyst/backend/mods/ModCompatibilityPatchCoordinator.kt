@@ -221,7 +221,12 @@ internal object ModCompatibilityPatchCoordinator {
         )
         tryBackupCompatRule(context, rule, targetJar, patchJar)
         try {
-            val result = ensureJarClassCompat(targetJar, patchJar, rule.targetClassEntry, rule.label)
+            val result = ensureJarClassCompat(
+                targetJar = targetJar,
+                patchJar = patchJar,
+                classEntry = rule.targetClassEntry,
+                label = rule.label
+            )
             if (result == CompatPatchApplyResult.ALREADY_PATCHED) {
                 ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "rule already patched: ${rule.label}")
             } else {
@@ -273,7 +278,11 @@ internal object ModCompatibilityPatchCoordinator {
                 )
                 return
             }
-            val patchEntries = loadSinglePatchEntry(patchJar, rule.targetClassEntry, rule.label)
+            val patchEntries = loadSinglePatchEntry(
+                patchJar = patchJar,
+                requiredClassEntry = rule.targetClassEntry,
+                label = rule.label
+            )
             if (isJarClassCompatPatched(targetJar, rule.targetClassEntry, patchEntries)) {
                 ModCompatibilityDiagnosticsLogger.appendCompatLog(
                     context,
@@ -311,7 +320,11 @@ internal object ModCompatibilityPatchCoordinator {
             return
         }
         try {
-            val patchEntries = loadSinglePatchEntry(patchJar, rule.targetClassEntry, rule.label)
+            val patchEntries = loadSinglePatchEntry(
+                patchJar = patchJar,
+                requiredClassEntry = rule.targetClassEntry,
+                label = rule.label
+            )
             if (!isJarClassCompatPatched(targetJar, rule.targetClassEntry, patchEntries)) {
                 ModCompatibilityDiagnosticsLogger.appendCompatLog(
                     context,
@@ -387,7 +400,11 @@ internal object ModCompatibilityPatchCoordinator {
             throw IOException("$label compat patch not found")
         }
 
-        val patchEntries = loadSinglePatchEntry(patchJar, classEntry, label)
+        val patchEntries = loadSinglePatchEntry(
+            patchJar = patchJar,
+            requiredClassEntry = classEntry,
+            label = label
+        )
         if (isJarClassCompatPatched(targetJar, classEntry, patchEntries)) {
             return CompatPatchApplyResult.ALREADY_PATCHED
         }

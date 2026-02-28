@@ -109,6 +109,7 @@ object StsLaunchSpec {
         args.add("-Dorg.lwjgl.librarypath=${context.applicationInfo.nativeLibraryDir}")
         args.add("-Dorg.lwjgl.system.SharedLibraryExtractPath=${context.applicationInfo.nativeLibraryDir}")
         args.add("-Dorg.lwjgl.system.EmulateSystemLoadLibrary=true")
+        args.add("-Damethyst.gdx.native_dir=${RuntimePaths.gdxPatchNativesDir(context).absolutePath}")
         args.add("-Dglfwstub.windowWidth=${Math.max(1, CallbackBridge.windowWidth)}")
         args.add("-Dglfwstub.windowHeight=${Math.max(1, CallbackBridge.windowHeight)}")
         args.add("-Dglfwstub.initEgl=false")

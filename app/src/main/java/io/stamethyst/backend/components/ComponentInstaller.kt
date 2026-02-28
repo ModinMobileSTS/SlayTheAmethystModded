@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets
 
 object ComponentInstaller {
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
+    private const val GDX_VIDEO_NATIVE_ASSET_DIR = "components/gdx_video_natives"
+    private const val LEGACY_HINA_VIDEO_PATCH_JAR = "hina-video-compat.jar"
     private const val PREF_FILE_PLAYER = "STSPlayer"
     private const val PREF_FILE_PLAYER_BACKUP = "STSPlayer.backUp"
     private const val PREF_FILE_SAVE_SLOTS = "STSSaveSlots"
@@ -50,6 +52,11 @@ object ComponentInstaller {
         )
         reportProgress(progressCallback, 40, "Installing gdx patches...")
         copyAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
+        removeLegacyCompatArtifacts(RuntimePaths.gdxPatchDir(context))
+        reportProgress(progressCallback, 48, "Installing gdx video natives...")
+        if (hasAssetChildren(assets, GDX_VIDEO_NATIVE_ASSET_DIR)) {
+            copyAssetTree(assets, GDX_VIDEO_NATIVE_ASSET_DIR, RuntimePaths.gdxPatchNativesDir(context))
+        }
         reportProgress(progressCallback, 55, "Installing Caciocavallo runtime...")
         copyAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
         reportProgress(progressCallback, 72, "Installing bundled mods...")
@@ -298,5 +305,12 @@ object ComponentInstaller {
         }
         val bounded = Math.max(0, Math.min(100, percent))
         callback.onProgress(bounded, message)
+    }
+
+    private fun removeLegacyCompatArtifacts(gdxPatchDir: File) {
+        val legacyHinaPatch = File(gdxPatchDir, LEGACY_HINA_VIDEO_PATCH_JAR)
+        if (legacyHinaPatch.isFile) {
+            legacyHinaPatch.delete()
+        }
     }
 }

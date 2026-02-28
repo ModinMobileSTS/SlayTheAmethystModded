@@ -96,6 +96,9 @@ object RuntimePaths {
     fun gdxPatchJar(context: Context): File = File(gdxPatchDir(context), "gdx-patch.jar")
 
     @JvmStatic
+    fun gdxPatchNativesDir(context: Context): File = File(gdxPatchDir(context), "natives")
+
+    @JvmStatic
     fun cacioDir(context: Context): File = File(componentRoot(context), "caciocavallo")
 
     @JvmStatic
@@ -110,6 +113,7 @@ object RuntimePaths {
         lwjgl2InjectorDir(context).mkdirs()
         bootBridgeDir(context).mkdirs()
         gdxPatchDir(context).mkdirs()
+        gdxPatchNativesDir(context).mkdirs()
         cacioDir(context).mkdirs()
         runtimeRoot(context).mkdirs()
     }
