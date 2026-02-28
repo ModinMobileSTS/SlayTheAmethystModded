@@ -21,4 +21,6 @@
     <string name="compat_downfall_fbo_desc">Controls whether Downfall\'s DoubleEnergyOrb FBO compatibility patch is injected before launch.</string>
     <string name="compat_virtual_fbo_poc_title">Virtual FBO PoC</string>
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer\'s Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Helps avoid unknown framebuffer status crashes, but may affect post-processing effects.</string>
+    <string name="compat_global_texture_compat_title">Global texture compatibility patch</string>
+    <string name="compat_global_texture_compat_desc">Scans managed textures and applies Linear + Clamp for mipmap textures (amethyst.gdx.global_texture_compat). Helps avoid black blocks/black water caused by GLES sampling edge cases. Recommended to keep enabled.</string>
 </resources>

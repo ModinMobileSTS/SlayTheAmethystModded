@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Map;
 
 import com.badlogic.gdx.ApplicationLogger;
 import org.lwjgl.LWJGLException;
@@ -38,11 +39,15 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.LifecycleListener;
 import com.badlogic.gdx.Net;
 import com.badlogic.gdx.Preferences;
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch;
 import com.badlogic.gdx.backends.lwjgl.audio.OpenALAudio;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Clipboard;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 import com.badlogic.gdx.utils.ObjectMap;
+import com.badlogic.gdx.utils.ObjectSet;
 import com.badlogic.gdx.utils.SnapshotArray;
 
 /** An OpenGL surface fullscreen or in a lightweight window. */
@@ -60,6 +65,9 @@ public class LwjglApplication implements Application {
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
+	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
+	private static final String STS_ABSTRACT_CREATURE_CLASS = "com.megacrit.cardcrawl.core.AbstractCreature";
+	private static final String RING_TITLE_BACKGROUND_CLASS = "RingOfDestiny.ui.RingLoginBackground";
 	private static volatile boolean noContextDiagnosticsInstalled;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
@@ -71,6 +79,15 @@ public class LwjglApplication implements Application {
 	private int nativeContextGeneration = Integer.MIN_VALUE;
 	private boolean pendingNativeContextRebind;
 	private Boolean lastActiveState;
+	private Boolean coreFramebufferBindUsable;
+	private Boolean extFramebufferBindUsable;
+	private boolean missingAbortPointerResolved;
+	private long missingAbortPointer;
+	private boolean ringTitleRenderCompatActive;
+	private boolean ringTitleRenderCompatErrorLogged;
+	private boolean globalTextureCompatErrorLogged;
+	private int globalTextureCompatAdjustedTotal;
+	private final ObjectSet<Texture> globalTextureCompatSeen = new ObjectSet<Texture>();
 	protected final Array<Runnable> runnables = new Array<Runnable>();
 	protected final Array<Runnable> executedRunnables = new Array<Runnable>();
 	protected final SnapshotArray<LifecycleListener> lifecycleListeners = new SnapshotArray<LifecycleListener>(LifecycleListener.class);
@@ -227,6 +244,7 @@ public class LwjglApplication implements Application {
 		if (generation != nativeContextGeneration) {
 			nativeContextGeneration = generation;
 			pendingNativeContextRebind = true;
+			invalidateFramebufferBindCapabilities();
 			System.out.println("[gdx-patch] Native GL context generation changed to " + generation + " (" + phase + ")");
 		}
 	}
@@ -280,6 +298,7 @@ public class LwjglApplication implements Application {
 		try {
 			GL.createCapabilities();
 			zeroMissingFunctionPointersIfRequested(phase);
+			invalidateFramebufferBindCapabilities();
 			return true;
 		} catch (Throwable t) {
 			if (!contextRecoveryLogged) {
@@ -334,6 +353,54 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	private void invalidateFramebufferBindCapabilities () {
+		coreFramebufferBindUsable = null;
+		extFramebufferBindUsable = null;
+	}
+
+	private long getMissingAbortPointer () {
+		if (missingAbortPointerResolved) return missingAbortPointer;
+		missingAbortPointerResolved = true;
+		missingAbortPointer = Long.MIN_VALUE;
+		try {
+			Class<?> threadLocalUtil = Class.forName("org.lwjgl.system.ThreadLocalUtil");
+			Method getMissingAbort = threadLocalUtil.getDeclaredMethod("getFunctionMissingAbort");
+			getMissingAbort.setAccessible(true);
+			Object value = getMissingAbort.invoke(null);
+			if (value instanceof Long) missingAbortPointer = ((Long)value).longValue();
+		} catch (Throwable ignored) {
+		}
+		return missingAbortPointer;
+	}
+
+	private boolean isFunctionPointerUsable (String fieldName) {
+		try {
+			Object capabilities = GL.getCapabilities();
+			Field field = capabilities.getClass().getDeclaredField(fieldName);
+			field.setAccessible(true);
+			Object value = field.get(capabilities);
+			if (!(value instanceof Long)) return false;
+			long address = ((Long)value).longValue();
+			if (address == 0L) return false;
+			long missingPointer = getMissingAbortPointer();
+			return missingPointer == Long.MIN_VALUE || address != missingPointer;
+		} catch (Throwable ignored) {
+			return false;
+		}
+	}
+
+	private boolean canUseCoreFramebufferBind () {
+		if (coreFramebufferBindUsable != null) return coreFramebufferBindUsable.booleanValue();
+		coreFramebufferBindUsable = Boolean.valueOf(isFunctionPointerUsable("glBindFramebuffer"));
+		return coreFramebufferBindUsable.booleanValue();
+	}
+
+	private boolean canUseExtFramebufferBind () {
+		if (extFramebufferBindUsable != null) return extFramebufferBindUsable.booleanValue();
+		extFramebufferBindUsable = Boolean.valueOf(isFunctionPointerUsable("glBindFramebufferEXT"));
+		return extFramebufferBindUsable.booleanValue();
+	}
+
 	private void ensureDisplayContextCurrent (String phase) {
 		if (!Display.isCreated()) return;
 
@@ -372,12 +439,26 @@ public class LwjglApplication implements Application {
 	}
 
 	private void bindDefaultFramebufferForSwap () {
+		ensureDisplayContextCurrent("pre-swap-fbo-rebind");
+		boolean bound = false;
 		try {
-			org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+			if (canUseCoreFramebufferBind()) {
+				org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+				bound = true;
+			}
 		} catch (Throwable ignored) {
 		}
 		try {
-			org.lwjgl.opengl.EXTFramebufferObject.glBindFramebufferEXT(org.lwjgl.opengl.EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0);
+			if (!bound && canUseExtFramebufferBind()) {
+				org.lwjgl.opengl.EXTFramebufferObject.glBindFramebufferEXT(org.lwjgl.opengl.EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0);
+				bound = true;
+			}
+		} catch (Throwable ignored) {
+		}
+		try {
+			if (!bound && Gdx.gl20 != null) {
+				Gdx.gl20.glBindFramebuffer(GL20.GL_FRAMEBUFFER, 0);
+			}
 		} catch (Throwable ignored) {
 		}
 		try {
@@ -397,6 +478,138 @@ public class LwjglApplication implements Application {
 		// Default to enabled on GLES-backed contexts to avoid swapping a stale black backbuffer
 		// when third-party code leaves an offscreen FBO bound at end of frame.
 		return LwjglGraphics.isGLESContextActive();
+	}
+
+	private static Field findField (Class<?> type, String name) throws NoSuchFieldException {
+		for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+			try {
+				Field field = current.getDeclaredField(name);
+				field.setAccessible(true);
+				return field;
+			} catch (NoSuchFieldException ignored) {
+			}
+		}
+		throw new NoSuchFieldException(name);
+	}
+
+	private static Object readStaticField (Class<?> owner, String fieldName) throws ReflectiveOperationException {
+		return findField(owner, fieldName).get(null);
+	}
+
+	private static Object readField (Object target, String fieldName) throws ReflectiveOperationException {
+		return findField(target.getClass(), fieldName).get(target);
+	}
+
+	private static void setSpinePremultipliedAlpha (Object renderer, boolean enabled) throws ReflectiveOperationException {
+		Method method = renderer.getClass().getMethod("setPremultipliedAlpha", boolean.class);
+		method.invoke(renderer, Boolean.valueOf(enabled));
+	}
+
+	private boolean shouldEnableGlobalTextureCompat () {
+		String configured = System.getProperty("amethyst.gdx.global_texture_compat");
+		if (configured != null) {
+			configured = configured.trim();
+			if (configured.length() > 0) {
+				return !"false".equalsIgnoreCase(configured)
+					&& !"0".equals(configured)
+					&& !"off".equalsIgnoreCase(configured);
+			}
+		}
+		// Default enabled on GLES where atlas mipmap chains often produce black-edge artifacts.
+		return LwjglGraphics.isGLESContextActive();
+	}
+
+	private boolean shouldRunGlobalTextureCompatScan () {
+		long frame = graphics.frameId;
+		// Early startup scans are more frequent because many textures are loaded then.
+		if (frame < 3600) return (frame % 120) == 0;
+		return (frame % 600) == 0;
+	}
+
+	private void ensureGlobalTextureCompat () {
+		if (!shouldEnableGlobalTextureCompat()) return;
+
+		try {
+			Object managedObj = readStaticField(Texture.class, "managedTextures");
+			if (!(managedObj instanceof Map<?, ?>)) return;
+
+			Object texturesObj = ((Map<?, ?>)managedObj).get(this);
+			if (!(texturesObj instanceof Array<?>)) return;
+
+			Array<?> textures = (Array<?>)texturesObj;
+			int adjustedThisScan = 0;
+			for (int i = 0, n = textures.size; i < n; i++) {
+				Object value = textures.get(i);
+				if (!(value instanceof Texture)) continue;
+
+				Texture texture = (Texture)value;
+				if (!globalTextureCompatSeen.add(texture)) continue;
+
+				Texture.TextureFilter minFilter = texture.getMinFilter();
+				if (!minFilter.isMipMap()) continue;
+
+				texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+				texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+				adjustedThisScan++;
+			}
+
+			if (adjustedThisScan > 0) {
+				globalTextureCompatAdjustedTotal += adjustedThisScan;
+				System.out.println("[gdx-patch] Global texture compat adjusted " + adjustedThisScan
+					+ " texture(s), total=" + globalTextureCompatAdjustedTotal + " (Linear+Clamp for mipmap textures)");
+			}
+		} catch (Throwable t) {
+			if (!globalTextureCompatErrorLogged) {
+				globalTextureCompatErrorLogged = true;
+				System.out.println("[gdx-patch] Global texture compat unavailable: " + t);
+			}
+		}
+	}
+
+	private void ensureRingTitleRenderCompat () {
+		try {
+			Class<?> cardCrawlGameClass = Class.forName(STS_CARD_CRAWL_GAME_CLASS);
+			Object mainMenuScreen = readStaticField(cardCrawlGameClass, "mainMenuScreen");
+			Object background = mainMenuScreen == null ? null : readField(mainMenuScreen, "bg");
+			boolean ringTitleBackgroundActive = background != null
+				&& RING_TITLE_BACKGROUND_CLASS.equals(background.getClass().getName());
+
+			Object renderer = readStaticField(Class.forName(STS_ABSTRACT_CREATURE_CLASS), "sr");
+			Object polygonBatchObj = readStaticField(cardCrawlGameClass, "psb");
+
+			if (ringTitleBackgroundActive) {
+				if (renderer != null) {
+					setSpinePremultipliedAlpha(renderer, false);
+				}
+
+				if (polygonBatchObj instanceof PolygonSpriteBatch) {
+					PolygonSpriteBatch psb = (PolygonSpriteBatch)polygonBatchObj;
+					if (!psb.isBlendingEnabled()) {
+						psb.enableBlending();
+					}
+					if (psb.getBlendSrcFunc() != GL20.GL_SRC_ALPHA
+						|| psb.getBlendDstFunc() != GL20.GL_ONE_MINUS_SRC_ALPHA) {
+						psb.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+					}
+				}
+
+				if (!ringTitleRenderCompatActive) {
+					ringTitleRenderCompatActive = true;
+					System.out.println("[gdx-patch] Ring title alpha compat enabled (Spine PMA=false)");
+				}
+			} else if (ringTitleRenderCompatActive) {
+				if (renderer != null) {
+					setSpinePremultipliedAlpha(renderer, true);
+				}
+				ringTitleRenderCompatActive = false;
+				System.out.println("[gdx-patch] Ring title alpha compat disabled (Spine PMA=true)");
+			}
+		} catch (Throwable t) {
+			if (!ringTitleRenderCompatErrorLogged) {
+				ringTitleRenderCompatErrorLogged = true;
+				System.out.println("[gdx-patch] Ring title alpha compat unavailable: " + t);
+			}
+		}
 	}
 
 	void mainLoop () {
@@ -534,6 +747,8 @@ public class LwjglApplication implements Application {
 					System.out.println("[gdx-patch][diag] render heartbeat frameId=" + graphics.frameId + ", active="
 						+ isActive + ", current=" + isCurrent + ", size=" + Display.getWidth() + "x" + Display.getHeight());
 				}
+				ensureRingTitleRenderCompat();
+				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
 				listener.render();
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer();
 				if (forceDefaultFbo || Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {

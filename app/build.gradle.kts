@@ -16,6 +16,7 @@ plugins {
 }
 
 val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
+val appVersionName = "0.0.4"
 
 android {
     namespace = "io.stamethyst"
@@ -26,7 +27,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.0.3"
+        versionName = appVersionName
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -78,6 +79,14 @@ android {
     buildFeatures {
         compose = true
         prefab = true
+    }
+
+    applicationVariants.all {
+        outputs.all {
+            if (this is com.android.build.gradle.api.ApkVariantOutput) {
+                outputFileName = "SlayTheAmethyst-dev-$appVersionName.APK"
+            }
+        }
     }
 }
 

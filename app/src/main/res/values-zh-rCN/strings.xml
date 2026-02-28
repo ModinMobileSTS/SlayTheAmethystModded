@@ -21,4 +21,6 @@
     <string name="compat_downfall_fbo_desc">控制是否在启动前注入 Downfall 的 DoubleEnergyOrb FBO 兼容补丁。</string>
     <string name="compat_virtual_fbo_poc_title">Virtual FBO 概念验证</string>
     <string name="compat_virtual_fbo_poc_desc">启用 GLFrameBuffer 的 Virtual FBO 实验路径（amethyst.gdx.virtual_fbo_poc）。用于规避 unknown framebuffer status 崩溃，但可能影响后处理效果。</string>
+    <string name="compat_global_texture_compat_title">全局纹理兼容补丁</string>
+    <string name="compat_global_texture_compat_desc">扫描托管纹理，并对 mipmap 纹理统一应用 Linear + Clamp（amethyst.gdx.global_texture_compat）。可规避 GLES 采样边界导致的黑块/黑水，建议保持开启。</string>
 </resources>

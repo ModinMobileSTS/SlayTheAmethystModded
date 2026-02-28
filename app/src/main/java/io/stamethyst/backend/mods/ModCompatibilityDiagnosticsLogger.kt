@@ -37,7 +37,9 @@ internal object ModCompatibilityDiagnosticsLogger {
                 "diag[$safeStage] setting original_fbo=" +
                     CompatibilitySettings.isOriginalFboPatchEnabled(context) +
                     ", downfall_fbo=" +
-                    CompatibilitySettings.isDownfallFboPatchEnabled(context)
+                    CompatibilitySettings.isDownfallFboPatchEnabled(context) +
+                    ", global_texture_compat=" +
+                    CompatibilitySettings.isGlobalTextureCompatEnabled(context)
             )
         } catch (error: Throwable) {
             appendCompatLog(

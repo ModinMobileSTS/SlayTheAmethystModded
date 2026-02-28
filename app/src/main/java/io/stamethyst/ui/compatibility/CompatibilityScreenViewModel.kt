@@ -15,7 +15,8 @@ class CompatibilityScreenViewModel : ViewModel() {
         val busyMessage: String? = null,
         val originalFboPatchEnabled: Boolean = false,
         val downfallFboPatchEnabled: Boolean = false,
-        val virtualFboPocEnabled: Boolean = false
+        val virtualFboPocEnabled: Boolean = false,
+        val globalTextureCompatEnabled: Boolean = true
     )
 
     var uiState by mutableStateOf(UiState())
@@ -27,7 +28,8 @@ class CompatibilityScreenViewModel : ViewModel() {
             busyMessage = null,
             originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host),
             downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host),
-            virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
+            virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
+            globalTextureCompatEnabled = CompatibilitySettings.isGlobalTextureCompatEnabled(host)
         )
     }
 
@@ -53,5 +55,13 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setVirtualFboPocEnabled(host, enabled)
         uiState = uiState.copy(virtualFboPocEnabled = enabled)
+    }
+
+    fun onGlobalTextureCompatToggled(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setGlobalTextureCompatEnabled(host, enabled)
+        uiState = uiState.copy(globalTextureCompatEnabled = enabled)
     }
 }

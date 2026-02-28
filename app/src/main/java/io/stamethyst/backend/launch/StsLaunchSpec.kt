@@ -43,6 +43,7 @@ object StsLaunchSpec {
         val jvmOutputFile = File(stsRoot, "jvm_output.log")
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
+        val lwjglDebugOffFlag = File(stsRoot, "lwjgl_debug_off.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
 
         val args = ArrayList<String>()
@@ -79,8 +80,9 @@ object StsLaunchSpec {
         if (classTraceFlag.exists()) {
             args.add("-verbose:class")
         }
-        args.add("-Dorg.lwjgl.util.Debug=true")
-        args.add("-Dorg.lwjgl.util.DebugLoader=true")
+        val enableLwjglDebug = !lwjglDebugOffFlag.exists()
+        args.add("-Dorg.lwjgl.util.Debug=${if (enableLwjglDebug) "true" else "false"}")
+        args.add("-Dorg.lwjgl.util.DebugLoader=${if (enableLwjglDebug) "true" else "false"}")
         args.add("-Djava.home=${javaHome.absolutePath}")
         args.add("-Djava.io.tmpdir=${context.cacheDir.absolutePath}")
         args.add("-Duser.home=${stsHome.absolutePath}")
@@ -93,8 +95,13 @@ object StsLaunchSpec {
         val effectiveRenderer = renderer ?: RendererBackend.OPENGL_ES2
         args.add("-Dorg.lwjgl.opengl.libname=${effectiveRenderer.lwjglOpenGlLibName()}")
         if (effectiveRenderer == RendererBackend.OPENGL_ES2) {
-            // Avoid desktop OpenGL 3.3 capability probing on GLES backends.
-            args.add("-Dorg.lwjgl.opengl.maxVersion=3.2")
+            // Clamp reported GL capability to a conservative baseline on GLES bridges.
+            // This avoids exposing desktop GL3.3 paths with missing entry points.
+            args.add("-Dorg.lwjgl.opengl.maxVersion=3.0")
+            args.add("-Dorg.lwjgl.opengles.maxVersion=3.0")
+            if (enableLwjglDebug) {
+                args.add("-Dorg.lwjgl.util.DebugFunctions=true")
+            }
         }
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
         args.add("-Dorg.lwjgl.libname=${context.applicationInfo.nativeLibraryDir}/liblwjgl.so")
@@ -119,6 +126,10 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.gdx.virtual_fbo_poc=" +
                 if (CompatibilitySettings.isVirtualFboPocEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.gdx.global_texture_compat=" +
+                if (CompatibilitySettings.isGlobalTextureCompatEnabled(context)) "true" else "false"
         )
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsFile(context).absolutePath}")
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader")

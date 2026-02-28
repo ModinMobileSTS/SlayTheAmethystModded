@@ -94,6 +94,14 @@ fun LauncherCompatibilityScreen(
                 enabled = !uiState.busy,
                 onCheckedChange = { enabled -> viewModel.onVirtualFboPocToggled(activity, enabled) }
             )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_global_texture_compat_title),
+                description = stringResource(R.string.compat_global_texture_compat_desc),
+                checked = uiState.globalTextureCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = { enabled -> viewModel.onGlobalTextureCompatToggled(activity, enabled) }
+            )
         }
     }
 
