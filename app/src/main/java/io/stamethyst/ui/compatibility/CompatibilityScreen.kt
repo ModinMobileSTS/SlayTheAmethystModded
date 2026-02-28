@@ -102,6 +102,14 @@ fun LauncherCompatibilityScreen(
                 enabled = !uiState.busy,
                 onCheckedChange = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(activity, enabled) }
             )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_force_linear_mipmap_filter_title),
+                description = stringResource(R.string.compat_force_linear_mipmap_filter_desc),
+                checked = uiState.forceLinearMipmapFilterEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = { enabled -> viewModel.onForceLinearMipmapFilterToggled(activity, enabled) }
+            )
         }
     }
 

@@ -25,6 +25,11 @@ Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
 4. When adding/updating runtime-critical native libs, keep both ABI folders in sync:
    - `app/src/main/jniLibs/arm64-v8a`
    - `app/src/main/jniLibs/armeabi-v7a`
+5. For desktop `gdx-video` mod compatibility, include both native bridge libs in:
+   - `runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so`
+   - `runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so`
+   You can download these files from:
+   - `https://github.com/ModinMobileSTS/GdxVideoDesktopAndroidNative/releases`
 
 ## Build
 ```bash

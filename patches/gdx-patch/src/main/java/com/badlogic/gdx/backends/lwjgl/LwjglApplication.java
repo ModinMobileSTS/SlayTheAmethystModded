@@ -70,11 +70,35 @@ public class LwjglApplication implements Application {
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final String STS_ABSTRACT_CREATURE_CLASS = "com.megacrit.cardcrawl.core.AbstractCreature";
 	private static final String RING_TITLE_BACKGROUND_CLASS = "RingOfDestiny.ui.RingLoginBackground";
+	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
+		{"glBindFramebufferEXT", "glBindFramebuffer"},
+		{"glDeleteFramebuffersEXT", "glDeleteFramebuffers"},
+		{"glGenFramebuffersEXT", "glGenFramebuffers"},
+		{"glCheckFramebufferStatusEXT", "glCheckFramebufferStatus"},
+		{"glFramebufferTexture1DEXT", "glFramebufferTexture1D"},
+		{"glFramebufferTexture2DEXT", "glFramebufferTexture2D"},
+		{"glFramebufferTexture3DEXT", "glFramebufferTexture3D"},
+		{"glFramebufferRenderbufferEXT", "glFramebufferRenderbuffer"},
+		{"glGetFramebufferAttachmentParameterivEXT", "glGetFramebufferAttachmentParameteriv"},
+		{"glBindRenderbufferEXT", "glBindRenderbuffer"},
+		{"glDeleteRenderbuffersEXT", "glDeleteRenderbuffers"},
+		{"glGenRenderbuffersEXT", "glGenRenderbuffers"},
+		{"glRenderbufferStorageEXT", "glRenderbufferStorage"},
+		{"glGetRenderbufferParameterivEXT", "glGetRenderbufferParameteriv"},
+		{"glIsFramebufferEXT", "glIsFramebuffer"},
+		{"glIsRenderbufferEXT", "glIsRenderbuffer"},
+		{"glGenerateMipmapEXT", "glGenerateMipmap"}
+	};
+	private static final String[] FUNCTION_ALIAS_SUFFIXES = {"EXT", "OES", "ARB"};
 	private static volatile boolean noContextDiagnosticsInstalled;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
 	private boolean missingFunctionPointerPatchLogged;
 	private boolean missingFunctionPointerPatched;
+	private boolean framebufferExtAliasLogged;
+	private boolean framebufferExtAliasFailedLogged;
+	private boolean genericFunctionAliasLogged;
+	private boolean genericFunctionAliasFailedLogged;
 	private boolean inactiveRenderSuppressedLogged;
 	private boolean firstRenderFrameLogged;
 	private boolean defaultFramebufferRebindLogged;
@@ -161,9 +185,8 @@ public class LwjglApplication implements Application {
 		if (noContextDiagnosticsInstalled) return;
 		synchronized (LwjglApplication.class) {
 			if (noContextDiagnosticsInstalled) return;
-			// Reduced log mode: disable stack-dump wrapping for stdout/stderr diagnostics.
-			// System.setOut(new NoContextDiagnosticPrintStream(System.out, "stdout"));
-			// System.setErr(new NoContextDiagnosticPrintStream(System.err, "stderr"));
+			System.setOut(new NoContextDiagnosticPrintStream(System.out, "stdout"));
+			System.setErr(new NoContextDiagnosticPrintStream(System.err, "stderr"));
 			noContextDiagnosticsInstalled = true;
 		}
 	}
@@ -305,6 +328,8 @@ public class LwjglApplication implements Application {
 			if (!forceRecreate) {
 				GL.getCapabilities();
 				zeroMissingFunctionPointersIfRequested(phase);
+				ensureFramebufferExtFunctionAliases(phase);
+				ensureGenericFunctionAliases(phase);
 				return true;
 			}
 		} catch (Throwable ignored) {
@@ -313,6 +338,8 @@ public class LwjglApplication implements Application {
 		try {
 			GL.createCapabilities();
 			zeroMissingFunctionPointersIfRequested(phase);
+			ensureFramebufferExtFunctionAliases(phase);
+			ensureGenericFunctionAliases(phase);
 			invalidateFramebufferBindCapabilities();
 			return true;
 		} catch (Throwable t) {
@@ -416,6 +443,146 @@ public class LwjglApplication implements Application {
 		return extFramebufferBindUsable.booleanValue();
 	}
 
+	private boolean isFunctionPointerAddressUsable (long address) {
+		if (address == 0L) return false;
+		long missingPointer = getMissingAbortPointer();
+		return missingPointer == Long.MIN_VALUE || address != missingPointer;
+	}
+
+	private boolean aliasFunctionPointerIfMissing (Object capabilities, String extFieldName, String coreFieldName) {
+		try {
+			Class<?> capabilitiesClass = capabilities.getClass();
+			Field extField = capabilitiesClass.getDeclaredField(extFieldName);
+			Field coreField = capabilitiesClass.getDeclaredField(coreFieldName);
+			extField.setAccessible(true);
+			coreField.setAccessible(true);
+
+			Object extValue = extField.get(capabilities);
+			Object coreValue = coreField.get(capabilities);
+			if (!(extValue instanceof Long) || !(coreValue instanceof Long)) return false;
+
+			long extAddress = ((Long)extValue).longValue();
+			if (isFunctionPointerAddressUsable(extAddress)) return false;
+
+			long coreAddress = ((Long)coreValue).longValue();
+			if (!isFunctionPointerAddressUsable(coreAddress)) return false;
+
+			extField.setLong(capabilities, coreAddress);
+			return true;
+		} catch (NoSuchFieldException ignored) {
+			return false;
+		} catch (Throwable ignored) {
+			return false;
+		}
+	}
+
+	private void ensureFramebufferExtFunctionAliases (String phase) {
+		try {
+			Object capabilities = GL.getCapabilities();
+			int aliased = 0;
+			for (int i = 0; i < EXT_FRAMEBUFFER_FUNCTION_ALIASES.length; i++) {
+				String[] mapping = EXT_FRAMEBUFFER_FUNCTION_ALIASES[i];
+				if (aliasFunctionPointerIfMissing(capabilities, mapping[0], mapping[1])) {
+					aliased++;
+				}
+			}
+			framebufferExtAliasFailedLogged = false;
+			if (aliased > 0 && !framebufferExtAliasLogged) {
+				framebufferExtAliasLogged = true;
+				System.out.println("[gdx-patch] Aliased " + aliased + " EXT framebuffer function pointer(s) to core GL (" + phase + ")");
+			}
+		} catch (Throwable t) {
+			if (!framebufferExtAliasFailedLogged) {
+				framebufferExtAliasFailedLogged = true;
+				System.out.println("[gdx-patch] Unable to alias EXT framebuffer function pointers (" + phase + "): " + t);
+			}
+		}
+	}
+
+	private static boolean isFunctionPointerField (Field field) {
+		if (field == null) return false;
+		if (!"long".equals(field.getType().getName())) return false;
+		String name = field.getName();
+		return name != null && name.startsWith("gl") && name.length() > 2;
+	}
+
+	private long readFunctionPointerAddress (Object capabilities, Field field) throws IllegalAccessException {
+		field.setAccessible(true);
+		return field.getLong(capabilities);
+	}
+
+	private boolean aliasFunctionPointerFieldIfMissing (Object capabilities, Field targetField, Field sourceField) throws IllegalAccessException {
+		if (targetField == null || sourceField == null) return false;
+		if (targetField == sourceField) return false;
+		if (!isFunctionPointerField(targetField) || !isFunctionPointerField(sourceField)) return false;
+
+		long targetAddress = readFunctionPointerAddress(capabilities, targetField);
+		if (isFunctionPointerAddressUsable(targetAddress)) return false;
+
+		long sourceAddress = readFunctionPointerAddress(capabilities, sourceField);
+		if (!isFunctionPointerAddressUsable(sourceAddress)) return false;
+
+		targetField.setAccessible(true);
+		targetField.setLong(capabilities, sourceAddress);
+		return true;
+	}
+
+	private void ensureGenericFunctionAliases (String phase) {
+		try {
+			Object capabilities = GL.getCapabilities();
+			Class<?> capabilitiesClass = capabilities.getClass();
+			Field[] declaredFields = capabilitiesClass.getDeclaredFields();
+			ObjectMap<String, Field> fieldsByName = new ObjectMap<String, Field>();
+			for (int i = 0; i < declaredFields.length; i++) {
+				Field field = declaredFields[i];
+				if (!isFunctionPointerField(field)) continue;
+				fieldsByName.put(field.getName(), field);
+			}
+			if (fieldsByName.size == 0) return;
+
+			int aliased = 0;
+			for (ObjectMap.Entry<String, Field> entry : fieldsByName.entries()) {
+				String fieldName = entry.key;
+				Field targetField = entry.value;
+
+				boolean aliasedThisField = false;
+				for (int i = 0; i < FUNCTION_ALIAS_SUFFIXES.length && !aliasedThisField; i++) {
+					String suffix = FUNCTION_ALIAS_SUFFIXES[i];
+					if (fieldName.endsWith(suffix)) {
+						String coreName = fieldName.substring(0, fieldName.length() - suffix.length());
+						Field coreField = fieldsByName.get(coreName);
+						if (aliasFunctionPointerFieldIfMissing(capabilities, targetField, coreField)) {
+							aliased++;
+							aliasedThisField = true;
+						}
+					}
+				}
+				if (aliasedThisField) continue;
+
+				for (int i = 0; i < FUNCTION_ALIAS_SUFFIXES.length; i++) {
+					String suffix = FUNCTION_ALIAS_SUFFIXES[i];
+					Field suffixField = fieldsByName.get(fieldName + suffix);
+					if (aliasFunctionPointerFieldIfMissing(capabilities, targetField, suffixField)) {
+						aliased++;
+						break;
+					}
+				}
+			}
+
+			genericFunctionAliasFailedLogged = false;
+			if (aliased > 0 && !genericFunctionAliasLogged) {
+				genericFunctionAliasLogged = true;
+				System.out.println("[gdx-patch] Aliased " + aliased
+					+ " generic GL function pointer(s) across core/EXT/OES/ARB names (" + phase + ")");
+			}
+		} catch (Throwable t) {
+			if (!genericFunctionAliasFailedLogged) {
+				genericFunctionAliasFailedLogged = true;
+				System.out.println("[gdx-patch] Unable to alias generic GL function pointers (" + phase + "): " + t);
+			}
+		}
+	}
+
 	private void ensureDisplayContextCurrent (String phase) {
 		if (!Display.isCreated()) return;
 
@@ -478,6 +645,15 @@ public class LwjglApplication implements Application {
 		}
 		try {
 			org.lwjgl.opengl.GL11.glViewport(0, 0, Display.getWidth(), Display.getHeight());
+		} catch (Throwable ignored) {
+		}
+	}
+
+	private void ensureColorMaskWritable () {
+		try {
+			if (Gdx.gl20 != null) {
+				Gdx.gl20.glColorMask(true, true, true, true);
+			}
 		} catch (Throwable ignored) {
 		}
 	}
@@ -1125,6 +1301,7 @@ public class LwjglApplication implements Application {
 				ensureRingTitleRenderCompat();
 				runGlobalTextureCompatOnManagedGrowth("pre-render");
 				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
+				ensureColorMaskWritable();
 				listener.render();
 				// Catch textures created during listener.render in the same frame.
 				runGlobalTextureCompatOnManagedGrowth("post-render");

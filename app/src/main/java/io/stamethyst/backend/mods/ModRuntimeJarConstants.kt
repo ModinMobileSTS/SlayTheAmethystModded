@@ -99,6 +99,8 @@ internal const val STS_PATCH_STEAM_UTILS_ENUM_CLASS =
     "com/codedisaster/steamworks/SteamUtils\$FloatingGamepadTextInputMode.class"
 internal const val STS_PATCH_STEAM_INPUT_HELPER_CLASS =
     "com/megacrit/cardcrawl/helpers/steamInput/SteamInputHelper.class"
+internal const val STS_PATCH_GL_TEXTURE_CLASS =
+    "com/badlogic/gdx/graphics/GLTexture.class"
 internal const val STS_PATCH_GL_FRAMEBUFFER_CLASS =
     "com/badlogic/gdx/graphics/glutils/GLFrameBuffer.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS =
@@ -144,6 +146,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_STEAM_UTILS_CLASS,
         STS_PATCH_STEAM_UTILS_ENUM_CLASS,
         STS_PATCH_STEAM_INPUT_HELPER_CLASS,
+        STS_PATCH_GL_TEXTURE_CLASS,
         STS_PATCH_GL_FRAMEBUFFER_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_DIRECT_CLASS,

@@ -55,12 +55,17 @@ class SettingsScreenViewModel : ViewModel() {
         private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
         private const val PREF_KEY_TARGET_FPS = "target_fps"
         private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
+        private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
 
         private const val DEFAULT_RENDER_SCALE = 1.0f
         private const val MIN_RENDER_SCALE = 0.50f
         private const val MAX_RENDER_SCALE = 1.00f
         private const val DEFAULT_TARGET_FPS = 120
         private const val DEFAULT_TOUCHSCREEN_ENABLED = true
+        private const val DEFAULT_JVM_HEAP_MAX_MB = 1536
+        private const val MIN_JVM_HEAP_MAX_MB = 1024
+        private const val MAX_JVM_HEAP_MAX_MB = 2048
+        private const val JVM_HEAP_STEP_MB = 128
 
         private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
         private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
@@ -108,6 +113,10 @@ class SettingsScreenViewModel : ViewModel() {
         val renderScaleInput: String = "",
         val selectedRenderer: RendererBackend = RendererBackend.OPENGL_ES2,
         val selectedTargetFps: Int = DEFAULT_TARGET_FPS,
+        val selectedJvmHeapMaxMb: Int = DEFAULT_JVM_HEAP_MAX_MB,
+        val jvmHeapMinMb: Int = MIN_JVM_HEAP_MAX_MB,
+        val jvmHeapMaxMb: Int = MAX_JVM_HEAP_MAX_MB,
+        val jvmHeapStepMb: Int = JVM_HEAP_STEP_MB,
         val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
         val backImmediateExit: Boolean = true,
         val manualDismissBootOverlay: Boolean = false,
@@ -146,6 +155,7 @@ class SettingsScreenViewModel : ViewModel() {
         val renderScale = readRenderScaleValue(host)
         val selectedRenderer = RendererConfig.readPreferredBackend(host)
         val targetFps = readTargetFpsSelection(host)
+        val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
         val backImmediateExit = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
         val touchscreenEnabled = readTouchscreenEnabledSelection(host)
@@ -154,6 +164,7 @@ class SettingsScreenViewModel : ViewModel() {
         val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host)
         val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
         val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
+        val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
 
         val rendererDecision = RendererConfig.resolveEffectiveBackend(host, selectedRenderer)
         val rendererSelectedLine = host.getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
@@ -189,6 +200,7 @@ class SettingsScreenViewModel : ViewModel() {
             "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
             "\nRender scale: ${formatRenderScale(renderScale)} (0.50-1.00)" +
             "\nTarget FPS: $targetFps" +
+            "\nJVM heap max: ${jvmHeapMaxMb} MB" +
             "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
             "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
             "\nLauncher icon: ${selectedLauncherIcon.title}" +
@@ -196,6 +208,7 @@ class SettingsScreenViewModel : ViewModel() {
             "\nDownfall FBO patch: " + if (downfallFboPatchEnabled) "ON" else "OFF" +
             "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
             "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
+            "\nForce linear mipmap filter: " + if (forceLinearMipmapFilterEnabled) "ON" else "OFF" +
             "\n$rendererSelectedLine" +
             "\n$rendererEffectiveLine" +
             "\nBundled JRE path: app/src/main/assets/components/jre"
@@ -206,6 +219,7 @@ class SettingsScreenViewModel : ViewModel() {
             renderScaleInput = uiState.renderScaleInput.ifBlank { formatRenderScale(renderScale) },
             selectedRenderer = selectedRenderer,
             selectedTargetFps = targetFps,
+            selectedJvmHeapMaxMb = jvmHeapMaxMb,
             selectedLauncherIcon = selectedLauncherIcon,
             backImmediateExit = backImmediateExit,
             manualDismissBootOverlay = manualDismissBootOverlay,
@@ -303,6 +317,19 @@ class SettingsScreenViewModel : ViewModel() {
         val normalizedTargetFps = normalizeTargetFps(targetFps)
         uiState = uiState.copy(selectedTargetFps = normalizedTargetFps)
         saveTargetFpsSelection(host, normalizedTargetFps)
+        refreshStatus(host)
+    }
+
+    fun onJvmHeapMaxSelected(host: Activity, heapMaxMb: Int) {
+        if (uiState.busy) {
+            return
+        }
+        val normalizedHeapMax = normalizeJvmHeapMax(heapMaxMb)
+        if (normalizedHeapMax == uiState.selectedJvmHeapMaxMb) {
+            return
+        }
+        uiState = uiState.copy(selectedJvmHeapMaxMb = normalizedHeapMax)
+        saveJvmHeapMaxSelection(host, normalizedHeapMax)
         refreshStatus(host)
     }
 
@@ -1289,6 +1316,27 @@ class SettingsScreenViewModel : ViewModel() {
         } else {
             DEFAULT_TARGET_FPS
         }
+    }
+
+    private fun readJvmHeapMaxSelection(host: Activity): Int {
+        val stored = host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+            .getInt(PREF_KEY_JVM_HEAP_MAX_MB, DEFAULT_JVM_HEAP_MAX_MB)
+        return normalizeJvmHeapMax(stored)
+    }
+
+    private fun saveJvmHeapMaxSelection(host: Activity, heapMaxMb: Int) {
+        host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+            .edit {
+                putInt(PREF_KEY_JVM_HEAP_MAX_MB, normalizeJvmHeapMax(heapMaxMb))
+            }
+    }
+
+    private fun normalizeJvmHeapMax(heapMaxMb: Int): Int {
+        val clamped = heapMaxMb.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
+        val offset = clamped - MIN_JVM_HEAP_MAX_MB
+        val snappedStepCount = Math.round(offset / JVM_HEAP_STEP_MB.toFloat())
+        val snapped = MIN_JVM_HEAP_MAX_MB + (snappedStepCount * JVM_HEAP_STEP_MB)
+        return snapped.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
     }
 
     private fun readTouchscreenEnabledSelection(host: Activity): Boolean {

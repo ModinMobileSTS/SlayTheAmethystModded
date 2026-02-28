@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,6 +44,7 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,6 +162,27 @@ fun LauncherSettingsScreen(
                 onSelect = { selectedFps -> viewModel.onTargetFpsSelected(activity, selectedFps) }
             )
         }
+
+        Text(text = "JVM 堆上限", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = "${uiState.selectedJvmHeapMaxMb} MB",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Slider(
+            value = uiState.selectedJvmHeapMaxMb.toFloat(),
+            onValueChange = { value ->
+                viewModel.onJvmHeapMaxSelected(activity, value.roundToInt())
+            },
+            valueRange = uiState.jvmHeapMinMb.toFloat()..uiState.jvmHeapMaxMb.toFloat(),
+            steps = ((uiState.jvmHeapMaxMb - uiState.jvmHeapMinMb) / uiState.jvmHeapStepMb - 1)
+                .coerceAtLeast(0),
+            enabled = !uiState.busy,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = "如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
+            style = MaterialTheme.typography.bodySmall
+        )
 
         Text(text = stringResource(R.string.renderer_backend_label), style = MaterialTheme.typography.bodyMedium)
         RendererBackend.entries.forEach { backend ->

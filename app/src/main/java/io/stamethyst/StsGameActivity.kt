@@ -66,6 +66,8 @@ import java.util.Locale
 class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     companion object {
         private const val TAG = "StsGameActivity"
+        private const val CRASH_CODE_BOOT_FAILURE = -2
+        private const val CRASH_CODE_OUT_OF_MEMORY = -8
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
         const val EXTRA_RENDERER_BACKEND = "io.stamethyst.renderer_backend"
         const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
@@ -517,9 +519,11 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(this)
+                val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(this)
                 Logger.appendToLog(
                     "Compat settings: originalFboPatch=$originalFboPatchEnabled, downfallFboPatch=$downfallFboPatchEnabled, " +
-                        "virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled"
+                        "virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled, " +
+                        "forceLinearMipmapFilter=$forceLinearMipmapFilterEnabled"
                 )
                 val preferredRenderer = RendererConfig.readPreferredBackend(this)
                 val rendererDecision = RendererConfig.resolveEffectiveBackend(this, preferredRenderer)
@@ -578,6 +582,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.fbo_fallback=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.virtual_fbo_poc=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.global_atlas_filter_compat=") + ", " +
+                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.force_linear_mipmap_filter=") + ", " +
                         findLaunchArgValue(launchArgs, "-Dorg.lwjgl.librarypath=")
                 )
                 Logger.appendToLog("Launch args: $launchArgs")
@@ -753,13 +758,13 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private fun onJvmLogMessage(text: String?) {
         Log.i(TAG, "[JVM] $text")
-        if (!waitForMainMenu || bootOverlayDismissed || text == null) {
+        if (text == null) {
             return
         }
+        val shouldHandleOverlayFlow = waitForMainMenu && !bootOverlayDismissed
         val lines = text.split(Regex("\\r?\\n"))
         for (raw in lines) {
             val line = raw.trim()
-            appendBootOverlayLog(raw)
             if (!launchFailureSignaled) {
                 val fatal = detectFatalStartupLog(line)
                 if (fatal != null) {
@@ -767,7 +772,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     continue
                 }
             }
-            if (!bootOverlayDismissed && shouldDismissOverlayEarlyLog(line)) {
+            if (shouldHandleOverlayFlow) {
+                appendBootOverlayLog(raw)
+            }
+            if (shouldHandleOverlayFlow && shouldDismissOverlayEarlyLog(line)) {
                 runOnUiThread {
                     updateBootOverlayProgress(Math.max(bootOverlayProgress, 98), "Starting game...")
                     requestEarlyOverlayDismiss()
@@ -782,6 +790,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         val lower = line.lowercase(Locale.ROOT)
         return when {
+            isOutOfMemoryFailure(lower) -> "OutOfMemoryError detected: $line"
             lower.contains("com.evacipated.cardcrawl.modthespire.patcher.patchingexception") -> "MTS patching failed: $line"
             lower.contains("missingdependencyexception") -> "MTS missing dependency: $line"
             lower.contains("duplicatemodidexception") -> "MTS duplicate mod id: $line"
@@ -789,6 +798,16 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             lower.contains("illegal patch parameter") -> "MTS illegal patch parameter: $line"
             else -> null
         }
+    }
+
+    private fun isOutOfMemoryFailure(detail: String?): Boolean {
+        if (detail == null || detail.isEmpty()) {
+            return false
+        }
+        val lower = detail.lowercase(Locale.ROOT)
+        return lower.contains("outofmemoryerror") ||
+            lower.contains("java heap space") ||
+            lower.contains("gc overhead limit exceeded")
     }
 
     private fun shouldDismissOverlayEarlyLog(line: String?): Boolean {
@@ -949,13 +968,25 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             runOnUiThread { finish() }
             return
         }
+        val oomFailure = isOutOfMemoryFailure(detail)
+        if (mainMenuReadySignaled && !oomFailure) {
+            // After game-ready, only treat explicit OOM as a forced return trigger.
+            Log.w(TAG, "Ignoring non-OOM launch failure after ready: $detail")
+            return
+        }
         if (launchFailureSignaled) {
             return
         }
         launchFailureSignaled = true
         stopBootBridgeReaderIfRunning()
         Log.e(TAG, "Detected startup failure from boot bridge: $detail")
-        runOnUiThread { reportCrashAndReturn(-2, false, detail) }
+        val crashCode = if (oomFailure) CRASH_CODE_OUT_OF_MEMORY else CRASH_CODE_BOOT_FAILURE
+        val crashDetail = if (oomFailure) {
+            "OutOfMemoryError detected. JVM heap exhausted during game runtime. $detail"
+        } else {
+            detail
+        }
+        runOnUiThread { reportCrashAndReturn(crashCode, false, crashDetail) }
     }
 
     private fun signalMainMenuReady(message: String) {
@@ -963,7 +994,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         mainMenuReadySignaled = true
-        stopBootBridgeReaderIfRunning()
         try {
             Logger.appendToLog(
                 "Boot overlay ready signal: message=\"$message\", manualDismiss=$manualDismissBootOverlay"

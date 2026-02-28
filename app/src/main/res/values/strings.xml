@@ -4,6 +4,7 @@
     <string name="sts_crash_detail_format">The game has crashed.\n%1$s</string>
     <string name="sts_normal_exit">The game process exited unexpectedly (exit code: %1$d).</string>
     <string name="sts_signal_exit">The game process crashed due to signal %1$d.</string>
+    <string name="sts_oom_exit">OutOfMemoryError detected (JVM heap exhausted). The game has been returned to launcher. Increase JVM heap max in Settings, or reduce enabled mods and try again.</string>
     <string name="sts_share_crash_report">Share crash report</string>
     <string name="sts_share_crash_chooser_title">Share to QQ / WeChat, etc.</string>
     <string name="sts_share_crash_report_failed">No available app can share the crash report.</string>
@@ -23,4 +24,6 @@
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer\'s Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Helps avoid unknown framebuffer status crashes, but may affect post-processing effects.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
     <string name="compat_global_atlas_filter_compat_desc">Runtime-only global texture compatibility mode. Benefits: reduces black blocks and restores transparent-water rendering without rewriting jars or creating backup files. Tradeoffs: may soften some textures or change wrap behavior due to Linear/Clamp fallback, increase startup CPU/GPU work, and produce larger debug logs.</string>
+    <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
+    <string name="compat_force_linear_mipmap_filter_desc">Controls -Damethyst.gdx.force_linear_mipmap_filter. When enabled, mipmap-based min filters are downgraded to Linear at runtime to avoid black blocks from incomplete mip chains in some mods. Disable for behavior closer to desktop vanilla.</string>
 </resources>

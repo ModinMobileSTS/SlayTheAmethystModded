@@ -39,7 +39,9 @@ internal object ModCompatibilityDiagnosticsLogger {
                     ", downfall_fbo=" +
                     CompatibilitySettings.isDownfallFboPatchEnabled(context) +
                     ", global_atlas_filter=" +
-                    CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)
+                    CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context) +
+                    ", force_linear_mipmap_filter=" +
+                    CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
             )
         } catch (error: Throwable) {
             appendCompatLog(

@@ -26,6 +26,7 @@ import java.util.ArrayDeque
 import java.util.ArrayList
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -422,7 +423,9 @@ class MainScreenViewModel : ViewModel() {
         val code = intent.getIntExtra(LauncherActivity.EXTRA_CRASH_CODE, -1)
         val isSignal = intent.getBooleanExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL, false)
         val detail = intent.getStringExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
-        val message = if (!detail.isNullOrBlank()) {
+        val message = if (isOutOfMemoryCrash(code, detail)) {
+            host.getString(R.string.sts_oom_exit)
+        } else if (!detail.isNullOrBlank()) {
             host.getString(R.string.sts_crash_detail_format, detail.trim())
         } else {
             val messageId = if (isSignal) R.string.sts_signal_exit else R.string.sts_normal_exit
@@ -446,6 +449,19 @@ class MainScreenViewModel : ViewModel() {
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_CODE)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
+    }
+
+    private fun isOutOfMemoryCrash(code: Int, detail: String?): Boolean {
+        if (code == -8) {
+            return true
+        }
+        if (detail.isNullOrBlank()) {
+            return false
+        }
+        val lower = detail.lowercase(Locale.ROOT)
+        return lower.contains("outofmemoryerror") ||
+            lower.contains("java heap space") ||
+            lower.contains("gc overhead limit exceeded")
     }
 
     private fun showExpectedBackExitDialog(host: Activity) {

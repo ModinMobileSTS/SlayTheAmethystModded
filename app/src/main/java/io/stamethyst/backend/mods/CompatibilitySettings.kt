@@ -9,6 +9,7 @@ object CompatibilitySettings {
     private const val PREF_KEY_DOWNFALL_FBO_PATCH = "compat_downfall_fbo_patch"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
+    private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
 
     @JvmStatic
     fun isOriginalFboPatchEnabled(context: Context): Boolean {
@@ -48,6 +49,16 @@ object CompatibilitySettings {
     @JvmStatic
     fun setGlobalAtlasFilterCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT, enabled).apply()
+    }
+
+    @JvmStatic
+    fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER, true)
+    }
+
+    @JvmStatic
+    fun setForceLinearMipmapFilterEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER, enabled).apply()
     }
 
     private fun prefs(context: Context): SharedPreferences {

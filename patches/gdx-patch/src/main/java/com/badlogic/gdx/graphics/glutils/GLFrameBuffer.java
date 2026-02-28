@@ -359,6 +359,9 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** Binds the frame buffer and sets the viewport accordingly, so everything gets drawn to it. */
 	public void begin () {
+		// Some render paths leave alpha color writes disabled and never restore state.
+		// Ensure offscreen buffers can clear/write alpha before rendering translucent overlays.
+		Gdx.gl20.glColorMask(true, true, true, true);
 		bind();
 		setFrameBufferViewport();
 	}

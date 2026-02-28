@@ -16,7 +16,8 @@ class CompatibilityScreenViewModel : ViewModel() {
         val originalFboPatchEnabled: Boolean = false,
         val downfallFboPatchEnabled: Boolean = false,
         val virtualFboPocEnabled: Boolean = false,
-        val globalAtlasFilterCompatEnabled: Boolean = true
+        val globalAtlasFilterCompatEnabled: Boolean = true,
+        val forceLinearMipmapFilterEnabled: Boolean = true
     )
 
     var uiState by mutableStateOf(UiState())
@@ -29,7 +30,8 @@ class CompatibilityScreenViewModel : ViewModel() {
             originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host),
             downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host),
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
-            globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
+            globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
+            forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
         )
     }
 
@@ -63,5 +65,13 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setGlobalAtlasFilterCompatEnabled(host, enabled)
         uiState = uiState.copy(globalAtlasFilterCompatEnabled = enabled)
+    }
+
+    fun onForceLinearMipmapFilterToggled(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setForceLinearMipmapFilterEnabled(host, enabled)
+        uiState = uiState.copy(forceLinearMipmapFilterEnabled = enabled)
     }
 }
