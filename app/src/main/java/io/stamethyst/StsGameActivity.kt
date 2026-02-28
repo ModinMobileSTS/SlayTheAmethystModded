@@ -577,6 +577,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         findLaunchArgValue(launchArgs, "-Dorg.lwjgl.opengl.libname=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.fbo_fallback=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.virtual_fbo_poc=") + ", " +
+                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.global_atlas_filter_compat=") + ", " +
                         findLaunchArgValue(launchArgs, "-Dorg.lwjgl.librarypath=")
                 )
                 Logger.appendToLog("Launch args: $launchArgs")

@@ -29,12 +29,17 @@ import com.badlogic.gdx.math.Affine2;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.NumberUtils;
+import com.badlogic.gdx.utils.ObjectSet;
+import java.lang.reflect.Method;
 
 /** Draws batched quads using indices.
  * @see Batch
  * @author mzechner
  * @author Nathan Sweet */
 public class SpriteBatch implements Batch {
+	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
+	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
+
 	/** @deprecated Do not use, this field is for testing only and is likely to be removed. Sets the {@link VertexDataType} to be
 	 *             used when gles 3 is not available, defaults to {@link VertexDataType#VertexArray}. */
 	@Deprecated public static VertexDataType defaultVertexDataType = VertexDataType.VertexArray;
@@ -62,6 +67,9 @@ public class SpriteBatch implements Batch {
 
 	float color = Color.WHITE.toFloatBits();
 	private Color tempColor = new Color(1, 1, 1, 1);
+	private final ObjectSet<Texture> compatTouchedTextures = new ObjectSet<Texture>();
+	private int compatAppliedTotal;
+	private int compatSkippedTotal;
 
 	/** Number of render calls since the last {@link #begin()}. **/
 	public int renderCalls = 0;
@@ -226,6 +234,107 @@ public class SpriteBatch implements Batch {
 		System.out.println("[gdx-patch] SpriteBatch shader compile failed (" + label + "): " + log);
 		shader.dispose();
 		return null;
+	}
+
+	private static boolean readBooleanProperty (String key, boolean defaultValue) {
+		String configured = System.getProperty(key);
+		if (configured == null) return defaultValue;
+		configured = configured.trim();
+		if (configured.length() == 0) return defaultValue;
+		if ("false".equalsIgnoreCase(configured) || "0".equals(configured) || "off".equalsIgnoreCase(configured)) return false;
+		if ("true".equalsIgnoreCase(configured) || "1".equals(configured) || "on".equalsIgnoreCase(configured)) return true;
+		return defaultValue;
+	}
+
+	private static Object invokeNoArgMethod (Object target, String methodName) {
+		if (target == null || methodName == null || methodName.length() == 0) return null;
+		try {
+			Method method = target.getClass().getMethod(methodName);
+			method.setAccessible(true);
+			return method.invoke(target);
+		} catch (Throwable ignored) {
+			return null;
+		}
+	}
+
+	private static boolean isPowerOfTwo (int value) {
+		return value > 0 && (value & (value - 1)) == 0;
+	}
+
+	private static boolean textureDataUseMipMaps (Texture texture) {
+		if (texture == null) return false;
+		try {
+			Object textureData = Texture.class.getMethod("getTextureData").invoke(texture);
+			Object value = invokeNoArgMethod(textureData, "useMipMaps");
+			return value instanceof Boolean && ((Boolean)value).booleanValue();
+		} catch (Throwable ignored) {
+			return false;
+		}
+	}
+
+	private static String textureCompatDebugInfo (Texture texture) {
+		if (texture == null) return "texture=null";
+		return "handle=" + texture.getTextureObjectHandle()
+			+ ", size=" + texture.getWidth() + "x" + texture.getHeight()
+			+ ", min=" + texture.getMinFilter()
+			+ ", mag=" + texture.getMagFilter()
+			+ ", wrap=" + texture.getUWrap() + "/" + texture.getVWrap();
+	}
+
+	private void applyGlobalAtlasCompatIfNeeded (Texture texture) {
+		if (texture == null) return;
+		if (!readBooleanProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true)) return;
+		if (compatTouchedTextures.contains(texture)) return;
+		compatTouchedTextures.add(texture);
+
+		boolean verbose = readBooleanProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
+		boolean useMipMaps = textureDataUseMipMaps(texture);
+		boolean minFilterMipMap = texture.getMinFilter().isMipMap();
+		boolean npot = !isPowerOfTwo(texture.getWidth()) || !isPowerOfTwo(texture.getHeight());
+		boolean wrapNotClamp = texture.getUWrap() != Texture.TextureWrap.ClampToEdge ||
+			texture.getVWrap() != Texture.TextureWrap.ClampToEdge;
+		boolean shouldApply = minFilterMipMap || useMipMaps || (npot && wrapNotClamp);
+		if (!shouldApply) {
+			compatSkippedTotal++;
+			return;
+		}
+
+		boolean filterChanged = false;
+		boolean wrapChanged = false;
+		Throwable failure = null;
+		try {
+			if (minFilterMipMap || useMipMaps) {
+				texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+				filterChanged = true;
+			}
+			if (wrapNotClamp || minFilterMipMap || useMipMaps) {
+				texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+				wrapChanged = true;
+			}
+		} catch (Throwable t) {
+			failure = t;
+		}
+
+		if (failure != null) {
+			if (verbose) {
+				System.out.println("[gdx-patch][spritebatch-compat] apply-failed: " +
+					failure.getClass().getSimpleName() + ": " + failure.getMessage() + ", " +
+					textureCompatDebugInfo(texture));
+			}
+			return;
+		}
+
+		compatAppliedTotal++;
+		// Reduced log mode: per-texture "applied" log disabled.
+		// if (verbose) {
+		//	System.out.println("[gdx-patch][spritebatch-compat] applied: filterChanged=" + filterChanged +
+		//		", wrapChanged=" + wrapChanged +
+		//		", minFilterMipMap=" + minFilterMipMap +
+		//		", textureDataUseMipMaps=" + useMipMaps +
+		//		", npot=" + npot +
+		//		", totalApplied=" + compatAppliedTotal +
+		//		", " + textureCompatDebugInfo(texture));
+		// }
 	}
 
 	@Override
@@ -1119,6 +1228,7 @@ public class SpriteBatch implements Batch {
 	protected void switchTexture (Texture texture) {
 		flush();
 		lastTexture = texture;
+		applyGlobalAtlasCompatIfNeeded(texture);
 		invTexWidth = 1.0f / texture.getWidth();
 		invTexHeight = 1.0f / texture.getHeight();
 	}

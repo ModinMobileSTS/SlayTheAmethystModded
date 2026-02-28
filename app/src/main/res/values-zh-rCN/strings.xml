@@ -22,5 +22,5 @@
     <string name="compat_virtual_fbo_poc_title">Virtual FBO 概念验证</string>
     <string name="compat_virtual_fbo_poc_desc">启用 GLFrameBuffer 的 Virtual FBO 实验路径（amethyst.gdx.virtual_fbo_poc）。用于规避 unknown framebuffer status 崩溃，但可能影响后处理效果。</string>
     <string name="compat_global_atlas_filter_compat_title">全局 atlas 过滤器兼容补丁</string>
-    <string name="compat_global_atlas_filter_compat_desc">启动前扫描已安装 mod 的 jar，将 atlas 中包含 MipMap 的 filter 行改写为 Linear,Linear。关闭该项只会停止后续改写，不会自动恢复已改写的 jar。</string>
+    <string name="compat_global_atlas_filter_compat_desc">纯运行时全局纹理兼容模式。好处：可减少黑块并恢复透明水面显示，且不会改写 jar、不会产生备份文件。坏处：由于 Linear/Clamp 兜底，部分纹理可能变糊或平铺行为变化；启动阶段 CPU/GPU 开销会增加，调试日志体积也会变大。</string>
 </resources>

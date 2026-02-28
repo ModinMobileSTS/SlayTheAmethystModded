@@ -65,6 +65,7 @@ public class LwjglApplication implements Application {
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
+	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final String STS_ABSTRACT_CREATURE_CLASS = "com.megacrit.cardcrawl.core.AbstractCreature";
@@ -89,8 +90,10 @@ public class LwjglApplication implements Application {
 	private boolean globalTextureCompatErrorLogged;
 	private boolean globalTextureCompatFailureLogged;
 	private int globalTextureCompatRepairedTotal;
+	private int globalTextureCompatFallbackTotal;
 	private int globalTextureCompatFailedTotal;
 	private int globalTextureCompatScanTotal;
+	private int globalTextureCompatKnownManagedCount = -1;
 	private final ObjectSet<Texture> globalTextureCompatSeen = new ObjectSet<Texture>();
 	private final ObjectMap<Texture, Integer> globalTextureCompatFailureCounts = new ObjectMap<Texture, Integer>();
 	private final ObjectMap<Texture, String> globalTextureCompatSourceCache = new ObjectMap<Texture, String>();
@@ -158,8 +161,9 @@ public class LwjglApplication implements Application {
 		if (noContextDiagnosticsInstalled) return;
 		synchronized (LwjglApplication.class) {
 			if (noContextDiagnosticsInstalled) return;
-			System.setOut(new NoContextDiagnosticPrintStream(System.out, "stdout"));
-			System.setErr(new NoContextDiagnosticPrintStream(System.err, "stderr"));
+			// Reduced log mode: disable stack-dump wrapping for stdout/stderr diagnostics.
+			// System.setOut(new NoContextDiagnosticPrintStream(System.out, "stdout"));
+			// System.setErr(new NoContextDiagnosticPrintStream(System.err, "stderr"));
 			noContextDiagnosticsInstalled = true;
 		}
 	}
@@ -255,6 +259,7 @@ public class LwjglApplication implements Application {
 			globalTextureCompatFailureCounts.clear();
 			globalTextureCompatSourceCache.clear();
 			globalTextureCompatFailureLogged = false;
+			globalTextureCompatKnownManagedCount = -1;
 			System.out.println("[gdx-patch] Native GL context generation changed to " + generation + " (" + phase + ")");
 		}
 	}
@@ -599,21 +604,35 @@ public class LwjglApplication implements Application {
 		return LwjglGraphics.isGLESContextActive();
 	}
 
+	private static boolean readBooleanSystemProperty (String key, boolean defaultValue) {
+		String configured = System.getProperty(key);
+		if (configured == null) return defaultValue;
+		configured = configured.trim();
+		if (configured.length() == 0) return defaultValue;
+		if ("false".equalsIgnoreCase(configured) || "0".equals(configured) || "off".equalsIgnoreCase(configured)) {
+			return false;
+		}
+		if ("true".equalsIgnoreCase(configured) || "1".equals(configured) || "on".equalsIgnoreCase(configured)) {
+			return true;
+		}
+		return defaultValue;
+	}
+
 	private boolean shouldRunGlobalTextureCompatScan () {
 		long frame = graphics.frameId;
-		// Early startup scans are more frequent because many textures are loaded then.
-		if (frame < 3600) return (frame % 120) == 0;
+		// Startup phase is most sensitive to transient black blocks: scan every frame first.
+		if (frame < 3600) return true;
+		if (frame < 7200) return (frame % 10) == 0;
+		if (frame < 21600) return (frame % 60) == 0;
 		return (frame % 600) == 0;
 	}
 
+	private boolean shouldEnableGlobalAtlasFilterCompatFallback () {
+		return readBooleanSystemProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
+	}
+
 	private boolean shouldEnableGlobalTextureCompatVerboseLog () {
-		String configured = System.getProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP);
-		if (configured == null) return true;
-		configured = configured.trim();
-		if (configured.length() == 0) return true;
-		return !"false".equalsIgnoreCase(configured)
-			&& !"0".equals(configured)
-			&& !"off".equalsIgnoreCase(configured);
+		return readBooleanSystemProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
 	}
 
 	private static void drainGlErrors () {
@@ -662,6 +681,17 @@ public class LwjglApplication implements Application {
 			+ ", wrap=" + texture.getUWrap() + "/" + texture.getVWrap();
 	}
 
+	private static boolean textureDataUseMipMaps (Texture texture) {
+		if (texture == null) return false;
+		try {
+			Object textureData = Texture.class.getMethod("getTextureData").invoke(texture);
+			Object value = invokeNoArgMethod(textureData, "useMipMaps");
+			return value instanceof Boolean && ((Boolean)value).booleanValue();
+		} catch (Throwable ignored) {
+			return false;
+		}
+	}
+
 	private MipRepairResult tryRepairTextureMipChain (Texture texture) {
 		if (Gdx.gl == null || texture == null) {
 			return new MipRepairResult(false, GL20.GL_INVALID_OPERATION, "missing gl or texture");
@@ -678,6 +708,17 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	private static String tryApplyLinearFilterFallback (Texture texture) {
+		if (texture == null) return "texture is null";
+		try {
+			texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+			texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+			return null;
+		} catch (Throwable t) {
+			return t.getClass().getSimpleName() + ": " + t.getMessage();
+		}
+	}
+
 	private static boolean isPowerOfTwo (int value) {
 		return value > 0 && (value & (value - 1)) == 0;
 	}
@@ -685,6 +726,48 @@ public class LwjglApplication implements Application {
 	private static boolean isNpotTexture (Texture texture) {
 		if (texture == null) return false;
 		return !isPowerOfTwo(texture.getWidth()) || !isPowerOfTwo(texture.getHeight());
+	}
+
+	private int getManagedTextureCount () {
+		try {
+			Object managedObj = readStaticField(Texture.class, "managedTextures");
+			if (!(managedObj instanceof Map<?, ?>)) return -1;
+
+			Object texturesObj = ((Map<?, ?>)managedObj).get(this);
+			if (!(texturesObj instanceof Array<?>)) return -1;
+			return ((Array<?>)texturesObj).size;
+		} catch (Throwable ignored) {
+			return -1;
+		}
+	}
+
+	private boolean runGlobalTextureCompatOnManagedGrowth (String phase) {
+		if (!shouldEnableGlobalTextureCompat()) return false;
+		int managedCount = getManagedTextureCount();
+		if (managedCount < 0) return false;
+
+		if (globalTextureCompatKnownManagedCount < 0) {
+			globalTextureCompatKnownManagedCount = managedCount;
+			return false;
+		}
+
+		if (managedCount == globalTextureCompatKnownManagedCount) return false;
+
+		if (managedCount > globalTextureCompatKnownManagedCount) {
+			int added = managedCount - globalTextureCompatKnownManagedCount;
+			globalTextureCompatKnownManagedCount = managedCount;
+			if (shouldEnableGlobalTextureCompatVerboseLog()) {
+				// Reduced log mode: growth-triggered debug log disabled.
+				// System.out.println("[gdx-patch] Global texture compat growth-triggered scan (" + phase + "): +"
+				//	+ added + " managed texture(s), total=" + managedCount);
+			}
+			ensureGlobalTextureCompat();
+			return true;
+		}
+
+		// Texture dispose/unload path: track new baseline, no immediate scan needed.
+		globalTextureCompatKnownManagedCount = managedCount;
+		return false;
 	}
 
 	private void ensureGlobalTextureCompat () {
@@ -698,13 +781,16 @@ public class LwjglApplication implements Application {
 			if (!(texturesObj instanceof Array<?>)) return;
 
 			Array<?> textures = (Array<?>)texturesObj;
+			globalTextureCompatKnownManagedCount = textures.size;
 			boolean verbose = shouldEnableGlobalTextureCompatVerboseLog();
+			boolean atlasFallbackEnabled = shouldEnableGlobalAtlasFilterCompatFallback();
 			globalTextureCompatScanTotal++;
 
 			int mipmapCandidatesThisScan = 0;
 			int npotCandidatesThisScan = 0;
 			int skippedSeenThisScan = 0;
 			int repairedThisScan = 0;
+			int fallbackThisScan = 0;
 			int failedThisScan = 0;
 			for (int i = 0, n = textures.size; i < n; i++) {
 				Object value = textures.get(i);
@@ -717,7 +803,8 @@ public class LwjglApplication implements Application {
 				}
 
 				Texture.TextureFilter minFilter = texture.getMinFilter();
-				if (!minFilter.isMipMap()) continue;
+				boolean textureDataMipMaps = textureDataUseMipMaps(texture);
+				if (!minFilter.isMipMap() && !textureDataMipMaps) continue;
 				mipmapCandidatesThisScan++;
 				boolean npot = isNpotTexture(texture);
 				if (npot) npotCandidatesThisScan++;
@@ -725,56 +812,118 @@ public class LwjglApplication implements Application {
 
 				MipRepairResult repair = tryRepairTextureMipChain(texture);
 				if (repair.repaired) {
+					boolean forcedLinearClamp = false;
+					if (atlasFallbackEnabled) {
+						String forceError = tryApplyLinearFilterFallback(texture);
+						if (forceError == null) {
+							fallbackThisScan++;
+							forcedLinearClamp = true;
+						} else if (verbose) {
+							// Reduced log mode: per-texture force-linear failure log disabled.
+							// System.out.println("[gdx-patch][texture-compat] force-linear-clamp-failed frame=" + graphics.frameId
+							//	+ ", scan=" + globalTextureCompatScanTotal
+							//	+ ", index=" + i
+							//	+ ", npot=" + npot
+							//	+ ", textureDataUseMipMaps=" + textureDataMipMaps
+							//	+ ", reason=" + forceError
+							//	+ ", " + textureDebugInfo(texture)
+							//	+ ", " + sourceTag);
+						}
+					}
 					globalTextureCompatSeen.add(texture);
 					globalTextureCompatFailureCounts.remove(texture);
 					repairedThisScan++;
-					if (verbose) {
-						System.out.println("[gdx-patch][texture-compat] repaired frame=" + graphics.frameId
-							+ ", scan=" + globalTextureCompatScanTotal
-							+ ", index=" + i
-							+ ", npot=" + npot
-							+ ", glError=" + toGlErrorString(repair.glError)
-							+ ", " + textureDebugInfo(texture)
-							+ ", " + sourceTag);
-					}
+					// Reduced log mode: per-texture repaired log disabled.
+					// if (verbose) {
+					//	System.out.println("[gdx-patch][texture-compat] repaired frame=" + graphics.frameId
+					//		+ ", scan=" + globalTextureCompatScanTotal
+					//		+ ", index=" + i
+					//		+ ", npot=" + npot
+					//		+ ", glError=" + toGlErrorString(repair.glError)
+					//		+ ", textureDataUseMipMaps=" + textureDataMipMaps
+					//		+ ", forcedLinearClamp=" + forcedLinearClamp
+					//		+ ", " + textureDebugInfo(texture)
+					//		+ ", " + sourceTag);
+					// }
 					continue;
+				}
+
+				if (atlasFallbackEnabled) {
+					String fallbackError = tryApplyLinearFilterFallback(texture);
+					if (fallbackError == null) {
+						globalTextureCompatSeen.add(texture);
+						globalTextureCompatFailureCounts.remove(texture);
+						fallbackThisScan++;
+						// Reduced log mode: per-texture fallback-linear log disabled.
+						// if (verbose) {
+						//	System.out.println("[gdx-patch][texture-compat] fallback-linear frame=" + graphics.frameId
+						//		+ ", scan=" + globalTextureCompatScanTotal
+						//		+ ", index=" + i
+						//		+ ", npot=" + npot
+						//		+ ", repairGlError=" + toGlErrorString(repair.glError)
+						//		+ ", textureDataUseMipMaps=" + textureDataMipMaps
+						//		+ ", " + textureDebugInfo(texture)
+						//		+ ", " + sourceTag);
+						// }
+						continue;
+					}
+					if (verbose) {
+						// Reduced log mode: per-texture fallback-failed log disabled.
+						// System.out.println("[gdx-patch][texture-compat] fallback-failed frame=" + graphics.frameId
+						//	+ ", scan=" + globalTextureCompatScanTotal
+						//	+ ", index=" + i
+						//	+ ", npot=" + npot
+						//	+ ", repairGlError=" + toGlErrorString(repair.glError)
+						//	+ ", textureDataUseMipMaps=" + textureDataMipMaps
+						//	+ ", fallbackReason=" + fallbackError
+						//	+ ", " + textureDebugInfo(texture)
+						//	+ ", " + sourceTag);
+					}
 				}
 
 				failedThisScan++;
 				int failureCount = globalTextureCompatFailureCounts.get(texture, 0) + 1;
 				globalTextureCompatFailureCounts.put(texture, failureCount);
-				if (verbose || failureCount <= 3 || (failureCount % 10) == 0) {
-					System.out.println("[gdx-patch][texture-compat] repair-failed frame=" + graphics.frameId
-						+ ", scan=" + globalTextureCompatScanTotal
-						+ ", index=" + i
-						+ ", failureCount=" + failureCount
-						+ ", npot=" + npot
-						+ ", glError=" + toGlErrorString(repair.glError)
-						+ (repair.failureReason == null ? "" : ", reason=" + repair.failureReason)
-						+ ", " + textureDebugInfo(texture)
-						+ ", " + sourceTag);
-				}
+				// Reduced log mode: per-texture repair-failed log disabled.
+				// if (verbose || failureCount <= 3 || (failureCount % 10) == 0) {
+				//	System.out.println("[gdx-patch][texture-compat] repair-failed frame=" + graphics.frameId
+				//		+ ", scan=" + globalTextureCompatScanTotal
+				//		+ ", index=" + i
+				//		+ ", failureCount=" + failureCount
+				//		+ ", npot=" + npot
+				//		+ ", glError=" + toGlErrorString(repair.glError)
+				//		+ ", textureDataUseMipMaps=" + textureDataMipMaps
+				//		+ ", atlasFallbackEnabled=" + atlasFallbackEnabled
+				//		+ (repair.failureReason == null ? "" : ", reason=" + repair.failureReason)
+				//		+ ", " + textureDebugInfo(texture)
+				//		+ ", " + sourceTag);
+				// }
 			}
 
-			if (repairedThisScan > 0) {
+			if (repairedThisScan > 0 || fallbackThisScan > 0) {
 				globalTextureCompatFailureLogged = false;
 			}
 			globalTextureCompatRepairedTotal += repairedThisScan;
+			globalTextureCompatFallbackTotal += fallbackThisScan;
 			globalTextureCompatFailedTotal += failedThisScan;
-			System.out.println("[gdx-patch] Global texture compat scan#" + globalTextureCompatScanTotal
-				+ ": managed=" + textures.size
-				+ ", mipmapCandidates=" + mipmapCandidatesThisScan
-				+ ", npotCandidates=" + npotCandidatesThisScan
-				+ ", skippedSeen=" + skippedSeenThisScan
-				+ ", repaired=" + repairedThisScan
-				+ ", failed=" + failedThisScan
-				+ ", totalRepaired=" + globalTextureCompatRepairedTotal
-				+ ", totalFailed=" + globalTextureCompatFailedTotal
-				+ ", strictRepair=true, verbose=" + verbose);
+			if (repairedThisScan > 0 || fallbackThisScan > 0 || failedThisScan > 0) {
+				System.out.println("[gdx-patch] Global texture compat scan#" + globalTextureCompatScanTotal
+					+ ": managed=" + textures.size
+					+ ", mipmapCandidates=" + mipmapCandidatesThisScan
+					+ ", npotCandidates=" + npotCandidatesThisScan
+					+ ", skippedSeen=" + skippedSeenThisScan
+					+ ", repaired=" + repairedThisScan
+					+ ", fallback=" + fallbackThisScan
+					+ ", failed=" + failedThisScan
+					+ ", totalRepaired=" + globalTextureCompatRepairedTotal
+					+ ", totalFallback=" + globalTextureCompatFallbackTotal
+					+ ", totalFailed=" + globalTextureCompatFailedTotal
+					+ ", strictRepair=true, atlasFallbackEnabled=" + atlasFallbackEnabled);
+			}
 			if (failedThisScan > 0 && !globalTextureCompatFailureLogged) {
 				globalTextureCompatFailureLogged = true;
 				System.out.println("[gdx-patch] Global texture compat could not repair " + failedThisScan
-					+ " texture(s) this scan (strict mip-repair mode)");
+					+ " texture(s) this scan (strict mip-repair mode, atlasFallbackEnabled=" + atlasFallbackEnabled + ")");
 			}
 		} catch (Throwable t) {
 			if (!globalTextureCompatErrorLogged) {
@@ -813,14 +962,16 @@ public class LwjglApplication implements Application {
 
 				if (!ringTitleRenderCompatActive) {
 					ringTitleRenderCompatActive = true;
-					System.out.println("[gdx-patch] Ring title alpha compat enabled (Spine PMA=false)");
+					// Reduced log mode: ring-title enabled log disabled.
+					// System.out.println("[gdx-patch] Ring title alpha compat enabled (Spine PMA=false)");
 				}
 			} else if (ringTitleRenderCompatActive) {
 				if (renderer != null) {
 					setSpinePremultipliedAlpha(renderer, true);
 				}
 				ringTitleRenderCompatActive = false;
-				System.out.println("[gdx-patch] Ring title alpha compat disabled (Spine PMA=true)");
+				// Reduced log mode: ring-title disabled log disabled.
+				// System.out.println("[gdx-patch] Ring title alpha compat disabled (Spine PMA=true)");
 			}
 		} catch (Throwable t) {
 			if (!ringTitleRenderCompatErrorLogged) {
@@ -840,9 +991,11 @@ public class LwjglApplication implements Application {
 		}
 
 		ensureDisplayContextCurrent("create");
-		System.out.println("[gdx-patch][diag] listener.create begin");
+		// Reduced log mode: listener.create begin log disabled.
+		// System.out.println("[gdx-patch][diag] listener.create begin");
 		listener.create();
-		System.out.println("[gdx-patch][diag] listener.create end");
+		// Reduced log mode: listener.create end log disabled.
+		// System.out.println("[gdx-patch][diag] listener.create end");
 		graphics.resize = true;
 
 		int lastWidth = graphics.getWidth();
@@ -866,9 +1019,10 @@ public class LwjglApplication implements Application {
 					isCurrent = Display.isCurrent();
 				} catch (Throwable ignored) {
 				}
-				System.out.println("[gdx-patch][diag] activity state changed: active=" + isActive + ", visible=" + isVisible
-					+ ", current=" + isCurrent + ", bgFPS=" + graphics.config.backgroundFPS + ", fgFPS="
-					+ graphics.config.foregroundFPS);
+				// Reduced log mode: activity-state diagnostic log disabled.
+				// System.out.println("[gdx-patch][diag] activity state changed: active=" + isActive + ", visible=" + isVisible
+				//	+ ", current=" + isCurrent + ", bgFPS=" + graphics.config.backgroundFPS + ", fgFPS="
+				//	+ graphics.config.foregroundFPS);
 				lastActiveState = isActive;
 			}
 			if (wasActive && !isActive) { // if it's just recently minimized from active state
@@ -937,7 +1091,8 @@ public class LwjglApplication implements Application {
 
 			if (!isActive && graphics.config.backgroundFPS == -1) {
 				if (!inactiveRenderSuppressedLogged) {
-					System.out.println("[gdx-patch][diag] suppressing render because active=false and backgroundFPS=-1");
+					// Reduced log mode: inactive-render diagnostic log disabled.
+					// System.out.println("[gdx-patch][diag] suppressing render because active=false and backgroundFPS=-1");
 					inactiveRenderSuppressedLogged = true;
 				}
 				shouldRender = false;
@@ -950,7 +1105,8 @@ public class LwjglApplication implements Application {
 						isCurrent = Display.isCurrent();
 					} catch (Throwable ignored) {
 					}
-					System.out.println("[gdx-patch][diag] first render frame, active=" + isActive + ", current=" + isCurrent);
+					// Reduced log mode: first-render diagnostic log disabled.
+					// System.out.println("[gdx-patch][diag] first render frame, active=" + isActive + ", current=" + isCurrent);
 					firstRenderFrameLogged = true;
 				}
 				ensureDisplayContextCurrent("render");
@@ -962,16 +1118,21 @@ public class LwjglApplication implements Application {
 						isCurrent = Display.isCurrent();
 					} catch (Throwable ignored) {
 					}
-					System.out.println("[gdx-patch][diag] render heartbeat frameId=" + graphics.frameId + ", active="
-						+ isActive + ", current=" + isCurrent + ", size=" + Display.getWidth() + "x" + Display.getHeight());
+					// Reduced log mode: render-heartbeat diagnostic log disabled.
+					// System.out.println("[gdx-patch][diag] render heartbeat frameId=" + graphics.frameId + ", active="
+					//	+ isActive + ", current=" + isCurrent + ", size=" + Display.getWidth() + "x" + Display.getHeight());
 				}
 				ensureRingTitleRenderCompat();
+				runGlobalTextureCompatOnManagedGrowth("pre-render");
 				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
 				listener.render();
+				// Catch textures created during listener.render in the same frame.
+				runGlobalTextureCompatOnManagedGrowth("post-render");
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer();
 				if (forceDefaultFbo || Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {
 					if (forceDefaultFbo && !defaultFramebufferRebindLogged) {
-						System.out.println("[gdx-patch] Enabling default framebuffer rebind before swap");
+						// Reduced log mode: default-fbo one-time info log disabled.
+						// System.out.println("[gdx-patch] Enabling default framebuffer rebind before swap");
 						defaultFramebufferRebindLogged = true;
 					}
 					bindDefaultFramebufferForSwap();

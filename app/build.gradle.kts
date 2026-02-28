@@ -7,6 +7,8 @@ import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Properties
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 plugins {
     alias(libs.plugins.android.application)
@@ -138,6 +140,106 @@ val stsLogFiles = listOf(
     "last_crash_report.txt"
 )
 
+data class CommandExecResult(
+    val exitCode: Int,
+    val stdout: ByteArray,
+    val stderr: ByteArray,
+    val timedOut: Boolean
+)
+
+fun ByteArray.asUtf8Text(): String = toString(Charsets.UTF_8).trim()
+
+fun Project.runCommandWithTimeout(
+    command: List<String>,
+    timeoutSeconds: Long
+): CommandExecResult {
+    val process = ProcessBuilder(command)
+        .redirectErrorStream(false)
+        .start()
+    val stdout = ByteArrayOutputStream()
+    val stderr = ByteArrayOutputStream()
+    val outThread = thread(start = true, isDaemon = true, name = "sts-adb-stdout") {
+        process.inputStream.use { input ->
+            input.copyTo(stdout)
+        }
+    }
+    val errThread = thread(start = true, isDaemon = true, name = "sts-adb-stderr") {
+        process.errorStream.use { input ->
+            input.copyTo(stderr)
+        }
+    }
+
+    val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+    if (!finished) {
+        process.destroy()
+        if (!process.waitFor(2, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            process.waitFor(2, TimeUnit.SECONDS)
+        }
+    }
+    outThread.join(2_000)
+    errThread.join(2_000)
+
+    return CommandExecResult(
+        exitCode = if (finished) process.exitValue() else -1,
+        stdout = stdout.toByteArray(),
+        stderr = stderr.toByteArray(),
+        timedOut = !finished
+    )
+}
+
+fun Project.connectedAdbSerials(): List<String> {
+    val result = runCommandWithTimeout(adbCommand("devices"), timeoutSeconds = 10)
+    if (result.timedOut) {
+        throw GradleException("adb devices timed out after 10s. Check adb/server status.")
+    }
+    if (result.exitCode != 0) {
+        val stderrText = result.stderr.asUtf8Text()
+        throw GradleException(
+            "adb devices failed (exit=${result.exitCode}). " +
+                if (stderrText.isNotEmpty()) stderrText else "No stderr output."
+        )
+    }
+
+    val deviceLine = Regex("^([^\\s]+)\\s+device(?:\\s+.*)?$")
+    return result.stdout.asUtf8Text()
+        .lineSequence()
+        .map { it.trim() }
+        .mapNotNull { line ->
+            val match = deviceLine.find(line) ?: return@mapNotNull null
+            match.groupValues[1]
+        }
+        .toList()
+}
+
+fun Project.requireAdbTargetDevice() {
+    val serial = (findProperty("deviceSerial")?.toString() ?: "").trim()
+    if (serial.startsWith("$") || (serial.startsWith("%") && serial.endsWith("%"))) {
+        throw GradleException(
+            "Invalid -PdeviceSerial value '$serial' (looks like an unexpanded shell variable). " +
+                "Use a concrete adb serial, e.g. -PdeviceSerial=1b430ecc."
+        )
+    }
+
+    val serials = connectedAdbSerials()
+    if (serials.isEmpty()) {
+        throw GradleException("No adb device is online. Connect a device and ensure 'adb devices' shows status 'device'.")
+    }
+
+    if (serial.isNotEmpty() && serial !in serials) {
+        throw GradleException(
+            "Requested deviceSerial '$serial' is not online. Available: ${serials.joinToString(", ")}"
+        )
+    }
+
+    if (serial.isEmpty() && serials.size > 1) {
+        throw GradleException(
+            "Multiple adb devices are online (${serials.joinToString(", ")}). " +
+                "Please set -PdeviceSerial=<serial>."
+        )
+    }
+}
+
 fun Project.resolveAdbExecutable(): File {
     val localPropertiesFile = rootProject.file("local.properties")
     val localProperties = Properties()
@@ -215,6 +317,7 @@ tasks.register("stsStart") {
     group = "debug"
     description = "Start SlayTheAmethyst on a connected Android device."
     doLast {
+        project.requireAdbTargetDevice()
         val launchMode = (findProperty("launchMode")?.toString() ?: "mts_basemod").trim()
         if (!supportedLaunchModes.contains(launchMode)) {
             throw GradleException(
@@ -222,18 +325,27 @@ tasks.register("stsStart") {
             )
         }
 
-        exec {
-            commandLine(
-                project.adbCommand(
-                    "shell",
-                    "am",
-                    "start",
-                    "-n",
-                    "$stsPackageName/.LauncherActivity",
-                    "--es",
-                    "io.stamethyst.debug_launch_mode",
-                    launchMode
-                )
+        val result = project.runCommandWithTimeout(
+            project.adbCommand(
+                "shell",
+                "am",
+                "start",
+                "-n",
+                "$stsPackageName/.LauncherActivity",
+                "--es",
+                "io.stamethyst.debug_launch_mode",
+                launchMode
+            ),
+            timeoutSeconds = 30
+        )
+        if (result.timedOut) {
+            throw GradleException("stsStart timed out after 30s.")
+        }
+        if (result.exitCode != 0) {
+            val stderrText = result.stderr.asUtf8Text()
+            throw GradleException(
+                "stsStart failed (exit=${result.exitCode}). " +
+                    if (stderrText.isNotEmpty()) stderrText else "No stderr output."
             )
         }
     }
@@ -243,14 +355,24 @@ tasks.register("stsStop") {
     group = "debug"
     description = "Force stop SlayTheAmethyst on a connected Android device."
     doLast {
-        exec {
-            commandLine(
-                project.adbCommand(
-                    "shell",
-                    "am",
-                    "force-stop",
-                    stsPackageName
-                )
+        project.requireAdbTargetDevice()
+        val result = project.runCommandWithTimeout(
+            project.adbCommand(
+                "shell",
+                "am",
+                "force-stop",
+                stsPackageName
+            ),
+            timeoutSeconds = 20
+        )
+        if (result.timedOut) {
+            throw GradleException("stsStop timed out after 20s.")
+        }
+        if (result.exitCode != 0) {
+            val stderrText = result.stderr.asUtf8Text()
+            throw GradleException(
+                "stsStop failed (exit=${result.exitCode}). " +
+                    if (stderrText.isNotEmpty()) stderrText else "No stderr output."
             )
         }
     }
@@ -260,6 +382,7 @@ tasks.register("stsPullLogs") {
     group = "debug"
     description = "Export SlayTheAmethyst runtime logs from device to a local directory."
     doLast {
+        project.requireAdbTargetDevice()
         val logsDirProp = (findProperty("logsDir")?.toString() ?: "").trim()
         val outputDir = if (logsDirProp.isNotEmpty()) {
             file(logsDirProp)
@@ -272,42 +395,40 @@ tasks.register("stsPullLogs") {
         val pulled = ArrayList<String>()
         val missing = ArrayList<String>()
         for (name in stsLogFiles) {
-            val output = ByteArrayOutputStream()
-            val errors = ByteArrayOutputStream()
-            val result = exec {
-                isIgnoreExitValue = true
-                commandLine(
-                    project.adbCommand(
-                        "exec-out",
-                        "run-as",
-                        stsPackageName,
-                        "sh",
-                        "-c",
-                        "cat files/sts/$name 2>/dev/null"
-                    )
-                )
-                standardOutput = output
-                errorOutput = errors
-            }
-            val bytes = output.toByteArray()
-            if (result.exitValue == 0 && bytes.isNotEmpty()) {
+            logger.lifecycle("Pulling STS log: $name")
+            val result = project.runCommandWithTimeout(
+                project.adbCommand(
+                    "exec-out",
+                    "run-as",
+                    stsPackageName,
+                    "sh",
+                    "-c",
+                    "cat files/sts/$name 2>/dev/null"
+                ),
+                timeoutSeconds = 20
+            )
+            val bytes = result.stdout
+            if (!result.timedOut && result.exitCode == 0 && bytes.isNotEmpty()) {
                 File(outputDir, name).writeBytes(bytes)
                 pulled.add(name)
             } else {
+                if (result.timedOut) {
+                    logger.lifecycle("Timed out pulling $name after 20s")
+                }
                 missing.add(name)
             }
         }
 
-        val logcatOut = ByteArrayOutputStream()
-        exec {
-            isIgnoreExitValue = true
-            commandLine(project.adbCommand("logcat", "-d", "-t", "2000"))
-            standardOutput = logcatOut
-            errorOutput = ByteArrayOutputStream()
-        }
-        if (logcatOut.size() > 0) {
-            File(outputDir, "logcat.txt").writeBytes(logcatOut.toByteArray())
+        logger.lifecycle("Pulling Android logcat")
+        val logcatResult = project.runCommandWithTimeout(
+            project.adbCommand("logcat", "-d", "-t", "2000"),
+            timeoutSeconds = 20
+        )
+        if (!logcatResult.timedOut && logcatResult.stdout.isNotEmpty()) {
+            File(outputDir, "logcat.txt").writeBytes(logcatResult.stdout)
             pulled.add("logcat.txt")
+        } else if (logcatResult.timedOut) {
+            logger.lifecycle("Timed out pulling logcat after 20s")
         }
 
         logger.lifecycle("SlayTheAmethyst logs exported to: ${outputDir.absolutePath}")

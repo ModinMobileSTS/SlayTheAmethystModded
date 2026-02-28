@@ -22,5 +22,5 @@
     <string name="compat_virtual_fbo_poc_title">Virtual FBO PoC</string>
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer\'s Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Helps avoid unknown framebuffer status crashes, but may affect post-processing effects.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
-    <string name="compat_global_atlas_filter_compat_desc">Scans installed mod jars and rewrites atlas filter lines containing MipMap to Linear,Linear before launch. Disabling this only stops future rewrites and does not automatically restore already patched jars.</string>
+    <string name="compat_global_atlas_filter_compat_desc">Runtime-only global texture compatibility mode. Benefits: reduces black blocks and restores transparent-water rendering without rewriting jars or creating backup files. Tradeoffs: may soften some textures or change wrap behavior due to Linear/Clamp fallback, increase startup CPU/GPU work, and produce larger debug logs.</string>
 </resources>
