@@ -407,25 +407,12 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        handleAndroidBackPressed()
-    }
-
     private fun handleAndroidBackPressed() {
         if (!backImmediateExit) {
             Log.i(TAG, "Android back pressed: disabled by launcher setting")
             return
         }
         requestBackExitToLauncher()
-    }
-
-    private fun handleAndroidBackKeyEvent(@NonNull event: KeyEvent): Boolean {
-        val action = event.action
-        if (action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-            onBackPressedDispatcher.onBackPressed()
-        }
-        return true
     }
 
     private fun requestBackExitToLauncher() {
@@ -1536,9 +1523,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            return handleAndroidBackKeyEvent(event)
-        }
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
             keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
             keyCode == KeyEvent.KEYCODE_VOLUME_MUTE

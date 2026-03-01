@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import androidx.annotation.RequiresApi
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -296,6 +297,7 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun backupExistingSavesToScopedDownloads(
         host: Activity,
         stsRoot: File,
