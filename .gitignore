@@ -16,6 +16,8 @@ runtime-pack/*
 
 # local temporary workspace
 _tmp/
+tmp_render_scale.txt
+/com/
 
 # local runtime/debug outputs
 *.log
