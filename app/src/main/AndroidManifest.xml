@@ -21,6 +21,13 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
+            android:name="io.stamethyst.backend.file.SafExportActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
+
+        <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"
             android:exported="false"
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
