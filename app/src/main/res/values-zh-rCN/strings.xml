@@ -31,4 +31,8 @@
     <string name="touch_mouse_mode_left_short">左</string>
     <string name="touch_mouse_mode_right_short">右</string>
     <string name="touch_mouse_mode_toast">触摸鼠标模式：%1$s</string>
+    <string name="settings_touch_mouse_floating_window_visible">触摸鼠标悬浮窗：显示</string>
+    <string name="settings_touch_mouse_floating_window_hidden">触摸鼠标悬浮窗：隐藏</string>
+    <string name="settings_touch_mouse_floating_window_desc">控制游戏内触摸鼠标悬浮窗是否显示。</string>
+    <string name="status_floating_touch_mouse_window_format">触摸鼠标悬浮窗：%1$s</string>
 </resources>

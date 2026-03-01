@@ -55,6 +55,8 @@ class SettingsScreenViewModel : ViewModel() {
         private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
         private const val PREF_KEY_TARGET_FPS = "target_fps"
         private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
+        private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
+        private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
         private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
 
         private const val DEFAULT_RENDER_SCALE = 1.0f
@@ -62,6 +64,8 @@ class SettingsScreenViewModel : ViewModel() {
         private const val MAX_RENDER_SCALE = 1.00f
         private const val DEFAULT_TARGET_FPS = 120
         private const val DEFAULT_TOUCHSCREEN_ENABLED = true
+        private const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
+        private const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
         private const val DEFAULT_JVM_HEAP_MAX_MB = 1536
         private const val MIN_JVM_HEAP_MAX_MB = 1024
         private const val MAX_JVM_HEAP_MAX_MB = 2048
@@ -120,6 +124,8 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
         val backImmediateExit: Boolean = true,
         val manualDismissBootOverlay: Boolean = false,
+        val showFloatingMouseWindow: Boolean = DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
+        val autoSwitchLeftAfterRightClick: Boolean = DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val touchscreenEnabled: Boolean = true,
         val statusText: String = "",
         val logPathText: String = "",
@@ -158,6 +164,8 @@ class SettingsScreenViewModel : ViewModel() {
         val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
         val backImmediateExit = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
+        val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
+        val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
         val touchscreenEnabled = readTouchscreenEnabledSelection(host)
         val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
         val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host)
@@ -203,6 +211,11 @@ class SettingsScreenViewModel : ViewModel() {
             "\nJVM heap max: ${jvmHeapMaxMb} MB" +
             "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
             "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
+            "\n" + host.getString(
+                R.string.status_floating_touch_mouse_window_format,
+                if (showFloatingMouseWindow) "ON" else "OFF"
+            ) +
+            "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
             "\nLauncher icon: ${selectedLauncherIcon.title}" +
             "\nOriginal FBO patch: " + if (originalFboPatchEnabled) "ON" else "OFF" +
             "\nDownfall FBO patch: " + if (downfallFboPatchEnabled) "ON" else "OFF" +
@@ -223,6 +236,8 @@ class SettingsScreenViewModel : ViewModel() {
             selectedLauncherIcon = selectedLauncherIcon,
             backImmediateExit = backImmediateExit,
             manualDismissBootOverlay = manualDismissBootOverlay,
+            showFloatingMouseWindow = showFloatingMouseWindow,
+            autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
             touchscreenEnabled = touchscreenEnabled,
             statusText = status,
             logPathText = buildLogPathText(host)
@@ -359,6 +374,24 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(manualDismissBootOverlay = enabled)
         saveManualDismissBootOverlaySelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onShowFloatingMouseWindowChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(showFloatingMouseWindow = enabled)
+        saveShowFloatingMouseWindowSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onAutoSwitchLeftAfterRightClickChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(autoSwitchLeftAfterRightClick = enabled)
+        saveAutoSwitchLeftAfterRightClickSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -1294,6 +1327,33 @@ class SettingsScreenViewModel : ViewModel() {
         host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
             .edit {
                 putBoolean(PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY, enabled)
+            }
+    }
+
+    private fun readShowFloatingMouseWindowSelection(host: Activity): Boolean {
+        return host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+            .getBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, DEFAULT_SHOW_FLOATING_MOUSE_WINDOW)
+    }
+
+    private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
+        host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+            .edit {
+                putBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, enabled)
+            }
+    }
+
+    private fun readAutoSwitchLeftAfterRightClickSelection(host: Activity): Boolean {
+        return host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+            .getBoolean(
+                PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
+                DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+            )
+    }
+
+    private fun saveAutoSwitchLeftAfterRightClickSelection(host: Activity, enabled: Boolean) {
+        host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+            .edit {
+                putBoolean(PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK, enabled)
             }
     }
 

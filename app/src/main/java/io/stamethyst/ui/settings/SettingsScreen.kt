@@ -246,6 +246,52 @@ fun LauncherSettingsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Switch(
+                checked = uiState.showFloatingMouseWindow,
+                enabled = !uiState.busy,
+                onCheckedChange = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) }
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (uiState.showFloatingMouseWindow) {
+                    stringResource(R.string.settings_touch_mouse_floating_window_visible)
+                } else {
+                    stringResource(R.string.settings_touch_mouse_floating_window_hidden)
+                }
+            )
+        }
+        Text(
+            text = stringResource(R.string.settings_touch_mouse_floating_window_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
+                checked = uiState.autoSwitchLeftAfterRightClick,
+                enabled = !uiState.busy,
+                onCheckedChange = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) }
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (uiState.autoSwitchLeftAfterRightClick) {
+                    "右键后自动切回左键：启用"
+                } else {
+                    "右键后自动切回左键：禁用"
+                }
+            )
+        }
+        Text(
+            text = "启用后，触发一次右键后会自动切换回左键模式。",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
                 checked = uiState.touchscreenEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) }
