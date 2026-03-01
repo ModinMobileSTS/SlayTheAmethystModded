@@ -66,7 +66,7 @@ class SettingsScreenViewModel : ViewModel() {
         private const val DEFAULT_TOUCHSCREEN_ENABLED = true
         private const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
         private const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
-        private const val DEFAULT_JVM_HEAP_MAX_MB = 1536
+        private const val DEFAULT_JVM_HEAP_MAX_MB = 1024
         private const val MIN_JVM_HEAP_MAX_MB = 1024
         private const val MAX_JVM_HEAP_MAX_MB = 2048
         private const val JVM_HEAP_STEP_MB = 128
@@ -83,6 +83,7 @@ class SettingsScreenViewModel : ViewModel() {
             "betapreferences",
             "betaPerferences",
             "betaperferences",
+            "perference",
             "preferences",
             "perferences",
             "saves",
@@ -98,7 +99,7 @@ class SettingsScreenViewModel : ViewModel() {
         private val SAVE_EXPORT_FOLDER_MAPPINGS = arrayOf(
             "multiplayer" to "multiple",
             "saves" to "saves",
-            "betaPreferences" to "preferences",
+            "perference" to "perference",
             "runs" to "runs"
         )
     }
@@ -1101,8 +1102,13 @@ class SettingsScreenViewModel : ViewModel() {
         }
 
         val mappedFolder = when (folder.lowercase(Locale.ROOT)) {
-            "preferences", "perferences", "betapreferences", "betaperferences" -> "betaPreferences"
-            "multiple", "multiplayer" -> "multiplayer"
+            "preferences",
+            "perference",
+            "perferences",
+            "betapreferences",
+            "betaperferences" -> "preferences"
+            "multiplayer",
+            "multiple" -> "multiplayer"
             else -> folder
         }
         return if (rest.isEmpty()) {
@@ -1114,6 +1120,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun isLikelySaveTopLevel(folder: String): Boolean {
         return folder == "betapreferences"
+            || folder == "perference"
             || folder == "preferences"
             || folder == "perferences"
             || folder == "betaperferences"
@@ -1170,7 +1177,7 @@ class SettingsScreenViewModel : ViewModel() {
                     zipOutput.putNextEntry(entry)
                     val message = "No save files found yet.\n" +
                         "Expected folders under: ${stsRoot.absolutePath}\n" +
-                        "Folders: multiplayer, saves, betaPreferences, runs\n"
+                        "Folders: multiplayer, saves, perference, runs\n"
                     zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
                     zipOutput.closeEntry()
                 }
@@ -1182,7 +1189,7 @@ class SettingsScreenViewModel : ViewModel() {
     private fun resolveSaveExportSourceFolder(stsRoot: File, sourceFolder: String): File? {
         val candidates = when (sourceFolder.lowercase(Locale.ROOT)) {
             "multiplayer" -> arrayOf("multiplayer", "multiple")
-            "betapreferences" -> arrayOf("betaPreferences", "betapreferences", "betaPerferences", "betaperferences")
+            "perference" -> arrayOf("perference", "preferences", "perferences")
             else -> arrayOf(sourceFolder)
         }
         for (candidateName in candidates) {

@@ -18,7 +18,7 @@ object StsLaunchSpec {
     const val LAUNCH_MODE_MTS_BASEMOD = "mts_basemod"
     private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
-    private const val DEFAULT_JVM_HEAP_MAX_MB = 1536
+    private const val DEFAULT_JVM_HEAP_MAX_MB = 1024
     private const val MIN_JVM_HEAP_MAX_MB = 1024
     private const val MAX_JVM_HEAP_MAX_MB = 2048
     private const val JVM_HEAP_STEP_MB = 128

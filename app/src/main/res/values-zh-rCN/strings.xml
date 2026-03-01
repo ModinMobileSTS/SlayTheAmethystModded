@@ -4,7 +4,7 @@
     <string name="sts_crash_detail_format">游戏已崩溃。\n%1$s</string>
     <string name="sts_normal_exit">游戏进程异常退出，退出码 %1$d。</string>
     <string name="sts_signal_exit">游戏进程因信号 %1$d 崩溃退出。</string>
-    <string name="sts_oom_exit">检测到 OutOfMemoryError（JVM 堆内存耗尽）。游戏已自动返回启动器。请在设置中提高 JVM 堆上限，或减少启用模组后重试。</string>
+    <string name="sts_oom_exit">检测到 OutOfMemoryError（JVM 堆内存耗尽）。游戏已自动返回启动器。JVM堆大小可能过大或过小，请在设置中适当调整 JVM 堆上限。</string>
     <string name="sts_share_crash_report">分享错误报告</string>
     <string name="sts_share_crash_chooser_title">分享到 QQ / 微信等</string>
     <string name="sts_share_crash_report_failed">没有可用应用可分享错误报告。</string>
