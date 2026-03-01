@@ -1,5 +1,9 @@
 package io.stamethyst.ui
 
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -32,7 +36,30 @@ fun LauncherContent(
                 rememberSaveableStateHolderNavEntryDecorator(),
                 rememberViewModelStoreNavEntryDecorator(),
             ),
+            onBack = { navigator.goBack() },
             backStack = navigator.backStack,
+            transitionSpec = {
+                slideInHorizontally(
+                    animationSpec = tween(durationMillis = 420),
+                    initialOffsetX = { fullWidth -> fullWidth }
+                ).togetherWith(
+                    slideOutHorizontally(
+                        animationSpec = tween(durationMillis = 420),
+                        targetOffsetX = { fullWidth -> -fullWidth }
+                    )
+                )
+            },
+            popTransitionSpec = {
+                slideInHorizontally(
+                    animationSpec = tween(durationMillis = 420),
+                    initialOffsetX = { fullWidth -> -fullWidth }
+                ).togetherWith(
+                    slideOutHorizontally(
+                        animationSpec = tween(durationMillis = 420),
+                        targetOffsetX = { fullWidth -> fullWidth }
+                    )
+                )
+            },
             entryProvider = entryProvider {
                 entry<Route.Main> {
                     LauncherMainScreen(

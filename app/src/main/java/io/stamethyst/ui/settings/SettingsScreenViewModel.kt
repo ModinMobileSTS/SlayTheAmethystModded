@@ -189,11 +189,27 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onRenderScaleInputChange(value: String) {
+    fun onRenderScaleInputChange(host: Activity, value: String) {
         if (uiState.busy) {
             return
         }
         uiState = uiState.copy(renderScaleInput = value)
+        val normalizedInput = value.trim().replace(',', '.')
+        if (normalizedInput == "." ||
+            normalizedInput == "0" ||
+            normalizedInput == "0." ||
+            Regex("^0\\.0+$").matches(normalizedInput)
+        ) {
+            return
+        }
+        saveRenderScaleFromInput(
+            host = host,
+            showToast = false,
+            suppressValidationErrorToast = true,
+            allowEmptyReset = false,
+            normalizeInputAfterSave = false,
+            refreshStatusAfterSave = false
+        )
     }
 
     fun onImportJar() {
@@ -261,13 +277,6 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
-    }
-
-    fun onSaveRenderScale(host: Activity) {
-        if (uiState.busy) {
-            return
-        }
-        saveRenderScaleFromInput(host, showToast = true)
     }
 
     fun onTargetFpsSelected(host: Activity, targetFps: Int) {
@@ -399,7 +408,11 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onModJarsPicked(host: Activity, uris: List<Uri>?) {
+    fun onModJarsPicked(
+        host: Activity,
+        uris: List<Uri>?,
+        onCompleted: (() -> Unit)? = null
+    ) {
         if (uris.isNullOrEmpty()) {
             return
         }
@@ -439,6 +452,7 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                 }
                 refreshStatus(host)
+                onCompleted?.invoke()
 //                todo host.notifyMainDataChanged()
             }
         }
@@ -529,9 +543,19 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun saveRenderScaleFromInput(host: Activity, showToast: Boolean): Boolean {
+    private fun saveRenderScaleFromInput(
+        host: Activity,
+        showToast: Boolean,
+        suppressValidationErrorToast: Boolean = false,
+        allowEmptyReset: Boolean = true,
+        normalizeInputAfterSave: Boolean = true,
+        refreshStatusAfterSave: Boolean = true
+    ): Boolean {
         val input = uiState.renderScaleInput.trim().replace(',', '.')
         if (input.isEmpty()) {
+            if (!allowEmptyReset) {
+                return false
+            }
             try {
                 RenderScaleService.reset(host)
             } catch (error: IOException) {
@@ -544,34 +568,66 @@ class SettingsScreenViewModel : ViewModel() {
             if (showToast) {
                 Toast.makeText(host, "Render scale reset to default 1.00", Toast.LENGTH_SHORT).show()
             }
-            refreshStatus(host)
+            if (refreshStatusAfterSave) {
+                refreshStatus(host)
+            } else {
+                updateStatusRenderScaleLine(RenderScaleService.format(RenderScaleService.DEFAULT_RENDER_SCALE))
+            }
             return true
         }
 
         val parsed = try {
             input.toFloat()
         } catch (_: NumberFormatException) {
-            Toast.makeText(host, "Invalid render scale, use 0.50 to 1.00", Toast.LENGTH_SHORT).show()
+            if (!suppressValidationErrorToast) {
+                Toast.makeText(host, "Invalid render scale, use 0.50 to 1.00", Toast.LENGTH_SHORT).show()
+            }
             return false
         }
 
-        if (parsed !in RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE) {
-            Toast.makeText(host, "Render scale must be between 0.50 and 1.00", Toast.LENGTH_SHORT).show()
-            return false
+        val targetValue = when {
+            parsed < RenderScaleService.MIN_RENDER_SCALE -> RenderScaleService.MIN_RENDER_SCALE
+            parsed > RenderScaleService.MAX_RENDER_SCALE -> {
+                if (!suppressValidationErrorToast) {
+                    Toast.makeText(host, "Render scale must be between 0.50 and 1.00", Toast.LENGTH_SHORT).show()
+                }
+                return false
+            }
+            else -> parsed
         }
 
         val normalized = try {
-            RenderScaleService.save(host, parsed)
+            RenderScaleService.save(host, targetValue)
         } catch (error: IOException) {
             Toast.makeText(host, error.message ?: "Failed to save render scale", Toast.LENGTH_SHORT).show()
             return false
         }
-        uiState = uiState.copy(renderScaleInput = normalized)
+        val clampedToMin = parsed < RenderScaleService.MIN_RENDER_SCALE
+        if (normalizeInputAfterSave || clampedToMin) {
+            uiState = uiState.copy(renderScaleInput = normalized)
+        }
+        updateStatusRenderScaleLine(normalized)
         if (showToast) {
             Toast.makeText(host, "Render scale saved: $normalized", Toast.LENGTH_SHORT).show()
         }
-        refreshStatus(host)
+        if (refreshStatusAfterSave) {
+            refreshStatus(host)
+        }
         return true
+    }
+
+    private fun updateStatusRenderScaleLine(normalizedRenderScale: String) {
+        val status = uiState.statusText
+        if (status.isBlank()) {
+            return
+        }
+        val lines = status.lines().toMutableList()
+        val lineIndex = lines.indexOfFirst { it.startsWith("Render scale: ") }
+        if (lineIndex < 0) {
+            return
+        }
+        lines[lineIndex] = "Render scale: $normalizedRenderScale (0.50-1.00)"
+        uiState = uiState.copy(statusText = lines.joinToString("\n"))
     }
 
     private fun readBackBehaviorSelection(host: Activity): Boolean {

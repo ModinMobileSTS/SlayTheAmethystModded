@@ -99,7 +99,7 @@ fun LauncherMainScreen(
 
             if (uiState.optionalMods.isEmpty()) {
                 Text(
-                    text = "暂无可选模组",
+                    text = "暂无模组，请在创意工坊进行下载，并在设置中导入。",
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {

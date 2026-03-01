@@ -27,7 +27,19 @@
 
         <activity
             android:name="io.stamethyst.LauncherActivity"
-            android:exported="true" />
+            android:exported="true"
+            android:enableOnBackInvokedCallback="false">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/java-archive" />
+                <data android:mimeType="application/x-java-archive" />
+                <data android:mimeType="application/jar" />
+                <data android:mimeType="application/x-jar" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
 
         <provider
             android:name="androidx.core.content.FileProvider"

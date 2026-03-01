@@ -5,12 +5,12 @@ Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
 - Amethyst/Pojav JavaSE launch chain
 - arm64-v8a + armeabi-v7a support
 
-## Current Scope (Verified 2026-02-26)
+## Current Scope
 - Main-screen launch defaults to `mts_basemod` mode.
 - Bundled mod components include `ModTheSpire.jar`, `BaseMod.jar`, and `StSLib.jar`.
 - Vanilla mode (`com.megacrit.cardcrawl.desktop.DesktopLauncher`) still exists for debug launch entry.
 
-## Build Prerequisites (Developers)
+## Build Prerequisites
 1. Set environment variable `STEAM_PATH` (or Gradle property `steam.path`) to Steam root or `steamapps`.
 2. Required build-time jars are resolved from Steam/Workshop:
    - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
@@ -36,7 +36,7 @@ Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
 ./gradlew :app:assembleDebug
 ```
 
-## Debug Automation (Cross-Platform)
+## Debug Automation
 Use Gradle tasks so the workflow is the same on Windows/macOS/Linux.
 
 Unix/macOS:
@@ -91,3 +91,15 @@ Options:
 ## Credits
 This repository reuses parts of Amethyst-Android/PojavLauncher native and Java bridge code.
 See `NOTICE` and `THIRD_PARTY_LICENSES.md`.
+
+### Special Thanks
+Special thanks to the Amethyst-Android (AngelAuraMC) maintainers and contributors.
+Their open-source work on Android JavaSE launcher bridging provided important reference implementations and practical foundations for this project.
+Without that prior engineering effort and community sharing, this repository would have taken significantly longer to reach its current state.
+
+Project: https://github.com/AngelAuraMC/Amethyst-Android
+
+This project currently uses a ModTheSpire variant from:
+https://github.com/bwwq/ModTheSpire
+
+We also sincerely thank all other modding and launcher developers whose public discussions, issue reports, and tooling contributions helped this project move forward.

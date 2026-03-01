@@ -18,7 +18,7 @@ plugins {
 }
 
 val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
-val appVersionName = "0.0.4"
+val appVersionName = "0.0.6"
 
 android {
     namespace = "io.stamethyst"

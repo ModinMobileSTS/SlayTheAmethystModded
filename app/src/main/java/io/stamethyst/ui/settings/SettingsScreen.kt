@@ -3,25 +3,31 @@ package io.stamethyst.ui.settings
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -29,13 +35,22 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.LauncherIcon
 import io.stamethyst.R
@@ -45,6 +60,7 @@ import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,9 +71,10 @@ fun LauncherSettingsScreen(
     val activity = requireNotNull(LocalActivity.current)
     val navigator = currentNavigator
     val uiState = viewModel.uiState
-    val scrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
+        // Delay initial heavy status refresh to avoid competing with enter transition/first scroll.
+        delay(320)
         viewModel.bind(activity)
     }
 
@@ -76,64 +93,82 @@ fun LauncherSettingsScreen(
             )
         },
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(scrollState),
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SettingsBusyIndicator(uiState = uiState)
+            item {
+                SettingsBusyIndicator(uiState = uiState)
+            }
 
-            SettingsImportSection(
-                busy = uiState.busy,
-                onImportJar = viewModel::onImportJar,
-                onImportMods = viewModel::onImportMods,
-                onImportSaves = viewModel::onImportSaves,
-                onExportSaves = viewModel::onExportSaves,
-                onShareCrashReport = { viewModel.onShareCrashReport(activity) }
-            )
-
-            HorizontalDivider()
-
-            SettingsRenderSection(
-                uiState = uiState,
-                onRenderScaleInputChange = viewModel::onRenderScaleInputChange,
-                onSaveRenderScale = { viewModel.onSaveRenderScale(activity) },
-                onTargetFpsSelected = { selectedFps -> viewModel.onTargetFpsSelected(activity, selectedFps) },
-                onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
-                onRendererSelected = { selectedBackend -> viewModel.onRendererSelected(activity, selectedBackend) }
-            )
-
-            SettingsInputSection(
-                uiState = uiState,
-                onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
-                onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
-                onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
-                onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
-                onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) }
-            )
-
-            HorizontalDivider()
-
-            SettingsCompatibilitySection(
-                busy = uiState.busy,
-                onOpenCompatibility = viewModel::onOpenCompatibility
-            )
-
-            HorizontalDivider()
-
-            SettingsLauncherIconSection(
-                uiState = uiState,
-                onLauncherIconSelected = { selectedIcon ->
-                    viewModel.onLauncherIconSelected(activity, selectedIcon)
+            item {
+                SettingsSectionCard(title = "资源与文件") {
+                    SettingsImportSection(
+                        busy = uiState.busy,
+                        onImportJar = viewModel::onImportJar,
+                        onImportMods = viewModel::onImportMods,
+                        onImportSaves = viewModel::onImportSaves,
+                        onExportSaves = viewModel::onExportSaves,
+                        onShareCrashReport = { viewModel.onShareCrashReport(activity) }
+                    )
                 }
-            )
+            }
 
-            HorizontalDivider()
+            item {
+                SettingsSectionCard(title = "渲染") {
+                    SettingsRenderSection(
+                        uiState = uiState,
+                        onRenderScaleInputChange = { value ->
+                            viewModel.onRenderScaleInputChange(activity, value)
+                        },
+                        onTargetFpsSelected = { selectedFps -> viewModel.onTargetFpsSelected(activity, selectedFps) },
+                        onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
+                        onRendererSelected = { selectedBackend -> viewModel.onRendererSelected(activity, selectedBackend) }
+                    )
+                }
+            }
 
-            SettingsStatusSection(uiState = uiState)
+            item {
+                SettingsSectionCard(title = "输入与交互") {
+                    SettingsInputSection(
+                        uiState = uiState,
+                        onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
+                        onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
+                        onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
+                        onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
+                        onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) }
+                    )
+                }
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.compat_settings_title)) {
+                    SettingsCompatibilitySection(
+                        busy = uiState.busy,
+                        onOpenCompatibility = viewModel::onOpenCompatibility
+                    )
+                }
+            }
+
+            item {
+                SettingsSectionCard(title = "启动器图标") {
+                    SettingsLauncherIconSection(
+                        uiState = uiState,
+                        onLauncherIconSelected = { selectedIcon ->
+                            viewModel.onLauncherIconSelected(activity, selectedIcon)
+                        }
+                    )
+                }
+            }
+
+            item {
+                SettingsSectionCard(title = "状态与日志") {
+                    SettingsStatusSection(uiState = uiState)
+                }
+            }
         }
     }
     SettingsEffectsHandler(viewModel = viewModel)
@@ -153,6 +188,31 @@ private fun SettingsBusyIndicator(
 }
 
 @Composable
+private fun SettingsSectionCard(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            HorizontalDivider()
+            content()
+        }
+    }
+}
+
+@Composable
 private fun SettingsImportSection(
     busy: Boolean,
     onImportJar: () -> Unit,
@@ -161,44 +221,32 @@ private fun SettingsImportSection(
     onExportSaves: () -> Unit,
     onShareCrashReport: () -> Unit,
 ) {
-    Button(
-        onClick = onImportJar,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("导入 desktop-1.0.jar")
-    }
-
-    Button(
-        onClick = onImportMods,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("导入模组")
-    }
-
-    Button(
-        onClick = onImportSaves,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("导入存档")
-    }
-
-    Button(
-        onClick = onExportSaves,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("导出存档")
-    }
-
-    Button(
-        onClick = onShareCrashReport,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(stringResource(R.string.sts_share_crash_report))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingsActionListItem(
+            title = "导入 desktop-1.0.jar",
+            enabled = !busy,
+            onClick = onImportJar
+        )
+        SettingsActionListItem(
+            title = "导入模组",
+            enabled = !busy,
+            onClick = onImportMods
+        )
+        SettingsActionListItem(
+            title = "导入存档",
+            enabled = !busy,
+            onClick = onImportSaves
+        )
+        SettingsActionListItem(
+            title = "导出存档",
+            enabled = !busy,
+            onClick = onExportSaves
+        )
+        SettingsActionListItem(
+            title = stringResource(R.string.sts_share_crash_report),
+            enabled = !busy,
+            onClick = onShareCrashReport
+        )
     }
 }
 
@@ -206,12 +254,13 @@ private fun SettingsImportSection(
 private fun SettingsRenderSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleInputChange: (String) -> Unit,
-    onSaveRenderScale: () -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
     onRendererSelected: (RendererBackend) -> Unit,
 ) {
-    Text(text = "渲染设置", style = MaterialTheme.typography.titleMedium)
+    var heapSliderValue by remember(uiState.selectedJvmHeapMaxMb) {
+        mutableFloatStateOf(uiState.selectedJvmHeapMaxMb.toFloat())
+    }
 
     OutlinedTextField(
         value = uiState.renderScaleInput,
@@ -222,14 +271,6 @@ private fun SettingsRenderSection(
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
-
-    Button(
-        onClick = onSaveRenderScale,
-        enabled = !uiState.busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("保存渲染比例")
-    }
 
     Text(text = "刷新率上限", style = MaterialTheme.typography.bodyMedium)
     uiState.targetFpsOptions.forEach { fps ->
@@ -243,12 +284,13 @@ private fun SettingsRenderSection(
 
     Text(text = "JVM 堆上限", style = MaterialTheme.typography.bodyMedium)
     Text(
-        text = "${uiState.selectedJvmHeapMaxMb} MB",
+        text = "${heapSliderValue.roundToInt()} MB",
         style = MaterialTheme.typography.bodySmall
     )
     Slider(
-        value = uiState.selectedJvmHeapMaxMb.toFloat(),
-        onValueChange = { value -> onJvmHeapMaxSelected(value.roundToInt()) },
+        value = heapSliderValue,
+        onValueChange = { value -> heapSliderValue = value },
+        onValueChangeFinished = { onJvmHeapMaxSelected(heapSliderValue.roundToInt()) },
         valueRange = uiState.jvmHeapMinMb.toFloat()..uiState.jvmHeapMaxMb.toFloat(),
         steps = ((uiState.jvmHeapMaxMb - uiState.jvmHeapMinMb) / uiState.jvmHeapStepMb - 1)
             .coerceAtLeast(0),
@@ -359,14 +401,40 @@ private fun SettingsCompatibilitySection(
     busy: Boolean,
     onOpenCompatibility: () -> Unit,
 ) {
-    Text(text = stringResource(R.string.compat_settings_title), style = MaterialTheme.typography.titleMedium)
-    Button(
-        onClick = onOpenCompatibility,
+    SettingsActionListItem(
+        title = stringResource(R.string.compat_settings_open),
         enabled = !busy,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(text = stringResource(R.string.compat_settings_open))
-    }
+        onClick = onOpenCompatibility
+    )
+}
+
+@Composable
+private fun SettingsActionListItem(
+    title: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(text = title)
+        },
+        trailingContent = {
+            Text(
+                text = ">",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                enabled = enabled,
+                onClick = onClick
+            )
+    )
 }
 
 @Composable
@@ -374,7 +442,6 @@ private fun SettingsLauncherIconSection(
     uiState: SettingsScreenViewModel.UiState,
     onLauncherIconSelected: (LauncherIcon) -> Unit,
 ) {
-    Text(text = "启动器图标", style = MaterialTheme.typography.titleMedium)
     LauncherIcon.entries.forEach { icon ->
         LauncherIconOptionRow(
             icon = icon,
@@ -389,14 +456,73 @@ private fun SettingsLauncherIconSection(
 private fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState
 ) {
-    Text(text = "状态信息", style = MaterialTheme.typography.titleMedium)
-    SelectionContainer {
-        Text(text = uiState.statusText, style = MaterialTheme.typography.bodySmall)
+    var showStatusDialog by rememberSaveable { mutableStateOf(false) }
+    var showLogDialog by rememberSaveable { mutableStateOf(false) }
+    val statusPreview = remember(uiState.statusText) {
+        uiState.statusText
+            .lineSequence()
+            .take(3)
+            .joinToString("\n")
     }
 
-    Text(text = "日志路径", style = MaterialTheme.typography.titleMedium)
-    SelectionContainer {
-        Text(text = uiState.logPathText, style = MaterialTheme.typography.bodySmall)
+    Text(
+        text = if (statusPreview.isBlank()) "状态加载中..." else statusPreview,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis
+    )
+
+    HorizontalDivider()
+
+    SettingsActionListItem(
+        title = "查看完整状态信息",
+        enabled = uiState.statusText.isNotBlank(),
+        onClick = { showStatusDialog = true }
+    )
+    SettingsActionListItem(
+        title = "查看日志路径",
+        enabled = uiState.logPathText.isNotBlank(),
+        onClick = { showLogDialog = true }
+    )
+
+    if (showStatusDialog) {
+        AlertDialog(
+            onDismissRequest = { showStatusDialog = false },
+            title = { Text("状态信息") },
+            text = {
+                SelectionContainer {
+                    Text(
+                        text = uiState.statusText.ifBlank { "暂无状态信息" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showStatusDialog = false }) {
+                    Text("关闭")
+                }
+            }
+        )
+    }
+
+    if (showLogDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogDialog = false },
+            title = { Text("日志路径") },
+            text = {
+                SelectionContainer {
+                    Text(
+                        text = uiState.logPathText.ifBlank { "暂无日志路径" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLogDialog = false }) {
+                    Text("关闭")
+                }
+            }
+        )
     }
 }
 
