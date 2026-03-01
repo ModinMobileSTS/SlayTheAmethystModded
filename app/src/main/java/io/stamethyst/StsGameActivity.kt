@@ -374,6 +374,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onResume()
         applyImmersiveMode()
         resetGamepadState()
+        resyncRenderSurfaceAfterForeground()
         applyForegroundWindowState()
         updateFloatingMouseVisibility()
         tryStartJvmWhenSurfaceReady()
@@ -390,6 +391,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             applyImmersiveMode()
+            resyncRenderSurfaceAfterForeground()
         }
         if (runtimeLifecycleReady) {
             try {
@@ -1153,9 +1155,54 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun applyTextureBufferSize(surface: SurfaceTexture) {
-        val scaledWidth = (surfaceBufferWidth * renderScale).roundToInt().coerceAtLeast(1)
-        val scaledHeight = (surfaceBufferHeight * renderScale).roundToInt().coerceAtLeast(1)
+        val rawWidth = if (surfaceBufferWidth > 0) {
+            surfaceBufferWidth
+        } else if (::renderView.isInitialized) {
+            renderView.width
+        } else {
+            0
+        }
+        val rawHeight = if (surfaceBufferHeight > 0) {
+            surfaceBufferHeight
+        } else if (::renderView.isInitialized) {
+            renderView.height
+        } else {
+            0
+        }
+        val scaledWidth = (rawWidth.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
+        val scaledHeight = (rawHeight.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
         surface.setDefaultBufferSize(scaledWidth, scaledHeight)
+    }
+
+    private fun resyncRenderSurfaceAfterForeground() {
+        if (useTextureViewSurface) {
+            reapplyTextureBufferSizeFromView()
+        }
+        updateWindowSize()
+        if (!::renderView.isInitialized) {
+            return
+        }
+        renderView.post {
+            if (isFinishing || isDestroyed) {
+                return@post
+            }
+            if (useTextureViewSurface) {
+                reapplyTextureBufferSizeFromView()
+            }
+            updateWindowSize()
+        }
+    }
+
+    private fun reapplyTextureBufferSizeFromView() {
+        val view = textureView ?: return
+        val surfaceTexture = view.surfaceTexture ?: return
+        if (view.width > 0) {
+            surfaceBufferWidth = view.width
+        }
+        if (view.height > 0) {
+            surfaceBufferHeight = view.height
+        }
+        applyTextureBufferSize(surfaceTexture)
     }
 
     private fun shouldUseTextureViewSurface(requestedRenderer: RendererBackend, scale: Float): Boolean {
