@@ -1,7 +1,6 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.widget.Toast
@@ -21,6 +20,7 @@ import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.ArrayList
@@ -34,12 +34,6 @@ import java.util.concurrent.Executors
 class MainScreenViewModel : ViewModel() {
     companion object {
         private const val TAG = "MainScreenViewModel"
-        private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
-        private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
-        private const val PREF_KEY_TARGET_FPS = "target_fps"
-        private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
-        private const val DEFAULT_TARGET_FPS = 120
-        private val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
     }
 
     data class UiState(
@@ -502,7 +496,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         val renderer = RendererConfig.readPreferredBackend(host)
-        val targetFps = normalizeTargetFps(readTargetFpsSelection(host))
+        val targetFps = LauncherPreferences.readTargetFps(host)
         val backImmediateExit = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
 
@@ -582,27 +576,11 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun readBackBehaviorSelection(host: Activity): Boolean {
-        return host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
-            .getBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, true)
+        return LauncherPreferences.readBackImmediateExit(host)
     }
 
     private fun readManualDismissBootOverlaySelection(host: Activity): Boolean {
-        return host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
-            .getBoolean(PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY, false)
-    }
-
-    private fun readTargetFpsSelection(host: Activity): Int {
-        val stored = host.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
-            .getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS)
-        return normalizeTargetFps(stored)
-    }
-
-    private fun normalizeTargetFps(targetFps: Int): Int {
-        return if (TARGET_FPS_OPTIONS.contains(targetFps)) {
-            targetFps
-        } else {
-            DEFAULT_TARGET_FPS
-        }
+        return LauncherPreferences.readManualDismissBootOverlay(host)
     }
 
     private fun initializePendingSelection(optionalMods: List<ModItemUi>) {
