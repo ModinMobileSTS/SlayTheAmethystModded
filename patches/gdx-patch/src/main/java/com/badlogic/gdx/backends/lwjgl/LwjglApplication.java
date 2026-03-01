@@ -41,7 +41,6 @@ import com.badlogic.gdx.Net;
 import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch;
 import com.badlogic.gdx.backends.lwjgl.audio.OpenALAudio;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Clipboard;
@@ -68,8 +67,6 @@ public class LwjglApplication implements Application {
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
-	private static final String STS_ABSTRACT_CREATURE_CLASS = "com.megacrit.cardcrawl.core.AbstractCreature";
-	private static final String RING_TITLE_BACKGROUND_CLASS = "RingOfDestiny.ui.RingLoginBackground";
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
 		{"glBindFramebufferEXT", "glBindFramebuffer"},
 		{"glDeleteFramebuffersEXT", "glDeleteFramebuffers"},
@@ -109,8 +106,6 @@ public class LwjglApplication implements Application {
 	private Boolean extFramebufferBindUsable;
 	private boolean missingAbortPointerResolved;
 	private long missingAbortPointer;
-	private boolean ringTitleRenderCompatActive;
-	private boolean ringTitleRenderCompatErrorLogged;
 	private boolean globalTextureCompatErrorLogged;
 	private boolean globalTextureCompatFailureLogged;
 	private int globalTextureCompatRepairedTotal;
@@ -691,11 +686,6 @@ public class LwjglApplication implements Application {
 		return findField(target.getClass(), fieldName).get(target);
 	}
 
-	private static void setSpinePremultipliedAlpha (Object renderer, boolean enabled) throws ReflectiveOperationException {
-		Method method = renderer.getClass().getMethod("setPremultipliedAlpha", boolean.class);
-		method.invoke(renderer, Boolean.valueOf(enabled));
-	}
-
 	private static Object invokeNoArgMethod (Object target, String methodName) {
 		if (target == null || methodName == null || methodName.length() == 0) return null;
 		try {
@@ -1109,54 +1099,6 @@ public class LwjglApplication implements Application {
 		}
 	}
 
-	private void ensureRingTitleRenderCompat () {
-		try {
-			Class<?> cardCrawlGameClass = Class.forName(STS_CARD_CRAWL_GAME_CLASS);
-			Object mainMenuScreen = readStaticField(cardCrawlGameClass, "mainMenuScreen");
-			Object background = mainMenuScreen == null ? null : readField(mainMenuScreen, "bg");
-			boolean ringTitleBackgroundActive = background != null
-				&& RING_TITLE_BACKGROUND_CLASS.equals(background.getClass().getName());
-
-			Object renderer = readStaticField(Class.forName(STS_ABSTRACT_CREATURE_CLASS), "sr");
-			Object polygonBatchObj = readStaticField(cardCrawlGameClass, "psb");
-
-			if (ringTitleBackgroundActive) {
-				if (renderer != null) {
-					setSpinePremultipliedAlpha(renderer, false);
-				}
-
-				if (polygonBatchObj instanceof PolygonSpriteBatch) {
-					PolygonSpriteBatch psb = (PolygonSpriteBatch)polygonBatchObj;
-					if (!psb.isBlendingEnabled()) {
-						psb.enableBlending();
-					}
-					if (psb.getBlendSrcFunc() != GL20.GL_SRC_ALPHA
-						|| psb.getBlendDstFunc() != GL20.GL_ONE_MINUS_SRC_ALPHA) {
-						psb.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
-					}
-				}
-
-				if (!ringTitleRenderCompatActive) {
-					ringTitleRenderCompatActive = true;
-					// Reduced log mode: ring-title enabled log disabled.
-					// System.out.println("[gdx-patch] Ring title alpha compat enabled (Spine PMA=false)");
-				}
-			} else if (ringTitleRenderCompatActive) {
-				if (renderer != null) {
-					setSpinePremultipliedAlpha(renderer, true);
-				}
-				ringTitleRenderCompatActive = false;
-				// Reduced log mode: ring-title disabled log disabled.
-				// System.out.println("[gdx-patch] Ring title alpha compat disabled (Spine PMA=true)");
-			}
-		} catch (Throwable t) {
-			if (!ringTitleRenderCompatErrorLogged) {
-				ringTitleRenderCompatErrorLogged = true;
-				System.out.println("[gdx-patch] Ring title alpha compat unavailable: " + t);
-			}
-		}
-	}
-
 	void mainLoop () {
 		SnapshotArray<LifecycleListener> lifecycleListeners = this.lifecycleListeners;
 
@@ -1298,7 +1240,6 @@ public class LwjglApplication implements Application {
 					// System.out.println("[gdx-patch][diag] render heartbeat frameId=" + graphics.frameId + ", active="
 					//	+ isActive + ", current=" + isCurrent + ", size=" + Display.getWidth() + "x" + Display.getHeight());
 				}
-				ensureRingTitleRenderCompat();
 				runGlobalTextureCompatOnManagedGrowth("pre-render");
 				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
 				ensureColorMaskWritable();
