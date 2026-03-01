@@ -22,7 +22,7 @@ object ModManager {
     const val MOD_ID_BASEMOD = "basemod"
     const val MOD_ID_STSLIB = "stslib"
     private val REQUIRED_MOD_IDS: Set<String> = HashSet(
-        Arrays.asList(
+        listOf(
             MOD_ID_BASEMOD,
             MOD_ID_STSLIB
         )
@@ -50,7 +50,7 @@ object ModManager {
             return ""
         }
         val normalized = modId.trim().lowercase(Locale.ROOT)
-        return if (normalized.isEmpty()) "" else normalized
+        return normalized.ifEmpty { "" }
     }
 
     @JvmStatic

@@ -28,9 +28,7 @@ object ModJarSupport {
         }
         ZipFile(jarFile).use { zipFile ->
             val loader = zipFile.getEntry("com/evacipated/cardcrawl/modthespire/Loader.class")
-            if (loader == null) {
-                throw IOException("Invalid ModTheSpire.jar: missing Loader class")
-            }
+                ?: throw IOException("Invalid ModTheSpire.jar: missing Loader class")
         }
     }
 

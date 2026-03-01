@@ -16,6 +16,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import kotlin.math.roundToInt
 
 object RuntimePackInstaller {
     private const val ARCHIVE_UNIVERSAL = "universal.tar.xz"
@@ -73,7 +74,7 @@ object RuntimePackInstaller {
         for (i in requiredFiles.indices) {
             val required = requiredFiles[i]
             copyAssetToFile(assets, "components/jre/$required", File(stagingDir, required))
-            val copiedPercent = 26 + Math.round((i + 1) * 14f / requiredFiles.size)
+            val copiedPercent = 26 + ((i + 1) * 14f / requiredFiles.size).roundToInt()
             reportProgress(progressCallback, copiedPercent, "Copied $required")
         }
 
@@ -210,7 +211,7 @@ object RuntimePackInstaller {
         val processBuilder = ProcessBuilder().directory(File(context.applicationInfo.nativeLibraryDir))
         for (i in packFiles.indices) {
             val packFile = packFiles[i]
-            val startPercent = 78 + Math.round(i * 10f / packFiles.size)
+            val startPercent = 78 + (i * 10f / packFiles.size).roundToInt()
             reportProgress(
                 progressCallback,
                 startPercent,
@@ -238,7 +239,7 @@ object RuntimePackInstaller {
             if (exitCode != 0 || !unpackedJar.exists()) {
                 throw IOException("unpack200 failed for ${packFile.name} (exit=$exitCode): $output")
             }
-            val endPercent = 78 + Math.round((i + 1) * 10f / packFiles.size)
+            val endPercent = 78 + ((i + 1) * 10f / packFiles.size).roundToInt()
             reportProgress(
                 progressCallback,
                 endPercent,
@@ -494,7 +495,7 @@ object RuntimePackInstaller {
         if (callback == null) {
             return
         }
-        val bounded = Math.max(0, Math.min(100, percent))
+        val bounded = percent.coerceIn(0, 100)
         callback.onProgress(bounded, message)
     }
 }

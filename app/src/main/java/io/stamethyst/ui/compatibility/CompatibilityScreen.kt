@@ -1,6 +1,5 @@
 package io.stamethyst.ui.compatibility
 
-import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
@@ -36,17 +37,61 @@ import io.stamethyst.ui.icon.ArrowBack
 fun LauncherCompatibilityScreen(
     modifier: Modifier = Modifier,
 ) {
-    val activity = LocalActivity.current!!
+    val context = LocalContext.current
     val navigator = currentNavigator
     val viewModel: CompatibilityScreenViewModel = viewModel()
     val uiState = viewModel.uiState
 
+    LaunchedEffect(Unit) {
+        viewModel.refresh(context)
+    }
+
+    LauncherCompatibilityScreenContent(
+        modifier = modifier,
+        uiState = uiState,
+        onGoBack = navigator::goBack,
+        onOriginalFboPatchToggled = { enabled -> viewModel.onOriginalFboPatchToggled(context, enabled) },
+        onDownfallFboPatchToggled = { enabled -> viewModel.onDownfallFboPatchToggled(context, enabled) },
+        onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
+        onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
+        onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview(showBackground = true)
+@Composable
+private fun LauncherCompatibilityScreenPreview() {
+    LauncherCompatibilityScreenContent(
+        uiState = CompatibilityScreenViewModel.UiState(
+            busy = false,
+            originalFboPatchEnabled = true,
+            downfallFboPatchEnabled = false,
+            virtualFboPocEnabled = false,
+            globalAtlasFilterCompatEnabled = true,
+            forceLinearMipmapFilterEnabled = true
+        )
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LauncherCompatibilityScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: CompatibilityScreenViewModel.UiState,
+    onGoBack: () -> Unit = {},
+    onOriginalFboPatchToggled: (Boolean) -> Unit = {},
+    onDownfallFboPatchToggled: (Boolean) -> Unit = {},
+    onVirtualFboPocToggled: (Boolean) -> Unit = {},
+    onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
+    onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
+) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.compat_settings_title)) },
                 navigationIcon = {
-                    IconButton(onClick = navigator::goBack) {
+                    IconButton(onClick = onGoBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
                             contentDescription = "返回"
@@ -76,7 +121,7 @@ fun LauncherCompatibilityScreen(
                 description = stringResource(R.string.compat_original_fbo_desc),
                 checked = uiState.originalFboPatchEnabled,
                 enabled = !uiState.busy,
-                onCheckedChange = { enabled -> viewModel.onOriginalFboPatchToggled(activity, enabled) }
+                onCheckedChange = onOriginalFboPatchToggled
             )
 
             CompatibilitySwitchRow(
@@ -84,7 +129,7 @@ fun LauncherCompatibilityScreen(
                 description = stringResource(R.string.compat_downfall_fbo_desc),
                 checked = uiState.downfallFboPatchEnabled,
                 enabled = !uiState.busy,
-                onCheckedChange = { enabled -> viewModel.onDownfallFboPatchToggled(activity, enabled) }
+                onCheckedChange = onDownfallFboPatchToggled
             )
 
             CompatibilitySwitchRow(
@@ -92,7 +137,7 @@ fun LauncherCompatibilityScreen(
                 description = stringResource(R.string.compat_virtual_fbo_poc_desc),
                 checked = uiState.virtualFboPocEnabled,
                 enabled = !uiState.busy,
-                onCheckedChange = { enabled -> viewModel.onVirtualFboPocToggled(activity, enabled) }
+                onCheckedChange = onVirtualFboPocToggled
             )
 
             CompatibilitySwitchRow(
@@ -100,7 +145,7 @@ fun LauncherCompatibilityScreen(
                 description = stringResource(R.string.compat_global_atlas_filter_compat_desc),
                 checked = uiState.globalAtlasFilterCompatEnabled,
                 enabled = !uiState.busy,
-                onCheckedChange = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(activity, enabled) }
+                onCheckedChange = onGlobalAtlasFilterCompatToggled
             )
 
             CompatibilitySwitchRow(
@@ -108,13 +153,9 @@ fun LauncherCompatibilityScreen(
                 description = stringResource(R.string.compat_force_linear_mipmap_filter_desc),
                 checked = uiState.forceLinearMipmapFilterEnabled,
                 enabled = !uiState.busy,
-                onCheckedChange = { enabled -> viewModel.onForceLinearMipmapFilterToggled(activity, enabled) }
+                onCheckedChange = onForceLinearMipmapFilterToggled
             )
         }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.refresh(activity)
     }
 }
 

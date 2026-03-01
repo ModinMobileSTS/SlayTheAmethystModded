@@ -19,9 +19,7 @@ internal object ModJarManifestParser {
         }
         ZipFile(modJar).use { zipFile ->
             val modInfo = JarFileIoUtils.findEntryIgnoreCase(zipFile, "ModTheSpire.json")
-            if (modInfo == null) {
-                throw IOException("ModTheSpire.json not found in ${modJar.name}")
-            }
+                ?: throw IOException("ModTheSpire.json not found in ${modJar.name}")
             val json = JarFileIoUtils.readEntry(zipFile, modInfo)
             val manifest = parseManifest(json)
             if (manifest == null || manifest.normalizedModId.isEmpty()) {

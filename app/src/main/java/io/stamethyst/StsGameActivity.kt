@@ -57,11 +57,14 @@ import org.lwjgl.glfw.CallbackBridge
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.lang.Math.max
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.ArrayDeque
 import java.util.ArrayList
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlin.system.exitProcess
 
 class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     companion object {
@@ -90,9 +93,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
         @JvmStatic
         fun launch(
-            @NonNull context: Context,
-            @NonNull launchMode: String,
-            @NonNull rendererBackend: RendererBackend,
+            context: Context,
+            launchMode: String,
+            rendererBackend: RendererBackend,
             targetFps: Int,
             backImmediateExit: Boolean,
             manualDismissBootOverlay: Boolean
@@ -111,13 +114,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    @Nullable
     private var surfaceView: SurfaceView? = null
 
-    @Nullable
     private var textureView: TextureView? = null
 
-    @Nullable
     private var textureSurface: Surface? = null
 
     private lateinit var renderView: View
@@ -175,7 +175,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var earlyOverlayDismissRequestFrameTimestampNs = 0L
 
     @Volatile
-    @Nullable
     private var jvmLaunchThread: Thread? = null
 
     private var bootBridgeReaderThread: Thread? = null
@@ -249,12 +248,12 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             root.addView(view, renderLayoutParams)
             view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                 override fun onSurfaceTextureAvailable(
-                    @NonNull surface: SurfaceTexture,
+                    surface: SurfaceTexture,
                     width: Int,
                     height: Int
                 ) {
-                    surfaceBufferWidth = Math.max(1, width)
-                    surfaceBufferHeight = Math.max(1, height)
+                    surfaceBufferWidth = width.coerceAtLeast(1)
+                    surfaceBufferHeight = height.coerceAtLeast(1)
                     applyTextureBufferSize(surface)
                     releaseTextureSurfaceIfNeeded()
                     textureSurface = Surface(surface)
@@ -265,18 +264,18 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 }
 
                 override fun onSurfaceTextureSizeChanged(
-                    @NonNull surface: SurfaceTexture,
+                    surface: SurfaceTexture,
                     width: Int,
                     height: Int
                 ) {
-                    surfaceBufferWidth = Math.max(1, width)
-                    surfaceBufferHeight = Math.max(1, height)
+                    surfaceBufferWidth = width.coerceAtLeast(1)
+                    surfaceBufferHeight = height.coerceAtLeast(1)
                     applyTextureBufferSize(surface)
                     updateWindowSize()
                     tryStartJvmWhenSurfaceReady()
                 }
 
-                override fun onSurfaceTextureDestroyed(@NonNull surface: SurfaceTexture): Boolean {
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                     bridgeSurfaceReady = false
                     JREUtils.releaseBridgeWindow()
                     releaseTextureSurfaceIfNeeded()
@@ -285,14 +284,14 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     return true
                 }
 
-                override fun onSurfaceTextureUpdated(@NonNull surface: SurfaceTexture) {
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
                     lastTextureFrameTimestampNs = surface.timestamp
                     if (earlyOverlayDismissOnNextFrame &&
                         lastTextureFrameTimestampNs > earlyOverlayDismissRequestFrameTimestampNs
                     ) {
                         earlyOverlayDismissOnNextFrame = false
                         runOnUiThread {
-                            updateBootOverlayProgress(Math.max(bootOverlayProgress, 99), "Game frame ready")
+                            updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(99), "Game frame ready")
                             dismissBootOverlay()
                         }
                     }
@@ -342,7 +341,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onDestroy()
     }
 
-    override fun surfaceCreated(@NonNull holder: SurfaceHolder) {
+    override fun surfaceCreated(holder: SurfaceHolder) {
         val frame = holder.surfaceFrame
         if (frame != null) {
             surfaceBufferWidth = frame.width()
@@ -354,14 +353,14 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         tryStartJvmWhenSurfaceReady()
     }
 
-    override fun surfaceChanged(@NonNull holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         surfaceBufferWidth = width
         surfaceBufferHeight = height
         updateWindowSize()
         tryStartJvmWhenSurfaceReady()
     }
 
-    override fun surfaceDestroyed(@NonNull holder: SurfaceHolder) {
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
         bridgeSurfaceReady = false
         JREUtils.releaseBridgeWindow()
     }
@@ -420,7 +419,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         requestBackExitToLauncher()
     }
 
-    private fun handleAndroidBackKeyEvent(@NonNull event: KeyEvent): Boolean {
+    private fun handleAndroidBackKeyEvent(event: KeyEvent): Boolean {
         val action = event.action
         if (action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             onBackPressedDispatcher.onBackPressed()
@@ -480,7 +479,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
-        System.exit(0)
+        exitProcess(0)
     }
 
     private fun startJvmOnce() {
@@ -569,8 +568,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 JREUtils.setJavaEnvironment(
                     this,
                     javaHome.absolutePath,
-                    Math.max(1, CallbackBridge.windowWidth),
-                    Math.max(1, CallbackBridge.windowHeight),
+                    CallbackBridge.windowWidth.coerceAtLeast(1),
+                    CallbackBridge.windowHeight.coerceAtLeast(1),
                     effectiveRenderer
                 )
                 JREUtils.initJavaRuntime(javaHome.absolutePath)
@@ -733,7 +732,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 button.isEnabled = true
                 button.text = "关闭遮幕"
                 button.setOnClickListener {
-                    updateBootOverlayProgress(Math.max(bootOverlayProgress, 99), "Manual dismiss requested")
+                    updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(99), "Manual dismiss requested")
                     dismissBootOverlay()
                 }
             } else {
@@ -799,7 +798,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
             if (shouldHandleOverlayFlow && shouldDismissOverlayEarlyLog(line)) {
                 runOnUiThread {
-                    updateBootOverlayProgress(Math.max(bootOverlayProgress, 98), "Starting game...")
+                    updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(98), "Starting game...")
                     requestEarlyOverlayDismiss()
                 }
             }
@@ -857,7 +856,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         if (manualDismissBootOverlay) {
-            updateBootOverlayProgress(Math.max(bootOverlayProgress, 98), "Game ready, tap Close Overlay")
+            updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(98), "Game ready, tap Close Overlay")
             runOnUiThread {
                 bootOverlayDismissButton?.let {
                     it.text = "进入游戏"
@@ -951,17 +950,17 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 if (parsed.percent >= 0) {
                     updateBootOverlayProgress(
                         parsed.percent,
-                        if (parsed.message.isEmpty()) "Loading..." else parsed.message
+                        parsed.message.ifEmpty { "Loading..." }
                     )
                 }
             }
 
             "READY" -> signalMainMenuReady(
-                if (parsed.message.isEmpty()) "Main menu is ready" else parsed.message
+                parsed.message.ifEmpty { "Main menu is ready" }
             )
 
             "FAIL" -> signalLaunchFailure(
-                if (parsed.message.isEmpty()) "Bridge reported startup failure" else parsed.message
+                parsed.message.ifEmpty { "Bridge reported startup failure" }
             )
         }
     }
@@ -1035,8 +1034,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         updateBootOverlayProgress(100, message)
         val now = SystemClock.uptimeMillis()
         val elapsed = if (bootOverlayShownAtMs <= 0L) BOOT_OVERLAY_MIN_VISIBLE_MS else (now - bootOverlayShownAtMs)
-        val minDelay = Math.max(0L, BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed)
-        val delay = Math.max(minDelay, BOOT_OVERLAY_READY_DELAY_MS)
+        val minDelay = (BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed).coerceAtLeast(0)
+        val delay = minDelay.coerceAtLeast(BOOT_OVERLAY_READY_DELAY_MS)
         runOnUiThread {
             try {
                 Logger.appendToLog("Boot overlay auto dismiss scheduled in ${delay}ms")
@@ -1069,7 +1068,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (!waitForMainMenu) {
             return
         }
-        val bounded = Math.max(0, Math.min(100, percent))
+        val bounded = percent.coerceIn(0, 100)
         val normalizedMessage = message?.trim() ?: ""
         if (bounded < bootOverlayProgress) {
             return
@@ -1121,7 +1120,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         bootOverlayLogScroll?.post { bootOverlayLogScroll?.fullScroll(View.FOCUS_DOWN) }
     }
 
-    private fun reportCrashAndReturn(code: Int, isSignal: Boolean, @Nullable detail: String?) {
+    private fun reportCrashAndReturn(code: Int, isSignal: Boolean, detail: String?) {
         if (backExitRequested) {
             finish()
             return
@@ -1143,8 +1142,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun updateWindowSize() {
         val physicalWidth = resolvePhysicalWidth()
         val physicalHeight = resolvePhysicalHeight()
-        val windowWidth = Math.max(1, Math.round(physicalWidth * renderScale))
-        val windowHeight = Math.max(1, Math.round(physicalHeight * renderScale))
+        val windowWidth = (physicalWidth * renderScale).roundToInt().coerceAtLeast(1)
+        val windowHeight = (physicalHeight * renderScale).roundToInt().coerceAtLeast(1)
 
         CallbackBridge.physicalWidth = physicalWidth
         CallbackBridge.physicalHeight = physicalHeight
@@ -1153,9 +1152,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         CallbackBridge.sendUpdateWindowSize(windowWidth, windowHeight)
     }
 
-    private fun applyTextureBufferSize(@NonNull surface: SurfaceTexture) {
-        val scaledWidth = Math.max(1, Math.round(surfaceBufferWidth * renderScale))
-        val scaledHeight = Math.max(1, Math.round(surfaceBufferHeight * renderScale))
+    private fun applyTextureBufferSize(surface: SurfaceTexture) {
+        val scaledWidth = (surfaceBufferWidth * renderScale).roundToInt().coerceAtLeast(1)
+        val scaledHeight = (surfaceBufferHeight * renderScale).roundToInt().coerceAtLeast(1)
         surface.setDefaultBufferSize(scaledWidth, scaledHeight)
     }
 
@@ -1175,21 +1174,21 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private fun resolveRawPhysicalWidth(): Int {
         val viewWidth = if (::renderView.isInitialized) renderView.width else 0
-        return Math.max(1, if (surfaceBufferWidth > 0) surfaceBufferWidth else viewWidth)
+        return (if (surfaceBufferWidth > 0) surfaceBufferWidth else viewWidth).coerceAtLeast(1)
     }
 
     private fun resolveRawPhysicalHeight(): Int {
         val viewHeight = if (::renderView.isInitialized) renderView.height else 0
-        return Math.max(1, if (surfaceBufferHeight > 0) surfaceBufferHeight else viewHeight)
+        return (if (surfaceBufferHeight > 0) surfaceBufferHeight else viewHeight).coerceAtLeast(1)
     }
 
     private fun syncDisplayConfigToSurfaceSize() {
-        val windowWidth = Math.max(1, CallbackBridge.windowWidth)
-        val windowHeight = Math.max(1, CallbackBridge.windowHeight)
+        val windowWidth = CallbackBridge.windowWidth.coerceAtLeast(1)
+        val windowHeight = CallbackBridge.windowHeight.coerceAtLeast(1)
         try {
             DisplayConfigSync.syncToCurrentResolution(this, windowWidth, windowHeight, targetFps)
             Logger.appendToLog(
-                "Display config synced to ${Math.max(800, windowWidth)}x${Math.max(450, windowHeight)} @$targetFps fps"
+                "Display config synced to ${windowWidth.coerceAtLeast(800)}x${windowHeight.coerceAtLeast(450)} @$targetFps fps"
             )
         } catch (error: Throwable) {
             Log.w(TAG, "Failed to sync info.displayconfig", error)
@@ -1235,12 +1234,12 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun readShowFloatingMouseWindowSelection(): Boolean {
-        return getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+        return getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
             .getBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, DEFAULT_SHOW_FLOATING_MOUSE_WINDOW)
     }
 
     private fun readAutoSwitchLeftAfterRightClickSelection(): Boolean {
-        return getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+        return getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
             .getBoolean(
                 PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
                 DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
@@ -1270,9 +1269,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun mapBootOverlayPreparationProgress(percent: Int): Int {
-        val bounded = Math.max(0, Math.min(100, percent))
+        val bounded = percent.coerceIn(0, 100)
         val ratio = bounded / 100f
-        return 12 + Math.round((24 - 12) * ratio)
+        return 12 + ((24 - 12) * ratio).roundToInt()
     }
 
     private fun findLaunchArgValue(args: List<String>?, keyPrefix: String?): String {
@@ -1341,7 +1340,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         return super.onGenericMotionEvent(event)
     }
 
-    private fun isGamepadKeyEvent(@Nullable event: KeyEvent?): Boolean {
+    private fun isGamepadKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) {
             return false
         }
@@ -1355,7 +1354,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             (deviceSources and InputDevice.SOURCE_JOYSTICK) != 0
     }
 
-    private fun isGamepadMotionEvent(@Nullable event: MotionEvent?): Boolean {
+    private fun isGamepadMotionEvent(event: MotionEvent?): Boolean {
         if (event == null || event.actionMasked != MotionEvent.ACTION_MOVE) {
             return false
         }
@@ -1364,7 +1363,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             (source and InputDevice.SOURCE_GAMEPAD) != 0
     }
 
-    private fun handleGamepadKeyEvent(@NonNull event: KeyEvent): Boolean {
+    private fun handleGamepadKeyEvent(event: KeyEvent): Boolean {
         if (!isNativeInputDispatchReady()) {
             return true
         }
@@ -1377,7 +1376,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         return true
     }
 
-    private fun handleGamepadMotionEvent(@NonNull event: MotionEvent): Boolean {
+    private fun handleGamepadMotionEvent(event: MotionEvent): Boolean {
         if (!isNativeInputDispatchReady()) {
             return true
         }
@@ -1640,11 +1639,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun handleVolumeKeyEvent(@NonNull event: KeyEvent): Boolean {
-        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager?
-        if (audioManager == null) {
-            return false
-        }
+    private fun handleVolumeKeyEvent(event: KeyEvent): Boolean {
+        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager? ?: return false
         if (event.action == KeyEvent.ACTION_DOWN) {
             val direction = when (event.keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP -> AudioManager.ADJUST_RAISE

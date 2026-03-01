@@ -123,7 +123,7 @@ internal object ModCompatibilityDiagnosticsLogger {
             return "unknown"
         }
         val normalized = stage.trim()
-        return if (normalized.isEmpty()) "unknown" else normalized
+        return normalized.ifEmpty { "unknown" }
     }
 
     private fun appendClassPatchStatus(

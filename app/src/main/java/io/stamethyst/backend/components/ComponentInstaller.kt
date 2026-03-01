@@ -204,10 +204,10 @@ object ComponentInstaller {
         val runtimeJava = File(RuntimePaths.runtimeRoot(context), "bin/java")
         val script = "#!/system/bin/sh\n" +
             "RUNTIME_JAVA=\"${runtimeJava.absolutePath}\"\n" +
-            "if [ -x \"\$JAVA_HOME/bin/java\" ]; then\n" +
-            "  exec \"\$JAVA_HOME/bin/java\" \"\$@\"\n" +
+                $$"if [ -x \"$JAVA_HOME/bin/java\" ]; then\n" +
+                $$"  exec \"$JAVA_HOME/bin/java\" \"$@\"\n" +
             "fi\n" +
-            "exec \"\$RUNTIME_JAVA\" \"\$@\"\n"
+                $$"exec \"$RUNTIME_JAVA\" \"$@\"\n"
 
         FileOutputStream(javaShim, false).use { output ->
             output.write(script.toByteArray(StandardCharsets.UTF_8))
@@ -275,7 +275,7 @@ object ComponentInstaller {
         if (!file.isFile || file.length() <= 0) {
             return false
         }
-        val bytes = ByteArray(Math.min(file.length(), 4096L).toInt())
+        val bytes = ByteArray(file.length().coerceAtMost(4096L).toInt())
         return try {
             FileInputStream(file).use { input ->
                 val read = input.read(bytes)
@@ -303,7 +303,7 @@ object ComponentInstaller {
         if (callback == null) {
             return
         }
-        val bounded = Math.max(0, Math.min(100, percent))
+        val bounded = percent.coerceIn(0, 100)
         callback.onProgress(bounded, message)
     }
 

@@ -1,6 +1,5 @@
 package io.stamethyst.ui.main
 
-import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,7 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
@@ -43,17 +44,64 @@ import io.stamethyst.ui.icon.Settings
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherMainScreen(
-    viewModel: MainScreenViewModel,
     modifier: Modifier = Modifier,
-    onOpenSettings: () -> Unit = {}
+    viewModel: MainScreenViewModel = MainScreenViewModel(),
+    onOpenSettings: () -> Unit = {},
 ) {
-    val activity = LocalActivity.current!!
+    val context = LocalContext.current
     val uiState = viewModel.uiState
-    val scrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
-        viewModel.refresh(activity)
+        viewModel.refresh(context)
     }
+
+    LauncherMainScreenContent(
+        modifier = modifier,
+        uiState = uiState,
+        onOpenSettings = onOpenSettings,
+        onDeleteMod = { mod -> viewModel.onDeleteMod(context, mod) },
+        onToggleMod = { mod, checked -> viewModel.onToggleMod(context, mod, checked) },
+        onLaunch = { viewModel.onLaunch(context) },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview(showBackground = true)
+@Composable
+private fun LauncherMainScreenPreview() {
+    LauncherMainScreenContent(
+        uiState = MainScreenViewModel.UiState(
+            busy = false,
+            statusSummary = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
+            optionalMods = listOf(
+                ModItemUi(
+                    modId = "samplemod",
+                    manifestModId = "SampleMod",
+                    name = "Sample Mod",
+                    version = "1.0.0",
+                    description = "这是一个示例模组",
+                    dependencies = listOf("basemod"),
+                    required = false,
+                    installed = true,
+                    enabled = true
+                )
+            ),
+            controlsEnabled = true
+        )
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LauncherMainScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: MainScreenViewModel.UiState,
+    onOpenSettings: () -> Unit = {},
+    onDeleteMod: (ModItemUi) -> Unit = {},
+    onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
+    onLaunch: () -> Unit = {},
+) {
+    val scrollState = rememberScrollState()
 
     Scaffold(
         topBar = {
@@ -108,8 +156,8 @@ fun LauncherMainScreen(
                         mod = mod,
                         controlsEnabled = uiState.controlsEnabled && mod.installed,
                         deleteEnabled = uiState.controlsEnabled && mod.installed,
-                        onDeleteClick = { viewModel.onDeleteMod(activity, mod) },
-                        onCheckedChange = { checked -> viewModel.onToggleMod(activity, mod, checked) }
+                        onDeleteClick = { onDeleteMod(mod) },
+                        onCheckedChange = { checked -> onToggleMod(mod, checked) }
                     )
                 }
             }
@@ -117,7 +165,7 @@ fun LauncherMainScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(
-                onClick = { viewModel.onLaunch(activity) },
+                onClick = onLaunch,
                 enabled = uiState.controlsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) {

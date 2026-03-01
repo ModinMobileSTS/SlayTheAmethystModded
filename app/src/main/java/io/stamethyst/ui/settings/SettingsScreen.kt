@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.LauncherIcon
 import io.stamethyst.R
@@ -73,17 +74,90 @@ fun LauncherSettingsScreen(
     val uiState = viewModel.uiState
 
     LaunchedEffect(Unit) {
-        // Delay initial heavy status refresh to avoid competing with enter transition/first scroll.
         delay(320)
         viewModel.bind(activity)
     }
 
+    LauncherSettingsScreenContent(
+        modifier = modifier,
+        uiState = uiState,
+        onGoBack = navigator::goBack,
+        onImportJar = viewModel::onImportJar,
+        onImportMods = viewModel::onImportMods,
+        onImportSaves = viewModel::onImportSaves,
+        onExportSaves = viewModel::onExportSaves,
+        onShareCrashReport = { viewModel.onShareCrashReport(activity) },
+        onRenderScaleInputChange = { value -> viewModel.onRenderScaleInputChange(activity, value) },
+        onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
+        onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
+        onRendererSelected = { backend -> viewModel.onRendererSelected(activity, backend) },
+        onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
+        onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
+        onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
+        onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
+        onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
+        onOpenCompatibility = viewModel::onOpenCompatibility,
+        onLauncherIconSelected = { icon -> viewModel.onLauncherIconSelected(activity, icon) },
+    )
+    SettingsEffectsHandler(viewModel = viewModel)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview(showBackground = true, heightDp = 2000)
+@Composable
+private fun LauncherSettingsScreenPreview() {
+    LauncherSettingsScreenContent(
+        uiState = SettingsScreenViewModel.UiState(
+            busy = false,
+            renderScaleInput = "1.00",
+            selectedRenderer = RendererBackend.OPENGL_ES2,
+            selectedTargetFps = 60,
+            selectedJvmHeapMaxMb = 1024,
+            jvmHeapMinMb = 512,
+            jvmHeapMaxMb = 2048,
+            jvmHeapStepMb = 256,
+            selectedLauncherIcon = LauncherIcon.AMBER,
+            backImmediateExit = true,
+            manualDismissBootOverlay = false,
+            showFloatingMouseWindow = true,
+            autoSwitchLeftAfterRightClick = true,
+            touchscreenEnabled = true,
+            statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
+            logPathText = "/example/path/to/logs",
+            targetFpsOptions = listOf(30, 60, 90, 120, 240),
+        )
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LauncherSettingsScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: SettingsScreenViewModel.UiState,
+    onGoBack: () -> Unit = {},
+    onImportJar: () -> Unit = {},
+    onImportMods: () -> Unit = {},
+    onImportSaves: () -> Unit = {},
+    onExportSaves: () -> Unit = {},
+    onShareCrashReport: () -> Unit = {},
+    onRenderScaleInputChange: (String) -> Unit = {},
+    onTargetFpsSelected: (Int) -> Unit = {},
+    onJvmHeapMaxSelected: (Int) -> Unit = {},
+    onRendererSelected: (RendererBackend) -> Unit = {},
+    onBackBehaviorChanged: (Boolean) -> Unit = {},
+    onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
+    onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
+    onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
+    onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
+    onOpenCompatibility: () -> Unit = {},
+    onLauncherIconSelected: (LauncherIcon) -> Unit = {},
+) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("设置") },
                 navigationIcon = {
-                    IconButton(onClick = navigator::goBack) {
+                    IconButton(onClick = onGoBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
                             contentDescription = "返回",
@@ -108,11 +182,11 @@ fun LauncherSettingsScreen(
                 SettingsSectionCard(title = "资源与文件") {
                     SettingsImportSection(
                         busy = uiState.busy,
-                        onImportJar = viewModel::onImportJar,
-                        onImportMods = viewModel::onImportMods,
-                        onImportSaves = viewModel::onImportSaves,
-                        onExportSaves = viewModel::onExportSaves,
-                        onShareCrashReport = { viewModel.onShareCrashReport(activity) }
+                        onImportJar = onImportJar,
+                        onImportMods = onImportMods,
+                        onImportSaves = onImportSaves,
+                        onExportSaves = onExportSaves,
+                        onShareCrashReport = onShareCrashReport,
                     )
                 }
             }
@@ -121,12 +195,10 @@ fun LauncherSettingsScreen(
                 SettingsSectionCard(title = "渲染") {
                     SettingsRenderSection(
                         uiState = uiState,
-                        onRenderScaleInputChange = { value ->
-                            viewModel.onRenderScaleInputChange(activity, value)
-                        },
-                        onTargetFpsSelected = { selectedFps -> viewModel.onTargetFpsSelected(activity, selectedFps) },
-                        onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
-                        onRendererSelected = { selectedBackend -> viewModel.onRendererSelected(activity, selectedBackend) }
+                        onRenderScaleInputChange = onRenderScaleInputChange,
+                        onTargetFpsSelected = onTargetFpsSelected,
+                        onJvmHeapMaxSelected = onJvmHeapMaxSelected,
+                        onRendererSelected = onRendererSelected,
                     )
                 }
             }
@@ -135,11 +207,11 @@ fun LauncherSettingsScreen(
                 SettingsSectionCard(title = "输入与交互") {
                     SettingsInputSection(
                         uiState = uiState,
-                        onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
-                        onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
-                        onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
-                        onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
-                        onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) }
+                        onBackBehaviorChanged = onBackBehaviorChanged,
+                        onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
+                        onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
+                        onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
+                        onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
                 }
             }
@@ -148,7 +220,7 @@ fun LauncherSettingsScreen(
                 SettingsSectionCard(title = stringResource(R.string.compat_settings_title)) {
                     SettingsCompatibilitySection(
                         busy = uiState.busy,
-                        onOpenCompatibility = viewModel::onOpenCompatibility
+                        onOpenCompatibility = onOpenCompatibility,
                     )
                 }
             }
@@ -157,9 +229,7 @@ fun LauncherSettingsScreen(
                 SettingsSectionCard(title = "启动器图标") {
                     SettingsLauncherIconSection(
                         uiState = uiState,
-                        onLauncherIconSelected = { selectedIcon ->
-                            viewModel.onLauncherIconSelected(activity, selectedIcon)
-                        }
+                        onLauncherIconSelected = onLauncherIconSelected,
                     )
                 }
             }
@@ -171,7 +241,6 @@ fun LauncherSettingsScreen(
             }
         }
     }
-    SettingsEffectsHandler(viewModel = viewModel)
 }
 
 @Composable
@@ -466,7 +535,7 @@ private fun SettingsStatusSection(
     }
 
     Text(
-        text = if (statusPreview.isBlank()) "状态加载中..." else statusPreview,
+        text = statusPreview.ifBlank { "状态加载中..." },
         style = MaterialTheme.typography.bodySmall,
         maxLines = 3,
         overflow = TextOverflow.Ellipsis
