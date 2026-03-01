@@ -26,4 +26,9 @@
     <string name="compat_global_atlas_filter_compat_desc">Runtime-only global texture compatibility mode. Benefits: reduces black blocks and restores transparent-water rendering without rewriting jars or creating backup files. Tradeoffs: may soften some textures or change wrap behavior due to Linear/Clamp fallback, increase startup CPU/GPU work, and produce larger debug logs.</string>
     <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
     <string name="compat_force_linear_mipmap_filter_desc">Controls -Damethyst.gdx.force_linear_mipmap_filter. When enabled, mipmap-based min filters are downgraded to Linear at runtime to avoid black blocks from incomplete mip chains in some mods. Disable for behavior closer to desktop vanilla.</string>
+    <string name="touch_mouse_mode_left">Left click</string>
+    <string name="touch_mouse_mode_right">Right click</string>
+    <string name="touch_mouse_mode_left_short">L</string>
+    <string name="touch_mouse_mode_right_short">R</string>
+    <string name="touch_mouse_mode_toast">Touch mouse mode: %1$s</string>
 </resources>

@@ -26,4 +26,9 @@
     <string name="compat_global_atlas_filter_compat_desc">纯运行时全局纹理兼容模式。好处：可减少黑块并恢复透明水面显示，且不会改写 jar、不会产生备份文件。坏处：由于 Linear/Clamp 兜底，部分纹理可能变糊或平铺行为变化；启动阶段 CPU/GPU 开销会增加，调试日志体积也会变大。</string>
     <string name="compat_force_linear_mipmap_filter_title">强制线性 mipmap 过滤兜底</string>
     <string name="compat_force_linear_mipmap_filter_desc">控制 -Damethyst.gdx.force_linear_mipmap_filter。开启后会在运行时把依赖 mipmap 的最小过滤降级为 Linear，以规避部分 mod 因 mip 链不完整导致的黑块；关闭后行为更接近桌面原版。</string>
+    <string name="touch_mouse_mode_left">左键</string>
+    <string name="touch_mouse_mode_right">右键</string>
+    <string name="touch_mouse_mode_left_short">左</string>
+    <string name="touch_mouse_mode_right_short">右</string>
+    <string name="touch_mouse_mode_toast">触摸鼠标模式：%1$s</string>
 </resources>

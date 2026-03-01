@@ -10,7 +10,10 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.InputType
 import android.util.Log
+import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -20,9 +23,15 @@ import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -64,6 +73,11 @@ import java.util.ArrayList
 import java.util.Locale
 
 class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
+    private enum class TouchMouseMode {
+        LEFT,
+        RIGHT
+    }
+
     companion object {
         private const val TAG = "StsGameActivity"
         private const val CRASH_CODE_BOOT_FAILURE = -2
@@ -131,7 +145,19 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var backExitRequested = false
 
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
-    private var leftPressed = false
+    private var touchMouseMode = TouchMouseMode.LEFT
+    private var touchPressedButton = -1
+    private var floatingMouseButton: FrameLayout? = null
+    private var floatingMouseModeText: TextView? = null
+    private var imeProxyView: View? = null
+    private var floatingMouseTouchSlop = 0
+    private var floatingMouseDragging = false
+    private var floatingMouseLongPressTriggered = false
+    private var floatingMousePressRunnable: Runnable? = null
+    private var floatingMouseDownRawX = 0f
+    private var floatingMouseDownRawY = 0f
+    private var floatingMouseDownLeft = 0
+    private var floatingMouseDownTop = 0
     private var gamepadDirectInputEnableAttempted = false
     private var surfaceBufferWidth = 0
     private var surfaceBufferHeight = 0
@@ -301,10 +327,14 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         renderView.isFocusableInTouchMode = true
         renderView.setOnTouchListener { _, event -> handleTouchEvent(event) }
         renderView.requestFocus()
+        initFloatingMouseControls()
     }
 
     override fun onDestroy() {
         resetGamepadState()
+        hideSoftKeyboard()
+        floatingMouseButton?.removeCallbacks(floatingMousePressRunnable)
+        floatingMousePressRunnable = null
         runtimeLifecycleReady = false
         bridgeSurfaceReady = false
         earlyOverlayDismissOnNextFrame = false
@@ -358,11 +388,13 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         applyImmersiveMode()
         resetGamepadState()
         applyForegroundWindowState()
+        updateFloatingMouseVisibility()
         tryStartJvmWhenSurfaceReady()
     }
 
     override fun onPause() {
         resetGamepadState()
+        hideSoftKeyboard()
         applyBackgroundWindowState()
         super.onPause()
     }
@@ -418,6 +450,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         backExitRequested = true
+        hideSoftKeyboard()
+        releaseTouchButtonIfNeeded()
+        updateFloatingMouseVisibility()
         BackExitNotice.markExpectedBackExit(this)
         stopBootBridgeReaderIfRunning()
         updateBootOverlayProgress(100, "Stopping game...")
@@ -562,7 +597,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 CallbackBridge.nativeSetUseInputStackQueue(true)
                 CallbackBridge.nativeSetInputReady(true)
                 runtimeLifecycleReady = true
-                runOnUiThread { applyForegroundWindowState() }
+                runOnUiThread {
+                    applyForegroundWindowState()
+                    updateFloatingMouseVisibility()
+                }
 
                 val launchArgs = ArrayList<String>()
                 launchArgs.add("java")
@@ -699,6 +737,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 it.visibility = View.GONE
                 it.setOnClickListener(null)
             }
+            updateFloatingMouseVisibility()
             return
         }
         synchronized(bootLogLines) {
@@ -1040,6 +1079,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             it.setOnClickListener(null)
         }
         bootOverlay?.visibility = View.GONE
+        updateFloatingMouseVisibility()
     }
 
     private fun updateBootOverlayProgress(percent: Int, message: String?) {
@@ -1211,6 +1251,341 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         ) requestedFps else DEFAULT_TARGET_FPS
     }
 
+    private fun initFloatingMouseControls() {
+        floatingMouseTouchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val host = findViewById<FrameLayout>(R.id.gameHost)
+
+        val imeView = GameImeProxyView(this).apply {
+            alpha = 0f
+        }
+        host.addView(
+            imeView,
+            FrameLayout.LayoutParams(1, 1, Gravity.TOP or Gravity.START)
+        )
+        imeProxyView = imeView
+
+        val buttonSize = dpToPx(62)
+        val iconSize = dpToPx(28)
+        val badgeSize = dpToPx(24)
+
+        val button = FrameLayout(this).apply {
+            setBackgroundResource(R.drawable.bg_touch_mouse_floating)
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = false
+            elevation = dpToPx(8).toFloat()
+        }
+
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_touch_mouse)
+            setColorFilter(0xFFFFFFFF.toInt())
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        button.addView(
+            icon,
+            FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
+        )
+
+        val modeText = TextView(this).apply {
+            gravity = Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 12f
+            setBackgroundResource(R.drawable.bg_touch_mode_badge)
+            includeFontPadding = false
+        }
+        button.addView(
+            modeText,
+            FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.BOTTOM or Gravity.END).apply {
+                rightMargin = dpToPx(3)
+                bottomMargin = dpToPx(3)
+            }
+        )
+
+        floatingMouseModeText = modeText
+        floatingMouseButton = button
+        host.addView(
+            button,
+            FrameLayout.LayoutParams(buttonSize, buttonSize, Gravity.TOP or Gravity.START).apply {
+                leftMargin = dpToPx(18)
+                topMargin = dpToPx(96)
+            }
+        )
+        button.setOnTouchListener { _, event -> handleFloatingMouseTouch(event) }
+        updateTouchMouseModeUi(showToast = false)
+        updateFloatingMouseVisibility()
+    }
+
+    private fun handleFloatingMouseTouch(event: MotionEvent): Boolean {
+        val button = floatingMouseButton ?: return false
+        val params = button.layoutParams as? FrameLayout.LayoutParams ?: return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                floatingMouseDragging = false
+                floatingMouseLongPressTriggered = false
+                floatingMouseDownRawX = event.rawX
+                floatingMouseDownRawY = event.rawY
+                floatingMouseDownLeft = params.leftMargin
+                floatingMouseDownTop = params.topMargin
+
+                val longPressRunnable = Runnable {
+                    if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
+                        floatingMouseLongPressTriggered = true
+                        button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        showSoftKeyboard()
+                    }
+                }
+                floatingMousePressRunnable = longPressRunnable
+                button.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val dx = (event.rawX - floatingMouseDownRawX).toInt()
+                val dy = (event.rawY - floatingMouseDownRawY).toInt()
+                if (!floatingMouseDragging &&
+                    (Math.abs(dx) > floatingMouseTouchSlop || Math.abs(dy) > floatingMouseTouchSlop)
+                ) {
+                    floatingMouseDragging = true
+                    cancelFloatingMouseLongPress()
+                }
+                if (floatingMouseDragging) {
+                    val parentView = button.parent as? View
+                    val maxLeft = ((parentView?.width ?: 0) - button.width).coerceAtLeast(0)
+                    val maxTop = ((parentView?.height ?: 0) - button.height).coerceAtLeast(0)
+                    params.leftMargin = (floatingMouseDownLeft + dx).coerceIn(0, maxLeft)
+                    params.topMargin = (floatingMouseDownTop + dy).coerceIn(0, maxTop)
+                    button.layoutParams = params
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                cancelFloatingMouseLongPress()
+                if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
+                    button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    toggleTouchMouseMode()
+                }
+                floatingMouseDragging = false
+                floatingMouseLongPressTriggered = false
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                cancelFloatingMouseLongPress()
+                floatingMouseDragging = false
+                floatingMouseLongPressTriggered = false
+                return true
+            }
+
+            else -> return false
+        }
+    }
+
+    private fun cancelFloatingMouseLongPress() {
+        val button = floatingMouseButton ?: return
+        floatingMousePressRunnable?.let { button.removeCallbacks(it) }
+        floatingMousePressRunnable = null
+    }
+
+    private fun toggleTouchMouseMode() {
+        releaseTouchButtonIfNeeded()
+        touchMouseMode = if (touchMouseMode == TouchMouseMode.LEFT) {
+            TouchMouseMode.RIGHT
+        } else {
+            TouchMouseMode.LEFT
+        }
+        updateTouchMouseModeUi(showToast = true)
+    }
+
+    private fun updateTouchMouseModeUi(showToast: Boolean) {
+        val leftMode = touchMouseMode == TouchMouseMode.LEFT
+        val shortLabelRes = if (leftMode) {
+            R.string.touch_mouse_mode_left_short
+        } else {
+            R.string.touch_mouse_mode_right_short
+        }
+        val longLabelRes = if (leftMode) {
+            R.string.touch_mouse_mode_left
+        } else {
+            R.string.touch_mouse_mode_right
+        }
+        floatingMouseModeText?.text = getString(shortLabelRes)
+        if (showToast) {
+            Toast.makeText(
+                this,
+                getString(R.string.touch_mouse_mode_toast, getString(longLabelRes)),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun updateFloatingMouseVisibility() {
+        val button = floatingMouseButton ?: return
+        val shouldShow = runtimeLifecycleReady && bootOverlayDismissed && !backExitRequested
+        button.visibility = if (shouldShow) View.VISIBLE else View.GONE
+    }
+
+    private fun showSoftKeyboard() {
+        val inputView = imeProxyView ?: return
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+        inputView.requestFocus()
+        imm.restartInput(inputView)
+        inputView.post {
+            imm.showSoftInput(inputView, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun hideSoftKeyboard() {
+        val inputView = imeProxyView ?: return
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+        imm.hideSoftInputFromWindow(inputView.windowToken, 0)
+        if (::renderView.isInitialized) {
+            renderView.requestFocus()
+        }
+    }
+
+    private fun sendSoftKeyboardText(text: CharSequence?): Boolean {
+        if (text.isNullOrEmpty() || !isNativeInputDispatchReady()) {
+            return false
+        }
+        var handled = false
+        for (ch in text) {
+            when (ch) {
+                '\n', '\r' -> {
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
+                    handled = true
+                }
+
+                '\b' -> {
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+                    handled = true
+                }
+
+                else -> {
+                    if (!Character.isISOControl(ch)) {
+                        CallbackBridge.sendChar(ch, CallbackBridge.getCurrentMods())
+                        handled = true
+                    }
+                }
+            }
+        }
+        return handled
+    }
+
+    private fun sendSyntheticSoftKey(androidKeyCode: Int) {
+        dispatchKeyboardEventToGame(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode))
+        dispatchKeyboardEventToGame(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode))
+    }
+
+    private fun dispatchSoftKeyboardKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            return false
+        }
+        if (!isNativeInputDispatchReady()) {
+            return true
+        }
+        return dispatchKeyboardEventToGame(event)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun dispatchKeyboardEventToGame(event: KeyEvent): Boolean {
+        if (!isNativeInputDispatchReady()) {
+            return false
+        }
+        if (event.action == KeyEvent.ACTION_MULTIPLE) {
+            val chars = event.characters
+            return if (!chars.isNullOrEmpty()) {
+                sendSoftKeyboardText(chars)
+            } else {
+                true
+            }
+        }
+        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
+            return false
+        }
+
+        val glfwKey = AndroidGlfwKeycode.toGlfw(event.keyCode)
+        var handled = false
+        if (glfwKey != AndroidGlfwKeycode.GLFW_KEY_UNKNOWN) {
+            val isDown = event.action == KeyEvent.ACTION_DOWN
+            CallbackBridge.setModifiers(glfwKey, isDown)
+            CallbackBridge.sendKeyPress(glfwKey, 0, CallbackBridge.getCurrentMods(), isDown)
+            handled = true
+        }
+
+        val unicode = event.unicodeChar
+        if (event.action == KeyEvent.ACTION_DOWN && unicode > 0 && !Character.isISOControl(unicode)) {
+            CallbackBridge.sendChar(unicode.toChar(), CallbackBridge.getCurrentMods())
+            handled = true
+        }
+        return handled
+    }
+
+    private fun resolveTouchButton(): Int {
+        return if (touchMouseMode == TouchMouseMode.LEFT) {
+            LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LEFT.toInt()
+        } else {
+            LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt()
+        }
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return Math.round(resources.displayMetrics.density * dp)
+    }
+
+    private inner class GameImeProxyView(context: Context) : View(context) {
+        init {
+            isFocusable = true
+            isFocusableInTouchMode = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            }
+        }
+
+        override fun onCheckIsTextEditor(): Boolean {
+            return true
+        }
+
+        override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            return object : BaseInputConnection(this, false) {
+                override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                    sendSoftKeyboardText(text)
+                    return true
+                }
+
+                override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                    // Keep composition internal to IME and only forward committed text.
+                    return true
+                }
+
+                override fun finishComposingText(): Boolean {
+                    return true
+                }
+
+                override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                    val count = if (beforeLength > 0) beforeLength else 1
+                    repeat(count) {
+                        sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+                    }
+                    return true
+                }
+
+                override fun sendKeyEvent(event: KeyEvent): Boolean {
+                    return dispatchSoftKeyboardKeyEvent(event)
+                }
+
+                override fun performEditorAction(actionCode: Int): Boolean {
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
+                    return true
+                }
+            }
+        }
+    }
+
     private fun mapBootOverlayPreparationProgress(percent: Int): Int {
         val bounded = Math.max(0, Math.min(100, percent))
         val ratio = bounded / 100f
@@ -1371,7 +1746,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = event.getPointerId(0)
                 moveCursor(event.getX(0), event.getY(0))
-                pressLeftIfNeeded()
+                pressTouchButtonIfNeeded()
                 return true
             }
 
@@ -1379,7 +1754,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 val downIndex = event.actionIndex
                 activePointerId = event.getPointerId(downIndex)
                 moveCursor(event.getX(downIndex), event.getY(downIndex))
-                pressLeftIfNeeded()
+                pressTouchButtonIfNeeded()
                 return true
             }
 
@@ -1402,7 +1777,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                releaseLeftIfNeeded()
+                releaseTouchButtonIfNeeded()
                 resetTouchState()
                 return true
             }
@@ -1428,7 +1803,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
         }
         if (remaining <= 0) {
-            releaseLeftIfNeeded()
+            releaseTouchButtonIfNeeded()
             resetTouchState()
         }
     }
@@ -1464,27 +1839,28 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         textureSurface = null
     }
 
-    private fun pressLeftIfNeeded() {
+    private fun pressTouchButtonIfNeeded() {
         if (!isNativeInputDispatchReady()) {
             return
         }
-        if (leftPressed) {
+        if (touchPressedButton >= 0) {
             return
         }
-        CallbackBridge.sendMouseButton(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LEFT.toInt(), true)
-        leftPressed = true
+        val button = resolveTouchButton()
+        CallbackBridge.sendMouseButton(button, true)
+        touchPressedButton = button
     }
 
-    private fun releaseLeftIfNeeded() {
+    private fun releaseTouchButtonIfNeeded() {
         if (!isNativeInputDispatchReady()) {
-            leftPressed = false
+            touchPressedButton = -1
             return
         }
-        if (!leftPressed) {
+        if (touchPressedButton < 0) {
             return
         }
-        CallbackBridge.sendMouseButton(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LEFT.toInt(), false)
-        leftPressed = false
+        CallbackBridge.sendMouseButton(touchPressedButton, false)
+        touchPressedButton = -1
     }
 
     private fun resetTouchState() {
@@ -1505,28 +1881,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (isGamepadKeyEvent(event)) {
             return handleGamepadKeyEvent(event)
         }
-        if (!isNativeInputDispatchReady()) {
-            return super.dispatchKeyEvent(event)
-        }
-
-        if (event.action == KeyEvent.ACTION_MULTIPLE) {
+        if (dispatchKeyboardEventToGame(event)) {
             return true
         }
-
-        val glfwKey = AndroidGlfwKeycode.toGlfw(keyCode)
-        if (glfwKey == AndroidGlfwKeycode.GLFW_KEY_UNKNOWN) {
-            return super.dispatchKeyEvent(event)
-        }
-
-        val isDown = event.action == KeyEvent.ACTION_DOWN
-        CallbackBridge.setModifiers(glfwKey, isDown)
-        CallbackBridge.sendKeyPress(glfwKey, 0, CallbackBridge.getCurrentMods(), isDown)
-
-        val unicode = event.unicodeChar
-        if (isDown && unicode > 0 && !Character.isISOControl(unicode)) {
-            CallbackBridge.sendChar(unicode.toChar(), CallbackBridge.getCurrentMods())
-        }
-        return true
+        return super.dispatchKeyEvent(event)
     }
 
     private fun isNativeInputDispatchReady(): Boolean {
