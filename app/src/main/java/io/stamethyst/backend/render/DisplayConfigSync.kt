@@ -20,8 +20,8 @@ object DisplayConfigSync {
     @JvmStatic
     @Throws(IOException::class)
     fun syncToCurrentResolution(context: Context, width: Int, height: Int, targetFpsLimit: Int) {
-        val safeWidth = Math.max(MIN_WIDTH, width)
-        val safeHeight = Math.max(MIN_HEIGHT, height)
+        val safeWidth = width.coerceAtLeast(MIN_WIDTH)
+        val safeHeight = height.coerceAtLeast(MIN_HEIGHT)
         val normalizedTargetFpsLimit = normalizeTargetFpsLimit(targetFpsLimit)
 
         val configFile = RuntimePaths.displayConfigFile(context)
@@ -58,9 +58,9 @@ object DisplayConfigSync {
         }
 
         val lines = ArrayList<String>(6)
-        lines.add(Integer.toString(width))
-        lines.add(Integer.toString(height))
-        lines.add(Integer.toString(state.fpsLimit))
+        lines.add(width.toString())
+        lines.add(height.toString())
+        lines.add(state.fpsLimit.toString())
         lines.add(java.lang.Boolean.toString(state.fullscreen))
         lines.add(java.lang.Boolean.toString(state.windowedFullscreen))
         lines.add(java.lang.Boolean.toString(state.vsync))

@@ -1,6 +1,7 @@
 package io.stamethyst.ui.compatibility
 
 import android.app.Activity
+import android.content.Context
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +24,7 @@ class CompatibilityScreenViewModel : ViewModel() {
     var uiState by mutableStateOf(UiState())
         private set
 
-    fun refresh(host: Activity) {
+    fun refresh(host: Context) {
         uiState = uiState.copy(
             busy = false,
             busyMessage = null,
@@ -35,7 +36,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         )
     }
 
-    fun onOriginalFboPatchToggled(host: Activity, enabled: Boolean) {
+    fun onOriginalFboPatchToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
         }
@@ -43,7 +44,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(originalFboPatchEnabled = enabled)
     }
 
-    fun onDownfallFboPatchToggled(host: Activity, enabled: Boolean) {
+    fun onDownfallFboPatchToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
         }
@@ -51,7 +52,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(downfallFboPatchEnabled = enabled)
     }
 
-    fun onVirtualFboPocToggled(host: Activity, enabled: Boolean) {
+    fun onVirtualFboPocToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
         }
@@ -59,7 +60,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(virtualFboPocEnabled = enabled)
     }
 
-    fun onGlobalAtlasFilterCompatToggled(host: Activity, enabled: Boolean) {
+    fun onGlobalAtlasFilterCompatToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
         }
@@ -67,7 +68,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(globalAtlasFilterCompatEnabled = enabled)
     }
 
-    fun onForceLinearMipmapFilterToggled(host: Activity, enabled: Boolean) {
+    fun onForceLinearMipmapFilterToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
         }

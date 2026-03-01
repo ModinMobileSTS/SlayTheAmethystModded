@@ -140,7 +140,7 @@ class SettingsScreenViewModel : ViewModel() {
                     "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
                     "\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)" +
                     "\nTarget FPS: $targetFps" +
-                    "\nJVM heap max: ${jvmHeapMaxMb} MB" +
+                    "\nJVM heap max: $jvmHeapMaxMb MB" +
                     "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
                     "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
                     "\n" + host.getString(

@@ -2,6 +2,7 @@ package io.stamethyst.ui.preferences
 
 import android.content.Context
 import androidx.core.content.edit
+import kotlin.math.roundToInt
 
 object LauncherPreferences {
     private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
@@ -95,7 +96,7 @@ object LauncherPreferences {
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {
         val clamped = heapMaxMb.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
         val offset = clamped - MIN_JVM_HEAP_MAX_MB
-        val snappedStepCount = Math.round(offset / JVM_HEAP_STEP_MB.toFloat())
+        val snappedStepCount = (offset / JVM_HEAP_STEP_MB.toFloat()).roundToInt()
         val snapped = MIN_JVM_HEAP_MAX_MB + (snappedStepCount * JVM_HEAP_STEP_MB)
         return snapped.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
     }

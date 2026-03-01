@@ -1,6 +1,7 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.widget.Toast
@@ -21,6 +22,12 @@ import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.preferences.LauncherPreferences
+import android.os.Handler
+import android.os.Looper
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.ArrayList
@@ -50,6 +57,7 @@ class MainScreenViewModel : ViewModel() {
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val optionalModsSnapshot = ArrayList<ModItemUi>()
     private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
     private var pendingSelectionInitialized = false
@@ -57,7 +65,7 @@ class MainScreenViewModel : ViewModel() {
     var uiState by mutableStateOf(UiState())
         private set
 
-    fun refresh(host: Activity) {
+    fun refresh(host: Context) {
         val hasJar = RuntimePaths.importedStsJar(host).exists()
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
         val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
@@ -81,15 +89,15 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    fun onDeleteMod(host: Activity, mod: ModItemUi) {
+    fun onDeleteMod(host: Context, mod: ModItemUi) {
         onDeleteModRequested(host, mod)
     }
 
-    fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
+    fun onToggleMod(host: Context, mod: ModItemUi, enabled: Boolean) {
         onModChecked(host, mod, enabled)
     }
 
-    fun onLaunch(host: Activity) {
+    fun onLaunch(host: Context) {
         if (uiState.busy) {
             return
         }
@@ -97,7 +105,7 @@ class MainScreenViewModel : ViewModel() {
         prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD)
     }
 
-    fun handleIncomingIntent(host: Activity, intent: Intent?, onShareCrashReport: () -> Unit) {
+    fun handleIncomingIntent(host: Context, intent: Intent?, onShareCrashReport: () -> Unit) {
         if (intent == null) {
             return
         }
@@ -145,7 +153,7 @@ class MainScreenViewModel : ViewModel() {
             .toString()
     }
 
-    private fun onModChecked(host: Activity, mod: ModItemUi, enabled: Boolean) {
+    private fun onModChecked(host: Context, mod: ModItemUi, enabled: Boolean) {
         if (uiState.busy || mod.required) {
             return
         }
@@ -196,7 +204,7 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun onDeleteModRequested(host: Activity, mod: ModItemUi) {
+    private fun onDeleteModRequested(host: Context, mod: ModItemUi) {
         if (uiState.busy || mod.required || !mod.installed) {
             return
         }
@@ -220,20 +228,11 @@ class MainScreenViewModel : ViewModel() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton("删除") { _, _ ->
                 setBusy(true, "正在删除模组...")
-                executor.execute {
-                    try {
-                        val deleted = ModManager.deleteOptionalMod(host, mod.modId)
-                        host.runOnUiThread {
-                            clearPendingSelectionForMod(mod)
-                            if (deleted) {
-                                Toast.makeText(host, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(host, "模组不存在或已被删除：$displayName", Toast.LENGTH_SHORT).show()
-                            }
-                            refresh(host)
-                        }
+                viewModelScope.launch(Dispatchers.IO) {
+                    val deleted = try {
+                        ModManager.deleteOptionalMod(host, mod.modId)
                     } catch (error: Throwable) {
-                        host.runOnUiThread {
+                        mainHandler.post {
                             Toast.makeText(
                                 host,
                                 "删除模组失败：${error.message}",
@@ -241,6 +240,17 @@ class MainScreenViewModel : ViewModel() {
                             ).show()
                             refresh(host)
                         }
+                        return@launch
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        clearPendingSelectionForMod(mod)
+                        if (deleted) {
+                            Toast.makeText(host, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(host, "模组不存在或已被删除：$displayName", Toast.LENGTH_SHORT).show()
+                        }
+                        refresh(host)
                     }
                 }
             }
@@ -248,7 +258,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun enableModWithDependencies(
-        host: Activity,
+        host: Context,
         rootMod: ModItemUi,
         optionalMods: List<ModItemUi>
     ): DependencyEnableResult {
@@ -376,7 +386,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun showMissingDependencyDialog(
-        host: Activity,
+        host: Context,
         rootMod: ModItemUi,
         missingDependencies: List<String>
     ) {
@@ -406,7 +416,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun maybeShowCrashDialog(
-        host: Activity,
+        host: Context,
         intent: Intent,
         onShareCrashReport: () -> Unit
     ): Boolean {
@@ -458,7 +468,7 @@ class MainScreenViewModel : ViewModel() {
             lower.contains("gc overhead limit exceeded")
     }
 
-    private fun showExpectedBackExitDialog(host: Activity) {
+    private fun showExpectedBackExitDialog(host: Context) {
         AlertDialog.Builder(host)
             .setTitle("已返回启动器")
             .setMessage(
@@ -469,7 +479,7 @@ class MainScreenViewModel : ViewModel() {
             .show()
     }
 
-    private fun maybeLaunchFromDebugExtra(host: Activity, intent: Intent) {
+    private fun maybeLaunchFromDebugExtra(host: Context, intent: Intent) {
         val debugLaunchMode = intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_LAUNCH_MODE)
         Log.i(TAG, "Debug launch extra: $debugLaunchMode")
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA
@@ -483,7 +493,7 @@ class MainScreenViewModel : ViewModel() {
         prepareAndLaunch(host, debugLaunchMode)
     }
 
-    private fun prepareAndLaunch(host: Activity, launchMode: String) {
+    private fun prepareAndLaunch(host: Context, launchMode: String) {
         ensurePendingSelectionInitialized(host)
         try {
             ModManager.replaceEnabledOptionalModIds(host, pendingEnabledOptionalModIds)
@@ -514,7 +524,7 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun loadModItems(host: Activity): List<ModItemUi> {
+    private fun loadModItems(host: Context): List<ModItemUi> {
         return ModManager.listInstalledMods(host).map { mod ->
             ModItemUi(
                 modId = mod.modId,
@@ -543,7 +553,7 @@ class MainScreenViewModel : ViewModel() {
         return normalizedManifestId.isNotEmpty() && enabledIds.contains(normalizedManifestId)
     }
 
-    private fun isRequiredDependencyAvailable(host: Activity, normalizedDependency: String): Boolean {
+    private fun isRequiredDependencyAvailable(host: Context, normalizedDependency: String): Boolean {
         return when (normalizedDependency) {
             ModManager.MOD_ID_BASEMOD -> isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
             ModManager.MOD_ID_STSLIB -> isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
@@ -551,7 +561,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun isRequiredModAvailable(host: Activity, modId: String): Boolean {
+    private fun isRequiredModAvailable(host: Context, modId: String): Boolean {
         return when (modId) {
             ModManager.MOD_ID_BASEMOD -> RuntimePaths.importedBaseModJar(host).exists() || hasBundledAsset(host, "components/mods/BaseMod.jar")
             ModManager.MOD_ID_STSLIB -> RuntimePaths.importedStsLibJar(host).exists() || hasBundledAsset(host, "components/mods/StSLib.jar")
@@ -559,7 +569,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {
+    private fun hasBundledAsset(host: Context, assetPath: String): Boolean {
         return try {
             host.assets.open(assetPath).use {
                 true
@@ -575,11 +585,11 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun readBackBehaviorSelection(host: Activity): Boolean {
+    private fun readBackBehaviorSelection(host: Context): Boolean {
         return LauncherPreferences.readBackImmediateExit(host)
     }
 
-    private fun readManualDismissBootOverlaySelection(host: Activity): Boolean {
+    private fun readManualDismissBootOverlaySelection(host: Context): Boolean {
         return LauncherPreferences.readManualDismissBootOverlay(host)
     }
 
@@ -593,7 +603,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun ensurePendingSelectionInitialized(host: Activity) {
+    private fun ensurePendingSelectionInitialized(host: Context) {
         if (pendingSelectionInitialized) {
             return
         }

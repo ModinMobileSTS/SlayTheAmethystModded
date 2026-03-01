@@ -19,6 +19,7 @@ import io.stamethyst.input.AndroidGlfwKeycode
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 internal class FloatingMouseOverlayController(
     private val activity: AppCompatActivity,
@@ -396,7 +397,7 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun dpToPx(dp: Int): Int {
-        return Math.round(activity.resources.displayMetrics.density * dp)
+        return (activity.resources.displayMetrics.density * dp).roundToInt()
     }
 
     private fun placeFloatingButtonAtRightCenter(host: FrameLayout, button: FrameLayout, buttonSize: Int) {

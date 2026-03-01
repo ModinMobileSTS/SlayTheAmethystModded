@@ -8,6 +8,7 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import java.io.IOException
+import kotlin.math.roundToInt
 
 object LaunchPreparationService {
     @JvmStatic
@@ -63,11 +64,11 @@ object LaunchPreparationService {
     private fun mapRangeProgress(percent: Int, startPercent: Int, endPercent: Int): Int {
         val bounded = clampPercent(percent)
         val ratio = bounded / 100f
-        return startPercent + Math.round((endPercent - startPercent) * ratio)
+        return startPercent + ((endPercent - startPercent) * ratio).roundToInt()
     }
 
     private fun clampPercent(value: Int): Int {
-        return Math.max(0, Math.min(100, value))
+        return value.coerceIn(0, 100)
     }
 
     private fun reportProgress(callback: StartupProgressCallback?, percent: Int, message: String) {

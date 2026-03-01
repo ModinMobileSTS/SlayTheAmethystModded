@@ -27,7 +27,7 @@ object RendererConfig {
         }
         return try {
             FileInputStream(configFile).use { input ->
-                val bytes = ByteArray(Math.min(configFile.length(), 128L).toInt())
+                val bytes = ByteArray(configFile.length().coerceAtMost(128L).toInt())
                 val read = input.read(bytes)
                 if (read <= 0) {
                     return RendererBackend.OPENGL_ES2

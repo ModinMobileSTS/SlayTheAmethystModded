@@ -62,7 +62,7 @@ internal const val GDX_BACKEND_PREFIX = "com/badlogic/gdx/backends/"
 internal val ALLOWED_PARENT_BACKEND_CLASSES: MutableSet<String> = HashSet()
 
 internal val REQUIRED_GDX_CLASSES: Set<String> = HashSet(
-    Arrays.asList(
+    listOf(
         "com/badlogic/gdx/Application.class",
         "com/badlogic/gdx/graphics/g2d/Batch.class",
         "com/badlogic/gdx/utils/Disposable.class"
@@ -70,7 +70,7 @@ internal val REQUIRED_GDX_CLASSES: Set<String> = HashSet(
 )
 
 internal val GDX_BRIDGE_CLASSES: Set<String> = HashSet(
-    Arrays.asList(
+    listOf(
         "com/badlogic/gdx/utils/SharedLibraryLoader.class",
         "com/badlogic/gdx/backends/lwjgl/LwjglNativesLoader.class"
     )
@@ -96,7 +96,7 @@ internal const val STS_PATCH_SHARED_LOADER_CLASS =
 internal const val STS_PATCH_STEAM_UTILS_CLASS =
     "com/codedisaster/steamworks/SteamUtils.class"
 internal const val STS_PATCH_STEAM_UTILS_ENUM_CLASS =
-    "com/codedisaster/steamworks/SteamUtils\$FloatingGamepadTextInputMode.class"
+    $$"com/codedisaster/steamworks/SteamUtils$FloatingGamepadTextInputMode.class"
 internal const val STS_PATCH_STEAM_INPUT_HELPER_CLASS =
     "com/megacrit/cardcrawl/helpers/steamInput/SteamInputHelper.class"
 internal const val STS_PATCH_GL_TEXTURE_CLASS =
@@ -106,9 +106,9 @@ internal const val STS_PATCH_GL_FRAMEBUFFER_CLASS =
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS =
     "com/badlogic/gdx/controllers/desktop/DesktopControllerManager.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_DIRECT_CLASS =
-    "com/badlogic/gdx/controllers/desktop/DesktopControllerManager\$DirectController.class"
+    $$"com/badlogic/gdx/controllers/desktop/DesktopControllerManager$DirectController.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_POLL_CLASS =
-    "com/badlogic/gdx/controllers/desktop/DesktopControllerManager\$PollRunnable.class"
+    $$"com/badlogic/gdx/controllers/desktop/DesktopControllerManager$PollRunnable.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX =
     "com/badlogic/gdx/controllers/desktop/DesktopControllerManager"
 internal const val STS_PATCH_BUILD_PROPERTIES = "build.properties"
@@ -121,7 +121,7 @@ internal const val BASEMOD_MOD_ID = "basemod"
 internal const val BASEMOD_JAR_FILE_NAME = "BaseMod.jar"
 internal const val BASEMOD_GLOW_PATCH_JAR = "basemod-glow-fbo-compat.jar"
 internal const val BASEMOD_GLOW_PATCH_CLASS =
-    "basemod/helpers/CardBorderGlowManager\$RenderGlowPatch.class"
+    $$"basemod/helpers/CardBorderGlowManager$RenderGlowPatch.class"
 internal const val BASEMOD_POSTPROCESS_PATCH_JAR = "basemod-postprocess-fbo-compat.jar"
 internal const val BASEMOD_POSTPROCESS_PATCH_CLASS =
     "basemod/patches/com/megacrit/cardcrawl/core/CardCrawlGame/ApplyScreenPostProcessor.class"
@@ -136,7 +136,7 @@ internal const val DOWNFALL_NPC_FBO_PATCH_CLASS =
 internal const val COMPAT_LOG_PREFIX = "[compat] "
 
 internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
-    Arrays.asList(
+    listOf(
         STS_PATCH_LWJGL_APPLICATION_CLASS,
         "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",
         STS_PATCH_PIXEL_SCALE_CLASS,

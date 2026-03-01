@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import io.stamethyst.model.ModItemUi
 import io.stamethyst.navigation.LocalNavigator
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.rememberAppNavigator
@@ -65,7 +67,7 @@ fun LauncherContent(
                     LauncherMainScreen(
                         viewModel = mainViewModel,
                         modifier = Modifier.fillMaxSize(),
-                        onOpenSettings = { navigator.push(Route.Settings) }
+                        onOpenSettings = { navigator.push(Route.Settings) },
                     )
                 }
 
