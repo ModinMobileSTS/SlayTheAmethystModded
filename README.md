@@ -64,7 +64,10 @@ Options:
 - `boot_bridge_events.log`
 - `enabled_mods.txt`
 - `last_crash_report.txt`
-- `logcat.txt` (last 2000 lines)
+- `last_signal_stack.txt` (when signal handler captured a native crash stack)
+- `hs_err_pid*.log` (if JVM fatal error logs were generated)
+- `logcat.txt` (all buffers, last 12000 lines)
+- `logcat_crash.txt` (crash buffer, last 12000 lines)
 
 ## Runtime Setup (Device)
 1. Open app settings.

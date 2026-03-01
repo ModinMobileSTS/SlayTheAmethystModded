@@ -33,7 +33,7 @@ static void custom_atexit() {
         return;
     }
     exit_tripped = true;
-    nominal_exit(exit_code, false);
+    nominal_exit(exit_code, false, NULL);
 }
 
 static void create_hooks(bytehook_hook_all_t bytehook_hook_all_p) {

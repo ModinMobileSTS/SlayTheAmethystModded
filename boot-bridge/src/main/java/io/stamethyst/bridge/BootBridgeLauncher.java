@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class BootBridgeLauncher {
     private static final String PROP_EVENTS = "amethyst.bridge.events";
     private static final String PROP_DELEGATE = "amethyst.bridge.delegate";
+    private static final String PROP_FORCE_CRASH = "amethyst.debug.force_jvm_crash";
     private static final String DEFAULT_DELEGATE = "com.evacipated.cardcrawl.modthespire.Loader";
     private static final Object EVENT_LOCK = new Object();
     private static final AtomicBoolean READY_SENT = new AtomicBoolean(false);
@@ -36,10 +37,21 @@ public final class BootBridgeLauncher {
         installUncaughtExceptionBridge();
         tryInstallMtsProgressBridge();
         startMainMenuWatcher();
+        triggerForcedCrashIfRequested();
 
         String delegateClass = System.getProperty(PROP_DELEGATE, DEFAULT_DELEGATE);
         emitPhase(29, "Starting " + delegateClass);
         invokeDelegate(delegateClass, args);
+    }
+
+    private static void triggerForcedCrashIfRequested() {
+        boolean forceCrash = Boolean.parseBoolean(System.getProperty(PROP_FORCE_CRASH, "false"));
+        if (!forceCrash) {
+            return;
+        }
+        RuntimeException crash = new RuntimeException("Forced JVM crash for diagnostics verification");
+        emitFail("Forced crash requested via " + PROP_FORCE_CRASH);
+        throw crash;
     }
 
     private static void initEventsFile() {

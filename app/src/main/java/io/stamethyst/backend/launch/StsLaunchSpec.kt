@@ -25,12 +25,12 @@ object StsLaunchSpec {
 
     @JvmStatic
     fun buildArgs(context: Context, javaHome: File): List<String> {
-        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA, RendererBackend.OPENGL_ES2)
+        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA, RendererBackend.OPENGL_ES2, false)
     }
 
     @JvmStatic
     fun buildArgs(context: Context, javaHome: File, launchMode: String): List<String> {
-        return buildArgs(context, javaHome, launchMode, RendererBackend.OPENGL_ES2)
+        return buildArgs(context, javaHome, launchMode, RendererBackend.OPENGL_ES2, false)
     }
 
     @JvmStatic
@@ -38,7 +38,8 @@ object StsLaunchSpec {
         context: Context,
         javaHome: File,
         launchMode: String,
-        renderer: RendererBackend?
+        renderer: RendererBackend?,
+        forceJvmCrash: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = File(stsRoot, "home")
@@ -145,6 +146,7 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsFile(context).absolutePath}")
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader")
         args.add("-Damethyst.bridge.mode=$launchMode")
+        args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
 
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 

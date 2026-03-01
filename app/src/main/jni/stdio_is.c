@@ -100,7 +100,7 @@ Java_net_kdt_pojavlaunch_Logger_begin(JNIEnv *env, __attribute((unused)) jclass 
     pthread_detach(logger);
 }
 
-_Noreturn void nominal_exit(int code, bool is_signal) {
+_Noreturn void nominal_exit(int code, bool is_signal, const char* detail) {
     JNIEnv *env;
     jint errorCode = (*exitTrap_jvm)->GetEnv(exitTrap_jvm, (void**)&env, JNI_VERSION_1_6);
     if(errorCode == JNI_EDETACHED) {
@@ -115,7 +115,22 @@ _Noreturn void nominal_exit(int code, bool is_signal) {
     if(code != 0) {
         // Exit code 0 is pretty established as "eh it's fine"
         // so only open the GUI if the code is != 0
-        (*env)->CallStaticVoidMethod(env, exitTrap_exitClass, exitTrap_staticMethod, exitTrap_ctx, code, is_signal);
+        jstring detailString = NULL;
+        if(detail != NULL && detail[0] != '\0') {
+            detailString = (*env)->NewStringUTF(env, detail);
+        }
+        (*env)->CallStaticVoidMethod(
+            env,
+            exitTrap_exitClass,
+            exitTrap_staticMethod,
+            exitTrap_ctx,
+            code,
+            is_signal,
+            detailString
+        );
+        if(detailString != NULL) {
+            (*env)->DeleteLocalRef(env, detailString);
+        }
     }
     // Delete the reference, not gonna need 'em later anyway
     (*env)->DeleteGlobalRef(env, exitTrap_ctx);
@@ -166,5 +181,10 @@ Java_net_kdt_pojavlaunch_utils_JREUtils_setupExitMethod(JNIEnv *env, jclass claz
     exitTrap_ctx = (*env)->NewGlobalRef(env,context);
     (*env)->GetJavaVM(env,&exitTrap_jvm);
     exitTrap_exitClass = (*env)->NewGlobalRef(env,(*env)->FindClass(env,"net/kdt/pojavlaunch/ExitActivity"));
-    exitTrap_staticMethod = (*env)->GetStaticMethodID(env,exitTrap_exitClass,"showExitMessage","(Landroid/content/Context;IZ)V");
+    exitTrap_staticMethod = (*env)->GetStaticMethodID(
+        env,
+        exitTrap_exitClass,
+        "showExitMessage",
+        "(Landroid/content/Context;IZLjava/lang/String;)V"
+    );
 }

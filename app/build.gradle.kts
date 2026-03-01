@@ -6,6 +6,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.Properties
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -137,7 +138,14 @@ val stsLogFiles = listOf(
     "jvm_output.log",
     "boot_bridge_events.log",
     "enabled_mods.txt",
-    "last_crash_report.txt"
+    "last_crash_report.txt",
+    "last_exit_info.txt",
+    "last_exit_trace.txt",
+    "last_signal_stack.txt",
+    "logcat_snapshot.txt",
+    "logcat_crash_snapshot.txt",
+    "logcat_events_snapshot.txt",
+    "crash_highlights.txt"
 )
 
 data class CommandExecResult(
@@ -342,9 +350,12 @@ tasks.register("stsStart") {
                 "Unsupported launchMode: $launchMode. Supported: ${supportedLaunchModes.joinToString(", ")}"
             )
         }
+        val forceJvmCrash = (findProperty("forceJvmCrash")?.toString() ?: "false").trim()
+            .lowercase(Locale.US) == "true"
 
-        val result = project.runCommandWithTimeout(
-            project.adbCommand(
+        val startArgs = ArrayList<String>()
+        startArgs.addAll(
+            listOf(
                 "shell",
                 "am",
                 "start",
@@ -353,7 +364,14 @@ tasks.register("stsStart") {
                 "--es",
                 "io.stamethyst.debug_launch_mode",
                 launchMode
-            ),
+            )
+        )
+        if (forceJvmCrash) {
+            startArgs.addAll(listOf("--ez", "io.stamethyst.debug_force_jvm_crash", "true"))
+        }
+
+        val result = project.runCommandWithTimeout(
+            project.adbCommand(*startArgs.toTypedArray()),
             timeoutSeconds = 30
         )
         if (result.timedOut) {
@@ -412,8 +430,8 @@ tasks.register("stsPullLogs") {
 
         val pulled = ArrayList<String>()
         val missing = ArrayList<String>()
-        for (name in stsLogFiles) {
-            logger.lifecycle("Pulling STS log: $name")
+
+        fun pullRunAsFile(remotePath: String, localName: String): Boolean {
             val result = project.runCommandWithTimeout(
                 project.adbCommand(
                     "exec-out",
@@ -421,33 +439,111 @@ tasks.register("stsPullLogs") {
                     stsPackageName,
                     "sh",
                     "-c",
-                    "cat files/sts/$name 2>/dev/null"
+                    "cat $remotePath 2>/dev/null"
                 ),
                 timeoutSeconds = 20
             )
             val bytes = result.stdout
             if (!result.timedOut && result.exitCode == 0 && bytes.isNotEmpty()) {
-                File(outputDir, name).writeBytes(bytes)
-                pulled.add(name)
-            } else {
-                if (result.timedOut) {
-                    logger.lifecycle("Timed out pulling $name after 20s")
-                }
+                File(outputDir, localName).writeBytes(bytes)
+                pulled.add(localName)
+                return true
+            }
+            if (result.timedOut) {
+                logger.lifecycle("Timed out pulling $localName after 20s")
+            }
+            return false
+        }
+
+        fun listRunAsFiles(globPattern: String): List<String>? {
+            val listResult = project.runCommandWithTimeout(
+                project.adbCommand(
+                    "exec-out",
+                    "run-as",
+                    stsPackageName,
+                    "sh",
+                    "-c",
+                    "for f in $globPattern; do [ -f \"${'$'}f\" ] && echo \"${'$'}f\"; done"
+                ),
+                timeoutSeconds = 20
+            )
+            if (listResult.timedOut) {
+                logger.lifecycle("Timed out listing files for pattern '$globPattern' after 20s")
+                return null
+            }
+            if (listResult.exitCode != 0) {
+                logger.lifecycle(
+                    "Failed listing files for pattern '$globPattern' (exit=${listResult.exitCode})"
+                )
+                return null
+            }
+            return listResult.stdout.asUtf8Text()
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .toList()
+        }
+
+        for (name in stsLogFiles) {
+            logger.lifecycle("Pulling STS log: $name")
+            if (!pullRunAsFile("files/sts/$name", name)) {
                 missing.add(name)
             }
         }
 
-        logger.lifecycle("Pulling Android logcat")
-        val logcatResult = project.runCommandWithTimeout(
-            project.adbCommand("logcat", "-d", "-t", "2000"),
-            timeoutSeconds = 20
-        )
-        if (!logcatResult.timedOut && logcatResult.stdout.isNotEmpty()) {
-            File(outputDir, "logcat.txt").writeBytes(logcatResult.stdout)
-            pulled.add("logcat.txt")
-        } else if (logcatResult.timedOut) {
-            logger.lifecycle("Timed out pulling logcat after 20s")
+        logger.lifecycle("Scanning STS crash dumps (hs_err_pid*.log)")
+        val hsErrPaths = listRunAsFiles("files/sts/hs_err_pid*.log")
+        if (hsErrPaths != null) {
+            if (hsErrPaths.isEmpty()) {
+                logger.lifecycle("No hs_err_pid*.log found on device.")
+            } else {
+                for (remotePath in hsErrPaths) {
+                    val name = remotePath.substringAfterLast('/')
+                    logger.lifecycle("Pulling STS crash dump: $name")
+                    if (!pullRunAsFile(remotePath, name)) {
+                        logger.lifecycle("Failed or empty crash dump: $name")
+                    }
+                }
+            }
         }
+
+        logger.lifecycle("Scanning STS pid snapshots (logcat_pid_*_snapshot.txt)")
+        val pidSnapshotPaths = listRunAsFiles("files/sts/logcat_pid_*_snapshot.txt")
+        if (pidSnapshotPaths != null) {
+            if (pidSnapshotPaths.isEmpty()) {
+                logger.lifecycle("No logcat_pid_*_snapshot.txt found on device.")
+            } else {
+                for (remotePath in pidSnapshotPaths) {
+                    val name = remotePath.substringAfterLast('/')
+                    logger.lifecycle("Pulling STS pid snapshot: $name")
+                    if (!pullRunAsFile(remotePath, name)) {
+                        logger.lifecycle("Failed or empty pid snapshot: $name")
+                    }
+                }
+            }
+        }
+
+        fun pullLogcatToFile(fileName: String, vararg args: String) {
+            logger.lifecycle("Pulling Android logcat -> $fileName")
+            val command = ArrayList<String>()
+            command.add("logcat")
+            command.addAll(args)
+            val result = project.runCommandWithTimeout(
+                project.adbCommand(*command.toTypedArray()),
+                timeoutSeconds = 20
+            )
+            if (!result.timedOut && result.stdout.isNotEmpty()) {
+                File(outputDir, fileName).writeBytes(result.stdout)
+                pulled.add(fileName)
+            } else if (result.timedOut) {
+                logger.lifecycle("Timed out pulling $fileName after 20s")
+            } else {
+                logger.lifecycle("Failed or empty logcat capture: $fileName")
+            }
+        }
+        pullLogcatToFile("logcat.txt", "-d", "-b", "all", "-v", "threadtime", "-t", "12000")
+        pullLogcatToFile("logcat_crash.txt", "-d", "-b", "crash", "-v", "threadtime", "-t", "12000")
+        pullLogcatToFile("logcat_events.txt", "-d", "-b", "events", "-v", "threadtime", "-t", "12000")
 
         logger.lifecycle("SlayTheAmethyst logs exported to: ${outputDir.absolutePath}")
         logger.lifecycle("Pulled: ${pulled.joinToString(", ").ifBlank { "(none)" }}")

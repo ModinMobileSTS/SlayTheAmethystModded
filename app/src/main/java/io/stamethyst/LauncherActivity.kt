@@ -8,7 +8,9 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.MaterialTheme
+import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.settings.SettingsFileService
@@ -19,6 +21,7 @@ import java.util.Locale
 class LauncherActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode"
+        const val EXTRA_DEBUG_FORCE_JVM_CRASH = "io.stamethyst.debug_force_jvm_crash"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
         const val EXTRA_CRASH_CODE = "io.stamethyst.crash_code"
         const val EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.crash_is_signal"
@@ -49,9 +52,16 @@ class LauncherActivity : AppCompatActivity() {
 
         LauncherIconManager.syncSelection(this)
 
+        val initialRoute = if (RuntimePaths.importedStsJar(this).isFile) {
+            Route.Main
+        } else {
+            Route.QuickStart
+        }
+
         setContent {
             MaterialTheme {
                 LauncherContent(
+                    initialRoute = initialRoute,
                     mainViewModel = mainViewModel,
                     settingsViewModel = settingsViewModel,
                 )

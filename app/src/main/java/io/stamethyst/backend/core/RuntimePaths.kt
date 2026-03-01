@@ -59,6 +59,18 @@ object RuntimePaths {
     fun lastCrashReport(context: Context): File = File(stsRoot(context), "last_crash_report.txt")
 
     @JvmStatic
+    fun lastSignalStack(context: Context): File = File(stsRoot(context), "last_signal_stack.txt")
+
+    @JvmStatic
+    fun lastExitInfo(context: Context): File = File(stsRoot(context), "last_exit_info.txt")
+
+    @JvmStatic
+    fun lastExitTrace(context: Context): File = File(stsRoot(context), "last_exit_trace.txt")
+
+    @JvmStatic
+    fun lastExitMarker(context: Context): File = File(stsRoot(context), ".last_exit_marker")
+
+    @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
 
     @JvmStatic

@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
+import io.stamethyst.backend.crash.CrashDiagnostics
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -20,7 +21,6 @@ import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.ArrayList
-import java.util.Arrays
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
@@ -607,28 +607,13 @@ internal object SettingsFileService {
         return "sts/$archiveRoot/$normalizedRelativePath"
     }
 
-    private fun collectDebugBundleFiles(host: Activity, stsRoot: File): List<File> {
-        val debugFiles = ArrayList<File>()
-        addDebugFileIfExists(debugFiles, RuntimePaths.latestLog(host))
-        addDebugFileIfExists(debugFiles, File(stsRoot, "jvm_output.log"))
-        addDebugFileIfExists(debugFiles, RuntimePaths.lastCrashReport(host))
-        addDebugFileIfExists(debugFiles, RuntimePaths.enabledModsConfig(host))
-
-        val hsErrFiles = stsRoot.listFiles { _, name ->
-            name != null && name.startsWith("hs_err_pid") && name.endsWith(".log")
-        }
-        if (hsErrFiles != null && hsErrFiles.isNotEmpty()) {
-            Arrays.sort(hsErrFiles) { a, b -> b.lastModified().compareTo(a.lastModified()) }
-            for (hsErrFile in hsErrFiles) {
-                addDebugFileIfExists(debugFiles, hsErrFile)
-            }
-        }
-        return debugFiles
+    private fun collectDebugBundleFiles(host: Activity): List<File> {
+        return CrashDiagnostics.collectDebugBundleFiles(host)
     }
 
     @Throws(IOException::class)
     private fun writeDebugBundleToZip(host: Activity, zipOutput: ZipOutputStream, stsRoot: File): Int {
-        val debugFiles = collectDebugBundleFiles(host, stsRoot)
+        val debugFiles = collectDebugBundleFiles(host)
         var exportedCount = 0
         for (file in debugFiles) {
             writeFileToZip(zipOutput, stsRoot, file)
@@ -639,7 +624,7 @@ internal object SettingsFileService {
             zipOutput.putNextEntry(entry)
             val message = "No debug log files found yet.\n" +
                 "Expected paths under: ${stsRoot.absolutePath}\n" +
-                "Files: latestlog.txt, jvm_output.log, hs_err_pid*.log, last_crash_report.txt\n"
+                "Files: ${CrashDiagnostics.expectedDebugFileHint()}\n"
             zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
             zipOutput.closeEntry()
         }
@@ -684,9 +669,4 @@ internal object SettingsFileService {
         return "sts/${relativePath.replace('\\', '/')}"
     }
 
-    private fun addDebugFileIfExists(files: MutableList<File>, file: File?) {
-        if (file != null && file.isFile && file.length() > 0) {
-            files.add(file)
-        }
-    }
 }

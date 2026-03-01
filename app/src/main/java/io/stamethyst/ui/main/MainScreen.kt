@@ -1,5 +1,6 @@
 package io.stamethyst.ui.main
 
+import android.app.Activity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,19 +50,34 @@ fun LauncherMainScreen(
     onOpenSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val hostActivity = context as? Activity
     val uiState = viewModel.uiState
 
-    LaunchedEffect(Unit) {
-        viewModel.refresh(context)
+    LaunchedEffect(hostActivity) {
+        if (hostActivity != null) {
+            viewModel.refresh(hostActivity)
+        }
     }
 
     LauncherMainScreenContent(
         modifier = modifier,
         uiState = uiState,
         onOpenSettings = onOpenSettings,
-        onDeleteMod = { mod -> viewModel.onDeleteMod(context, mod) },
-        onToggleMod = { mod, checked -> viewModel.onToggleMod(context, mod, checked) },
-        onLaunch = { viewModel.onLaunch(context) },
+        onDeleteMod = { mod ->
+            if (hostActivity != null) {
+                viewModel.onDeleteMod(hostActivity, mod)
+            }
+        },
+        onToggleMod = { mod, checked ->
+            if (hostActivity != null) {
+                viewModel.onToggleMod(hostActivity, mod, checked)
+            }
+        },
+        onLaunch = {
+            if (hostActivity != null) {
+                viewModel.onLaunch(hostActivity)
+            }
+        },
     )
 }
 

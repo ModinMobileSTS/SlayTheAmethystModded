@@ -20,15 +20,17 @@ import io.stamethyst.navigation.rememberAppNavigator
 import io.stamethyst.ui.compatibility.LauncherCompatibilityScreen
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
+import io.stamethyst.ui.quickstart.QuickStartScreen
 import io.stamethyst.ui.settings.LauncherSettingsScreen
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 
 @Composable
 fun LauncherContent(
+    initialRoute: Route = Route.Main,
     mainViewModel: MainScreenViewModel,
     settingsViewModel: SettingsScreenViewModel,
 ) {
-    val navigator = rememberAppNavigator(Route.Main)
+    val navigator = rememberAppNavigator(initialRoute)
 
     CompositionLocalProvider(
         LocalNavigator provides navigator,
@@ -63,6 +65,14 @@ fun LauncherContent(
                 )
             },
             entryProvider = entryProvider {
+                entry<Route.QuickStart> {
+                    QuickStartScreen(
+                        viewModel = settingsViewModel,
+                        modifier = Modifier.fillMaxSize(),
+                        onImportSuccess = { navigator.resetRoot(Route.Main) }
+                    )
+                }
+
                 entry<Route.Main> {
                     LauncherMainScreen(
                         viewModel = mainViewModel,

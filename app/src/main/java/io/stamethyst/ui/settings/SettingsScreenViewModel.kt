@@ -140,7 +140,7 @@ class SettingsScreenViewModel : ViewModel() {
                     "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
                     "\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)" +
                     "\nTarget FPS: $targetFps" +
-                    "\nJVM heap max: $jvmHeapMaxMb MB" +
+                    "\nJVM heap max: ${jvmHeapMaxMb} MB" +
                     "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
                     "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
                     "\n" + host.getString(
@@ -385,7 +385,11 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onJarPicked(host: Activity, uri: Uri?) {
+    fun onJarPicked(
+        host: Activity,
+        uri: Uri?,
+        onCompleted: ((Boolean) -> Unit)? = null
+    ) {
         if (uri == null) {
             return
         }
@@ -397,12 +401,14 @@ class SettingsScreenViewModel : ViewModel() {
                 host.runOnUiThread {
                     Toast.makeText(host, "Imported desktop-1.0.jar", Toast.LENGTH_SHORT).show()
                     refreshStatus(host)
+                    onCompleted?.invoke(true)
 //                    todo: host.notifyMainDataChanged()
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     Toast.makeText(host, "Import failed: ${error.message}", Toast.LENGTH_LONG).show()
                     refreshStatus(host)
+                    onCompleted?.invoke(false)
                 }
             }
         }

@@ -1,7 +1,7 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
-import android.content.Context
+import android.app.ApplicationExitInfo
 import android.content.Intent
 import android.util.Log
 import android.widget.Toast
@@ -12,9 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.launch.BackExitNotice
-import io.stamethyst.backend.launch.CrashReportStore
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
+import io.stamethyst.backend.crash.CrashDiagnostics
+import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.render.RendererConfig
 import io.stamethyst.backend.core.RuntimePaths
@@ -22,12 +23,6 @@ import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.preferences.LauncherPreferences
-import android.os.Handler
-import android.os.Looper
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.ArrayList
@@ -57,7 +52,6 @@ class MainScreenViewModel : ViewModel() {
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
     private val optionalModsSnapshot = ArrayList<ModItemUi>()
     private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
     private var pendingSelectionInitialized = false
@@ -65,7 +59,7 @@ class MainScreenViewModel : ViewModel() {
     var uiState by mutableStateOf(UiState())
         private set
 
-    fun refresh(host: Context) {
+    fun refresh(host: Activity) {
         val hasJar = RuntimePaths.importedStsJar(host).exists()
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
         val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
@@ -89,24 +83,30 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    fun onDeleteMod(host: Context, mod: ModItemUi) {
+    fun onDeleteMod(host: Activity, mod: ModItemUi) {
         onDeleteModRequested(host, mod)
     }
 
-    fun onToggleMod(host: Context, mod: ModItemUi, enabled: Boolean) {
+    fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
         onModChecked(host, mod, enabled)
     }
 
-    fun onLaunch(host: Context) {
+    fun onLaunch(host: Activity) {
         if (uiState.busy) {
             return
         }
-        CrashReportStore.clear(host)
-        prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD)
+        CrashDiagnostics.clear(host)
+        prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD, forceJvmCrash = false)
     }
 
-    fun handleIncomingIntent(host: Context, intent: Intent?, onShareCrashReport: () -> Unit) {
+    fun handleIncomingIntent(host: Activity, intent: Intent?, onShareCrashReport: () -> Unit) {
+        val exitSummary = CrashDiagnostics.captureLatestProcessExitInfo(host, "launcher_intent_entry")
+        val hasCrashExtra = intent?.getBooleanExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, false) == true
+        if (exitSummary != null || hasCrashExtra) {
+            CrashDiagnostics.scheduleSnapshotCapture(host, exitSummary)
+        }
         if (intent == null) {
+            maybeShowProcessExitDialog(host, exitSummary, onShareCrashReport)
             return
         }
 
@@ -121,7 +121,12 @@ class MainScreenViewModel : ViewModel() {
         } else {
             maybeShowCrashDialog(host, intent, onShareCrashReport)
         }
-        if (!showedCrashDialog) {
+        val showedProcessExitDialog = if (showedCrashDialog) {
+            false
+        } else {
+            maybeShowProcessExitDialog(host, exitSummary, onShareCrashReport)
+        }
+        if (!showedCrashDialog && !showedProcessExitDialog) {
             maybeLaunchFromDebugExtra(host, intent)
         }
     }
@@ -153,7 +158,7 @@ class MainScreenViewModel : ViewModel() {
             .toString()
     }
 
-    private fun onModChecked(host: Context, mod: ModItemUi, enabled: Boolean) {
+    private fun onModChecked(host: Activity, mod: ModItemUi, enabled: Boolean) {
         if (uiState.busy || mod.required) {
             return
         }
@@ -204,7 +209,7 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun onDeleteModRequested(host: Context, mod: ModItemUi) {
+    private fun onDeleteModRequested(host: Activity, mod: ModItemUi) {
         if (uiState.busy || mod.required || !mod.installed) {
             return
         }
@@ -228,11 +233,20 @@ class MainScreenViewModel : ViewModel() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton("删除") { _, _ ->
                 setBusy(true, "正在删除模组...")
-                viewModelScope.launch(Dispatchers.IO) {
-                    val deleted = try {
-                        ModManager.deleteOptionalMod(host, mod.modId)
+                executor.execute {
+                    try {
+                        val deleted = ModManager.deleteOptionalMod(host, mod.modId)
+                        host.runOnUiThread {
+                            clearPendingSelectionForMod(mod)
+                            if (deleted) {
+                                Toast.makeText(host, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(host, "模组不存在或已被删除：$displayName", Toast.LENGTH_SHORT).show()
+                            }
+                            refresh(host)
+                        }
                     } catch (error: Throwable) {
-                        mainHandler.post {
+                        host.runOnUiThread {
                             Toast.makeText(
                                 host,
                                 "删除模组失败：${error.message}",
@@ -240,17 +254,6 @@ class MainScreenViewModel : ViewModel() {
                             ).show()
                             refresh(host)
                         }
-                        return@launch
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        clearPendingSelectionForMod(mod)
-                        if (deleted) {
-                            Toast.makeText(host, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(host, "模组不存在或已被删除：$displayName", Toast.LENGTH_SHORT).show()
-                        }
-                        refresh(host)
                     }
                 }
             }
@@ -258,7 +261,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun enableModWithDependencies(
-        host: Context,
+        host: Activity,
         rootMod: ModItemUi,
         optionalMods: List<ModItemUi>
     ): DependencyEnableResult {
@@ -386,7 +389,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun showMissingDependencyDialog(
-        host: Context,
+        host: Activity,
         rootMod: ModItemUi,
         missingDependencies: List<String>
     ) {
@@ -416,7 +419,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun maybeShowCrashDialog(
-        host: Context,
+        host: Activity,
         intent: Intent,
         onShareCrashReport: () -> Unit
     ): Boolean {
@@ -436,9 +439,54 @@ class MainScreenViewModel : ViewModel() {
             host.getString(messageId, code)
         }
 
-        CrashReportStore.recordLaunchResult(host, "launcher_intent_crash", code, isSignal, detail)
+        CrashDiagnostics.recordLaunchResult(host, "launcher_intent_crash", code, isSignal, detail)
         clearCrashExtras(intent)
 
+        AlertDialog.Builder(host)
+            .setTitle(R.string.sts_crash_dialog_title)
+            .setMessage(message)
+            .setNeutralButton(R.string.sts_share_crash_report) { _, _ -> onShareCrashReport() }
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+        return true
+    }
+
+    private fun maybeShowProcessExitDialog(
+        host: Activity,
+        summary: ProcessExitSummary?,
+        onShareCrashReport: () -> Unit
+    ): Boolean {
+        if (summary == null) {
+            return false
+        }
+        val isSignal = summary.reason == ApplicationExitInfo.REASON_SIGNALED
+        val detail = buildString {
+            append("reason=").append(summary.reasonName)
+            append(", status=").append(summary.status)
+            append(", pid=").append(summary.pid)
+            append(", timestamp=").append(summary.timestamp)
+            if (summary.description.isNotBlank()) {
+                append(", description=").append(summary.description)
+            }
+        }
+        CrashDiagnostics.recordLaunchResult(
+            host,
+            "launcher_exit_info_crash",
+            summary.status,
+            isSignal,
+            detail
+        )
+        val message = buildString {
+            append("检测到上次运行异常退出。\n")
+            if (isSignal) {
+                append(host.getString(R.string.sts_signal_exit, summary.status))
+            } else {
+                append("退出原因：").append(summary.reasonName).append(" (status=").append(summary.status).append(')')
+            }
+            if (summary.description.isNotBlank()) {
+                append("\n").append(summary.description)
+            }
+        }
         AlertDialog.Builder(host)
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
@@ -468,7 +516,7 @@ class MainScreenViewModel : ViewModel() {
             lower.contains("gc overhead limit exceeded")
     }
 
-    private fun showExpectedBackExitDialog(host: Context) {
+    private fun showExpectedBackExitDialog(host: Activity) {
         AlertDialog.Builder(host)
             .setTitle("已返回启动器")
             .setMessage(
@@ -479,8 +527,9 @@ class MainScreenViewModel : ViewModel() {
             .show()
     }
 
-    private fun maybeLaunchFromDebugExtra(host: Context, intent: Intent) {
+    private fun maybeLaunchFromDebugExtra(host: Activity, intent: Intent) {
         val debugLaunchMode = intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_LAUNCH_MODE)
+        val forceJvmCrash = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_FORCE_JVM_CRASH, false)
         Log.i(TAG, "Debug launch extra: $debugLaunchMode")
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA
             && debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
@@ -488,12 +537,12 @@ class MainScreenViewModel : ViewModel() {
             return
         }
 
-        Log.i(TAG, "Auto launching mode from debug extra: $debugLaunchMode")
-        CrashReportStore.clear(host)
-        prepareAndLaunch(host, debugLaunchMode)
+        Log.i(TAG, "Auto launching mode from debug extra: $debugLaunchMode, forceJvmCrash=$forceJvmCrash")
+        CrashDiagnostics.clear(host)
+        prepareAndLaunch(host, debugLaunchMode, forceJvmCrash = forceJvmCrash)
     }
 
-    private fun prepareAndLaunch(host: Context, launchMode: String) {
+    private fun prepareAndLaunch(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
         ensurePendingSelectionInitialized(host)
         try {
             ModManager.replaceEnabledOptionalModIds(host, pendingEnabledOptionalModIds)
@@ -512,7 +561,7 @@ class MainScreenViewModel : ViewModel() {
 
         Log.i(
             TAG,
-            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay"
+            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay, forceJvmCrash=$forceJvmCrash"
         )
         StsGameActivity.launch(
             host,
@@ -520,11 +569,12 @@ class MainScreenViewModel : ViewModel() {
             renderer,
             targetFps,
             backImmediateExit,
-            manualDismissBootOverlay
+            manualDismissBootOverlay,
+            forceJvmCrash
         )
     }
 
-    private fun loadModItems(host: Context): List<ModItemUi> {
+    private fun loadModItems(host: Activity): List<ModItemUi> {
         return ModManager.listInstalledMods(host).map { mod ->
             ModItemUi(
                 modId = mod.modId,
@@ -553,7 +603,7 @@ class MainScreenViewModel : ViewModel() {
         return normalizedManifestId.isNotEmpty() && enabledIds.contains(normalizedManifestId)
     }
 
-    private fun isRequiredDependencyAvailable(host: Context, normalizedDependency: String): Boolean {
+    private fun isRequiredDependencyAvailable(host: Activity, normalizedDependency: String): Boolean {
         return when (normalizedDependency) {
             ModManager.MOD_ID_BASEMOD -> isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
             ModManager.MOD_ID_STSLIB -> isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
@@ -561,7 +611,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun isRequiredModAvailable(host: Context, modId: String): Boolean {
+    private fun isRequiredModAvailable(host: Activity, modId: String): Boolean {
         return when (modId) {
             ModManager.MOD_ID_BASEMOD -> RuntimePaths.importedBaseModJar(host).exists() || hasBundledAsset(host, "components/mods/BaseMod.jar")
             ModManager.MOD_ID_STSLIB -> RuntimePaths.importedStsLibJar(host).exists() || hasBundledAsset(host, "components/mods/StSLib.jar")
@@ -569,7 +619,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun hasBundledAsset(host: Context, assetPath: String): Boolean {
+    private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {
         return try {
             host.assets.open(assetPath).use {
                 true
@@ -585,11 +635,11 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun readBackBehaviorSelection(host: Context): Boolean {
+    private fun readBackBehaviorSelection(host: Activity): Boolean {
         return LauncherPreferences.readBackImmediateExit(host)
     }
 
-    private fun readManualDismissBootOverlaySelection(host: Context): Boolean {
+    private fun readManualDismissBootOverlaySelection(host: Activity): Boolean {
         return LauncherPreferences.readManualDismissBootOverlay(host)
     }
 
@@ -603,7 +653,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun ensurePendingSelectionInitialized(host: Context) {
+    private fun ensurePendingSelectionInitialized(host: Activity) {
         if (pendingSelectionInitialized) {
             return
         }

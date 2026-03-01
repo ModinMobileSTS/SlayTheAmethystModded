@@ -37,7 +37,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.oracle.dalvik.VMLauncher
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.mods.CompatibilitySettings
-import io.stamethyst.backend.launch.CrashReportStore
+import io.stamethyst.backend.crash.CrashDiagnostics
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.launch.LaunchPreparationService
 import io.stamethyst.backend.mods.ModJarSupport
@@ -76,6 +76,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
+        const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
         private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
         private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
@@ -98,7 +99,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             rendererBackend: RendererBackend,
             targetFps: Int,
             backImmediateExit: Boolean,
-            manualDismissBootOverlay: Boolean
+            manualDismissBootOverlay: Boolean,
+            forceJvmCrash: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
@@ -110,6 +112,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             )
             intent.putExtra(EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
+            intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
             context.startActivity(intent)
         }
     }
@@ -149,6 +152,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var waitForMainMenu = false
     private var backImmediateExit = true
     private var manualDismissBootOverlay = false
+    private var forceJvmCrash = false
     private var showFloatingMouseWindow = DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     private var autoSwitchLeftAfterRightClick = DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     private var jvmLogListenerRegistered = false
@@ -220,6 +224,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         )
         backImmediateExit = intent.getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true)
         manualDismissBootOverlay = intent.getBooleanExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, false)
+        forceJvmCrash = intent.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false)
         showFloatingMouseWindow = readShowFloatingMouseWindowSelection()
         autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection()
         targetFps = sanitizeTargetFps(intent.getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS))
@@ -480,7 +485,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         vmStarted = true
         runtimeLifecycleReady = false
         updateBootOverlayProgress(8, "Starting JVM...")
-        CrashReportStore.clear(this)
+        CrashDiagnostics.clear(this)
 
         val launchThread = Thread({
             try {
@@ -573,7 +578,15 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
                 val launchArgs = ArrayList<String>()
                 launchArgs.add("java")
-                launchArgs.addAll(StsLaunchSpec.buildArgs(this, javaHome, launchMode, effectiveRenderer))
+                launchArgs.addAll(
+                    StsLaunchSpec.buildArgs(
+                        this,
+                        javaHome,
+                        launchMode,
+                        effectiveRenderer,
+                        forceJvmCrash
+                    )
+                )
                 if (backExitRequested) {
                     runOnUiThread { finish() }
                     return@Thread
@@ -622,7 +635,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             } catch (t: Throwable) {
                 runtimeLifecycleReady = false
                 Log.e(TAG, "Launch failed", t)
-                CrashReportStore.recordThrowable(this, "game_launch_thread", t)
+                CrashDiagnostics.recordThrowable(this, "game_launch_thread", t)
                 try {
                     Logger.appendToLog("Launch failed: $t")
                 } catch (_: Throwable) {
@@ -1113,7 +1126,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         runtimeLifecycleReady = false
-        CrashReportStore.recordLaunchResult(this, "game_report_crash_and_return", code, isSignal, detail)
+        CrashDiagnostics.recordLaunchResult(this, "game_report_crash_and_return", code, isSignal, detail)
         val launcherIntent = Intent(this, LauncherActivity::class.java)
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true)
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code)

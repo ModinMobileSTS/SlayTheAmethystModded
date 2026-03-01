@@ -28,7 +28,14 @@
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include <stdarg.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdint.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <ucontext.h>
 #include <unistd.h>
 // Boardwalk: missing include
 #include <string.h>
@@ -65,58 +72,229 @@ typedef jint JLI_Launch_func(int argc, char ** argv, /* main argc, argc */
         jint ergo                               /* ergonomics class policy */
 );
 
-struct {
-    sigset_t tracked_sigset;
-    int pipe[2];
-} abort_waiter_data;
+typedef struct {
+    int signal_id;
+    int signal_code;
+    uintptr_t fault_addr;
+    int sender_pid;
+    int sender_uid;
+} abort_signal_packet_t;
 
-_Noreturn extern void nominal_exit(int code, bool is_signal);
+typedef struct {
+    uintptr_t pc;
+    uintptr_t sp;
+    uintptr_t lr;
+    pid_t tid;
+} crash_context_snapshot_t;
 
-_Noreturn static void* abort_waiter_thread(void* extraArg) {
-    // Don't allow this thread to receive signals this thread is tracking.
-    // We should only receive them externally.
-    pthread_sigmask(SIG_BLOCK, &abort_waiter_data.tracked_sigset, NULL);
-    int signal;
-    // Block for reading the signal ID until it arrives
-    read(abort_waiter_data.pipe[0], &signal, sizeof(int));
-    // Die
-    nominal_exit(signal, true);
+static int signal_stack_fd = -1;
+
+static void write_signal_line(const char* line) {
+    if(signal_stack_fd == -1 || line == NULL) {
+        return;
+    }
+    size_t len = strlen(line);
+    if(len > 0) {
+        write(signal_stack_fd, line, len);
+    }
 }
 
-_Noreturn static void abort_waiter_handler(int signal) {
-    // Write the final signal into the pipe and block forever.
-    write(abort_waiter_data.pipe[1], &signal, sizeof(int));
-    while(1) {}
+static void append_signal_linef(const char* fmt, ...) {
+    if(signal_stack_fd == -1 || fmt == NULL) {
+        return;
+    }
+    char buf[768];
+    va_list args;
+    va_start(args, fmt);
+    int written = vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    if(written <= 0) {
+        return;
+    }
+    size_t safe_len = (size_t)written;
+    if(safe_len >= sizeof(buf)) {
+        safe_len = sizeof(buf) - 1;
+    }
+    write(signal_stack_fd, buf, safe_len);
+}
+
+static crash_context_snapshot_t capture_crash_context_snapshot(void* ucontext) {
+    crash_context_snapshot_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    snapshot.tid = (pid_t)syscall(__NR_gettid);
+    if(ucontext == NULL) {
+        return snapshot;
+    }
+    ucontext_t* context = (ucontext_t*)ucontext;
+#if defined(__aarch64__)
+    snapshot.pc = (uintptr_t)context->uc_mcontext.pc;
+    snapshot.sp = (uintptr_t)context->uc_mcontext.sp;
+    snapshot.lr = (uintptr_t)context->uc_mcontext.regs[30];
+#elif defined(__arm__)
+    snapshot.pc = (uintptr_t)context->uc_mcontext.arm_pc;
+    snapshot.sp = (uintptr_t)context->uc_mcontext.arm_sp;
+    snapshot.lr = (uintptr_t)context->uc_mcontext.arm_lr;
+#elif defined(__x86_64__)
+    snapshot.pc = (uintptr_t)context->uc_mcontext.gregs[REG_RIP];
+    snapshot.sp = (uintptr_t)context->uc_mcontext.gregs[REG_RSP];
+    snapshot.lr = 0;
+#elif defined(__i386__)
+    snapshot.pc = (uintptr_t)context->uc_mcontext.gregs[REG_EIP];
+    snapshot.sp = (uintptr_t)context->uc_mcontext.gregs[REG_ESP];
+    snapshot.lr = 0;
+#endif
+    return snapshot;
+}
+
+static void append_symbol_detail(const char* label, uintptr_t address) {
+    if(signal_stack_fd == -1 || label == NULL || address == 0) {
+        return;
+    }
+    Dl_info info;
+    memset(&info, 0, sizeof(info));
+    if(dladdr((void*)address, &info) != 0 && info.dli_fname != NULL) {
+        uintptr_t base = (uintptr_t)info.dli_fbase;
+        uintptr_t module_offset = address >= base ? (address - base) : 0;
+        uintptr_t symbol_addr = (uintptr_t)info.dli_saddr;
+        uintptr_t symbol_offset = 0;
+        if(info.dli_sname != NULL && symbol_addr != 0 && address >= symbol_addr) {
+            symbol_offset = address - symbol_addr;
+        }
+        append_signal_linef(
+            "%s=0x%lx module=%s module_offset=0x%lx symbol=%s symbol_offset=0x%lx\n",
+            label,
+            (unsigned long)address,
+            info.dli_fname,
+            (unsigned long)module_offset,
+            info.dli_sname != NULL ? info.dli_sname : "?",
+            (unsigned long)symbol_offset
+        );
+        return;
+    }
+    append_signal_linef("%s=0x%lx module=unknown\n", label, (unsigned long)address);
+}
+
+static const char* signal_name(int signal_id) {
+    switch(signal_id) {
+        case SIGABRT: return "SIGABRT";
+        case SIGSEGV: return "SIGSEGV";
+        case SIGBUS: return "SIGBUS";
+        case SIGILL: return "SIGILL";
+        case SIGFPE: return "SIGFPE";
+        default: return "UNKNOWN";
+    }
+}
+
+static void setup_signal_stack_report_file() {
+    if(signal_stack_fd != -1) {
+        close(signal_stack_fd);
+        signal_stack_fd = -1;
+    }
+    const char* home_path = getenv("HOME");
+    if(home_path == NULL || home_path[0] == '\0') {
+        return;
+    }
+    char signal_report_path[PATH_MAX];
+    int path_len = snprintf(
+        signal_report_path,
+        sizeof(signal_report_path),
+        "%s/sts/last_signal_stack.txt",
+        home_path
+    );
+    if(path_len <= 0 || path_len >= (int)sizeof(signal_report_path)) {
+        return;
+    }
+    signal_stack_fd = open(signal_report_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+}
+
+static void append_signal_stack_header(int signal_id, const siginfo_t* info) {
+    if(signal_stack_fd == -1) {
+        return;
+    }
+    char header[512];
+    int written = snprintf(
+        header,
+        sizeof(header),
+        "signal=%s(%d)\nsi_code=%d\nsi_addr=0x%lx\nsender_pid=%d\nsender_uid=%d\n"
+            "native_stack=unavailable_in_process_signal_handler\n"
+            "hint=check logcat_crash_snapshot.txt, hs_err_pid*.log, and pc/lr symbol lines below\n",
+        signal_name(signal_id),
+        signal_id,
+        info != NULL ? info->si_code : 0,
+        (unsigned long)(info != NULL ? (uintptr_t)info->si_addr : 0),
+        info != NULL ? info->si_pid : 0,
+        info != NULL ? info->si_uid : 0
+    );
+    if(written > 0) {
+        size_t safe_len = (size_t)written;
+        if(safe_len >= sizeof(header)) {
+            safe_len = sizeof(header) - 1;
+        }
+        write(signal_stack_fd, header, safe_len);
+    }
+}
+
+static void append_crash_context_snapshot(const crash_context_snapshot_t* snapshot) {
+    if(signal_stack_fd == -1 || snapshot == NULL) {
+        return;
+    }
+    append_signal_linef(
+        "thread_tid=%d\npc=0x%lx\nsp=0x%lx\nlr=0x%lx\n",
+        (int)snapshot->tid,
+        (unsigned long)snapshot->pc,
+        (unsigned long)snapshot->sp,
+        (unsigned long)snapshot->lr
+    );
+    append_symbol_detail("pc_symbol", snapshot->pc);
+    append_symbol_detail("lr_symbol", snapshot->lr);
+}
+
+static void abort_waiter_handler(int signal, siginfo_t* info, void* ucontext) {
+    abort_signal_packet_t packet;
+    memset(&packet, 0, sizeof(packet));
+    packet.signal_id = signal;
+    if(info != NULL) {
+        packet.signal_code = info->si_code;
+        packet.fault_addr = (uintptr_t)info->si_addr;
+        packet.sender_pid = info->si_pid;
+        packet.sender_uid = info->si_uid;
+    }
+    append_signal_stack_header(signal, info);
+    crash_context_snapshot_t context_snapshot = capture_crash_context_snapshot(ucontext);
+    append_crash_context_snapshot(&context_snapshot);
+    if(signal_stack_fd != -1) {
+        append_signal_linef(
+            "detail=Captured signal %s(%d), si_code=%d, fault_addr=0x%lx, sender_pid=%d, sender_uid=%d\n",
+            signal_name(packet.signal_id),
+            packet.signal_id,
+            packet.signal_code,
+            (unsigned long)packet.fault_addr,
+            packet.sender_pid,
+            packet.sender_uid
+        );
+        fsync(signal_stack_fd);
+    }
+    // IMPORTANT: re-raise with default handling so debuggerd/JVM can emit full fatal stack logs.
+    raise(signal);
+    _exit(128 + signal);
 }
 
 static void abort_waiter_setup() {
-    // Only abort on SIGABRT as the JVM either emits SIGABRT or SIGKILL (which we can't catch)
-    // when a fatal crash occurs. Still, keep expandability if we would want to add more
-    // user-friendly fatal signals in the future.
-    const static int tracked_signals[] = {SIGABRT};
+    // Track common fatal signals and immediately forward to default handler
+    // after writing minimal metadata.
+    const static int tracked_signals[] = {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE};
     const static int ntracked = (sizeof(tracked_signals) / sizeof(tracked_signals[0]));
     struct sigaction sigactions[ntracked];
-    sigemptyset(&abort_waiter_data.tracked_sigset);
+    memset(sigactions, 0, sizeof(sigactions));
     for(size_t i = 0; i < ntracked; i++) {
-        sigaddset(&abort_waiter_data.tracked_sigset, tracked_signals[i]);
-        sigactions[i].sa_handler = abort_waiter_handler;
+        sigemptyset(&sigactions[i].sa_mask);
+        sigactions[i].sa_sigaction = abort_waiter_handler;
+        // SA_RESETHAND + SA_NODEFER allows immediate re-raise to hit default disposition.
+        sigactions[i].sa_flags = SA_SIGINFO | SA_RESETHAND | SA_NODEFER;
     }
-    if(pipe(abort_waiter_data.pipe) != 0) {
-        printf("Failed to set up aborter pipe: %s\n", strerror(errno));
-        return;
-    }
-    pthread_t waiter_thread; int result;
-    if((result = pthread_create(&waiter_thread, NULL, abort_waiter_thread, NULL)) != 0) {
-        printf("Failed to start up waiter thread: %s", strerror(result));
-        for(int i = 0; i < 2; i++) close(abort_waiter_data.pipe[i]);
-        return;
-    }
-    // Only set the sigactions *after* we have already set up the pipe and the thread.
     for(size_t i = 0; i < ntracked; i++) {
         if(sigaction(tracked_signals[i], &sigactions[i], NULL) != 0) {
-            // Not returning here because we may have set some handlers successfully.
-            // Some handling is better than no handling.
-            printf("Failed to set signal hander for signal %i: %s", i, strerror(errno));
+            printf("Failed to set signal hander for signal %zu: %s", i, strerror(errno));
         }
     }
 }
@@ -132,6 +310,7 @@ static jint launchJVM(int margc, char** margv) {
        sigaction(sigid, &clean_sa, NULL);
    }
    // Set up the thread that will abort the launcher with an user-facing dialog on a signal.
+   setup_signal_stack_report_file();
    abort_waiter_setup();
 
    // Boardwalk: silence
