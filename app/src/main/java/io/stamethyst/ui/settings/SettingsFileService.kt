@@ -22,8 +22,10 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.ArrayList
 import java.util.Date
+import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 internal data class SaveImportResult(
@@ -32,6 +34,15 @@ internal data class SaveImportResult(
 )
 
 internal object SettingsFileService {
+    class ReservedModImportException(
+        @JvmField val blockedComponent: String
+    ) : IOException("Import blocked for built-in component: $blockedComponent")
+
+    private const val RESERVED_COMPONENT_BASEMOD = "BaseMod"
+    private const val RESERVED_COMPONENT_STSLIB = "StSLib"
+    private const val RESERVED_COMPONENT_MTS = "ModTheSpire"
+    private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
+
     private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
         "betaPreferences",
         "betapreferences",
@@ -134,18 +145,28 @@ internal object SettingsFileService {
             throw IOException("Failed to create mods directory")
         }
 
+        val displayName = resolveDisplayName(host, uri)
         val tempFile = File(modsDir, ".import-${System.nanoTime()}.tmp.jar")
         copyUriToFile(host, uri, tempFile)
         try {
-            val modId = ModManager.normalizeModId(ModJarSupport.resolveModId(tempFile))
+            val manifest = try {
+                ModJarSupport.readModManifest(tempFile)
+            } catch (error: Throwable) {
+                if (isLikelyModTheSpireJar(tempFile, displayName)) {
+                    throw ReservedModImportException(RESERVED_COMPONENT_MTS)
+                }
+                throw error
+            }
+
+            val modId = ModManager.normalizeModId(manifest.modId)
             if (modId.isBlank()) {
                 throw IOException("modid is empty")
             }
-            if (ModManager.MOD_ID_BASEMOD == modId) {
-                ModJarSupport.validateBaseModJar(tempFile)
-            } else if (ModManager.MOD_ID_STSLIB == modId) {
-                ModJarSupport.validateStsLibJar(tempFile)
+            val blockedComponent = resolveReservedComponent(modId)
+            if (blockedComponent != null) {
+                throw ReservedModImportException(blockedComponent)
             }
+
             val targetFile = ModManager.resolveStorageFileForModId(host, modId)
             moveFileReplacing(tempFile, targetFile)
             return modId
@@ -180,6 +201,27 @@ internal object SettingsFileService {
             "unknown.jar"
         } finally {
             cursor?.close()
+        }
+    }
+
+    fun buildReservedModImportMessage(blockedComponents: Collection<String>): String {
+        val uniqueComponents = LinkedHashSet<String>()
+        blockedComponents.forEach { component ->
+            normalizeReservedComponentName(component)?.let { uniqueComponents.add(it) }
+        }
+        if (uniqueComponents.isEmpty()) {
+            uniqueComponents.add(RESERVED_COMPONENT_BASEMOD)
+            uniqueComponents.add(RESERVED_COMPONENT_STSLIB)
+            uniqueComponents.add(RESERVED_COMPONENT_MTS)
+        }
+
+        return buildString {
+            append("已拒绝导入以下内置核心组件：\n")
+            uniqueComponents.forEach { component ->
+                append("- ").append(component).append('\n')
+            }
+            append("\n")
+            append("BaseMod、StSLib、ModTheSpire 已内置并由启动器管理，请不要手动导入。")
         }
     }
 
@@ -561,6 +603,59 @@ internal object SettingsFileService {
     private fun buildDebugExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-debug-${formatter.format(Date())}.zip"
+    }
+
+    private fun resolveReservedComponent(modId: String): String? {
+        return when (ModManager.normalizeModId(modId)) {
+            ModManager.MOD_ID_BASEMOD -> RESERVED_COMPONENT_BASEMOD
+            ModManager.MOD_ID_STSLIB -> RESERVED_COMPONENT_STSLIB
+            "modthespire" -> RESERVED_COMPONENT_MTS
+            else -> null
+        }
+    }
+
+    private fun normalizeReservedComponentName(rawComponent: String?): String? {
+        val normalized = rawComponent?.trim()?.lowercase(Locale.ROOT) ?: return null
+        if (normalized.isEmpty()) {
+            return null
+        }
+        return when (normalized) {
+            RESERVED_COMPONENT_BASEMOD.lowercase(Locale.ROOT),
+            "basemod.jar",
+            ModManager.MOD_ID_BASEMOD -> RESERVED_COMPONENT_BASEMOD
+
+            RESERVED_COMPONENT_STSLIB.lowercase(Locale.ROOT),
+            "stslib.jar",
+            ModManager.MOD_ID_STSLIB -> RESERVED_COMPONENT_STSLIB
+
+            RESERVED_COMPONENT_MTS.lowercase(Locale.ROOT),
+            "modthespire.jar",
+            "modthespire" -> RESERVED_COMPONENT_MTS
+
+            else -> rawComponent.trim()
+        }
+    }
+
+    private fun isLikelyModTheSpireJar(jarFile: File, displayName: String): Boolean {
+        if (looksLikeModTheSpireName(displayName)) {
+            return true
+        }
+        return try {
+            ZipFile(jarFile).use { zipFile ->
+                zipFile.getEntry(MTS_LOADER_ENTRY) != null
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun looksLikeModTheSpireName(displayName: String?): Boolean {
+        val normalized = displayName?.trim()?.lowercase(Locale.ROOT) ?: return false
+        if (normalized.isEmpty()) {
+            return false
+        }
+        return (normalized == "modthespire.jar")
+            || (normalized.endsWith(".jar") && normalized.contains("modthespire"))
     }
 
     private fun resolveSaveExportSourceFolder(stsRoot: File, sourceFolder: String): File? {

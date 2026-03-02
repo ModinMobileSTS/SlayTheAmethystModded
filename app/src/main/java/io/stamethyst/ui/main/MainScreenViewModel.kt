@@ -108,20 +108,34 @@ class MainScreenViewModel : ViewModel() {
         executor.execute {
             var imported = 0
             val errors = ArrayList<String>()
+            val blockedComponents = LinkedHashSet<String>()
             for (uri in uris) {
                 try {
                     SettingsFileService.importModJar(host, uri)
                     imported++
                 } catch (error: Throwable) {
-                    val name = SettingsFileService.resolveDisplayName(host, uri)
-                    errors.add("$name: ${error.message}")
+                    if (error is SettingsFileService.ReservedModImportException) {
+                        blockedComponents.add(error.blockedComponent)
+                    } else {
+                        val name = SettingsFileService.resolveDisplayName(host, uri)
+                        errors.add("$name: ${error.message}")
+                    }
                 }
             }
 
             val importedCount = imported
             val failedCount = errors.size
+            val blockedCount = blockedComponents.size
             val firstError = errors.firstOrNull()
+            val blockedList = blockedComponents.toList()
             host.runOnUiThread {
+                if (blockedList.isNotEmpty()) {
+                    AlertDialog.Builder(host)
+                        .setTitle("禁止导入内置核心组件")
+                        .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
                 when {
                     importedCount > 0 && failedCount == 0 -> {
                         Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
@@ -135,8 +149,12 @@ class MainScreenViewModel : ViewModel() {
                         ).show()
                     }
 
-                    else -> {
+                    failedCount > 0 -> {
                         Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
+                    }
+
+                    blockedCount > 0 -> {
+                        Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
                     }
                 }
                 refresh(host)
