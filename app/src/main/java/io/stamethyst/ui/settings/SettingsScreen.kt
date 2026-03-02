@@ -81,7 +81,6 @@ fun LauncherSettingsScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onImportJar = viewModel::onImportJar,
         onImportMods = viewModel::onImportMods,
         onImportSaves = viewModel::onImportSaves,
         onExportSaves = viewModel::onExportSaves,
@@ -132,7 +131,6 @@ private fun LauncherSettingsScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onImportJar: () -> Unit = {},
     onImportMods: () -> Unit = {},
     onImportSaves: () -> Unit = {},
     onExportSaves: () -> Unit = {},
@@ -178,7 +176,6 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = "资源与文件") {
                     SettingsImportSection(
                         busy = uiState.busy,
-                        onImportJar = onImportJar,
                         onImportMods = onImportMods,
                         onImportSaves = onImportSaves,
                         onExportSaves = onExportSaves,
@@ -279,18 +276,12 @@ private fun SettingsSectionCard(
 @Composable
 private fun SettingsImportSection(
     busy: Boolean,
-    onImportJar: () -> Unit,
     onImportMods: () -> Unit,
     onImportSaves: () -> Unit,
     onExportSaves: () -> Unit,
     onShareCrashReport: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingsActionListItem(
-            title = "导入 desktop-1.0.jar",
-            enabled = !busy,
-            onClick = onImportJar
-        )
         SettingsActionListItem(
             title = "导入模组",
             enabled = !busy,

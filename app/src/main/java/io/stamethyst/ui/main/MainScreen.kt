@@ -1,6 +1,8 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -52,6 +53,13 @@ fun LauncherMainScreen(
     val context = LocalContext.current
     val hostActivity = context as? Activity
     val uiState = viewModel.uiState
+    val importModsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (hostActivity != null) {
+            viewModel.onModJarsPicked(hostActivity, uris)
+        }
+    }
 
     LaunchedEffect(hostActivity) {
         if (hostActivity != null) {
@@ -71,6 +79,13 @@ fun LauncherMainScreen(
         onToggleMod = { mod, checked ->
             if (hostActivity != null) {
                 viewModel.onToggleMod(hostActivity, mod, checked)
+            }
+        },
+        onImportMods = {
+            if (hostActivity != null) {
+                importModsLauncher.launch(
+                    arrayOf("application/java-archive", "application/octet-stream", "*/*")
+                )
             }
         },
         onLaunch = {
@@ -115,6 +130,7 @@ private fun LauncherMainScreenContent(
     onOpenSettings: () -> Unit = {},
     onDeleteMod: (ModItemUi) -> Unit = {},
     onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
+    onImportMods: () -> Unit = {},
     onLaunch: () -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
@@ -132,6 +148,28 @@ private fun LauncherMainScreenContent(
                     }
                 }
             )
+        },
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onImportMods,
+                    enabled = uiState.controlsEnabled
+                ) {
+                    Text("导入模组")
+                }
+                Button(
+                    onClick = onLaunch,
+                    enabled = uiState.controlsEnabled
+                ) {
+                    Text("启动游戏")
+                }
+            }
         }
     ) { paddingValues ->
         Column(
@@ -163,7 +201,7 @@ private fun LauncherMainScreenContent(
 
             if (uiState.optionalMods.isEmpty()) {
                 Text(
-                    text = "暂无模组，请在创意工坊进行下载，并在设置中导入。",
+                    text = "暂无模组，请在创意工坊进行下载，并在左下角导入。",
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
@@ -176,16 +214,6 @@ private fun LauncherMainScreenContent(
                         onCheckedChange = { checked -> onToggleMod(mod, checked) }
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Button(
-                onClick = onLaunch,
-                enabled = uiState.controlsEnabled,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("启动游戏")
             }
         }
     }

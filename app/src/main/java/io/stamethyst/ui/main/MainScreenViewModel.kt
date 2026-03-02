@@ -3,6 +3,7 @@ package io.stamethyst.ui.main
 import android.app.Activity
 import android.app.ApplicationExitInfo
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -22,6 +23,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.SettingsFileService
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.ArrayList
@@ -96,6 +98,50 @@ class MainScreenViewModel : ViewModel() {
         }
         CrashDiagnostics.clear(host)
         prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD, forceJvmCrash = false)
+    }
+
+    fun onModJarsPicked(host: Activity, uris: List<Uri>?) {
+        if (uiState.busy || uris.isNullOrEmpty()) {
+            return
+        }
+        setBusy(true, "Importing selected mod jars...")
+        executor.execute {
+            var imported = 0
+            val errors = ArrayList<String>()
+            for (uri in uris) {
+                try {
+                    SettingsFileService.importModJar(host, uri)
+                    imported++
+                } catch (error: Throwable) {
+                    val name = SettingsFileService.resolveDisplayName(host, uri)
+                    errors.add("$name: ${error.message}")
+                }
+            }
+
+            val importedCount = imported
+            val failedCount = errors.size
+            val firstError = errors.firstOrNull()
+            host.runOnUiThread {
+                when {
+                    importedCount > 0 && failedCount == 0 -> {
+                        Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
+                    }
+
+                    importedCount > 0 -> {
+                        Toast.makeText(
+                            host,
+                            "Imported $importedCount, failed $failedCount ($firstError)",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+
+                    else -> {
+                        Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
+                    }
+                }
+                refresh(host)
+            }
+        }
     }
 
     fun handleIncomingIntent(host: Activity, intent: Intent?, onShareCrashReport: () -> Unit) {
