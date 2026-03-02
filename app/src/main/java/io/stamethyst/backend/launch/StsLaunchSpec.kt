@@ -43,7 +43,6 @@ object StsLaunchSpec {
         val jvmOutputFile = File(stsRoot, "jvm_output.log")
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
-        val lwjglDebugOffFlag = File(stsRoot, "lwjgl_debug_off.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
 
         val args = ArrayList<String>()
@@ -80,7 +79,7 @@ object StsLaunchSpec {
         if (classTraceFlag.exists()) {
             args.add("-verbose:class")
         }
-        val enableLwjglDebug = !lwjglDebugOffFlag.exists()
+        val enableLwjglDebug = LauncherConfig.isLwjglDebugEnabled(context)
         args.add("-Dorg.lwjgl.util.Debug=${if (enableLwjglDebug) "true" else "false"}")
         args.add("-Dorg.lwjgl.util.DebugLoader=${if (enableLwjglDebug) "true" else "false"}")
         args.add("-Djava.home=${javaHome.absolutePath}")

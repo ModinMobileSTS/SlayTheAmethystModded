@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +22,7 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 import java.io.IOException
 import java.util.ArrayList
+import java.util.LinkedHashSet
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -51,6 +53,7 @@ class SettingsScreenViewModel : ViewModel() {
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
+        val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
         val statusText: String = "",
         val logPathText: String = "",
@@ -94,6 +97,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
+                val lwjglDebugEnabled = readLwjglDebugSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
                 val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
@@ -127,6 +131,7 @@ class SettingsScreenViewModel : ViewModel() {
                         if (showFloatingMouseWindow) "ON" else "OFF"
                     ) +
                     "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
+                    "\nLWJGL Debug: " + if (lwjglDebugEnabled) "ON" else "OFF" +
                     "\nLauncher icon: ${selectedLauncherIcon.title}" +
                     "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
                     "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
@@ -145,6 +150,7 @@ class SettingsScreenViewModel : ViewModel() {
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
+                        lwjglDebugEnabled = lwjglDebugEnabled,
                         touchscreenEnabled = touchscreenEnabled,
                         statusText = status,
                         logPathText = buildLogPathText(host)
@@ -312,6 +318,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onLwjglDebugChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(lwjglDebugEnabled = enabled)
+        saveLwjglDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onTouchscreenEnabledChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -389,20 +404,34 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             var imported = 0
             val errors = ArrayList<String>()
+            val blockedComponents = LinkedHashSet<String>()
             for (uri in uris) {
                 try {
                     SettingsFileService.importModJar(host, uri)
                     imported++
                 } catch (error: Throwable) {
-                    val name = SettingsFileService.resolveDisplayName(host, uri)
-                    errors.add("$name: ${error.message}")
+                    if (error is SettingsFileService.ReservedModImportException) {
+                        blockedComponents.add(error.blockedComponent)
+                    } else {
+                        val name = SettingsFileService.resolveDisplayName(host, uri)
+                        errors.add("$name: ${error.message}")
+                    }
                 }
             }
 
             val importedCount = imported
             val failedCount = errors.size
+            val blockedCount = blockedComponents.size
             val firstError = if (failedCount > 0) errors[0] else null
+            val blockedList = blockedComponents.toList()
             host.runOnUiThread {
+                if (blockedList.isNotEmpty()) {
+                    AlertDialog.Builder(host)
+                        .setTitle("禁止导入内置核心组件")
+                        .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
                 when {
                     importedCount > 0 && failedCount == 0 -> {
                         Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
@@ -416,8 +445,12 @@ class SettingsScreenViewModel : ViewModel() {
                         ).show()
                     }
 
-                    else -> {
+                    failedCount > 0 -> {
                         Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
+                    }
+
+                    blockedCount > 0 -> {
+                        Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
                     }
                 }
                 refreshStatus(host)
@@ -615,6 +648,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveAutoSwitchLeftAfterRightClickSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveAutoSwitchLeftAfterRightClick(host, enabled)
+    }
+
+    private fun readLwjglDebugSelection(host: Activity): Boolean {
+        return LauncherPreferences.isLwjglDebugEnabled(host)
+    }
+
+    private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setLwjglDebugEnabled(host, enabled)
     }
 
     private fun readTargetFpsSelection(host: Activity): Int {

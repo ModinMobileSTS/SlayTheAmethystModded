@@ -32,6 +32,7 @@ object LauncherConfig {
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
+    private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
 
@@ -41,6 +42,7 @@ object LauncherConfig {
     val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
+    const val DEFAULT_LWJGL_DEBUG = false
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 1024
     const val MIN_JVM_HEAP_MAX_MB = 1024
@@ -185,6 +187,16 @@ object LauncherConfig {
     fun setForceLinearMipmapFilterEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER, enabled)
+        }
+    }
+
+    fun isLwjglDebugEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_LWJGL_DEBUG, DEFAULT_LWJGL_DEBUG)
+    }
+
+    fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LWJGL_DEBUG, enabled)
         }
     }
 

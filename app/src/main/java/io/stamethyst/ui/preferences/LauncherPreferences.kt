@@ -16,6 +16,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+    val DEFAULT_LWJGL_DEBUG: Boolean
+        get() = LauncherConfig.DEFAULT_LWJGL_DEBUG
 
     val DEFAULT_JVM_HEAP_MAX_MB: Int
         get() = LauncherConfig.DEFAULT_JVM_HEAP_MAX_MB
@@ -56,6 +58,14 @@ object LauncherPreferences {
 
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         LauncherConfig.saveAutoSwitchLeftAfterRightClick(context, enabled)
+    }
+
+    fun isLwjglDebugEnabled(context: Context): Boolean {
+        return LauncherConfig.isLwjglDebugEnabled(context)
+    }
+
+    fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setLwjglDebugEnabled(context, enabled)
     }
 
     fun normalizeTargetFps(targetFps: Int): Int {

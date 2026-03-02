@@ -92,6 +92,7 @@ fun LauncherSettingsScreen(
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
+        onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onLauncherIconSelected = { icon -> viewModel.onLauncherIconSelected(activity, icon) },
@@ -117,6 +118,7 @@ private fun LauncherSettingsScreenPreview() {
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
             autoSwitchLeftAfterRightClick = true,
+            lwjglDebugEnabled = false,
             touchscreenEnabled = true,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
@@ -142,6 +144,7 @@ private fun LauncherSettingsScreenContent(
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
+    onLwjglDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onLauncherIconSelected: (LauncherIcon) -> Unit = {},
@@ -228,7 +231,10 @@ private fun LauncherSettingsScreenContent(
 
             item {
                 SettingsSectionCard(title = "状态与日志") {
-                    SettingsStatusSection(uiState = uiState)
+                    SettingsStatusSection(
+                        uiState = uiState,
+                        onLwjglDebugChanged = onLwjglDebugChanged
+                    )
                 }
             }
         }
@@ -497,7 +503,8 @@ private fun SettingsLauncherIconSection(
 
 @Composable
 private fun SettingsStatusSection(
-    uiState: SettingsScreenViewModel.UiState
+    uiState: SettingsScreenViewModel.UiState,
+    onLwjglDebugChanged: (Boolean) -> Unit,
 ) {
     var showStatusDialog by rememberSaveable { mutableStateOf(false) }
     var showLogDialog by rememberSaveable { mutableStateOf(false) }
@@ -513,6 +520,15 @@ private fun SettingsStatusSection(
         style = MaterialTheme.typography.bodySmall,
         maxLines = 3,
         overflow = TextOverflow.Ellipsis
+    )
+
+    SwitchSettingRow(
+        checked = uiState.lwjglDebugEnabled,
+        enabled = !uiState.busy,
+        enabledText = "LWJGL Debug：启用",
+        disabledText = "LWJGL Debug：禁用",
+        description = "控制 JVM 启动参数中的 org.lwjgl.util.Debug / DebugLoader / DebugFunctions。",
+        onCheckedChange = onLwjglDebugChanged
     )
 
     HorizontalDivider()
