@@ -19,7 +19,7 @@ plugins {
 }
 
 val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
-val appVersionName = "0.0.6"
+val appVersionName = "0.0.7"
 
 android {
     namespace = "io.stamethyst"
@@ -125,10 +125,7 @@ val installBootBridgeJar by tasks.registering(Copy::class) {
 }
 
 val patchProjectPaths = listOf(
-    ":patches:gdx-patch",
-    ":patches:downfall-fbo-patch",
-    ":patches:basemod-fbo-patch",
-    ":patches:basemod-glow-fbo-compat"
+    ":patches:gdx-patch"
 )
 val runtimePackZip = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
 val stsPackageName = "io.stamethyst"
@@ -328,7 +325,9 @@ val installRuntimePackAssets by tasks.registering(Sync::class) {
             )
         }
     }
-    from(zipTree(runtimePackZip))
+    from(zipTree(runtimePackZip)) {
+        exclude("bin-x86.tar.xz", "bin-x86_64.tar.xz")
+    }
     into(generatedRuntimeAssetsDir.map { it.dir("components/jre") })
 }
 
@@ -337,6 +336,29 @@ tasks.named("preBuild").configure {
     dependsOn(installPatchJars)
     dependsOn(installGdxVideoNatives)
     dependsOn(installRuntimePackAssets)
+}
+
+tasks.matching { task ->
+    task.name == "assemble" || task.name.startsWith("assemble")
+}.configureEach {
+    doLast {
+        val variantSuffix = name.removePrefix("assemble")
+        val variantDirName = variantSuffix
+            .takeIf { it.isNotBlank() }
+            ?.replaceFirstChar { it.lowercaseChar() }
+        val fallbackDir = layout.buildDirectory.dir("outputs/apk").get().asFile
+        val candidateDir = if (variantDirName != null) {
+            layout.buildDirectory.dir("outputs/apk/$variantDirName").get().asFile
+        } else {
+            fallbackDir
+        }
+        val searchDir = if (candidateDir.isDirectory) candidateDir else fallbackDir
+        val latestApk = fileTree(searchDir) {
+            include("**/*.apk", "**/*.APK")
+        }.files.maxByOrNull { it.lastModified() }
+        val apkDir = latestApk?.parentFile ?: searchDir
+        logger.lifecycle("APK output directory: ${apkDir.absolutePath}")
+    }
 }
 
 tasks.register("stsStart") {

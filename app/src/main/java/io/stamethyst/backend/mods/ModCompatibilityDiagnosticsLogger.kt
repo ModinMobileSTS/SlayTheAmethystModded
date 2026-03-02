@@ -34,11 +34,7 @@ internal object ModCompatibilityDiagnosticsLogger {
         try {
             appendCompatLog(
                 context,
-                "diag[$safeStage] setting original_fbo=" +
-                    CompatibilitySettings.isOriginalFboPatchEnabled(context) +
-                    ", downfall_fbo=" +
-                    CompatibilitySettings.isDownfallFboPatchEnabled(context) +
-                    ", global_atlas_filter=" +
+                "diag[$safeStage] setting global_atlas_filter=" +
                     CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context) +
                     ", force_linear_mipmap_filter=" +
                     CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
@@ -61,55 +57,6 @@ internal object ModCompatibilityDiagnosticsLogger {
                 patchJar = RuntimePaths.gdxPatchJar(context),
                 classEntry = STS_PATCH_GL_FRAMEBUFFER_CLASS
             )
-
-            val baseModJar = RuntimePaths.importedBaseModJar(context)
-            appendClassPatchStatus(
-                context = context,
-                stage = safeStage,
-                label = "BaseMod glow",
-                targetJar = baseModJar,
-                patchJar = File(RuntimePaths.gdxPatchDir(context), BASEMOD_GLOW_PATCH_JAR),
-                classEntry = BASEMOD_GLOW_PATCH_CLASS
-            )
-            appendClassPatchStatus(
-                context = context,
-                stage = safeStage,
-                label = "BaseMod ApplyScreenPostProcessor",
-                targetJar = baseModJar,
-                patchJar = File(RuntimePaths.gdxPatchDir(context), BASEMOD_POSTPROCESS_PATCH_JAR),
-                classEntry = BASEMOD_POSTPROCESS_PATCH_CLASS
-            )
-
-            val downfallJar = installedMods[DOWNFALL_MOD_ID]
-            if (downfallJar == null) {
-                appendCompatLog(
-                    context,
-                    "diag[$safeStage] Downfall not installed (modid=$DOWNFALL_MOD_ID)"
-                )
-            } else {
-                val downfallPatchJar = File(RuntimePaths.gdxPatchDir(context), DOWNFALL_FBO_PATCH_JAR)
-                appendClassPatchStatus(
-                    context = context,
-                    stage = safeStage,
-                    label = "Downfall DoubleEnergyOrb",
-                    targetJar = downfallJar,
-                    patchJar = downfallPatchJar,
-                    classEntry = DOWNFALL_FBO_PATCH_CLASS
-                )
-                appendClassPatchStatus(
-                    context = context,
-                    stage = safeStage,
-                    label = "Downfall CustomAnimatedNPC",
-                    targetJar = downfallJar,
-                    patchJar = downfallPatchJar,
-                    classEntry = DOWNFALL_NPC_FBO_PATCH_CLASS
-                )
-                val backupFile = File(downfallJar.absolutePath + ".amethyst.downfall_fbo.backup")
-                appendCompatLog(
-                    context,
-                    "diag[$safeStage] Downfall backup exists=${backupFile.isFile}, file=${backupFile.name}"
-                )
-            }
         } catch (error: Throwable) {
             appendCompatLog(
                 context,

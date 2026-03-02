@@ -14,8 +14,6 @@ class CompatibilityScreenViewModel : ViewModel() {
     data class UiState(
         val busy: Boolean = false,
         val busyMessage: String? = null,
-        val originalFboPatchEnabled: Boolean = false,
-        val downfallFboPatchEnabled: Boolean = false,
         val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
         val forceLinearMipmapFilterEnabled: Boolean = true
@@ -28,28 +26,10 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             busy = false,
             busyMessage = null,
-            originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host),
-            downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host),
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
         )
-    }
-
-    fun onOriginalFboPatchToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setOriginalFboPatchEnabled(host, enabled)
-        uiState = uiState.copy(originalFboPatchEnabled = enabled)
-    }
-
-    fun onDownfallFboPatchToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setDownfallFboPatchEnabled(host, enabled)
-        uiState = uiState.copy(downfallFboPatchEnabled = enabled)
     }
 
     fun onVirtualFboPocToggled(host: Context, enabled: Boolean) {

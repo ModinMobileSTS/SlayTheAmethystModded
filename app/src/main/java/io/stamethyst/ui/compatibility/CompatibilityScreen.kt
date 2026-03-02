@@ -50,8 +50,6 @@ fun LauncherCompatibilityScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onOriginalFboPatchToggled = { enabled -> viewModel.onOriginalFboPatchToggled(context, enabled) },
-        onDownfallFboPatchToggled = { enabled -> viewModel.onDownfallFboPatchToggled(context, enabled) },
         onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
@@ -65,8 +63,6 @@ private fun LauncherCompatibilityScreenPreview() {
     LauncherCompatibilityScreenContent(
         uiState = CompatibilityScreenViewModel.UiState(
             busy = false,
-            originalFboPatchEnabled = true,
-            downfallFboPatchEnabled = false,
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
             forceLinearMipmapFilterEnabled = true
@@ -80,8 +76,6 @@ private fun LauncherCompatibilityScreenContent(
     modifier: Modifier = Modifier,
     uiState: CompatibilityScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onOriginalFboPatchToggled: (Boolean) -> Unit = {},
-    onDownfallFboPatchToggled: (Boolean) -> Unit = {},
     onVirtualFboPocToggled: (Boolean) -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
@@ -115,22 +109,6 @@ private fun LauncherCompatibilityScreenContent(
                     Text(text = it, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-
-            CompatibilitySwitchRow(
-                title = stringResource(R.string.compat_original_fbo_title),
-                description = stringResource(R.string.compat_original_fbo_desc),
-                checked = uiState.originalFboPatchEnabled,
-                enabled = !uiState.busy,
-                onCheckedChange = onOriginalFboPatchToggled
-            )
-
-            CompatibilitySwitchRow(
-                title = stringResource(R.string.compat_downfall_fbo_title),
-                description = stringResource(R.string.compat_downfall_fbo_desc),
-                checked = uiState.downfallFboPatchEnabled,
-                enabled = !uiState.busy,
-                onCheckedChange = onDownfallFboPatchToggled
-            )
 
             CompatibilitySwitchRow(
                 title = stringResource(R.string.compat_virtual_fbo_poc_title),

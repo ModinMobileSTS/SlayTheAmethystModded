@@ -30,7 +30,6 @@ internal object ModCompatibilityPatchCoordinator {
     fun applyCompatPatchRules(context: Context) {
         val installedModsById = findInstalledModsById(context)
         for (rule in COMPAT_PATCH_RULES) {
-            val ruleEnabled = isCompatRuleEnabled(context, rule)
             if (rule.applyWhenInstalled) {
                 val targetJar = installedModsById[rule.modId]
                 if (targetJar == null) {
@@ -40,23 +39,8 @@ internal object ModCompatibilityPatchCoordinator {
                     )
                     continue
                 }
-                if (!ruleEnabled) {
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                        context,
-                        "rule disabled by user setting: ${rule.label}"
-                    )
-                    tryRestoreCompatRule(context, rule, targetJar)
-                    continue
-                }
                 applyCompatRuleToJar(context, rule, targetJar)
             } else {
-                if (!ruleEnabled) {
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                        context,
-                        "rule disabled by user setting: ${rule.label}"
-                    )
-                    continue
-                }
                 val targetJar = resolveFixedTargetJar(context, rule)
                 if (targetJar == null || !targetJar.isFile) {
                     ModCompatibilityDiagnosticsLogger.appendCompatLog(
@@ -91,16 +75,6 @@ internal object ModCompatibilityPatchCoordinator {
             }
         }
         return modsById
-    }
-
-    private fun isCompatRuleEnabled(context: Context?, rule: CompatPatchRule?): Boolean {
-        if (context == null || rule == null) {
-            return true
-        }
-        if (DOWNFALL_MOD_ID == rule.modId && DOWNFALL_FBO_PATCH_JAR == rule.patchJarName) {
-            return CompatibilitySettings.isDownfallFboPatchEnabled(context)
-        }
-        return true
     }
 
     private fun applyGlobalAtlasFilterCompat(context: Context, installedModsById: Map<String, File>) {
@@ -219,7 +193,6 @@ internal object ModCompatibilityPatchCoordinator {
             context,
             "rule matched: ${rule.label} target=${targetJar.name} class=${rule.targetClassEntry}"
         )
-        tryBackupCompatRule(context, rule, targetJar, patchJar)
         try {
             val result = ensureJarClassCompat(
                 targetJar = targetJar,
@@ -233,14 +206,6 @@ internal object ModCompatibilityPatchCoordinator {
                 ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "rule patched successfully: ${rule.label}")
             }
         } catch (error: Throwable) {
-            if (shouldSkipMissingDownfallCompatClass(rule, error)) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                    context,
-                    "rule skip missing patch class: ${rule.label} class=${rule.targetClassEntry}" +
-                        " reason=${error.javaClass.simpleName}: ${error.message.toString()}"
-                )
-                return
-            }
             ModCompatibilityDiagnosticsLogger.appendCompatLog(
                 context,
                 "rule failed: ${rule.label} reason=${error.javaClass.simpleName}: ${error.message.toString()}"
@@ -250,132 +215,6 @@ internal object ModCompatibilityPatchCoordinator {
             }
             throw IOException("${rule.label} compat apply failed", error)
         }
-    }
-
-    private fun shouldSkipMissingDownfallCompatClass(rule: CompatPatchRule, error: Throwable): Boolean {
-        if (!isDownfallFboRule(rule) || error !is IOException) {
-            return false
-        }
-        val message = error.message.toString()
-        return message.contains("compat patch is missing required class")
-    }
-
-    private fun tryBackupCompatRule(
-        context: Context,
-        rule: CompatPatchRule,
-        targetJar: File?,
-        patchJar: File
-    ) {
-        if (!isDownfallFboRule(rule) || targetJar == null || !targetJar.isFile) {
-            return
-        }
-        try {
-            val backupFile = resolveCompatRuleBackupFile(rule, targetJar) ?: return
-            if (backupFile.isFile && backupFile.length() > 0) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                    context,
-                    "rule backup keep existing: ${rule.label} -> ${backupFile.name}"
-                )
-                return
-            }
-            val patchEntries = loadSinglePatchEntry(
-                patchJar = patchJar,
-                requiredClassEntry = rule.targetClassEntry,
-                label = rule.label
-            )
-            if (isJarClassCompatPatched(targetJar, rule.targetClassEntry, patchEntries)) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                    context,
-                    "rule backup skip (already patched): ${rule.label}"
-                )
-                return
-            }
-            JarFileIoUtils.copyFileReplacing(targetJar, backupFile)
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                context,
-                "rule backup updated: ${rule.label} -> ${backupFile.name}"
-            )
-        } catch (error: Throwable) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                context,
-                "rule backup failed: ${rule.label} reason=${error.javaClass.simpleName}: ${error.message.toString()}"
-            )
-        }
-    }
-
-    private fun tryRestoreCompatRule(
-        context: Context,
-        rule: CompatPatchRule,
-        targetJar: File?
-    ) {
-        if (!isDownfallFboRule(rule) || targetJar == null || !targetJar.isFile) {
-            return
-        }
-        val patchJar = File(RuntimePaths.gdxPatchDir(context), rule.patchJarName)
-        if (!patchJar.isFile) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                context,
-                "rule restore skip, patch jar missing: ${patchJar.absolutePath}"
-            )
-            return
-        }
-        try {
-            val patchEntries = loadSinglePatchEntry(
-                patchJar = patchJar,
-                requiredClassEntry = rule.targetClassEntry,
-                label = rule.label
-            )
-            if (!isJarClassCompatPatched(targetJar, rule.targetClassEntry, patchEntries)) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                    context,
-                    "rule restore skip (target not patched): ${rule.label}"
-                )
-                return
-            }
-            val backupFile = resolveCompatRuleBackupFile(rule, targetJar)
-            if (backupFile == null || !backupFile.isFile) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                    context,
-                    "rule restore skip, backup missing: ${rule.label}"
-                )
-                return
-            }
-            if (isJarClassCompatPatched(backupFile, rule.targetClassEntry, patchEntries)) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                    context,
-                    "rule restore skip, backup already patched: ${rule.label}"
-                )
-                return
-            }
-            JarFileIoUtils.copyFileReplacing(backupFile, targetJar)
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                context,
-                "rule restored from backup: ${rule.label}"
-            )
-        } catch (error: Throwable) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
-                context,
-                "rule restore failed: ${rule.label} reason=${error.javaClass.simpleName}: ${error.message.toString()}"
-            )
-        }
-    }
-
-    private fun isDownfallFboRule(rule: CompatPatchRule?): Boolean {
-        if (rule == null) {
-            return false
-        }
-        if (DOWNFALL_MOD_ID != rule.modId || DOWNFALL_FBO_PATCH_JAR != rule.patchJarName) {
-            return false
-        }
-        return DOWNFALL_FBO_PATCH_CLASS == rule.targetClassEntry ||
-            DOWNFALL_NPC_FBO_PATCH_CLASS == rule.targetClassEntry
-    }
-
-    private fun resolveCompatRuleBackupFile(rule: CompatPatchRule, targetJar: File?): File? {
-        if (!isDownfallFboRule(rule) || targetJar == null) {
-            return null
-        }
-        return File(targetJar.absolutePath + ".amethyst.downfall_fbo.backup")
     }
 
     private fun resolveFixedTargetJar(context: Context, rule: CompatPatchRule): File? {

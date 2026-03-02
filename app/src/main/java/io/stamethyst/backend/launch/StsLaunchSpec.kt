@@ -123,10 +123,6 @@ object StsLaunchSpec {
         args.add("-Dawt.toolkit=net.java.openjdk.cacio.ctc.CTCToolkit")
         args.add("-Djava.awt.graphicsenv=net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment")
         args.add(
-            "-Damethyst.gdx.fbo_fallback=" +
-                if (CompatibilitySettings.isOriginalFboPatchEnabled(context)) "true" else "false"
-        )
-        args.add(
             "-Damethyst.gdx.virtual_fbo_poc=" +
                 if (CompatibilitySettings.isVirtualFboPocEnabled(context)) "true" else "false"
         )

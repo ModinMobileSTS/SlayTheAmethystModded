@@ -25,6 +25,3 @@ rootProject.name = "SlayTheAmethyst"
 include(":app")
 include(":boot-bridge")
 include(":patches:gdx-patch")
-include(":patches:downfall-fbo-patch")
-include(":patches:basemod-fbo-patch")
-include(":patches:basemod-glow-fbo-compat")

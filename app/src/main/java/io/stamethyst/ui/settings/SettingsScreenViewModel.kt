@@ -96,8 +96,6 @@ class SettingsScreenViewModel : ViewModel() {
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
                 val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
-                val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(host)
-                val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(host)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
                 val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
@@ -130,8 +128,6 @@ class SettingsScreenViewModel : ViewModel() {
                     ) +
                     "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
                     "\nLauncher icon: ${selectedLauncherIcon.title}" +
-                    "\nOriginal FBO patch: " + if (originalFboPatchEnabled) "ON" else "OFF" +
-                    "\nDownfall FBO patch: " + if (downfallFboPatchEnabled) "ON" else "OFF" +
                     "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
                     "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
                     "\nForce linear mipmap filter: " + if (forceLinearMipmapFilterEnabled) "ON" else "OFF" +

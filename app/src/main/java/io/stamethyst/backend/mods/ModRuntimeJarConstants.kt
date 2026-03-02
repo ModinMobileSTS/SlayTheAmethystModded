@@ -117,22 +117,6 @@ internal const val STS_RESOURCE_SENTINEL = "build.properties"
 internal const val BASEMOD_RESOURCE_SENTINEL =
     "localization/basemod/eng/customMods.json"
 
-internal const val BASEMOD_MOD_ID = "basemod"
-internal const val BASEMOD_JAR_FILE_NAME = "BaseMod.jar"
-internal const val BASEMOD_GLOW_PATCH_JAR = "basemod-glow-fbo-compat.jar"
-internal const val BASEMOD_GLOW_PATCH_CLASS =
-    $$"basemod/helpers/CardBorderGlowManager$RenderGlowPatch.class"
-internal const val BASEMOD_POSTPROCESS_PATCH_JAR = "basemod-postprocess-fbo-compat.jar"
-internal const val BASEMOD_POSTPROCESS_PATCH_CLASS =
-    "basemod/patches/com/megacrit/cardcrawl/core/CardCrawlGame/ApplyScreenPostProcessor.class"
-
-internal const val DOWNFALL_MOD_ID = "downfall"
-internal const val DOWNFALL_FBO_PATCH_JAR = "downfall-fbo-compat.jar"
-internal const val DOWNFALL_FBO_PATCH_CLASS =
-    "collector/util/DoubleEnergyOrb.class"
-internal const val DOWNFALL_NPC_FBO_PATCH_CLASS =
-    "downfall/vfx/CustomAnimatedNPC.class"
-
 internal const val COMPAT_LOG_PREFIX = "[compat] "
 
 internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
@@ -169,37 +153,4 @@ internal data class CompatPatchRule(
     val fixedTargetJarName: String?
 )
 
-internal val COMPAT_PATCH_RULES: Array<CompatPatchRule> = arrayOf(
-    CompatPatchRule(
-        modId = BASEMOD_MOD_ID,
-        patchJarName = BASEMOD_GLOW_PATCH_JAR,
-        targetClassEntry = BASEMOD_GLOW_PATCH_CLASS,
-        label = "BaseMod glow",
-        applyWhenInstalled = false,
-        fixedTargetJarName = BASEMOD_JAR_FILE_NAME
-    ),
-    CompatPatchRule(
-        modId = BASEMOD_MOD_ID,
-        patchJarName = BASEMOD_POSTPROCESS_PATCH_JAR,
-        targetClassEntry = BASEMOD_POSTPROCESS_PATCH_CLASS,
-        label = "BaseMod postprocess FBO",
-        applyWhenInstalled = false,
-        fixedTargetJarName = BASEMOD_JAR_FILE_NAME
-    ),
-    CompatPatchRule(
-        modId = DOWNFALL_MOD_ID,
-        patchJarName = DOWNFALL_FBO_PATCH_JAR,
-        targetClassEntry = DOWNFALL_FBO_PATCH_CLASS,
-        label = "Downfall FBO",
-        applyWhenInstalled = true,
-        fixedTargetJarName = null
-    ),
-    CompatPatchRule(
-        modId = DOWNFALL_MOD_ID,
-        patchJarName = DOWNFALL_FBO_PATCH_JAR,
-        targetClassEntry = DOWNFALL_NPC_FBO_PATCH_CLASS,
-        label = "Downfall NPC portal FBO",
-        applyWhenInstalled = true,
-        fixedTargetJarName = null
-    )
-)
+internal val COMPAT_PATCH_RULES: Array<CompatPatchRule> = emptyArray()

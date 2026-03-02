@@ -10,10 +10,6 @@
     <string name="sts_share_crash_report_failed">没有可用应用可分享错误报告。</string>
     <string name="compat_settings_title">兼容性设置</string>
     <string name="compat_settings_open">打开兼容性设置</string>
-    <string name="compat_original_fbo_title">原版 FBO 兼容补丁</string>
-    <string name="compat_original_fbo_desc">控制 GLFrameBuffer fallback（amethyst.gdx.fbo_fallback）。关闭后更接近原版行为，但可能更容易在部分设备崩溃。</string>
-    <string name="compat_downfall_fbo_title">Downfall FBO 兼容补丁</string>
-    <string name="compat_downfall_fbo_desc">控制是否在启动前注入 Downfall 的 DoubleEnergyOrb FBO 兼容补丁。</string>
     <string name="compat_virtual_fbo_poc_title">Virtual FBO 概念验证</string>
     <string name="compat_virtual_fbo_poc_desc">启用 GLFrameBuffer 的 Virtual FBO 实验路径（amethyst.gdx.virtual_fbo_poc）。用于规避 unknown framebuffer status 崩溃，但可能影响后处理效果。</string>
     <string name="compat_global_atlas_filter_compat_title">全局 atlas 过滤器兼容补丁</string>

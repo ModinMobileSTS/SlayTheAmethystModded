@@ -10,10 +10,6 @@
     <string name="sts_share_crash_report_failed">No available app can share the crash report.</string>
     <string name="compat_settings_title">Compatibility settings</string>
     <string name="compat_settings_open">Open compatibility settings</string>
-    <string name="compat_original_fbo_title">Original FBO compatibility patch</string>
-    <string name="compat_original_fbo_desc">Controls GLFrameBuffer fallback (amethyst.gdx.fbo_fallback). Disabling it is closer to vanilla behavior, but may crash more easily on some devices.</string>
-    <string name="compat_downfall_fbo_title">Downfall FBO compatibility patch</string>
-    <string name="compat_downfall_fbo_desc">Controls whether Downfall\'s DoubleEnergyOrb FBO compatibility patch is injected before launch.</string>
     <string name="compat_virtual_fbo_poc_title">Virtual FBO PoC</string>
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer\'s Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Helps avoid unknown framebuffer status crashes, but may affect post-processing effects.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>

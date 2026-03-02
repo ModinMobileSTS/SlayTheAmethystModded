@@ -52,8 +52,6 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static Map<Application, Array<GLFrameBuffer>> buffers = new HashMap<Application, Array<GLFrameBuffer>>();
 
 	private final static int GL_DEPTH24_STENCIL8_OES = 0x88F0;
-	private final static String FBO_FALLBACK_ENV = "AMETHYST_GDX_FBO_FALLBACK";
-	private final static String FBO_FALLBACK_PROP = "amethyst.gdx.fbo_fallback";
 	private static boolean fboFallbackLogged = false;
 
 	/** the color buffer texture **/
@@ -317,15 +315,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	private static boolean isFboFallbackEnabled () {
-		String value = System.getProperty(FBO_FALLBACK_PROP);
-		if (value == null) {
-			value = System.getenv(FBO_FALLBACK_ENV);
-		}
-		if (value == null) {
-			return true;
-		}
-		value = value.trim();
-		return !"0".equals(value) && !"false".equalsIgnoreCase(value) && !"off".equalsIgnoreCase(value);
+		return false;
 	}
 
 	/** Releases all resources associated with the FrameBuffer. */

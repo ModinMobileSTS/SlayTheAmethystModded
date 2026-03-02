@@ -506,14 +506,11 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 Logger.appendToLog("Launching STS with java home: ${javaHome.absolutePath}")
                 Logger.appendToLog("Launch mode: $launchMode")
                 Logger.appendToLog("Surface backend: ${if (useTextureViewSurface) "TextureView" else "SurfaceView"}")
-                val originalFboPatchEnabled = CompatibilitySettings.isOriginalFboPatchEnabled(this)
-                val downfallFboPatchEnabled = CompatibilitySettings.isDownfallFboPatchEnabled(this)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(this)
                 val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(this)
                 Logger.appendToLog(
-                    "Compat settings: originalFboPatch=$originalFboPatchEnabled, downfallFboPatch=$downfallFboPatchEnabled, " +
-                        "virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled, " +
+                    "Compat settings: virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled, " +
                         "forceLinearMipmapFilter=$forceLinearMipmapFilterEnabled"
                 )
                 val effectiveRenderer = RendererBackend.OPENGL_ES2
@@ -571,7 +568,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 Logger.appendToLog(
                     "Launch arg check: " +
                         findLaunchArgValue(launchArgs, "-Dorg.lwjgl.opengl.libname=") + ", " +
-                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.fbo_fallback=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.virtual_fbo_poc=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.global_atlas_filter_compat=") + ", " +
                         findLaunchArgValue(launchArgs, "-Damethyst.gdx.force_linear_mipmap_filter=") + ", " +

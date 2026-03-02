@@ -5,31 +5,9 @@ import android.content.SharedPreferences
 
 object CompatibilitySettings {
     private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
-    private const val PREF_KEY_ORIGINAL_FBO_PATCH = "compat_original_fbo_patch"
-    private const val PREF_KEY_DOWNFALL_FBO_PATCH = "compat_downfall_fbo_patch"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
-
-    @JvmStatic
-    fun isOriginalFboPatchEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_ORIGINAL_FBO_PATCH, false)
-    }
-
-    @JvmStatic
-    fun setOriginalFboPatchEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(PREF_KEY_ORIGINAL_FBO_PATCH, enabled).apply()
-    }
-
-    @JvmStatic
-    fun isDownfallFboPatchEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_DOWNFALL_FBO_PATCH, false)
-    }
-
-    @JvmStatic
-    fun setDownfallFboPatchEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(PREF_KEY_DOWNFALL_FBO_PATCH, enabled).apply()
-    }
 
     @JvmStatic
     fun isVirtualFboPocEnabled(context: Context): Boolean {
