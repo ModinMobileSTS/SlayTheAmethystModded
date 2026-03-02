@@ -9,6 +9,7 @@ import java.io.IOException
 import java.util.ArrayList
 import java.util.HashMap
 import java.util.HashSet
+import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -93,6 +94,20 @@ internal object ModCompatibilityPatchCoordinator {
             return
         }
 
+        val launchScopedModsById = filterToLaunchScopedMods(context, installedModsById)
+        if (launchScopedModsById.isEmpty()) {
+            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                context,
+                "global atlas filter compat skip: no launch-scoped mods"
+            )
+            return
+        }
+        ModCompatibilityDiagnosticsLogger.appendCompatLog(
+            context,
+            "global atlas filter compat scope: installed=${installedModsById.size}, " +
+                "launchScoped=${launchScopedModsById.size}, ids=${launchScopedModsById.keys}"
+        )
+
         var scannedMods = 0
         var modsWithAtlas = 0
         var modsWithMipmapFilters = 0
@@ -100,10 +115,10 @@ internal object ModCompatibilityPatchCoordinator {
         var totalAtlasEntries = 0
         var totalMipmapEntries = 0
 
-        val sortedModIds: MutableList<String> = ArrayList(installedModsById.keys)
+        val sortedModIds: MutableList<String> = ArrayList(launchScopedModsById.keys)
         sortedModIds.sort()
         for (modId in sortedModIds) {
-            val targetJar = installedModsById[modId] ?: continue
+            val targetJar = launchScopedModsById[modId] ?: continue
             scannedMods++
             if (!targetJar.isFile) {
                 failed++
@@ -156,6 +171,31 @@ internal object ModCompatibilityPatchCoordinator {
                 "modsWithAtlas=$modsWithAtlas, modsWithMipmapFilters=$modsWithMipmapFilters, " +
                 "failed=$failed, atlasEntries=$totalAtlasEntries, mipmapEntries=$totalMipmapEntries"
         )
+    }
+
+    private fun filterToLaunchScopedMods(
+        context: Context,
+        installedModsById: Map<String, File>
+    ): Map<String, File> {
+        val launchScopedIds: MutableSet<String> = LinkedHashSet()
+        launchScopedIds.add(ModManager.MOD_ID_BASEMOD)
+        launchScopedIds.add(ModManager.MOD_ID_STSLIB)
+        for (modId in ModManager.listEnabledOptionalModIds(context)) {
+            val normalized = ModManager.normalizeModId(modId)
+            if (normalized.isNotEmpty()) {
+                launchScopedIds.add(normalized)
+            }
+        }
+        if (launchScopedIds.isEmpty()) {
+            return emptyMap()
+        }
+
+        val scoped: MutableMap<String, File> = HashMap()
+        for (modId in launchScopedIds) {
+            val jar = installedModsById[modId] ?: continue
+            scoped[modId] = jar
+        }
+        return scoped
     }
 
     @Throws(IOException::class)

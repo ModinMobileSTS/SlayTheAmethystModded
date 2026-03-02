@@ -6,18 +6,36 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.File
 import java.io.IOException
+import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.regex.Pattern
 import java.util.zip.ZipFile
 
 internal object ModJarManifestParser {
+    private data class CachedManifest(
+        val lastModified: Long,
+        val length: Long,
+        val manifest: ModJarSupport.ModManifestInfo
+    )
+
+    private const val MAX_MANIFEST_CACHE_SIZE = 128
+    private val manifestCache = LinkedHashMap<String, CachedManifest>(64, 0.75f, true)
+
     @Throws(IOException::class)
     fun readModManifest(modJar: File?): ModJarSupport.ModManifestInfo {
         if (modJar == null || !modJar.isFile) {
             throw IOException("Mod jar not found")
         }
-        ZipFile(modJar).use { zipFile ->
+        val cachePath = modJar.absolutePath
+        val cacheLastModified = modJar.lastModified()
+        val cacheLength = modJar.length()
+        val cached = readCachedManifest(cachePath, cacheLastModified, cacheLength)
+        if (cached != null) {
+            return cached
+        }
+
+        val parsed = ZipFile(modJar).use { zipFile ->
             val modInfo = JarFileIoUtils.findEntryIgnoreCase(zipFile, "ModTheSpire.json")
                 ?: throw IOException("ModTheSpire.json not found in ${modJar.name}")
             val json = JarFileIoUtils.readEntry(zipFile, modInfo)
@@ -25,8 +43,10 @@ internal object ModJarManifestParser {
             if (manifest == null || manifest.normalizedModId.isEmpty()) {
                 throw IOException("modid not found in ${modJar.name}")
             }
-            return manifest
+            manifest
         }
+        cacheManifest(cachePath, cacheLastModified, cacheLength, parsed)
+        return parsed
     }
 
     @Throws(IOException::class)
@@ -36,6 +56,40 @@ internal object ModJarManifestParser {
 
     fun normalizeModId(modId: String?): String {
         return modId?.trim()?.lowercase(Locale.ROOT) ?: ""
+    }
+
+    private fun readCachedManifest(
+        cachePath: String,
+        lastModified: Long,
+        length: Long
+    ): ModJarSupport.ModManifestInfo? {
+        synchronized(manifestCache) {
+            val cached = manifestCache[cachePath] ?: return null
+            if (cached.lastModified != lastModified || cached.length != length) {
+                manifestCache.remove(cachePath)
+                return null
+            }
+            return cached.manifest
+        }
+    }
+
+    private fun cacheManifest(
+        cachePath: String,
+        lastModified: Long,
+        length: Long,
+        manifest: ModJarSupport.ModManifestInfo
+    ) {
+        synchronized(manifestCache) {
+            manifestCache[cachePath] = CachedManifest(lastModified, length, manifest)
+            while (manifestCache.size > MAX_MANIFEST_CACHE_SIZE) {
+                val iterator = manifestCache.entries.iterator()
+                if (!iterator.hasNext()) {
+                    break
+                }
+                iterator.next()
+                iterator.remove()
+            }
+        }
     }
 
     private fun parseManifest(json: String?): ModJarSupport.ModManifestInfo? {

@@ -83,6 +83,11 @@ object ModManager {
     }
 
     @JvmStatic
+    fun listEnabledOptionalModIds(context: Context): Set<String> {
+        return LinkedHashSet(readEnabledOptionalModIdsSafely(context))
+    }
+
+    @JvmStatic
     @Throws(IOException::class)
     fun setOptionalModEnabled(context: Context, modId: String, enabled: Boolean) {
         val normalized = normalizeModId(modId)

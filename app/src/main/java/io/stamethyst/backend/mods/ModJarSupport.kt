@@ -85,13 +85,11 @@ object ModJarSupport {
         val patchJar = RuntimePaths.gdxPatchJar(context)
         val baseModJar = RuntimePaths.importedBaseModJar(context)
         ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "prepare classpath start")
-        ModCompatibilityDiagnosticsLogger.appendCompatDiagnostics(context, "prepare_start")
         StsDesktopJarPatcher.ensurePatchedStsJar(stsJar, patchJar)
         ModCompatibilityPatchCoordinator.applyCompatPatchRules(context)
         ModClasspathJarBuilder.ensureGdxApiJar(stsJar, RuntimePaths.mtsGdxApiJar(context))
         ModClasspathJarBuilder.ensureStsResourceJar(stsJar, RuntimePaths.mtsStsResourcesJar(context))
         ModClasspathJarBuilder.ensureBaseModResourceJar(baseModJar, RuntimePaths.mtsBaseModResourcesJar(context))
-        ModCompatibilityDiagnosticsLogger.appendCompatDiagnostics(context, "prepare_done")
         ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "prepare classpath done")
     }
 
