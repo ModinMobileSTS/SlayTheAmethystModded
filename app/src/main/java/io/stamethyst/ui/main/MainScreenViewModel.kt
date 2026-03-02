@@ -17,7 +17,6 @@ import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.CrashDiagnostics
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.mods.ModManager
-import io.stamethyst.backend.render.RendererConfig
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -554,19 +553,17 @@ class MainScreenViewModel : ViewModel() {
             ).show()
             return
         }
-        val renderer = RendererConfig.readPreferredBackend(host)
         val targetFps = LauncherPreferences.readTargetFps(host)
         val backImmediateExit = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
 
         Log.i(
             TAG,
-            "Start StsGameActivity directly, mode=$launchMode, renderer=${renderer.rendererId()}, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay, forceJvmCrash=$forceJvmCrash"
+            "Start StsGameActivity directly, mode=$launchMode, renderer=opengles2, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay, forceJvmCrash=$forceJvmCrash"
         )
         StsGameActivity.launch(
             host,
             launchMode,
-            renderer,
             targetFps,
             backImmediateExit,
             manualDismissBootOverlay,

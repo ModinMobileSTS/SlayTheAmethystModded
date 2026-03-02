@@ -74,9 +74,6 @@ object RuntimePaths {
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
 
     @JvmStatic
-    fun rendererConfigFile(context: Context): File = File(stsRoot(context), "renderer_backend.txt")
-
-    @JvmStatic
     fun componentRoot(context: Context): File = context.filesDir
 
     @JvmStatic

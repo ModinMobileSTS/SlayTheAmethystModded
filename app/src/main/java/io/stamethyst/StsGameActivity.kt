@@ -42,7 +42,6 @@ import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.launch.LaunchPreparationService
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.render.RendererBackend
-import io.stamethyst.backend.render.RendererConfig
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -72,7 +71,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         private const val CRASH_CODE_BOOT_FAILURE = -2
         private const val CRASH_CODE_OUT_OF_MEMORY = -8
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
-        const val EXTRA_RENDERER_BACKEND = "io.stamethyst.renderer_backend"
         const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
@@ -96,7 +94,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         fun launch(
             context: Context,
             launchMode: String,
-            rendererBackend: RendererBackend,
             targetFps: Int,
             backImmediateExit: Boolean,
             manualDismissBootOverlay: Boolean,
@@ -104,7 +101,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
-            intent.putExtra(EXTRA_RENDERER_BACKEND, rendererBackend.rendererId())
             intent.putExtra(EXTRA_TARGET_FPS, targetFps)
             intent.putExtra(
                 EXTRA_WAIT_FOR_MAIN_MENU,
@@ -148,7 +144,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var renderScale = DEFAULT_RENDER_SCALE
     private var targetFps = DEFAULT_TARGET_FPS
     private var launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA
-    private var launcherRequestedRenderer = RendererBackend.OPENGL_ES2
     private var waitForMainMenu = false
     private var backImmediateExit = true
     private var manualDismissBootOverlay = false
@@ -207,17 +202,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == requestedMode) {
             launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
         }
-        val requestedRenderer = RendererBackend.fromRendererId(intent.getStringExtra(EXTRA_RENDERER_BACKEND))
-        val rendererDecision = RendererConfig.resolveEffectiveBackend(this, requestedRenderer)
-        launcherRequestedRenderer = rendererDecision.effective
-        appendRendererDecisionLog("game_entry", rendererDecision)
-        if (rendererDecision.isFallback) {
-            Toast.makeText(
-                this,
-                getString(R.string.renderer_fallback_toast, rendererDecision.reason),
-                Toast.LENGTH_LONG
-            ).show()
-        }
         waitForMainMenu = intent.getBooleanExtra(
             EXTRA_WAIT_FOR_MAIN_MENU,
             StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
@@ -228,7 +212,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         showFloatingMouseWindow = readShowFloatingMouseWindowSelection()
         autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection()
         targetFps = sanitizeTargetFps(intent.getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS))
-        useTextureViewSurface = shouldUseTextureViewSurface(launcherRequestedRenderer, renderScale)
+        useTextureViewSurface = true
         initBootOverlay()
         onBackPressedDispatcher.addCallback(this, gameBackPressedCallback)
 
@@ -238,14 +222,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         if (useTextureViewSurface) {
-            if (launcherRequestedRenderer == RendererBackend.KOPPER_ZINK) {
-                Log.i(TAG, "Using TextureView surface path for Kopper renderer")
-            } else {
-                Log.i(
-                    TAG,
-                    "Using TextureView surface path for scaled rendering: renderScale=$renderScale"
-                )
-            }
+            Log.i(
+                TAG,
+                "Using TextureView surface path for OpenGL ES2: renderScale=$renderScale"
+            )
             val view = TextureView(this)
             view.isOpaque = true
             textureView = view
@@ -536,17 +516,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         "virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled, " +
                         "forceLinearMipmapFilter=$forceLinearMipmapFilterEnabled"
                 )
-                val preferredRenderer = RendererConfig.readPreferredBackend(this)
-                val rendererDecision = RendererConfig.resolveEffectiveBackend(this, preferredRenderer)
-                val effectiveRenderer = rendererDecision.effective
-                Logger.appendToLog("Renderer from launcher intent: ${launcherRequestedRenderer.rendererId()}")
-                Logger.appendToLog("Renderer decision in game: ${rendererDecision.toLogText()}")
+                val effectiveRenderer = RendererBackend.OPENGL_ES2
+                Logger.appendToLog("Renderer fixed: ${effectiveRenderer.rendererId()}")
                 Logger.appendToLog("Renderer GL library expected: ${effectiveRenderer.lwjglOpenGlLibName()}")
-                if (launcherRequestedRenderer != effectiveRenderer) {
-                    Logger.appendToLog(
-                        "Renderer changed after re-check: launcher_effective=${launcherRequestedRenderer.rendererId()}, game_effective=${effectiveRenderer.rendererId()}"
-                    )
-                }
                 if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
                     ModJarSupport.appendCompatDiagnosticSnapshot(this, "game_pre_jvm")
                 }
@@ -563,8 +535,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     this,
                     javaHome.absolutePath,
                     CallbackBridge.windowWidth.coerceAtLeast(1),
-                    CallbackBridge.windowHeight.coerceAtLeast(1),
-                    effectiveRenderer
+                    CallbackBridge.windowHeight.coerceAtLeast(1)
                 )
                 JREUtils.initJavaRuntime(javaHome.absolutePath)
                 JREUtils.setupExitMethod(applicationContext)
@@ -585,7 +556,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         this,
                         javaHome,
                         launchMode,
-                        effectiveRenderer,
                         forceJvmCrash
                     )
                 )
@@ -759,23 +729,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             updateBootOverlayProgress(1, "Starting launch pipeline... (manual overlay dismiss)")
         } else {
             updateBootOverlayProgress(1, "Starting launch pipeline...")
-        }
-    }
-
-    private fun appendRendererDecisionLog(stage: String, decision: RendererConfig.ResolutionResult) {
-        val line = "[StsGameActivity/$stage] ${decision.toLogText()}\n"
-        try {
-            RuntimePaths.ensureBaseDirs(this)
-            val logFile = RuntimePaths.latestLog(this)
-            val parent = logFile.parentFile
-            if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                return
-            }
-            FileOutputStream(logFile, true).use { output ->
-                output.write(line.toByteArray(StandardCharsets.UTF_8))
-            }
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to append renderer decision log", error)
         }
     }
 
@@ -1203,16 +1156,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             surfaceBufferHeight = view.height
         }
         applyTextureBufferSize(surfaceTexture)
-    }
-
-    private fun shouldUseTextureViewSurface(requestedRenderer: RendererBackend, scale: Float): Boolean {
-        if (requestedRenderer == RendererBackend.KOPPER_ZINK) {
-            return true
-        }
-        if (requestedRenderer == RendererBackend.OPENGL_ES2) {
-            return true
-        }
-        return scale < MAX_RENDER_SCALE
     }
 
     private fun resolvePhysicalWidth(): Int = resolveRawPhysicalWidth()

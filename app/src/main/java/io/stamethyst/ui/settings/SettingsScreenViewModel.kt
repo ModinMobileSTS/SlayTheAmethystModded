@@ -15,8 +15,6 @@ import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
-import io.stamethyst.backend.render.RendererBackend
-import io.stamethyst.backend.render.RendererConfig
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -43,7 +41,6 @@ class SettingsScreenViewModel : ViewModel() {
         val busy: Boolean = false,
         val busyMessage: String? = null,
         val renderScaleInput: String = "",
-        val selectedRenderer: RendererBackend = RendererBackend.OPENGL_ES2,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val jvmHeapMinMb: Int = LauncherPreferences.MIN_JVM_HEAP_MAX_MB,
@@ -91,7 +88,6 @@ class SettingsScreenViewModel : ViewModel() {
                 val hasStsLib = RuntimePaths.importedStsLibJar(host).exists() || hasBundledAsset(host, "components/mods/StSLib.jar")
 
                 val renderScale = RenderScaleService.readValue(host)
-                val selectedRenderer = RendererConfig.readPreferredBackend(host)
                 val targetFps = readTargetFpsSelection(host)
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
                 val backImmediateExit = readBackBehaviorSelection(host)
@@ -105,21 +101,6 @@ class SettingsScreenViewModel : ViewModel() {
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
                 val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
-
-                val rendererDecision = RendererConfig.resolveEffectiveBackend(host, selectedRenderer)
-                val rendererSelectedLine = host.getString(R.string.renderer_selected_format, selectedRenderer.statusLabel())
-                val rendererEffectiveLine = if (rendererDecision.isFallback) {
-                    host.getString(
-                        R.string.renderer_effective_reason_format,
-                        rendererDecision.effective.statusLabel(),
-                        rendererDecision.reason
-                    )
-                } else {
-                    host.getString(
-                        R.string.renderer_effective_format,
-                        rendererDecision.effective.statusLabel()
-                    )
-                }
 
                 val mods = ModManager.listInstalledMods(host)
                 var optionalTotal = 0
@@ -154,8 +135,6 @@ class SettingsScreenViewModel : ViewModel() {
                     "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
                     "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
                     "\nForce linear mipmap filter: " + if (forceLinearMipmapFilterEnabled) "ON" else "OFF" +
-                    "\n$rendererSelectedLine" +
-                    "\n$rendererEffectiveLine" +
                     "\nBundled JRE path: app/src/main/assets/components/jre"
 
                 host.runOnUiThread {
@@ -163,7 +142,6 @@ class SettingsScreenViewModel : ViewModel() {
                         busy = if (clearBusy) false else uiState.busy,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
                         renderScaleInput = uiState.renderScaleInput.ifBlank { RenderScaleService.format(renderScale) },
-                        selectedRenderer = selectedRenderer,
                         selectedTargetFps = targetFps,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
                         selectedLauncherIcon = selectedLauncherIcon,
@@ -299,17 +277,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(selectedJvmHeapMaxMb = normalizedHeapMax)
         saveJvmHeapMaxSelection(host, normalizedHeapMax)
-        refreshStatus(host)
-    }
-
-    fun onRendererSelected(host: Activity, backend: RendererBackend) {
-        if (uiState.busy) {
-            return
-        }
-        uiState = uiState.copy(selectedRenderer = backend)
-        if (!saveRendererSelection(host, backend)) {
-            return
-        }
         refreshStatus(host)
     }
 
@@ -531,20 +498,6 @@ class SettingsScreenViewModel : ViewModel() {
                 true
             }
         } catch (_: IOException) {
-            false
-        }
-    }
-
-    private fun saveRendererSelection(host: Activity, backend: RendererBackend): Boolean {
-        return try {
-            RendererConfig.writePreferredBackend(host, backend)
-            true
-        } catch (error: IOException) {
-            Toast.makeText(
-                host,
-                host.getString(R.string.renderer_save_failed, error.message ?: "unknown"),
-                Toast.LENGTH_SHORT
-            ).show()
             false
         }
     }

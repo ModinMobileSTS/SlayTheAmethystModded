@@ -8,12 +8,6 @@
     <string name="sts_share_crash_report">Share crash report</string>
     <string name="sts_share_crash_chooser_title">Share to QQ / WeChat, etc.</string>
     <string name="sts_share_crash_report_failed">No available app can share the crash report.</string>
-    <string name="renderer_backend_label">Renderer backend</string>
-    <string name="renderer_selected_format">Renderer selected: %1$s</string>
-    <string name="renderer_effective_format">Renderer effective: %1$s</string>
-    <string name="renderer_effective_reason_format">Renderer effective: %1$s (fallback: %2$s)</string>
-    <string name="renderer_save_failed">Failed to save renderer backend: %1$s</string>
-    <string name="renderer_fallback_toast">Selected renderer unavailable, auto-fallback to OpenGL ES2 (%1$s)</string>
     <string name="compat_settings_title">Compatibility settings</string>
     <string name="compat_settings_open">Open compatibility settings</string>
     <string name="compat_original_fbo_title">Original FBO compatibility patch</string>

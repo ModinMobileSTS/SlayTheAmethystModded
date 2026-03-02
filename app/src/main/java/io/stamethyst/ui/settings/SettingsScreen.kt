@@ -55,7 +55,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.LauncherIcon
 import io.stamethyst.R
-import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
@@ -90,7 +89,6 @@ fun LauncherSettingsScreen(
         onRenderScaleInputChange = { value -> viewModel.onRenderScaleInputChange(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
-        onRendererSelected = { backend -> viewModel.onRendererSelected(activity, backend) },
         onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
@@ -110,7 +108,6 @@ private fun LauncherSettingsScreenPreview() {
         uiState = SettingsScreenViewModel.UiState(
             busy = false,
             renderScaleInput = "1.00",
-            selectedRenderer = RendererBackend.OPENGL_ES2,
             selectedTargetFps = 60,
             selectedJvmHeapMaxMb = 1024,
             jvmHeapMinMb = 512,
@@ -143,7 +140,6 @@ private fun LauncherSettingsScreenContent(
     onRenderScaleInputChange: (String) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
-    onRendererSelected: (RendererBackend) -> Unit = {},
     onBackBehaviorChanged: (Boolean) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
@@ -198,7 +194,6 @@ private fun LauncherSettingsScreenContent(
                         onRenderScaleInputChange = onRenderScaleInputChange,
                         onTargetFpsSelected = onTargetFpsSelected,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
-                        onRendererSelected = onRendererSelected,
                     )
                 }
             }
@@ -325,7 +320,6 @@ private fun SettingsRenderSection(
     onRenderScaleInputChange: (String) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
-    onRendererSelected: (RendererBackend) -> Unit,
 ) {
     var heapSliderValue by remember(uiState.selectedJvmHeapMaxMb) {
         mutableFloatStateOf(uiState.selectedJvmHeapMaxMb.toFloat())
@@ -370,17 +364,6 @@ private fun SettingsRenderSection(
         text = "如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
         style = MaterialTheme.typography.bodySmall
     )
-
-    Text(text = stringResource(R.string.renderer_backend_label), style = MaterialTheme.typography.bodyMedium)
-    RendererBackend.entries.forEach { backend ->
-        RendererOptionRow(
-            backend = backend,
-            label = backend.selectorLabel(),
-            selected = uiState.selectedRenderer == backend,
-            enabled = !uiState.busy,
-            onSelect = onRendererSelected
-        )
-    }
 }
 
 @Composable
@@ -644,35 +627,6 @@ fun SettingsEffectsHandler(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun RendererOptionRow(
-    backend: RendererBackend,
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    onSelect: (RendererBackend) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = selected,
-                enabled = enabled,
-                onValueChange = { onSelect(backend) }
-            )
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = null,
-            enabled = enabled
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text = label)
     }
 }
 

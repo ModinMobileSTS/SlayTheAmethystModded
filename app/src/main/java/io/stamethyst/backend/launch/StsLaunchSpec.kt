@@ -5,7 +5,6 @@ import android.os.Build
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
-import io.stamethyst.backend.render.RendererBackend
 import net.kdt.pojavlaunch.AWTCanvasView
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
@@ -25,12 +24,12 @@ object StsLaunchSpec {
 
     @JvmStatic
     fun buildArgs(context: Context, javaHome: File): List<String> {
-        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA, RendererBackend.OPENGL_ES2, false)
+        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA, false)
     }
 
     @JvmStatic
     fun buildArgs(context: Context, javaHome: File, launchMode: String): List<String> {
-        return buildArgs(context, javaHome, launchMode, RendererBackend.OPENGL_ES2, false)
+        return buildArgs(context, javaHome, launchMode, false)
     }
 
     @JvmStatic
@@ -38,7 +37,6 @@ object StsLaunchSpec {
         context: Context,
         javaHome: File,
         launchMode: String,
-        renderer: RendererBackend?,
         forceJvmCrash: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
@@ -99,16 +97,13 @@ object StsLaunchSpec {
         args.add("-Dos.name=Linux")
         args.add("-Dos.version=Android-${Build.VERSION.RELEASE}")
         args.add("-Djdk.lang.Process.launchMechanism=FORK")
-        val effectiveRenderer = renderer ?: RendererBackend.OPENGL_ES2
-        args.add("-Dorg.lwjgl.opengl.libname=${effectiveRenderer.lwjglOpenGlLibName()}")
-        if (effectiveRenderer == RendererBackend.OPENGL_ES2) {
-            // Clamp reported GL capability to a conservative baseline on GLES bridges.
-            // This avoids exposing desktop GL3.3 paths with missing entry points.
-            args.add("-Dorg.lwjgl.opengl.maxVersion=3.0")
-            args.add("-Dorg.lwjgl.opengles.maxVersion=3.0")
-            if (enableLwjglDebug) {
-                args.add("-Dorg.lwjgl.util.DebugFunctions=true")
-            }
+        args.add("-Dorg.lwjgl.opengl.libname=libGLESv2.so")
+        // Clamp reported GL capability to a conservative baseline on GLES bridges.
+        // This avoids exposing desktop GL3.3 paths with missing entry points.
+        args.add("-Dorg.lwjgl.opengl.maxVersion=3.0")
+        args.add("-Dorg.lwjgl.opengles.maxVersion=3.0")
+        if (enableLwjglDebug) {
+            args.add("-Dorg.lwjgl.util.DebugFunctions=true")
         }
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
         args.add("-Dorg.lwjgl.libname=${context.applicationInfo.nativeLibraryDir}/liblwjgl.so")
