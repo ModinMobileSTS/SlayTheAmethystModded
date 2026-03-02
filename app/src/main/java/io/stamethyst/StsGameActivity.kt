@@ -47,6 +47,7 @@ import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.input.mapViewToWindowCoords
 import io.stamethyst.backend.bridge.parseBootBridgeEventLine
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.input.AndroidGamepadGlfwMapper
 import io.stamethyst.input.AndroidGlfwKeycode
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
@@ -58,7 +59,6 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.lang.Math.max
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.util.ArrayDeque
 import java.util.ArrayList
 import java.util.Locale
@@ -76,15 +76,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
-        private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
-        private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
-        private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
-        private const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
-        private const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
-        private const val DEFAULT_RENDER_SCALE = 1.0f
-        private const val MIN_RENDER_SCALE = 0.50f
-        private const val MAX_RENDER_SCALE = 1.00f
-        private const val DEFAULT_TARGET_FPS = 120
         private const val BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L
         private const val BOOT_OVERLAY_READY_DELAY_MS = 700L
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
@@ -141,15 +132,15 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var surfaceBufferHeight = 0
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
-    private var renderScale = DEFAULT_RENDER_SCALE
-    private var targetFps = DEFAULT_TARGET_FPS
+    private var renderScale = LauncherConfig.DEFAULT_RENDER_SCALE
+    private var targetFps = LauncherConfig.DEFAULT_TARGET_FPS
     private var launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA
     private var waitForMainMenu = false
     private var backImmediateExit = true
     private var manualDismissBootOverlay = false
     private var forceJvmCrash = false
-    private var showFloatingMouseWindow = DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
-    private var autoSwitchLeftAfterRightClick = DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+    private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+    private var autoSwitchLeftAfterRightClick = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     private var jvmLogListenerRegistered = false
     private var bootOverlay: View? = null
     private var bootOverlayProgressBar: ProgressBar? = null
@@ -206,12 +197,20 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             EXTRA_WAIT_FOR_MAIN_MENU,
             StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
         )
-        backImmediateExit = intent.getBooleanExtra(EXTRA_BACK_IMMEDIATE_EXIT, true)
-        manualDismissBootOverlay = intent.getBooleanExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, false)
+        backImmediateExit = intent.getBooleanExtra(
+            EXTRA_BACK_IMMEDIATE_EXIT,
+            LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
+        )
+        manualDismissBootOverlay = intent.getBooleanExtra(
+            EXTRA_MANUAL_DISMISS_BOOT_OVERLAY,
+            LauncherConfig.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
+        )
         forceJvmCrash = intent.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false)
-        showFloatingMouseWindow = readShowFloatingMouseWindowSelection()
-        autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection()
-        targetFps = sanitizeTargetFps(intent.getIntExtra(EXTRA_TARGET_FPS, DEFAULT_TARGET_FPS))
+        showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(this)
+        autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(this)
+        targetFps = LauncherConfig.normalizeTargetFps(
+            intent.getIntExtra(EXTRA_TARGET_FPS, LauncherConfig.DEFAULT_TARGET_FPS)
+        )
         useTextureViewSurface = true
         initBootOverlay()
         onBackPressedDispatcher.addCallback(this, gameBackPressedCallback)
@@ -1188,48 +1187,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun resolveRenderScale(): Float {
-        val configFile = File(RuntimePaths.stsRoot(this), "render_scale.txt")
-        if (!configFile.exists()) {
-            return DEFAULT_RENDER_SCALE
-        }
-        return try {
-            val value = String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8).trim()
-            if (value.isNotEmpty()) {
-                val parsed = value.toFloat()
-                when {
-                    parsed < MIN_RENDER_SCALE -> MIN_RENDER_SCALE
-                    parsed > MAX_RENDER_SCALE -> MAX_RENDER_SCALE
-                    else -> parsed
-                }
-            } else {
-                DEFAULT_RENDER_SCALE
-            }
-        } catch (error: Throwable) {
-            Log.w(TAG, "Invalid render_scale.txt, fallback to default", error)
-            DEFAULT_RENDER_SCALE
-        }
-    }
-
-    private fun sanitizeTargetFps(requestedFps: Int): Int {
-        return if (
-            requestedFps == 60 ||
-            requestedFps == 90 ||
-            requestedFps == 120 ||
-            requestedFps == 240
-        ) requestedFps else DEFAULT_TARGET_FPS
-    }
-
-    private fun readShowFloatingMouseWindowSelection(): Boolean {
-        return getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
-            .getBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, DEFAULT_SHOW_FLOATING_MOUSE_WINDOW)
-    }
-
-    private fun readAutoSwitchLeftAfterRightClickSelection(): Boolean {
-        return getSharedPreferences(PREF_NAME_LAUNCHER, MODE_PRIVATE)
-            .getBoolean(
-                PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
-                DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
-            )
+        return LauncherConfig.readRenderScale(this)
     }
 
     private fun initFloatingMouseControls() {

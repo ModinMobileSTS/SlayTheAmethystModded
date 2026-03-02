@@ -5,6 +5,7 @@ import android.os.Build
 import io.stamethyst.backend.core.RuntimePaths
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.config.LauncherConfig
 import net.kdt.pojavlaunch.AWTCanvasView
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
@@ -15,12 +16,6 @@ import java.util.TimeZone
 object StsLaunchSpec {
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS_BASEMOD = "mts_basemod"
-    private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
-    private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
-    private const val DEFAULT_JVM_HEAP_MAX_MB = 1024
-    private const val MIN_JVM_HEAP_MAX_MB = 1024
-    private const val MAX_JVM_HEAP_MAX_MB = 2048
-    private const val JVM_HEAP_STEP_MB = 128
 
     @JvmStatic
     fun buildArgs(context: Context, javaHome: File): List<String> {
@@ -66,7 +61,7 @@ object StsLaunchSpec {
             args.add("-XX:-UseCompressedClassPointers")
         }
         args.add("-Xms512M")
-        args.add("-Xmx${readJvmHeapMaxMb(context)}M")
+        args.add("-Xmx${LauncherConfig.readJvmHeapMaxMb(context)}M")
         args.add("-XX:+DisableExplicitGC")
         if (is64BitRuntime) {
             // Reduce periodic frame hitching from stop-the-world pauses.
@@ -217,17 +212,4 @@ object StsLaunchSpec {
             File(javaHome, "lib/x86_64").isDirectory
     }
 
-    private fun readJvmHeapMaxMb(context: Context): Int {
-        val stored = context.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
-            .getInt(PREF_KEY_JVM_HEAP_MAX_MB, DEFAULT_JVM_HEAP_MAX_MB)
-        return normalizeJvmHeapMaxMb(stored)
-    }
-
-    private fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {
-        val clamped = heapMaxMb.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
-        val offset = clamped - MIN_JVM_HEAP_MAX_MB
-        val snappedStepCount = Math.round(offset / JVM_HEAP_STEP_MB.toFloat())
-        val snapped = MIN_JVM_HEAP_MAX_MB + (snappedStepCount * JVM_HEAP_STEP_MB)
-        return snapped.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
-    }
 }

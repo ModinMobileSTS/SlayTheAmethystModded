@@ -2,6 +2,7 @@ package io.stamethyst.backend.render
 
 import android.content.Context
 import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -9,8 +10,7 @@ import java.nio.file.Files
 import java.util.Locale
 
 object DisplayConfigSync {
-    private const val DEFAULT_FPS_LIMIT = 60
-    private const val FALLBACK_TARGET_FPS_LIMIT = 120
+    private const val DEFAULT_FPS_LIMIT = LauncherConfig.DEFAULT_TARGET_FPS
     private const val DEFAULT_FULLSCREEN = false
     private const val DEFAULT_WINDOWED_FULLSCREEN = false
     private const val DEFAULT_VSYNC = true
@@ -94,10 +94,7 @@ object DisplayConfigSync {
     }
 
     private fun normalizeTargetFpsLimit(targetFpsLimit: Int): Int {
-        if (targetFpsLimit == 60 || targetFpsLimit == 90 || targetFpsLimit == 120 || targetFpsLimit == 240) {
-            return targetFpsLimit
-        }
-        return FALLBACK_TARGET_FPS_LIMIT
+        return LauncherConfig.normalizeTargetFps(targetFpsLimit)
     }
 
     private data class DisplayConfigState(

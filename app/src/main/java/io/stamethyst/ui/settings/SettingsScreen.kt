@@ -110,9 +110,9 @@ private fun LauncherSettingsScreenPreview() {
             renderScaleInput = "1.00",
             selectedTargetFps = 60,
             selectedJvmHeapMaxMb = 1024,
-            jvmHeapMinMb = 512,
+            jvmHeapMinMb = 1024,
             jvmHeapMaxMb = 2048,
-            jvmHeapStepMb = 256,
+            jvmHeapStepMb = 128,
             selectedLauncherIcon = LauncherIcon.AMBER,
             backImmediateExit = true,
             manualDismissBootOverlay = false,
@@ -121,7 +121,7 @@ private fun LauncherSettingsScreenPreview() {
             touchscreenEnabled = true,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
-            targetFpsOptions = listOf(30, 60, 90, 120, 240),
+            targetFpsOptions = listOf(60, 90, 120, 240),
         )
     )
 }
