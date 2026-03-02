@@ -167,10 +167,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     @Volatile
     private var jvmLaunchThread: Thread? = null
 
-    private var bootBridgeReaderThread: Thread? = null
-
-    @Volatile
-    private var bootBridgeReaderStop = false
+//    private var bootBridgeReaderThread: Thread? = null
+//
+//    @Volatile
+//    private var bootBridgeReaderStop = false
 
     private val bootLogLines = ArrayDeque<String>()
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
@@ -304,7 +304,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         runtimeLifecycleReady = false
         bridgeSurfaceReady = false
         earlyOverlayDismissOnNextFrame = false
-        stopBootBridgeReaderIfRunning()
+//        stopBootBridgeReaderIfRunning()
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()
@@ -409,7 +409,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         releaseTouchButtonIfNeeded()
         updateFloatingMouseVisibility()
         BackExitNotice.markExpectedBackExit(this)
-        stopBootBridgeReaderIfRunning()
+//        stopBootBridgeReaderIfRunning()
         updateBootOverlayProgress(100, "Stopping game...")
         Log.i(TAG, "Android back pressed: force restart to launcher")
 
@@ -499,7 +499,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     jvmLogListenerRegistered = false
                 }
                 if (waitForMainMenu && StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
-                    startBootBridgeReader()
+//                    startBootBridgeReader()
                     updateBootOverlayProgress(26, "Waiting for structured boot events...")
                 }
                 Logger.appendToLog("Launching STS with java home: ${javaHome.absolutePath}")
@@ -823,6 +823,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         dismissBootOverlay()
     }
 
+/*
     private fun startBootBridgeReader() {
         stopBootBridgeReaderIfRunning()
         val eventsFile = RuntimePaths.bootBridgeEventsFile(this)
@@ -933,6 +934,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             Thread.currentThread().interrupt()
         }
     }
+*/
 
     private fun signalLaunchFailure(detail: String) {
         if (backExitRequested) {
@@ -949,7 +951,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         launchFailureSignaled = true
-        stopBootBridgeReaderIfRunning()
+//        stopBootBridgeReaderIfRunning()
         Log.e(TAG, "Detected startup failure from boot bridge: $detail")
         val crashCode = if (oomFailure) CRASH_CODE_OUT_OF_MEMORY else CRASH_CODE_BOOT_FAILURE
         val crashDetail = if (oomFailure) {
