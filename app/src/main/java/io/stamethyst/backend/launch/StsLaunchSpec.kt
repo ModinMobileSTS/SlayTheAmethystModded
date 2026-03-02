@@ -87,6 +87,10 @@ object StsLaunchSpec {
         args.add("-Djava.io.tmpdir=${context.cacheDir.absolutePath}")
         args.add("-Duser.home=${stsHome.absolutePath}")
         args.add("-Duser.dir=${stsRoot.absolutePath}")
+        args.add(
+            "-Damethyst.touchscreen_enabled=" +
+                if (LauncherConfig.readTouchscreenEnabled(context)) "true" else "false"
+        )
         args.add("-Duser.language=${Locale.getDefault().language}")
         args.add("-Duser.timezone=${TimeZone.getDefault().id}")
         args.add("-Dos.name=Linux")

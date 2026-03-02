@@ -29,6 +29,7 @@ public class DesktopControllerManager implements ControllerManager {
     private static final float TRIGGER_CONNECT_THRESHOLD = 0.05f;
     private static final byte BUTTON_RELEASE = 0;
     private static final byte BUTTON_PRESS = 1;
+    private static final String TOUCHSCREEN_ENABLED_PROP = "amethyst.touchscreen_enabled";
 
     // Raw axis order in CallbackBridge gamepad buffers (GLFW standard)
     private static final int RAW_AXIS_LEFT_X = 0;
@@ -56,6 +57,7 @@ public class DesktopControllerManager implements ControllerManager {
     private boolean controllerRegistered = false;
     private boolean hasSeenInput = false;
     private boolean directInputEnableAttempted = false;
+    private Boolean expectedTouchscreenEnabled = null;
 
     public DesktopControllerManager() {
         buttonBuffer = createButtonBuffer();
@@ -112,8 +114,8 @@ public class DesktopControllerManager implements ControllerManager {
         if (!directInputEnableAttempted) {
             tryEnableDirectInput();
         }
+        enforceConfiguredTouchscreenMode();
         if (!hasSeenInput) {
-            enforceTouchModeUntilFirstGamepadInput();
             if (!hasLiveInput()) {
                 return;
             }
@@ -128,14 +130,61 @@ public class DesktopControllerManager implements ControllerManager {
         dispatchPovEvent();
     }
 
-    private void enforceTouchModeUntilFirstGamepadInput() {
+    private void enforceConfiguredTouchscreenMode() {
+        boolean expectedTouchscreen = resolveExpectedTouchscreenEnabled();
         try {
-            if (Settings.isControllerMode || !Settings.isTouchScreen) {
+            if (Settings.isTouchScreen != expectedTouchscreen) {
+                Settings.isTouchScreen = expectedTouchscreen;
+            }
+            if (!hasSeenInput && Settings.isControllerMode) {
                 Settings.isControllerMode = false;
-                Settings.isTouchScreen = true;
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private boolean resolveExpectedTouchscreenEnabled() {
+        if (expectedTouchscreenEnabled != null) {
+            return expectedTouchscreenEnabled;
+        }
+
+        boolean expected = true;
+        try {
+            expected = Settings.isTouchScreen;
+        } catch (Throwable ignored) {
+        }
+
+        Boolean parsed = parseBooleanLike(System.getProperty(TOUCHSCREEN_ENABLED_PROP));
+        if (parsed != null) {
+            expected = parsed;
+        }
+
+        expectedTouchscreenEnabled = expected;
+        return expected;
+    }
+
+    private Boolean parseBooleanLike(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String normalized = rawValue.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        if ("true".equalsIgnoreCase(normalized)
+                || "1".equals(normalized)
+                || "yes".equalsIgnoreCase(normalized)
+                || "on".equalsIgnoreCase(normalized)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equalsIgnoreCase(normalized)
+                || "0".equals(normalized)
+                || "no".equalsIgnoreCase(normalized)
+                || "off".equalsIgnoreCase(normalized)) {
+            return Boolean.FALSE;
+        }
+        return null;
     }
 
     private void registerControllerIfNeeded() {
