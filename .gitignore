@@ -1,4 +1,9 @@
 note.md
+$dir/
+artifacts/
+*/artifacts/
+tmp/
+RingOfDestiny/
 desktop-1.0.jar
 _tmp*
 .tmp*
@@ -29,3 +34,6 @@ replay_pid*.log
 Thumbs.db
 
 app/src/main/assets/components/jre
+
+# generated patch build outputs
+patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class

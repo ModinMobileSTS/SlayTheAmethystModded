@@ -122,7 +122,7 @@ private fun LauncherMainScreenContent(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SlayTheAmethyst") },
+                title = { Text("杀戮尖塔模组启动器") },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(
