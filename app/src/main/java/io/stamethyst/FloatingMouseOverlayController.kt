@@ -70,8 +70,8 @@ internal class FloatingMouseOverlayController(
         )
         imeProxyView = imeView
 
-        val buttonSize = dpToPx(62)
-        val iconSize = dpToPx(34)
+        val buttonSize = dpToPx(56)
+        val iconSize = dpToPx(30)
         val button = FrameLayout(activity).apply {
             setBackgroundResource(R.drawable.bg_touch_mouse_floating)
             visibility = View.GONE
