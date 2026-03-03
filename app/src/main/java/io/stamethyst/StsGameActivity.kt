@@ -154,6 +154,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var bootOverlayMessage = ""
     private var bootOverlayShownAtMs = -1L
     private var bootOverlayDismissed = false
+    private var splashOverlayDismissSignaled = false
     private var mainMenuReadySignaled = false
     private var launchFailureSignaled = false
 
@@ -173,6 +174,9 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     @Volatile
     private var bootBridgeReaderStop = false
+
+    @Volatile
+    private var bootOverlayLogRenderScheduled = false
 
     @Volatile
     private var bootBridgeSawStructuredEvent = false
@@ -743,6 +747,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         synchronized(bootLogLines) {
             bootLogLines.clear()
         }
+        bootOverlayLogRenderScheduled = false
+        splashOverlayDismissSignaled = false
         bootOverlayLogText?.text = ""
         bootOverlayDismissButton?.let { button ->
             if (manualDismissBootOverlay) {
@@ -974,6 +980,16 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                         parsed.message.ifEmpty { "Loading..." }
                     )
                 }
+                maybeDismissOverlayOnSplashPhase(parsed.percent, parsed.message)
+            }
+
+            "SPLASH" -> {
+                val splashMessage = parsed.message.ifEmpty { "Game splash" }
+                updateBootOverlayProgress(
+                    if (parsed.percent >= 0) parsed.percent else 94,
+                    splashMessage
+                )
+                maybeDismissOverlayOnSplashSignal("event", splashMessage)
             }
 
             "READY" -> signalMainMenuReady(
@@ -984,6 +1000,35 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 parsed.message.ifEmpty { "Bridge reported startup failure" }
             )
         }
+    }
+
+    private fun maybeDismissOverlayOnSplashPhase(percent: Int, message: String?) {
+        if (!waitForMainMenu ||
+            manualDismissBootOverlay ||
+            bootOverlayDismissed ||
+            splashOverlayDismissSignaled ||
+            percent != 94
+        ) {
+            return
+        }
+        val splashPhaseDetected = message?.contains("splash", ignoreCase = true) == true
+        if (!splashPhaseDetected) {
+            return
+        }
+        maybeDismissOverlayOnSplashSignal("phase", message)
+    }
+
+    private fun maybeDismissOverlayOnSplashSignal(source: String, message: String) {
+        if (!waitForMainMenu || manualDismissBootOverlay || bootOverlayDismissed || splashOverlayDismissSignaled) {
+            return
+        }
+        splashOverlayDismissSignaled = true
+        try {
+            Logger.appendToLog("Boot overlay splash signal ($source): message=\"$message\"")
+        } catch (_: Throwable) {
+        }
+        updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(98), "Game splash detected")
+        runOnUiThread { requestEarlyOverlayDismiss() }
     }
 
     private fun sleepQuietly(ms: Long) {
@@ -1104,28 +1149,39 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun appendBootOverlayLog(rawLine: String?) {
-        if (!waitForMainMenu || rawLine == null) {
+        if (!waitForMainMenu || rawLine == null || bootOverlayDismissed) {
             return
         }
         val line = rawLine.replace('\r', ' ').trim()
         if (line.isEmpty()) {
             return
         }
+        var shouldScheduleRender = false
         synchronized(bootLogLines) {
             bootLogLines.addLast(line)
             while (bootLogLines.size > BOOT_LOG_MAX_LINES) {
                 bootLogLines.removeFirst()
             }
+            if (!bootOverlayLogRenderScheduled) {
+                bootOverlayLogRenderScheduled = true
+                shouldScheduleRender = true
+            }
         }
-        runOnUiThread { renderBootOverlayLogs() }
+        if (shouldScheduleRender) {
+            runOnUiThread { renderBootOverlayLogs() }
+        }
     }
 
     private fun renderBootOverlayLogs() {
         if (bootOverlayDismissed || bootOverlayLogText == null) {
+            synchronized(bootLogLines) {
+                bootOverlayLogRenderScheduled = false
+            }
             return
         }
         val builder = StringBuilder(4096)
         synchronized(bootLogLines) {
+            bootOverlayLogRenderScheduled = false
             for (line in bootLogLines) {
                 builder.append(line).append('\n')
             }

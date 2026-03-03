@@ -13,6 +13,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class BootBridgeLauncher {
@@ -27,6 +29,12 @@ public final class BootBridgeLauncher {
     private static final long WATCHER_POLL_MS = 120L;
     private static final int READY_CONFIRM_TICKS = 3;
     private static final int CONSOLE_FALLBACK_FAIL_TICKS = 90;
+
+    private static volatile Class<?> cachedCardCrawlGameClass;
+    private static volatile Field cachedModeField;
+    private static volatile Field cachedMainMenuField;
+    private static volatile Class<?> cachedMainMenuScreenClass;
+    private static volatile Field cachedMainMenuScreenField;
 
     private static File eventsFile;
     private static int lastProgress = 0;
@@ -230,12 +238,16 @@ public final class BootBridgeLauncher {
         Thread watcher = new Thread(() -> {
             int readyTicks = 0;
             int reflectionFailureTicks = 0;
+            boolean splashSignaled = false;
+            String lastMainMenuScreen = "";
             while (!READY_SENT.get() && !FAIL_SENT.get()) {
                 try {
                     GameSnapshot snapshot = readGameSnapshot();
                     reflectionFailureTicks = 0;
                     if (snapshot == null) {
                         readyTicks = 0;
+                        splashSignaled = false;
+                        lastMainMenuScreen = "";
                         sleepQuietly(WATCHER_POLL_MS);
                         continue;
                     }
@@ -250,13 +262,24 @@ public final class BootBridgeLauncher {
                     }
 
                     if ("SPLASH".equals(snapshot.modeName)) {
-                        emitPhase(94, "Game splash");
+                        if (!splashSignaled) {
+                            emitSplash("Game splash");
+                            emitPhase(94, "Game splash");
+                            splashSignaled = true;
+                        }
+                    } else {
+                        splashSignaled = false;
                     }
                     if ("CHAR_SELECT".equals(snapshot.modeName) && snapshot.hasMainMenuScreen) {
                         String screen = snapshot.menuScreenName.isEmpty()
                                 ? "unknown"
                                 : snapshot.menuScreenName;
-                        emitPhase(97, "Main menu scene: " + screen);
+                        if (!screen.equals(lastMainMenuScreen)) {
+                            emitPhase(97, "Main menu scene: " + screen);
+                            lastMainMenuScreen = screen;
+                        }
+                    } else {
+                        lastMainMenuScreen = "";
                     }
                 } catch (Throwable error) {
                     readyTicks = 0;
@@ -275,19 +298,27 @@ public final class BootBridgeLauncher {
 
     private static GameSnapshot readGameSnapshot() throws Exception {
         Class<?> cardCrawlGameClass = loadCardCrawlGameClass();
-        Field modeField = cardCrawlGameClass.getDeclaredField("mode");
+        Field modeField = cachedModeField;
+        if (modeField == null || modeField.getDeclaringClass() != cardCrawlGameClass) {
+            modeField = cardCrawlGameClass.getDeclaredField("mode");
+            modeField.setAccessible(true);
+            cachedModeField = modeField;
+        }
         if (!Modifier.isStatic(modeField.getModifiers())) {
             return null;
         }
-        modeField.setAccessible(true);
         Object mode = modeField.get(null);
         String modeName = readModeName(mode);
 
-        Field mainMenuField = cardCrawlGameClass.getDeclaredField("mainMenuScreen");
+        Field mainMenuField = cachedMainMenuField;
+        if (mainMenuField == null || mainMenuField.getDeclaringClass() != cardCrawlGameClass) {
+            mainMenuField = cardCrawlGameClass.getDeclaredField("mainMenuScreen");
+            mainMenuField.setAccessible(true);
+            cachedMainMenuField = mainMenuField;
+        }
         if (!Modifier.isStatic(mainMenuField.getModifiers())) {
             return new GameSnapshot(modeName, false, "");
         }
-        mainMenuField.setAccessible(true);
         Object mainMenuScreen = mainMenuField.get(null);
         if (mainMenuScreen == null) {
             return new GameSnapshot(modeName, false, "");
@@ -295,13 +326,28 @@ public final class BootBridgeLauncher {
 
         String menuScreenName = "";
         try {
-            Field screenField = mainMenuScreen.getClass().getDeclaredField("screen");
-            screenField.setAccessible(true);
-            Object screen = screenField.get(mainMenuScreen);
-            if (screen instanceof Enum<?>) {
-                menuScreenName = ((Enum<?>) screen).name();
-            } else if (screen != null) {
-                menuScreenName = String.valueOf(screen);
+            Class<?> menuClass = mainMenuScreen.getClass();
+            Field screenField = cachedMainMenuScreenField;
+            if (screenField == null || cachedMainMenuScreenClass != menuClass) {
+                try {
+                    Field discovered = menuClass.getDeclaredField("screen");
+                    discovered.setAccessible(true);
+                    cachedMainMenuScreenField = discovered;
+                    cachedMainMenuScreenClass = menuClass;
+                    screenField = discovered;
+                } catch (Throwable ignored) {
+                    cachedMainMenuScreenField = null;
+                    cachedMainMenuScreenClass = menuClass;
+                    screenField = null;
+                }
+            }
+            if (screenField != null) {
+                Object screen = screenField.get(mainMenuScreen);
+                if (screen instanceof Enum<?>) {
+                    menuScreenName = ((Enum<?>) screen).name();
+                } else if (screen != null) {
+                    menuScreenName = String.valueOf(screen);
+                }
             }
         } catch (Throwable ignored) {
             // Menu screen introspection is best-effort only.
@@ -310,18 +356,24 @@ public final class BootBridgeLauncher {
     }
 
     private static Class<?> loadCardCrawlGameClass() throws ClassNotFoundException {
-        ClassLoader[] candidates = new ClassLoader[]{
-                Thread.currentThread().getContextClassLoader(),
-                BootBridgeLauncher.class.getClassLoader(),
-                ClassLoader.getSystemClassLoader()
-        };
+        Class<?> cached = cachedCardCrawlGameClass;
+        if (cached != null) {
+            return cached;
+        }
+        List<ClassLoader> candidates = new ArrayList<ClassLoader>(4);
+        addCandidateLoader(candidates, resolveMtsRuntimeClassLoader());
+        addCandidateLoader(candidates, Thread.currentThread().getContextClassLoader());
+        addCandidateLoader(candidates, BootBridgeLauncher.class.getClassLoader());
+        addCandidateLoader(candidates, ClassLoader.getSystemClassLoader());
         ClassNotFoundException last = null;
         for (ClassLoader loader : candidates) {
             if (loader == null) {
                 continue;
             }
             try {
-                return Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame", false, loader);
+                Class<?> loaded = Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame", false, loader);
+                cachedCardCrawlGameClass = loaded;
+                return loaded;
             } catch (ClassNotFoundException error) {
                 last = error;
             }
@@ -329,7 +381,54 @@ public final class BootBridgeLauncher {
         if (last != null) {
             throw last;
         }
-        return Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame");
+        Class<?> loaded = Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame");
+        cachedCardCrawlGameClass = loaded;
+        return loaded;
+    }
+
+    private static void addCandidateLoader(List<ClassLoader> out, ClassLoader loader) {
+        if (loader == null || out == null) {
+            return;
+        }
+        for (ClassLoader existing : out) {
+            if (existing == loader) {
+                return;
+            }
+        }
+        out.add(loader);
+    }
+
+    private static ClassLoader resolveMtsRuntimeClassLoader() {
+        try {
+            Class<?> loaderClass = Class.forName("com.evacipated.cardcrawl.modthespire.Loader");
+            Method getClassPool = loaderClass.getMethod("getClassPool");
+            Object classPool = getClassPool.invoke(null);
+            if (classPool == null) {
+                return null;
+            }
+            try {
+                Method getClassLoader = classPool.getClass().getMethod("getClassLoader");
+                Object value = getClassLoader.invoke(classPool);
+                if (value instanceof ClassLoader) {
+                    return (ClassLoader) value;
+                }
+            } catch (Throwable ignored) {
+                // Fall through to reflective field access.
+            }
+            try {
+                Field classLoaderField = classPool.getClass().getDeclaredField("classLoader");
+                classLoaderField.setAccessible(true);
+                Object value = classLoaderField.get(classPool);
+                if (value instanceof ClassLoader) {
+                    return (ClassLoader) value;
+                }
+            } catch (Throwable ignored) {
+                return null;
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
+        return null;
     }
 
     private static String readModeName(Object mode) {
@@ -448,6 +547,13 @@ public final class BootBridgeLauncher {
         }
         lastProgress = bounded;
         emit("PHASE", bounded, message);
+    }
+
+    private static void emitSplash(String message) {
+        if (FAIL_SENT.get()) {
+            return;
+        }
+        emit("SPLASH", 94, message);
     }
 
     private static void emitReady(String message) {
