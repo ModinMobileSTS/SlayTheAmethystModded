@@ -23,6 +23,10 @@ public final class BootBridgeLauncher {
     private static final Object EVENT_LOCK = new Object();
     private static final AtomicBoolean READY_SENT = new AtomicBoolean(false);
     private static final AtomicBoolean FAIL_SENT = new AtomicBoolean(false);
+    private static final AtomicBoolean CONSOLE_READY_HINT = new AtomicBoolean(false);
+    private static final long WATCHER_POLL_MS = 120L;
+    private static final int READY_CONFIRM_TICKS = 3;
+    private static final int CONSOLE_FALLBACK_FAIL_TICKS = 90;
 
     private static File eventsFile;
     private static int lastProgress = 0;
@@ -74,6 +78,12 @@ public final class BootBridgeLauncher {
         final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             emitFail("Uncaught exception on " + thread.getName() + ": " + summarizeThrowable(throwable));
+            try {
+                if (throwable != null) {
+                    throwable.printStackTrace(System.err);
+                }
+            } catch (Throwable ignored) {
+            }
             if (previous != null) {
                 previous.uncaughtException(thread, throwable);
             }
@@ -149,7 +159,8 @@ public final class BootBridgeLauncher {
             emitPhase(mappedPercent, line);
         }
         if (isReadyConsoleLine(line)) {
-            emitReady("Startup reached interactive phase");
+            CONSOLE_READY_HINT.set(true);
+            emitPhase(97, "Console ready hint");
         }
     }
 
@@ -217,38 +228,85 @@ public final class BootBridgeLauncher {
 
     private static void startMainMenuWatcher() {
         Thread watcher = new Thread(() -> {
+            int readyTicks = 0;
+            int reflectionFailureTicks = 0;
             while (!READY_SENT.get() && !FAIL_SENT.get()) {
                 try {
-                    Object mode = readGameMode();
-                    if (mode == null) {
-                        sleepQuietly(120L);
+                    GameSnapshot snapshot = readGameSnapshot();
+                    reflectionFailureTicks = 0;
+                    if (snapshot == null) {
+                        readyTicks = 0;
+                        sleepQuietly(WATCHER_POLL_MS);
                         continue;
                     }
-                    String modeName = readModeName(mode);
-                    if (isReadyGameMode(modeName)) {
-                        emitReady("Game mode ready: " + modeName);
-                        return;
+                    if (isReadyGameState(snapshot)) {
+                        readyTicks += 1;
+                        if (readyTicks >= READY_CONFIRM_TICKS) {
+                            emitReady("Game state ready: " + describeSnapshot(snapshot));
+                            return;
+                        }
+                    } else {
+                        readyTicks = 0;
                     }
-                    if ("SPLASH".equals(modeName)) {
+
+                    if ("SPLASH".equals(snapshot.modeName)) {
                         emitPhase(94, "Game splash");
                     }
-                } catch (Throwable ignored) {
+                    if ("CHAR_SELECT".equals(snapshot.modeName) && snapshot.hasMainMenuScreen) {
+                        String screen = snapshot.menuScreenName.isEmpty()
+                                ? "unknown"
+                                : snapshot.menuScreenName;
+                        emitPhase(97, "Main menu scene: " + screen);
+                    }
+                } catch (Throwable error) {
+                    readyTicks = 0;
+                    reflectionFailureTicks += 1;
+                    if (CONSOLE_READY_HINT.get() && reflectionFailureTicks >= CONSOLE_FALLBACK_FAIL_TICKS) {
+                        emitReady("Startup reached interactive phase (console fallback)");
+                        return;
+                    }
                 }
-                sleepQuietly(120L);
+                sleepQuietly(WATCHER_POLL_MS);
             }
         }, "Amethyst-BootBridge-MenuWatcher");
         watcher.setDaemon(true);
         watcher.start();
     }
 
-    private static Object readGameMode() throws Exception {
+    private static GameSnapshot readGameSnapshot() throws Exception {
         Class<?> cardCrawlGameClass = loadCardCrawlGameClass();
         Field modeField = cardCrawlGameClass.getDeclaredField("mode");
         if (!Modifier.isStatic(modeField.getModifiers())) {
             return null;
         }
         modeField.setAccessible(true);
-        return modeField.get(null);
+        Object mode = modeField.get(null);
+        String modeName = readModeName(mode);
+
+        Field mainMenuField = cardCrawlGameClass.getDeclaredField("mainMenuScreen");
+        if (!Modifier.isStatic(mainMenuField.getModifiers())) {
+            return new GameSnapshot(modeName, false, "");
+        }
+        mainMenuField.setAccessible(true);
+        Object mainMenuScreen = mainMenuField.get(null);
+        if (mainMenuScreen == null) {
+            return new GameSnapshot(modeName, false, "");
+        }
+
+        String menuScreenName = "";
+        try {
+            Field screenField = mainMenuScreen.getClass().getDeclaredField("screen");
+            screenField.setAccessible(true);
+            Object screen = screenField.get(mainMenuScreen);
+            if (screen instanceof Enum<?>) {
+                menuScreenName = ((Enum<?>) screen).name();
+            } else if (screen != null) {
+                menuScreenName = String.valueOf(screen);
+            }
+        } catch (Throwable ignored) {
+            // Menu screen introspection is best-effort only.
+        }
+        return new GameSnapshot(modeName, true, menuScreenName);
     }
 
     private static Class<?> loadCardCrawlGameClass() throws ClassNotFoundException {
@@ -278,15 +336,54 @@ public final class BootBridgeLauncher {
         if (mode instanceof Enum<?>) {
             return ((Enum<?>) mode).name();
         }
+        if (mode == null) {
+            return "";
+        }
         return String.valueOf(mode);
     }
 
-    private static boolean isReadyGameMode(String modeName) {
-        if (modeName == null || modeName.isEmpty()) {
+    private static boolean isReadyGameState(GameSnapshot snapshot) {
+        if (snapshot == null) {
             return false;
         }
-        // Splash is still pre-render warmup; any other mode means the game UI is ready.
-        return !"SPLASH".equals(modeName);
+        if ("GAMEPLAY".equals(snapshot.modeName) || "DUNGEON_TRANSITION".equals(snapshot.modeName)) {
+            return true;
+        }
+        if (!"CHAR_SELECT".equals(snapshot.modeName)) {
+            return false;
+        }
+        if (!snapshot.hasMainMenuScreen) {
+            return false;
+        }
+        if (snapshot.menuScreenName == null || snapshot.menuScreenName.isEmpty()) {
+            return false;
+        }
+        return !"NONE".equals(snapshot.menuScreenName);
+    }
+
+    private static String describeSnapshot(GameSnapshot snapshot) {
+        if (snapshot == null) {
+            return "unknown";
+        }
+        String mode = snapshot.modeName == null || snapshot.modeName.isEmpty()
+                ? "unknown"
+                : snapshot.modeName;
+        String menu = snapshot.menuScreenName == null || snapshot.menuScreenName.isEmpty()
+                ? "n/a"
+                : snapshot.menuScreenName;
+        return "mode=" + mode + ", mainMenu=" + snapshot.hasMainMenuScreen + ", screen=" + menu;
+    }
+
+    private static final class GameSnapshot {
+        private final String modeName;
+        private final boolean hasMainMenuScreen;
+        private final String menuScreenName;
+
+        private GameSnapshot(String modeName, boolean hasMainMenuScreen, String menuScreenName) {
+            this.modeName = modeName;
+            this.hasMainMenuScreen = hasMainMenuScreen;
+            this.menuScreenName = menuScreenName;
+        }
     }
 
     private static void invokeDelegate(String delegateClass, String[] args) throws Throwable {
@@ -297,9 +394,17 @@ public final class BootBridgeLauncher {
         } catch (InvocationTargetException error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             emitFail("Delegate crashed: " + summarizeThrowable(cause));
+            try {
+                cause.printStackTrace(System.err);
+            } catch (Throwable ignored) {
+            }
             throw cause;
         } catch (Throwable error) {
             emitFail("Delegate start failed: " + summarizeThrowable(error));
+            try {
+                error.printStackTrace(System.err);
+            } catch (Throwable ignored) {
+            }
             throw error;
         }
     }

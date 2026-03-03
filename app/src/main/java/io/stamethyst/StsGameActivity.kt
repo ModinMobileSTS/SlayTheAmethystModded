@@ -78,6 +78,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
         private const val BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L
         private const val BOOT_OVERLAY_READY_DELAY_MS = 700L
+        private const val BOOT_LOG_READY_FALLBACK_NO_EVENTS_MS = 45_000L
+        private const val BOOT_LOG_READY_FALLBACK_WITH_EVENTS_MS = 90_000L
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
         private const val BOOT_LOG_MAX_LINES = 220
 
@@ -167,10 +169,14 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     @Volatile
     private var jvmLaunchThread: Thread? = null
 
-//    private var bootBridgeReaderThread: Thread? = null
-//
-//    @Volatile
-//    private var bootBridgeReaderStop = false
+    private var bootBridgeReaderThread: Thread? = null
+
+    @Volatile
+    private var bootBridgeReaderStop = false
+
+    @Volatile
+    private var bootBridgeSawStructuredEvent = false
+    private var bootBridgeReaderStartedAtMs = 0L
 
     private val bootLogLines = ArrayDeque<String>()
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
@@ -304,7 +310,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         runtimeLifecycleReady = false
         bridgeSurfaceReady = false
         earlyOverlayDismissOnNextFrame = false
-//        stopBootBridgeReaderIfRunning()
+        stopBootBridgeReaderIfRunning()
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()
@@ -409,7 +415,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         releaseTouchButtonIfNeeded()
         updateFloatingMouseVisibility()
         BackExitNotice.markExpectedBackExit(this)
-//        stopBootBridgeReaderIfRunning()
+        stopBootBridgeReaderIfRunning()
         updateBootOverlayProgress(100, "Stopping game...")
         Log.i(TAG, "Android back pressed: force restart to launcher")
 
@@ -442,17 +448,62 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val pendingIntent = PendingIntent.getActivity(this, 0x71A7, launcherIntent, flags)
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager?
         val triggerAt = SystemClock.elapsedRealtime() + BACK_FORCE_RESTART_DELAY_MS
+        var scheduled = false
         if (alarmManager != null) {
-            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
-        } else {
+            scheduled = tryScheduleLauncherRestart(alarmManager, triggerAt, pendingIntent)
+        }
+        if (!scheduled) {
             try {
                 pendingIntent.send()
-            } catch (_: PendingIntent.CanceledException) {
+                scheduled = true
+            } catch (error: PendingIntent.CanceledException) {
+                Log.w(TAG, "Failed to send launcher restart PendingIntent", error)
+            }
+        }
+        if (!scheduled) {
+            try {
+                startActivity(launcherIntent)
+            } catch (error: Throwable) {
+                Log.e(TAG, "Failed to launch launcher fallback activity", error)
             }
         }
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
         exitProcess(0)
+    }
+
+    private fun tryScheduleLauncherRestart(
+        alarmManager: AlarmManager,
+        triggerAt: Long,
+        pendingIntent: PendingIntent
+    ): Boolean {
+        return try {
+            if (canUseExactAlarm(alarmManager)) {
+                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                Log.w(TAG, "Exact alarm unavailable, falling back to inexact alarm restart")
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            }
+            true
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Alarm scheduling denied, using fallback launcher restart", error)
+            false
+        } catch (error: Throwable) {
+            Log.w(TAG, "Failed to schedule launcher restart alarm", error)
+            false
+        }
+    }
+
+    private fun canUseExactAlarm(alarmManager: AlarmManager): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true
+        }
+        return try {
+            alarmManager.canScheduleExactAlarms()
+        } catch (error: Throwable) {
+            Log.w(TAG, "Unable to query exact alarm capability", error)
+            false
+        }
     }
 
     private fun startJvmOnce() {
@@ -499,7 +550,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     jvmLogListenerRegistered = false
                 }
                 if (waitForMainMenu && StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
-//                    startBootBridgeReader()
+                    startBootBridgeReader()
                     updateBootOverlayProgress(26, "Waiting for structured boot events...")
                 }
                 Logger.appendToLog("Launching STS with java home: ${javaHome.absolutePath}")
@@ -746,11 +797,8 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             if (shouldHandleOverlayFlow) {
                 appendBootOverlayLog(raw)
             }
-            if (shouldHandleOverlayFlow && shouldDismissOverlayEarlyLog(line)) {
-                runOnUiThread {
-                    updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(98), "Starting game...")
-                    requestEarlyOverlayDismiss()
-                }
+            if (shouldHandleOverlayFlow && shouldUseLogReadyFallback(line)) {
+                signalMainMenuReady("Startup reached interactive phase (log fallback)")
             }
         }
     }
@@ -781,7 +829,26 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             lower.contains("gc overhead limit exceeded")
     }
 
-    private fun shouldDismissOverlayEarlyLog(line: String?): Boolean {
+    private fun shouldUseLogReadyFallback(line: String?): Boolean {
+        if (!waitForMainMenu || mainMenuReadySignaled || bootOverlayDismissed) {
+            return false
+        }
+        if (bootBridgeReaderStartedAtMs <= 0L) {
+            return false
+        }
+        val elapsed = SystemClock.uptimeMillis() - bootBridgeReaderStartedAtMs
+        val fallbackDelay = if (bootBridgeSawStructuredEvent) {
+            BOOT_LOG_READY_FALLBACK_WITH_EVENTS_MS
+        } else {
+            BOOT_LOG_READY_FALLBACK_NO_EVENTS_MS
+        }
+        if (elapsed < fallbackDelay) {
+            return false
+        }
+        return isReadyHintLog(line)
+    }
+
+    private fun isReadyHintLog(line: String?): Boolean {
         if (line == null || line.isEmpty()) {
             return false
         }
@@ -798,7 +865,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (lower.contains("publishaddcustommodemods")) {
             return true
         }
-        return lower.contains("events.heartevent>")
+        return false
     }
 
     private fun requestEarlyOverlayDismiss() {
@@ -823,9 +890,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         dismissBootOverlay()
     }
 
-/*
     private fun startBootBridgeReader() {
         stopBootBridgeReaderIfRunning()
+        bootBridgeSawStructuredEvent = false
+        bootBridgeReaderStartedAtMs = SystemClock.uptimeMillis()
         val eventsFile = RuntimePaths.bootBridgeEventsFile(this)
         val parent = eventsFile.parentFile
         if (parent != null && !parent.exists()) {
@@ -851,6 +919,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val thread = bootBridgeReaderThread
         bootBridgeReaderThread = null
         thread?.interrupt()
+        bootBridgeReaderStartedAtMs = 0L
     }
 
     private fun runBootBridgeReader(eventsFile: File) {
@@ -895,6 +964,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         appendBootOverlayLog("[bridge] $trimmed")
 
         val parsed = parseBootBridgeEventLine(trimmed) ?: return
+        bootBridgeSawStructuredEvent = true
 
         when (parsed.type) {
             "PHASE" -> {
@@ -916,17 +986,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun parseSafeInt(value: String?, fallback: Int): Int {
-        if (value == null) {
-            return fallback
-        }
-        return try {
-            value.trim().toInt()
-        } catch (_: Throwable) {
-            fallback
-        }
-    }
-
     private fun sleepQuietly(ms: Long) {
         try {
             Thread.sleep(ms)
@@ -934,7 +993,6 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             Thread.currentThread().interrupt()
         }
     }
-*/
 
     private fun signalLaunchFailure(detail: String) {
         if (backExitRequested) {
@@ -951,7 +1009,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         launchFailureSignaled = true
-//        stopBootBridgeReaderIfRunning()
+        stopBootBridgeReaderIfRunning()
         Log.e(TAG, "Detected startup failure from boot bridge: $detail")
         val crashCode = if (oomFailure) CRASH_CODE_OUT_OF_MEMORY else CRASH_CODE_BOOT_FAILURE
         val crashDetail = if (oomFailure) {
@@ -967,6 +1025,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         mainMenuReadySignaled = true
+        stopBootBridgeReaderIfRunning()
         try {
             Logger.appendToLog(
                 "Boot overlay ready signal: message=\"$message\", manualDismiss=$manualDismissBootOverlay"
@@ -993,7 +1052,10 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 Logger.appendToLog("Boot overlay auto dismiss scheduled in ${delay}ms")
             } catch (_: Throwable) {
             }
-            bootOverlay?.postDelayed({ dismissBootOverlay() }, delay)
+            bootOverlay?.postDelayed({
+                updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(99), "Game frame ready")
+                requestEarlyOverlayDismiss()
+            }, delay)
         }
     }
 

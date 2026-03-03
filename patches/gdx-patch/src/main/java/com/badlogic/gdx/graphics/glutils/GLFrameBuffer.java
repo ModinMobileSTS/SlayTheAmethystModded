@@ -53,6 +53,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	private final static int GL_DEPTH24_STENCIL8_OES = 0x88F0;
 	private static boolean fboFallbackLogged = false;
+	private static boolean nonRenderableFormatFallbackLogged = false;
 
 	/** the color buffer texture **/
 	protected T colorTexture;
@@ -113,7 +114,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	public GLFrameBuffer (Pixmap.Format format, int width, int height, boolean hasDepth, boolean hasStencil) {
 		this.width = width;
 		this.height = height;
-		this.format = format;
+		this.format = toCompatibleColorFormat(format);
 		this.hasDepth = hasDepth;
 		this.hasStencil = hasStencil;
 		build();
@@ -129,6 +130,21 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** Override this method in a derived class to attach the backing texture to the GL framebuffer object. */
 	protected abstract void attachFrameBufferColorTexture ();
+
+	private static Pixmap.Format toCompatibleColorFormat (Pixmap.Format requestedFormat) {
+		Pixmap.Format safeFormat = requestedFormat == null ? Pixmap.Format.RGBA8888 : requestedFormat;
+		if (safeFormat == Pixmap.Format.Alpha ||
+			safeFormat == Pixmap.Format.Intensity ||
+			safeFormat == Pixmap.Format.LuminanceAlpha) {
+			if (!nonRenderableFormatFallbackLogged) {
+				nonRenderableFormatFallbackLogged = true;
+				System.out.println("[gdx-patch] GLFrameBuffer fallback: non-color-renderable format "
+					+ safeFormat + " -> RGBA8888");
+			}
+			return Pixmap.Format.RGBA8888;
+		}
+		return safeFormat;
+	}
 
 	private void build () {
 		GL20 gl = Gdx.gl20;
