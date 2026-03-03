@@ -141,7 +141,7 @@ object RuntimePackInstaller {
                 TarArchiveInputStream(xzInput).use { tarInput ->
                     val buffer = ByteArray(8192)
                     var entry: TarArchiveEntry?
-                    while (tarInput.nextTarEntry.also { entry = it } != null) {
+                    while (tarInput.nextEntry.also { entry = it } != null) {
                         val current = entry!!
                         val outFile = File(destination, current.name)
                         if (current.isDirectory) {

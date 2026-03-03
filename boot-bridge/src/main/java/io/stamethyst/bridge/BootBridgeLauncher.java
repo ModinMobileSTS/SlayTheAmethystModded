@@ -13,6 +13,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class BootBridgeLauncher {
@@ -23,6 +25,16 @@ public final class BootBridgeLauncher {
     private static final Object EVENT_LOCK = new Object();
     private static final AtomicBoolean READY_SENT = new AtomicBoolean(false);
     private static final AtomicBoolean FAIL_SENT = new AtomicBoolean(false);
+    private static final AtomicBoolean CONSOLE_READY_HINT = new AtomicBoolean(false);
+    private static final long WATCHER_POLL_MS = 120L;
+    private static final int READY_CONFIRM_TICKS = 3;
+    private static final int CONSOLE_FALLBACK_FAIL_TICKS = 90;
+
+    private static volatile Class<?> cachedCardCrawlGameClass;
+    private static volatile Field cachedModeField;
+    private static volatile Field cachedMainMenuField;
+    private static volatile Class<?> cachedMainMenuScreenClass;
+    private static volatile Field cachedMainMenuScreenField;
 
     private static File eventsFile;
     private static int lastProgress = 0;
@@ -74,6 +86,12 @@ public final class BootBridgeLauncher {
         final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             emitFail("Uncaught exception on " + thread.getName() + ": " + summarizeThrowable(throwable));
+            try {
+                if (throwable != null) {
+                    throwable.printStackTrace(System.err);
+                }
+            } catch (Throwable ignored) {
+            }
             if (previous != null) {
                 previous.uncaughtException(thread, throwable);
             }
@@ -149,15 +167,13 @@ public final class BootBridgeLauncher {
             emitPhase(mappedPercent, line);
         }
         if (isReadyConsoleLine(line)) {
-            emitReady("Startup reached interactive phase");
+            CONSOLE_READY_HINT.set(true);
+            emitPhase(97, "Console ready hint");
         }
     }
 
     private static boolean isKnownFatalConsoleLine(String line) {
-        if (line.startsWith("ERROR:")) {
-            return true;
-        }
-        return false;
+        return line.startsWith("ERROR:");
     }
 
     private static int mapConsolePhase(String line) {
@@ -217,53 +233,144 @@ public final class BootBridgeLauncher {
 
     private static void startMainMenuWatcher() {
         Thread watcher = new Thread(() -> {
+            int readyTicks = 0;
+            int reflectionFailureTicks = 0;
+            boolean splashSignaled = false;
+            String lastMainMenuScreen = "";
             while (!READY_SENT.get() && !FAIL_SENT.get()) {
                 try {
-                    Object mode = readGameMode();
-                    if (mode == null) {
-                        sleepQuietly(120L);
+                    GameSnapshot snapshot = readGameSnapshot();
+                    reflectionFailureTicks = 0;
+                    if (snapshot == null) {
+                        readyTicks = 0;
+                        splashSignaled = false;
+                        lastMainMenuScreen = "";
+                        sleepQuietly(WATCHER_POLL_MS);
                         continue;
                     }
-                    String modeName = readModeName(mode);
-                    if (isReadyGameMode(modeName)) {
-                        emitReady("Game mode ready: " + modeName);
+                    if (isReadyGameState(snapshot)) {
+                        readyTicks += 1;
+                        if (readyTicks >= READY_CONFIRM_TICKS) {
+                            emitReady("Game state ready: " + describeSnapshot(snapshot));
+                            return;
+                        }
+                    } else {
+                        readyTicks = 0;
+                    }
+
+                    if ("SPLASH".equals(snapshot.modeName)) {
+                        if (!splashSignaled) {
+                            emitSplash("Game splash");
+                            emitPhase(94, "Game splash");
+                            splashSignaled = true;
+                        }
+                    } else {
+                        splashSignaled = false;
+                    }
+                    if ("CHAR_SELECT".equals(snapshot.modeName) && snapshot.hasMainMenuScreen) {
+                        String screen = snapshot.menuScreenName.isEmpty()
+                                ? "unknown"
+                                : snapshot.menuScreenName;
+                        if (!screen.equals(lastMainMenuScreen)) {
+                            emitPhase(97, "Main menu scene: " + screen);
+                            lastMainMenuScreen = screen;
+                        }
+                    } else {
+                        lastMainMenuScreen = "";
+                    }
+                } catch (Throwable error) {
+                    readyTicks = 0;
+                    reflectionFailureTicks += 1;
+                    if (CONSOLE_READY_HINT.get() && reflectionFailureTicks >= CONSOLE_FALLBACK_FAIL_TICKS) {
+                        emitReady("Startup reached interactive phase (console fallback)");
                         return;
                     }
-                    if ("SPLASH".equals(modeName)) {
-                        emitPhase(94, "Game splash");
-                    }
-                } catch (Throwable ignored) {
                 }
-                sleepQuietly(120L);
+                sleepQuietly(WATCHER_POLL_MS);
             }
         }, "Amethyst-BootBridge-MenuWatcher");
         watcher.setDaemon(true);
         watcher.start();
     }
 
-    private static Object readGameMode() throws Exception {
+    private static GameSnapshot readGameSnapshot() throws Exception {
         Class<?> cardCrawlGameClass = loadCardCrawlGameClass();
-        Field modeField = cardCrawlGameClass.getDeclaredField("mode");
+        Field modeField = cachedModeField;
+        if (modeField == null || modeField.getDeclaringClass() != cardCrawlGameClass) {
+            modeField = cardCrawlGameClass.getDeclaredField("mode");
+            modeField.setAccessible(true);
+            cachedModeField = modeField;
+        }
         if (!Modifier.isStatic(modeField.getModifiers())) {
             return null;
         }
-        modeField.setAccessible(true);
-        return modeField.get(null);
+        Object mode = modeField.get(null);
+        String modeName = readModeName(mode);
+
+        Field mainMenuField = cachedMainMenuField;
+        if (mainMenuField == null || mainMenuField.getDeclaringClass() != cardCrawlGameClass) {
+            mainMenuField = cardCrawlGameClass.getDeclaredField("mainMenuScreen");
+            mainMenuField.setAccessible(true);
+            cachedMainMenuField = mainMenuField;
+        }
+        if (!Modifier.isStatic(mainMenuField.getModifiers())) {
+            return new GameSnapshot(modeName, false, "");
+        }
+        Object mainMenuScreen = mainMenuField.get(null);
+        if (mainMenuScreen == null) {
+            return new GameSnapshot(modeName, false, "");
+        }
+
+        String menuScreenName = "";
+        try {
+            Class<?> menuClass = mainMenuScreen.getClass();
+            Field screenField = cachedMainMenuScreenField;
+            if (screenField == null || cachedMainMenuScreenClass != menuClass) {
+                try {
+                    Field discovered = menuClass.getDeclaredField("screen");
+                    discovered.setAccessible(true);
+                    cachedMainMenuScreenField = discovered;
+                    cachedMainMenuScreenClass = menuClass;
+                    screenField = discovered;
+                } catch (Throwable ignored) {
+                    cachedMainMenuScreenField = null;
+                    cachedMainMenuScreenClass = menuClass;
+                    screenField = null;
+                }
+            }
+            if (screenField != null) {
+                Object screen = screenField.get(mainMenuScreen);
+                if (screen instanceof Enum<?>) {
+                    menuScreenName = ((Enum<?>) screen).name();
+                } else if (screen != null) {
+                    menuScreenName = String.valueOf(screen);
+                }
+            }
+        } catch (Throwable ignored) {
+            // Menu screen introspection is best-effort only.
+        }
+        return new GameSnapshot(modeName, true, menuScreenName);
     }
 
     private static Class<?> loadCardCrawlGameClass() throws ClassNotFoundException {
-        ClassLoader[] candidates = new ClassLoader[]{
-                Thread.currentThread().getContextClassLoader(),
-                BootBridgeLauncher.class.getClassLoader(),
-                ClassLoader.getSystemClassLoader()
-        };
+        Class<?> cached = cachedCardCrawlGameClass;
+        if (cached != null) {
+            return cached;
+        }
+        List<ClassLoader> candidates = new ArrayList<ClassLoader>(4);
+        addCandidateLoader(candidates, resolveMtsRuntimeClassLoader());
+        addCandidateLoader(candidates, Thread.currentThread().getContextClassLoader());
+        addCandidateLoader(candidates, BootBridgeLauncher.class.getClassLoader());
+        addCandidateLoader(candidates, ClassLoader.getSystemClassLoader());
         ClassNotFoundException last = null;
         for (ClassLoader loader : candidates) {
             if (loader == null) {
                 continue;
             }
             try {
-                return Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame", false, loader);
+                Class<?> loaded = Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame", false, loader);
+                cachedCardCrawlGameClass = loaded;
+                return loaded;
             } catch (ClassNotFoundException error) {
                 last = error;
             }
@@ -271,22 +378,108 @@ public final class BootBridgeLauncher {
         if (last != null) {
             throw last;
         }
-        return Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame");
+        Class<?> loaded = Class.forName("com.megacrit.cardcrawl.core.CardCrawlGame");
+        cachedCardCrawlGameClass = loaded;
+        return loaded;
+    }
+
+    private static void addCandidateLoader(List<ClassLoader> out, ClassLoader loader) {
+        if (loader == null || out == null) {
+            return;
+        }
+        for (ClassLoader existing : out) {
+            if (existing == loader) {
+                return;
+            }
+        }
+        out.add(loader);
+    }
+
+    private static ClassLoader resolveMtsRuntimeClassLoader() {
+        try {
+            Class<?> loaderClass = Class.forName("com.evacipated.cardcrawl.modthespire.Loader");
+            Method getClassPool = loaderClass.getMethod("getClassPool");
+            Object classPool = getClassPool.invoke(null);
+            if (classPool == null) {
+                return null;
+            }
+            try {
+                Method getClassLoader = classPool.getClass().getMethod("getClassLoader");
+                Object value = getClassLoader.invoke(classPool);
+                if (value instanceof ClassLoader) {
+                    return (ClassLoader) value;
+                }
+            } catch (Throwable ignored) {
+                // Fall through to reflective field access.
+            }
+            try {
+                Field classLoaderField = classPool.getClass().getDeclaredField("classLoader");
+                classLoaderField.setAccessible(true);
+                Object value = classLoaderField.get(classPool);
+                if (value instanceof ClassLoader) {
+                    return (ClassLoader) value;
+                }
+            } catch (Throwable ignored) {
+                return null;
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
+        return null;
     }
 
     private static String readModeName(Object mode) {
         if (mode instanceof Enum<?>) {
             return ((Enum<?>) mode).name();
         }
+        if (mode == null) {
+            return "";
+        }
         return String.valueOf(mode);
     }
 
-    private static boolean isReadyGameMode(String modeName) {
-        if (modeName == null || modeName.isEmpty()) {
+    private static boolean isReadyGameState(GameSnapshot snapshot) {
+        if (snapshot == null) {
             return false;
         }
-        // Splash is still pre-render warmup; any other mode means the game UI is ready.
-        return !"SPLASH".equals(modeName);
+        if ("GAMEPLAY".equals(snapshot.modeName) || "DUNGEON_TRANSITION".equals(snapshot.modeName)) {
+            return true;
+        }
+        if (!"CHAR_SELECT".equals(snapshot.modeName)) {
+            return false;
+        }
+        if (!snapshot.hasMainMenuScreen) {
+            return false;
+        }
+        if (snapshot.menuScreenName == null || snapshot.menuScreenName.isEmpty()) {
+            return false;
+        }
+        return !"NONE".equals(snapshot.menuScreenName);
+    }
+
+    private static String describeSnapshot(GameSnapshot snapshot) {
+        if (snapshot == null) {
+            return "unknown";
+        }
+        String mode = snapshot.modeName == null || snapshot.modeName.isEmpty()
+                ? "unknown"
+                : snapshot.modeName;
+        String menu = snapshot.menuScreenName == null || snapshot.menuScreenName.isEmpty()
+                ? "n/a"
+                : snapshot.menuScreenName;
+        return "mode=" + mode + ", mainMenu=" + snapshot.hasMainMenuScreen + ", screen=" + menu;
+    }
+
+    private static final class GameSnapshot {
+        private final String modeName;
+        private final boolean hasMainMenuScreen;
+        private final String menuScreenName;
+
+        private GameSnapshot(String modeName, boolean hasMainMenuScreen, String menuScreenName) {
+            this.modeName = modeName;
+            this.hasMainMenuScreen = hasMainMenuScreen;
+            this.menuScreenName = menuScreenName;
+        }
     }
 
     private static void invokeDelegate(String delegateClass, String[] args) throws Throwable {
@@ -297,9 +490,17 @@ public final class BootBridgeLauncher {
         } catch (InvocationTargetException error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             emitFail("Delegate crashed: " + summarizeThrowable(cause));
+            try {
+                cause.printStackTrace(System.err);
+            } catch (Throwable ignored) {
+            }
             throw cause;
         } catch (Throwable error) {
             emitFail("Delegate start failed: " + summarizeThrowable(error));
+            try {
+                error.printStackTrace(System.err);
+            } catch (Throwable ignored) {
+            }
             throw error;
         }
     }
@@ -343,6 +544,13 @@ public final class BootBridgeLauncher {
         }
         lastProgress = bounded;
         emit("PHASE", bounded, message);
+    }
+
+    private static void emitSplash(String message) {
+        if (FAIL_SENT.get()) {
+            return;
+        }
+        emit("SPLASH", 94, message);
     }
 
     private static void emitReady(String message) {
@@ -471,7 +679,7 @@ public final class BootBridgeLauncher {
         }
 
         private void flushBufferedLine() {
-            if (lineBuffer.size() <= 0) {
+            if (lineBuffer.size() == 0) {
                 return;
             }
             String line = new String(lineBuffer.toByteArray(), StandardCharsets.UTF_8);
