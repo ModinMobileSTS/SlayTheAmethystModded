@@ -33,6 +33,11 @@ internal data class SaveImportResult(
     val backupLabel: String?
 )
 
+private data class SaveArchiveScanResult(
+    val importableFiles: Int,
+    val targetTopLevelDirs: Set<String>
+)
+
 internal object SettingsFileService {
     class ReservedModImportException(
         @JvmField val blockedComponent: String
@@ -226,19 +231,61 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
+    fun isLegacyJibaoSaveArchive(host: Activity, uri: Uri): Boolean {
+        var hasImportableFiles = false
+        var hasFlatPreferencesStyleRootEntries = false
+        var hasNonPreferencesTargets = false
+
+        host.contentResolver.openInputStream(uri).use { rawInput ->
+            if (rawInput == null) {
+                throw IOException("Unable to open selected archive")
+            }
+            java.util.zip.ZipInputStream(rawInput).use { zipInput ->
+                while (true) {
+                    val entry = zipInput.nextEntry ?: break
+                    val rawPath = normalizeRawArchiveEntryPath(entry.name) ?: continue
+
+                    if (!entry.isDirectory
+                        && rawPath.indexOf('/') < 0
+                        && shouldTreatFlatArchiveFileAsPreferences(rawPath)
+                    ) {
+                        hasFlatPreferencesStyleRootEntries = true
+                    }
+
+                    val mappedPath = resolveImportableArchivePath(rawPath) ?: continue
+                    val mappedTopLevel = extractTopLevelDirectory(mappedPath)?.lowercase(Locale.ROOT)
+                        ?: continue
+                    if (entry.isDirectory) {
+                        continue
+                    }
+
+                    hasImportableFiles = true
+                    if (mappedTopLevel != "preferences") {
+                        hasNonPreferencesTargets = true
+                    }
+                }
+            }
+        }
+
+        return hasImportableFiles
+            && hasFlatPreferencesStyleRootEntries
+            && !hasNonPreferencesTargets
+    }
+
+    @Throws(IOException::class)
     fun importSaveArchive(host: Activity, uri: Uri): SaveImportResult {
         val stsRoot = RuntimePaths.stsRoot(host)
         if (!stsRoot.exists() && !stsRoot.mkdirs()) {
             throw IOException("Failed to create save root: ${stsRoot.absolutePath}")
         }
 
-        val importableCount = countImportableSaveEntries(host, uri)
-        if (importableCount <= 0) {
+        val scanResult = scanSaveArchive(host, uri)
+        if (scanResult.importableFiles <= 0) {
             throw IOException("Archive did not contain importable save files")
         }
 
         val backupLabel = backupExistingSavesToDownloads(host, stsRoot)
-        clearExistingSaveTargets(stsRoot)
+        clearExistingSaveTargets(stsRoot, scanResult.targetTopLevelDirs)
         val importedFiles = extractSaveArchive(host, uri, stsRoot)
         if (importedFiles <= 0) {
             throw IOException("Archive did not contain importable save files")
@@ -280,8 +327,9 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    private fun countImportableSaveEntries(host: Activity, uri: Uri): Int {
+    private fun scanSaveArchive(host: Activity, uri: Uri): SaveArchiveScanResult {
         var importableFiles = 0
+        val targetTopLevelDirs = LinkedHashSet<String>()
         host.contentResolver.openInputStream(uri).use { rawInput ->
             if (rawInput == null) {
                 throw IOException("Unable to open selected archive")
@@ -290,14 +338,21 @@ internal object SettingsFileService {
                 while (true) {
                     val entry = zipInput.nextEntry ?: break
                     val mappedPath = resolveImportableArchivePath(entry.name)
-                    if (mappedPath.isNullOrEmpty() || entry.isDirectory) {
+                    if (mappedPath.isNullOrEmpty()) {
+                        continue
+                    }
+                    extractTopLevelDirectory(mappedPath)?.let { targetTopLevelDirs.add(it) }
+                    if (entry.isDirectory) {
                         continue
                     }
                     importableFiles++
                 }
             }
         }
-        return importableFiles
+        return SaveArchiveScanResult(
+            importableFiles = importableFiles,
+            targetTopLevelDirs = targetTopLevelDirs
+        )
     }
 
     @Throws(IOException::class)
@@ -412,8 +467,9 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    private fun clearExistingSaveTargets(stsRoot: File) {
-        for (folderName in SAVE_IMPORT_TOP_LEVEL_DIRS) {
+    private fun clearExistingSaveTargets(stsRoot: File, targetTopLevelDirs: Set<String>) {
+        val clearTargets = resolveClearTargets(targetTopLevelDirs)
+        for (folderName in clearTargets) {
             val target = File(stsRoot, folderName)
             if (!target.exists()) {
                 continue
@@ -526,6 +582,20 @@ internal object SettingsFileService {
         return path
     }
 
+    private fun normalizeRawArchiveEntryPath(rawEntryName: String?): String? {
+        if (rawEntryName == null) {
+            return null
+        }
+        var path = rawEntryName.replace('\\', '/')
+        while (path.startsWith("/")) {
+            path = path.substring(1)
+        }
+        if (path.isEmpty() || path.contains("../")) {
+            return null
+        }
+        return path
+    }
+
     private fun stripWrapperFolder(path: String): String {
         val firstSlash = path.indexOf('/')
         if (firstSlash <= 0 || firstSlash >= path.length - 1) {
@@ -568,6 +638,10 @@ internal object SettingsFileService {
             ""
         }
 
+        if (firstSlash < 0 && shouldTreatFlatArchiveFileAsPreferences(folder)) {
+            return "preferences/$folder"
+        }
+
         val mappedFolder = when (folder.lowercase(Locale.ROOT)) {
             "preferences",
             "perference",
@@ -582,6 +656,93 @@ internal object SettingsFileService {
             mappedFolder
         } else {
             "$mappedFolder/$rest"
+        }
+    }
+
+    private fun shouldTreatFlatArchiveFileAsPreferences(fileName: String): Boolean {
+        val normalized = fileName.trim()
+        if (normalized.isEmpty()) {
+            return false
+        }
+        val lower = normalized.lowercase(Locale.ROOT)
+        if (isLikelySaveTopLevel(lower)) {
+            return false
+        }
+        if (lower == "desktop-1.0.jar") {
+            return false
+        }
+        if (lower.startsWith("sts")) {
+            return true
+        }
+        if (lower == "mtssettings" || lower.startsWith("the_")) {
+            return true
+        }
+        if (!lower.endsWith(".backup")) {
+            return false
+        }
+        val baseName = lower.removeSuffix(".backup")
+        return baseName.startsWith("sts")
+            || baseName.startsWith("the_")
+            || baseName == "mtssettings"
+    }
+
+    private fun resolveClearTargets(targetTopLevelDirs: Set<String>): Set<String> {
+        if (targetTopLevelDirs.isEmpty()) {
+            return SAVE_IMPORT_TOP_LEVEL_DIRS.toSet()
+        }
+
+        val clearTargets = LinkedHashSet<String>()
+        for (rawTopLevel in targetTopLevelDirs) {
+            val topLevel = rawTopLevel.trim()
+            if (topLevel.isEmpty()) {
+                continue
+            }
+            when (topLevel.lowercase(Locale.ROOT)) {
+                "preferences",
+                "perference",
+                "perferences",
+                "betapreferences",
+                "betaperferences" -> {
+                    clearTargets.add("preferences")
+                    clearTargets.add("perference")
+                    clearTargets.add("perferences")
+                    clearTargets.add("betaPreferences")
+                    clearTargets.add("betapreferences")
+                    clearTargets.add("betaPerferences")
+                    clearTargets.add("betaperferences")
+                }
+
+                "multiplayer",
+                "multiple" -> {
+                    clearTargets.add("multiplayer")
+                    clearTargets.add("multiple")
+                }
+
+                "sendtodevs",
+                "sendtodev" -> {
+                    clearTargets.add("sendToDevs")
+                    clearTargets.add("sendtodevs")
+                }
+
+                else -> clearTargets.add(topLevel)
+            }
+        }
+        return clearTargets
+    }
+
+    private fun extractTopLevelDirectory(path: String): String? {
+        var normalizedPath = path.replace('\\', '/')
+        while (normalizedPath.startsWith("/")) {
+            normalizedPath = normalizedPath.substring(1)
+        }
+        if (normalizedPath.isEmpty()) {
+            return null
+        }
+        val firstSlash = normalizedPath.indexOf('/')
+        return if (firstSlash >= 0) {
+            normalizedPath.substring(0, firstSlash)
+        } else {
+            normalizedPath
         }
     }
 
