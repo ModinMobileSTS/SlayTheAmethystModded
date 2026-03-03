@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,7 +28,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -49,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -85,7 +82,7 @@ fun LauncherSettingsScreen(
         onImportSaves = viewModel::onImportSaves,
         onExportSaves = viewModel::onExportSaves,
         onShareCrashReport = { viewModel.onShareCrashReport(activity) },
-        onRenderScaleInputChange = { value -> viewModel.onRenderScaleInputChange(activity, value) },
+        onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
@@ -107,10 +104,10 @@ private fun LauncherSettingsScreenPreview() {
     LauncherSettingsScreenContent(
         uiState = SettingsScreenViewModel.UiState(
             busy = false,
-            renderScaleInput = "1.00",
+            selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
             selectedJvmHeapMaxMb = 1024,
-            jvmHeapMinMb = 1024,
+            jvmHeapMinMb = 512,
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
             selectedLauncherIcon = LauncherIcon.AMBER,
@@ -137,7 +134,7 @@ private fun LauncherSettingsScreenContent(
     onImportSaves: () -> Unit = {},
     onExportSaves: () -> Unit = {},
     onShareCrashReport: () -> Unit = {},
-    onRenderScaleInputChange: (String) -> Unit = {},
+    onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
     onBackBehaviorChanged: (Boolean) -> Unit = {},
@@ -191,7 +188,7 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = "渲染") {
                     SettingsRenderSection(
                         uiState = uiState,
-                        onRenderScaleInputChange = onRenderScaleInputChange,
+                        onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
                     )
@@ -314,21 +311,30 @@ private fun SettingsImportSection(
 @Composable
 private fun SettingsRenderSection(
     uiState: SettingsScreenViewModel.UiState,
-    onRenderScaleInputChange: (String) -> Unit,
+    onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
 ) {
+    var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
+        mutableFloatStateOf(uiState.selectedRenderScale)
+    }
     var heapSliderValue by remember(uiState.selectedJvmHeapMaxMb) {
         mutableFloatStateOf(uiState.selectedJvmHeapMaxMb.toFloat())
     }
 
-    OutlinedTextField(
-        value = uiState.renderScaleInput,
-        onValueChange = onRenderScaleInputChange,
+    Text(text = "内部渲染比例", style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text = RenderScaleService.format(renderScaleSliderValue),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Slider(
+        value = renderScaleSliderValue,
+        onValueChange = { value -> renderScaleSliderValue = value },
+        onValueChangeFinished = { onRenderScaleSelected(renderScaleSliderValue) },
+        valueRange = RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE,
+        steps = ((RenderScaleService.MAX_RENDER_SCALE - RenderScaleService.MIN_RENDER_SCALE) / 0.01f)
+            .roundToInt() - 1,
         enabled = !uiState.busy,
-        label = { Text("内部渲染比例 (0.50 - 1.00)") },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
 

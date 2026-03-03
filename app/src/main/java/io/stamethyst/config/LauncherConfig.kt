@@ -45,7 +45,7 @@ object LauncherConfig {
     const val DEFAULT_LWJGL_DEBUG = false
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 1024
-    const val MIN_JVM_HEAP_MAX_MB = 1024
+    const val MIN_JVM_HEAP_MAX_MB = 512
     const val MAX_JVM_HEAP_MAX_MB = 2048
     const val JVM_HEAP_STEP_MB = 128
 
