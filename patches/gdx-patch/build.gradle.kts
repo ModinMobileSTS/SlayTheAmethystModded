@@ -1,5 +1,3 @@
-import io.stamethyst.gradle.desktopJar
-
 plugins {
     id("java")
     id("io.stamethyst.steam-path")
