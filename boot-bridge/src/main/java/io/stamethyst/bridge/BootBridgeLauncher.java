@@ -173,10 +173,7 @@ public final class BootBridgeLauncher {
     }
 
     private static boolean isKnownFatalConsoleLine(String line) {
-        if (line.startsWith("ERROR:")) {
-            return true;
-        }
-        return false;
+        return line.startsWith("ERROR:");
     }
 
     private static int mapConsolePhase(String line) {
@@ -682,7 +679,7 @@ public final class BootBridgeLauncher {
         }
 
         private void flushBufferedLine() {
-            if (lineBuffer.size() <= 0) {
+            if (lineBuffer.size() == 0) {
                 return;
             }
             String line = new String(lineBuffer.toByteArray(), StandardCharsets.UTF_8);
