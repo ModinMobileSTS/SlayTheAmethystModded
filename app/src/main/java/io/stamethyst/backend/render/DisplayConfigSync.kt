@@ -1,7 +1,7 @@
 package io.stamethyst.backend.render
 
 import android.content.Context
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.io.IOException

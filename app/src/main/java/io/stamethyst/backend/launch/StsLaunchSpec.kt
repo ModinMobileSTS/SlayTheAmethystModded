@@ -2,7 +2,7 @@ package io.stamethyst.backend.launch
 
 import android.content.Context
 import android.os.Build
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.config.LauncherConfig

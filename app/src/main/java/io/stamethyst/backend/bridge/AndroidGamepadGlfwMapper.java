@@ -1,4 +1,4 @@
-package io.stamethyst.input;
+package io.stamethyst.backend.bridge;
 
 import android.view.InputDevice;
 import android.view.KeyEvent;

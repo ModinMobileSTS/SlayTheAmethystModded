@@ -3,7 +3,7 @@ package io.stamethyst.config
 import android.content.Context
 import androidx.core.content.edit
 import io.stamethyst.LauncherIcon
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream

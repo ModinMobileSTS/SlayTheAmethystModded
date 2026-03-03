@@ -10,7 +10,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import io.stamethyst.backend.crash.CrashDiagnostics
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import java.io.File

@@ -1,7 +1,7 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
 import java.util.ArrayList

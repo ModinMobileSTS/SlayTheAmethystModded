@@ -1,4 +1,4 @@
-package io.stamethyst.backend.core
+package io.stamethyst.config
 
 import android.content.Context
 import java.io.File

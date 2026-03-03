@@ -1,15 +1,13 @@
-package io.stamethyst.backend.components
+package io.stamethyst.backend.launch
 
 import android.content.Context
 import android.content.res.AssetManager
-import io.stamethyst.backend.core.RuntimePaths
-import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 object ComponentInstaller {

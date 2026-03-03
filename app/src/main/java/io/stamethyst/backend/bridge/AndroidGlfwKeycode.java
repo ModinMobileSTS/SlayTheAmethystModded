@@ -1,4 +1,4 @@
-package io.stamethyst.input;
+package io.stamethyst.backend.bridge;
 
 import android.util.SparseIntArray;
 import android.view.KeyEvent;

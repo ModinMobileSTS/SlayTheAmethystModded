@@ -15,7 +15,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
-import io.stamethyst.input.AndroidGlfwKeycode
+import io.stamethyst.backend.bridge.AndroidGlfwKeycode
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import kotlin.math.abs

@@ -16,7 +16,7 @@ import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File

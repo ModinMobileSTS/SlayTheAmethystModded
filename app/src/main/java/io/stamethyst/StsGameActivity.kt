@@ -5,81 +5,39 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.SurfaceTexture
 import android.media.AudioManager
-import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
-import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.TextureView
 import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
-import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.annotation.NonNull
-import androidx.annotation.Nullable
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import com.oracle.dalvik.VMLauncher
 import io.stamethyst.backend.launch.BackExitNotice
-import io.stamethyst.backend.mods.CompatibilitySettings
-import io.stamethyst.backend.crash.CrashDiagnostics
-import io.stamethyst.backend.render.DisplayConfigSync
-import io.stamethyst.backend.launch.LaunchPreparationService
-import io.stamethyst.backend.mods.ModJarSupport
-import io.stamethyst.backend.render.RendererBackend
-import io.stamethyst.backend.runtime.RuntimePackInstaller
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.StsLaunchSpec
-import io.stamethyst.backend.input.mapViewToWindowCoords
-import io.stamethyst.backend.bridge.parseBootBridgeEventLine
+import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.LauncherConfig
-import io.stamethyst.input.AndroidGamepadGlfwMapper
-import io.stamethyst.input.AndroidGlfwKeycode
+import io.stamethyst.input.GameInputHandler
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import net.kdt.pojavlaunch.Logger
-import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
-import java.io.FileOutputStream
-import java.io.RandomAccessFile
-import java.lang.Math.max
-import java.nio.charset.StandardCharsets
-import java.util.ArrayDeque
-import java.util.ArrayList
-import java.util.Locale
-import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 
-class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
+class StsGameActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "StsGameActivity"
-        private const val CRASH_CODE_BOOT_FAILURE = -2
-        private const val CRASH_CODE_OUT_OF_MEMORY = -8
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
         const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
-        private const val BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L
-        private const val BOOT_OVERLAY_READY_DELAY_MS = 700L
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
-        private const val BOOT_LOG_MAX_LINES = 220
 
         @JvmStatic
         fun launch(
@@ -104,34 +62,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private var surfaceView: SurfaceView? = null
-
-    private var textureView: TextureView? = null
-
-    private var textureSurface: Surface? = null
-
-    private lateinit var renderView: View
-    private var useTextureViewSurface = false
-
-    @Volatile
-    private var vmStarted = false
-
-    @Volatile
-    private var runtimeLifecycleReady = false
-
-    @Volatile
-    private var bridgeSurfaceReady = false
-
-    @Volatile
-    private var backExitRequested = false
-
-    private var activePointerId = MotionEvent.INVALID_POINTER_ID
-    private var floatingMouseController: FloatingMouseOverlayController? = null
-    private var gamepadDirectInputEnableAttempted = false
-    private var surfaceBufferWidth = 0
-    private var surfaceBufferHeight = 0
-    private var waitingLandscapeSinceMs = -1L
-    private var startCheckPosted = false
+    // Configuration
     private var renderScale = LauncherConfig.DEFAULT_RENDER_SCALE
     private var targetFps = LauncherConfig.DEFAULT_TARGET_FPS
     private var launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA
@@ -141,54 +72,76 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var forceJvmCrash = false
     private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     private var autoSwitchLeftAfterRightClick = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
-    private var jvmLogListenerRegistered = false
-    private var bootOverlay: View? = null
-    private var bootOverlayProgressBar: ProgressBar? = null
-    private var bootOverlayStatusText: TextView? = null
-    private var bootOverlayLogScroll: ScrollView? = null
-    private var bootOverlayLogText: TextView? = null
-    private var bootOverlayDismissButton: Button? = null
-    private var bootOverlayProgress = 0
-    private var bootOverlayMessage = ""
-    private var bootOverlayShownAtMs = -1L
-    private var bootOverlayDismissed = false
-    private var mainMenuReadySignaled = false
-    private var launchFailureSignaled = false
+    private var useTextureViewSurface = true
 
+    // State
     @Volatile
-    private var earlyOverlayDismissOnNextFrame = false
+    private var backExitRequested = false
+    private var waitingLandscapeSinceMs = -1L
+    private var startCheckPosted = false
 
-    @Volatile
-    private var lastTextureFrameTimestampNs = 0L
+    // Controllers
+    private lateinit var renderSurfaceManager: RenderSurfaceManager
+    private lateinit var inputHandler: GameInputHandler
+    private lateinit var bootOverlayController: BootOverlayController
+    private lateinit var jvmLaunchController: JvmLaunchController
 
-    @Volatile
-    private var earlyOverlayDismissRequestFrameTimestampNs = 0L
-
-    @Volatile
-    private var jvmLaunchThread: Thread? = null
-
-//    private var bootBridgeReaderThread: Thread? = null
-//
-//    @Volatile
-//    private var bootBridgeReaderStop = false
-
-    private val bootLogLines = ArrayDeque<String>()
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
             handleAndroidBackPressed()
         }
     }
 
-    private val jvmLogcatListener = Logger.eventLogListener { text ->
-        onJvmLogMessage(text)
-    }
+    // ==================== Activity Lifecycle ====================
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
-        applyImmersiveMode()
-        renderScale = resolveRenderScale()
+
+        parseIntentExtras()
+        initControllers()
+        initViews()
+    }
+
+    override fun onDestroy() {
+        inputHandler.onDestroy()
+        renderSurfaceManager.onDestroy()
+        bootOverlayController.onDestroy()
+        jvmLaunchController.cleanup()
+        super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        renderSurfaceManager.applyImmersiveMode()
+        inputHandler.resetGamepadState()
+        renderSurfaceManager.resyncAfterForeground()
+        applyForegroundWindowState()
+        updateFloatingMouseVisibility()
+        tryStartJvmWhenSurfaceReady()
+    }
+
+    override fun onPause() {
+        inputHandler.resetGamepadState()
+        inputHandler.hideSoftKeyboard()
+        applyBackgroundWindowState()
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            renderSurfaceManager.applyImmersiveMode()
+            renderSurfaceManager.resyncAfterForeground()
+        }
+        syncFocusStateToNative(hasFocus)
+    }
+
+    // ==================== Initialization ====================
+
+    private fun parseIntentExtras() {
+        renderScale = LauncherConfig.readRenderScale(this)
         val requestedMode = intent.getStringExtra(EXTRA_LAUNCH_MODE)
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == requestedMode) {
             launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
@@ -211,186 +164,195 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         targetFps = LauncherConfig.normalizeTargetFps(
             intent.getIntExtra(EXTRA_TARGET_FPS, LauncherConfig.DEFAULT_TARGET_FPS)
         )
-        useTextureViewSurface = true
-        initBootOverlay()
+    }
+
+    private fun initControllers() {
+        bootOverlayController = BootOverlayController(
+            activity = this,
+            waitForMainMenu = waitForMainMenu,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            useTextureViewSurface = useTextureViewSurface,
+            onDismissed = { updateFloatingMouseVisibility() },
+            onRequestEarlyDismiss = {
+                bootOverlayController.setEarlyDismissRequestTimestamp(
+                    renderSurfaceManager.let { 0L } // Will be set properly below
+                )
+            },
+            onSignalMainMenuReady = { message -> bootOverlayController.signalMainMenuReady(message) },
+            onSignalLaunchFailure = { detail -> signalLaunchFailure(detail) }
+        )
+
+        jvmLaunchController = JvmLaunchController(
+            activity = this,
+            launchMode = launchMode,
+            targetFps = targetFps,
+            forceJvmCrash = forceJvmCrash,
+            onProgressUpdate = { percent, message -> bootOverlayController.updateProgress(percent, message) },
+            onLaunchComplete = { exitCode, waitForMenu, wasReady -> handleJvmExit(exitCode, waitForMenu) },
+            onLaunchFailed = { t -> handleJvmLaunchFailed(t) },
+            onRuntimeReady = {
+                runOnUiThread {
+                    applyForegroundWindowState()
+                    updateFloatingMouseVisibility()
+                }
+            },
+            onSurfaceSizeSync = {
+                renderSurfaceManager.updateWindowSize()
+                renderSurfaceManager.logRenderInfo()
+                renderSurfaceManager.syncDisplayConfigToSurfaceSize()
+            },
+            getWindowWidth = { CallbackBridge.windowWidth },
+            getWindowHeight = { CallbackBridge.windowHeight }
+        )
+
+        inputHandler = GameInputHandler(
+            activity = this,
+            isInputDispatchReady = { isNativeInputDispatchReady() },
+            requestRenderViewFocus = {
+                if (::renderSurfaceManager.isInitialized) {
+                    renderSurfaceManager.requestRenderViewFocus()
+                }
+            },
+            getRenderViewWidth = {
+                if (::renderSurfaceManager.isInitialized) {
+                    renderSurfaceManager.getRenderViewWidth()
+                } else 0
+            },
+            getRenderViewHeight = {
+                if (::renderSurfaceManager.isInitialized) {
+                    renderSurfaceManager.getRenderViewHeight()
+                } else 0
+            }
+        )
+
+        renderSurfaceManager = RenderSurfaceManager(
+            activity = this,
+            renderScale = renderScale,
+            targetFps = targetFps,
+            useTextureViewSurface = useTextureViewSurface,
+            onSurfaceReady = { tryStartJvmWhenSurfaceReady() },
+            onSurfaceDestroyed = { },
+            onTextureFrameUpdate = { timestampNs ->
+                bootOverlayController.onTextureFrameUpdate(timestampNs)
+            }
+        )
+    }
+
+    private fun initViews() {
         onBackPressedDispatcher.addCallback(this, gameBackPressedCallback)
 
         val root = findViewById<FrameLayout>(R.id.gameRoot)
-        val renderLayoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        if (useTextureViewSurface) {
-            Log.i(
-                TAG,
-                "Using TextureView surface path for OpenGL ES2: renderScale=$renderScale"
-            )
-            val view = TextureView(this)
-            view.isOpaque = true
-            textureView = view
-            renderView = view
-            root.addView(view, renderLayoutParams)
-            view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(
-                    surface: SurfaceTexture,
-                    width: Int,
-                    height: Int
-                ) {
-                    surfaceBufferWidth = width.coerceAtLeast(1)
-                    surfaceBufferHeight = height.coerceAtLeast(1)
-                    applyTextureBufferSize(surface)
-                    releaseTextureSurfaceIfNeeded()
-                    textureSurface = Surface(surface)
-                    JREUtils.setupBridgeWindow(textureSurface)
-                    bridgeSurfaceReady = true
-                    updateWindowSize()
-                    tryStartJvmWhenSurfaceReady()
-                }
+        renderSurfaceManager.init(root)
 
-                override fun onSurfaceTextureSizeChanged(
-                    surface: SurfaceTexture,
-                    width: Int,
-                    height: Int
-                ) {
-                    surfaceBufferWidth = width.coerceAtLeast(1)
-                    surfaceBufferHeight = height.coerceAtLeast(1)
-                    applyTextureBufferSize(surface)
-                    updateWindowSize()
-                    tryStartJvmWhenSurfaceReady()
-                }
+        bootOverlayController.init()
 
-                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                    bridgeSurfaceReady = false
-                    JREUtils.releaseBridgeWindow()
-                    releaseTextureSurfaceIfNeeded()
-                    surfaceBufferWidth = 0
-                    surfaceBufferHeight = 0
-                    return true
-                }
-
-                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-                    lastTextureFrameTimestampNs = surface.timestamp
-                    if (earlyOverlayDismissOnNextFrame &&
-                        lastTextureFrameTimestampNs > earlyOverlayDismissRequestFrameTimestampNs
-                    ) {
-                        earlyOverlayDismissOnNextFrame = false
-                        runOnUiThread {
-                            updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(99), "Game frame ready")
-                            dismissBootOverlay()
-                        }
-                    }
-                }
-            }
-        } else {
-            val view = SurfaceView(this)
-            surfaceView = view
-            renderView = view
-            root.addView(view, renderLayoutParams)
-            view.holder.addCallback(this)
-        }
-
-        renderView.isFocusable = true
-        renderView.isFocusableInTouchMode = true
-        renderView.setOnTouchListener { _, event -> handleTouchEvent(event) }
-        renderView.requestFocus()
-        initFloatingMouseControls()
-    }
-
-    override fun onDestroy() {
-        resetGamepadState()
-        hideSoftKeyboard()
-        floatingMouseController?.onDestroy()
-        floatingMouseController = null
-        runtimeLifecycleReady = false
-        bridgeSurfaceReady = false
-        earlyOverlayDismissOnNextFrame = false
-//        stopBootBridgeReaderIfRunning()
-        val launchThread = jvmLaunchThread
-        jvmLaunchThread = null
-        launchThread?.interrupt()
-        if (useTextureViewSurface) {
-            try {
-                JREUtils.releaseBridgeWindow()
-            } catch (_: Throwable) {
-            }
-        }
-        releaseTextureSurfaceIfNeeded()
-        if (jvmLogListenerRegistered) {
-            try {
-                Logger.removeLogListener(jvmLogcatListener)
-            } catch (_: Throwable) {
-            }
-            jvmLogListenerRegistered = false
-        }
-        super.onDestroy()
-    }
-
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        val frame = holder.surfaceFrame
-        if (frame != null) {
-            surfaceBufferWidth = frame.width()
-            surfaceBufferHeight = frame.height()
-        }
-        JREUtils.setupBridgeWindow(holder.surface)
-        bridgeSurfaceReady = true
-        updateWindowSize()
-        tryStartJvmWhenSurfaceReady()
-    }
-
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        surfaceBufferWidth = width
-        surfaceBufferHeight = height
-        updateWindowSize()
-        tryStartJvmWhenSurfaceReady()
-    }
-
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        bridgeSurfaceReady = false
-        JREUtils.releaseBridgeWindow()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        applyImmersiveMode()
-        resetGamepadState()
-        resyncRenderSurfaceAfterForeground()
-        applyForegroundWindowState()
+        val host = findViewById<FrameLayout>(R.id.gameHost)
+        inputHandler.initFloatingMouseControls(host, autoSwitchLeftAfterRightClick)
         updateFloatingMouseVisibility()
-        tryStartJvmWhenSurfaceReady()
+
+        renderSurfaceManager.renderView.setOnTouchListener { _, event -> inputHandler.handleTouchEvent(event) }
+        renderSurfaceManager.renderView.requestFocus()
     }
 
-    override fun onPause() {
-        resetGamepadState()
-        hideSoftKeyboard()
-        applyBackgroundWindowState()
-        super.onPause()
-    }
+    // ==================== JVM Launch ====================
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            applyImmersiveMode()
-            resyncRenderSurfaceAfterForeground()
+    private fun tryStartJvmWhenSurfaceReady() {
+        if (backExitRequested || jvmLaunchController.vmStarted) return
+
+        val rawWidth = renderSurfaceManager.resolvePhysicalWidth()
+        val rawHeight = renderSurfaceManager.resolvePhysicalHeight()
+
+        if (rawWidth <= 1 || rawHeight <= 1) {
+            Log.i(TAG, "Waiting for valid surface size before JVM start: ${rawWidth}x$rawHeight")
+            scheduleStartCheck()
+            return
         }
-        if (runtimeLifecycleReady) {
-            try {
-                CallbackBridge.nativeSetWindowAttrib(
-                    LwjglGlfwKeycode.GLFW_FOCUSED,
-                    if (hasFocus) 1 else 0
-                )
-                CallbackBridge.nativeSetWindowAttrib(
-                    LwjglGlfwKeycode.GLFW_HOVERED,
-                    if (hasFocus) 1 else 0
-                )
-                if (hasFocus) {
-                    CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
-                    CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
-                }
-            } catch (error: Throwable) {
-                Log.w(TAG, "Failed to sync focus window attribs", error)
+
+        if (rawWidth < rawHeight) {
+            val now = SystemClock.uptimeMillis()
+            if (waitingLandscapeSinceMs < 0L) {
+                waitingLandscapeSinceMs = now
             }
+            val waitedMs = now - waitingLandscapeSinceMs
+            if (waitedMs < 4000L) {
+                Log.i(TAG, "Waiting for landscape surface before JVM start: ${rawWidth}x$rawHeight, waited=${waitedMs}ms")
+                scheduleStartCheck()
+                return
+            }
+            Log.w(TAG, "Surface is still portrait after wait, starting JVM anyway: ${rawWidth}x$rawHeight")
+        } else {
+            waitingLandscapeSinceMs = -1L
+        }
+
+        startJvmOnce()
+    }
+
+    private fun startJvmOnce() {
+        if (jvmLaunchController.vmStarted || backExitRequested) {
+            if (backExitRequested) finish()
+            return
+        }
+
+        val runtimeRoot = RuntimePaths.runtimeRoot(this)
+        val javaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot) ?: File(runtimeRoot, "jre")
+
+        jvmLaunchController.start(
+            javaHome = javaHome,
+            waitForMainMenu = waitForMainMenu,
+            bootOverlayController = bootOverlayController,
+            logListener = { text -> bootOverlayController.handleJvmLogMessage(text) }
+        )
+    }
+
+    private fun scheduleStartCheck() {
+        if (jvmLaunchController.vmStarted || startCheckPosted) return
+        startCheckPosted = true
+        renderSurfaceManager.renderView.postDelayed({
+            startCheckPosted = false
+            tryStartJvmWhenSurfaceReady()
+        }, 120L)
+    }
+
+    private fun handleJvmExit(exitCode: Int, waitForMainMenu: Boolean) {
+        if (backExitRequested) {
+            runOnUiThread { finish() }
+            return
+        }
+
+        if (exitCode == 0) {
+            runOnUiThread { finish() }
+        } else {
+            runOnUiThread { reportCrashAndReturn(exitCode, false, null) }
         }
     }
+
+    private fun handleJvmLaunchFailed(t: Throwable) {
+        if (backExitRequested) {
+            runOnUiThread { finish() }
+            return
+        }
+        val message = "${t.javaClass.simpleName}: ${t.message}"
+        runOnUiThread { reportCrashAndReturn(-1, false, message) }
+    }
+
+    // ==================== Launch Failure Handling ====================
+
+    private fun signalLaunchFailure(detail: String) {
+        if (backExitRequested) {
+            runOnUiThread { finish() }
+            return
+        }
+
+        val crashCode = if (detail.lowercase().contains("outofmemory")) {
+            JvmLaunchController.CRASH_CODE_OUT_OF_MEMORY
+        } else {
+            JvmLaunchController.CRASH_CODE_BOOT_FAILURE
+        }
+
+        runOnUiThread { reportCrashAndReturn(crashCode, false, detail) }
+    }
+
+    // ==================== Back Press Handling ====================
 
     private fun handleAndroidBackPressed() {
         if (!backImmediateExit) {
@@ -401,23 +363,23 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun requestBackExitToLauncher() {
-        if (backExitRequested) {
-            return
-        }
+        if (backExitRequested) return
         backExitRequested = true
-        hideSoftKeyboard()
-        releaseTouchButtonIfNeeded()
+
+        inputHandler.hideSoftKeyboard()
+        inputHandler.resetGamepadState()
         updateFloatingMouseVisibility()
         BackExitNotice.markExpectedBackExit(this)
-//        stopBootBridgeReaderIfRunning()
-        updateBootOverlayProgress(100, "Stopping game...")
+
+        bootOverlayController.updateProgress(100, "Stopping game...")
         Log.i(TAG, "Android back pressed: force restart to launcher")
 
-        jvmLaunchThread?.interrupt()
+        jvmLaunchController.interrupt()
+
         try {
             CallbackBridge.nativeSetInputReady(false)
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
+
         requestJvmCloseSignal()
         scheduleLauncherRestartAndKillProcess()
     }
@@ -425,9 +387,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun requestJvmCloseSignal(): Boolean {
         return try {
             val requested = CallbackBridge.nativeRequestCloseWindow()
-            if (requested) {
-                Log.i(TAG, "Sent glfwSetWindowShouldClose=true")
-            }
+            if (requested) Log.i(TAG, "Sent glfwSetWindowShouldClose=true")
             requested
         } catch (error: Throwable) {
             Log.w(TAG, "Failed to request JVM window close", error)
@@ -447,638 +407,21 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         } else {
             try {
                 pendingIntent.send()
-            } catch (_: PendingIntent.CanceledException) {
-            }
+            } catch (_: PendingIntent.CanceledException) {}
         }
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
         exitProcess(0)
     }
 
-    private fun startJvmOnce() {
-        if (vmStarted) {
-            return
-        }
-        if (backExitRequested) {
-            finish()
-            return
-        }
-        vmStarted = true
-        runtimeLifecycleReady = false
-        updateBootOverlayProgress(8, "Starting JVM...")
-        CrashDiagnostics.clear(this)
-
-        val launchThread = Thread({
-            try {
-                if (backExitRequested) {
-                    runOnUiThread { finish() }
-                    return@Thread
-                }
-                LaunchPreparationService.prepare(this, launchMode) { percent, message ->
-                    updateBootOverlayProgress(mapBootOverlayPreparationProgress(percent), message)
-                }
-
-                val runtimeRoot = RuntimePaths.runtimeRoot(this)
-                val javaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot)
-                    ?: throw IllegalStateException("No Java home found in ${runtimeRoot.absolutePath}")
-
-                RuntimePaths.ensureBaseDirs(this)
-                val logFile = RuntimePaths.latestLog(this)
-                val logParent = logFile.parentFile
-                if (logParent != null && !logParent.exists() && !logParent.mkdirs()) {
-                    throw IllegalStateException("Failed to create log directory: ${logParent.absolutePath}")
-                }
-                if (!logFile.exists() && !logFile.createNewFile()) {
-                    throw IllegalStateException("Failed to create log file: ${logFile.absolutePath}")
-                }
-                Logger.begin(logFile.absolutePath)
-                try {
-                    Logger.addLogListener(jvmLogcatListener)
-                    jvmLogListenerRegistered = true
-                } catch (_: Throwable) {
-                    jvmLogListenerRegistered = false
-                }
-                if (waitForMainMenu && StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
-//                    startBootBridgeReader()
-                    updateBootOverlayProgress(26, "Waiting for structured boot events...")
-                }
-                Logger.appendToLog("Launching STS with java home: ${javaHome.absolutePath}")
-                Logger.appendToLog("Launch mode: $launchMode")
-                Logger.appendToLog("Surface backend: ${if (useTextureViewSurface) "TextureView" else "SurfaceView"}")
-                val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(this)
-                val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(this)
-                val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(this)
-                Logger.appendToLog(
-                    "Compat settings: virtualFboPoc=$virtualFboPocEnabled, globalAtlasFilterCompat=$globalAtlasFilterCompatEnabled, " +
-                        "forceLinearMipmapFilter=$forceLinearMipmapFilterEnabled"
-                )
-                val effectiveRenderer = RendererBackend.OPENGL_ES2
-                Logger.appendToLog("Renderer fixed: ${effectiveRenderer.rendererId()}")
-                Logger.appendToLog("Renderer GL library expected: ${effectiveRenderer.lwjglOpenGlLibName()}")
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
-                    ModJarSupport.appendCompatDiagnosticSnapshot(this, "game_pre_jvm")
-                }
-                updateWindowSize()
-                Logger.appendToLog(
-                    "Render scale: $renderScale, surface(raw)=${resolveRawPhysicalWidth()}x${resolveRawPhysicalHeight()}, " +
-                        "surface(effective)=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}, " +
-                        "window=${CallbackBridge.windowWidth}x${CallbackBridge.windowHeight}"
-                )
-                Logger.appendToLog("Target FPS limit: $targetFps")
-                syncDisplayConfigToSurfaceSize()
-                JREUtils.relocateLibPath(applicationInfo.nativeLibraryDir, javaHome.absolutePath)
-                JREUtils.setJavaEnvironment(
-                    this,
-                    javaHome.absolutePath,
-                    CallbackBridge.windowWidth.coerceAtLeast(1),
-                    CallbackBridge.windowHeight.coerceAtLeast(1)
-                )
-                JREUtils.initJavaRuntime(javaHome.absolutePath)
-                JREUtils.setupExitMethod(applicationContext)
-                JREUtils.initializeHooks()
-                JREUtils.chdir(RuntimePaths.stsRoot(this).absolutePath)
-                CallbackBridge.nativeSetUseInputStackQueue(true)
-                CallbackBridge.nativeSetInputReady(true)
-                runtimeLifecycleReady = true
-                runOnUiThread {
-                    applyForegroundWindowState()
-                    updateFloatingMouseVisibility()
-                }
-
-                val launchArgs = ArrayList<String>()
-                launchArgs.add("java")
-                launchArgs.addAll(
-                    StsLaunchSpec.buildArgs(
-                        this,
-                        javaHome,
-                        launchMode,
-                        forceJvmCrash
-                    )
-                )
-                if (backExitRequested) {
-                    runOnUiThread { finish() }
-                    return@Thread
-                }
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
-                    updateBootOverlayProgress(28, "Launching ModTheSpire...")
-                } else {
-                    updateBootOverlayProgress(85, "Launching game...")
-                }
-                Logger.appendToLog(
-                    "Launch arg check: " +
-                        findLaunchArgValue(launchArgs, "-Dorg.lwjgl.opengl.libname=") + ", " +
-                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.virtual_fbo_poc=") + ", " +
-                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.global_atlas_filter_compat=") + ", " +
-                        findLaunchArgValue(launchArgs, "-Damethyst.gdx.force_linear_mipmap_filter=") + ", " +
-                        findLaunchArgValue(launchArgs, "-Dorg.lwjgl.librarypath=")
-                )
-                Logger.appendToLog("Launch args: $launchArgs")
-
-                val exitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
-                Logger.appendToLog("Java Exit code: $exitCode")
-                if (backExitRequested) {
-                    runOnUiThread { finish() }
-                    return@Thread
-                }
-                if (exitCode == 0) {
-                    if (waitForMainMenu &&
-                        StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode &&
-                        !mainMenuReadySignaled &&
-                        !bootOverlayDismissed
-                    ) {
-                        runOnUiThread {
-                            reportCrashAndReturn(
-                                -3,
-                                false,
-                                "JVM exited before reaching main menu"
-                            )
-                        }
-                    } else {
-                        runOnUiThread { finish() }
-                    }
-                } else {
-                    runOnUiThread { reportCrashAndReturn(exitCode, false, null) }
-                }
-            } catch (t: Throwable) {
-                runtimeLifecycleReady = false
-                Log.e(TAG, "Launch failed", t)
-                CrashDiagnostics.recordThrowable(this, "game_launch_thread", t)
-                try {
-                    Logger.appendToLog("Launch failed: $t")
-                } catch (_: Throwable) {
-                }
-                if (backExitRequested) {
-                    runOnUiThread { finish() }
-                    return@Thread
-                }
-                val message = "${t.javaClass.simpleName}: ${t.message}"
-                runOnUiThread { reportCrashAndReturn(-1, false, message) }
-            } finally {
-                runtimeLifecycleReady = false
-                jvmLaunchThread = null
-            }
-        }, "STS-JVM-Thread")
-        jvmLaunchThread = launchThread
-        launchThread.start()
-    }
-
-    private fun tryStartJvmWhenSurfaceReady() {
-        if (backExitRequested) {
-            return
-        }
-        if (vmStarted) {
-            return
-        }
-        val rawWidth = resolveRawPhysicalWidth()
-        val rawHeight = resolveRawPhysicalHeight()
-        if (rawWidth <= 1 || rawHeight <= 1) {
-            Log.i(TAG, "Waiting for valid surface size before JVM start: ${rawWidth}x$rawHeight")
-            scheduleStartCheck()
-            return
-        }
-        if (rawWidth < rawHeight) {
-            val now = SystemClock.uptimeMillis()
-            if (waitingLandscapeSinceMs < 0L) {
-                waitingLandscapeSinceMs = now
-            }
-            val waitedMs = now - waitingLandscapeSinceMs
-            if (waitedMs < 4000L) {
-                Log.i(
-                    TAG,
-                    "Waiting for landscape surface before JVM start: ${rawWidth}x$rawHeight, waited=${waitedMs}ms"
-                )
-                scheduleStartCheck()
-                return
-            }
-            Log.w(TAG, "Surface is still portrait after wait, starting JVM anyway: ${rawWidth}x$rawHeight")
-        } else {
-            waitingLandscapeSinceMs = -1L
-        }
-        startJvmOnce()
-    }
-
-    private fun scheduleStartCheck() {
-        if (vmStarted || startCheckPosted) {
-            return
-        }
-        startCheckPosted = true
-        renderView.postDelayed({
-            startCheckPosted = false
-            tryStartJvmWhenSurfaceReady()
-        }, 120L)
-    }
-
-    private fun initBootOverlay() {
-        bootOverlay = findViewById(R.id.bootOverlay)
-        bootOverlayProgressBar = findViewById(R.id.bootOverlayProgressBar)
-        bootOverlayStatusText = findViewById(R.id.bootOverlayStatusText)
-        bootOverlayLogScroll = findViewById(R.id.bootOverlayLogScroll)
-        bootOverlayLogText = findViewById(R.id.bootOverlayLogText)
-        bootOverlayDismissButton = findViewById(R.id.bootOverlayDismissButton)
-        if (bootOverlay == null || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
-            waitForMainMenu = false
-            return
-        }
-        if (!waitForMainMenu) {
-            bootOverlay?.visibility = View.GONE
-            bootOverlayDismissed = true
-            bootOverlayDismissButton?.let {
-                it.visibility = View.GONE
-                it.setOnClickListener(null)
-            }
-            updateFloatingMouseVisibility()
-            return
-        }
-        synchronized(bootLogLines) {
-            bootLogLines.clear()
-        }
-        bootOverlayLogText?.text = ""
-        bootOverlayDismissButton?.let { button ->
-            if (manualDismissBootOverlay) {
-                button.visibility = View.VISIBLE
-                button.isEnabled = true
-                button.text = "关闭遮幕"
-                button.setOnClickListener {
-                    updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(99), "Manual dismiss requested")
-                    dismissBootOverlay()
-                }
-            } else {
-                button.visibility = View.GONE
-                button.setOnClickListener(null)
-            }
-        }
-        bootOverlay?.visibility = View.VISIBLE
-        if (manualDismissBootOverlay) {
-            bootOverlay?.setOnTouchListener(null)
-            bootOverlay?.isClickable = true
-            bootOverlay?.isFocusable = true
-            bootOverlay?.setOnClickListener {
-                // Consume background taps but keep dismiss button clickable.
-            }
-        } else {
-            bootOverlay?.setOnClickListener(null)
-            bootOverlay?.setOnTouchListener { _, _ -> true }
-        }
-        bootOverlayShownAtMs = SystemClock.uptimeMillis()
-        if (manualDismissBootOverlay) {
-            updateBootOverlayProgress(1, "Starting launch pipeline... (manual overlay dismiss)")
-        } else {
-            updateBootOverlayProgress(1, "Starting launch pipeline...")
-        }
-    }
-
-    private fun onJvmLogMessage(text: String?) {
-        Log.i(TAG, "[JVM] $text")
-        if (text == null) {
-            return
-        }
-        val shouldHandleOverlayFlow = waitForMainMenu && !bootOverlayDismissed
-        val lines = text.split(Regex("\\r?\\n"))
-        for (raw in lines) {
-            val line = raw.trim()
-            if (!launchFailureSignaled) {
-                val fatal = detectFatalStartupLog(line)
-                if (fatal != null) {
-                    signalLaunchFailure(fatal)
-                    continue
-                }
-            }
-            if (shouldHandleOverlayFlow) {
-                appendBootOverlayLog(raw)
-            }
-            if (shouldHandleOverlayFlow && shouldDismissOverlayEarlyLog(line)) {
-                runOnUiThread {
-                    updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(98), "Starting game...")
-                    requestEarlyOverlayDismiss()
-                }
-            }
-        }
-    }
-
-    private fun detectFatalStartupLog(line: String?): String? {
-        if (line == null || line.isEmpty()) {
-            return null
-        }
-        val lower = line.lowercase(Locale.ROOT)
-        return when {
-            isOutOfMemoryFailure(lower) -> "OutOfMemoryError detected: $line"
-            lower.contains("com.evacipated.cardcrawl.modthespire.patcher.patchingexception") -> "MTS patching failed: $line"
-            lower.contains("missingdependencyexception") -> "MTS missing dependency: $line"
-            lower.contains("duplicatemodidexception") -> "MTS duplicate mod id: $line"
-            lower.contains("missingmodidexception") -> "MTS missing mod id: $line"
-            lower.contains("illegal patch parameter") -> "MTS illegal patch parameter: $line"
-            else -> null
-        }
-    }
-
-    private fun isOutOfMemoryFailure(detail: String?): Boolean {
-        if (detail == null || detail.isEmpty()) {
-            return false
-        }
-        val lower = detail.lowercase(Locale.ROOT)
-        return lower.contains("outofmemoryerror") ||
-            lower.contains("java heap space") ||
-            lower.contains("gc overhead limit exceeded")
-    }
-
-    private fun shouldDismissOverlayEarlyLog(line: String?): Boolean {
-        if (line == null || line.isEmpty()) {
-            return false
-        }
-        val lower = line.lowercase(Locale.ROOT)
-        if (lower.contains("core.cardcrawlgame> distributorplatform=")) {
-            return true
-        }
-        if (lower.contains("core.cardcrawlgame> ismodded=")) {
-            return true
-        }
-        if (lower.contains("core.cardcrawlgame> no migration")) {
-            return true
-        }
-        if (lower.contains("publishaddcustommodemods")) {
-            return true
-        }
-        return lower.contains("events.heartevent>")
-    }
-
-    private fun requestEarlyOverlayDismiss() {
-        if (bootOverlayDismissed || bootOverlay == null) {
-            return
-        }
-        if (manualDismissBootOverlay) {
-            updateBootOverlayProgress(bootOverlayProgress.coerceAtLeast(98), "Game ready, tap Close Overlay")
-            runOnUiThread {
-                bootOverlayDismissButton?.let {
-                    it.text = "进入游戏"
-                    it.isEnabled = true
-                }
-            }
-            return
-        }
-        if (useTextureViewSurface && textureView != null) {
-            earlyOverlayDismissRequestFrameTimestampNs = lastTextureFrameTimestampNs
-            earlyOverlayDismissOnNextFrame = true
-            return
-        }
-        dismissBootOverlay()
-    }
-
-/*
-    private fun startBootBridgeReader() {
-        stopBootBridgeReaderIfRunning()
-        val eventsFile = RuntimePaths.bootBridgeEventsFile(this)
-        val parent = eventsFile.parentFile
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs()
-        }
-        try {
-            FileOutputStream(eventsFile, false).use {
-                // Truncate old events.
-            }
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to reset boot bridge events file", error)
-        }
-
-        bootBridgeReaderStop = false
-        bootBridgeReaderThread = Thread({ runBootBridgeReader(eventsFile) }, "BootBridge-Reader").apply {
-            isDaemon = true
-            start()
-        }
-    }
-
-    private fun stopBootBridgeReaderIfRunning() {
-        bootBridgeReaderStop = true
-        val thread = bootBridgeReaderThread
-        bootBridgeReaderThread = null
-        thread?.interrupt()
-    }
-
-    private fun runBootBridgeReader(eventsFile: File) {
-        var offset = 0L
-        while (!bootBridgeReaderStop) {
-            try {
-                if (!eventsFile.exists()) {
-                    sleepQuietly(80L)
-                    continue
-                }
-                RandomAccessFile(eventsFile, "r").use { raf ->
-                    val length = raf.length()
-                    if (length < offset) {
-                        offset = 0L
-                    }
-                    if (length > offset) {
-                        raf.seek(offset)
-                        var raw: String? = raf.readLine()
-                        while (!bootBridgeReaderStop && raw != null) {
-                            val line = String(raw.toByteArray(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8)
-                            onBootBridgeEventLine(line)
-                            raw = raf.readLine()
-                        }
-                        offset = raf.filePointer
-                    }
-                }
-            } catch (error: Throwable) {
-                Log.w(TAG, "Boot bridge reader error", error)
-            }
-            sleepQuietly(80L)
-        }
-    }
-
-    private fun onBootBridgeEventLine(line: String?) {
-        if (line == null) {
-            return
-        }
-        val trimmed = line.trim()
-        if (trimmed.isEmpty()) {
-            return
-        }
-        appendBootOverlayLog("[bridge] $trimmed")
-
-        val parsed = parseBootBridgeEventLine(trimmed) ?: return
-
-        when (parsed.type) {
-            "PHASE" -> {
-                if (parsed.percent >= 0) {
-                    updateBootOverlayProgress(
-                        parsed.percent,
-                        parsed.message.ifEmpty { "Loading..." }
-                    )
-                }
-            }
-
-            "READY" -> signalMainMenuReady(
-                parsed.message.ifEmpty { "Main menu is ready" }
-            )
-
-            "FAIL" -> signalLaunchFailure(
-                parsed.message.ifEmpty { "Bridge reported startup failure" }
-            )
-        }
-    }
-
-    private fun parseSafeInt(value: String?, fallback: Int): Int {
-        if (value == null) {
-            return fallback
-        }
-        return try {
-            value.trim().toInt()
-        } catch (_: Throwable) {
-            fallback
-        }
-    }
-
-    private fun sleepQuietly(ms: Long) {
-        try {
-            Thread.sleep(ms)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-    }
-*/
-
-    private fun signalLaunchFailure(detail: String) {
-        if (backExitRequested) {
-            runOnUiThread { finish() }
-            return
-        }
-        val oomFailure = isOutOfMemoryFailure(detail)
-        if (mainMenuReadySignaled && !oomFailure) {
-            // After game-ready, only treat explicit OOM as a forced return trigger.
-            Log.w(TAG, "Ignoring non-OOM launch failure after ready: $detail")
-            return
-        }
-        if (launchFailureSignaled) {
-            return
-        }
-        launchFailureSignaled = true
-//        stopBootBridgeReaderIfRunning()
-        Log.e(TAG, "Detected startup failure from boot bridge: $detail")
-        val crashCode = if (oomFailure) CRASH_CODE_OUT_OF_MEMORY else CRASH_CODE_BOOT_FAILURE
-        val crashDetail = if (oomFailure) {
-            "OutOfMemoryError detected. JVM heap exhausted during game runtime. $detail"
-        } else {
-            detail
-        }
-        runOnUiThread { reportCrashAndReturn(crashCode, false, crashDetail) }
-    }
-
-    private fun signalMainMenuReady(message: String) {
-        if (!waitForMainMenu || mainMenuReadySignaled) {
-            return
-        }
-        mainMenuReadySignaled = true
-        try {
-            Logger.appendToLog(
-                "Boot overlay ready signal: message=\"$message\", manualDismiss=$manualDismissBootOverlay"
-            )
-        } catch (_: Throwable) {
-        }
-        if (manualDismissBootOverlay) {
-            updateBootOverlayProgress(100, "$message (tap Close Overlay)")
-            runOnUiThread {
-                bootOverlayDismissButton?.let {
-                    it.text = "进入游戏"
-                    it.isEnabled = true
-                }
-            }
-            return
-        }
-        updateBootOverlayProgress(100, message)
-        val now = SystemClock.uptimeMillis()
-        val elapsed = if (bootOverlayShownAtMs <= 0L) BOOT_OVERLAY_MIN_VISIBLE_MS else (now - bootOverlayShownAtMs)
-        val minDelay = (BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed).coerceAtLeast(0)
-        val delay = minDelay.coerceAtLeast(BOOT_OVERLAY_READY_DELAY_MS)
-        runOnUiThread {
-            try {
-                Logger.appendToLog("Boot overlay auto dismiss scheduled in ${delay}ms")
-            } catch (_: Throwable) {
-            }
-            bootOverlay?.postDelayed({ dismissBootOverlay() }, delay)
-        }
-    }
-
-    private fun dismissBootOverlay() {
-        if (bootOverlayDismissed || bootOverlay == null) {
-            return
-        }
-        bootOverlayDismissed = true
-        earlyOverlayDismissOnNextFrame = false
-        earlyOverlayDismissRequestFrameTimestampNs = 0L
-        try {
-            Logger.appendToLog("Boot overlay dismissed")
-        } catch (_: Throwable) {
-        }
-        bootOverlayDismissButton?.let {
-            it.visibility = View.GONE
-            it.setOnClickListener(null)
-        }
-        bootOverlay?.visibility = View.GONE
-        updateFloatingMouseVisibility()
-    }
-
-    private fun updateBootOverlayProgress(percent: Int, message: String?) {
-        if (!waitForMainMenu) {
-            return
-        }
-        val bounded = percent.coerceIn(0, 100)
-        val normalizedMessage = message?.trim() ?: ""
-        if (bounded < bootOverlayProgress) {
-            return
-        }
-        if (bounded == bootOverlayProgress && normalizedMessage == bootOverlayMessage) {
-            return
-        }
-        bootOverlayProgress = bounded
-        bootOverlayMessage = normalizedMessage
-        runOnUiThread {
-            if (bootOverlayDismissed || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
-                return@runOnUiThread
-            }
-            bootOverlayProgressBar?.progress = bootOverlayProgress
-            if (normalizedMessage.isNotEmpty()) {
-                bootOverlayStatusText?.text = "$normalizedMessage ($bootOverlayProgress%)"
-            }
-        }
-    }
-
-    private fun appendBootOverlayLog(rawLine: String?) {
-        if (!waitForMainMenu || rawLine == null) {
-            return
-        }
-        val line = rawLine.replace('\r', ' ').trim()
-        if (line.isEmpty()) {
-            return
-        }
-        synchronized(bootLogLines) {
-            bootLogLines.addLast(line)
-            while (bootLogLines.size > BOOT_LOG_MAX_LINES) {
-                bootLogLines.removeFirst()
-            }
-        }
-        runOnUiThread { renderBootOverlayLogs() }
-    }
-
-    private fun renderBootOverlayLogs() {
-        if (bootOverlayDismissed || bootOverlayLogText == null) {
-            return
-        }
-        val builder = StringBuilder(4096)
-        synchronized(bootLogLines) {
-            for (line in bootLogLines) {
-                builder.append(line).append('\n')
-            }
-        }
-        bootOverlayLogText?.text = builder.toString()
-        bootOverlayLogScroll?.post { bootOverlayLogScroll?.fullScroll(View.FOCUS_DOWN) }
-    }
+    // ==================== Crash Reporting ====================
 
     private fun reportCrashAndReturn(code: Int, isSignal: Boolean, detail: String?) {
         if (backExitRequested) {
             finish()
             return
         }
-        runtimeLifecycleReady = false
-        CrashDiagnostics.recordLaunchResult(this, "game_report_crash_and_return", code, isSignal, detail)
+
         val launcherIntent = Intent(this, LauncherActivity::class.java)
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true)
         launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code)
@@ -1091,392 +434,15 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         finish()
     }
 
-    private fun updateWindowSize() {
-        val physicalWidth = resolvePhysicalWidth()
-        val physicalHeight = resolvePhysicalHeight()
-        val windowWidth = (physicalWidth * renderScale).roundToInt().coerceAtLeast(1)
-        val windowHeight = (physicalHeight * renderScale).roundToInt().coerceAtLeast(1)
-
-        CallbackBridge.physicalWidth = physicalWidth
-        CallbackBridge.physicalHeight = physicalHeight
-        CallbackBridge.windowWidth = windowWidth
-        CallbackBridge.windowHeight = windowHeight
-        CallbackBridge.sendUpdateWindowSize(windowWidth, windowHeight)
-    }
-
-    private fun applyTextureBufferSize(surface: SurfaceTexture) {
-        val rawWidth = if (surfaceBufferWidth > 0) {
-            surfaceBufferWidth
-        } else if (::renderView.isInitialized) {
-            renderView.width
-        } else {
-            0
-        }
-        val rawHeight = if (surfaceBufferHeight > 0) {
-            surfaceBufferHeight
-        } else if (::renderView.isInitialized) {
-            renderView.height
-        } else {
-            0
-        }
-        val scaledWidth = (rawWidth.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
-        val scaledHeight = (rawHeight.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
-        surface.setDefaultBufferSize(scaledWidth, scaledHeight)
-    }
-
-    private fun resyncRenderSurfaceAfterForeground() {
-        if (useTextureViewSurface) {
-            reapplyTextureBufferSizeFromView()
-        }
-        updateWindowSize()
-        if (!::renderView.isInitialized) {
-            return
-        }
-        renderView.post {
-            if (isFinishing || isDestroyed) {
-                return@post
-            }
-            if (useTextureViewSurface) {
-                reapplyTextureBufferSizeFromView()
-            }
-            updateWindowSize()
-        }
-    }
-
-    private fun reapplyTextureBufferSizeFromView() {
-        val view = textureView ?: return
-        val surfaceTexture = view.surfaceTexture ?: return
-        if (view.width > 0) {
-            surfaceBufferWidth = view.width
-        }
-        if (view.height > 0) {
-            surfaceBufferHeight = view.height
-        }
-        applyTextureBufferSize(surfaceTexture)
-    }
-
-    private fun resolvePhysicalWidth(): Int = resolveRawPhysicalWidth()
-
-    private fun resolvePhysicalHeight(): Int = resolveRawPhysicalHeight()
-
-    private fun resolveRawPhysicalWidth(): Int {
-        val viewWidth = if (::renderView.isInitialized) renderView.width else 0
-        return (if (surfaceBufferWidth > 0) surfaceBufferWidth else viewWidth).coerceAtLeast(1)
-    }
-
-    private fun resolveRawPhysicalHeight(): Int {
-        val viewHeight = if (::renderView.isInitialized) renderView.height else 0
-        return (if (surfaceBufferHeight > 0) surfaceBufferHeight else viewHeight).coerceAtLeast(1)
-    }
-
-    private fun syncDisplayConfigToSurfaceSize() {
-        val windowWidth = CallbackBridge.windowWidth.coerceAtLeast(1)
-        val windowHeight = CallbackBridge.windowHeight.coerceAtLeast(1)
-        try {
-            DisplayConfigSync.syncToCurrentResolution(this, windowWidth, windowHeight, targetFps)
-            Logger.appendToLog(
-                "Display config synced to ${windowWidth.coerceAtLeast(800)}x${windowHeight.coerceAtLeast(450)} @$targetFps fps"
-            )
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to sync info.displayconfig", error)
-            try {
-                Logger.appendToLog(
-                    "Display config sync failed: ${error.javaClass.simpleName}: ${error.message}"
-                )
-            } catch (_: Throwable) {
-            }
-        }
-    }
-
-    private fun resolveRenderScale(): Float {
-        return LauncherConfig.readRenderScale(this)
-    }
-
-    private fun initFloatingMouseControls() {
-        val host = findViewById<FrameLayout>(R.id.gameHost)
-        floatingMouseController = FloatingMouseOverlayController(
-            activity = this,
-            isNativeInputDispatchReady = { isNativeInputDispatchReady() },
-            requestRenderViewFocus = { if (::renderView.isInitialized) renderView.requestFocus() },
-            autoSwitchBackToLeftAfterRightClick = autoSwitchLeftAfterRightClick
-        ).also { controller ->
-            controller.attachToHost(host)
-        }
-        updateFloatingMouseVisibility()
-    }
-
-    private fun updateFloatingMouseVisibility() {
-        val shouldShow = showFloatingMouseWindow && runtimeLifecycleReady && bootOverlayDismissed && !backExitRequested
-        floatingMouseController?.updateVisibility(shouldShow)
-    }
-
-    private fun hideSoftKeyboard() {
-        floatingMouseController?.hideSoftKeyboard()
-    }
-
-    private fun mapBootOverlayPreparationProgress(percent: Int): Int {
-        val bounded = percent.coerceIn(0, 100)
-        val ratio = bounded / 100f
-        return 12 + ((24 - 12) * ratio).roundToInt()
-    }
-
-    private fun findLaunchArgValue(args: List<String>?, keyPrefix: String?): String {
-        if (args == null || keyPrefix.isNullOrEmpty()) {
-            return "${keyPrefix}<invalid>"
-        }
-        for (arg in args) {
-            if (arg.startsWith(keyPrefix)) {
-                return arg
-            }
-        }
-        return "${keyPrefix}<missing>"
-    }
-
-    private fun applyImmersiveMode() {
-        applyDisplayCutoutMode()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    }
-
-    private fun applyDisplayCutoutMode() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            return
-        }
-        val attributes = window.attributes
-        if (attributes.layoutInDisplayCutoutMode == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
-            return
-        }
-        attributes.layoutInDisplayCutoutMode =
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        window.attributes = attributes
-    }
+    // ==================== Input Event Dispatch ====================
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        return handleTouchEvent(event) || super.onTouchEvent(event)
+        return inputHandler.handleTouchEvent(event) || super.onTouchEvent(event)
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        if (isGamepadMotionEvent(event)) {
-            return handleGamepadMotionEvent(event)
-        }
-        val source = event.source
-        if ((source and InputDevice.SOURCE_MOUSE) != 0 || (source and InputDevice.SOURCE_TOUCHPAD) != 0) {
-            when (event.actionMasked) {
-                MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE -> {
-                    moveCursor(event.x, event.y)
-                    return true
-                }
-
-                MotionEvent.ACTION_SCROLL -> {
-                    CallbackBridge.sendScroll(
-                        event.getAxisValue(MotionEvent.AXIS_HSCROLL).toDouble(),
-                        event.getAxisValue(MotionEvent.AXIS_VSCROLL).toDouble()
-                    )
-                    return true
-                }
-
-                MotionEvent.ACTION_BUTTON_PRESS -> return sendMouseButton(event.actionButton, true)
-                MotionEvent.ACTION_BUTTON_RELEASE -> return sendMouseButton(event.actionButton, false)
-            }
-        }
-        return super.onGenericMotionEvent(event)
-    }
-
-    private fun isGamepadKeyEvent(event: KeyEvent?): Boolean {
-        if (event == null) {
-            return false
-        }
-        val source = event.source
-        if ((source and InputDevice.SOURCE_GAMEPAD) != 0 || (source and InputDevice.SOURCE_JOYSTICK) != 0) {
-            return true
-        }
-        val device = event.device ?: return false
-        val deviceSources = device.sources
-        return (deviceSources and InputDevice.SOURCE_GAMEPAD) != 0 ||
-            (deviceSources and InputDevice.SOURCE_JOYSTICK) != 0
-    }
-
-    private fun isGamepadMotionEvent(event: MotionEvent?): Boolean {
-        if (event == null || event.actionMasked != MotionEvent.ACTION_MOVE) {
-            return false
-        }
-        val source = event.source
-        return (source and InputDevice.SOURCE_JOYSTICK) != 0 ||
-            (source and InputDevice.SOURCE_GAMEPAD) != 0
-    }
-
-    private fun handleGamepadKeyEvent(event: KeyEvent): Boolean {
-        if (!isNativeInputDispatchReady()) {
-            return true
-        }
-        ensureGamepadDirectInputEnabled()
-        val action = event.action
-        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
-            return true
-        }
-        AndroidGamepadGlfwMapper.writeKeyEvent(event.keyCode, action == KeyEvent.ACTION_DOWN)
-        return true
-    }
-
-    private fun handleGamepadMotionEvent(event: MotionEvent): Boolean {
-        if (!isNativeInputDispatchReady()) {
-            return true
-        }
-        ensureGamepadDirectInputEnabled()
-        AndroidGamepadGlfwMapper.writeMotionEvent(event)
-        return true
-    }
-
-    private fun ensureGamepadDirectInputEnabled() {
-        if (gamepadDirectInputEnableAttempted) {
-            return
-        }
-        gamepadDirectInputEnableAttempted = true
-        try {
-            val enabled = CallbackBridge.nativeEnableGamepadDirectInput()
-            Log.i(TAG, "Requested gamepad direct input: $enabled")
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to enable gamepad direct input", error)
-        }
-    }
-
-    private fun resetGamepadState() {
-        try {
-            AndroidGamepadGlfwMapper.resetState()
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to reset gamepad state", error)
-        }
-    }
-
-    private fun sendMouseButton(androidButton: Int, down: Boolean): Boolean {
-        if (!isNativeInputDispatchReady()) {
-            return true
-        }
-        val glfwButton = when (androidButton) {
-            MotionEvent.BUTTON_PRIMARY -> LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LEFT.toInt()
-            MotionEvent.BUTTON_SECONDARY -> LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt()
-            MotionEvent.BUTTON_TERTIARY -> LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_MIDDLE.toInt()
-            else -> return false
-        }
-        CallbackBridge.sendMouseButton(glfwButton, down)
-        return true
-    }
-
-    private fun handleTouchEvent(event: MotionEvent): Boolean {
-        if (!isNativeInputDispatchReady()) {
-            return false
-        }
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                activePointerId = event.getPointerId(0)
-                moveCursor(event.getX(0), event.getY(0))
-                pressTouchButtonIfNeeded()
-                return true
-            }
-
-            MotionEvent.ACTION_POINTER_DOWN -> {
-                val downIndex = event.actionIndex
-                activePointerId = event.getPointerId(downIndex)
-                moveCursor(event.getX(downIndex), event.getY(downIndex))
-                pressTouchButtonIfNeeded()
-                return true
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                var pointerIndex = event.findPointerIndex(activePointerId)
-                if (pointerIndex < 0 && event.pointerCount > 0) {
-                    activePointerId = event.getPointerId(0)
-                    pointerIndex = 0
-                }
-                if (pointerIndex >= 0) {
-                    moveCursor(event.getX(pointerIndex), event.getY(pointerIndex))
-                    return true
-                }
-                return false
-            }
-
-            MotionEvent.ACTION_POINTER_UP -> {
-                handlePointerUp(event)
-                return true
-            }
-
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                releaseTouchButtonIfNeeded()
-                resetTouchState()
-                return true
-            }
-
-            else -> return false
-        }
-    }
-
-    private fun handlePointerUp(event: MotionEvent) {
-        val actionIndex = event.actionIndex
-        val pointerId = event.getPointerId(actionIndex)
-        val remaining = event.pointerCount - 1
-
-        if (pointerId == activePointerId) {
-            activePointerId = MotionEvent.INVALID_POINTER_ID
-            for (i in 0 until event.pointerCount) {
-                if (i == actionIndex) {
-                    continue
-                }
-                activePointerId = event.getPointerId(i)
-                moveCursor(event.getX(i), event.getY(i))
-                break
-            }
-        }
-        if (remaining <= 0) {
-            releaseTouchButtonIfNeeded()
-            resetTouchState()
-        }
-    }
-
-    private fun moveCursor(x: Float, y: Float) {
-        if (!isNativeInputDispatchReady()) {
-            return
-        }
-        val mapped = mapToWindowCoords(x, y)
-        CallbackBridge.sendCursorPos(mapped[0], mapped[1])
-    }
-
-    private fun mapToWindowCoords(viewX: Float, viewY: Float): FloatArray {
-        val rawViewWidth = if (::renderView.isInitialized) renderView.width else 0
-        val rawViewHeight = if (::renderView.isInitialized) renderView.height else 0
-        return mapViewToWindowCoords(
-            viewX = viewX,
-            viewY = viewY,
-            rawViewWidth = rawViewWidth,
-            rawViewHeight = rawViewHeight,
-            windowWidthRaw = CallbackBridge.windowWidth,
-            windowHeightRaw = CallbackBridge.windowHeight
-        )
-    }
-
-    private fun releaseTextureSurfaceIfNeeded() {
-        textureSurface?.let {
-            try {
-                it.release()
-            } catch (_: Throwable) {
-            }
-        }
-        textureSurface = null
-    }
-
-    private fun pressTouchButtonIfNeeded() {
-        floatingMouseController?.pressTouchButtonIfNeeded()
-    }
-
-    private fun releaseTouchButtonIfNeeded() {
-        floatingMouseController?.releaseTouchButtonIfNeeded()
-    }
-
-    private fun resetTouchState() {
-        activePointerId = MotionEvent.INVALID_POINTER_ID
+        return inputHandler.handleGenericMotionEvent(event) || super.onGenericMotionEvent(event)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -1485,80 +451,33 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
             keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
             keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
         ) {
-            return handleVolumeKeyEvent(event)
+            return inputHandler.handleVolumeKeyEvent(event)
         }
-        if (isGamepadKeyEvent(event)) {
-            return handleGamepadKeyEvent(event)
+        if (inputHandler.isGamepadKeyEvent(event)) {
+            return inputHandler.handleGamepadKeyEvent(event)
         }
-        if (dispatchKeyboardEventToGame(event)) {
+        if (inputHandler.dispatchKeyboardEventToGame(event)) {
             return true
         }
         return super.dispatchKeyEvent(event)
     }
 
-    @Suppress("DEPRECATION")
-    private fun dispatchKeyboardEventToGame(event: KeyEvent): Boolean {
-        if (!isNativeInputDispatchReady()) {
-            return false
-        }
-        if (event.action == KeyEvent.ACTION_MULTIPLE) {
-            val chars = event.characters
-            if (chars.isNullOrEmpty()) {
-                return true
-            }
-            var handled = false
-            for (ch in chars) {
-                if (!Character.isISOControl(ch)) {
-                    CallbackBridge.sendChar(ch, CallbackBridge.getCurrentMods())
-                    handled = true
-                }
-            }
-            return handled
-        }
-        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
-            return false
-        }
-
-        val glfwKey = AndroidGlfwKeycode.toGlfw(event.keyCode)
-        var handled = false
-        if (glfwKey != AndroidGlfwKeycode.GLFW_KEY_UNKNOWN) {
-            val isDown = event.action == KeyEvent.ACTION_DOWN
-            CallbackBridge.setModifiers(glfwKey, isDown)
-            CallbackBridge.sendKeyPress(glfwKey, 0, CallbackBridge.getCurrentMods(), isDown)
-            handled = true
-        }
-
-        val unicode = event.unicodeChar
-        if (event.action == KeyEvent.ACTION_DOWN && unicode > 0 && !Character.isISOControl(unicode)) {
-            CallbackBridge.sendChar(unicode.toChar(), CallbackBridge.getCurrentMods())
-            handled = true
-        }
-        return handled
-    }
+    // ==================== Window State ====================
 
     private fun isNativeInputDispatchReady(): Boolean {
-        if (backExitRequested) {
-            return false
-        }
-        if (!runtimeLifecycleReady) {
-            return false
-        }
-        if (!bridgeSurfaceReady) {
-            return false
-        }
+        if (backExitRequested) return false
+        if (!jvmLaunchController.runtimeLifecycleReady) return false
+        if (!renderSurfaceManager.bridgeSurfaceReady) return false
         return CallbackBridge.windowWidth > 0 && CallbackBridge.windowHeight > 0
     }
 
     private fun applyForegroundWindowState() {
-        if (!runtimeLifecycleReady) {
-            return
-        }
+        if (!jvmLaunchController.runtimeLifecycleReady) return
         try {
             CallbackBridge.nativeSetInputReady(true)
             CallbackBridge.nativeSetAudioMuted(false)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
-            // Keep the render loop in foreground mode immediately after resume/start.
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1)
         } catch (error: Throwable) {
@@ -1567,9 +486,7 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     private fun applyBackgroundWindowState() {
-        if (!runtimeLifecycleReady) {
-            return
-        }
+        if (!jvmLaunchController.runtimeLifecycleReady) return
         try {
             CallbackBridge.nativeSetInputReady(false)
             CallbackBridge.nativeSetAudioMuted(true)
@@ -1582,21 +499,32 @@ class StsGameActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun handleVolumeKeyEvent(event: KeyEvent): Boolean {
-        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager? ?: return false
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            val direction = when (event.keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> AudioManager.ADJUST_RAISE
-                KeyEvent.KEYCODE_VOLUME_DOWN -> AudioManager.ADJUST_LOWER
-                KeyEvent.KEYCODE_VOLUME_MUTE -> AudioManager.ADJUST_TOGGLE_MUTE
-                else -> return false
-            }
-            audioManager.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                direction,
-                AudioManager.FLAG_SHOW_UI
+    private fun syncFocusStateToNative(hasFocus: Boolean) {
+        if (!jvmLaunchController.runtimeLifecycleReady) return
+        try {
+            CallbackBridge.nativeSetWindowAttrib(
+                LwjglGlfwKeycode.GLFW_FOCUSED,
+                if (hasFocus) 1 else 0
             )
+            CallbackBridge.nativeSetWindowAttrib(
+                LwjglGlfwKeycode.GLFW_HOVERED,
+                if (hasFocus) 1 else 0
+            )
+            if (hasFocus) {
+                CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
+                CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "Failed to sync focus window attribs", error)
         }
-        return true
+    }
+
+    private fun updateFloatingMouseVisibility() {
+        inputHandler.updateFloatingMouseVisibility(
+            showFloatingMouseWindow,
+            jvmLaunchController.runtimeLifecycleReady,
+            bootOverlayController.isDismissed,
+            backExitRequested
+        )
     }
 }

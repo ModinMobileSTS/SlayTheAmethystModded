@@ -21,7 +21,7 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
-            android:name="io.stamethyst.backend.file.SafExportActivity"
+            android:name="io.stamethyst.backend.file_interactive.SafExportActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:noHistory="true"

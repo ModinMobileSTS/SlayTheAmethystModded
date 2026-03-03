@@ -1,4 +1,4 @@
-package io.stamethyst.backend.file
+package io.stamethyst.backend.file_interactive
 
 import android.app.Activity
 import android.content.Intent

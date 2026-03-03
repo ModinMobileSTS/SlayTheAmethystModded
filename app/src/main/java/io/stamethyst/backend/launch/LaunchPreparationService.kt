@@ -1,8 +1,8 @@
 package io.stamethyst.backend.launch
 
 import android.content.Context
-import io.stamethyst.backend.components.ComponentInstaller
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.backend.launch.ComponentInstaller
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.StsJarValidator

@@ -3,7 +3,7 @@ package io.stamethyst.backend.runtime
 import android.content.Context
 import android.content.res.AssetManager
 import android.system.Os
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.launch.StartupProgressCallback
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream

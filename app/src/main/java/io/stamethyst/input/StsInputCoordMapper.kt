@@ -1,4 +1,4 @@
-package io.stamethyst.backend.input
+package io.stamethyst.input
 
 internal fun mapViewToWindowCoords(
     viewX: Float,

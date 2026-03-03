@@ -12,7 +12,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.text.TextUtils;
 
-import io.stamethyst.backend.file.FileLinkOpener;
+import io.stamethyst.backend.file_interactive.FileLinkOpener;
 
 public class MainActivity {
     public static ClipboardManager GLOBAL_CLIPBOARD;

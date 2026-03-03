@@ -2,7 +2,7 @@ package io.stamethyst.backend.crash
 
 import android.content.Context
 import android.util.Log
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.ArrayList

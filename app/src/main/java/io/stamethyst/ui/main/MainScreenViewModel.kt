@@ -18,7 +18,7 @@ import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.CrashDiagnostics
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.mods.ModManager
-import io.stamethyst.backend.core.RuntimePaths
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
