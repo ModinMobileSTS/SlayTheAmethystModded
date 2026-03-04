@@ -4,8 +4,13 @@ import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Sync
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
+import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 plugins {
     alias(libs.plugins.android.application)
@@ -139,13 +144,7 @@ val gdxVideoNativeAssetFiles = listOf(
     rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so")
 )
 val supportedLaunchModes = setOf("mts_basemod", "vanilla")
-val stsRequiredLogFiles = listOf(
-    "latest.log",
-)
-val stsOptionalDebugFiles = listOf(
-    ".last_exit_marker",
-    "enabled_mods.txt",
-)
+val stsJvmLogExportMaxSlots = 5
 
 val launchMode: String = readGradleProperty("launchMode", "mts_basemod")
 val forceJvmCrash: String = readGradleProperty("forceJvmCrash", "false")
@@ -239,134 +238,136 @@ val stsStop by tasks.registering(Exec::class) {
 
 val stsPullLogs by tasks.registering {
     group = "debug"
-    description = "Export SlayTheAmethyst runtime logs (latest.log + slot archives + optional debug artifacts) from device."
+    description = "Export the same JVM log bundle as Settings > Share Logs."
 
-    data class PatternSpec(
-        val globPattern: String,
-        val scanMessage: String,
-        val emptyMessage: String,
-        val itemLabel: String
+    data class PulledLog(
+        val fileName: String,
+        val content: String
     )
 
-    val pulled = mutableListOf<String>()
-    val missing = mutableListOf<String>()
-    fun listFiles(globPattern: String): List<String> {
-        val bashScript = "for f in $globPattern; do [ -f \"${'$'}f\" ] && echo \"${'$'}f\"; done"
-        val command = adbCommand("exec-out run-as $packageName sh -c '$bashScript'")
-        return runCommand(command)
-            .lineSequence()
+    fun runAdbCommand(args: List<String>): String {
+        val output = providers.exec {
+            val command = mutableListOf(adb)
+            if (deviceSerial.isNotEmpty()) {
+                command.addAll(listOf("-s", deviceSerial))
+            }
+            command.addAll(args)
+            commandLine(command)
+            isIgnoreExitValue = true
+        }
+        if (output.result.get().exitValue != 0) {
+            return ""
+        }
+        return output.standardOutput.asText.get()
+    }
+
+    fun remoteFileExists(remotePath: String): Boolean {
+        val checkScript = "[ -f $remotePath ] && echo 1"
+        return runAdbCommand(
+            listOf("exec-out", "run-as", packageName, "sh", "-c", checkScript)
+        ).trim() == "1"
+    }
+
+    fun readRemoteFile(remotePath: String): String {
+        return runAdbCommand(
+            listOf(
+                "exec-out",
+                "run-as",
+                packageName,
+                "sh",
+                "-c",
+                "cat $remotePath 2>/dev/null"
+            )
+        )
+    }
+
+    fun listArchivedJvmLogNames(): List<String> {
+        val listScript = "for f in files/sts/jvm_logs/jvm_log_*.log; do [ -f \"${'$'}f\" ] && echo \"${'$'}{f##*/}\"; done"
+        return runAdbCommand(
+            listOf("exec-out", "run-as", packageName, "sh", "-c", listScript)
+        ).lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+            .distinct()
+            .sortedDescending()
             .toList()
     }
 
-    fun pullByPattern(spec: PatternSpec, pullFile: (String, String) -> Boolean) {
-        logger.lifecycle(spec.scanMessage)
-        val remotePaths = listFiles(spec.globPattern)
-        if (remotePaths.isEmpty()) {
-            logger.lifecycle(spec.emptyMessage)
-            return
-        }
-        for (remotePath in remotePaths) {
-            val name = remotePath.substringAfterLast('/')
-            logger.lifecycle("Pulling STS ${spec.itemLabel}: $name")
-            if (!pullFile(remotePath, name)) {
-                logger.lifecycle("Failed or empty ${spec.itemLabel}: $name")
-            }
-        }
+    fun buildJvmLogExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
     }
-
-    val patternSpecs = listOf(
-        PatternSpec(
-            globPattern = "files/sts/jvm_logs/jvm_log_*.log",
-            scanMessage = "Scanning STS slot logs (jvm_log_*.log)",
-            emptyMessage = "No jvm_log_*.log found on device.",
-            itemLabel = "slot log"
-        ),
-        PatternSpec(
-            globPattern = "files/sts/hs_err_pid*.log",
-            scanMessage = "Scanning STS crash dumps (hs_err_pid*.log)",
-            emptyMessage = "No hs_err_pid*.log found on device.",
-            itemLabel = "crash dump"
-        ),
-        PatternSpec(
-            globPattern = "files/sts/logcat_pid_*_snapshot.txt",
-            scanMessage = "Scanning STS pid snapshots (logcat_pid_*_snapshot.txt)",
-            emptyMessage = "No logcat_pid_*_snapshot.txt found on device.",
-            itemLabel = "pid snapshot"
-        ),
-        PatternSpec(
-            globPattern = "files/sts/latestlog.txt files/sts/jvm_output.log files/sts/boot_bridge_events.log " +
-                "files/sts/last_crash_report.txt files/sts/last_exit_info.txt files/sts/last_exit_trace.txt " +
-                "files/sts/last_signal_stack.txt files/sts/logcat_snapshot.txt files/sts/logcat_crash_snapshot.txt " +
-                "files/sts/logcat_events_snapshot.txt files/sts/crash_highlights.txt",
-            scanMessage = "Scanning legacy STS log artifacts",
-            emptyMessage = "No legacy STS log artifacts found.",
-            itemLabel = "legacy artifact"
-        )
-    )
-    val logcatSpecs = listOf(
-        "logcat.txt" to "logcat -d -b all -v threadtime -t 12000",
-        "logcat_crash.txt" to "logcat -d -b crash -v threadtime -t 12000",
-        "logcat_events.txt" to "logcat -d -b events -v threadtime -t 12000"
-    )
 
     doLast {
         val outputDir = if (logsDir.isNotEmpty()) {
             file(logsDir)
         } else {
-            val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
-            layout.buildDirectory.dir("sts-logs/$timestamp").get().asFile
+            layout.buildDirectory.dir("sts-logs").get().asFile
         }
         outputDir.mkdirs()
 
-        fun pullToFile(localName: String, command: String, emptyMessage: String): Boolean {
-            val content = runCommand(command)
-            if (content.isEmpty()) {
-                logger.lifecycle(emptyMessage)
-                return false
-            }
-            File(outputDir, localName).writeText(content)
-            pulled.add(localName)
-            return true
-        }
+        val pulledLogs = mutableListOf<PulledLog>()
 
-        fun pullFile(remotePath: String, localName: String): Boolean {
-            return pullToFile(
-                localName = localName,
-                command = adbCommand("exec-out run-as $packageName sh -c 'cat $remotePath 2>/dev/null'"),
-                emptyMessage = "Failed or empty file: $localName"
+        val latestRemotePath = "files/sts/latest.log"
+        val latestExists = remoteFileExists(latestRemotePath)
+        if (latestExists) {
+            logger.lifecycle("Pulling shared JVM log: latest.log")
+            pulledLogs.add(
+                PulledLog(
+                    fileName = "latest.log",
+                    content = readRemoteFile(latestRemotePath)
+                )
             )
+        } else {
+            logger.lifecycle("latest.log not found on device.")
         }
 
-        for (name in stsRequiredLogFiles) {
-            logger.lifecycle("Pulling required STS log: $name")
-            if (!pullFile("files/sts/$name", name)) {
-                missing.add(name)
+        val archivedLimit = if (latestExists) {
+            stsJvmLogExportMaxSlots - 1
+        } else {
+            stsJvmLogExportMaxSlots
+        }
+        val archivedNames = listArchivedJvmLogNames().take(archivedLimit)
+        if (archivedNames.isEmpty()) {
+            logger.lifecycle("No archived jvm_log_*.log found on device.")
+        }
+        for (name in archivedNames) {
+            val remotePath = "files/sts/jvm_logs/$name"
+            if (!remoteFileExists(remotePath)) {
+                continue
+            }
+            logger.lifecycle("Pulling shared JVM log: $name")
+            pulledLogs.add(PulledLog(fileName = name, content = readRemoteFile(remotePath)))
+        }
+
+        val archiveFile = File(outputDir, buildJvmLogExportFileName())
+        FileOutputStream(archiveFile, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                if (pulledLogs.isEmpty()) {
+                    val entry = ZipEntry("sts/jvm_logs/README.txt")
+                    zipOutput.putNextEntry(entry)
+                    val message = "No JVM logs found.\n" +
+                        "Expected files:\n" +
+                        "- /data/user/0/$packageName/files/sts/latest.log\n" +
+                        "- /data/user/0/$packageName/files/sts/jvm_logs\n"
+                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
+                    zipOutput.closeEntry()
+                } else {
+                    for (pulled in pulledLogs) {
+                        val entry = ZipEntry("sts/jvm_logs/${pulled.fileName}")
+                        zipOutput.putNextEntry(entry)
+                        zipOutput.write(pulled.content.toByteArray(StandardCharsets.UTF_8))
+                        zipOutput.closeEntry()
+                    }
+                }
             }
         }
 
-        for (name in stsOptionalDebugFiles) {
-            logger.lifecycle("Pulling optional STS file: $name")
-            if (!pullFile("files/sts/$name", name)) {
-                logger.lifecycle("Optional file missing: $name")
-            }
-        }
-
-        patternSpecs.forEach { spec -> pullByPattern(spec, ::pullFile) }
-        logcatSpecs.forEach { (fileName, args) ->
-            logger.lifecycle("Pulling Android logcat -> $fileName")
-            pullToFile(
-                localName = fileName,
-                command = adbCommand(args),
-                emptyMessage = "Failed or empty logcat capture: $fileName"
-            )
-        }
-
-        logger.lifecycle("SlayTheAmethyst logs exported to: ${outputDir.absolutePath}")
-        logger.lifecycle("Pulled: ${pulled.joinToString(", ")}")
-        if (missing.isNotEmpty()) {
-            logger.warn("Missing/empty on device: ${missing.joinToString(", ")}")
+        logger.lifecycle("SlayTheAmethyst JVM logs exported to: ${archiveFile.absolutePath}")
+        if (pulledLogs.isEmpty()) {
+            logger.lifecycle("No JVM logs found on device; wrote README.txt into archive.")
+        } else {
+            logger.lifecycle("Pulled: ${pulledLogs.joinToString(", ") { it.fileName }}")
         }
     }
 }
