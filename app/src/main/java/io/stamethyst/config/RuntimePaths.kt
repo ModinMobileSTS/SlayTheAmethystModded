@@ -5,6 +5,7 @@ import java.io.File
 
 object RuntimePaths {
     private const val LATEST_LOG_FILE_NAME = "latest.log"
+    private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
 
     @JvmStatic
@@ -60,6 +61,9 @@ object RuntimePaths {
 
     @JvmStatic
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun bootBridgeEventsLog(context: Context): File = File(stsRoot(context), BOOT_BRIDGE_EVENTS_FILE_NAME)
 
     @JvmStatic
     fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)

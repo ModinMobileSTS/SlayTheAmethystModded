@@ -322,6 +322,19 @@ val stsPullLogs by tasks.registering {
             logger.lifecycle("latest.log not found on device.")
         }
 
+        val bootBridgeEventsRemotePath = "files/sts/boot_bridge_events.log"
+        if (remoteFileExists(bootBridgeEventsRemotePath)) {
+            logger.lifecycle("Pulling shared JVM log: boot_bridge_events.log")
+            pulledLogs.add(
+                PulledLog(
+                    fileName = "boot_bridge_events.log",
+                    content = readRemoteFile(bootBridgeEventsRemotePath)
+                )
+            )
+        } else {
+            logger.lifecycle("boot_bridge_events.log not found on device.")
+        }
+
         val archivedLimit = if (latestExists) {
             stsJvmLogExportMaxSlots - 1
         } else {

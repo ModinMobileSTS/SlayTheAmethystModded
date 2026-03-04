@@ -365,7 +365,7 @@ private fun SettingsRenderSection(
         modifier = Modifier.fillMaxWidth()
     )
     Text(
-        text = "如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
+        text = "如果你不知道你在做什么，请勿修改此项。如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
         style = MaterialTheme.typography.bodySmall
     )
 }

@@ -60,15 +60,11 @@ Options:
 - Export logs to a specific directory: `-PlogsDir=<path>`
 
 `stsPullLogs` exports:
-- `latestlog.txt`
-- `jvm_output.log`
-- `boot_bridge_events.log`
-- `enabled_mods.txt`
-- `last_crash_report.txt`
-- `last_signal_stack.txt` (when signal handler captured a native crash stack)
-- `hs_err_pid*.log` (if JVM fatal error logs were generated)
-- `logcat.txt` (all buffers, last 12000 lines)
-- `logcat_crash.txt` (crash buffer, last 12000 lines)
+- One zip bundle named `sts-jvm-logs-export-<timestamp>.zip`
+- Bundle contents match Settings -> Share Logs:
+  - `sts/jvm_logs/latest.log` (if present)
+  - Up to 4 archived `sts/jvm_logs/jvm_log_*.log` files (or up to 5 if `latest.log` is absent)
+  - `sts/jvm_logs/README.txt` when no JVM logs are found
 
 ## Runtime Setup (Device)
 1. Open app settings.
