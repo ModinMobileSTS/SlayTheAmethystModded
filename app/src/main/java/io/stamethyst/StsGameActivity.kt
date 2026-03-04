@@ -62,6 +62,7 @@ class StsGameActivity : AppCompatActivity() {
     private var manualDismissBootOverlay = false
     private var forceJvmCrash = false
     private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+    private var longPressMouseShowsKeyboard = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     private var autoSwitchLeftAfterRightClick = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     private var useTextureViewSurface = false
 
@@ -147,6 +148,7 @@ class StsGameActivity : AppCompatActivity() {
         )
         forceJvmCrash = intent.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false)
         showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(this)
+        longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(this)
         autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(this)
         targetFps = LauncherConfig.normalizeTargetFps(
             intent.getIntExtra(EXTRA_TARGET_FPS, LauncherConfig.DEFAULT_TARGET_FPS)
@@ -237,7 +239,11 @@ class StsGameActivity : AppCompatActivity() {
         bootOverlayController.init()
 
         val host = findViewById<FrameLayout>(R.id.gameHost)
-        inputHandler.initFloatingMouseControls(host, autoSwitchLeftAfterRightClick)
+        inputHandler.initFloatingMouseControls(
+            host = host,
+            autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
+            longPressMouseShowsKeyboard = longPressMouseShowsKeyboard
+        )
         updateFloatingMouseVisibility()
 
         renderSurfaceManager.renderView.setOnTouchListener { _, event -> inputHandler.handleTouchEvent(event) }

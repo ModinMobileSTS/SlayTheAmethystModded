@@ -14,6 +14,8 @@ object LauncherPreferences {
         get() = LauncherConfig.TARGET_FPS_OPTIONS.copyOf()
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+    val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
+        get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     val DEFAULT_LWJGL_DEBUG: Boolean
@@ -50,6 +52,14 @@ object LauncherPreferences {
 
     fun saveShowFloatingMouseWindow(context: Context, enabled: Boolean) {
         LauncherConfig.saveShowFloatingMouseWindow(context, enabled)
+    }
+
+    fun readLongPressMouseShowsKeyboard(context: Context): Boolean {
+        return LauncherConfig.readLongPressMouseShowsKeyboard(context)
+    }
+
+    fun saveLongPressMouseShowsKeyboard(context: Context, enabled: Boolean) {
+        LauncherConfig.saveLongPressMouseShowsKeyboard(context, enabled)
     }
 
     fun readAutoSwitchLeftAfterRightClick(context: Context): Boolean {

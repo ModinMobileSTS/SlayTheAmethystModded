@@ -29,6 +29,10 @@
     <string name="settings_touch_mouse_floating_window_hidden">Touch mouse floating window: Hide</string>
     <string name="settings_touch_mouse_floating_window_desc">Controls whether the touch mouse floating window is shown in game.</string>
     <string name="status_floating_touch_mouse_window_format">Floating touch mouse window: %1$s</string>
+    <string name="settings_touch_mouse_long_press_keyboard_enabled">Touch mouse long press keyboard: Enable</string>
+    <string name="settings_touch_mouse_long_press_keyboard_disabled">Touch mouse long press keyboard: Disable</string>
+    <string name="settings_touch_mouse_long_press_keyboard_desc">Controls whether long-pressing the touch mouse button opens the soft keyboard.</string>
+    <string name="status_touch_mouse_long_press_keyboard_format">Touch mouse long press keyboard: %1$s</string>
     <string name="boot_overlay_button_close">Close overlay</string>
     <string name="boot_overlay_button_enter_game">Enter game</string>
     <string name="boot_overlay_logs_placeholder">Waiting for JVM log output...</string>

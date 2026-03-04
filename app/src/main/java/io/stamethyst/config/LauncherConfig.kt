@@ -26,6 +26,8 @@ object LauncherConfig {
     private const val PREF_KEY_TARGET_FPS = "target_fps"
     private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
     private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
+    private const val PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD =
+        "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_LAUNCHER_ICON = "launcher_icon"
@@ -44,6 +46,7 @@ object LauncherConfig {
     const val DEFAULT_TARGET_FPS = 120
     val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
+    const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_LWJGL_DEBUG = false
 
@@ -97,6 +100,19 @@ object LauncherConfig {
     fun saveShowFloatingMouseWindow(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, enabled)
+        }
+    }
+
+    fun readLongPressMouseShowsKeyboard(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
+            DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
+        )
+    }
+
+    fun saveLongPressMouseShowsKeyboard(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD, enabled)
         }
     }
 

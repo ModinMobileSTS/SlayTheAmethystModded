@@ -83,12 +83,14 @@ fun LauncherSettingsScreen(
         onImportSaves = viewModel::onImportSaves,
         onExportSaves = viewModel::onExportSaves,
         onExportLogs = { viewModel.onExportLogs(activity) },
+        onExportLogsToFile = viewModel::onExportLogsToFile,
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
+        onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
@@ -115,6 +117,7 @@ private fun LauncherSettingsScreenPreview() {
             backImmediateExit = true,
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
+            longPressMouseShowsKeyboard = true,
             autoSwitchLeftAfterRightClick = true,
             lwjglDebugEnabled = false,
             touchscreenEnabled = true,
@@ -135,12 +138,14 @@ private fun LauncherSettingsScreenContent(
     onImportSaves: () -> Unit = {},
     onExportSaves: () -> Unit = {},
     onExportLogs: () -> Unit = {},
+    onExportLogsToFile: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
     onBackBehaviorChanged: (Boolean) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
+    onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
@@ -181,6 +186,7 @@ private fun LauncherSettingsScreenContent(
                         onImportSaves = onImportSaves,
                         onExportSaves = onExportSaves,
                         onExportLogs = onExportLogs,
+                        onExportLogsToFile = onExportLogsToFile,
                     )
                 }
             }
@@ -203,6 +209,7 @@ private fun LauncherSettingsScreenContent(
                         onBackBehaviorChanged = onBackBehaviorChanged,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
+                        onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
@@ -284,6 +291,7 @@ private fun SettingsImportSection(
     onImportSaves: () -> Unit,
     onExportSaves: () -> Unit,
     onExportLogs: () -> Unit,
+    onExportLogsToFile: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
@@ -302,9 +310,14 @@ private fun SettingsImportSection(
             onClick = onExportSaves
         )
         SettingsActionListItem(
-            title = "分享日志",
+            title = "分享错误日志",
             enabled = !busy,
             onClick = onExportLogs
+        )
+        SettingsActionListItem(
+            title = "导出错误日志",
+            enabled = !busy,
+            onClick = onExportLogsToFile
         )
     }
 }
@@ -376,6 +389,7 @@ private fun SettingsInputSection(
     onBackBehaviorChanged: (Boolean) -> Unit,
     onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
+    onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
@@ -404,6 +418,15 @@ private fun SettingsInputSection(
         disabledText = stringResource(R.string.settings_touch_mouse_floating_window_hidden),
         description = stringResource(R.string.settings_touch_mouse_floating_window_desc),
         onCheckedChange = onShowFloatingMouseWindowChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.longPressMouseShowsKeyboard,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_enabled),
+        disabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_disabled),
+        description = stringResource(R.string.settings_touch_mouse_long_press_keyboard_desc),
+        onCheckedChange = onLongPressMouseShowsKeyboardChanged
     )
 
     SwitchSettingRow(
@@ -610,6 +633,9 @@ fun SettingsEffectsHandler(
     val exportSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onSavesExportPicked(activity, uri)
     }
+    val exportLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        viewModel.onLogsExportPicked(activity, uri)
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
@@ -634,6 +660,10 @@ fun SettingsEffectsHandler(
 
                 is SettingsScreenViewModel.Effect.OpenExportSavesPicker -> {
                     exportSavesLauncher.launch(effect.fileName)
+                }
+
+                is SettingsScreenViewModel.Effect.OpenExportLogsPicker -> {
+                    exportLogsLauncher.launch(effect.fileName)
                 }
 
                 is SettingsScreenViewModel.Effect.ShareJvmLogsBundle -> {

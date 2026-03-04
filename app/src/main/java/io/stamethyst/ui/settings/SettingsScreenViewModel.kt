@@ -21,9 +21,6 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.IOException
-import java.util.ArrayList
-import java.util.LinkedHashMap
-import java.util.LinkedHashSet
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -41,6 +38,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
+        data class OpenExportLogsPicker(val fileName: String) : Effect
         data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
         data object OpenCompatibility : Effect
     }
@@ -58,6 +56,7 @@ class SettingsScreenViewModel : ViewModel() {
         val backImmediateExit: Boolean = LauncherPreferences.DEFAULT_BACK_IMMEDIATE_EXIT,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
+        val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
@@ -102,6 +101,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val backImmediateExit = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
+                val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
@@ -137,6 +137,10 @@ class SettingsScreenViewModel : ViewModel() {
                         R.string.status_floating_touch_mouse_window_format,
                         if (showFloatingMouseWindow) "ON" else "OFF"
                     ) +
+                    "\n" + host.getString(
+                        R.string.status_touch_mouse_long_press_keyboard_format,
+                        if (longPressMouseShowsKeyboard) "ON" else "OFF"
+                    ) +
                     "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
                     "\nLWJGL Debug: " + if (lwjglDebugEnabled) "ON" else "OFF" +
                     "\nLauncher icon: ${selectedLauncherIcon.title}" +
@@ -157,6 +161,7 @@ class SettingsScreenViewModel : ViewModel() {
                         backImmediateExit = backImmediateExit,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
+                        longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
                         lwjglDebugEnabled = lwjglDebugEnabled,
                         touchscreenEnabled = touchscreenEnabled,
@@ -228,6 +233,13 @@ class SettingsScreenViewModel : ViewModel() {
         _effects.tryEmit(Effect.OpenExportSavesPicker(SettingsFileService.buildSaveExportFileName()))
     }
 
+    fun onExportLogsToFile() {
+        if (uiState.busy) {
+            return
+        }
+        _effects.tryEmit(Effect.OpenExportLogsPicker(SettingsFileService.buildJvmLogExportFileName()))
+    }
+
     fun onExportLogs(host: Activity) {
         if (uiState.busy) {
             return
@@ -243,6 +255,31 @@ class SettingsScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     Toast.makeText(host, "Log share failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus(host)
+                }
+            }
+        }
+    }
+
+    fun onLogsExportPicked(host: Activity, uri: Uri?) {
+        if (uri == null) {
+            return
+        }
+        setBusy(true, "Exporting JVM logs...")
+        executor.execute {
+            try {
+                val exportedCount = SettingsFileService.exportJvmLogBundle(host, uri)
+                host.runOnUiThread {
+                    if (exportedCount > 0) {
+                        Toast.makeText(host, "Log archive exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(host, "Log archive exported (no logs yet)", Toast.LENGTH_LONG).show()
+                    }
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    Toast.makeText(host, "Log export failed: ${error.message}", Toast.LENGTH_LONG).show()
                     refreshStatus(host)
                 }
             }
@@ -296,6 +333,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(showFloatingMouseWindow = enabled)
         saveShowFloatingMouseWindowSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onLongPressMouseShowsKeyboardChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(longPressMouseShowsKeyboard = enabled)
+        saveLongPressMouseShowsKeyboardSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -392,42 +438,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         setBusy(true, "Importing selected mod jars...")
         executor.execute {
-            var imported = 0
-            val errors = ArrayList<String>()
-            val blockedComponents = LinkedHashSet<String>()
-            val patchedMods = LinkedHashMap<String, ModImportResult>()
-            for (uri in uris) {
-                try {
-                    val result = SettingsFileService.importModJar(host, uri)
-                    imported++
-                    if (result.wasAtlasPatched) {
-                        val existing = patchedMods[result.modId]
-                        if (existing == null) {
-                            patchedMods[result.modId] = result
-                        } else {
-                            patchedMods[result.modId] = existing.copy(
-                                modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
-                                patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
-                                patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
-                            )
-                        }
-                    }
-                } catch (error: Throwable) {
-                    if (error is SettingsFileService.ReservedModImportException) {
-                        blockedComponents.add(error.blockedComponent)
-                    } else {
-                        val name = SettingsFileService.resolveDisplayName(host, uri)
-                        errors.add("$name: ${error.message}")
-                    }
-                }
-            }
-
-            val importedCount = imported
-            val failedCount = errors.size
-            val blockedCount = blockedComponents.size
-            val firstError = if (failedCount > 0) errors[0] else null
-            val blockedList = blockedComponents.toList()
-            val patchedResults = patchedMods.values.toList()
+            val batchResult = SettingsFileService.importModJars(host, uris)
+            val importedCount = batchResult.importedCount
+            val failedCount = batchResult.failedCount
+            val blockedCount = batchResult.blockedCount
+            val compressedArchiveCount = batchResult.compressedArchiveCount
+            val firstError = batchResult.firstError
+            val blockedList = batchResult.blockedComponents
+            val compressedArchiveList = batchResult.compressedArchives
+            val patchedResults = batchResult.patchedResults
             host.runOnUiThread {
                 if (blockedList.isNotEmpty()) {
                     AlertDialog.Builder(host)
@@ -435,6 +454,9 @@ class SettingsScreenViewModel : ViewModel() {
                         .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
                         .setPositiveButton(android.R.string.ok, null)
                         .show()
+                }
+                if (compressedArchiveList.isNotEmpty()) {
+                    showCompressedArchiveWarningDialog(host, compressedArchiveList)
                 }
                 if (patchedResults.isNotEmpty()) {
                     showAtlasPatchSummaryDialog(host, patchedResults)
@@ -459,6 +481,10 @@ class SettingsScreenViewModel : ViewModel() {
                     blockedCount > 0 -> {
                         Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
                     }
+
+                    compressedArchiveCount > 0 -> {
+                        Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 refreshStatus(host)
                 onCompleted?.invoke()
@@ -471,6 +497,14 @@ class SettingsScreenViewModel : ViewModel() {
         AlertDialog.Builder(host)
             .setTitle("Atlas 已离线修补")
             .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {
+        AlertDialog.Builder(host)
+            .setTitle("检测到压缩包")
+            .setMessage(SettingsFileService.buildCompressedArchiveImportMessage(archiveDisplayNames))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
@@ -617,6 +651,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
+    }
+
+    private fun readLongPressMouseShowsKeyboardSelection(host: Activity): Boolean {
+        return LauncherPreferences.readLongPressMouseShowsKeyboard(host)
+    }
+
+    private fun saveLongPressMouseShowsKeyboardSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveLongPressMouseShowsKeyboard(host, enabled)
     }
 
     private fun readAutoSwitchLeftAfterRightClickSelection(host: Activity): Boolean {

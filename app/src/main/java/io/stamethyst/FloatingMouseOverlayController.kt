@@ -14,7 +14,11 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
@@ -26,6 +30,7 @@ internal class FloatingMouseOverlayController(
     private val isNativeInputDispatchReady: () -> Boolean,
     private val requestRenderViewFocus: () -> Unit,
     private val autoSwitchBackToLeftAfterRightClick: Boolean,
+    private val longPressMouseShowsKeyboard: Boolean,
 ) {
     private enum class TouchMouseMode {
         LEFT,
@@ -38,6 +43,13 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MOUSE_ACTIVE_KEEP_MS = 1500L
         private const val FLOATING_MOUSE_ALPHA_ANIM_DURATION_MS = 180L
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
+        private const val SPECIAL_KEYS_BAR_BOTTOM_MARGIN_DP = 8
+        private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
+        private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
+        private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
+        private const val SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP = 12f
+        private const val SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP = 46
+        private const val SPECIAL_KEYS_BUTTON_SPACING_DP = 6
     }
 
     private var hostView: FrameLayout? = null
@@ -46,6 +58,7 @@ internal class FloatingMouseOverlayController(
     private var floatingMouseButton: FrameLayout? = null
     private var floatingMouseMainIcon: ImageView? = null
     private var imeProxyView: View? = null
+    private var specialKeysBar: LinearLayout? = null
     private var floatingMouseTouchSlop = 0
     private var floatingMouseDragging = false
     private var floatingMouseLongPressTriggered = false
@@ -69,6 +82,45 @@ internal class FloatingMouseOverlayController(
             FrameLayout.LayoutParams(1, 1, Gravity.TOP or Gravity.START)
         )
         imeProxyView = imeView
+
+        val keysBar = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            alpha = 0.95f
+            setPadding(
+                dpToPx(SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP),
+                dpToPx(SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP),
+                dpToPx(SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP),
+                dpToPx(SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP)
+            )
+            // Keep toolbar taps from stealing IME focus.
+            isFocusable = false
+            isFocusableInTouchMode = false
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(12).toFloat()
+                setColor(0xCC121212.toInt())
+            }
+        }
+        host.addView(
+            keysBar,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM
+            ).apply {
+                leftMargin = 0
+                rightMargin = 0
+                bottomMargin = dpToPx(SPECIAL_KEYS_BAR_BOTTOM_MARGIN_DP)
+            }
+        )
+        specialKeysBar = keysBar
+        populateSpecialKeysBar(keysBar)
+        ViewCompat.setOnApplyWindowInsetsListener(keysBar) { _, insets ->
+            updateSpecialKeysBarForInsets(insets)
+            insets
+        }
+        ViewCompat.requestApplyInsets(keysBar)
 
         val buttonSize = dpToPx(56)
         val iconSize = dpToPx(30)
@@ -155,6 +207,7 @@ internal class FloatingMouseOverlayController(
     }
 
     fun hideSoftKeyboard() {
+        specialKeysBar?.visibility = View.GONE
         val inputView = imeProxyView ?: return
         val imm = activity.getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
         imm.hideSoftInputFromWindow(inputView.windowToken, 0)
@@ -168,9 +221,14 @@ internal class FloatingMouseOverlayController(
         imeProxyView?.let { ime ->
             (ime.parent as? FrameLayout)?.removeView(ime)
         }
+        specialKeysBar?.let { bar ->
+            ViewCompat.setOnApplyWindowInsetsListener(bar, null)
+            (bar.parent as? FrameLayout)?.removeView(bar)
+        }
         floatingMouseButton = null
         floatingMouseMainIcon = null
         imeProxyView = null
+        specialKeysBar = null
     }
 
     private fun handleFloatingMouseTouch(event: MotionEvent): Boolean {
@@ -186,15 +244,19 @@ internal class FloatingMouseOverlayController(
                 floatingMouseDownLeft = params.leftMargin
                 floatingMouseDownTop = params.topMargin
 
-                val longPressRunnable = Runnable {
-                    if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
-                        floatingMouseLongPressTriggered = true
-                        button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        showSoftKeyboard()
+                if (longPressMouseShowsKeyboard) {
+                    val longPressRunnable = Runnable {
+                        if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
+                            floatingMouseLongPressTriggered = true
+                            button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            showSoftKeyboard()
+                        }
                     }
+                    floatingMousePressRunnable = longPressRunnable
+                    button.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                } else {
+                    floatingMousePressRunnable = null
                 }
-                floatingMousePressRunnable = longPressRunnable
-                button.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                 return true
             }
 
@@ -316,7 +378,70 @@ internal class FloatingMouseOverlayController(
         imm.restartInput(inputView)
         inputView.post {
             imm.showSoftInput(inputView, InputMethodManager.SHOW_IMPLICIT)
+            specialKeysBar?.let { ViewCompat.requestApplyInsets(it) }
         }
+    }
+
+    private fun populateSpecialKeysBar(bar: LinearLayout) {
+        val keys = listOf(
+            "Esc" to KeyEvent.KEYCODE_ESCAPE,
+            "Tab" to KeyEvent.KEYCODE_TAB,
+            "↑" to KeyEvent.KEYCODE_DPAD_UP,
+            "↓" to KeyEvent.KEYCODE_DPAD_DOWN,
+            "←" to KeyEvent.KEYCODE_DPAD_LEFT,
+            "→" to KeyEvent.KEYCODE_DPAD_RIGHT
+        )
+        val spacing = dpToPx(SPECIAL_KEYS_BUTTON_SPACING_DP)
+        keys.forEachIndexed { index, (label, keyCode) ->
+            val button = createSpecialKeyButton(label, keyCode)
+            bar.addView(
+                button,
+                LinearLayout.LayoutParams(
+                    0,
+                    dpToPx(SPECIAL_KEYS_BUTTON_HEIGHT_DP),
+                    1f
+                ).apply {
+                    if (index > 0) {
+                        leftMargin = spacing
+                    }
+                }
+            )
+        }
+    }
+
+    private fun createSpecialKeyButton(label: String, keyCode: Int): TextView {
+        return TextView(activity).apply {
+            text = label
+            gravity = Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP
+            minWidth = dpToPx(SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP)
+            isAllCaps = false
+            isFocusable = false
+            isFocusableInTouchMode = false
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(10).toFloat()
+                setColor(0xFF2B2B2B.toInt())
+            }
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                sendSyntheticSoftKey(keyCode)
+            }
+        }
+    }
+
+    private fun updateSpecialKeysBarForInsets(insets: WindowInsetsCompat) {
+        val bar = specialKeysBar ?: return
+        val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+        val imeInsetsBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        val navInsetsBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+        val keyboardBottomInset = (imeInsetsBottom - navInsetsBottom).coerceAtLeast(0)
+
+        val params = bar.layoutParams as? FrameLayout.LayoutParams ?: return
+        params.bottomMargin = keyboardBottomInset + dpToPx(SPECIAL_KEYS_BAR_BOTTOM_MARGIN_DP)
+        bar.layoutParams = params
+        bar.visibility = if (imeVisible) View.VISIBLE else View.GONE
     }
 
     private fun sendSoftKeyboardText(text: CharSequence?): Boolean {
