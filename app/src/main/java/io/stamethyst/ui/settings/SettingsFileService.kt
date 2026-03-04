@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
@@ -177,15 +178,21 @@ internal object SettingsFileService {
                 throw ReservedModImportException(blockedComponent)
             }
 
-            val patchResult = ModAtlasFilterCompatPatcher.patchMipMapFiltersInPlace(tempFile)
+            var patchedAtlasEntries = 0
+            var patchedFilterLines = 0
+            if (CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)) {
+                val patchResult = ModAtlasFilterCompatPatcher.patchMipMapFiltersInPlace(tempFile)
+                patchedAtlasEntries = patchResult.patchedAtlasEntries
+                patchedFilterLines = patchResult.patchedFilterLines
+            }
             val targetFile = ModManager.resolveStorageFileForModId(host, modId)
             moveFileReplacing(tempFile, targetFile)
             val modName = manifest.name.trim().ifBlank { modId }
             return ModImportResult(
                 modId = modId,
                 modName = modName,
-                patchedAtlasEntries = patchResult.patchedAtlasEntries,
-                patchedFilterLines = patchResult.patchedFilterLines
+                patchedAtlasEntries = patchedAtlasEntries,
+                patchedFilterLines = patchedFilterLines
             )
         } finally {
             if (tempFile.exists()) {

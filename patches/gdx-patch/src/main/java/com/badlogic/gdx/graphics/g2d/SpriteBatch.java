@@ -38,6 +38,7 @@ import java.lang.reflect.Method;
  * @author Nathan Sweet */
 public class SpriteBatch implements Batch {
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
+	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 
 	/** @deprecated Do not use, this field is for testing only and is likely to be removed. Sets the {@link VertexDataType} to be
@@ -283,6 +284,7 @@ public class SpriteBatch implements Batch {
 
 	private void applyGlobalAtlasCompatIfNeeded (Texture texture) {
 		if (texture == null) return;
+		if (!readBooleanProperty(RUNTIME_TEXTURE_COMPAT_PROP, false)) return;
 		if (!readBooleanProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true)) return;
 		if (compatTouchedTextures.contains(texture)) return;
 		compatTouchedTextures.add(texture);

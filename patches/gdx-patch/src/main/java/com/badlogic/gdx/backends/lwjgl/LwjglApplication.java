@@ -65,6 +65,7 @@ public class LwjglApplication implements Application {
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
+	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
@@ -766,8 +767,7 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldEnableGlobalTextureCompat () {
-		// Always enabled on GLES-backed contexts.
-		return LwjglGraphics.isGLESContextActive();
+		return readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PROP, false) && LwjglGraphics.isGLESContextActive();
 	}
 
 	private static boolean readBooleanSystemProperty (String key, boolean defaultValue) {

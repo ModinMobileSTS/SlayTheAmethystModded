@@ -125,6 +125,10 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.gdx.runtime_texture_compat=" +
+                if (CompatibilitySettings.isRuntimeTextureCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
             "-Damethyst.gdx.force_linear_mipmap_filter=" +
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )

@@ -52,6 +52,7 @@ fun LauncherCompatibilityScreen(
         onGoBack = navigator::goBack,
         onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
+        onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
     )
 }
@@ -65,6 +66,7 @@ private fun LauncherCompatibilityScreenPreview() {
             busy = false,
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
+            runtimeTextureCompatEnabled = false,
             forceLinearMipmapFilterEnabled = true
         )
     )
@@ -78,6 +80,7 @@ private fun LauncherCompatibilityScreenContent(
     onGoBack: () -> Unit = {},
     onVirtualFboPocToggled: (Boolean) -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
+    onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
 ) {
     Scaffold(
@@ -124,6 +127,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.globalAtlasFilterCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onGlobalAtlasFilterCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_runtime_texture_compat_title),
+                description = stringResource(R.string.compat_runtime_texture_compat_desc),
+                checked = uiState.runtimeTextureCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onRuntimeTextureCompatToggled
             )
 
             CompatibilitySwitchRow(

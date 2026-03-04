@@ -16,6 +16,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val busyMessage: String? = null,
         val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
+        val runtimeTextureCompatEnabled: Boolean = false,
         val forceLinearMipmapFilterEnabled: Boolean = true
     )
 
@@ -28,6 +29,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             busyMessage = null,
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
+            runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
         )
     }
@@ -46,6 +48,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setGlobalAtlasFilterCompatEnabled(host, enabled)
         uiState = uiState.copy(globalAtlasFilterCompatEnabled = enabled)
+    }
+
+    fun onRuntimeTextureCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setRuntimeTextureCompatEnabled(host, enabled)
+        uiState = uiState.copy(runtimeTextureCompatEnabled = enabled)
     }
 
     fun onForceLinearMipmapFilterToggled(host: Context, enabled: Boolean) {

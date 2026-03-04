@@ -25,6 +25,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isRuntimeTextureCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isRuntimeTextureCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setRuntimeTextureCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setRuntimeTextureCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
         return LauncherConfig.isForceLinearMipmapFilterEnabled(context)
     }

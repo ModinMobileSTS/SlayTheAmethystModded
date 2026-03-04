@@ -14,6 +14,8 @@
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer\'s Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Helps avoid unknown framebuffer status crashes, but may affect post-processing effects.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
     <string name="compat_global_atlas_filter_compat_desc">Imported mods are now patched offline: atlas filter lines containing mipmap are rewritten to Linear,Linear during import. Keep this enabled for higher compatibility; if disabled, newly imported mods will not be patched. Example fix: black blocks on the main menu in the Ring of Fate mod.</string>
+    <string name="compat_runtime_texture_compat_title">Runtime texture compatibility patch</string>
+    <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you encounter missing materials/textures, consider enabling it. Pros: can continue fixing black blocks not covered by import-time patching. Cons: increases startup CPU/GPU overhead from managed-texture scans, and runtime Linear/Clamp fallback may make some textures look blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
     <string name="compat_force_linear_mipmap_filter_desc">When enabled, mipmap-dependent min filters are downgraded to Linear at runtime to avoid black blocks caused by incomplete mip chains in some mods. Example fix: characters turning into black blocks in the Ring of Fate mod.</string>
     <string name="touch_mouse_mode_left">Left click</string>
