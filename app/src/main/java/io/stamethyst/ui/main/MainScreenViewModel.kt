@@ -22,6 +22,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.ModImportResult
 import io.stamethyst.ui.settings.SettingsFileService
 import java.io.IOException
 import java.util.ArrayDeque
@@ -103,10 +104,23 @@ class MainScreenViewModel : ViewModel() {
             var imported = 0
             val errors = ArrayList<String>()
             val blockedComponents = LinkedHashSet<String>()
+            val patchedMods = LinkedHashMap<String, ModImportResult>()
             for (uri in uris) {
                 try {
-                    SettingsFileService.importModJar(host, uri)
+                    val result = SettingsFileService.importModJar(host, uri)
                     imported++
+                    if (result.wasAtlasPatched) {
+                        val existing = patchedMods[result.modId]
+                        if (existing == null) {
+                            patchedMods[result.modId] = result
+                        } else {
+                            patchedMods[result.modId] = existing.copy(
+                                modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                                patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
+                                patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
+                            )
+                        }
+                    }
                 } catch (error: Throwable) {
                     if (error is SettingsFileService.ReservedModImportException) {
                         blockedComponents.add(error.blockedComponent)
@@ -122,6 +136,7 @@ class MainScreenViewModel : ViewModel() {
             val blockedCount = blockedComponents.size
             val firstError = errors.firstOrNull()
             val blockedList = blockedComponents.toList()
+            val patchedResults = patchedMods.values.toList()
             host.runOnUiThread {
                 if (blockedList.isNotEmpty()) {
                     AlertDialog.Builder(host)
@@ -129,6 +144,9 @@ class MainScreenViewModel : ViewModel() {
                         .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
                         .setPositiveButton(android.R.string.ok, null)
                         .show()
+                }
+                if (patchedResults.isNotEmpty()) {
+                    showAtlasPatchSummaryDialog(host, patchedResults)
                 }
                 when {
                     importedCount > 0 && failedCount == 0 -> {
@@ -154,6 +172,14 @@ class MainScreenViewModel : ViewModel() {
                 refresh(host)
             }
         }
+    }
+
+    private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        AlertDialog.Builder(host)
+            .setTitle("Atlas 已离线修补")
+            .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     fun handleIncomingIntent(host: Activity, intent: Intent?) {

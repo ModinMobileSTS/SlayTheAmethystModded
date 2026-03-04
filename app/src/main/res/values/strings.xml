@@ -13,9 +13,9 @@
     <string name="compat_virtual_fbo_poc_title">Virtual FBO PoC</string>
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer\'s Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Helps avoid unknown framebuffer status crashes, but may affect post-processing effects.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
-    <string name="compat_global_atlas_filter_compat_desc">Imported mod jars are now patched offline: atlas filter lines containing mipmap are rewritten to Linear,Linear during import, and the launcher lists patched mods after import. This switch controls additional runtime Linear/Clamp fallback only. Keep it enabled for maximum compatibility; disable for behavior closer to desktop vanilla.</string>
+    <string name="compat_global_atlas_filter_compat_desc">Imported mods are now patched offline: atlas filter lines containing mipmap are rewritten to Linear,Linear during import. Keep this enabled for higher compatibility; if disabled, newly imported mods will not be patched. Example fix: black blocks on the main menu in the Ring of Fate mod.</string>
     <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
-    <string name="compat_force_linear_mipmap_filter_desc">Controls -Damethyst.gdx.force_linear_mipmap_filter. When enabled, mipmap-based min filters are downgraded to Linear at runtime to avoid black blocks from incomplete mip chains in some mods. Disable for behavior closer to desktop vanilla.</string>
+    <string name="compat_force_linear_mipmap_filter_desc">When enabled, mipmap-dependent min filters are downgraded to Linear at runtime to avoid black blocks caused by incomplete mip chains in some mods. Example fix: characters turning into black blocks in the Ring of Fate mod.</string>
     <string name="touch_mouse_mode_left">Left click</string>
     <string name="touch_mouse_mode_right">Right click</string>
     <string name="touch_mouse_mode_left_short">L</string>

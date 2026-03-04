@@ -13,9 +13,9 @@
     <string name="compat_virtual_fbo_poc_title">Virtual FBO 概念验证</string>
     <string name="compat_virtual_fbo_poc_desc">启用 GLFrameBuffer 的 Virtual FBO 实验路径（amethyst.gdx.virtual_fbo_poc）。用于规避 unknown framebuffer status 崩溃，但可能影响后处理效果。</string>
     <string name="compat_global_atlas_filter_compat_title">全局 atlas 过滤器兼容补丁</string>
-    <string name="compat_global_atlas_filter_compat_desc">现在导入模组时会离线修补：将 atlas 中包含 mipmap 的 filter 行改为 Linear,Linear，并在导入完成后提示哪些模组被修补。本开关仅控制额外的运行时 Linear/Clamp 兜底；开启兼容性更高，关闭则更接近桌面原版行为。</string>
+    <string name="compat_global_atlas_filter_compat_desc">现在导入模组时会离线修补：将 atlas 中包含 mipmap 的 filter 行改为 Linear,Linear，开启兼容性更高，关闭则不会修补新导入的模组。修复案例为命运之戒模组主菜单出现黑块。</string>
     <string name="compat_force_linear_mipmap_filter_title">强制线性 mipmap 过滤兜底</string>
-    <string name="compat_force_linear_mipmap_filter_desc">控制 -Damethyst.gdx.force_linear_mipmap_filter。开启后会在运行时把依赖 mipmap 的最小过滤降级为 Linear，以规避部分 mod 因 mip 链不完整导致的黑块；关闭后行为更接近桌面原版。</string>
+    <string name="compat_force_linear_mipmap_filter_desc">开启后会在运行时把依赖 mipmap 的最小过滤降级为 Linear，以规避部分 mod 因 mip 链不完整导致的黑块；修复案例为命运之戒模组人物变为黑块。</string>
     <string name="touch_mouse_mode_left">左键</string>
     <string name="touch_mouse_mode_right">右键</string>
     <string name="touch_mouse_mode_left_short">左</string>
