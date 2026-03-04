@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
 import io.stamethyst.backend.mods.ModManager
@@ -40,7 +41,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
-        data class ShareLatestLog(val uri: Uri) : Effect
+        data class ShareJvmLogsBundle(val uri: Uri, val fileName: String) : Effect
         data object OpenCompatibility : Effect
     }
 
@@ -231,13 +232,14 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, "Preparing latest.log...")
+        setBusy(true, "Preparing JVM log bundle...")
         executor.execute {
             try {
-                val shareUri = SettingsFileService.resolveLatestLogShareUri(host)
+                val fileName = SettingsFileService.buildJvmLogExportFileName()
+                val shareUri = SettingsFileService.resolveJvmLogsShareUri(host)
                 host.runOnUiThread {
                     setBusy(false, null)
-                    _effects.tryEmit(Effect.ShareLatestLog(shareUri))
+                    _effects.tryEmit(Effect.ShareJvmLogsBundle(shareUri, fileName))
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -669,13 +671,20 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun buildLogPathText(host: Activity): String {
-        val logFile = RuntimePaths.latestLog(host)
+        val latestLog = RuntimePaths.latestLog(host)
+        val archivedDir = RuntimePaths.jvmLogsDir(host)
+        val logs = JvmLogRotationManager.listLogFiles(host)
         return buildString {
-            append("latest.log: ").append(logFile.absolutePath)
-            if (logFile.isFile) {
-                append("\nSize: ").append(logFile.length()).append(" bytes")
-            } else {
+            append("Log slots: ").append(logs.size).append('/').append(JvmLogRotationManager.MAX_LOG_SLOTS)
+            append("\nlatest.log: ").append(latestLog.absolutePath)
+            append("\narchive dir: ").append(archivedDir.absolutePath)
+            if (logs.isEmpty()) {
                 append("\n(no logs yet)")
+            } else {
+                for (log in logs) {
+                    append("\n- ").append(log.name)
+                    append(" (").append(log.length()).append(" bytes)")
+                }
             }
         }
     }

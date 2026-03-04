@@ -239,7 +239,7 @@ val stsStop by tasks.registering(Exec::class) {
 
 val stsPullLogs by tasks.registering {
     group = "debug"
-    description = "Export SlayTheAmethyst runtime logs (latest.log + optional debug artifacts) from device."
+    description = "Export SlayTheAmethyst runtime logs (latest.log + slot archives + optional debug artifacts) from device."
 
     data class PatternSpec(
         val globPattern: String,
@@ -277,6 +277,12 @@ val stsPullLogs by tasks.registering {
     }
 
     val patternSpecs = listOf(
+        PatternSpec(
+            globPattern = "files/sts/jvm_logs/jvm_log_*.log",
+            scanMessage = "Scanning STS slot logs (jvm_log_*.log)",
+            emptyMessage = "No jvm_log_*.log found on device.",
+            itemLabel = "slot log"
+        ),
         PatternSpec(
             globPattern = "files/sts/hs_err_pid*.log",
             scanMessage = "Scanning STS crash dumps (hs_err_pid*.log)",

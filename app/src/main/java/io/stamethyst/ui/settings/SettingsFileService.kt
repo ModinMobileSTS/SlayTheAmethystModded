@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.config.RuntimePaths
@@ -91,13 +92,40 @@ internal object SettingsFileService {
         return "sts-saves-export-${formatter.format(Date())}.zip"
     }
 
+    fun buildJvmLogExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
+    }
+
     @Throws(IOException::class)
-    fun resolveLatestLogShareUri(host: Activity): Uri {
-        val logFile = RuntimePaths.latestLog(host)
-        if (!logFile.isFile) {
-            throw IOException("No log file found: ${logFile.absolutePath}")
+    fun resolveJvmLogsShareUri(host: Activity): Uri {
+        val logFiles = JvmLogRotationManager.listLogFiles(host)
+        val shareDir = File(host.cacheDir, "share")
+        if (!shareDir.exists() && !shareDir.mkdirs()) {
+            throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
         }
-        return FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", logFile)
+
+        val archiveFile = File(shareDir, buildJvmLogExportFileName())
+        FileOutputStream(archiveFile, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                if (logFiles.isEmpty()) {
+                    val entry = ZipEntry("sts/jvm_logs/README.txt")
+                    zipOutput.putNextEntry(entry)
+                    val message = "No JVM logs found.\n" +
+                        "Expected files:\n" +
+                        "- ${RuntimePaths.latestLog(host).absolutePath}\n" +
+                        "- ${RuntimePaths.jvmLogsDir(host).absolutePath}\n"
+                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
+                    zipOutput.closeEntry()
+                } else {
+                    for (logFile in logFiles) {
+                        writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
+                    }
+                }
+            }
+        }
+
+        return FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", archiveFile)
     }
 
     @Throws(IOException::class)

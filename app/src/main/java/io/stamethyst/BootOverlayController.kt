@@ -102,7 +102,12 @@ class BootOverlayController(
             "adding modthespire to version"
         ),
         MTS_INITIALIZING_MODS(92, R.string.boot_overlay_stage_initializing_mods, "initializing mods"),
-        GAME_MAIN_BOOT(96, R.string.boot_overlay_stage_starting_game_entry, "desktoplauncher", "cardcrawlgame");
+        GAME_MAIN_BOOT(
+            96,
+            R.string.boot_overlay_stage_starting_game_entry,
+            "cardcrawlgame.create",
+            "cardcrawlgame create"
+        );
 
         private val loweredKeywords = keywords.map { it.lowercase() }
 
@@ -466,6 +471,9 @@ class BootOverlayController(
         }
         val lowered = line.lowercase()
         val nextStage = BootLogStage.entries.firstOrNull { stage -> stage.matches(lowered) } ?: return
+        if (!shouldAcceptStage(nextStage)) {
+            return
+        }
         if (nextStage.ordinal <= bootLogStage.ordinal) {
             return
         }
@@ -473,6 +481,15 @@ class BootOverlayController(
         bootLogStage = nextStage
         val stageMessage = buildStageMessage(nextStage, line)
         updateProgress(nextStage.progress, stageMessage)
+    }
+
+    private fun shouldAcceptStage(stage: BootLogStage): Boolean {
+        if (stage != BootLogStage.GAME_MAIN_BOOT) {
+            return true
+        }
+        // Guard against early false positives from class/arg lines before MTS patch stages.
+        return bootLogStage.ordinal >= BootLogStage.MTS_INITIALIZING_MODS.ordinal ||
+            bootOverlayProgress >= BootLogStage.MTS_INITIALIZING_MODS.progress
     }
 
     private fun buildStageMessage(stage: BootLogStage, rawLine: String): String {

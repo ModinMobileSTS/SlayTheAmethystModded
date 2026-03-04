@@ -79,6 +79,10 @@ class JvmLaunchController(
                     ?: throw IllegalStateException("No Java home found in ${runtimeRoot.absolutePath}")
 
                 RuntimePaths.ensureBaseDirs(activity)
+                try {
+                    JvmLogRotationManager.prepareForNewSession(activity)
+                } catch (_: Throwable) {
+                }
                 val latestLogFile = RuntimePaths.latestLog(activity)
                 try {
                     JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)

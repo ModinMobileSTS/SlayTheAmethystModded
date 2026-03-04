@@ -108,7 +108,7 @@ private fun LauncherSettingsScreenPreview() {
             busy = false,
             selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
-            selectedJvmHeapMaxMb = 1024,
+            selectedJvmHeapMaxMb = 512,
             jvmHeapMinMb = 512,
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
@@ -637,11 +637,11 @@ fun SettingsEffectsHandler(
                     exportSavesLauncher.launch(effect.fileName)
                 }
 
-                is SettingsScreenViewModel.Effect.ShareLatestLog -> {
+                is SettingsScreenViewModel.Effect.ShareJvmLogsBundle -> {
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
+                        type = "application/zip"
                         putExtra(Intent.EXTRA_STREAM, effect.uri)
-                        clipData = ClipData.newRawUri("latest.log", effect.uri)
+                        clipData = ClipData.newRawUri(effect.fileName, effect.uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))

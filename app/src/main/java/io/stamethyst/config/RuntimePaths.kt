@@ -5,6 +5,7 @@ import java.io.File
 
 object RuntimePaths {
     private const val LATEST_LOG_FILE_NAME = "latest.log"
+    private const val JVM_LOG_DIR_NAME = "jvm_logs"
 
     @JvmStatic
     fun stsRoot(context: Context): File = File(context.filesDir, "sts")
@@ -61,6 +62,9 @@ object RuntimePaths {
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)
 
     @JvmStatic
+    fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)
+
+    @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
 
     @JvmStatic
@@ -104,6 +108,7 @@ object RuntimePaths {
     fun ensureBaseDirs(context: Context) {
         stsRoot(context).mkdirs()
         modsDir(context).mkdirs()
+        jvmLogsDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()
