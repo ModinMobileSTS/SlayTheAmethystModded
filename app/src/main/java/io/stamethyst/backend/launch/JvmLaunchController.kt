@@ -320,9 +320,6 @@ class JvmLaunchController(
                         message.ifEmpty { "Loading..." }
                     )
                 }
-                if (shouldTreatAsSplashPhase(progress, message)) {
-                    signalDismissFromBootBridge(bootOverlayController, message)
-                }
             }
 
             "SPLASH" -> {
@@ -346,13 +343,6 @@ class JvmLaunchController(
                 bootOverlayController?.signalLaunchFailure(detail)
             }
         }
-    }
-
-    private fun shouldTreatAsSplashPhase(progress: Int?, message: String): Boolean {
-        if (progress != null && progress == BOOT_BRIDGE_SPLASH_PROGRESS) {
-            return true
-        }
-        return message.contains("splash", ignoreCase = true)
     }
 
     private fun signalDismissFromBootBridge(
