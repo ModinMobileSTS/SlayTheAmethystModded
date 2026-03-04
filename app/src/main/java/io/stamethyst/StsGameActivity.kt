@@ -172,7 +172,12 @@ class StsGameActivity : AppCompatActivity() {
             launchMode = launchMode,
             targetFps = targetFps,
             forceJvmCrash = forceJvmCrash,
-            onProgressUpdate = { percent, message -> bootOverlayController.updateProgress(percent, message) },
+            onProgressUpdate = { percent, message ->
+                bootOverlayController.updateProgress(
+                    percent,
+                    bootOverlayController.mapLaunchProgressMessage(percent, message)
+                )
+            },
             onLaunchComplete = { exitCode -> handleJvmExit(exitCode) },
             onLaunchFailed = { t -> handleJvmLaunchFailed(t) },
             onRuntimeReady = {
@@ -180,7 +185,6 @@ class StsGameActivity : AppCompatActivity() {
                     applyForegroundWindowState()
                     updateFloatingMouseVisibility()
                 }
-                bootOverlayController.requestEarlyDismiss()
             },
             onSurfaceSizeSync = {
                 renderSurfaceManager.updateWindowSize()

@@ -56,9 +56,6 @@ class BootOverlayController(
     companion object {
         private const val BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L
         private const val BOOT_OVERLAY_READY_DELAY_MS = 700L
-        private const val SURFACEVIEW_LATE_DISMISS_FALLBACK_DELAY_MS = 20_000L
-        private const val SURFACEVIEW_LATE_DISMISS_RECHECK_DELAY_MS = 2_200L
-        private const val SURFACEVIEW_LATE_DISMISS_HARD_TIMEOUT_MS = 90_000L
         private const val JVM_LOG_POLL_INTERVAL_MS = 360L
         private const val JVM_LOG_MAX_TAIL_BYTES = 32 * 1024
         private const val JVM_LOG_MAX_LINES = 100
@@ -142,12 +139,8 @@ class BootOverlayController(
     private var parsedJvmLogOffset = 0L
     private var parsedJvmLogRemainder = ""
     private var bootLogStage = BootLogStage.NONE
-    private var surfaceViewLateDismissArmed = false
-    private var surfaceViewLateDismissArmedAtMs = -1L
     private var surfaceViewLateDismissScheduled = false
-    private var surfaceViewLateDismissFallbackScheduled = false
     private val defaultDismissButtonText = text(R.string.boot_overlay_button_close)
-    private val readyDismissButtonText = text(R.string.boot_overlay_button_enter_game)
     private val jvmLogPlaceholderText = text(R.string.boot_overlay_logs_placeholder)
     private val surfaceViewLateDismissRunnable = Runnable {
         surfaceViewLateDismissScheduled = false
@@ -159,37 +152,6 @@ class BootOverlayController(
             text(R.string.boot_overlay_status_game_frame_ready)
         )
         dismiss()
-    }
-    private val surfaceViewLateDismissFallbackRunnable = Runnable {
-        surfaceViewLateDismissFallbackScheduled = false
-        if (bootOverlayDismissed ||
-            bootOverlay == null ||
-            useTextureViewSurface ||
-            !surfaceViewLateDismissArmed
-        ) {
-            return@Runnable
-        }
-        val now = SystemClock.uptimeMillis()
-        val armedElapsed = if (surfaceViewLateDismissArmedAtMs > 0L) {
-            now - surfaceViewLateDismissArmedAtMs
-        } else {
-            0L
-        }
-        val reachedLateBoot =
-            bootLogStage.ordinal >= BootLogStage.MTS_INITIALIZING_MODS.ordinal ||
-                bootOverlayProgress >= BootLogStage.MTS_INITIALIZING_MODS.progress
-        val hardTimeoutReached = armedElapsed >= SURFACEVIEW_LATE_DISMISS_HARD_TIMEOUT_MS
-        if (reachedLateBoot || hardTimeoutReached) {
-            surfaceViewLateDismissArmed = false
-            surfaceViewLateDismissArmedAtMs = -1L
-            updateProgress(
-                bootOverlayProgress.coerceAtLeast(BootLogStage.GAME_MAIN_BOOT.progress),
-                text(R.string.boot_overlay_stage_starting_game_entry)
-            )
-            scheduleSurfaceViewLateDismiss()
-            return@Runnable
-        }
-        scheduleSurfaceViewLateDismissFallback(SURFACEVIEW_LATE_DISMISS_RECHECK_DELAY_MS)
     }
 
     private var overlayUiState by mutableStateOf(
@@ -271,12 +233,8 @@ class BootOverlayController(
         }
         parsedJvmLogRemainder = ""
         bootLogStage = BootLogStage.NONE
-        surfaceViewLateDismissArmed = false
-        surfaceViewLateDismissArmedAtMs = -1L
         surfaceViewLateDismissScheduled = false
-        surfaceViewLateDismissFallbackScheduled = false
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
-        bootOverlay?.removeCallbacks(surfaceViewLateDismissFallbackRunnable)
         scheduleJvmLogPolling(initial = true)
 
         if (manualDismissBootOverlay) {
@@ -288,12 +246,8 @@ class BootOverlayController(
 
     fun onDestroy() {
         stopJvmLogPolling()
-        surfaceViewLateDismissArmed = false
-        surfaceViewLateDismissArmedAtMs = -1L
         surfaceViewLateDismissScheduled = false
-        surfaceViewLateDismissFallbackScheduled = false
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
-        bootOverlay?.removeCallbacks(surfaceViewLateDismissFallbackRunnable)
         bootOverlay?.disposeComposition()
         bootOverlay = null
         earlyOverlayDismissOnNextFrame = false
@@ -327,6 +281,19 @@ class BootOverlayController(
         }
     }
 
+    fun mapLaunchProgressMessage(percent: Int, message: String?): String? {
+        val bounded = percent.coerceIn(0, 100)
+        val normalizedMessage = message?.trim().orEmpty()
+        if (normalizedMessage.isEmpty()) {
+            return message
+        }
+        return if (bounded > BootLogStage.MTS_INITIALIZING_MODS.progress) {
+            text(R.string.boot_overlay_stage_starting_game_entry)
+        } else {
+            normalizedMessage
+        }
+    }
+
     fun signalLaunchFailure(detail: String) {
         if (launchFailureSignaled) return
         launchFailureSignaled = true
@@ -339,34 +306,25 @@ class BootOverlayController(
         onSignalLaunchFailure(crashDetail)
     }
 
-    fun requestEarlyDismiss() {
+    fun signalSplashPhase(_message: String?) {
         if (bootOverlayDismissed || bootOverlay == null) return
 
+        val phaseMessage = text(R.string.boot_overlay_stage_starting_game_entry)
+        updateProgress(
+            bootOverlayProgress.coerceAtLeast(BootLogStage.GAME_ENTRY_LAUNCHING.progress),
+            phaseMessage
+        )
+
         if (manualDismissBootOverlay) {
-            updateProgress(
-                bootOverlayProgress.coerceAtLeast(98),
-                text(R.string.boot_overlay_status_game_ready_tap_close)
-            )
-            activity.runOnUiThread {
-                overlayUiState = overlayUiState.copy(
-                    dismissButtonText = readyDismissButtonText,
-                    dismissButtonEnabled = true
-                )
-            }
             return
         }
-
         if (useTextureViewSurface) {
             onRequestEarlyDismiss()
             return
         }
-        // SurfaceView path: arm delayed dismiss and wait for late boot markers near first visible frame.
-        surfaceViewLateDismissArmed = true
-        surfaceViewLateDismissArmedAtMs = SystemClock.uptimeMillis()
-        scheduleSurfaceViewLateDismissFallback(SURFACEVIEW_LATE_DISMISS_FALLBACK_DELAY_MS)
-        updateProgress(
-            bootOverlayProgress.coerceAtLeast(1),
-            text(R.string.boot_overlay_stage_starting_game_entry)
+        scheduleSurfaceViewLateDismiss(
+            readyDelayMs = 0L,
+            respectMinVisible = false
         )
     }
 
@@ -375,12 +333,8 @@ class BootOverlayController(
 
         bootOverlayDismissed = true
         stopJvmLogPolling()
-        surfaceViewLateDismissArmed = false
-        surfaceViewLateDismissArmedAtMs = -1L
         surfaceViewLateDismissScheduled = false
-        surfaceViewLateDismissFallbackScheduled = false
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
-        bootOverlay?.removeCallbacks(surfaceViewLateDismissFallbackRunnable)
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
 
@@ -541,16 +495,6 @@ class BootOverlayController(
         bootLogStage = nextStage
         val stageMessage = buildStageMessage(nextStage, line)
         updateProgress(nextStage.progress, stageMessage)
-        if (!useTextureViewSurface &&
-            surfaceViewLateDismissArmed &&
-            nextStage == BootLogStage.GAME_MAIN_BOOT
-        ) {
-            surfaceViewLateDismissArmed = false
-            surfaceViewLateDismissArmedAtMs = -1L
-            surfaceViewLateDismissFallbackScheduled = false
-            bootOverlay?.removeCallbacks(surfaceViewLateDismissFallbackRunnable)
-            scheduleSurfaceViewLateDismiss()
-        }
     }
 
     private fun shouldAcceptStage(stage: BootLogStage): Boolean {
@@ -575,17 +519,26 @@ class BootOverlayController(
         return source.take(MAX_STATUS_LINE_LENGTH - 3) + "..."
     }
 
-    private fun scheduleSurfaceViewLateDismiss() {
+    private fun scheduleSurfaceViewLateDismiss(
+        readyDelayMs: Long = BOOT_OVERLAY_READY_DELAY_MS,
+        respectMinVisible: Boolean = true
+    ) {
         if (surfaceViewLateDismissScheduled || bootOverlayDismissed) {
             return
         }
-        surfaceViewLateDismissFallbackScheduled = false
-        bootOverlay?.removeCallbacks(surfaceViewLateDismissFallbackRunnable)
         surfaceViewLateDismissScheduled = true
         val now = SystemClock.uptimeMillis()
-        val elapsed = if (bootOverlayShownAtMs <= 0L) BOOT_OVERLAY_MIN_VISIBLE_MS else (now - bootOverlayShownAtMs)
-        val minDelay = (BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed).coerceAtLeast(0)
-        val delay = minDelay.coerceAtLeast(BOOT_OVERLAY_READY_DELAY_MS)
+        val elapsed = if (bootOverlayShownAtMs <= 0L) {
+            BOOT_OVERLAY_MIN_VISIBLE_MS
+        } else {
+            now - bootOverlayShownAtMs
+        }
+        val minDelay = if (respectMinVisible) {
+            (BOOT_OVERLAY_MIN_VISIBLE_MS - elapsed).coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        val delay = minDelay.coerceAtLeast(readyDelayMs.coerceAtLeast(0L))
         activity.runOnUiThread {
             val overlay = bootOverlay
             if (overlay == null || bootOverlayDismissed) {
@@ -595,23 +548,6 @@ class BootOverlayController(
             overlay.removeCallbacks(surfaceViewLateDismissRunnable)
             overlay.postDelayed(surfaceViewLateDismissRunnable, delay)
         }
-    }
-
-    private fun scheduleSurfaceViewLateDismissFallback(delayMs: Long) {
-        if (surfaceViewLateDismissFallbackScheduled ||
-            bootOverlayDismissed ||
-            useTextureViewSurface ||
-            !surfaceViewLateDismissArmed
-        ) {
-            return
-        }
-        val overlay = bootOverlay ?: return
-        surfaceViewLateDismissFallbackScheduled = true
-        overlay.removeCallbacks(surfaceViewLateDismissFallbackRunnable)
-        overlay.postDelayed(
-            surfaceViewLateDismissFallbackRunnable,
-            delayMs.coerceAtLeast(0L)
-        )
     }
 
     private fun readTailLogText(file: java.io.File): String {
@@ -714,7 +650,16 @@ private fun BootOverlayPanel(
             )
             val logScrollState = rememberScrollState()
             LaunchedEffect(uiState.jvmLogText) {
-                logScrollState.scrollTo(logScrollState.maxValue)
+                val target = logScrollState.maxValue
+                if (target != logScrollState.value) {
+                    logScrollState.animateScrollTo(
+                        value = target,
+                        animationSpec = tween(
+                            durationMillis = 240,
+                            easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                        )
+                    )
+                }
             }
             Box(
                 modifier = Modifier

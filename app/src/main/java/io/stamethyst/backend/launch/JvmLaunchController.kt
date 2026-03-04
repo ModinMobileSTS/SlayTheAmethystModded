@@ -10,6 +10,7 @@ import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.charset.StandardCharsets
 import java.util.ArrayList
 
 /**
@@ -34,6 +35,9 @@ class JvmLaunchController(
         private const val LATEST_LOG_MAX_BYTES = 64L * 1024L * 1024L
         private const val LATEST_LOG_KEEP_BYTES = 8L * 1024L * 1024L
         private const val LATEST_LOG_MONITOR_INTERVAL_MS = 12_000L
+        private const val BOOT_BRIDGE_EVENT_POLL_INTERVAL_MS = 180L
+        private const val BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES = 32 * 1024
+        private const val BOOT_BRIDGE_SPLASH_PROGRESS = 94
     }
 
     @Volatile
@@ -52,6 +56,18 @@ class JvmLaunchController(
 
     @Volatile
     private var latestLogCapMonitorRunning = false
+
+    @Volatile
+    private var bootBridgeEventMonitorThread: Thread? = null
+
+    @Volatile
+    private var bootBridgeEventMonitorRunning = false
+
+    @Volatile
+    private var bootBridgeDismissSignaled = false
+
+    private var bootBridgeEventOffset = 0L
+    private var bootBridgeEventRemainder = ""
 
     fun start(
         javaHome: File,
@@ -88,6 +104,10 @@ class JvmLaunchController(
                 } catch (_: Throwable) {
                 }
                 startLatestLogCapMonitor(latestLogFile)
+                startBootBridgeEventMonitor(
+                    RuntimePaths.bootBridgeEventsLog(activity),
+                    bootOverlayController
+                )
 
                 if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
                     ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
@@ -139,6 +159,7 @@ class JvmLaunchController(
             } finally {
                 runtimeLifecycleReady = false
                 stopLatestLogCapMonitor()
+                stopBootBridgeEventMonitor()
                 jvmLaunchThread = null
             }
         }, "STS-JVM-Thread")
@@ -156,6 +177,7 @@ class JvmLaunchController(
         jvmLaunchThread = null
         launchThread?.interrupt()
         stopLatestLogCapMonitor()
+        stopBootBridgeEventMonitor()
         runtimeLifecycleReady = false
     }
 
@@ -185,6 +207,163 @@ class JvmLaunchController(
         val monitorThread = latestLogCapMonitorThread
         latestLogCapMonitorThread = null
         monitorThread?.interrupt()
+    }
+
+    private fun startBootBridgeEventMonitor(eventsFile: File, bootOverlayController: BootOverlayController?) {
+        stopBootBridgeEventMonitor()
+        bootBridgeEventOffset = if (eventsFile.isFile) {
+            eventsFile.length().coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        bootBridgeEventRemainder = ""
+        bootBridgeDismissSignaled = false
+        bootBridgeEventMonitorRunning = true
+        val monitorThread = Thread({
+            while (bootBridgeEventMonitorRunning && !Thread.currentThread().isInterrupted) {
+                try {
+                    pollBootBridgeEvents(eventsFile, bootOverlayController)
+                } catch (_: Throwable) {
+                }
+                try {
+                    Thread.sleep(BOOT_BRIDGE_EVENT_POLL_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, "STS-BootBridgeEvents")
+        monitorThread.isDaemon = true
+        bootBridgeEventMonitorThread = monitorThread
+        monitorThread.start()
+    }
+
+    private fun stopBootBridgeEventMonitor() {
+        bootBridgeEventMonitorRunning = false
+        val monitorThread = bootBridgeEventMonitorThread
+        bootBridgeEventMonitorThread = null
+        monitorThread?.interrupt()
+        bootBridgeEventOffset = 0L
+        bootBridgeEventRemainder = ""
+        bootBridgeDismissSignaled = false
+    }
+
+    private fun pollBootBridgeEvents(eventsFile: File, bootOverlayController: BootOverlayController?) {
+        if (!eventsFile.isFile) {
+            return
+        }
+        val knownLength = eventsFile.length().coerceAtLeast(0L)
+        if (bootBridgeEventOffset > knownLength) {
+            bootBridgeEventOffset = 0L
+            bootBridgeEventRemainder = ""
+        }
+
+        var startOffset = bootBridgeEventOffset
+        var bytesToReadLong = knownLength - startOffset
+        if (bytesToReadLong <= 0L) {
+            return
+        }
+        if (bytesToReadLong > BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES) {
+            startOffset = knownLength - BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES
+            bytesToReadLong = BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES.toLong()
+            bootBridgeEventRemainder = ""
+        }
+
+        val bytesToRead = bytesToReadLong.toInt()
+        if (bytesToRead <= 0) {
+            return
+        }
+
+        RandomAccessFile(eventsFile, "r").use { raf ->
+            raf.seek(startOffset)
+            val buffer = ByteArray(bytesToRead)
+            raf.readFully(buffer)
+            bootBridgeEventOffset = startOffset + bytesToRead
+
+            var chunkText = String(buffer, StandardCharsets.UTF_8)
+            if (bootBridgeEventRemainder.isNotEmpty()) {
+                chunkText = bootBridgeEventRemainder + chunkText
+            }
+
+            val endsWithLineBreak = chunkText.endsWith("\n") || chunkText.endsWith("\r")
+            val parts = chunkText.split('\n')
+            val lines = if (endsWithLineBreak) {
+                bootBridgeEventRemainder = ""
+                parts
+            } else {
+                bootBridgeEventRemainder = parts.lastOrNull() ?: ""
+                if (parts.isNotEmpty()) parts.dropLast(1) else emptyList()
+            }
+
+            for (line in lines) {
+                processBootBridgeEventLine(line, bootOverlayController)
+            }
+        }
+    }
+
+    private fun processBootBridgeEventLine(rawLine: String, bootOverlayController: BootOverlayController?) {
+        val line = rawLine.trim()
+        if (line.isEmpty()) {
+            return
+        }
+        val parts = line.split('\t', limit = 3)
+        if (parts.isEmpty()) {
+            return
+        }
+        val eventType = parts[0].trim().uppercase()
+        val progress = parts.getOrNull(1)?.trim()?.toIntOrNull()
+        val message = parts.getOrNull(2)?.trim().orEmpty()
+        when (eventType) {
+            "PHASE" -> {
+                if (progress != null && progress >= 0) {
+                    onProgressUpdate(
+                        progress.coerceIn(0, 100),
+                        message.ifEmpty { "Loading..." }
+                    )
+                }
+                if (shouldTreatAsSplashPhase(progress, message)) {
+                    signalDismissFromBootBridge(bootOverlayController, message)
+                }
+            }
+
+            "SPLASH" -> {
+                val splashProgress = (progress ?: BOOT_BRIDGE_SPLASH_PROGRESS)
+                    .coerceAtLeast(BOOT_BRIDGE_SPLASH_PROGRESS)
+                    .coerceAtMost(100)
+                onProgressUpdate(splashProgress, message.ifEmpty { "Game splash" })
+                signalDismissFromBootBridge(bootOverlayController, message)
+            }
+
+            "READY" -> {
+                onProgressUpdate(100, message.ifEmpty { "Game ready" })
+                signalDismissFromBootBridge(
+                    bootOverlayController,
+                    message.ifEmpty { "Game ready" }
+                )
+            }
+
+            "FAIL" -> {
+                val detail = message.ifEmpty { "Boot bridge signaled failure" }
+                bootOverlayController?.signalLaunchFailure(detail)
+            }
+        }
+    }
+
+    private fun shouldTreatAsSplashPhase(progress: Int?, message: String): Boolean {
+        if (progress != null && progress == BOOT_BRIDGE_SPLASH_PROGRESS) {
+            return true
+        }
+        return message.contains("splash", ignoreCase = true)
+    }
+
+    private fun signalDismissFromBootBridge(
+        bootOverlayController: BootOverlayController?,
+        message: String
+    ) {
+        if (bootBridgeDismissSignaled) {
+            return
+        }
+        bootBridgeDismissSignaled = true
+        bootOverlayController?.signalSplashPhase(message.ifEmpty { "Game splash" })
     }
 
     private fun enforceLatestLogCap(logFile: File) {

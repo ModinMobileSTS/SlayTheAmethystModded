@@ -136,9 +136,15 @@ object StsLaunchSpec {
             "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
         )
-        args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader")
+        val bridgeDelegateMainClass = if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+            "com.evacipated.cardcrawl.modthespire.Loader"
+        } else {
+            "com.megacrit.cardcrawl.desktop.DesktopLauncher"
+        }
+        args.add("-Damethyst.bridge.delegate=$bridgeDelegateMainClass")
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
+        args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
 
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 
@@ -167,11 +173,12 @@ object StsLaunchSpec {
             args.add(joinModIds(launchMods))
         } else {
             args.add(
-                RuntimePaths.gdxPatchJar(context).absolutePath +
+                RuntimePaths.bootBridgeJar(context).absolutePath +
+                    ":" + RuntimePaths.gdxPatchJar(context).absolutePath +
                     ":" + RuntimePaths.lwjglJar(context).absolutePath +
                     ":" + RuntimePaths.importedStsJar(context).absolutePath
             )
-            args.add("com.megacrit.cardcrawl.desktop.DesktopLauncher")
+            args.add("io.stamethyst.bridge.BootBridgeLauncher")
         }
         return args
     }
