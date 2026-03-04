@@ -107,6 +107,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
+                val runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host)
                 val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
 
                 val mods = ModManager.listInstalledMods(host)
@@ -140,6 +141,7 @@ class SettingsScreenViewModel : ViewModel() {
                     "\nLauncher icon: ${selectedLauncherIcon.title}" +
                     "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
                     "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
+                    "\nRuntime texture compat: " + if (runtimeTextureCompatEnabled) "ON" else "OFF" +
                     "\nForce linear mipmap filter: " + if (forceLinearMipmapFilterEnabled) "ON" else "OFF" +
                     "\nBundled JRE path: app/src/main/assets/components/jre"
 
