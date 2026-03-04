@@ -17,6 +17,7 @@ import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
+import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -53,7 +54,7 @@ class SettingsScreenViewModel : ViewModel() {
         val jvmHeapMaxMb: Int = LauncherPreferences.MAX_JVM_HEAP_MAX_MB,
         val jvmHeapStepMb: Int = LauncherPreferences.JVM_HEAP_STEP_MB,
         val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
-        val backImmediateExit: Boolean = LauncherPreferences.DEFAULT_BACK_IMMEDIATE_EXIT,
+        val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
@@ -98,7 +99,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val renderScale = RenderScaleService.readValue(host)
                 val targetFps = readTargetFpsSelection(host)
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
-                val backImmediateExit = readBackBehaviorSelection(host)
+                val backBehavior = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
                 val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
@@ -131,6 +132,7 @@ class SettingsScreenViewModel : ViewModel() {
                     "\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)" +
                     "\nTarget FPS: $targetFps" +
                     "\nJVM heap max: ${jvmHeapMaxMb} MB" +
+                    "\nBack behavior: ${backBehavior.displayName()}" +
                     "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
                     "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
                     "\n" + host.getString(
@@ -158,7 +160,7 @@ class SettingsScreenViewModel : ViewModel() {
                         selectedTargetFps = targetFps,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
                         selectedLauncherIcon = selectedLauncherIcon,
-                        backImmediateExit = backImmediateExit,
+                        backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
                         longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
@@ -309,12 +311,12 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onBackBehaviorChanged(host: Activity, enabled: Boolean) {
+    fun onBackBehaviorChanged(host: Activity, behavior: BackBehavior) {
         if (uiState.busy) {
             return
         }
-        uiState = uiState.copy(backImmediateExit = enabled)
-        saveBackBehaviorSelection(host, enabled)
+        uiState = uiState.copy(backBehavior = behavior)
+        saveBackBehaviorSelection(host, behavior)
         refreshStatus(host)
     }
 
@@ -629,12 +631,12 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(statusText = lines.joinToString("\n"))
     }
 
-    private fun readBackBehaviorSelection(host: Activity): Boolean {
-        return LauncherPreferences.readBackImmediateExit(host)
+    private fun readBackBehaviorSelection(host: Activity): BackBehavior {
+        return LauncherPreferences.readBackBehavior(host)
     }
 
-    private fun saveBackBehaviorSelection(host: Activity, immediateExit: Boolean) {
-        LauncherPreferences.saveBackImmediateExit(host, immediateExit)
+    private fun saveBackBehaviorSelection(host: Activity, behavior: BackBehavior) {
+        LauncherPreferences.saveBackBehavior(host, behavior)
     }
 
     private fun readManualDismissBootOverlaySelection(host: Activity): Boolean {
@@ -733,5 +735,13 @@ class SettingsScreenViewModel : ViewModel() {
     override fun onCleared() {
         executor.shutdownNow()
         super.onCleared()
+    }
+
+    private fun BackBehavior.displayName(): String {
+        return when (this) {
+            BackBehavior.EXIT_TO_LAUNCHER -> "Exit to launcher"
+            BackBehavior.SEND_ESCAPE -> "Send Esc"
+            BackBehavior.NONE -> "No action"
+        }
     }
 }

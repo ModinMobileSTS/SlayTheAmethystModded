@@ -18,6 +18,7 @@ import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.input.GameInputHandler
@@ -29,6 +30,7 @@ import kotlin.system.exitProcess
 class StsGameActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
+        const val EXTRA_BACK_BEHAVIOR = "io.stamethyst.back_behavior"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
@@ -40,14 +42,18 @@ class StsGameActivity : AppCompatActivity() {
             context: Context,
             launchMode: String,
             targetFps: Int,
-            backImmediateExit: Boolean,
+            backBehavior: BackBehavior,
             manualDismissBootOverlay: Boolean,
             forceJvmCrash: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
             intent.putExtra(EXTRA_TARGET_FPS, targetFps)
-            intent.putExtra(EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
+            intent.putExtra(EXTRA_BACK_BEHAVIOR, backBehavior.persistedValue)
+            intent.putExtra(
+                EXTRA_BACK_IMMEDIATE_EXIT,
+                backBehavior == BackBehavior.EXIT_TO_LAUNCHER
+            )
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
             intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
             context.startActivity(intent)
@@ -58,7 +64,7 @@ class StsGameActivity : AppCompatActivity() {
     private var renderScale = LauncherConfig.DEFAULT_RENDER_SCALE
     private var targetFps = LauncherConfig.DEFAULT_TARGET_FPS
     private var launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA
-    private var backImmediateExit = true
+    private var backBehavior = LauncherConfig.DEFAULT_BACK_BEHAVIOR
     private var manualDismissBootOverlay = false
     private var forceJvmCrash = false
     private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
@@ -138,10 +144,7 @@ class StsGameActivity : AppCompatActivity() {
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == requestedMode) {
             launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
         }
-        backImmediateExit = intent.getBooleanExtra(
-            EXTRA_BACK_IMMEDIATE_EXIT,
-            LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
-        )
+        backBehavior = parseBackBehaviorExtra()
         manualDismissBootOverlay = intent.getBooleanExtra(
             EXTRA_MANUAL_DISMISS_BOOT_OVERLAY,
             LauncherConfig.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
@@ -346,10 +349,11 @@ class StsGameActivity : AppCompatActivity() {
     // ==================== Back Press Handling ====================
 
     private fun handleAndroidBackPressed() {
-        if (!backImmediateExit) {
-            return
+        when (backBehavior) {
+            BackBehavior.EXIT_TO_LAUNCHER -> requestBackExitToLauncher()
+            BackBehavior.SEND_ESCAPE -> sendEscapeKeyToGame()
+            BackBehavior.NONE -> Unit
         }
-        requestBackExitToLauncher()
     }
 
     private fun requestBackExitToLauncher() {
@@ -379,6 +383,37 @@ class StsGameActivity : AppCompatActivity() {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun parseBackBehaviorExtra(): BackBehavior {
+        val parsedBehavior = BackBehavior.fromPersistedValue(
+            intent.getStringExtra(EXTRA_BACK_BEHAVIOR)
+        )
+        if (parsedBehavior != null) {
+            return parsedBehavior
+        }
+        if (intent.hasExtra(EXTRA_BACK_IMMEDIATE_EXIT)) {
+            val immediateExit = intent.getBooleanExtra(
+                EXTRA_BACK_IMMEDIATE_EXIT,
+                LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
+            )
+            return if (immediateExit) {
+                BackBehavior.EXIT_TO_LAUNCHER
+            } else {
+                BackBehavior.NONE
+            }
+        }
+        return LauncherConfig.DEFAULT_BACK_BEHAVIOR
+    }
+
+    private fun sendEscapeKeyToGame() {
+        if (backExitRequested) {
+            return
+        }
+        val down = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE)
+        val up = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ESCAPE)
+        inputHandler.dispatchKeyboardEventToGame(down)
+        inputHandler.dispatchKeyboardEventToGame(up)
     }
 
     private fun scheduleLauncherRestartAndKillProcess() {

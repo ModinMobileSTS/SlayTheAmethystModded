@@ -18,6 +18,7 @@ import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -103,42 +104,15 @@ class MainScreenViewModel : ViewModel() {
         }
         setBusy(true, "Importing selected mod jars...")
         executor.execute {
-            var imported = 0
-            val errors = ArrayList<String>()
-            val blockedComponents = LinkedHashSet<String>()
-            val patchedMods = LinkedHashMap<String, ModImportResult>()
-            for (uri in uris) {
-                try {
-                    val result = SettingsFileService.importModJar(host, uri)
-                    imported++
-                    if (result.wasAtlasPatched) {
-                        val existing = patchedMods[result.modId]
-                        if (existing == null) {
-                            patchedMods[result.modId] = result
-                        } else {
-                            patchedMods[result.modId] = existing.copy(
-                                modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
-                                patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
-                                patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
-                            )
-                        }
-                    }
-                } catch (error: Throwable) {
-                    if (error is SettingsFileService.ReservedModImportException) {
-                        blockedComponents.add(error.blockedComponent)
-                    } else {
-                        val name = SettingsFileService.resolveDisplayName(host, uri)
-                        errors.add("$name: ${error.message}")
-                    }
-                }
-            }
-
-            val importedCount = imported
-            val failedCount = errors.size
-            val blockedCount = blockedComponents.size
-            val firstError = errors.firstOrNull()
-            val blockedList = blockedComponents.toList()
-            val patchedResults = patchedMods.values.toList()
+            val batchResult = SettingsFileService.importModJars(host, uris)
+            val importedCount = batchResult.importedCount
+            val failedCount = batchResult.failedCount
+            val blockedCount = batchResult.blockedCount
+            val compressedArchiveCount = batchResult.compressedArchiveCount
+            val firstError = batchResult.firstError
+            val blockedList = batchResult.blockedComponents
+            val compressedArchiveList = batchResult.compressedArchives
+            val patchedResults = batchResult.patchedResults
             host.runOnUiThread {
                 if (blockedList.isNotEmpty()) {
                     AlertDialog.Builder(host)
@@ -146,6 +120,9 @@ class MainScreenViewModel : ViewModel() {
                         .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
                         .setPositiveButton(android.R.string.ok, null)
                         .show()
+                }
+                if (compressedArchiveList.isNotEmpty()) {
+                    showCompressedArchiveWarningDialog(host, compressedArchiveList)
                 }
                 if (patchedResults.isNotEmpty()) {
                     showAtlasPatchSummaryDialog(host, patchedResults)
@@ -170,6 +147,10 @@ class MainScreenViewModel : ViewModel() {
                     blockedCount > 0 -> {
                         Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
                     }
+
+                    compressedArchiveCount > 0 -> {
+                        Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 refresh(host)
             }
@@ -180,6 +161,14 @@ class MainScreenViewModel : ViewModel() {
         AlertDialog.Builder(host)
             .setTitle("Atlas 已离线修补")
             .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {
+        AlertDialog.Builder(host)
+            .setTitle("检测到压缩包")
+            .setMessage(SettingsFileService.buildCompressedArchiveImportMessage(archiveDisplayNames))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
@@ -619,7 +608,7 @@ class MainScreenViewModel : ViewModel() {
             .setTitle("已返回启动器")
             .setMessage(
                 "这是预期内的结果：你触发了「Back 键：立即退出到主界面」。\n\n" +
-                    "如不需要该行为，可在设置中关闭此开关。"
+                    "如不需要该行为，可在设置中将 Back 键行为改为「Esc」或「无行为」。"
             )
             .setPositiveButton(android.R.string.ok, null)
             .show()
@@ -650,14 +639,14 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         val targetFps = LauncherPreferences.readTargetFps(host)
-        val backImmediateExit = readBackBehaviorSelection(host)
+        val backBehavior = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
 
         StsGameActivity.launch(
             host,
             launchMode,
             targetFps,
-            backImmediateExit,
+            backBehavior,
             manualDismissBootOverlay,
             forceJvmCrash
         )
@@ -724,8 +713,8 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun readBackBehaviorSelection(host: Activity): Boolean {
-        return LauncherPreferences.readBackImmediateExit(host)
+    private fun readBackBehaviorSelection(host: Activity): BackBehavior {
+        return LauncherPreferences.readBackBehavior(host)
     }
 
     private fun readManualDismissBootOverlaySelection(host: Activity): Boolean {

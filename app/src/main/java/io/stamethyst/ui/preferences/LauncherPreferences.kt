@@ -1,9 +1,12 @@
 package io.stamethyst.ui.preferences
 
 import android.content.Context
+import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 
 object LauncherPreferences {
+    val DEFAULT_BACK_BEHAVIOR: BackBehavior
+        get() = LauncherConfig.DEFAULT_BACK_BEHAVIOR
     val DEFAULT_BACK_IMMEDIATE_EXIT: Boolean
         get() = LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
     val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY: Boolean
@@ -29,6 +32,14 @@ object LauncherPreferences {
         get() = LauncherConfig.MAX_JVM_HEAP_MAX_MB
     val JVM_HEAP_STEP_MB: Int
         get() = LauncherConfig.JVM_HEAP_STEP_MB
+
+    fun readBackBehavior(context: Context): BackBehavior {
+        return LauncherConfig.readBackBehavior(context)
+    }
+
+    fun saveBackBehavior(context: Context, behavior: BackBehavior) {
+        LauncherConfig.saveBackBehavior(context, behavior)
+    }
 
     fun readBackImmediateExit(context: Context): Boolean {
         return LauncherConfig.readBackImmediateExit(context)

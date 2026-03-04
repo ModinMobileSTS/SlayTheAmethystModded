@@ -58,6 +58,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.LauncherIcon
 import io.stamethyst.R
+import io.stamethyst.config.BackBehavior
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
@@ -92,7 +93,7 @@ fun LauncherSettingsScreen(
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
-        onBackBehaviorChanged = { enabled -> viewModel.onBackBehaviorChanged(activity, enabled) },
+        onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
@@ -119,7 +120,7 @@ private fun LauncherSettingsScreenPreview() {
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
             selectedLauncherIcon = LauncherIcon.AMBER,
-            backImmediateExit = true,
+            backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
             longPressMouseShowsKeyboard = true,
@@ -147,7 +148,7 @@ private fun LauncherSettingsScreenContent(
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
-    onBackBehaviorChanged: (Boolean) -> Unit = {},
+    onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
@@ -435,20 +436,38 @@ private fun heapSliderToStep(value: Float, min: Int, step: Int): Int {
 @Composable
 private fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
-    onBackBehaviorChanged: (Boolean) -> Unit,
+    onBackBehaviorChanged: (BackBehavior) -> Unit,
     onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
-    SwitchSettingRow(
-        checked = uiState.backImmediateExit,
+    Text(text = "Back 键行为", style = MaterialTheme.typography.bodyMedium)
+    BackBehaviorOptionRow(
+        behavior = BackBehavior.EXIT_TO_LAUNCHER,
+        selected = uiState.backBehavior == BackBehavior.EXIT_TO_LAUNCHER,
         enabled = !uiState.busy,
-        enabledText = "Back 键：立即退出到主界面",
-        disabledText = "Back 键：禁用",
-        description = "关闭上面的开关后，游戏运行时按 Back 键将不处理。",
-        onCheckedChange = onBackBehaviorChanged
+        text = "立即退出到启动器",
+        onSelect = onBackBehaviorChanged
+    )
+    BackBehaviorOptionRow(
+        behavior = BackBehavior.SEND_ESCAPE,
+        selected = uiState.backBehavior == BackBehavior.SEND_ESCAPE,
+        enabled = !uiState.busy,
+        text = "映射为 Esc 按键，可用于暂停游戏等",
+        onSelect = onBackBehaviorChanged
+    )
+    BackBehaviorOptionRow(
+        behavior = BackBehavior.NONE,
+        selected = uiState.backBehavior == BackBehavior.NONE,
+        enabled = !uiState.busy,
+        text = "无行为",
+        onSelect = onBackBehaviorChanged
+    )
+    Text(
+        text = "决定游戏运行时按下系统 Back 键后的行为。",
+        style = MaterialTheme.typography.bodySmall
     )
 
     SwitchSettingRow(
@@ -757,6 +776,35 @@ private fun TargetFpsOptionRow(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = "$fps FPS")
+    }
+}
+
+@Composable
+private fun BackBehaviorOptionRow(
+    behavior: BackBehavior,
+    selected: Boolean,
+    enabled: Boolean,
+    text: String,
+    onSelect: (BackBehavior) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .hapticToggleable(
+                value = selected,
+                enabled = enabled,
+                onValueChange = { onSelect(behavior) }
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text = text)
     }
 }
 

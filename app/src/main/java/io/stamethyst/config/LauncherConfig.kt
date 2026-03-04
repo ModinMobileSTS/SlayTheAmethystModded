@@ -22,6 +22,7 @@ import org.json.JSONTokener
  */
 object LauncherConfig {
     private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
+    private const val PREF_KEY_BACK_BEHAVIOR = "back_behavior"
     private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
     private const val PREF_KEY_TARGET_FPS = "target_fps"
     private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
@@ -42,6 +43,7 @@ object LauncherConfig {
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
 
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
+    val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_TARGET_FPS = 120
     val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
@@ -67,14 +69,47 @@ object LauncherConfig {
         "components/default_saves/preferences/STSGameplaySettings"
     private val DEFAULT_LAUNCHER_ICON = LauncherIcon.AMBER
 
+    fun readBackBehavior(context: Context): BackBehavior {
+        val preferences = prefs(context)
+        val storedBehavior = BackBehavior.fromPersistedValue(
+            preferences.getString(PREF_KEY_BACK_BEHAVIOR, null)
+        )
+        if (storedBehavior != null) {
+            return storedBehavior
+        }
+
+        if (preferences.contains(PREF_KEY_BACK_IMMEDIATE_EXIT)) {
+            val legacyImmediateExit = preferences.getBoolean(
+                PREF_KEY_BACK_IMMEDIATE_EXIT,
+                DEFAULT_BACK_IMMEDIATE_EXIT
+            )
+            return if (legacyImmediateExit) {
+                BackBehavior.EXIT_TO_LAUNCHER
+            } else {
+                BackBehavior.NONE
+            }
+        }
+
+        return DEFAULT_BACK_BEHAVIOR
+    }
+
+    fun saveBackBehavior(context: Context, behavior: BackBehavior) {
+        prefs(context).edit {
+            putString(PREF_KEY_BACK_BEHAVIOR, behavior.persistedValue)
+            // Keep legacy key synchronized for older builds that still read this boolean.
+            putBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, behavior == BackBehavior.EXIT_TO_LAUNCHER)
+        }
+    }
+
     fun readBackImmediateExit(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, DEFAULT_BACK_IMMEDIATE_EXIT)
+        return readBackBehavior(context) == BackBehavior.EXIT_TO_LAUNCHER
     }
 
     fun saveBackImmediateExit(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_BACK_IMMEDIATE_EXIT, enabled)
-        }
+        saveBackBehavior(
+            context,
+            if (enabled) BackBehavior.EXIT_TO_LAUNCHER else BackBehavior.NONE
+        )
     }
 
     fun readManualDismissBootOverlay(context: Context): Boolean {
