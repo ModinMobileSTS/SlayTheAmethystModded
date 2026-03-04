@@ -84,17 +84,17 @@ object ModJarSupport {
         val stsJar = RuntimePaths.importedStsJar(context)
         val patchJar = RuntimePaths.gdxPatchJar(context)
         val baseModJar = RuntimePaths.importedBaseModJar(context)
-        ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "prepare classpath start")
+        ModCompatibilityDiagnostics.appendCompatLog(context, "prepare classpath start")
         StsDesktopJarPatcher.ensurePatchedStsJar(stsJar, patchJar)
         ModCompatibilityPatchCoordinator.applyCompatPatchRules(context)
         ModClasspathJarBuilder.ensureGdxApiJar(stsJar, RuntimePaths.mtsGdxApiJar(context))
         ModClasspathJarBuilder.ensureStsResourceJar(stsJar, RuntimePaths.mtsStsResourcesJar(context))
         ModClasspathJarBuilder.ensureBaseModResourceJar(baseModJar, RuntimePaths.mtsBaseModResourcesJar(context))
-        ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "prepare classpath done")
+        ModCompatibilityDiagnostics.appendCompatLog(context, "prepare classpath done")
     }
 
     @JvmStatic
     fun appendCompatDiagnosticSnapshot(context: Context, stage: String) {
-        ModCompatibilityDiagnosticsLogger.appendCompatDiagnostics(context, stage)
+        ModCompatibilityDiagnostics.appendCompatDiagnostics(context, stage)
     }
 }

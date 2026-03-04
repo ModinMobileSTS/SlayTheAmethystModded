@@ -2,7 +2,6 @@ package io.stamethyst
 
 import android.graphics.SurfaceTexture
 import android.os.Build
-import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -16,7 +15,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.config.LauncherConfig
-import net.kdt.pojavlaunch.Logger
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 import kotlin.math.roundToInt
@@ -33,10 +31,6 @@ class RenderSurfaceManager(
     private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
 ) {
-    companion object {
-        private const val TAG = "RenderSurfaceManager"
-    }
-
     private var surfaceView: SurfaceView? = null
     private var textureView: TextureView? = null
     private var textureSurface: Surface? = null
@@ -77,7 +71,6 @@ class RenderSurfaceManager(
         )
 
         if (useTextureViewSurface) {
-            Log.i(TAG, "Using TextureView surface path for OpenGL ES2: renderScale=$renderScale")
             val view = TextureView(activity)
             view.isOpaque = true
             textureView = view
@@ -201,26 +194,10 @@ class RenderSurfaceManager(
         val windowHeight = CallbackBridge.windowHeight.coerceAtLeast(1)
         try {
             DisplayConfigSync.syncToCurrentResolution(activity, windowWidth, windowHeight, targetFps)
-            Logger.appendToLog(
-                "Display config synced to ${windowWidth.coerceAtLeast(800)}x${windowHeight.coerceAtLeast(450)} @$targetFps fps"
-            )
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to sync info.displayconfig", error)
-            try {
-                Logger.appendToLog(
-                    "Display config sync failed: ${error.javaClass.simpleName}: ${error.message}"
-                )
-            } catch (_: Throwable) {}
-        }
+        } catch (_: Throwable) {}
     }
 
-    fun logRenderInfo() {
-        Logger.appendToLog(
-            "Render scale: $renderScale, surface(raw)=${resolveRawPhysicalWidth()}x${resolveRawPhysicalHeight()}, " +
-                    "surface(effective)=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}, " +
-                    "window=${CallbackBridge.windowWidth}x${CallbackBridge.windowHeight}"
-        )
-    }
+    fun logRenderInfo() {}
 
     fun resolvePhysicalWidth(): Int = resolveRawPhysicalWidth()
 

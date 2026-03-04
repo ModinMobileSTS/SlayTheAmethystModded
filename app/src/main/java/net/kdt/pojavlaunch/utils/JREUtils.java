@@ -12,9 +12,6 @@ import android.content.Context;
 import android.content.pm.ConfigurationInfo;
 import android.system.ErrnoException;
 import android.system.Os;
-import android.util.Log;
-
-import net.kdt.pojavlaunch.Logger;
 
 import io.stamethyst.backend.render.RendererBackend;
 
@@ -24,7 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class JREUtils {
-    private static final String TAG = "JREUtils";
 
     public static String LD_LIBRARY_PATH;
     public static String jvmLibraryPath;
@@ -122,10 +118,7 @@ public final class JREUtils {
         for (Map.Entry<String, String> entry : env.entrySet()) {
             try {
                 Os.setenv(entry.getKey(), entry.getValue(), true);
-                Logger.appendToLog("env " + entry.getKey() + "=" + entry.getValue());
-            } catch (Throwable t) {
-                Log.e(TAG, "Failed to set env " + entry.getKey(), t);
-            }
+            } catch (Throwable ignored) {}
         }
 
         File serverFile = new File(javaHome + "/" + runtimeLibDir + "/server/libjvm.so");
@@ -136,7 +129,6 @@ public final class JREUtils {
     private static void clearEnv(String key) {
         try {
             Os.unsetenv(key);
-            Logger.appendToLog("env unset " + key);
         } catch (Throwable ignored) {
         }
     }

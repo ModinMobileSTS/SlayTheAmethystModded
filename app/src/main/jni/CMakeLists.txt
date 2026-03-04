@@ -54,7 +54,6 @@ target_link_libraries(
     PRIVATE
     android
     dl
-    log
 )
 
 add_library(
@@ -76,7 +75,6 @@ target_link_libraries(
     bytehook::bytehook
     pojavexec
     dl
-    log
 )
 
 add_library(

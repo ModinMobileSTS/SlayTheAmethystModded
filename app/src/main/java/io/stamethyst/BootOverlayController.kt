@@ -1,20 +1,14 @@
 package io.stamethyst
 
 import android.os.SystemClock
-import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
-import net.kdt.pojavlaunch.Logger
-import java.util.ArrayDeque
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Manages the boot overlay UI: progress bar, status text, log display, and dismiss button.
- * Handles both automatic and manual dismiss modes.
+ * Manages the boot overlay UI: progress bar, status text, and dismiss button.
  */
 class BootOverlayController(
     private val activity: StsGameActivity,
@@ -27,17 +21,13 @@ class BootOverlayController(
     private val onSignalLaunchFailure: (String) -> Unit
 ) {
     companion object {
-        private const val TAG = "BootOverlayController"
         private const val BOOT_OVERLAY_MIN_VISIBLE_MS = 1200L
         private const val BOOT_OVERLAY_READY_DELAY_MS = 700L
-        private const val BOOT_LOG_MAX_LINES = 220
     }
 
     private var bootOverlay: View? = null
     private var bootOverlayProgressBar: ProgressBar? = null
     private var bootOverlayStatusText: TextView? = null
-    private var bootOverlayLogScroll: ScrollView? = null
-    private var bootOverlayLogText: TextView? = null
     private var bootOverlayDismissButton: Button? = null
     private var bootOverlayProgress = 0
     private var bootOverlayMessage = ""
@@ -54,16 +44,12 @@ class BootOverlayController(
     var earlyOverlayDismissRequestFrameTimestampNs = 0L
         private set
 
-    private val bootLogLines = ArrayDeque<String>()
-
     val isDismissed: Boolean get() = bootOverlayDismissed
 
     fun init() {
         bootOverlay = activity.findViewById(R.id.bootOverlay)
         bootOverlayProgressBar = activity.findViewById(R.id.bootOverlayProgressBar)
         bootOverlayStatusText = activity.findViewById(R.id.bootOverlayStatusText)
-        bootOverlayLogScroll = activity.findViewById(R.id.bootOverlayLogScroll)
-        bootOverlayLogText = activity.findViewById(R.id.bootOverlayLogText)
         bootOverlayDismissButton = activity.findViewById(R.id.bootOverlayDismissButton)
 
         if (bootOverlay == null || bootOverlayProgressBar == null || bootOverlayStatusText == null) {
@@ -80,11 +66,6 @@ class BootOverlayController(
             onDismissed()
             return
         }
-
-        synchronized(bootLogLines) {
-            bootLogLines.clear()
-        }
-        bootOverlayLogText?.text = ""
 
         bootOverlayDismissButton?.let { button ->
             if (manualDismissBootOverlay) {
@@ -128,38 +109,8 @@ class BootOverlayController(
         bootOverlay = null
         bootOverlayProgressBar = null
         bootOverlayStatusText = null
-        bootOverlayLogScroll = null
-        bootOverlayLogText = null
         bootOverlayDismissButton = null
         earlyOverlayDismissOnNextFrame = false
-    }
-
-    fun handleJvmLogMessage(text: String?) {
-        Log.i(TAG, "[JVM] $text")
-        if (text == null) return
-
-        val shouldHandleOverlayFlow = waitForMainMenu && !bootOverlayDismissed
-        val lines = text.split(Regex("\\r?\\n"))
-
-        for (raw in lines) {
-            val line = raw.trim()
-            if (!launchFailureSignaled) {
-                val fatal = detectFatalStartupLog(line)
-                if (fatal != null) {
-                    onSignalLaunchFailure(fatal)
-                    continue
-                }
-            }
-            if (shouldHandleOverlayFlow) {
-                appendLog(raw)
-            }
-            if (shouldHandleOverlayFlow && shouldDismissOverlayEarlyLog(line)) {
-                activity.runOnUiThread {
-                    updateProgress(bootOverlayProgress.coerceAtLeast(98), "Starting game...")
-                    requestEarlyDismiss()
-                }
-            }
-        }
     }
 
     fun updateProgress(percent: Int, message: String?) {
@@ -188,11 +139,6 @@ class BootOverlayController(
         if (!waitForMainMenu || mainMenuReadySignaled) return
 
         mainMenuReadySignaled = true
-        try {
-            Logger.appendToLog(
-                "Boot overlay ready signal: message=\"$message\", manualDismiss=$manualDismissBootOverlay"
-            )
-        } catch (_: Throwable) {}
 
         if (manualDismissBootOverlay) {
             updateProgress(100, "$message (tap Close Overlay)")
@@ -213,9 +159,6 @@ class BootOverlayController(
         val delay = minDelay.coerceAtLeast(BOOT_OVERLAY_READY_DELAY_MS)
 
         activity.runOnUiThread {
-            try {
-                Logger.appendToLog("Boot overlay auto dismiss scheduled in ${delay}ms")
-            } catch (_: Throwable) {}
             bootOverlay?.postDelayed({ dismiss() }, delay)
         }
     }
@@ -224,10 +167,7 @@ class BootOverlayController(
         if (launchFailureSignaled) return
         launchFailureSignaled = true
 
-        Log.e(TAG, "Detected startup failure: $detail")
-
-        val isOom = isOutOfMemoryFailure(detail)
-        val crashDetail = if (isOom) {
+        val crashDetail = if (isOutOfMemoryFailure(detail)) {
             "OutOfMemoryError detected. JVM heap exhausted during game runtime. $detail"
         } else {
             detail
@@ -263,10 +203,6 @@ class BootOverlayController(
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
 
-        try {
-            Logger.appendToLog("Boot overlay dismissed")
-        } catch (_: Throwable) {}
-
         bootOverlayDismissButton?.let {
             it.visibility = View.GONE
             it.setOnClickListener(null)
@@ -293,65 +229,12 @@ class BootOverlayController(
         }
     }
 
-    private fun appendLog(rawLine: String?) {
-        if (!waitForMainMenu || rawLine == null) return
-
-        val line = rawLine.replace('\r', ' ').trim()
-        if (line.isEmpty()) return
-
-        synchronized(bootLogLines) {
-            bootLogLines.addLast(line)
-            while (bootLogLines.size > BOOT_LOG_MAX_LINES) {
-                bootLogLines.removeFirst()
-            }
-        }
-        activity.runOnUiThread { renderLogs() }
-    }
-
-    private fun renderLogs() {
-        if (bootOverlayDismissed || bootOverlayLogText == null) return
-
-        val builder = StringBuilder(4096)
-        synchronized(bootLogLines) {
-            for (line in bootLogLines) {
-                builder.append(line).append('\n')
-            }
-        }
-        bootOverlayLogText?.text = builder.toString()
-        bootOverlayLogScroll?.post { bootOverlayLogScroll?.fullScroll(View.FOCUS_DOWN) }
-    }
-
-    private fun detectFatalStartupLog(line: String?): String? {
-        if (line == null || line.isEmpty()) return null
-
-        val lower = line.lowercase(Locale.ROOT)
-        return when {
-            isOutOfMemoryFailure(lower) -> "OutOfMemoryError detected: $line"
-            lower.contains("com.evacipated.cardcrawl.modthespire.patcher.patchingexception") -> "MTS patching failed: $line"
-            lower.contains("missingdependencyexception") -> "MTS missing dependency: $line"
-            lower.contains("duplicatemodidexception") -> "MTS duplicate mod id: $line"
-            lower.contains("missingmodidexception") -> "MTS missing mod id: $line"
-            lower.contains("illegal patch parameter") -> "MTS illegal patch parameter: $line"
-            else -> null
-        }
-    }
-
     private fun isOutOfMemoryFailure(detail: String?): Boolean {
         if (detail == null || detail.isEmpty()) return false
-        val lower = detail.lowercase(Locale.ROOT)
+        val lower = detail.lowercase()
         return lower.contains("outofmemoryerror") ||
             lower.contains("java heap space") ||
             lower.contains("gc overhead limit exceeded")
-    }
-
-    private fun shouldDismissOverlayEarlyLog(line: String?): Boolean {
-        if (line == null || line.isEmpty()) return false
-        val lower = line.lowercase(Locale.ROOT)
-        return lower.contains("core.cardcrawlgame> distributorplatform=") ||
-            lower.contains("core.cardcrawlgame> ismodded=") ||
-            lower.contains("core.cardcrawlgame> no migration") ||
-            lower.contains("publishaddcustommodemods") ||
-            lower.contains("events.heartevent>")
     }
 
     fun mapBootOverlayPreparationProgress(percent: Int): Int {

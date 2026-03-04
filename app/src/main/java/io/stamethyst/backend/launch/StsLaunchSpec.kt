@@ -39,13 +39,19 @@ object StsLaunchSpec {
         if (!stsHome.exists()) {
             stsHome.mkdirs()
         }
-        val hsErrFile = File(stsRoot, "hs_err_pid%p.log")
-        val jvmOutputFile = File(stsRoot, "jvm_output.log")
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
 
         val args = ArrayList<String>()
+        try {
+            val logSession = JvmLogRotationManager.prepareLogSession(context)
+            val configUri = logSession.configFile.toURI().toString()
+            args.add("-Dlog4j.configurationFile=$configUri")
+            args.add("-Dlog4j2.configurationFile=$configUri")
+            args.add("-Damethyst.log4j2.file=${logSession.logFile.absolutePath}")
+        } catch (_: Throwable) {
+        }
         // Performance-first by default, with a compatibility fallback file switch.
         // Create files/sts/compat_xint.flag to force interpreted mode on unstable devices.
         if (forceInterpreterFlag.exists()) {
@@ -68,10 +74,8 @@ object StsLaunchSpec {
             args.add("-XX:MaxGCPauseMillis=25")
             args.add("-XX:+ParallelRefProcEnabled")
         }
-        args.add("-XX:ErrorFile=${hsErrFile.absolutePath}")
+        args.add("-XX:ErrorFile=/dev/null")
         args.add("-XX:+UnlockDiagnosticVMOptions")
-        args.add("-XX:+LogVMOutput")
-        args.add("-XX:LogFile=${jvmOutputFile.absolutePath}")
         if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
             args.add("-noverify")
@@ -132,7 +136,6 @@ object StsLaunchSpec {
             "-Damethyst.gdx.force_linear_mipmap_filter=" +
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )
-        args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsFile(context).absolutePath}")
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader")
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")

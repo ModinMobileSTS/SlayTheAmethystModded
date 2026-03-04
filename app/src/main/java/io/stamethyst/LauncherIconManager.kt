@@ -4,12 +4,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
-import android.util.Log
 import io.stamethyst.config.LauncherConfig
 
 object LauncherIconManager {
-    private const val TAG = "LauncherIconManager"
-
     fun applySelection(context: Context, icon: LauncherIcon): LauncherIcon {
         setAliasState(context, icon)
         saveSelection(context, icon)
@@ -37,9 +34,6 @@ object LauncherIconManager {
     private fun setAliasState(context: Context, selected: LauncherIcon) {
         val debugBuild = isDebugBuild(context)
         val effectiveSelected = if (debugBuild) LauncherIcon.AMBER else selected
-        if (debugBuild && selected != effectiveSelected) {
-            Log.i(TAG, "debug build: force launcher alias to $effectiveSelected (requested=$selected)")
-        }
         val packageManager = context.packageManager
         LauncherIcon.entries.forEach { candidate ->
             val desiredState = if (candidate == effectiveSelected) {
@@ -55,8 +49,6 @@ object LauncherIconManager {
                     desiredState,
                     PackageManager.DONT_KILL_APP
                 )
-            }.onFailure { error ->
-                Log.w(TAG, "set launcher alias failed: $aliasClassName state=$desiredState", error)
             }
         }
     }

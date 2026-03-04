@@ -21,7 +21,6 @@
 #include <math.h>
 
 #define TAG __FILE_NAME__
-#include "log.h"
 #include "utils.h"
 #include "environ/environ.h"
 #include "jvm_hooks/jvm_hooks.h"
@@ -97,7 +96,7 @@ static bool resolveOpenalSymbols(void) {
     }
 
     if (pojav_alcGetCurrentContext == NULL || pojav_alListenerf == NULL) {
-        LOGW("OpenAL symbols unavailable, background mute will be ignored");
+        ;
         return false;
     }
 
@@ -109,7 +108,7 @@ static void registerFunctions(JNIEnv *env);
 
 jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
     if (pojav_environ->dalvikJavaVMPtr == NULL) {
-        LOGI("Saving DVM environ...");
+        ;
         //Save dalvik global JavaVM pointer
         pojav_environ->dalvikJavaVMPtr = vm;
         JNIEnv *dvEnv;
@@ -120,7 +119,7 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         pojav_environ->method_onDirectInputEnable = (*dvEnv)->GetStaticMethodID(dvEnv, pojav_environ->bridgeClazz, "onDirectInputEnable", "()V");
         pojav_environ->isUseStackQueueCall = JNI_FALSE;
     } else if (pojav_environ->dalvikJavaVMPtr != vm) {
-        LOGI("Saving JVM environ...");
+        ;
         pojav_environ->runtimeJavaVMPtr = vm;
         JNIEnv *vmEnv;
         (*vm)->GetEnv(vm, (void**) &vmEnv, JNI_VERSION_1_4);
@@ -170,7 +169,7 @@ ADD_CALLBACK_WWIN(Scroll)
 
 void updateMonitorSize(int width, int height) {
     if (!isValidScreenSize(width, height)) {
-        LOGW("InputBridge: ignored invalid monitor size update %dx%d", width, height);
+        ;
         return;
     }
     (*pojav_environ->glfwThreadVmEnv)->CallStaticVoidMethod(pojav_environ->glfwThreadVmEnv, pojav_environ->vmGlfwClass, pojav_environ->method_internalChangeMonitorSize, width, height);
@@ -321,7 +320,7 @@ void noncritical_set_stackqueue(__attribute__((unused)) JNIEnv *env, __attribute
 
 JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNIEnv* env, __attribute__((unused)) jclass clazz, jint action, jbyteArray copySrc) {
 #ifdef DEBUG
-    LOGD("Debug: Clipboard access is going on\n", pojav_environ->isUseStackQueueCall);
+    ;
 #endif
 
     if (action == CLIPBOARD_CONTEXT_GENERATION_QUERY) {
@@ -339,7 +338,7 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
     assert(dalvikEnv != NULL);
     assert(pojav_environ->bridgeClazz != NULL);
 
-    LOGD("Clipboard: Converting string\n");
+    ;
     char *copySrcC;
     jstring copyDst = NULL;
     if (copySrc) {
@@ -347,7 +346,7 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
         copyDst = (*dalvikEnv)->NewStringUTF(dalvikEnv, copySrcC);
     }
 
-    LOGD("Clipboard: Calling 2nd\n");
+    ;
     jstring pasteDst = convertStringJVM(dalvikEnv, env, (jstring) (*dalvikEnv)->CallStaticObjectMethod(dalvikEnv, pojav_environ->bridgeClazz, pojav_environ->method_accessAndroidClipboard, action, copyDst));
 
     if (copySrc) {
@@ -360,9 +359,9 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
 
 JNIEXPORT jboolean JNICALL JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(jboolean inputReady) {
 #ifdef DEBUG
-    LOGD("Debug: Changing input state, isReady=%d, pojav_environ->isUseStackQueueCall=%d\n", inputReady, pojav_environ->isUseStackQueueCall);
+    ;
 #endif
-    LOGI("Input ready: %i", inputReady);
+    ;
     pojav_environ->isInputReady = inputReady;
     return pojav_environ->isUseStackQueueCall;
 }
@@ -425,11 +424,11 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSendCursorEnter(
 
 void critical_send_cursor_pos(jfloat x, jfloat y) {
 #ifdef DEBUG
-    LOGD("Sending cursor position \n");
+    ;
 #endif
     if (pojav_environ->GLFW_invoke_CursorPos && pojav_environ->isInputReady) {
 #ifdef DEBUG
-        LOGD("pojav_environ->GLFW_invoke_CursorPos && pojav_environ->isInputReady \n");
+        ;
 #endif
         if (!pojav_environ->isCursorEntered) {
             if (pojav_environ->GLFW_invoke_CursorEnter) {
@@ -509,12 +508,12 @@ void noncritical_send_mouse_button(__attribute__((unused)) JNIEnv* env, __attrib
 
 void critical_send_screen_size(jint width, jint height) {
     if (!isValidScreenSize(width, height)) {
-        LOGW("InputBridge: rejected invalid screen size from Java = %dx%d", width, height);
+        ;
         return;
     }
     pojav_environ->savedWidth = width;
     pojav_environ->savedHeight = height;
-    LOGI("InputBridge: screen size update from Java = %dx%d", width, height);
+    ;
     // Even if there was call to pojavStartPumping that consumed the size, this call
     // might happen right after it (or right before pojavStopPumping)
     // So unmark the size as "consumed"
@@ -613,7 +612,7 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
 
     if (pojav_alcGetCurrentContext() == NULL) {
         if (!pojav_openal_no_context_logged) {
-            LOGW("OpenAL context unavailable, cannot toggle audio mute yet");
+            ;
             pojav_openal_no_context_logged = true;
         }
         return;
@@ -634,7 +633,7 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
         }
         pojav_alListenerf(AL_GAIN, 0.0f);
         pojav_audio_force_muted = true;
-        LOGI("OpenAL output muted on app background");
+        ;
         return;
     }
 
@@ -643,7 +642,7 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
     }
     pojav_alListenerf(AL_GAIN, pojav_saved_listener_gain_valid ? pojav_saved_listener_gain : 1.0f);
     pojav_audio_force_muted = false;
-    LOGI("OpenAL output restored on app foreground");
+    ;
 }
 
 const static JNINativeMethod critical_fcns[] = {
@@ -687,7 +686,7 @@ static bool tryCriticalNative(JNIEnv *env) {
     };
     jclass criticalNativeTest = (*env)->FindClass(env, "net/kdt/pojavlaunch/CriticalNativeTest");
     if(criticalNativeTest == NULL) {
-        LOGD("No CriticalNativeTest class found !");
+        ;
         (*env)->ExceptionClear(env);
         return false;
     }
@@ -703,9 +702,9 @@ static void registerFunctions(JNIEnv *env) {
     bool use_critical_cc = false;
     jclass bridge_class = (*env)->FindClass(env, "org/lwjgl/glfw/CallbackBridge");
     if (critical_supported) {
-        LOGI("CriticalNative is available, but input bridge forces noncritical callbacks to avoid ABI argument corruption");
+        ;
     }else{
-        LOGI("CriticalNative is not available. Upgrade, maybe?");
+        ;
     }
     (*env)->RegisterNatives(env,
                             bridge_class,

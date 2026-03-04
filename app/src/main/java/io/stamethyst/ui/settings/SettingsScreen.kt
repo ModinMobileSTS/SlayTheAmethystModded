@@ -81,7 +81,7 @@ fun LauncherSettingsScreen(
         onImportMods = viewModel::onImportMods,
         onImportSaves = viewModel::onImportSaves,
         onExportSaves = viewModel::onExportSaves,
-        onShareCrashReport = { viewModel.onShareCrashReport(activity) },
+        onExportLogs = viewModel::onExportLogs,
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
@@ -133,7 +133,7 @@ private fun LauncherSettingsScreenContent(
     onImportMods: () -> Unit = {},
     onImportSaves: () -> Unit = {},
     onExportSaves: () -> Unit = {},
-    onShareCrashReport: () -> Unit = {},
+    onExportLogs: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
@@ -179,7 +179,7 @@ private fun LauncherSettingsScreenContent(
                         onImportMods = onImportMods,
                         onImportSaves = onImportSaves,
                         onExportSaves = onExportSaves,
-                        onShareCrashReport = onShareCrashReport,
+                        onExportLogs = onExportLogs,
                     )
                 }
             }
@@ -282,7 +282,7 @@ private fun SettingsImportSection(
     onImportMods: () -> Unit,
     onImportSaves: () -> Unit,
     onExportSaves: () -> Unit,
-    onShareCrashReport: () -> Unit,
+    onExportLogs: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
@@ -301,9 +301,9 @@ private fun SettingsImportSection(
             onClick = onExportSaves
         )
         SettingsActionListItem(
-            title = stringResource(R.string.sts_share_crash_report),
+            title = "导出日志",
             enabled = !busy,
-            onClick = onShareCrashReport
+            onClick = onExportLogs
         )
     }
 }
@@ -609,6 +609,9 @@ fun SettingsEffectsHandler(
     val exportSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onSavesExportPicked(activity, uri)
     }
+    val exportLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        viewModel.onLogsExportPicked(activity, uri)
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
@@ -633,6 +636,10 @@ fun SettingsEffectsHandler(
 
                 is SettingsScreenViewModel.Effect.OpenExportSavesPicker -> {
                     exportSavesLauncher.launch(effect.fileName)
+                }
+
+                is SettingsScreenViewModel.Effect.OpenExportLogsPicker -> {
+                    exportLogsLauncher.launch(effect.fileName)
                 }
 
                 SettingsScreenViewModel.Effect.OpenCompatibility -> {

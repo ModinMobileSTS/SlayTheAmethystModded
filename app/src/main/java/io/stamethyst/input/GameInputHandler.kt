@@ -3,7 +3,6 @@ package io.stamethyst.input
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioManager
-import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -27,10 +26,6 @@ class GameInputHandler(
     private val getRenderViewWidth: () -> Int,
     private val getRenderViewHeight: () -> Int
 ) {
-    companion object {
-        private const val TAG = "GameInputHandler"
-    }
-
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var gamepadDirectInputEnableAttempted = false
 
@@ -261,19 +256,14 @@ class GameInputHandler(
         gamepadDirectInputEnableAttempted = true
 
         try {
-            val enabled = CallbackBridge.nativeEnableGamepadDirectInput()
-            Log.i(TAG, "Requested gamepad direct input: $enabled")
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to enable gamepad direct input", error)
-        }
+            CallbackBridge.nativeEnableGamepadDirectInput()
+        } catch (_: Throwable) {}
     }
 
     fun resetGamepadState() {
         try {
             AndroidGamepadGlfwMapper.resetState()
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to reset gamepad state", error)
-        }
+        } catch (_: Throwable) {}
     }
 
     // ==================== Keyboard Input ====================

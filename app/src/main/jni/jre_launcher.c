@@ -22,7 +22,6 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-#include <android/log.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <jni.h>
@@ -39,8 +38,6 @@
 #include <unistd.h>
 // Boardwalk: missing include
 #include <string.h>
-
-#include "log.h"
 #include "utils.h"
 #include "environ/environ.h"
 
@@ -190,21 +187,6 @@ static void setup_signal_stack_report_file() {
         close(signal_stack_fd);
         signal_stack_fd = -1;
     }
-    const char* home_path = getenv("HOME");
-    if(home_path == NULL || home_path[0] == '\0') {
-        return;
-    }
-    char signal_report_path[PATH_MAX];
-    int path_len = snprintf(
-        signal_report_path,
-        sizeof(signal_report_path),
-        "%s/sts/last_signal_stack.txt",
-        home_path
-    );
-    if(path_len <= 0 || path_len >= (int)sizeof(signal_report_path)) {
-        return;
-    }
-    signal_stack_fd = open(signal_report_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
 }
 
 static void append_signal_stack_header(int signal_id, const siginfo_t* info) {
@@ -217,7 +199,7 @@ static void append_signal_stack_header(int signal_id, const siginfo_t* info) {
         sizeof(header),
         "signal=%s(%d)\nsi_code=%d\nsi_addr=0x%lx\nsender_pid=%d\nsender_uid=%d\n"
             "native_stack=unavailable_in_process_signal_handler\n"
-            "hint=check logcat_crash_snapshot.txt, hs_err_pid*.log, and pc/lr symbol lines below\n",
+            "hint=check pc/lr symbol lines below\n",
         signal_name(signal_id),
         signal_id,
         info != NULL ? info->si_code : 0,
@@ -314,24 +296,24 @@ static jint launchJVM(int margc, char** margv) {
    abort_waiter_setup();
 
    // Boardwalk: silence
-   // LOGD("JLI lib = %x", (int)libjli);
+   // ;
    if (NULL == libjli) {
-       LOGE("JLI lib = NULL: %s", dlerror());
+       ;
        return -1;
    }
-   LOGD("Found JLI lib");
+   ;
 
    JLI_Launch_func *pJLI_Launch =
           (JLI_Launch_func *)dlsym(libjli, "JLI_Launch");
     // Boardwalk: silence
-    // LOGD("JLI_Launch = 0x%x", *(int*)&pJLI_Launch);
+    // ;
 
    if (NULL == pJLI_Launch) {
-       LOGE("JLI_Launch = NULL");
+       ;
        return -1;
    }
 
-   LOGD("Calling JLI_Launch");
+   ;
 
    return pJLI_Launch(margc, margv,
                    0, NULL, // sizeof(const_jargs) / sizeof(char *), const_jargs,
@@ -360,7 +342,7 @@ JNIEXPORT jint JNICALL Java_com_oracle_dalvik_VMLauncher_launchJVM(JNIEnv *env, 
    jint res = 0;
 
     if (argsArray == NULL) {
-        LOGE("Args array null, returning");
+        ;
         //handle error
         return 0;
     }
@@ -368,14 +350,14 @@ JNIEXPORT jint JNICALL Java_com_oracle_dalvik_VMLauncher_launchJVM(JNIEnv *env, 
     int argc = (*env)->GetArrayLength(env, argsArray);
     char **argv = convert_to_char_array(env, argsArray);
 
-    LOGD("Done processing args");
+    ;
 
     res = launchJVM(argc, argv);
 
-    LOGD("Going to free args");
+    ;
     free_char_array(env, argsArray, argv);
 
-    LOGD("Free done");
+    ;
 
     return res;
 }

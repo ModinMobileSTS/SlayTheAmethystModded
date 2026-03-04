@@ -4,6 +4,9 @@ import android.content.Context
 import java.io.File
 
 object RuntimePaths {
+    private const val JVM_LOG_DIR_NAME = "jvm_logs"
+    private const val LOG4J2_JVM_CONFIG_FILE_NAME = "log4j2-jvm.xml"
+
     @JvmStatic
     fun stsRoot(context: Context): File = File(context.filesDir, "sts")
 
@@ -53,22 +56,13 @@ object RuntimePaths {
     fun mtsLocalJavaShim(context: Context): File = File(mtsLocalJreBinDir(context), "java")
 
     @JvmStatic
-    fun latestLog(context: Context): File = File(stsRoot(context), "latestlog.txt")
-
-    @JvmStatic
-    fun lastCrashReport(context: Context): File = File(stsRoot(context), "last_crash_report.txt")
-
-    @JvmStatic
-    fun lastSignalStack(context: Context): File = File(stsRoot(context), "last_signal_stack.txt")
-
-    @JvmStatic
-    fun lastExitInfo(context: Context): File = File(stsRoot(context), "last_exit_info.txt")
-
-    @JvmStatic
-    fun lastExitTrace(context: Context): File = File(stsRoot(context), "last_exit_trace.txt")
-
-    @JvmStatic
     fun lastExitMarker(context: Context): File = File(stsRoot(context), ".last_exit_marker")
+
+    @JvmStatic
+    fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)
+
+    @JvmStatic
+    fun log4j2JvmConfigFile(context: Context): File = File(stsRoot(context), LOG4J2_JVM_CONFIG_FILE_NAME)
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
@@ -96,9 +90,6 @@ object RuntimePaths {
     fun bootBridgeJar(context: Context): File = File(bootBridgeDir(context), "boot-bridge.jar")
 
     @JvmStatic
-    fun bootBridgeEventsFile(context: Context): File = File(stsRoot(context), "boot_bridge_events.log")
-
-    @JvmStatic
     fun gdxPatchDir(context: Context): File = File(componentRoot(context), "gdx_patch")
 
     @JvmStatic
@@ -117,6 +108,7 @@ object RuntimePaths {
     fun ensureBaseDirs(context: Context) {
         stsRoot(context).mkdirs()
         modsDir(context).mkdirs()
+        jvmLogsDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()

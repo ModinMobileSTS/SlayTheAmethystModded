@@ -9,7 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
-import io.stamethyst.backend.crash.CrashDiagnostics
+import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -78,20 +78,36 @@ internal object SettingsFileService {
         return "sts-saves-export-${formatter.format(Date())}.zip"
     }
 
+    fun buildJvmLogExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
+    }
+
     @Throws(IOException::class)
-    fun createShareDebugBundleFile(host: Activity): File {
-        val shareDir = File(host.cacheDir, "share")
-        if (!shareDir.exists() && !shareDir.mkdirs()) {
-            throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
-        }
-        val shareFile = File(shareDir, buildDebugExportFileName())
-        val stsRoot = RuntimePaths.stsRoot(host)
-        FileOutputStream(shareFile, false).use { output ->
+    fun exportJvmLogsBundle(host: Activity, uri: Uri): Int {
+        val logs = JvmLogRotationManager.listLogFiles(host)
+        host.contentResolver.openOutputStream(uri).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
             ZipOutputStream(output).use { zipOutput ->
-                writeDebugBundleToZip(host, zipOutput, stsRoot)
+                if (logs.isEmpty()) {
+                    val entry = ZipEntry("sts/jvm_logs/README.txt")
+                    zipOutput.putNextEntry(entry)
+                    val message = "No JVM logs found.\n" +
+                        "Expected directory: ${RuntimePaths.jvmLogsDir(host).absolutePath}\n"
+                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
+                    zipOutput.closeEntry()
+                    return 0
+                }
+                var exportedCount = 0
+                for (logFile in logs) {
+                    writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
+                    exportedCount++
+                }
+                return exportedCount
             }
         }
-        return shareFile
     }
 
     @Throws(IOException::class)
@@ -761,11 +777,6 @@ internal object SettingsFileService {
             || folder == "multiple"
     }
 
-    private fun buildDebugExportFileName(): String {
-        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
-        return "sts-debug-${formatter.format(Date())}.zip"
-    }
-
     private fun resolveReservedComponent(modId: String): String? {
         return when (ModManager.normalizeModId(modId)) {
             ModManager.MOD_ID_BASEMOD -> RESERVED_COMPONENT_BASEMOD
@@ -863,33 +874,16 @@ internal object SettingsFileService {
         return "sts/$archiveRoot/$normalizedRelativePath"
     }
 
-    private fun collectDebugBundleFiles(host: Activity): List<File> {
-        return CrashDiagnostics.collectDebugBundleFiles(host)
-    }
-
-    @Throws(IOException::class)
-    private fun writeDebugBundleToZip(host: Activity, zipOutput: ZipOutputStream, stsRoot: File): Int {
-        val debugFiles = collectDebugBundleFiles(host)
-        var exportedCount = 0
-        for (file in debugFiles) {
-            writeFileToZip(zipOutput, stsRoot, file)
-            exportedCount++
-        }
-        if (exportedCount <= 0) {
-            val entry = ZipEntry("sts/README.txt")
-            zipOutput.putNextEntry(entry)
-            val message = "No debug log files found yet.\n" +
-                "Expected paths under: ${stsRoot.absolutePath}\n" +
-                "Files: ${CrashDiagnostics.expectedDebugFileHint()}\n"
-            zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
-            zipOutput.closeEntry()
-        }
-        return exportedCount
-    }
-
     @Throws(IOException::class)
     private fun writeFileToZip(zipOutput: ZipOutputStream, stsRoot: File, sourceFile: File) {
-        val entryName = buildDebugEntryName(stsRoot, sourceFile)
+        val rootPath = stsRoot.canonicalPath
+        val filePath = sourceFile.canonicalPath
+        val relativePath = if (filePath.startsWith("$rootPath${File.separator}")) {
+            filePath.substring(rootPath.length + 1)
+        } else {
+            sourceFile.name
+        }
+        val entryName = "sts/${relativePath.replace('\\', '/')}"
         writeFileToZip(zipOutput, sourceFile, entryName)
     }
 
@@ -911,18 +905,6 @@ internal object SettingsFileService {
             }
         }
         zipOutput.closeEntry()
-    }
-
-    @Throws(IOException::class)
-    private fun buildDebugEntryName(stsRoot: File, sourceFile: File): String {
-        val rootPath = stsRoot.canonicalPath
-        val filePath = sourceFile.canonicalPath
-        val relativePath = if (filePath.startsWith("$rootPath${File.separator}")) {
-            filePath.substring(rootPath.length + 1)
-        } else {
-            sourceFile.name
-        }
-        return "sts/${relativePath.replace('\\', '/')}"
     }
 
 }

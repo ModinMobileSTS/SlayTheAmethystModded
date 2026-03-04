@@ -3,9 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#include "log.h"
-
 #include "utils.h"
 
 typedef int (*Main_Function_t)(int, char**);
@@ -93,7 +90,7 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setLdLibraryPath(
 		updateLdLibPath = dlsym(libdl_handle, "__loader_android_update_LD_LIBRARY_PATH");
 		if (updateLdLibPath == NULL) {
 			char *dl_error_c = dlerror();
-			LOGE("Error getting symbol android_update_LD_LIBRARY_PATH: %s", dl_error_c);
+			;
 			// (*env)->ThrowNew(env, exception_cls, dl_error_c);
 		}
 	}
@@ -108,9 +105,9 @@ JNIEXPORT jboolean JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_dlopen(JNIEnv
 	const char *nameUtf = (*env)->GetStringUTFChars(env, name, 0);
 	void* handle = dlopen(nameUtf, RTLD_GLOBAL | RTLD_LAZY);
 	if (!handle) {
-		LOGE("dlopen %s failed: %s", nameUtf, dlerror());
+		;
 	} else {
-		LOGD("dlopen %s success", nameUtf);
+		;
 	}
 	(*env)->ReleaseStringUTFChars(env, name, nameUtf);
 	return handle != NULL;
@@ -135,7 +132,7 @@ JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_executeBinary(JNI
 	
 	char *exec_error_c = dlerror();
 	if (exec_error_c != NULL) {
-		LOGE("Error: %s", exec_error_c);
+		;
 		(*env)->ThrowNew(env, exception_cls, exec_error_c);
 		return -1;
 	}
@@ -145,7 +142,7 @@ JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_executeBinary(JNI
 	
 	exec_error_c = dlerror();
 	if (exec_error_c != NULL) {
-		LOGE("Error: %s", exec_error_c);
+		;
 		(*env)->ThrowNew(env, exception_cls, exec_error_c);
 		return -1;
 	}

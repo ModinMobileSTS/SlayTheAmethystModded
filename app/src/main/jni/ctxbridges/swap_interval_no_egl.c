@@ -8,8 +8,6 @@
 #include <android/native_window.h>
 
 #define TAG __FILE_NAME__
-#include <log.h>
-
 // Taken from https://android.googlesource.com/platform/frameworks/native/+/41abd67/include/ui/egl/android_natives.h
 // Might be outdated, if you can find a more recent version please add it there
 // region android_native_base_t definition
@@ -229,17 +227,15 @@ void setNativeWindowSwapInterval(struct ANativeWindow* nativeWindow, int swapInt
     }
     struct ANativeWindow_real* nativeWindowReal = (struct ANativeWindow_real*) nativeWindow;
     if(nativeWindowReal->common.magic != ANDROID_NATIVE_WINDOW_MAGIC) {
-        LOGW("ANativeWindow magic does not match. Expected %i, got %i",
-                            ANDROID_NATIVE_WINDOW_MAGIC, nativeWindowReal->common.magic);
+        ;
         return;
     }
     if(nativeWindowReal->common.version != sizeof(struct ANativeWindow_real)) {
-        LOGW("ANativeWindow version does not match. Expected %i, got %i",
-                            sizeof(struct ANativeWindow_real), nativeWindowReal->common.version);
+        ;
         return;
     }
     int error;
     if((error = nativeWindowReal->setSwapInterval(nativeWindow, swapInterval)) != 0) {
-        LOGW("Failed to set swap interval: %s", strerror(-error));
+        ;
     }
 }

@@ -8,7 +8,6 @@ import android.content.Intent
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -23,14 +22,12 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.input.GameInputHandler
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
-import net.kdt.pojavlaunch.Logger
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
 import kotlin.system.exitProcess
 
 class StsGameActivity : AppCompatActivity() {
     companion object {
-        private const val TAG = "StsGameActivity"
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
         const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
@@ -53,7 +50,7 @@ class StsGameActivity : AppCompatActivity() {
             intent.putExtra(EXTRA_TARGET_FPS, targetFps)
             intent.putExtra(
                 EXTRA_WAIT_FOR_MAIN_MENU,
-                StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
+                false
             )
             intent.putExtra(EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
@@ -263,7 +260,6 @@ class StsGameActivity : AppCompatActivity() {
         val rawHeight = renderSurfaceManager.resolvePhysicalHeight()
 
         if (rawWidth <= 1 || rawHeight <= 1) {
-            Log.i(TAG, "Waiting for valid surface size before JVM start: ${rawWidth}x$rawHeight")
             scheduleStartCheck()
             return
         }
@@ -275,11 +271,9 @@ class StsGameActivity : AppCompatActivity() {
             }
             val waitedMs = now - waitingLandscapeSinceMs
             if (waitedMs < 4000L) {
-                Log.i(TAG, "Waiting for landscape surface before JVM start: ${rawWidth}x$rawHeight, waited=${waitedMs}ms")
                 scheduleStartCheck()
                 return
             }
-            Log.w(TAG, "Surface is still portrait after wait, starting JVM anyway: ${rawWidth}x$rawHeight")
         } else {
             waitingLandscapeSinceMs = -1L
         }
@@ -299,8 +293,7 @@ class StsGameActivity : AppCompatActivity() {
         jvmLaunchController.start(
             javaHome = javaHome,
             waitForMainMenu = waitForMainMenu,
-            bootOverlayController = bootOverlayController,
-            logListener = { text -> bootOverlayController.handleJvmLogMessage(text) }
+            bootOverlayController = bootOverlayController
         )
     }
 
@@ -356,7 +349,6 @@ class StsGameActivity : AppCompatActivity() {
 
     private fun handleAndroidBackPressed() {
         if (!backImmediateExit) {
-            Log.i(TAG, "Android back pressed: disabled by launcher setting")
             return
         }
         requestBackExitToLauncher()
@@ -372,7 +364,6 @@ class StsGameActivity : AppCompatActivity() {
         BackExitNotice.markExpectedBackExit(this)
 
         bootOverlayController.updateProgress(100, "Stopping game...")
-        Log.i(TAG, "Android back pressed: force restart to launcher")
 
         jvmLaunchController.interrupt()
 
@@ -386,11 +377,8 @@ class StsGameActivity : AppCompatActivity() {
 
     private fun requestJvmCloseSignal(): Boolean {
         return try {
-            val requested = CallbackBridge.nativeRequestCloseWindow()
-            if (requested) Log.i(TAG, "Sent glfwSetWindowShouldClose=true")
-            requested
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to request JVM window close", error)
+            CallbackBridge.nativeRequestCloseWindow()
+        } catch (_: Throwable) {
             false
         }
     }
@@ -480,9 +468,7 @@ class StsGameActivity : AppCompatActivity() {
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1)
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to apply foreground window state", error)
-        }
+        } catch (_: Throwable) {}
     }
 
     private fun applyBackgroundWindowState() {
@@ -494,9 +480,7 @@ class StsGameActivity : AppCompatActivity() {
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0)
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to apply background window state", error)
-        }
+        } catch (_: Throwable) {}
     }
 
     private fun syncFocusStateToNative(hasFocus: Boolean) {
@@ -514,9 +498,7 @@ class StsGameActivity : AppCompatActivity() {
                 CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
                 CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
             }
-        } catch (error: Throwable) {
-            Log.w(TAG, "Failed to sync focus window attribs", error)
-        }
+        } catch (_: Throwable) {}
     }
 
     private fun updateFloatingMouseVisibility() {

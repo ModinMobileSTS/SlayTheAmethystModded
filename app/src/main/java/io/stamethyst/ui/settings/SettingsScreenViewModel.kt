@@ -2,7 +2,6 @@ package io.stamethyst.ui.settings
 
 import android.app.Activity
 import android.content.DialogInterface
-import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.widget.Toast
@@ -11,8 +10,8 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
+import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
@@ -21,7 +20,6 @@ import io.stamethyst.R
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
-import java.io.File
 import java.io.IOException
 import java.util.ArrayList
 import java.util.LinkedHashSet
@@ -42,6 +40,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
+        data class OpenExportLogsPicker(val fileName: String) : Effect
         data object OpenCompatibility : Effect
     }
 
@@ -226,43 +225,11 @@ class SettingsScreenViewModel : ViewModel() {
         _effects.tryEmit(Effect.OpenExportSavesPicker(SettingsFileService.buildSaveExportFileName()))
     }
 
-    fun onShareCrashReport(host: Activity) {
+    fun onExportLogs() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, "Preparing error report for sharing...")
-        executor.execute {
-            try {
-                val shareFile = SettingsFileService.createShareDebugBundleFile(host)
-                val uri = FileProvider.getUriForFile(
-                    host,
-                    "${host.packageName}.fileprovider",
-                    shareFile
-                )
-                host.runOnUiThread {
-                    refreshStatus(host)
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "*/*"
-                        putExtra(Intent.EXTRA_SUBJECT, host.getString(R.string.sts_crash_dialog_title))
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        clipData = android.content.ClipData.newUri(host.contentResolver, shareFile.name, uri)
-                    }
-                    val chooser = Intent.createChooser(shareIntent, host.getString(R.string.sts_share_crash_chooser_title))
-                    chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    try {
-                        host.startActivity(chooser)
-                    } catch (_: Throwable) {
-                        Toast.makeText(host, R.string.sts_share_crash_report_failed, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (error: Throwable) {
-                host.runOnUiThread {
-                    Toast.makeText(host, "Debug share failed: ${error.message}", Toast.LENGTH_LONG).show()
-                    refreshStatus(host)
-                }
-            }
-        }
+        _effects.tryEmit(Effect.OpenExportLogsPicker(SettingsFileService.buildJvmLogExportFileName()))
     }
 
     fun onTargetFpsSelected(host: Activity, targetFps: Int) {
@@ -548,6 +515,27 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    fun onLogsExportPicked(host: Activity, uri: Uri?) {
+        if (uri == null) {
+            return
+        }
+        setBusy(true, "Exporting JVM logs...")
+        executor.execute {
+            try {
+                val exportedCount = SettingsFileService.exportJvmLogsBundle(host, uri)
+                host.runOnUiThread {
+                    Toast.makeText(host, "JVM logs exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    Toast.makeText(host, "Log export failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus(host)
+                }
+            }
+        }
+    }
+
     private fun setBusy(busy: Boolean, message: String?) {
         uiState = if (busy) {
             uiState.copy(
@@ -661,10 +649,19 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun buildLogPathText(host: Activity): String {
-        return "Log: ${RuntimePaths.latestLog(host).absolutePath}\n" +
-            "VM: ${File(RuntimePaths.stsRoot(host), "jvm_output.log").absolutePath}\n" +
-            "Crash: ${File(RuntimePaths.stsRoot(host), "hs_err_pid*.log").absolutePath}\n" +
-            "Last: ${RuntimePaths.lastCrashReport(host).absolutePath}"
+        val logs = JvmLogRotationManager.listLogFiles(host)
+        val logsDir = RuntimePaths.jvmLogsDir(host).absolutePath
+        return buildString {
+            append("JVM logs dir: ").append(logsDir)
+            append("\nSlots: ").append(logs.size).append('/').append(JvmLogRotationManager.MAX_LOG_SLOTS)
+            if (logs.isEmpty()) {
+                append("\n(no logs yet)")
+            } else {
+                for (log in logs) {
+                    append("\n- ").append(log.name)
+                }
+            }
+        }
     }
 
     override fun onCleared() {

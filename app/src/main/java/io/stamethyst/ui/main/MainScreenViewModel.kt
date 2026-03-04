@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.ApplicationExitInfo
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.Stable
@@ -15,7 +14,7 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
-import io.stamethyst.backend.crash.CrashDiagnostics
+import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.config.RuntimePaths
@@ -35,10 +34,6 @@ import java.util.concurrent.Executors
 
 @Stable
 class MainScreenViewModel : ViewModel() {
-    companion object {
-        private const val TAG = "MainScreenViewModel"
-    }
-
     data class UiState(
         val busy: Boolean = false,
         val busyMessage: String? = null,
@@ -96,7 +91,6 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CrashDiagnostics.clear(host)
         prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD, forceJvmCrash = false)
     }
 
@@ -162,14 +156,10 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    fun handleIncomingIntent(host: Activity, intent: Intent?, onShareCrashReport: () -> Unit) {
-        val exitSummary = CrashDiagnostics.captureLatestProcessExitInfo(host, "launcher_intent_entry")
-        val hasCrashExtra = intent?.getBooleanExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, false) == true
-        if (exitSummary != null || hasCrashExtra) {
-            CrashDiagnostics.scheduleSnapshotCapture(host, exitSummary)
-        }
+    fun handleIncomingIntent(host: Activity, intent: Intent?) {
+        val exitSummary = ProcessExitInfoCapture.captureLatestProcessExitInfo(host)
         if (intent == null) {
-            maybeShowProcessExitDialog(host, exitSummary, onShareCrashReport)
+            maybeShowProcessExitDialog(host, exitSummary)
             return
         }
 
@@ -182,12 +172,12 @@ class MainScreenViewModel : ViewModel() {
         val showedCrashDialog = if (expectedBackExit) {
             false
         } else {
-            maybeShowCrashDialog(host, intent, onShareCrashReport)
+            maybeShowCrashDialog(host, intent)
         }
         val showedProcessExitDialog = if (showedCrashDialog) {
             false
         } else {
-            maybeShowProcessExitDialog(host, exitSummary, onShareCrashReport)
+            maybeShowProcessExitDialog(host, exitSummary)
         }
         if (!showedCrashDialog && !showedProcessExitDialog) {
             maybeLaunchFromDebugExtra(host, intent)
@@ -483,8 +473,7 @@ class MainScreenViewModel : ViewModel() {
 
     private fun maybeShowCrashDialog(
         host: Activity,
-        intent: Intent,
-        onShareCrashReport: () -> Unit
+        intent: Intent
     ): Boolean {
         if (!intent.getBooleanExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, false)) {
             return false
@@ -502,13 +491,11 @@ class MainScreenViewModel : ViewModel() {
             host.getString(messageId, code)
         }
 
-        CrashDiagnostics.recordLaunchResult(host, "launcher_intent_crash", code, isSignal, detail)
         clearCrashExtras(intent)
 
         AlertDialog.Builder(host)
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
-            .setNeutralButton(R.string.sts_share_crash_report) { _, _ -> onShareCrashReport() }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
@@ -516,29 +503,12 @@ class MainScreenViewModel : ViewModel() {
 
     private fun maybeShowProcessExitDialog(
         host: Activity,
-        summary: ProcessExitSummary?,
-        onShareCrashReport: () -> Unit
+        summary: ProcessExitSummary?
     ): Boolean {
         if (summary == null) {
             return false
         }
         val isSignal = summary.reason == ApplicationExitInfo.REASON_SIGNALED
-        val detail = buildString {
-            append("reason=").append(summary.reasonName)
-            append(", status=").append(summary.status)
-            append(", pid=").append(summary.pid)
-            append(", timestamp=").append(summary.timestamp)
-            if (summary.description.isNotBlank()) {
-                append(", description=").append(summary.description)
-            }
-        }
-        CrashDiagnostics.recordLaunchResult(
-            host,
-            "launcher_exit_info_crash",
-            summary.status,
-            isSignal,
-            detail
-        )
         val message = buildString {
             append("检测到上次运行异常退出。\n")
             if (isSignal) {
@@ -553,7 +523,6 @@ class MainScreenViewModel : ViewModel() {
         AlertDialog.Builder(host)
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
-            .setNeutralButton(R.string.sts_share_crash_report) { _, _ -> onShareCrashReport() }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
@@ -593,15 +562,12 @@ class MainScreenViewModel : ViewModel() {
     private fun maybeLaunchFromDebugExtra(host: Activity, intent: Intent) {
         val debugLaunchMode = intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_LAUNCH_MODE)
         val forceJvmCrash = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_FORCE_JVM_CRASH, false)
-        Log.i(TAG, "Debug launch extra: $debugLaunchMode")
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA
             && debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
         ) {
             return
         }
 
-        Log.i(TAG, "Auto launching mode from debug extra: $debugLaunchMode, forceJvmCrash=$forceJvmCrash")
-        CrashDiagnostics.clear(host)
         prepareAndLaunch(host, debugLaunchMode, forceJvmCrash = forceJvmCrash)
     }
 
@@ -621,10 +587,6 @@ class MainScreenViewModel : ViewModel() {
         val backImmediateExit = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
 
-        Log.i(
-            TAG,
-            "Start StsGameActivity directly, mode=$launchMode, renderer=opengles2, targetFps=$targetFps, backImmediateExit=$backImmediateExit, manualDismissBootOverlay=$manualDismissBootOverlay, forceJvmCrash=$forceJvmCrash"
-        )
         StsGameActivity.launch(
             host,
             launchMode,

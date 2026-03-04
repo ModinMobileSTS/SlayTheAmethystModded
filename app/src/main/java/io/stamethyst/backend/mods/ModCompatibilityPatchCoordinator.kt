@@ -34,7 +34,7 @@ internal object ModCompatibilityPatchCoordinator {
             if (rule.applyWhenInstalled) {
                 val targetJar = installedModsById[rule.modId]
                 if (targetJar == null) {
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    ModCompatibilityDiagnostics.appendCompatLog(
                         context,
                         "rule skip not installed: ${rule.label} (modid=${rule.modId})"
                     )
@@ -44,7 +44,7 @@ internal object ModCompatibilityPatchCoordinator {
             } else {
                 val targetJar = resolveFixedTargetJar(context, rule)
                 if (targetJar == null || !targetJar.isFile) {
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    ModCompatibilityDiagnostics.appendCompatLog(
                         context,
                         "rule missing required target: ${rule.label} (jar=${targetJar?.absolutePath ?: "null"})"
                     )
@@ -80,14 +80,14 @@ internal object ModCompatibilityPatchCoordinator {
 
     private fun applyGlobalAtlasFilterCompat(context: Context, installedModsById: Map<String, File>) {
         if (!CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+            ModCompatibilityDiagnostics.appendCompatLog(
                 context,
                 "global atlas filter compat skip: disabled by user setting (runtime fallback disabled)"
             )
             return
         }
         if (installedModsById.isEmpty()) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+            ModCompatibilityDiagnostics.appendCompatLog(
                 context,
                 "global atlas filter compat skip: no installed mods"
             )
@@ -96,13 +96,13 @@ internal object ModCompatibilityPatchCoordinator {
 
         val launchScopedModsById = filterToLaunchScopedMods(context, installedModsById)
         if (launchScopedModsById.isEmpty()) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+            ModCompatibilityDiagnostics.appendCompatLog(
                 context,
                 "global atlas filter compat skip: no launch-scoped mods"
             )
             return
         }
-        ModCompatibilityDiagnosticsLogger.appendCompatLog(
+        ModCompatibilityDiagnostics.appendCompatLog(
             context,
             "global atlas filter compat scope: installed=${installedModsById.size}, " +
                 "launchScoped=${launchScopedModsById.size}, ids=${launchScopedModsById.keys}"
@@ -122,7 +122,7 @@ internal object ModCompatibilityPatchCoordinator {
             scannedMods++
             if (!targetJar.isFile) {
                 failed++
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                ModCompatibilityDiagnostics.appendCompatLog(
                     context,
                     "global atlas filter compat skip: mod=$modId jar missing (${targetJar.absolutePath})"
                 )
@@ -137,27 +137,27 @@ internal object ModCompatibilityPatchCoordinator {
                 }
                 if (scan.mipmapFilterEntries.isNotEmpty()) {
                     modsWithMipmapFilters++
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    ModCompatibilityDiagnostics.appendCompatLog(
                         context,
                         "global atlas filter compat runtime fallback armed: mod=$modId jar=${targetJar.name}, " +
                             "atlasEntries=${scan.atlasEntries}, mipmapEntries=${scan.mipmapFilterEntries.size}, " +
                             "sample=${scan.mipmapFilterEntries.take(6).joinToString(",")}"
                     )
                 } else if (scan.atlasEntries > 0) {
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    ModCompatibilityDiagnostics.appendCompatLog(
                         context,
                         "global atlas filter compat runtime fallback no mipmap filters: mod=$modId jar=${targetJar.name}, " +
                             "atlasEntries=${scan.atlasEntries}"
                     )
                 } else {
-                    ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                    ModCompatibilityDiagnostics.appendCompatLog(
                         context,
                         "global atlas filter compat runtime fallback no atlas entries: mod=$modId jar=${targetJar.name}"
                     )
                 }
             } catch (error: Throwable) {
                 failed++
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(
+                ModCompatibilityDiagnostics.appendCompatLog(
                     context,
                     "global atlas filter compat scan failed: mod=$modId jar=${targetJar.name}, " +
                         "reason=${error.javaClass.simpleName}: ${error.message.toString()}"
@@ -165,7 +165,7 @@ internal object ModCompatibilityPatchCoordinator {
             }
         }
 
-        ModCompatibilityDiagnosticsLogger.appendCompatLog(
+        ModCompatibilityDiagnostics.appendCompatLog(
             context,
             "global atlas filter compat summary: mode=runtime_only, scannedMods=$scannedMods, " +
                 "modsWithAtlas=$modsWithAtlas, modsWithMipmapFilters=$modsWithMipmapFilters, " +
@@ -229,7 +229,7 @@ internal object ModCompatibilityPatchCoordinator {
     @Throws(IOException::class)
     private fun applyCompatRuleToJar(context: Context, rule: CompatPatchRule, targetJar: File) {
         val patchJar = File(RuntimePaths.gdxPatchDir(context), rule.patchJarName)
-        ModCompatibilityDiagnosticsLogger.appendCompatLog(
+        ModCompatibilityDiagnostics.appendCompatLog(
             context,
             "rule matched: ${rule.label} target=${targetJar.name} class=${rule.targetClassEntry}"
         )
@@ -241,12 +241,12 @@ internal object ModCompatibilityPatchCoordinator {
                 label = rule.label
             )
             if (result == CompatPatchApplyResult.ALREADY_PATCHED) {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "rule already patched: ${rule.label}")
+                ModCompatibilityDiagnostics.appendCompatLog(context, "rule already patched: ${rule.label}")
             } else {
-                ModCompatibilityDiagnosticsLogger.appendCompatLog(context, "rule patched successfully: ${rule.label}")
+                ModCompatibilityDiagnostics.appendCompatLog(context, "rule patched successfully: ${rule.label}")
             }
         } catch (error: Throwable) {
-            ModCompatibilityDiagnosticsLogger.appendCompatLog(
+            ModCompatibilityDiagnostics.appendCompatLog(
                 context,
                 "rule failed: ${rule.label} reason=${error.javaClass.simpleName}: ${error.message.toString()}"
             )

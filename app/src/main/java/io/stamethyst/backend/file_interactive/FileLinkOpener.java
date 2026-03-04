@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.text.TextUtils;
-import android.util.Log;
 import android.webkit.MimeTypeMap;
 
 import java.util.ArrayDeque;
@@ -16,7 +15,6 @@ import java.util.Locale;
  * Local files are routed to a SAF export flow instead of being opened directly.
  */
 public final class FileLinkOpener {
-    private static final String TAG = "FileLinkOpener";
     private static final int MAX_DIRECTORY_SCAN_ENTRIES = 4096;
 
     private FileLinkOpener() {
@@ -33,14 +31,12 @@ public final class FileLinkOpener {
         try {
             Intent intent = buildIntent(context, value);
             if (intent == null) {
-                Log.w(TAG, "Ignore open request, unsupported value: " + value);
                 return;
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
         } catch (Throwable error) {
             // Never propagate to JNI bridge. Unhandled Java exceptions here can abort ART.
-            Log.w(TAG, "Failed to open value: " + value, error);
         }
     }
 
@@ -89,11 +85,6 @@ public final class FileLinkOpener {
             return input;
         }
         File newestFile = findNewestRegularFile(input);
-        if (newestFile != null) {
-            Log.i(TAG, "Directory open request resolved to newest file: " + newestFile.getAbsolutePath());
-        } else {
-            Log.w(TAG, "Directory open request has no readable files: " + input.getAbsolutePath());
-        }
         return newestFile;
     }
 

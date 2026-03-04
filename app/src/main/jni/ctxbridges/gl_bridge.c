@@ -14,8 +14,6 @@
 #include "egl_loader.h"
 
 #define TAG __FILE_NAME__
-#include <log.h>
-
 //
 // Created by maks on 17.09.2022.
 //
@@ -39,7 +37,7 @@ static int gl_get_context_client_version() {
 static void gl_advance_context_generation(const char* reason) {
     if (pojav_environ == NULL) return;
     int generation = atomic_fetch_add_explicit(&pojav_environ->glContextGeneration, 1, memory_order_relaxed) + 1;
-    LOGI("GL context generation -> %d (%s)", generation, reason == NULL ? "unknown" : reason);
+    ;
 }
 
 static void gl_replace_queued_surface_locked(gl_render_window_t* bundle, ANativeWindow* window) {
@@ -63,8 +61,7 @@ static void gl_queue_surface(gl_render_window_t* bundle, ANativeWindow* window, 
     pthread_mutex_lock(&g_surface_mutex);
     gl_replace_queued_surface_locked(bundle, window);
     pthread_mutex_unlock(&g_surface_mutex);
-    LOGI("Queued %s surface update (%s)", window == NULL ? "NULL" : "native",
-         reason == NULL ? "unknown" : reason);
+    ;
 }
 
 static void gl_queue_bridge_window_surface(gl_render_window_t* bundle, const char* reason) {
@@ -77,8 +74,7 @@ static void gl_queue_bridge_window_surface(gl_render_window_t* bundle, const cha
     gl_replace_queued_surface_locked(bundle, window);
     hasWindow = window != NULL;
     pthread_mutex_unlock(&g_surface_mutex);
-    LOGI("Queued %s bridge window (%s)", hasWindow ? "native" : "NULL",
-         reason == NULL ? "unknown" : reason);
+    ;
 }
 
 static ANativeWindow* gl_take_queued_surface(gl_render_window_t* bundle) {
@@ -110,7 +106,7 @@ static ANativeWindow* gl_take_queued_or_bridge_surface(gl_render_window_t* bundl
     pthread_mutex_unlock(&g_surface_mutex);
 
     if (queued != NULL) {
-        LOGI("No queued surface, reusing current bridge window");
+        ;
         printf("GLBridgeDiag: no queued surface, reusing bridge window\n");
     }
     return queued;
@@ -133,8 +129,7 @@ static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const
     pthread_mutex_unlock(&g_surface_mutex);
 
     if (queued) {
-        LOGI("Detected bridge window while on fallback surface, scheduling window restore (%s)",
-             reason == NULL ? "unknown" : reason);
+        ;
         printf("GLBridgeDiag: scheduling window restore (%s)\n", reason == NULL ? "unknown" : reason);
     }
     return queued;
@@ -148,7 +143,7 @@ static bool gl_create_context_for_bundle(gl_render_window_t* bundle, EGLContext 
     };
     bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, sharedContext, egl_context_attributes);
     if (bundle->context == EGL_NO_CONTEXT) {
-        LOGE("eglCreateContext failed (%s): %04x", reason == NULL ? "unknown" : reason, eglGetError_p());
+        ;
         return false;
     }
     gl_advance_context_generation(reason);
@@ -163,15 +158,14 @@ static bool gl_recreate_context(gl_render_window_t* bundle, const char* reason) 
 
     if (bundle->context != NULL && bundle->context != EGL_NO_CONTEXT) {
         if (!eglDestroyContext_p(g_EglDisplay, bundle->context)) {
-            LOGW("eglDestroyContext failed while recovering (%s): %04x",
-                 reason == NULL ? "unknown" : reason, eglGetError_p());
+            ;
         }
     }
     bundle->context = EGL_NO_CONTEXT;
     if (!gl_create_context_for_bundle(bundle, EGL_NO_CONTEXT, reason)) {
         return false;
     }
-    LOGI("Recreated EGL context (%s)", reason == NULL ? "unknown" : reason);
+    ;
     return true;
 }
 
@@ -191,20 +185,20 @@ static bool gl_egl_ready() {
 
 bool gl_init() {
     if(!dlsym_EGL()) {
-        LOGE("%s", "dlsym_EGL() failed");
+        ;
         return false;
     }
     if (!gl_egl_ready()) {
-        LOGE("%s", "EGL core symbols are not ready");
+        ;
         return false;
     }
     g_EglDisplay = eglGetDisplay_p(EGL_DEFAULT_DISPLAY);
     if (g_EglDisplay == EGL_NO_DISPLAY) {
-        LOGE("%s", "eglGetDisplay_p(EGL_DEFAULT_DISPLAY) returned EGL_NO_DISPLAY");
+        ;
         return false;
     }
     if (eglInitialize_p(g_EglDisplay, 0, 0) != EGL_TRUE) {
-        LOGE("eglInitialize_p() failed: %04x", eglGetError_p());
+        ;
         return false;
     }
     return true;
@@ -232,11 +226,11 @@ static void gl4esi_get_display_dimensions(int* width, int* height) {
 
 gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     if (!gl_egl_ready()) {
-        LOGE("%s", "gl_init_context aborted: EGL symbols are unavailable");
+        ;
         return NULL;
     }
     if (g_EglDisplay == EGL_NO_DISPLAY) {
-        LOGE("%s", "gl_init_context aborted: EGL display is not initialized");
+        ;
         return NULL;
     }
     gl_render_window_t* bundle = malloc(sizeof(gl_render_window_t));
@@ -245,12 +239,12 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     EGLint num_configs = 0;
 
     if (eglChooseConfig_p(g_EglDisplay, egl_attributes, NULL, 0, &num_configs) != EGL_TRUE) {
-        LOGE("eglChooseConfig_p() failed: %04x", eglGetError_p());
+        ;
         free(bundle);
         return NULL;
     }
     if (num_configs == 0) {
-        LOGE("%s", "eglChooseConfig_p() found no matching config");
+        ;
         free(bundle);
         return NULL;
     }
@@ -290,25 +284,25 @@ void gl_swap_surface(gl_render_window_t* bundle) {
     }
     if(bundle->surface != NULL && bundle->surface != EGL_NO_SURFACE) {
         if (!eglDestroySurface_p(g_EglDisplay, bundle->surface)) {
-            LOGW("eglDestroySurface failed: %04x", eglGetError_p());
+            ;
         }
     }
     bundle->surface = EGL_NO_SURFACE;
     if(queuedSurface != NULL) {
-        LOGI("Switching to new native surface");
+        ;
         bundle->nativeSurface = queuedSurface;
         ANativeWindow_setBuffersGeometry(bundle->nativeSurface, 0, 0, bundle->format);
         bundle->surface = eglCreateWindowSurface_p(g_EglDisplay, bundle->config, bundle->nativeSurface, NULL);
         printf("GLBridgeDiag: created WINDOW surface=%p native=%p\n", bundle->surface, bundle->nativeSurface);
     }else{
-        LOGI("No new native surface, switching to 1x1 pbuffer");
+        ;
         bundle->nativeSurface = NULL;
         const EGLint pbuffer_attrs[] = {EGL_WIDTH, 1 , EGL_HEIGHT, 1, EGL_NONE};
         bundle->surface = eglCreatePbufferSurface_p(g_EglDisplay, bundle->config, pbuffer_attrs);
         printf("GLBridgeDiag: created PBUFFER surface=%p\n", bundle->surface);
     }
     if (bundle->surface == EGL_NO_SURFACE || bundle->surface == NULL) {
-        LOGE("Failed to create EGL surface: %04x", eglGetError_p());
+        ;
         printf("GLBridgeDiag: surface create failed err=0x%04x\n", eglGetError_p());
     }
 }
@@ -332,24 +326,22 @@ static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char
 
         EGLint makeCurrentErr = eglGetError_p();
         if (makeCurrentErr == EGL_BAD_SURFACE) {
-            LOGW("eglMakeCurrent failed with EGL_BAD_SURFACE (%s), recreating surface",
-                 reason == NULL ? "unknown" : reason);
+            ;
             gl_swap_surface(bundle);
             continue;
         }
         if (makeCurrentErr == EGL_CONTEXT_LOST || makeCurrentErr == EGL_BAD_CONTEXT) {
-            LOGW("eglMakeCurrent failed with context error (%04x, %s), recreating context",
-                 makeCurrentErr, reason == NULL ? "unknown" : reason);
+            ;
             if (!gl_recreate_context(bundle, reason)) {
                 return false;
             }
             gl_swap_surface(bundle);
             continue;
         }
-        LOGE("eglMakeCurrent failed (%s): %04x", reason == NULL ? "unknown" : reason, makeCurrentErr);
+        ;
         return false;
     }
-    LOGE("eglMakeCurrent recovery exhausted (%s)", reason == NULL ? "unknown" : reason);
+    ;
     return false;
 }
 
@@ -372,7 +364,7 @@ void gl_make_current(gl_render_window_t* bundle) {
     }
     pthread_mutex_unlock(&g_surface_mutex);
     if (hasSetMainWindow) {
-        LOGI("Main window bundle is now %p", pojav_environ->mainWindowBundle);
+        ;
     }
     if(bundle->surface == NULL) { //it likely will be on the first run
         gl_swap_surface(bundle);
@@ -425,19 +417,19 @@ void gl_swap_buffers() {
                 gl_queue_bridge_window_surface(currentBundle, "swap bad surface");
                 gl_swap_surface(currentBundle);
                 if (gl_make_current_with_recovery(currentBundle, "swap bad surface")) {
-                    LOGI("The window surface died, switched to fallback surface");
+                    ;
                 }
                 return;
             }
             if (swapErr == EGL_CONTEXT_LOST || swapErr == EGL_BAD_CONTEXT) {
-                LOGW("eglSwapBuffers context error: %04x", swapErr);
+                ;
                 if (gl_recreate_context(currentBundle, "swap context loss")) {
                     gl_swap_surface(currentBundle);
                     gl_make_current_with_recovery(currentBundle, "swap context loss");
                 }
                 return;
             }
-            LOGE("eglSwapBuffers failed: %04x", swapErr);
+            ;
             printf("GLBridgeDiag: eglSwapBuffers failed err=0x%04x surface=%p native=%p state=%d\n",
                    swapErr, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
             return;
@@ -456,7 +448,7 @@ void gl_setup_window() {
     bool updated = false;
     pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle != NULL) {
-        LOGI("Main window bundle is not NULL, changing state");
+        ;
         gl_render_window_t* mainBundle = (gl_render_window_t*)pojav_environ->mainWindowBundle;
         mainBundle->state = STATE_RENDERER_NEW_WINDOW;
         gl_replace_queued_surface_locked(mainBundle, pojav_environ->pojavWindow);
@@ -464,18 +456,18 @@ void gl_setup_window() {
     }
     pthread_mutex_unlock(&g_surface_mutex);
     if (updated) {
-        LOGI("Queued window surface for next swap");
+        ;
     }
 }
 
 void gl_swap_interval(int swapInterval) {
     if(pojav_environ->force_vsync) swapInterval = 1;
     if (g_EglDisplay == EGL_NO_DISPLAY) {
-        LOGW("Skip swap interval update: EGL display is not ready");
+        ;
         return;
     }
     if (eglSwapInterval_p == NULL) {
-        LOGW("Skip swap interval update: eglSwapInterval function is unavailable");
+        ;
         return;
     }
     eglSwapInterval_p(g_EglDisplay, swapInterval);
@@ -484,14 +476,14 @@ void gl_swap_interval(int swapInterval) {
 JNIEXPORT void JNICALL
 Java_org_lwjgl_opengl_PojavRendererInit_nativeInitGl4esInternals(JNIEnv *env, jclass clazz,
                                                             jobject function_provider) {
-    LOGI("GL4ES internals initializing...");
+    ;
     jclass funcProviderClass = (*env)->GetObjectClass(env, function_provider);
     jmethodID method_getFunctionAddress = (*env)->GetMethodID(env, funcProviderClass, "getFunctionAddress", "(Ljava/lang/CharSequence;)J");
 #define GETSYM(N) ((*env)->CallLongMethod(env, function_provider, method_getFunctionAddress, (*env)->NewStringUTF(env, N)));
 
     void (*set_getmainfbsize)(void (*new_getMainFBSize)(int* width, int* height)) = (void*)GETSYM("set_getmainfbsize");
     if(set_getmainfbsize != NULL) {
-        LOGI("GL4ES internals initialized dimension callback");
+        ;
         set_getmainfbsize(gl4esi_get_display_dimensions);
     }
 

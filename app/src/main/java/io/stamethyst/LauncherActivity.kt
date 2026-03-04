@@ -68,18 +68,14 @@ class LauncherActivity : AppCompatActivity() {
             }
         }
 
-        mainViewModel.handleIncomingIntent(this, intent) {
-            settingsViewModel.onShareCrashReport(this)
-        }
+        mainViewModel.handleIncomingIntent(this, intent)
         maybeImportModJarFromIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        mainViewModel.handleIncomingIntent(this, intent) {
-            settingsViewModel.onShareCrashReport(this)
-        }
+        mainViewModel.handleIncomingIntent(this, intent)
         maybeImportModJarFromIntent(intent)
     }
 
