@@ -33,8 +33,9 @@ Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
 
 ## Build
 ```bash
-./gradlew :app:assembleDebug
+./gradlew.bat :app:assembleRelease
 ```
+`assembleRelease` will produce a signed APK directly (using debug signing config).
 
 ## Debug Automation
 Use Gradle tasks so the workflow is the same on Windows/macOS/Linux.
