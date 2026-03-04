@@ -18,6 +18,8 @@
     <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you encounter missing materials/textures, consider enabling it. Pros: can continue fixing black blocks not covered by import-time patching. Cons: increases startup CPU/GPU overhead from managed-texture scans, and runtime Linear/Clamp fallback may make some textures look blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
     <string name="compat_force_linear_mipmap_filter_desc">When enabled, mipmap-dependent min filters are downgraded to Linear at runtime to avoid black blocks caused by incomplete mip chains in some mods. Example fix: characters turning into black blocks in the Ring of Fate mod.</string>
+    <string name="compat_non_renderable_fbo_format_compat_title">Non-renderable FBO format fallback</string>
+    <string name="compat_non_renderable_fbo_format_compat_desc">When enabled, FrameBuffer formats that are not color-renderable on GLES (Alpha/Intensity/LuminanceAlpha) are upgraded to RGBA8888 to prevent startup crashes such as \"frame buffer couldn\'t be constructed: incomplete attachment\". Disabling this may restore original mod behavior but can reintroduce startup crashes.</string>
     <string name="touch_mouse_mode_left">Left click</string>
     <string name="touch_mouse_mode_right">Right click</string>
     <string name="touch_mouse_mode_left_short">L</string>

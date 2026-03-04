@@ -17,7 +17,8 @@ class CompatibilityScreenViewModel : ViewModel() {
         val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
-        val forceLinearMipmapFilterEnabled: Boolean = true
+        val forceLinearMipmapFilterEnabled: Boolean = true,
+        val nonRenderableFboFormatCompatEnabled: Boolean = true
     )
 
     var uiState by mutableStateOf(UiState())
@@ -30,7 +31,8 @@ class CompatibilityScreenViewModel : ViewModel() {
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
-            forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
+            forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
+            nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host)
         )
     }
 
@@ -64,5 +66,13 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setForceLinearMipmapFilterEnabled(host, enabled)
         uiState = uiState.copy(forceLinearMipmapFilterEnabled = enabled)
+    }
+
+    fun onNonRenderableFboFormatCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setNonRenderableFboFormatCompatEnabled(host, enabled)
+        uiState = uiState.copy(nonRenderableFboFormatCompatEnabled = enabled)
     }
 }

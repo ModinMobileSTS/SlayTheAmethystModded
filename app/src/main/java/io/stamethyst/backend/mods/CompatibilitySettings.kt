@@ -43,4 +43,14 @@ object CompatibilitySettings {
     fun setForceLinearMipmapFilterEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setForceLinearMipmapFilterEnabled(context, enabled)
     }
+
+    @JvmStatic
+    fun isNonRenderableFboFormatCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isNonRenderableFboFormatCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setNonRenderableFboFormatCompatEnabled(context, enabled)
+    }
 }

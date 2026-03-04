@@ -33,6 +33,8 @@ object LauncherConfig {
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
+    private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
+        "compat_non_renderable_fbo_format_compat"
     private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -198,6 +200,16 @@ object LauncherConfig {
     fun setForceLinearMipmapFilterEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER, enabled)
+        }
+    }
+
+    fun isNonRenderableFboFormatCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT, true)
+    }
+
+    fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT, enabled)
         }
     }
 

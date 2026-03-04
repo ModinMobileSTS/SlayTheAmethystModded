@@ -132,6 +132,10 @@ object StsLaunchSpec {
             "-Damethyst.gdx.force_linear_mipmap_filter=" +
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )
+        args.add(
+            "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
+                if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
+        )
         args.add("-Damethyst.bridge.delegate=com.evacipated.cardcrawl.modthespire.Loader")
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")

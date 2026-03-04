@@ -54,6 +54,9 @@ fun LauncherCompatibilityScreen(
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
+        onNonRenderableFboFormatCompatToggled = { enabled ->
+            viewModel.onNonRenderableFboFormatCompatToggled(context, enabled)
+        },
     )
 }
 
@@ -67,7 +70,8 @@ private fun LauncherCompatibilityScreenPreview() {
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
-            forceLinearMipmapFilterEnabled = true
+            forceLinearMipmapFilterEnabled = true,
+            nonRenderableFboFormatCompatEnabled = true
         )
     )
 }
@@ -82,6 +86,7 @@ private fun LauncherCompatibilityScreenContent(
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
+    onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -143,6 +148,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.forceLinearMipmapFilterEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onForceLinearMipmapFilterToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_non_renderable_fbo_format_compat_title),
+                description = stringResource(R.string.compat_non_renderable_fbo_format_compat_desc),
+                checked = uiState.nonRenderableFboFormatCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onNonRenderableFboFormatCompatToggled
             )
         }
     }

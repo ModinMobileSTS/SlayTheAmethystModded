@@ -52,6 +52,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static Map<Application, Array<GLFrameBuffer>> buffers = new HashMap<Application, Array<GLFrameBuffer>>();
 
 	private final static int GL_DEPTH24_STENCIL8_OES = 0x88F0;
+	private final static String NON_RENDERABLE_FBO_FORMAT_COMPAT_PROP =
+		"amethyst.gdx.non_renderable_fbo_format_compat";
 	private static boolean fboFallbackLogged = false;
 	private static boolean nonRenderableFormatFallbackLogged = false;
 
@@ -133,6 +135,9 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	private static Pixmap.Format toCompatibleColorFormat (Pixmap.Format requestedFormat) {
 		Pixmap.Format safeFormat = requestedFormat == null ? Pixmap.Format.RGBA8888 : requestedFormat;
+		if (!isNonRenderableFboFormatCompatEnabled()) {
+			return safeFormat;
+		}
 		if (safeFormat == Pixmap.Format.Alpha ||
 			safeFormat == Pixmap.Format.Intensity ||
 			safeFormat == Pixmap.Format.LuminanceAlpha) {
@@ -144,6 +149,24 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			return Pixmap.Format.RGBA8888;
 		}
 		return safeFormat;
+	}
+
+	private static boolean isNonRenderableFboFormatCompatEnabled () {
+		return readBooleanSystemProperty(NON_RENDERABLE_FBO_FORMAT_COMPAT_PROP, true);
+	}
+
+	private static boolean readBooleanSystemProperty (String key, boolean defaultValue) {
+		String configured = System.getProperty(key);
+		if (configured == null) return defaultValue;
+		configured = configured.trim();
+		if (configured.length() == 0) return defaultValue;
+		if ("false".equalsIgnoreCase(configured) || "0".equals(configured) || "off".equalsIgnoreCase(configured)) {
+			return false;
+		}
+		if ("true".equalsIgnoreCase(configured) || "1".equals(configured) || "on".equalsIgnoreCase(configured)) {
+			return true;
+		}
+		return defaultValue;
 	}
 
 	private void build () {
