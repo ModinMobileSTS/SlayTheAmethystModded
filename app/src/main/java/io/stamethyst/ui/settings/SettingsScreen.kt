@@ -1,6 +1,7 @@
 package io.stamethyst.ui.settings
 
 import android.content.Intent
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,13 +42,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -157,7 +162,7 @@ private fun LauncherSettingsScreenContent(
             TopAppBar(
                 title = { Text("设置") },
                 navigationIcon = {
-                    IconButton(onClick = onGoBack) {
+                    HapticIconButton(onClick = onGoBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
                             contentDescription = "返回",
@@ -329,11 +334,28 @@ private fun SettingsRenderSection(
     onTargetFpsSelected: (Int) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
 ) {
+    val view = LocalView.current
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
     var heapSliderValue by remember(uiState.selectedJvmHeapMaxMb) {
         mutableFloatStateOf(uiState.selectedJvmHeapMaxMb.toFloat())
+    }
+    var lastRenderScaleStep by remember(uiState.selectedRenderScale) {
+        mutableIntStateOf(renderScaleToStep(uiState.selectedRenderScale))
+    }
+    var lastHeapStep by remember(
+        uiState.selectedJvmHeapMaxMb,
+        uiState.jvmHeapMinMb,
+        uiState.jvmHeapStepMb,
+    ) {
+        mutableIntStateOf(
+            heapSliderToStep(
+                value = uiState.selectedJvmHeapMaxMb.toFloat(),
+                min = uiState.jvmHeapMinMb,
+                step = uiState.jvmHeapStepMb,
+            )
+        )
     }
 
     Text(text = "内部渲染比例", style = MaterialTheme.typography.bodyMedium)
@@ -343,7 +365,14 @@ private fun SettingsRenderSection(
     )
     Slider(
         value = renderScaleSliderValue,
-        onValueChange = { value -> renderScaleSliderValue = value },
+        onValueChange = { value ->
+            renderScaleSliderValue = value
+            val step = renderScaleToStep(value)
+            if (step != lastRenderScaleStep) {
+                lastRenderScaleStep = step
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        },
         onValueChangeFinished = { onRenderScaleSelected(renderScaleSliderValue) },
         valueRange = RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE,
         steps = ((RenderScaleService.MAX_RENDER_SCALE - RenderScaleService.MIN_RENDER_SCALE) / 0.01f)
@@ -369,7 +398,18 @@ private fun SettingsRenderSection(
     )
     Slider(
         value = heapSliderValue,
-        onValueChange = { value -> heapSliderValue = value },
+        onValueChange = { value ->
+            heapSliderValue = value
+            val step = heapSliderToStep(
+                value = value,
+                min = uiState.jvmHeapMinMb,
+                step = uiState.jvmHeapStepMb,
+            )
+            if (step != lastHeapStep) {
+                lastHeapStep = step
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        },
         onValueChangeFinished = { onJvmHeapMaxSelected(heapSliderValue.roundToInt()) },
         valueRange = uiState.jvmHeapMinMb.toFloat()..uiState.jvmHeapMaxMb.toFloat(),
         steps = ((uiState.jvmHeapMaxMb - uiState.jvmHeapMinMb) / uiState.jvmHeapStepMb - 1)
@@ -381,6 +421,15 @@ private fun SettingsRenderSection(
         text = "如果你不知道你在做什么，请勿修改此项。如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
         style = MaterialTheme.typography.bodySmall
     )
+}
+
+private fun renderScaleToStep(value: Float): Int {
+    return ((value - RenderScaleService.MIN_RENDER_SCALE) / 0.01f).roundToInt()
+}
+
+private fun heapSliderToStep(value: Float, min: Int, step: Int): Int {
+    val safeStep = step.coerceAtLeast(1)
+    return ((value - min.toFloat()) / safeStep.toFloat()).roundToInt()
 }
 
 @Composable
@@ -457,6 +506,7 @@ private fun SwitchSettingRow(
     description: String,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val view = LocalView.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -464,7 +514,10 @@ private fun SwitchSettingRow(
         Switch(
             checked = checked,
             enabled = enabled,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = { changed ->
+                performTapHapticFeedback(view)
+                onCheckedChange(changed)
+            }
         )
         Spacer(modifier = Modifier.width(10.dp))
         Text(text = if (checked) enabledText else disabledText)
@@ -509,7 +562,7 @@ private fun SettingsActionListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(
+            .hapticClickable(
                 enabled = enabled,
                 onClick = onClick
             )
@@ -587,7 +640,7 @@ private fun SettingsStatusSection(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showStatusDialog = false }) {
+                HapticTextButton(onClick = { showStatusDialog = false }) {
                     Text("关闭")
                 }
             }
@@ -607,7 +660,7 @@ private fun SettingsStatusSection(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showLogDialog = false }) {
+                HapticTextButton(onClick = { showLogDialog = false }) {
                     Text("关闭")
                 }
             }
@@ -689,7 +742,7 @@ private fun TargetFpsOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(
+            .hapticToggleable(
                 value = selected,
                 enabled = enabled,
                 onValueChange = { onSelect(fps) }
@@ -717,7 +770,7 @@ private fun LauncherIconOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(
+            .hapticToggleable(
                 value = selected,
                 enabled = enabled,
                 onValueChange = { onSelect(icon) }
@@ -739,4 +792,72 @@ private fun LauncherIconOptionRow(
             )
         }
     }
+}
+
+@Composable
+private fun HapticIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val view = LocalView.current
+    IconButton(
+        onClick = {
+            performTapHapticFeedback(view)
+            onClick()
+        },
+        enabled = enabled,
+        content = content
+    )
+}
+
+@Composable
+private fun HapticTextButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val view = LocalView.current
+    TextButton(
+        onClick = {
+            performTapHapticFeedback(view)
+            onClick()
+        },
+        enabled = enabled,
+        content = content
+    )
+}
+
+private fun Modifier.hapticClickable(
+    enabled: Boolean,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val view = LocalView.current
+    clickable(
+        enabled = enabled,
+        onClick = {
+            performTapHapticFeedback(view)
+            onClick()
+        }
+    )
+}
+
+private fun Modifier.hapticToggleable(
+    value: Boolean,
+    enabled: Boolean,
+    onValueChange: (Boolean) -> Unit,
+): Modifier = composed {
+    val view = LocalView.current
+    toggleable(
+        value = value,
+        enabled = enabled,
+        onValueChange = { changed ->
+            performTapHapticFeedback(view)
+            onValueChange(changed)
+        }
+    )
+}
+
+private fun performTapHapticFeedback(view: android.view.View) {
+    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
 }
