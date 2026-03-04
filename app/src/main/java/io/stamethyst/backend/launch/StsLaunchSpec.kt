@@ -44,14 +44,6 @@ object StsLaunchSpec {
         val is64BitRuntime = is64BitRuntime(javaHome)
 
         val args = ArrayList<String>()
-        try {
-            val logSession = JvmLogRotationManager.prepareLogSession(context)
-            val configUri = logSession.configFile.toURI().toString()
-            args.add("-Dlog4j.configurationFile=$configUri")
-            args.add("-Dlog4j2.configurationFile=$configUri")
-            args.add("-Damethyst.log4j2.file=${logSession.logFile.absolutePath}")
-        } catch (_: Throwable) {
-        }
         // Performance-first by default, with a compatibility fallback file switch.
         // Create files/sts/compat_xint.flag to force interpreted mode on unstable devices.
         if (forceInterpreterFlag.exists()) {

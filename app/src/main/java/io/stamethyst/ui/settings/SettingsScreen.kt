@@ -1,5 +1,7 @@
 package io.stamethyst.ui.settings
 
+import android.content.ClipData
+import android.content.Intent
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,7 +83,7 @@ fun LauncherSettingsScreen(
         onImportMods = viewModel::onImportMods,
         onImportSaves = viewModel::onImportSaves,
         onExportSaves = viewModel::onExportSaves,
-        onExportLogs = viewModel::onExportLogs,
+        onExportLogs = { viewModel.onExportLogs(activity) },
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
@@ -301,7 +303,7 @@ private fun SettingsImportSection(
             onClick = onExportSaves
         )
         SettingsActionListItem(
-            title = "导出日志",
+            title = "分享日志",
             enabled = !busy,
             onClick = onExportLogs
         )
@@ -609,9 +611,6 @@ fun SettingsEffectsHandler(
     val exportSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onSavesExportPicked(activity, uri)
     }
-    val exportLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        viewModel.onLogsExportPicked(activity, uri)
-    }
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
@@ -638,8 +637,14 @@ fun SettingsEffectsHandler(
                     exportSavesLauncher.launch(effect.fileName)
                 }
 
-                is SettingsScreenViewModel.Effect.OpenExportLogsPicker -> {
-                    exportLogsLauncher.launch(effect.fileName)
+                is SettingsScreenViewModel.Effect.ShareLatestLog -> {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, effect.uri)
+                        clipData = ClipData.newRawUri("latest.log", effect.uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
                 }
 
                 SettingsScreenViewModel.Effect.OpenCompatibility -> {

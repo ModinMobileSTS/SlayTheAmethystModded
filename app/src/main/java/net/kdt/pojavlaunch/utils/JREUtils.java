@@ -222,6 +222,8 @@ public final class JREUtils {
 
     public static native void setupExitMethod(Context context);
 
+    public static native boolean redirectStdioToFile(String filePath, boolean append);
+
     public static native int[] renderAWTScreenFrame();
 
     static {

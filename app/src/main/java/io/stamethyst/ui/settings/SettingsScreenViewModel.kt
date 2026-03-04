@@ -11,7 +11,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
@@ -22,6 +21,7 @@ import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.IOException
 import java.util.ArrayList
+import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -40,7 +40,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
-        data class OpenExportLogsPicker(val fileName: String) : Effect
+        data class ShareLatestLog(val uri: Uri) : Effect
         data object OpenCompatibility : Effect
     }
 
@@ -225,11 +225,25 @@ class SettingsScreenViewModel : ViewModel() {
         _effects.tryEmit(Effect.OpenExportSavesPicker(SettingsFileService.buildSaveExportFileName()))
     }
 
-    fun onExportLogs() {
+    fun onExportLogs(host: Activity) {
         if (uiState.busy) {
             return
         }
-        _effects.tryEmit(Effect.OpenExportLogsPicker(SettingsFileService.buildJvmLogExportFileName()))
+        setBusy(true, "Preparing latest.log...")
+        executor.execute {
+            try {
+                val shareUri = SettingsFileService.resolveLatestLogShareUri(host)
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(Effect.ShareLatestLog(shareUri))
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    Toast.makeText(host, "Log share failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus(host)
+                }
+            }
+        }
     }
 
     fun onTargetFpsSelected(host: Activity, targetFps: Int) {
@@ -378,10 +392,23 @@ class SettingsScreenViewModel : ViewModel() {
             var imported = 0
             val errors = ArrayList<String>()
             val blockedComponents = LinkedHashSet<String>()
+            val patchedMods = LinkedHashMap<String, ModImportResult>()
             for (uri in uris) {
                 try {
-                    SettingsFileService.importModJar(host, uri)
+                    val result = SettingsFileService.importModJar(host, uri)
                     imported++
+                    if (result.wasAtlasPatched) {
+                        val existing = patchedMods[result.modId]
+                        if (existing == null) {
+                            patchedMods[result.modId] = result
+                        } else {
+                            patchedMods[result.modId] = existing.copy(
+                                modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                                patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
+                                patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
+                            )
+                        }
+                    }
                 } catch (error: Throwable) {
                     if (error is SettingsFileService.ReservedModImportException) {
                         blockedComponents.add(error.blockedComponent)
@@ -397,6 +424,7 @@ class SettingsScreenViewModel : ViewModel() {
             val blockedCount = blockedComponents.size
             val firstError = if (failedCount > 0) errors[0] else null
             val blockedList = blockedComponents.toList()
+            val patchedResults = patchedMods.values.toList()
             host.runOnUiThread {
                 if (blockedList.isNotEmpty()) {
                     AlertDialog.Builder(host)
@@ -404,6 +432,9 @@ class SettingsScreenViewModel : ViewModel() {
                         .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
                         .setPositiveButton(android.R.string.ok, null)
                         .show()
+                }
+                if (patchedResults.isNotEmpty()) {
+                    showAtlasPatchSummaryDialog(host, patchedResults)
                 }
                 when {
                     importedCount > 0 && failedCount == 0 -> {
@@ -431,6 +462,14 @@ class SettingsScreenViewModel : ViewModel() {
 //                todo host.notifyMainDataChanged()
             }
         }
+    }
+
+    private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        AlertDialog.Builder(host)
+            .setTitle("Atlas 已离线修补")
+            .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     fun onSavesArchivePicked(host: Activity, uri: Uri?) {
@@ -509,27 +548,6 @@ class SettingsScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     Toast.makeText(host, "Save export failed: ${error.message}", Toast.LENGTH_LONG).show()
-                    refreshStatus(host)
-                }
-            }
-        }
-    }
-
-    fun onLogsExportPicked(host: Activity, uri: Uri?) {
-        if (uri == null) {
-            return
-        }
-        setBusy(true, "Exporting JVM logs...")
-        executor.execute {
-            try {
-                val exportedCount = SettingsFileService.exportJvmLogsBundle(host, uri)
-                host.runOnUiThread {
-                    Toast.makeText(host, "JVM logs exported ($exportedCount files)", Toast.LENGTH_LONG).show()
-                    refreshStatus(host)
-                }
-            } catch (error: Throwable) {
-                host.runOnUiThread {
-                    Toast.makeText(host, "Log export failed: ${error.message}", Toast.LENGTH_LONG).show()
                     refreshStatus(host)
                 }
             }
@@ -649,17 +667,13 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun buildLogPathText(host: Activity): String {
-        val logs = JvmLogRotationManager.listLogFiles(host)
-        val logsDir = RuntimePaths.jvmLogsDir(host).absolutePath
+        val logFile = RuntimePaths.latestLog(host)
         return buildString {
-            append("JVM logs dir: ").append(logsDir)
-            append("\nSlots: ").append(logs.size).append('/').append(JvmLogRotationManager.MAX_LOG_SLOTS)
-            if (logs.isEmpty()) {
-                append("\n(no logs yet)")
+            append("latest.log: ").append(logFile.absolutePath)
+            if (logFile.isFile) {
+                append("\nSize: ").append(logFile.length()).append(" bytes")
             } else {
-                for (log in logs) {
-                    append("\n- ").append(log.name)
-                }
+                append("\n(no logs yet)")
             }
         }
     }

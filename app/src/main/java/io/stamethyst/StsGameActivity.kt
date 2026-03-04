@@ -172,7 +172,7 @@ class StsGameActivity : AppCompatActivity() {
             onDismissed = { updateFloatingMouseVisibility() },
             onRequestEarlyDismiss = {
                 bootOverlayController.setEarlyDismissRequestTimestamp(
-                    renderSurfaceManager.let { 0L } // Will be set properly below
+                    renderSurfaceManager.getLastTextureFrameTimestampNs()
                 )
             },
             onSignalMainMenuReady = { message -> bootOverlayController.signalMainMenuReady(message) },
@@ -192,6 +192,7 @@ class StsGameActivity : AppCompatActivity() {
                     applyForegroundWindowState()
                     updateFloatingMouseVisibility()
                 }
+                bootOverlayController.requestEarlyDismiss()
             },
             onSurfaceSizeSync = {
                 renderSurfaceManager.updateWindowSize()

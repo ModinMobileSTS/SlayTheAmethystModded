@@ -139,19 +139,12 @@ val gdxVideoNativeAssetFiles = listOf(
     rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so")
 )
 val supportedLaunchModes = setOf("mts_basemod", "vanilla")
-val stsLogFiles = listOf(
-    "latestlog.txt",
-    "jvm_output.log",
-    "boot_bridge_events.log",
+val stsRequiredLogFiles = listOf(
+    "latest.log",
+)
+val stsOptionalDebugFiles = listOf(
+    ".last_exit_marker",
     "enabled_mods.txt",
-    "last_crash_report.txt",
-    "last_exit_info.txt",
-    "last_exit_trace.txt",
-    "last_signal_stack.txt",
-    "logcat_snapshot.txt",
-    "logcat_crash_snapshot.txt",
-    "logcat_events_snapshot.txt",
-    "crash_highlights.txt",
 )
 
 val launchMode: String = readGradleProperty("launchMode", "mts_basemod")
@@ -246,7 +239,7 @@ val stsStop by tasks.registering(Exec::class) {
 
 val stsPullLogs by tasks.registering {
     group = "debug"
-    description = "Export SlayTheAmethyst runtime logs from device to a local directory."
+    description = "Export SlayTheAmethyst runtime logs (latest.log + optional debug artifacts) from device."
 
     data class PatternSpec(
         val globPattern: String,
@@ -295,6 +288,15 @@ val stsPullLogs by tasks.registering {
             scanMessage = "Scanning STS pid snapshots (logcat_pid_*_snapshot.txt)",
             emptyMessage = "No logcat_pid_*_snapshot.txt found on device.",
             itemLabel = "pid snapshot"
+        ),
+        PatternSpec(
+            globPattern = "files/sts/latestlog.txt files/sts/jvm_output.log files/sts/boot_bridge_events.log " +
+                "files/sts/last_crash_report.txt files/sts/last_exit_info.txt files/sts/last_exit_trace.txt " +
+                "files/sts/last_signal_stack.txt files/sts/logcat_snapshot.txt files/sts/logcat_crash_snapshot.txt " +
+                "files/sts/logcat_events_snapshot.txt files/sts/crash_highlights.txt",
+            scanMessage = "Scanning legacy STS log artifacts",
+            emptyMessage = "No legacy STS log artifacts found.",
+            itemLabel = "legacy artifact"
         )
     )
     val logcatSpecs = listOf(
@@ -331,10 +333,17 @@ val stsPullLogs by tasks.registering {
             )
         }
 
-        for (name in stsLogFiles) {
-            logger.lifecycle("Pulling STS log: $name")
+        for (name in stsRequiredLogFiles) {
+            logger.lifecycle("Pulling required STS log: $name")
             if (!pullFile("files/sts/$name", name)) {
                 missing.add(name)
+            }
+        }
+
+        for (name in stsOptionalDebugFiles) {
+            logger.lifecycle("Pulling optional STS file: $name")
+            if (!pullFile("files/sts/$name", name)) {
+                logger.lifecycle("Optional file missing: $name")
             }
         }
 

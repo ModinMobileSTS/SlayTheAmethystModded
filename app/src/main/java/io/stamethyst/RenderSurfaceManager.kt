@@ -50,6 +50,8 @@ class RenderSurfaceManager(
     @Volatile
     private var lastTextureFrameTimestampNs = 0L
 
+    fun getLastTextureFrameTimestampNs(): Long = lastTextureFrameTimestampNs
+
     fun requestRenderViewFocus() {
         if (::renderView.isInitialized) {
             renderView.requestFocus()

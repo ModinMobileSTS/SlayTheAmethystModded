@@ -4,8 +4,7 @@ import android.content.Context
 import java.io.File
 
 object RuntimePaths {
-    private const val JVM_LOG_DIR_NAME = "jvm_logs"
-    private const val LOG4J2_JVM_CONFIG_FILE_NAME = "log4j2-jvm.xml"
+    private const val LATEST_LOG_FILE_NAME = "latest.log"
 
     @JvmStatic
     fun stsRoot(context: Context): File = File(context.filesDir, "sts")
@@ -59,10 +58,7 @@ object RuntimePaths {
     fun lastExitMarker(context: Context): File = File(stsRoot(context), ".last_exit_marker")
 
     @JvmStatic
-    fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)
-
-    @JvmStatic
-    fun log4j2JvmConfigFile(context: Context): File = File(stsRoot(context), LOG4J2_JVM_CONFIG_FILE_NAME)
+    fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
@@ -108,7 +104,6 @@ object RuntimePaths {
     fun ensureBaseDirs(context: Context) {
         stsRoot(context).mkdirs()
         modsDir(context).mkdirs()
-        jvmLogsDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()

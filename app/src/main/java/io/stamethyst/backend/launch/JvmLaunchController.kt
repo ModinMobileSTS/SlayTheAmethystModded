@@ -9,6 +9,7 @@ import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.ArrayList
 
 /**
@@ -30,6 +31,9 @@ class JvmLaunchController(
     companion object {
         const val CRASH_CODE_BOOT_FAILURE = -2
         const val CRASH_CODE_OUT_OF_MEMORY = -8
+        private const val LATEST_LOG_MAX_BYTES = 64L * 1024L * 1024L
+        private const val LATEST_LOG_KEEP_BYTES = 8L * 1024L * 1024L
+        private const val LATEST_LOG_MONITOR_INTERVAL_MS = 12_000L
     }
 
     @Volatile
@@ -42,6 +46,12 @@ class JvmLaunchController(
 
     @Volatile
     private var jvmLaunchThread: Thread? = null
+
+    @Volatile
+    private var latestLogCapMonitorThread: Thread? = null
+
+    @Volatile
+    private var latestLogCapMonitorRunning = false
 
     fun start(
         javaHome: File,
@@ -69,6 +79,12 @@ class JvmLaunchController(
                     ?: throw IllegalStateException("No Java home found in ${runtimeRoot.absolutePath}")
 
                 RuntimePaths.ensureBaseDirs(activity)
+                val latestLogFile = RuntimePaths.latestLog(activity)
+                try {
+                    JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)
+                } catch (_: Throwable) {
+                }
+                startLatestLogCapMonitor(latestLogFile)
 
                 if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
                     ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
@@ -119,6 +135,7 @@ class JvmLaunchController(
                 onLaunchFailed(t)
             } finally {
                 runtimeLifecycleReady = false
+                stopLatestLogCapMonitor()
                 jvmLaunchThread = null
             }
         }, "STS-JVM-Thread")
@@ -135,6 +152,61 @@ class JvmLaunchController(
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()
+        stopLatestLogCapMonitor()
         runtimeLifecycleReady = false
+    }
+
+    private fun startLatestLogCapMonitor(logFile: File) {
+        stopLatestLogCapMonitor()
+        latestLogCapMonitorRunning = true
+        val monitorThread = Thread({
+            while (latestLogCapMonitorRunning && !Thread.currentThread().isInterrupted) {
+                try {
+                    enforceLatestLogCap(logFile)
+                } catch (_: Throwable) {
+                }
+                try {
+                    Thread.sleep(LATEST_LOG_MONITOR_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, "STS-LatestLogCap")
+        monitorThread.isDaemon = true
+        latestLogCapMonitorThread = monitorThread
+        monitorThread.start()
+    }
+
+    private fun stopLatestLogCapMonitor() {
+        latestLogCapMonitorRunning = false
+        val monitorThread = latestLogCapMonitorThread
+        latestLogCapMonitorThread = null
+        monitorThread?.interrupt()
+    }
+
+    private fun enforceLatestLogCap(logFile: File) {
+        if (!logFile.isFile) {
+            return
+        }
+        val length = logFile.length()
+        if (length <= LATEST_LOG_MAX_BYTES) {
+            return
+        }
+
+        val keepBytes = minOf(LATEST_LOG_KEEP_BYTES, length).toInt()
+        RandomAccessFile(logFile, "rw").use { raf ->
+            if (keepBytes <= 0) {
+                raf.setLength(0)
+                return
+            }
+            val startOffset = length - keepBytes
+            raf.seek(startOffset)
+            val buffer = ByteArray(keepBytes)
+            raf.readFully(buffer)
+            raf.setLength(0)
+            raf.seek(0)
+            raf.write(buffer)
+            raf.fd.sync()
+        }
     }
 }

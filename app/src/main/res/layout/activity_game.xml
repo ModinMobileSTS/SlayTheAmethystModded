@@ -11,51 +11,10 @@
         android:layout_height="match_parent"
         android:background="#000000" />
 
-    <LinearLayout
+    <androidx.compose.ui.platform.ComposeView
         android:id="@+id/bootOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CC000000"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp">
-
-        <TextView
-            android:id="@+id/bootOverlayTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Loading mods..."
-            android:textColor="#FFFFFFFF"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <ProgressBar
-            android:id="@+id/bootOverlayProgressBar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:max="100"
-            android:progress="0" />
-
-        <TextView
-            android:id="@+id/bootOverlayStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:gravity="center_horizontal"
-            android:text="Starting JVM..."
-            android:textColor="#FFFFFFFF"
-            android:textSize="14sp" />
-
-        <Button
-            android:id="@+id/bootOverlayDismissButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:layout_marginTop="10dp"
-            android:text="关闭遮幕"
-            android:visibility="gone" />
-    </LinearLayout>
+        android:background="#CC000000" />
 
 </FrameLayout>

@@ -9,7 +9,8 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
-import io.stamethyst.backend.launch.JvmLogRotationManager
+import androidx.core.content.FileProvider
+import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -22,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.ArrayList
 import java.util.Date
+import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
@@ -32,6 +34,16 @@ internal data class SaveImportResult(
     val importedFiles: Int,
     val backupLabel: String?
 )
+
+internal data class ModImportResult(
+    val modId: String,
+    val modName: String,
+    val patchedAtlasEntries: Int,
+    val patchedFilterLines: Int
+) {
+    val wasAtlasPatched: Boolean
+        get() = patchedFilterLines > 0
+}
 
 private data class SaveArchiveScanResult(
     val importableFiles: Int,
@@ -78,36 +90,13 @@ internal object SettingsFileService {
         return "sts-saves-export-${formatter.format(Date())}.zip"
     }
 
-    fun buildJvmLogExportFileName(): String {
-        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
-        return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
-    }
-
     @Throws(IOException::class)
-    fun exportJvmLogsBundle(host: Activity, uri: Uri): Int {
-        val logs = JvmLogRotationManager.listLogFiles(host)
-        host.contentResolver.openOutputStream(uri).use { output ->
-            if (output == null) {
-                throw IOException("Unable to open destination file")
-            }
-            ZipOutputStream(output).use { zipOutput ->
-                if (logs.isEmpty()) {
-                    val entry = ZipEntry("sts/jvm_logs/README.txt")
-                    zipOutput.putNextEntry(entry)
-                    val message = "No JVM logs found.\n" +
-                        "Expected directory: ${RuntimePaths.jvmLogsDir(host).absolutePath}\n"
-                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
-                    zipOutput.closeEntry()
-                    return 0
-                }
-                var exportedCount = 0
-                for (logFile in logs) {
-                    writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
-                    exportedCount++
-                }
-                return exportedCount
-            }
+    fun resolveLatestLogShareUri(host: Activity): Uri {
+        val logFile = RuntimePaths.latestLog(host)
+        if (!logFile.isFile) {
+            throw IOException("No log file found: ${logFile.absolutePath}")
         }
+        return FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", logFile)
     }
 
     @Throws(IOException::class)
@@ -160,7 +149,7 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun importModJar(host: Activity, uri: Uri): String {
+    fun importModJar(host: Activity, uri: Uri): ModImportResult {
         val modsDir = RuntimePaths.modsDir(host)
         if (!modsDir.exists() && !modsDir.mkdirs()) {
             throw IOException("Failed to create mods directory")
@@ -188,9 +177,16 @@ internal object SettingsFileService {
                 throw ReservedModImportException(blockedComponent)
             }
 
+            val patchResult = ModAtlasFilterCompatPatcher.patchMipMapFiltersInPlace(tempFile)
             val targetFile = ModManager.resolveStorageFileForModId(host, modId)
             moveFileReplacing(tempFile, targetFile)
-            return modId
+            val modName = manifest.name.trim().ifBlank { modId }
+            return ModImportResult(
+                modId = modId,
+                modName = modName,
+                patchedAtlasEntries = patchResult.patchedAtlasEntries,
+                patchedFilterLines = patchResult.patchedFilterLines
+            )
         } finally {
             if (tempFile.exists()) {
                 tempFile.delete()
@@ -244,6 +240,48 @@ internal object SettingsFileService {
             append("\n")
             append("BaseMod、StSLib、ModTheSpire 已内置并由启动器管理，请不要手动导入。")
         }
+    }
+
+    fun buildAtlasPatchImportSummaryMessage(patchedResults: Collection<ModImportResult>): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasAtlasPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
+                    patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return "本次导入没有发现需要离线修补的 atlas。"
+        }
+
+        return buildString {
+            append("以下模组在导入时已离线修补 atlas 过滤设置：\n")
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(result.modName.ifBlank { result.modId })
+                append("（modid: ")
+                append(result.modId)
+                append("）")
+                append('\n')
+                append("  已修补 atlas: ")
+                append(result.patchedAtlasEntries)
+                append("，替换 filter 行: ")
+                append(result.patchedFilterLines)
+                append('\n')
+            }
+            append('\n')
+            append("修补规则：将包含 mipmap 的 filter 行改为 Linear,Linear。")
+        }.trimEnd()
     }
 
     @Throws(IOException::class)
