@@ -9,10 +9,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -140,7 +138,8 @@ class BootOverlayController(
     private var parsedJvmLogRemainder = ""
     private var bootLogStage = BootLogStage.NONE
     private var surfaceViewLateDismissScheduled = false
-    private val defaultDismissButtonText = text(R.string.boot_overlay_button_close)
+    @Volatile
+    private var manualEnterGameReady = false
     private val jvmLogPlaceholderText = text(R.string.boot_overlay_logs_placeholder)
     private val surfaceViewLateDismissRunnable = Runnable {
         surfaceViewLateDismissScheduled = false
@@ -158,9 +157,7 @@ class BootOverlayController(
         BootOverlayUiState(
             progress = 0,
             statusText = text(R.string.boot_overlay_status_starting_jvm),
-            showDismissButton = false,
-            dismissButtonEnabled = false,
-            dismissButtonText = defaultDismissButtonText,
+            enterGameReady = false,
             jvmLogText = jvmLogPlaceholderText
         )
     )
@@ -205,12 +202,6 @@ class BootOverlayController(
             )
         }
 
-        overlayUiState = overlayUiState.copy(
-            showDismissButton = manualDismissBootOverlay,
-            dismissButtonEnabled = manualDismissBootOverlay,
-            dismissButtonText = defaultDismissButtonText
-        )
-
         bootOverlay?.visibility = View.VISIBLE
 
         if (!manualDismissBootOverlay) {
@@ -234,6 +225,8 @@ class BootOverlayController(
         parsedJvmLogRemainder = ""
         bootLogStage = BootLogStage.NONE
         surfaceViewLateDismissScheduled = false
+        manualEnterGameReady = false
+        overlayUiState = overlayUiState.copy(enterGameReady = false)
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
         scheduleJvmLogPolling(initial = true)
 
@@ -316,6 +309,15 @@ class BootOverlayController(
         )
 
         if (manualDismissBootOverlay) {
+            if (useTextureViewSurface) {
+                onRequestEarlyDismiss()
+            } else {
+                updateProgress(
+                    bootOverlayProgress.coerceAtLeast(99),
+                    text(R.string.boot_overlay_status_game_frame_ready)
+                )
+                markManualEnterGameReady()
+            }
             return
         }
         if (useTextureViewSurface) {
@@ -338,7 +340,6 @@ class BootOverlayController(
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
 
-        overlayUiState = overlayUiState.copy(showDismissButton = false)
         bootOverlay?.visibility = View.GONE
 
         onDismissed()
@@ -359,8 +360,24 @@ class BootOverlayController(
                     bootOverlayProgress.coerceAtLeast(99),
                     text(R.string.boot_overlay_status_game_frame_ready)
                 )
-                dismiss()
+                if (manualDismissBootOverlay) {
+                    markManualEnterGameReady()
+                } else {
+                    dismiss()
+                }
             }
+        }
+    }
+
+    private fun markManualEnterGameReady() {
+        if (!manualDismissBootOverlay || manualEnterGameReady) {
+            return
+        }
+        manualEnterGameReady = true
+        activity.runOnUiThread {
+            if (bootOverlayDismissed || bootOverlay == null) return@runOnUiThread
+            if (overlayUiState.enterGameReady) return@runOnUiThread
+            overlayUiState = overlayUiState.copy(enterGameReady = true)
         }
     }
 
@@ -582,9 +599,7 @@ class BootOverlayController(
 private data class BootOverlayUiState(
     val progress: Int,
     val statusText: String,
-    val showDismissButton: Boolean,
-    val dismissButtonEnabled: Boolean,
-    val dismissButtonText: String,
+    val enterGameReady: Boolean,
     val jvmLogText: String
 )
 
@@ -617,11 +632,14 @@ private fun BootOverlayPanel(
             .fillMaxSize()
             .background(Color(0xCC000000))
             .then(consumeBackgroundTapModifier)
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
+            .padding(24.dp)
     ) {
+        val contentBottomPadding = if (manualDismissBootOverlay) 72.dp else 0.dp
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center)
+                .padding(bottom = contentBottomPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -675,20 +693,19 @@ private fun BootOverlayPanel(
                     color = Color.White
                 )
             }
-            if (uiState.showDismissButton) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Button(
-                        onClick = onDismissClick,
-                        enabled = uiState.dismissButtonEnabled
-                    ) {
-                        Text(text = uiState.dismissButtonText)
-                    }
-                }
+        }
+        if (manualDismissBootOverlay) {
+            val dismissButtonText = if (uiState.enterGameReady) {
+                stringResource(R.string.boot_overlay_button_enter_game)
+            } else {
+                stringResource(R.string.boot_overlay_button_close)
+            }
+            Button(
+                onClick = onDismissClick,
+                enabled = true,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            ) {
+                Text(text = dismissButtonText)
             }
         }
     }

@@ -10,8 +10,15 @@ final class BootBridgeGameStateProbe {
     private volatile Class<?> cachedCardCrawlGameClass;
     private volatile Field cachedModeField;
     private volatile Field cachedMainMenuField;
+    private volatile Field cachedSplashScreenField;
     private volatile Class<?> cachedMainMenuScreenClass;
     private volatile Field cachedMainMenuScreenField;
+    private volatile Class<?> cachedSplashPhaseClass;
+    private volatile Field cachedSplashPhaseField;
+    private volatile Class<?> cachedSplashColorClass;
+    private volatile Field cachedSplashColorField;
+    private volatile Class<?> cachedColorAlphaClass;
+    private volatile Field cachedColorAlphaField;
 
     Snapshot readSnapshot() throws Exception {
         Class<?> cardCrawlGameClass = loadCardCrawlGameClass();
@@ -34,42 +41,62 @@ final class BootBridgeGameStateProbe {
             cachedMainMenuField = mainMenuField;
         }
         if (!Modifier.isStatic(mainMenuField.getModifiers())) {
-            return new Snapshot(modeName, false, "");
+            return new Snapshot(modeName, false, "", "", Float.NaN);
         }
         Object mainMenuScreen = mainMenuField.get(null);
-        if (mainMenuScreen == null) {
-            return new Snapshot(modeName, false, "");
+        String menuScreenName = "";
+        boolean hasMainMenuScreen = mainMenuScreen != null;
+        if (mainMenuScreen != null) {
+            try {
+                Class<?> menuClass = mainMenuScreen.getClass();
+                Field screenField = cachedMainMenuScreenField;
+                if (screenField == null || cachedMainMenuScreenClass != menuClass) {
+                    try {
+                        Field discovered = menuClass.getDeclaredField("screen");
+                        discovered.setAccessible(true);
+                        cachedMainMenuScreenField = discovered;
+                        cachedMainMenuScreenClass = menuClass;
+                        screenField = discovered;
+                    } catch (Throwable ignored) {
+                        cachedMainMenuScreenField = null;
+                        cachedMainMenuScreenClass = menuClass;
+                        screenField = null;
+                    }
+                }
+                if (screenField != null) {
+                    Object screen = screenField.get(mainMenuScreen);
+                    if (screen instanceof Enum<?>) {
+                        menuScreenName = ((Enum<?>) screen).name();
+                    } else if (screen != null) {
+                        menuScreenName = String.valueOf(screen);
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Menu screen introspection is best-effort only.
+            }
         }
 
-        String menuScreenName = "";
+        String splashPhaseName = "";
+        float splashLogoAlpha = Float.NaN;
         try {
-            Class<?> menuClass = mainMenuScreen.getClass();
-            Field screenField = cachedMainMenuScreenField;
-            if (screenField == null || cachedMainMenuScreenClass != menuClass) {
-                try {
-                    Field discovered = menuClass.getDeclaredField("screen");
-                    discovered.setAccessible(true);
-                    cachedMainMenuScreenField = discovered;
-                    cachedMainMenuScreenClass = menuClass;
-                    screenField = discovered;
-                } catch (Throwable ignored) {
-                    cachedMainMenuScreenField = null;
-                    cachedMainMenuScreenClass = menuClass;
-                    screenField = null;
-                }
+            Field splashField = cachedSplashScreenField;
+            if (splashField == null || splashField.getDeclaringClass() != cardCrawlGameClass) {
+                splashField = cardCrawlGameClass.getDeclaredField("splashScreen");
+                splashField.setAccessible(true);
+                cachedSplashScreenField = splashField;
             }
-            if (screenField != null) {
-                Object screen = screenField.get(mainMenuScreen);
-                if (screen instanceof Enum<?>) {
-                    menuScreenName = ((Enum<?>) screen).name();
-                } else if (screen != null) {
-                    menuScreenName = String.valueOf(screen);
+            if (Modifier.isStatic(splashField.getModifiers())) {
+                Object splashScreen = splashField.get(null);
+                if (splashScreen != null) {
+                    splashPhaseName = readSplashPhaseName(splashScreen);
+                    splashLogoAlpha = readSplashLogoAlpha(splashScreen);
                 }
             }
         } catch (Throwable ignored) {
-            // Menu screen introspection is best-effort only.
+            // Splash introspection is best-effort only.
         }
-        return new Snapshot(modeName, true, menuScreenName);
+
+        return new Snapshot(modeName, hasMainMenuScreen, menuScreenName, splashPhaseName, splashLogoAlpha);
     }
 
     private Class<?> loadCardCrawlGameClass() throws ClassNotFoundException {
@@ -159,15 +186,113 @@ final class BootBridgeGameStateProbe {
         return String.valueOf(mode);
     }
 
+    private String readSplashPhaseName(Object splashScreen) {
+        if (splashScreen == null) {
+            return "";
+        }
+        try {
+            Class<?> splashClass = splashScreen.getClass();
+            Field phaseField = cachedSplashPhaseField;
+            if (phaseField == null || cachedSplashPhaseClass != splashClass) {
+                try {
+                    Field discovered = splashClass.getDeclaredField("phase");
+                    discovered.setAccessible(true);
+                    cachedSplashPhaseField = discovered;
+                    cachedSplashPhaseClass = splashClass;
+                    phaseField = discovered;
+                } catch (Throwable ignored) {
+                    cachedSplashPhaseField = null;
+                    cachedSplashPhaseClass = splashClass;
+                    phaseField = null;
+                }
+            }
+            if (phaseField == null) {
+                return "";
+            }
+            Object phase = phaseField.get(splashScreen);
+            if (phase instanceof Enum<?>) {
+                return ((Enum<?>) phase).name();
+            }
+            if (phase == null) {
+                return "";
+            }
+            return String.valueOf(phase);
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private float readSplashLogoAlpha(Object splashScreen) {
+        if (splashScreen == null) {
+            return Float.NaN;
+        }
+        try {
+            Class<?> splashClass = splashScreen.getClass();
+            Field colorField = cachedSplashColorField;
+            if (colorField == null || cachedSplashColorClass != splashClass) {
+                try {
+                    Field discovered = splashClass.getDeclaredField("color");
+                    discovered.setAccessible(true);
+                    cachedSplashColorField = discovered;
+                    cachedSplashColorClass = splashClass;
+                    colorField = discovered;
+                } catch (Throwable ignored) {
+                    cachedSplashColorField = null;
+                    cachedSplashColorClass = splashClass;
+                    colorField = null;
+                }
+            }
+            if (colorField == null) {
+                return Float.NaN;
+            }
+            Object color = colorField.get(splashScreen);
+            if (color == null) {
+                return Float.NaN;
+            }
+
+            Class<?> colorClass = color.getClass();
+            Field alphaField = cachedColorAlphaField;
+            if (alphaField == null || cachedColorAlphaClass != colorClass) {
+                Field discovered;
+                try {
+                    discovered = colorClass.getField("a");
+                } catch (NoSuchFieldException notPublicField) {
+                    discovered = colorClass.getDeclaredField("a");
+                    discovered.setAccessible(true);
+                }
+                cachedColorAlphaField = discovered;
+                cachedColorAlphaClass = colorClass;
+                alphaField = discovered;
+            }
+            Object alpha = alphaField.get(color);
+            if (alpha instanceof Number) {
+                return ((Number) alpha).floatValue();
+            }
+        } catch (Throwable ignored) {
+            // Ignore and treat as unknown.
+        }
+        return Float.NaN;
+    }
+
     static final class Snapshot {
         final String modeName;
         final boolean hasMainMenuScreen;
         final String menuScreenName;
+        final String splashPhaseName;
+        final float splashLogoAlpha;
 
-        Snapshot(String modeName, boolean hasMainMenuScreen, String menuScreenName) {
+        Snapshot(
+                String modeName,
+                boolean hasMainMenuScreen,
+                String menuScreenName,
+                String splashPhaseName,
+                float splashLogoAlpha
+        ) {
             this.modeName = modeName;
             this.hasMainMenuScreen = hasMainMenuScreen;
             this.menuScreenName = menuScreenName;
+            this.splashPhaseName = splashPhaseName;
+            this.splashLogoAlpha = splashLogoAlpha;
         }
     }
 }

@@ -4,6 +4,7 @@ final class BootBridgeGameStateWatcher {
     private static final long WATCHER_POLL_MS = 120L;
     private static final int READY_CONFIRM_TICKS = 3;
     private static final int CONSOLE_FALLBACK_FAIL_TICKS = 90;
+    private static final float SPLASH_VISIBLE_ALPHA_THRESHOLD = 0.06f;
 
     private final BootBridgeReporter reporter;
     private final BootBridgeGameStateProbe probe = new BootBridgeGameStateProbe();
@@ -51,8 +52,8 @@ final class BootBridgeGameStateWatcher {
                 }
 
                 if ("SPLASH".equals(snapshot.modeName)) {
-                    if (!splashSignaled) {
-                        reporter.splash("Game splash");
+                    if (!splashSignaled && isSplashLogoVisible(snapshot)) {
+                        reporter.splash(buildSplashMessage(snapshot));
                         splashSignaled = true;
                     }
                 } else {
@@ -97,6 +98,36 @@ final class BootBridgeGameStateWatcher {
             return false;
         }
         return !"NONE".equals(snapshot.menuScreenName);
+    }
+
+    private static boolean isSplashLogoVisible(BootBridgeGameStateProbe.Snapshot snapshot) {
+        if (snapshot == null || !"SPLASH".equals(snapshot.modeName)) {
+            return false;
+        }
+        String phase = snapshot.splashPhaseName == null ? "" : snapshot.splashPhaseName;
+        if ("INIT".equals(phase)) {
+            return false;
+        }
+        if (Float.isNaN(snapshot.splashLogoAlpha)) {
+            // If alpha introspection is unavailable, use phase-only detection.
+            return true;
+        }
+        return snapshot.splashLogoAlpha >= SPLASH_VISIBLE_ALPHA_THRESHOLD;
+    }
+
+    private static String buildSplashMessage(BootBridgeGameStateProbe.Snapshot snapshot) {
+        if (snapshot == null) {
+            return "Game splash";
+        }
+        String phase = snapshot.splashPhaseName == null ? "" : snapshot.splashPhaseName;
+        if (phase.isEmpty()) {
+            return "Game splash";
+        }
+        if (Float.isNaN(snapshot.splashLogoAlpha)) {
+            return "Game splash: phase=" + phase;
+        }
+        int alphaPercent = Math.round(snapshot.splashLogoAlpha * 100f);
+        return "Game splash: phase=" + phase + ", alpha=" + alphaPercent + "%";
     }
 
     private static String describeSnapshot(BootBridgeGameStateProbe.Snapshot snapshot) {
