@@ -47,6 +47,23 @@ internal data class ModImportResult(
         get() = patchedFilterLines > 0
 }
 
+internal data class ModBatchImportResult(
+    val importedCount: Int,
+    val errors: List<String>,
+    val blockedComponents: List<String>,
+    val compressedArchives: List<String>,
+    val patchedResults: List<ModImportResult>
+) {
+    val failedCount: Int
+        get() = errors.size
+    val blockedCount: Int
+        get() = blockedComponents.size
+    val compressedArchiveCount: Int
+        get() = compressedArchives.size
+    val firstError: String?
+        get() = errors.firstOrNull()
+}
+
 private data class SaveArchiveScanResult(
     val importableFiles: Int,
     val targetTopLevelDirs: Set<String>
@@ -61,6 +78,41 @@ internal object SettingsFileService {
     private const val RESERVED_COMPONENT_STSLIB = "StSLib"
     private const val RESERVED_COMPONENT_MTS = "ModTheSpire"
     private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
+    private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
+        ".zip",
+        ".rar",
+        ".7z",
+        ".tar",
+        ".tgz",
+        ".tar.gz",
+        ".gz",
+        ".bz2",
+        ".tar.bz2",
+        ".xz",
+        ".tar.xz",
+        ".zst",
+        ".tar.zst",
+        ".lz4",
+        ".tar.lz4"
+    )
+    private val MOD_IMPORT_ARCHIVE_MIME_TYPES = setOf(
+        "application/zip",
+        "application/x-zip",
+        "application/x-zip-compressed",
+        "multipart/x-zip",
+        "application/vnd.rar",
+        "application/rar",
+        "application/x-rar",
+        "application/x-rar-compressed",
+        "application/x-7z-compressed",
+        "application/x-tar",
+        "application/gzip",
+        "application/x-gzip",
+        "application/x-bzip2",
+        "application/x-xz",
+        "application/zstd",
+        "application/x-zstd"
+    )
 
     private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
         "betaPreferences",
@@ -99,7 +151,6 @@ internal object SettingsFileService {
 
     @Throws(IOException::class)
     fun resolveJvmLogsShareUri(host: Activity): Uri {
-        val logFiles = JvmLogRotationManager.listLogFiles(host)
         val shareDir = File(host.cacheDir, "share")
         if (!shareDir.exists() && !shareDir.mkdirs()) {
             throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
@@ -107,25 +158,20 @@ internal object SettingsFileService {
 
         val archiveFile = File(shareDir, buildJvmLogExportFileName())
         FileOutputStream(archiveFile, false).use { output ->
-            ZipOutputStream(output).use { zipOutput ->
-                if (logFiles.isEmpty()) {
-                    val entry = ZipEntry("sts/jvm_logs/README.txt")
-                    zipOutput.putNextEntry(entry)
-                    val message = "No JVM logs found.\n" +
-                        "Expected files:\n" +
-                        "- ${RuntimePaths.latestLog(host).absolutePath}\n" +
-                        "- ${RuntimePaths.jvmLogsDir(host).absolutePath}\n"
-                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
-                    zipOutput.closeEntry()
-                } else {
-                    for (logFile in logFiles) {
-                        writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
-                    }
-                }
-            }
+            writeJvmLogsBundle(host, output)
         }
 
         return FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", archiveFile)
+    }
+
+    @Throws(IOException::class)
+    fun exportJvmLogBundle(host: Activity, uri: Uri): Int {
+        host.contentResolver.openOutputStream(uri).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
+            return writeJvmLogsBundle(host, output)
+        }
     }
 
     @Throws(IOException::class)
@@ -229,6 +275,76 @@ internal object SettingsFileService {
         }
     }
 
+    @Throws(IOException::class)
+    private fun writeJvmLogsBundle(host: Activity, output: OutputStream): Int {
+        val logFiles = JvmLogRotationManager.listLogFiles(host)
+        ZipOutputStream(output).use { zipOutput ->
+            writeTextEntry(
+                zipOutput,
+                "sts/jvm_logs/device_info.txt",
+                buildJvmLogDeviceInfo(host)
+            )
+            if (logFiles.isEmpty()) {
+                val message = "No JVM logs found.\n" +
+                    "Expected files:\n" +
+                    "- ${RuntimePaths.latestLog(host).absolutePath}\n" +
+                    "- ${RuntimePaths.jvmLogsDir(host).absolutePath}\n"
+                writeTextEntry(zipOutput, "sts/jvm_logs/README.txt", message)
+                return 0
+            }
+            for (logFile in logFiles) {
+                writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
+            }
+            return logFiles.size
+        }
+    }
+
+    fun importModJars(host: Activity, uris: Collection<Uri>): ModBatchImportResult {
+        var imported = 0
+        val errors = ArrayList<String>()
+        val blockedComponents = LinkedHashSet<String>()
+        val compressedArchives = LinkedHashSet<String>()
+        val patchedMods = LinkedHashMap<String, ModImportResult>()
+
+        for (uri in uris) {
+            val displayName = resolveDisplayName(host, uri)
+            if (isLikelyCompressedArchive(host, uri, displayName)) {
+                compressedArchives.add(displayName)
+                continue
+            }
+            try {
+                val result = importModJar(host, uri)
+                imported++
+                if (result.wasAtlasPatched) {
+                    val existing = patchedMods[result.modId]
+                    if (existing == null) {
+                        patchedMods[result.modId] = result
+                    } else {
+                        patchedMods[result.modId] = existing.copy(
+                            modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                            patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
+                            patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
+                        )
+                    }
+                }
+            } catch (error: Throwable) {
+                if (error is ReservedModImportException) {
+                    blockedComponents.add(error.blockedComponent)
+                } else {
+                    errors.add("$displayName: ${error.message}")
+                }
+            }
+        }
+
+        return ModBatchImportResult(
+            importedCount = imported,
+            errors = errors,
+            blockedComponents = blockedComponents.toList(),
+            compressedArchives = compressedArchives.toList(),
+            patchedResults = patchedMods.values.toList()
+        )
+    }
+
     fun resolveDisplayName(host: Activity, uri: Uri): String {
         var cursor: Cursor? = null
         return try {
@@ -254,6 +370,42 @@ internal object SettingsFileService {
         } finally {
             cursor?.close()
         }
+    }
+
+    fun isLikelyCompressedArchive(
+        host: Activity,
+        uri: Uri,
+        displayName: String = resolveDisplayName(host, uri)
+    ): Boolean {
+        if (looksLikeCompressedArchiveName(displayName)) {
+            return true
+        }
+        val normalizedMime = host.contentResolver.getType(uri)
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+            ?: return false
+        return normalizedMime in MOD_IMPORT_ARCHIVE_MIME_TYPES
+    }
+
+    fun buildCompressedArchiveImportMessage(archiveDisplayNames: Collection<String>): String {
+        val uniqueNames = LinkedHashSet<String>()
+        archiveDisplayNames.forEach { rawName ->
+            val normalized = rawName.trim()
+            if (normalized.isNotEmpty()) {
+                uniqueNames.add(normalized)
+            }
+        }
+        return buildString {
+            append("检测到以下文件是压缩包，不能直接作为模组导入：\n")
+            if (uniqueNames.isEmpty()) {
+                append("- 未知文件\n")
+            } else {
+                uniqueNames.forEach { name ->
+                    append("- ").append(name).append('\n')
+                }
+            }
+            append("\n请先解压压缩包，选择其中的 .jar 模组文件再导入。")
+        }.trimEnd()
     }
 
     fun buildReservedModImportMessage(blockedComponents: Collection<String>): String {
@@ -903,6 +1055,16 @@ internal object SettingsFileService {
             || (normalized.endsWith(".jar") && normalized.contains("modthespire"))
     }
 
+    private fun looksLikeCompressedArchiveName(displayName: String?): Boolean {
+        val normalized = displayName?.trim()?.lowercase(Locale.ROOT) ?: return false
+        if (normalized.isEmpty() || normalized.endsWith(".jar")) {
+            return false
+        }
+        return MOD_IMPORT_ARCHIVE_EXTENSIONS.any { extension ->
+            normalized.endsWith(extension)
+        }
+    }
+
     private fun resolveSaveExportSourceFolder(stsRoot: File, sourceFolder: String): File? {
         val candidates = when (sourceFolder.lowercase(Locale.ROOT)) {
             "multiplayer" -> arrayOf("multiplayer", "multiple")
@@ -958,6 +1120,62 @@ internal object SettingsFileService {
         }
         val entryName = "sts/${relativePath.replace('\\', '/')}"
         writeFileToZip(zipOutput, sourceFile, entryName)
+    }
+
+    private fun buildJvmLogDeviceInfo(host: Activity): String = buildString {
+        val launcherVersion = resolveLauncherVersion(host)
+        append("launcher.package=").append(host.packageName).append('\n')
+        append("launcher.versionName=").append(launcherVersion.first).append('\n')
+        append("launcher.versionCode=").append(launcherVersion.second).append('\n')
+        append("device.manufacturer=").append(normalizeInfoValue(Build.MANUFACTURER)).append('\n')
+        append("device.brand=").append(normalizeInfoValue(Build.BRAND)).append('\n')
+        append("device.model=").append(normalizeInfoValue(Build.MODEL)).append('\n')
+        append("device.device=").append(normalizeInfoValue(Build.DEVICE)).append('\n')
+        append("device.product=").append(normalizeInfoValue(Build.PRODUCT)).append('\n')
+        append("device.hardware=").append(normalizeInfoValue(Build.HARDWARE)).append('\n')
+        append("android.release=").append(normalizeInfoValue(Build.VERSION.RELEASE)).append('\n')
+        append("android.sdkInt=").append(Build.VERSION.SDK_INT).append('\n')
+        append("android.securityPatch=").append(normalizeInfoValue(Build.VERSION.SECURITY_PATCH)).append('\n')
+        append("device.abis=").append(Build.SUPPORTED_ABIS.joinToString(", ").ifBlank { "unknown" }).append('\n')
+        append("device.fingerprint=").append(normalizeInfoValue(Build.FINGERPRINT)).append('\n')
+    }
+
+    private fun normalizeInfoValue(value: String?): String {
+        return value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "unknown"
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveLauncherVersion(host: Activity): Pair<String, String> {
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                host.packageManager.getPackageInfo(
+                    host.packageName,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                host.packageManager.getPackageInfo(host.packageName, 0)
+            }
+            val versionName = normalizeInfoValue(packageInfo.versionName)
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toString()
+            } else {
+                packageInfo.versionCode.toString()
+            }
+            versionName to versionCode
+        } catch (_: Throwable) {
+            "unknown" to "unknown"
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun writeTextEntry(zipOutput: ZipOutputStream, entryName: String, content: String) {
+        val entry = ZipEntry(entryName)
+        zipOutput.putNextEntry(entry)
+        zipOutput.write(content.toByteArray(StandardCharsets.UTF_8))
+        zipOutput.closeEntry()
     }
 
     @Throws(IOException::class)
