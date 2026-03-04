@@ -29,7 +29,6 @@ import kotlin.system.exitProcess
 class StsGameActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
-        const val EXTRA_WAIT_FOR_MAIN_MENU = "io.stamethyst.wait_for_main_menu"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
@@ -48,10 +47,6 @@ class StsGameActivity : AppCompatActivity() {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
             intent.putExtra(EXTRA_TARGET_FPS, targetFps)
-            intent.putExtra(
-                EXTRA_WAIT_FOR_MAIN_MENU,
-                false
-            )
             intent.putExtra(EXTRA_BACK_IMMEDIATE_EXIT, backImmediateExit)
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
             intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
@@ -63,13 +58,12 @@ class StsGameActivity : AppCompatActivity() {
     private var renderScale = LauncherConfig.DEFAULT_RENDER_SCALE
     private var targetFps = LauncherConfig.DEFAULT_TARGET_FPS
     private var launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA
-    private var waitForMainMenu = false
     private var backImmediateExit = true
     private var manualDismissBootOverlay = false
     private var forceJvmCrash = false
     private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     private var autoSwitchLeftAfterRightClick = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
-    private var useTextureViewSurface = true
+    private var useTextureViewSurface = false
 
     // State
     @Volatile
@@ -143,10 +137,6 @@ class StsGameActivity : AppCompatActivity() {
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == requestedMode) {
             launchMode = StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
         }
-        waitForMainMenu = intent.getBooleanExtra(
-            EXTRA_WAIT_FOR_MAIN_MENU,
-            StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode
-        )
         backImmediateExit = intent.getBooleanExtra(
             EXTRA_BACK_IMMEDIATE_EXIT,
             LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
@@ -166,7 +156,6 @@ class StsGameActivity : AppCompatActivity() {
     private fun initControllers() {
         bootOverlayController = BootOverlayController(
             activity = this,
-            waitForMainMenu = waitForMainMenu,
             manualDismissBootOverlay = manualDismissBootOverlay,
             useTextureViewSurface = useTextureViewSurface,
             onDismissed = { updateFloatingMouseVisibility() },
@@ -175,7 +164,6 @@ class StsGameActivity : AppCompatActivity() {
                     renderSurfaceManager.getLastTextureFrameTimestampNs()
                 )
             },
-            onSignalMainMenuReady = { message -> bootOverlayController.signalMainMenuReady(message) },
             onSignalLaunchFailure = { detail -> signalLaunchFailure(detail) }
         )
 
@@ -185,7 +173,7 @@ class StsGameActivity : AppCompatActivity() {
             targetFps = targetFps,
             forceJvmCrash = forceJvmCrash,
             onProgressUpdate = { percent, message -> bootOverlayController.updateProgress(percent, message) },
-            onLaunchComplete = { exitCode, waitForMenu, wasReady -> handleJvmExit(exitCode, waitForMenu) },
+            onLaunchComplete = { exitCode -> handleJvmExit(exitCode) },
             onLaunchFailed = { t -> handleJvmLaunchFailed(t) },
             onRuntimeReady = {
                 runOnUiThread {
@@ -293,7 +281,6 @@ class StsGameActivity : AppCompatActivity() {
 
         jvmLaunchController.start(
             javaHome = javaHome,
-            waitForMainMenu = waitForMainMenu,
             bootOverlayController = bootOverlayController
         )
     }
@@ -307,7 +294,7 @@ class StsGameActivity : AppCompatActivity() {
         }, 120L)
     }
 
-    private fun handleJvmExit(exitCode: Int, waitForMainMenu: Boolean) {
+    private fun handleJvmExit(exitCode: Int) {
         if (backExitRequested) {
             runOnUiThread { finish() }
             return

@@ -21,7 +21,7 @@ class JvmLaunchController(
     private val targetFps: Int,
     private val forceJvmCrash: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
-    private val onLaunchComplete: (exitCode: Int, waitForMainMenu: Boolean, mainMenuReadySignaled: Boolean) -> Unit,
+    private val onLaunchComplete: (exitCode: Int) -> Unit,
     private val onLaunchFailed: (Throwable) -> Unit,
     private val onRuntimeReady: () -> Unit,
     private val onSurfaceSizeSync: () -> Unit,
@@ -55,7 +55,6 @@ class JvmLaunchController(
 
     fun start(
         javaHome: File,
-        waitForMainMenu: Boolean,
         bootOverlayController: BootOverlayController?
     ) {
         if (vmStarted) return
@@ -132,7 +131,7 @@ class JvmLaunchController(
                 }
 
                 val exitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
-                onLaunchComplete(exitCode, waitForMainMenu, bootOverlayController?.let { false } ?: false)
+                onLaunchComplete(exitCode)
 
             } catch (t: Throwable) {
                 runtimeLifecycleReady = false
