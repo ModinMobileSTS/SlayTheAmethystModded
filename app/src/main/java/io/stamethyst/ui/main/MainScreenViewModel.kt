@@ -193,13 +193,10 @@ class MainScreenViewModel : ViewModel() {
         if (expectedBackExit) {
             clearCrashExtras(intent)
             showExpectedBackExitDialog(host)
+            return
         }
 
-        val showedCrashDialog = if (expectedBackExit) {
-            false
-        } else {
-            maybeShowCrashDialog(host, intent)
-        }
+        val showedCrashDialog = maybeShowCrashDialog(host, intent)
         val showedProcessExitDialog = if (showedCrashDialog) {
             false
         } else {

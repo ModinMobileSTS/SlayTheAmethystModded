@@ -45,7 +45,7 @@ object LauncherConfig {
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_LWJGL_DEBUG = false
 
-    const val DEFAULT_JVM_HEAP_MAX_MB = 1024
+    const val DEFAULT_JVM_HEAP_MAX_MB = 512
     const val MIN_JVM_HEAP_MAX_MB = 512
     const val MAX_JVM_HEAP_MAX_MB = 2048
     const val JVM_HEAP_STEP_MB = 128
@@ -212,7 +212,7 @@ object LauncherConfig {
     }
 
     fun markExpectedBackExit(context: Context) {
-        prefs(context).edit {
+        prefs(context).edit(commit = true) {
             putLong(PREF_KEY_EXPECTED_BACK_EXIT_AT_MS, System.currentTimeMillis())
         }
     }
