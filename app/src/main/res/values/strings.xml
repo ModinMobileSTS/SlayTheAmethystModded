@@ -5,7 +5,7 @@
     <string name="sts_normal_exit">The game process exited unexpectedly (exit code: %1$d).</string>
     <string name="sts_signal_exit">The game process crashed due to signal %1$d.</string>
     <string name="sts_oom_exit">OutOfMemoryError detected (JVM heap exhausted). The game has been returned to launcher. Increase JVM heap max in Settings, or reduce enabled mods and try again.</string>
-    <string name="sts_share_crash_report">Share crash report</string>
+    <string name="sts_share_crash_report">Share error logs</string>
     <string name="sts_share_crash_chooser_title">Share to QQ / WeChat, etc.</string>
     <string name="sts_share_crash_report_failed">No available app can share the crash report.</string>
     <string name="compat_settings_title">Compatibility settings</string>

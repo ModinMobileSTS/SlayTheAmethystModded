@@ -1,6 +1,5 @@
 package io.stamethyst.ui.settings
 
-import android.content.ClipData
 import android.content.Intent
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -638,12 +637,7 @@ fun SettingsEffectsHandler(
                 }
 
                 is SettingsScreenViewModel.Effect.ShareJvmLogsBundle -> {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/zip"
-                        putExtra(Intent.EXTRA_STREAM, effect.uri)
-                        clipData = ClipData.newRawUri(effect.fileName, effect.uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
+                    val shareIntent = JvmLogShareService.buildShareIntent(effect.payload)
                     activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
                 }
 

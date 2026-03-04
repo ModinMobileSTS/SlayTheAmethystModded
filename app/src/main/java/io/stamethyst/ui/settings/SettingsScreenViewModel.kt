@@ -41,7 +41,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
-        data class ShareJvmLogsBundle(val uri: Uri, val fileName: String) : Effect
+        data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
         data object OpenCompatibility : Effect
     }
 
@@ -235,11 +235,10 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, "Preparing JVM log bundle...")
         executor.execute {
             try {
-                val fileName = SettingsFileService.buildJvmLogExportFileName()
-                val shareUri = SettingsFileService.resolveJvmLogsShareUri(host)
+                val payload = JvmLogShareService.prepareSharePayload(host)
                 host.runOnUiThread {
                     setBusy(false, null)
-                    _effects.tryEmit(Effect.ShareJvmLogsBundle(shareUri, fileName))
+                    _effects.tryEmit(Effect.ShareJvmLogsBundle(payload))
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {

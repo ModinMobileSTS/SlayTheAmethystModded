@@ -2,6 +2,7 @@ package io.stamethyst.ui.main
 
 import android.app.Activity
 import android.app.ApplicationExitInfo
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -22,6 +23,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.JvmLogShareService
 import io.stamethyst.ui.settings.ModImportResult
 import io.stamethyst.ui.settings.SettingsFileService
 import java.io.IOException
@@ -519,9 +521,50 @@ class MainScreenViewModel : ViewModel() {
         AlertDialog.Builder(host)
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
+            .setNeutralButton(R.string.sts_share_crash_report) { _, _ ->
+                shareCrashLogs(host)
+            }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
+    }
+
+    private fun shareCrashLogs(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        setBusy(true, "Preparing JVM log bundle...")
+        executor.execute {
+            try {
+                val payload = JvmLogShareService.prepareSharePayload(host)
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    try {
+                        val shareIntent = JvmLogShareService.buildShareIntent(payload)
+                        val chooserIntent = Intent.createChooser(
+                            shareIntent,
+                            host.getString(R.string.sts_share_crash_chooser_title)
+                        )
+                        host.startActivity(chooserIntent)
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(
+                            host,
+                            host.getString(R.string.sts_share_crash_report_failed),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (_: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    Toast.makeText(
+                        host,
+                        host.getString(R.string.sts_share_crash_report_failed),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
     }
 
     private fun maybeShowProcessExitDialog(
