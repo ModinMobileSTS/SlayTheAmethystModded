@@ -120,7 +120,7 @@ private fun LauncherSettingsScreenPreview() {
             selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
             selectedJvmHeapMaxMb = 512,
-            jvmHeapMinMb = 512,
+            jvmHeapMinMb = 256,
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,

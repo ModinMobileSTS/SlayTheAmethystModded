@@ -57,8 +57,10 @@ object StsLaunchSpec {
             args.add("-XX:-UseCompressedOops")
             args.add("-XX:-UseCompressedClassPointers")
         }
-        args.add("-Xms512M")
-        args.add("-Xmx${LauncherConfig.readJvmHeapMaxMb(context)}M")
+        val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
+        val heapStartMb = minOf(LauncherConfig.DEFAULT_JVM_HEAP_MAX_MB, heapMaxMb)
+        args.add("-Xms${heapStartMb}M")
+        args.add("-Xmx${heapMaxMb}M")
         args.add("-XX:+DisableExplicitGC")
         if (is64BitRuntime) {
             // Reduce periodic frame hitching from stop-the-world pauses.

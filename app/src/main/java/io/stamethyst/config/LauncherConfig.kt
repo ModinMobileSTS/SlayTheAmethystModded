@@ -60,7 +60,7 @@ object LauncherConfig {
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
-    const val MIN_JVM_HEAP_MAX_MB = 512
+    const val MIN_JVM_HEAP_MAX_MB = 256
     const val MAX_JVM_HEAP_MAX_MB = 2048
     const val JVM_HEAP_STEP_MB = 128
 
