@@ -19,6 +19,7 @@
             android:name="io.stamethyst.StsGameActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="false"
+            android:enableOnBackInvokedCallback="true"
             android:screenOrientation="sensorLandscape" />
 
         <activity

@@ -6,11 +6,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -83,6 +86,7 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var inputHandler: GameInputHandler
     private lateinit var bootOverlayController: BootOverlayController
     private lateinit var jvmLaunchController: JvmLaunchController
+    private var onBackInvokedCallback: OnBackInvokedCallback? = null
 
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
@@ -100,9 +104,11 @@ class StsGameActivity : AppCompatActivity() {
         parseIntentExtras()
         initControllers()
         initViews()
+        registerSystemBackInvokedCallback()
     }
 
     override fun onDestroy() {
+        unregisterSystemBackInvokedCallback()
         inputHandler.onDestroy()
         renderSurfaceManager.onDestroy()
         bootOverlayController.onDestroy()
@@ -356,6 +362,27 @@ class StsGameActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleAndroidBackKeyEvent(event: KeyEvent): Boolean {
+        if (inputHandler.isGamepadKeyEvent(event)) {
+            return false
+        }
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> return true
+            KeyEvent.ACTION_UP -> {
+                if (!event.isCanceled) {
+                    handleAndroidBackPressed()
+                }
+                return true
+            }
+            else -> return true
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        handleAndroidBackPressed()
+    }
+
     private fun requestBackExitToLauncher() {
         if (backExitRequested) return
         backExitRequested = true
@@ -375,6 +402,36 @@ class StsGameActivity : AppCompatActivity() {
 
         requestJvmCloseSignal()
         scheduleLauncherRestartAndKillProcess()
+    }
+
+    private fun registerSystemBackInvokedCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        if (onBackInvokedCallback != null) {
+            return
+        }
+        val callback = OnBackInvokedCallback {
+            handleAndroidBackPressed()
+        }
+        try {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                callback
+            )
+            onBackInvokedCallback = callback
+        } catch (_: Throwable) {}
+    }
+
+    private fun unregisterSystemBackInvokedCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        val callback = onBackInvokedCallback ?: return
+        try {
+            onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback)
+        } catch (_: Throwable) {}
+        onBackInvokedCallback = null
     }
 
     private fun requestJvmCloseSignal(): Boolean {
@@ -423,9 +480,19 @@ class StsGameActivity : AppCompatActivity() {
         val pendingIntent = PendingIntent.getActivity(this, 0x71A7, launcherIntent, flags)
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager?
         val triggerAt = SystemClock.elapsedRealtime() + BACK_FORCE_RESTART_DELAY_MS
-        if (alarmManager != null) {
-            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+        val scheduledByAlarm = if (alarmManager != null) {
+            try {
+                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+                true
+            } catch (_: SecurityException) {
+                false
+            } catch (_: Throwable) {
+                false
+            }
         } else {
+            false
+        }
+        if (!scheduledByAlarm) {
             try {
                 pendingIntent.send()
             } catch (_: PendingIntent.CanceledException) {}
@@ -468,6 +535,9 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+        if (keyCode == KeyEvent.KEYCODE_BACK && handleAndroidBackKeyEvent(event)) {
+            return true
+        }
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
             keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
             keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
