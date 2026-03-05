@@ -23,6 +23,27 @@ val packageName = readGradleProperty("application.id")
 val appVersionName = readGradleProperty("application.version.name")
 val appVersionCode = readGradleProperty("application.version.code").toInt()
 val generatedRuntimeAssetsDir: Provider<Directory> = layout.buildDirectory.dir("generated/runtime-assets")
+val releaseStoreFilePath = providers.environmentVariable("RELEASE_STORE_FILE").orNull?.trim().orEmpty()
+val releaseStorePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").orNull?.trim().orEmpty()
+val releaseKeyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").orNull?.trim().orEmpty()
+val releaseKeyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").orNull?.trim().orEmpty()
+val hasReleaseSigning = releaseStoreFilePath.isNotEmpty() &&
+    releaseStorePassword.isNotEmpty() &&
+    releaseKeyAlias.isNotEmpty() &&
+    releaseKeyPassword.isNotEmpty()
+val isReleaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.contains("Release", ignoreCase = true)
+}
+
+if (hasReleaseSigning && !File(releaseStoreFilePath).isFile) {
+    throw GradleException("RELEASE_STORE_FILE does not exist: $releaseStoreFilePath")
+}
+if (isReleaseTaskRequested && !hasReleaseSigning) {
+    throw GradleException(
+        "Missing release signing env vars. Required: " +
+            "RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD"
+    )
+}
 
 android {
     namespace = "io.stamethyst"
@@ -31,7 +52,7 @@ android {
     defaultConfig {
         applicationId = packageName
         minSdk = 26
-        targetSdk = 31
+        targetSdk = 33
         versionCode = appVersionCode
         versionName = appVersionName
 
@@ -48,10 +69,25 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFilePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

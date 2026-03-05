@@ -23,6 +23,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -245,6 +246,19 @@ internal fun ModCard(
             showRenameDialog = false
             callbacks.onRenameModFile(mod, renameInput)
         }
+    )
+}
+
+@Composable
+internal fun DraggingModCardOverlayLayer(
+    overlayState: State<ModCardDragOverlayState?>,
+    showModFileName: Boolean,
+    overlayHostTopLeftWindow: Offset
+) {
+    DraggingModCardOverlay(
+        overlayState = overlayState.value,
+        showModFileName = showModFileName,
+        overlayHostTopLeftWindow = overlayHostTopLeftWindow
     )
 }
 

@@ -26,8 +26,9 @@ Use project Gradle tasks as the primary interface for debug automation and use d
 
 3. Pass optional parameters when needed.
 - `-PlaunchMode=mts_basemod` or `-PlaunchMode=vanilla`
-- `-PdeviceSerial=<adb-serial>`
+- `-PdeviceSerial=<adb-serial>` (for `:app:stsStart` and `:app:stsPullLogs`)
 - `-PlogsDir=<local-output-dir>`
+- Note: current `:app:stsStop` task uses default adb target. For multi-device cases, use adb fallback with `-s`.
 
 4. Use adb fallback when Gradle tasks are unavailable or intentionally bypassed.
 - Start:
@@ -35,20 +36,23 @@ Use project Gradle tasks as the primary interface for debug automation and use d
 - Stop:
   - `adb shell am force-stop io.stamethyst`
 - Pull one log:
-  - `adb exec-out run-as io.stamethyst sh -c "cat files/sts/latestlog.txt 2>/dev/null" > latestlog.txt`
+  - `adb exec-out run-as io.stamethyst sh -c "cat files/sts/latest.log 2>/dev/null" > latest.log`
 - Capture screenshot:
   - `adb shell screencap -p /sdcard/sts_screen.png`
   - `adb pull /sdcard/sts_screen.png ./sts_screen.png`
   - `adb shell rm /sdcard/sts_screen.png`
 
 5. Export expected logs for test artifacts.
-- `latestlog.txt`
-- `jvm_output.log`
-- `boot_bridge_events.log`
-- `enabled_mods.txt`
-- `last_crash_report.txt`
-- `logcat.txt` (captured by `stsPullLogs`)
-- `sts_screen.png` (when screenshot capture is requested)
+- Preferred artifact from `:app:stsPullLogs`:
+  - `sts-jvm-logs-export-<timestamp>.zip`
+  - Zip entries:
+    - `sts/jvm_logs/latest.log` (if present)
+    - `sts/jvm_logs/boot_bridge_events.log` (if present)
+    - up to 4 archived `sts/jvm_logs/jvm_log_*.log` files (or up to 5 if `latest.log` is absent)
+    - `sts/jvm_logs/README.txt` when no JVM logs are found
+- Optional manual extras (adb fallback):
+  - `enabled_mods.txt` via `files/sts/enabled_mods.txt`
+  - `sts_screen.png` (when screenshot capture is requested)
 
 ## Response Rules
 

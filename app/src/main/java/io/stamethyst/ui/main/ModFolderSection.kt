@@ -2,8 +2,6 @@ package io.stamethyst.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -415,7 +413,7 @@ internal fun ModFolderSection(
                                     },
                                     onDragStarted = {
                                         interactionState.activeDragModStoragePath = null
-                                        interactionState.activeDragOverlay = null
+                                        interactionState.activeDragOverlayState.value = null
                                         interactionState.activeDragFolderId = folderTokenId
                                         interactionState.folderPreviewOrder = folderTargetIds
                                         interactionState.folderDragSnapshot =
@@ -522,19 +520,9 @@ internal fun ModFolderSection(
                                         durationMillis = COLLAPSE_ANIMATION_MS,
                                         easing = LinearEasing
                                     )
-                                ) + fadeIn(
-                                    animationSpec = tween(
-                                        durationMillis = COLLAPSE_ANIMATION_MS,
-                                        easing = LinearEasing
-                                    )
                                 ),
                                 exit = shrinkVertically(
                                     shrinkTowards = Alignment.Top,
-                                    animationSpec = tween(
-                                        durationMillis = COLLAPSE_ANIMATION_MS,
-                                        easing = LinearEasing
-                                    )
-                                ) + fadeOut(
                                     animationSpec = tween(
                                         durationMillis = COLLAPSE_ANIMATION_MS,
                                         easing = LinearEasing
@@ -602,8 +590,8 @@ internal fun ModFolderSection(
         }
     }
 
-    DraggingModCardOverlay(
-        overlayState = interactionState.activeDragOverlay,
+    DraggingModCardOverlayLayer(
+        overlayState = interactionState.activeDragOverlayState,
         showModFileName = showModFileName,
         overlayHostTopLeftWindow = interactionState.sectionTopLeftInWindow
     )
@@ -667,19 +655,9 @@ private fun StatusSummaryFolderCard(
                     durationMillis = COLLAPSE_ANIMATION_MS,
                     easing = LinearEasing
                 )
-            ) + fadeIn(
-                animationSpec = tween(
-                    durationMillis = COLLAPSE_ANIMATION_MS,
-                    easing = LinearEasing
-                )
             ),
             exit = shrinkVertically(
                 shrinkTowards = Alignment.Top,
-                animationSpec = tween(
-                    durationMillis = COLLAPSE_ANIMATION_MS,
-                    easing = LinearEasing
-                )
-            ) + fadeOut(
                 animationSpec = tween(
                     durationMillis = COLLAPSE_ANIMATION_MS,
                     easing = LinearEasing

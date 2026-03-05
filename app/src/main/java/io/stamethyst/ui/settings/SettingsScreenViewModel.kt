@@ -15,8 +15,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.launch.JvmLogRotationManager
-import io.stamethyst.LauncherIcon
-import io.stamethyst.LauncherIconManager
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
@@ -63,7 +61,6 @@ class SettingsScreenViewModel : ViewModel() {
         val jvmHeapMinMb: Int = LauncherPreferences.MIN_JVM_HEAP_MAX_MB,
         val jvmHeapMaxMb: Int = LauncherPreferences.MAX_JVM_HEAP_MAX_MB,
         val jvmHeapStepMb: Int = LauncherPreferences.JVM_HEAP_STEP_MB,
-        val selectedLauncherIcon: LauncherIcon = LauncherIcon.AMBER,
         val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
@@ -135,7 +132,6 @@ class SettingsScreenViewModel : ViewModel() {
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
                 val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
-                val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
                 val modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host)
@@ -221,7 +217,6 @@ class SettingsScreenViewModel : ViewModel() {
                         .append(if (gdxPadCursorDebugEnabled) "ON" else "OFF")
                     append("\nGLBridge swap heartbeat log: ")
                         .append(if (glBridgeSwapHeartbeatDebugEnabled) "ON" else "OFF")
-                    append("\nLauncher icon: ${selectedLauncherIcon.title}")
                     append("\nVirtual FBO PoC: ").append(if (virtualFboPocEnabled) "ON" else "OFF")
                     append("\nGlobal atlas filter compat: ")
                         .append(if (globalAtlasFilterCompatEnabled) "ON" else "OFF")
@@ -241,7 +236,6 @@ class SettingsScreenViewModel : ViewModel() {
                         selectedRenderScale = renderScale,
                         selectedTargetFps = targetFps,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
-                        selectedLauncherIcon = selectedLauncherIcon,
                         backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
@@ -503,24 +497,6 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         _effects.tryEmit(Effect.OpenCompatibility)
-    }
-
-    fun onLauncherIconSelected(host: Activity, icon: LauncherIcon) {
-        if (uiState.busy || uiState.selectedLauncherIcon == icon) {
-            return
-        }
-        val effectiveIcon = LauncherIconManager.applySelection(host, icon)
-        uiState = uiState.copy(selectedLauncherIcon = effectiveIcon)
-        if (effectiveIcon == icon) {
-            Toast.makeText(host, "已切换启动器图标为：${icon.title}", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(
-                host,
-                "Debug 构建固定使用观者图标，已保存你的选择",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-        refreshStatus(host)
     }
 
     fun onJarPicked(

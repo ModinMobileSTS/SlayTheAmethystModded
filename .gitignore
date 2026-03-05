@@ -14,10 +14,16 @@ local.properties
 android-ndk-r10e/
 app/build/
 build/
+*.jks
+*.keystore
+*.p12
+*.pfx
 runtime-pack/*
 !runtime-pack/README.txt
 .kotlin
 .cxx
+signing/*
+!signing/upload_certificate.pem
 
 # local temporary workspace
 _tmp/

@@ -67,8 +67,6 @@ class LauncherActivity : AppCompatActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        LauncherIconManager.syncSelection(this)
-
         val initialRoute = if (RuntimePaths.importedStsJar(this).isFile) {
             Route.Main
         } else {

@@ -2,7 +2,6 @@ package io.stamethyst.config
 
 import android.content.Context
 import androidx.core.content.edit
-import io.stamethyst.LauncherIcon
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -33,7 +32,6 @@ object LauncherConfig {
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
-    private const val PREF_KEY_LAUNCHER_ICON = "launcher_icon"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
@@ -76,7 +74,6 @@ object LauncherConfig {
     private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
     private const val GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH =
         "components/default_saves/preferences/STSGameplaySettings"
-    private val DEFAULT_LAUNCHER_ICON = LauncherIcon.AMBER
 
     fun readBackBehavior(context: Context): BackBehavior {
         val preferences = prefs(context)
@@ -234,18 +231,6 @@ object LauncherConfig {
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {
         prefs(context).edit {
             putInt(PREF_KEY_JVM_HEAP_MAX_MB, normalizeJvmHeapMaxMb(heapMaxMb))
-        }
-    }
-
-    fun readLauncherIcon(context: Context): LauncherIcon {
-        val rawValue = prefs(context).getString(PREF_KEY_LAUNCHER_ICON, DEFAULT_LAUNCHER_ICON.name)
-        return runCatching { LauncherIcon.valueOf(rawValue ?: "") }
-            .getOrDefault(DEFAULT_LAUNCHER_ICON)
-    }
-
-    fun saveLauncherIcon(context: Context, icon: LauncherIcon) {
-        prefs(context).edit {
-            putString(PREF_KEY_LAUNCHER_ICON, icon.name)
         }
     }
 

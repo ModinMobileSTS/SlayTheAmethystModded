@@ -23,7 +23,7 @@ internal class ModFolderDragController(
         interactionState.activeDragModSourceFolderId = sourceFolderTokenId
         interactionState.activeDragModStoragePath = mod.storagePath
         interactionState.dragSessionActive = true
-        interactionState.activeDragOverlay = ModCardDragOverlayState(
+        interactionState.activeDragOverlayState.value = ModCardDragOverlayState(
             mod = mod,
             pointerWindow = dragInfo.pointerWindow,
             touchOffsetInsideCard = dragInfo.pointerWindow - dragInfo.cardTopLeftWindow,
@@ -38,17 +38,17 @@ internal class ModFolderDragController(
     fun onDragMove(mod: ModItemUi, position: Offset) {
         interactionState.lastPointerWindowRef.set(position)
         updateDragHover(position)
-        val current = interactionState.activeDragOverlay
+        val current = interactionState.activeDragOverlayState.value
         if (current != null && current.mod.storagePath == mod.storagePath) {
-            interactionState.activeDragOverlay = current.copy(pointerWindow = position)
+            interactionState.activeDragOverlayState.value = current.copy(pointerWindow = position)
         }
     }
 
     fun onDragEnd(mod: ModItemUi, rawDropPosition: Offset) {
         interactionState.lastPointerWindowRef.set(rawDropPosition)
-        val current = interactionState.activeDragOverlay
+        val current = interactionState.activeDragOverlayState.value
         if (current != null && current.mod.storagePath == mod.storagePath) {
-            interactionState.activeDragOverlay = current.copy(pointerWindow = rawDropPosition)
+            interactionState.activeDragOverlayState.value = current.copy(pointerWindow = rawDropPosition)
         }
         handleModDrop(mod, rawDropPosition)
         expandSourceFolderAfterModDrag()
@@ -57,7 +57,7 @@ internal class ModFolderDragController(
     fun onDragCancel(mod: ModItemUi) {
         interactionState.dragHoveredFolderId = null
         interactionState.dragSessionActive = false
-        interactionState.activeDragOverlay = null
+        interactionState.activeDragOverlayState.value = null
         if (interactionState.activeDragModStoragePath == mod.storagePath) {
             interactionState.activeDragModStoragePath = null
         }
@@ -68,7 +68,7 @@ internal class ModFolderDragController(
         interactionState.activeDragFolderId = null
         interactionState.dragHoveredFolderId = null
         interactionState.dragSessionActive = false
-        interactionState.activeDragOverlay = null
+        interactionState.activeDragOverlayState.value = null
     }
 
     fun updateDragHover(position: Offset, ignoreFolderId: String? = null) {
@@ -155,7 +155,7 @@ internal class ModFolderDragController(
 
         interactionState.dragHoveredFolderId = null
         interactionState.dragSessionActive = false
-        interactionState.activeDragOverlay = null
+        interactionState.activeDragOverlayState.value = null
         if (interactionState.activeDragModStoragePath == mod.storagePath) {
             interactionState.activeDragModStoragePath = null
         }

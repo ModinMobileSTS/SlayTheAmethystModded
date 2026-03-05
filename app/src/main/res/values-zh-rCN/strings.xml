@@ -116,12 +116,12 @@
     <string name="settings_author_contributor_raw_filter_name">Raw filter</string>
     <string name="settings_author_contributor_raw_filter_url">https://example.com/</string>
     <string name="settings_author_special_thanks_label">特别鸣谢：</string>
-    <string name="settings_author_special_thanks_item_1">1. 蝴蝶是幼虫及其粉丝群与测试群群友提供的帮助，反馈问题的群友太多，此处不再一一列举</string>
-    <string name="settings_author_special_thanks_item_2">2. 此项目前身（机版）提供的前端设计思路</string>
-    <string name="settings_author_special_thanks_item_3">3. Amethyst-android 项目提供的技术思路</string>
-    <string name="settings_author_special_thanks_footer">十分感谢以上所有朋友的辛勤工作</string>
+    <string name="settings_author_special_thanks_item_1">1. Amethyst-android 项目提供的技术思路</string>
+    <string name="settings_author_special_thanks_item_2">2. 此项目前身（机版）提供的设计思路</string>
+    <string name="settings_author_special_thanks_item_3">3. 蝴蝶是幼虫及其粉丝群群友提供的帮助</string>
+    <string name="settings_author_special_thanks_footer">十分感谢以上所有朋友的辛勤付出</string>
     <string name="settings_author_release_notice">正式版仅会通过非限速网盘或 Github Release 发布。</string>
-    <string name="settings_author_report_notice">如果你在其他来源下载到本项目，请顺手给该来源点一个举报。</string>
+    <string name="settings_author_report_notice">如果你在其他来源下载到本项目，属于第三方违规再分发。</string>
     <string name="settings_author_follow_notice">请关注官方发布渠道，以获取最新版本与公告。</string>
     <string name="settings_unplayable_mods_entry_title">有模组玩不了？</string>
     <string name="settings_unplayable_mods_dialog_title">上报无法游玩模组</string>

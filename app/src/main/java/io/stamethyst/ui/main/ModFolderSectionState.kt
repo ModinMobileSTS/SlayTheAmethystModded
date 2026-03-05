@@ -28,7 +28,7 @@ internal class ModFolderSectionInteractionState(
     var activeDragFolderId by mutableStateOf<String?>(null)
     var activeDragModSourceFolderId by mutableStateOf<String?>(null)
     var dragSessionActive by mutableStateOf(false)
-    var activeDragOverlay by mutableStateOf<ModCardDragOverlayState?>(null)
+    val activeDragOverlayState = mutableStateOf<ModCardDragOverlayState?>(null)
     var folderDragSnapshot by mutableStateOf<MainScreenViewModel.FolderCollapseSnapshot?>(null)
     val expandedCards = mutableStateMapOf<String, Boolean>()
     val lastPointerWindowRef = AtomicReference<Offset?>(null)

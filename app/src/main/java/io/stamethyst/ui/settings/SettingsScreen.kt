@@ -58,7 +58,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import io.stamethyst.LauncherIcon
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.navigation.Route
@@ -107,7 +106,6 @@ fun LauncherSettingsScreen(
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
-        onLauncherIconSelected = { icon -> viewModel.onLauncherIconSelected(activity, icon) },
     )
     SettingsEffectsHandler(viewModel = viewModel)
 }
@@ -125,7 +123,6 @@ private fun LauncherSettingsScreenPreview() {
             jvmHeapMinMb = 512,
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
-            selectedLauncherIcon = LauncherIcon.AMBER,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
@@ -170,7 +167,6 @@ private fun LauncherSettingsScreenContent(
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
-    onLauncherIconSelected: (LauncherIcon) -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -243,15 +239,6 @@ private fun LauncherSettingsScreenContent(
                     SettingsCompatibilitySection(
                         busy = uiState.busy,
                         onOpenCompatibility = onOpenCompatibility,
-                    )
-                }
-            }
-
-            item {
-                SettingsSectionCard(title = "启动器图标") {
-                    SettingsLauncherIconSection(
-                        uiState = uiState,
-                        onLauncherIconSelected = onLauncherIconSelected,
                     )
                 }
             }
@@ -546,7 +533,7 @@ private fun SettingsInputSection(
         enabled = !uiState.busy,
         enabledText = "移动端 UI：启用",
         disabledText = "移动端 UI：禁用",
-        description = "控制启动参数 -Damethyst.mobile_hud_enabled，重启后生效。",
+        description = "控制是否启用原生移动端 UI，启用后 UI 会部分变大，但是可能会出现一些模组渲染不兼容的问题，例如 loadout 控制台不会出现。",
         onCheckedChange = onMobileHudEnabledChanged
     )
 
@@ -555,7 +542,7 @@ private fun SettingsInputSection(
         enabled = !uiState.busy,
         enabledText = "触屏输入：启用",
         disabledText = "触屏输入：禁用",
-        description = "同步写入 STSGameplaySettings 的 Touchscreen Enabled。",
+        description = "控制是否使用原生触控适配模式，关闭后会显示鼠标指针，启用电脑版 UI。",
         onCheckedChange = onTouchscreenEnabledChanged
     )
 }
@@ -630,21 +617,6 @@ private fun SettingsActionListItem(
                 onClick = onClick
             )
     )
-}
-
-@Composable
-private fun SettingsLauncherIconSection(
-    uiState: SettingsScreenViewModel.UiState,
-    onLauncherIconSelected: (LauncherIcon) -> Unit,
-) {
-    LauncherIcon.entries.forEach { icon ->
-        LauncherIconOptionRow(
-            icon = icon,
-            selected = uiState.selectedLauncherIcon == icon,
-            enabled = !uiState.busy,
-            onSelect = onLauncherIconSelected
-        )
-    }
 }
 
 @Composable
@@ -812,17 +784,15 @@ private fun SettingsAuthorInfoSection() {
             text = stringResource(R.string.settings_author_contributor_freude916_name),
             url = stringResource(R.string.settings_author_contributor_freude916_url),
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.settings_author_icon_design_label),
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            SettingsExternalLinkText(
-                text = stringResource(R.string.settings_author_contributor_raw_filter_name),
-                url = stringResource(R.string.settings_author_contributor_raw_filter_url),
-            )
-        }
+        Text(
+            text = stringResource(R.string.settings_author_icon_design_label),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        SettingsExternalLinkText(
+            text = stringResource(R.string.settings_author_contributor_raw_filter_name),
+            url = stringResource(R.string.settings_author_contributor_raw_filter_url),
+        )
         Text(
             text = stringResource(R.string.settings_author_special_thanks_label),
             style = MaterialTheme.typography.bodySmall
@@ -995,40 +965,6 @@ private fun BackBehaviorOptionRow(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = text)
-    }
-}
-
-@Composable
-private fun LauncherIconOptionRow(
-    icon: LauncherIcon,
-    selected: Boolean,
-    enabled: Boolean,
-    onSelect: (LauncherIcon) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .hapticToggleable(
-                value = selected,
-                enabled = enabled,
-                onValueChange = { onSelect(icon) }
-            )
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = null,
-            enabled = enabled
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            Text(text = icon.title)
-            Text(
-                text = icon.description,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
     }
 }
 

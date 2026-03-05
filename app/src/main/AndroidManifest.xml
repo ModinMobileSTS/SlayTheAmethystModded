@@ -9,9 +9,9 @@
         android:allowBackup="true"
         android:appCategory="game"
         android:allowNativeHeapPointerTagging="false"
-        android:icon="@mipmap/ic_launcher_amber"
+        android:icon="@mipmap/ic_launcher_amethyst"
         android:label="SlayTheAmethyst"
-        android:roundIcon="@mipmap/ic_launcher_amber_round"
+        android:roundIcon="@mipmap/ic_launcher_amethyst_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.SlayTheAmethyst">
 
@@ -38,6 +38,10 @@
             android:exported="true"
             android:enableOnBackInvokedCallback="false">
             <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
@@ -59,61 +63,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <activity-alias
-            android:name=".alias.LauncherIconClassicAlias"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher"
-            android:label="SlayTheAmethyst"
-            android:roundIcon="@mipmap/ic_launcher_round"
-            android:targetActivity="io.stamethyst.LauncherActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".alias.LauncherIconRubyAlias"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_ruby"
-            android:label="SlayTheAmethyst"
-            android:roundIcon="@mipmap/ic_launcher_ruby_round"
-            android:targetActivity="io.stamethyst.LauncherActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".alias.LauncherIconEmeraldAlias"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_emerald"
-            android:label="SlayTheAmethyst"
-            android:roundIcon="@mipmap/ic_launcher_emerald_round"
-            android:targetActivity="io.stamethyst.LauncherActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".alias.LauncherIconAmberAlias"
-            android:enabled="true"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_amber"
-            android:label="SlayTheAmethyst"
-            android:roundIcon="@mipmap/ic_launcher_amber_round"
-            android:targetActivity="io.stamethyst.LauncherActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
     </application>
 
 </manifest>
