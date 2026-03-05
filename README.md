@@ -30,29 +30,9 @@ Android launcher for running Slay the Spire (`desktop-1.0.jar`) on Android with:
    You can download these files from:
    - `https://github.com/ModinMobileSTS/GdxVideoDesktopAndroidNative/releases`
 
-## CI Release Build (Private Dependency Bundle)
-GitHub-hosted runners do not have your local Steam/runtime files. For release workflow, prepare one private dependency archive and host it in a private location.
-
-Expected archive format (`.tar.gz`):
-- `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
-- `build-deps/runtime-pack/jre8-pojav.zip`
-- `build-deps/runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so`
-- `build-deps/runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so`
-
-Required `release-signing` environment settings:
-- Variables:
-  - `BUILD_DEPS_RELEASE_TAG` (tag that contains the dependency asset, example `deps-20260305`)
-  - `BUILD_DEPS_ASSET_NAME` (optional, default `build-deps.tar.gz`)
-  - `BUILD_DEPS_REPO` (optional, default current repository, format `owner/repo`)
-  - `BUILD_DEPS_SHA256` (archive sha256 checksum)
-- Secrets:
-  - `BUILD_DEPS_GH_TOKEN` (optional; required when downloading from another private repository)
-  - `ANDROID_KEYSTORE_BASE64`
-  - `RELEASE_STORE_PASSWORD`
-  - `RELEASE_KEY_ALIAS`
-  - `RELEASE_KEY_PASSWORD`
-
-The workflow downloads the archive from GitHub Release via `gh release download`, verifies `BUILD_DEPS_SHA256`, unpacks it, sets `STEAM_PATH` to the unpacked `steamapps`, and copies `runtime-pack` into workspace before `:app:assembleRelease`.
+## CI Release Build
+Release automation operations and onboarding are documented in:
+- `docs/release-automation/README.md`
 
 ## Build
 ```bash
@@ -114,6 +94,7 @@ Options:
 ## Documentation Map
 - Entry guide and prerequisites: `README.md`
 - Backend launch chain: `docs/backend-startup-chain.md`
+- Release automation guide: `docs/release-automation/README.md`
 - Debug automation skill reference: `skills/sts-debug-automation/SKILL.md`
 
 ## Credits
