@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -124,3 +124,25 @@ jobs:
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/release/*.APK
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          shopt -s nullglob
+          assets=(app/build/outputs/apk/release/*.apk app/build/outputs/apk/release/*.APK)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No APK assets found for release publish." >&2
+            exit 1
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+          fi
