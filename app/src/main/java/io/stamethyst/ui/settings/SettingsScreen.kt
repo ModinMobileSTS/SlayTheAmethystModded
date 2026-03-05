@@ -53,6 +53,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -740,20 +742,37 @@ private fun SettingsAuthorInfoSection() {
             text = stringResource(R.string.settings_author_repo_label),
             style = MaterialTheme.typography.bodyMedium
         )
-        SelectionContainer {
-            Text(
-                text = stringResource(R.string.settings_author_repo_url),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
+        SettingsExternalLinkText(
+            text = stringResource(R.string.settings_author_repo_url),
+            url = stringResource(R.string.settings_author_repo_url),
+        )
         Text(
             text = stringResource(R.string.settings_author_contributors_label),
             style = MaterialTheme.typography.bodyMedium
         )
-        Text(
-            text = stringResource(R.string.settings_author_contributors_value),
-            style = MaterialTheme.typography.bodySmall
+        SettingsExternalLinkText(
+            text = stringResource(R.string.settings_author_contributor_ketal_name),
+            url = stringResource(R.string.settings_author_contributor_ketal_url),
         )
+        SettingsExternalLinkText(
+            text = stringResource(R.string.settings_author_contributor_apricityx_name),
+            url = stringResource(R.string.settings_author_contributor_apricityx_url),
+        )
+        SettingsExternalLinkText(
+            text = stringResource(R.string.settings_author_contributor_freude916_name),
+            url = stringResource(R.string.settings_author_contributor_freude916_url),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.settings_author_icon_design_label),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            SettingsExternalLinkText(
+                text = stringResource(R.string.settings_author_contributor_raw_filter_name),
+                url = stringResource(R.string.settings_author_contributor_raw_filter_url),
+            )
+        }
         HorizontalDivider()
         Text(
             text = stringResource(R.string.settings_author_release_notice),
@@ -768,6 +787,24 @@ private fun SettingsAuthorInfoSection() {
             style = MaterialTheme.typography.bodySmall
         )
     }
+}
+
+@Composable
+private fun SettingsExternalLinkText(
+    text: String,
+    url: String,
+) {
+    val uriHandler = LocalUriHandler.current
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall.copy(
+            color = MaterialTheme.colorScheme.primary,
+            textDecoration = TextDecoration.Underline,
+        ),
+        modifier = Modifier.hapticClickable(enabled = true) {
+            uriHandler.openUri(url)
+        }
+    )
 }
 
 @Composable
