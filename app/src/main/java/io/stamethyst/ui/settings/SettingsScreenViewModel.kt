@@ -59,6 +59,7 @@ class SettingsScreenViewModel : ViewModel() {
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
+        val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
@@ -107,6 +108,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
                 val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
+                val showModFileName = readShowModFileNameSelection(host)
                 val mobileHudEnabled = readMobileHudEnabledSelection(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
@@ -151,6 +153,7 @@ class SettingsScreenViewModel : ViewModel() {
                         if (longPressMouseShowsKeyboard) "ON" else "OFF"
                     ) +
                     "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
+                    "\nMod card name from file: " + if (showModFileName) "ON" else "OFF" +
                     "\nLWJGL Debug: " + if (lwjglDebugEnabled) "ON" else "OFF" +
                     "\nGDX pad cursor debug log: " + if (gdxPadCursorDebugEnabled) "ON" else "OFF" +
                     "\nGLBridge swap heartbeat log: " + if (glBridgeSwapHeartbeatDebugEnabled) "ON" else "OFF" +
@@ -174,6 +177,7 @@ class SettingsScreenViewModel : ViewModel() {
                         showFloatingMouseWindow = showFloatingMouseWindow,
                         longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
+                        showModFileName = showModFileName,
                         mobileHudEnabled = mobileHudEnabled,
                         lwjglDebugEnabled = lwjglDebugEnabled,
                         gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
@@ -365,6 +369,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(autoSwitchLeftAfterRightClick = enabled)
         saveAutoSwitchLeftAfterRightClickSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onShowModFileNameChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(showModFileName = enabled)
+        saveShowModFileNameSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -708,6 +721,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveAutoSwitchLeftAfterRightClickSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveAutoSwitchLeftAfterRightClick(host, enabled)
+    }
+
+    private fun readShowModFileNameSelection(host: Activity): Boolean {
+        return LauncherPreferences.readShowModFileName(host)
+    }
+
+    private fun saveShowModFileNameSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveShowModFileName(host, enabled)
     }
 
     private fun readMobileHudEnabledSelection(host: Activity): Boolean {

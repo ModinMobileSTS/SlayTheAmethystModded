@@ -94,7 +94,7 @@
     <string name="main_mod_share">分享</string>
     <string name="main_mod_rename">重命名文件</string>
     <string name="main_mod_rename_dialog_title">重命名模组文件</string>
-    <string name="main_mod_rename_hint">文件名（不带 .jar）</string>
+    <string name="main_mod_rename_hint">文件名</string>
     <string name="main_mod_delete">删除</string>
     <string name="main_mod_drag">拖拽模组</string>
     <string name="main_mod_version_format">版本: %1$s</string>

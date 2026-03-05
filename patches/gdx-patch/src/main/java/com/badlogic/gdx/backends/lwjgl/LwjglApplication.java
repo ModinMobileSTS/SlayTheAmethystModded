@@ -64,6 +64,7 @@ public class LwjglApplication implements Application {
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
+	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
@@ -227,6 +228,40 @@ public class LwjglApplication implements Application {
 		config.height = height;
 		config.vSyncEnabled = true;
 		return config;
+	}
+
+	private static Boolean parseBooleanLike (String rawValue) {
+		if (rawValue == null) return null;
+		String normalized = rawValue.trim();
+		if (normalized.length() == 0) return null;
+
+		if ("true".equalsIgnoreCase(normalized) || "1".equals(normalized) || "yes".equalsIgnoreCase(normalized)
+			|| "on".equalsIgnoreCase(normalized)) {
+			return Boolean.TRUE;
+		}
+		if ("false".equalsIgnoreCase(normalized) || "0".equals(normalized) || "no".equalsIgnoreCase(normalized)
+			|| "off".equalsIgnoreCase(normalized)) {
+			return Boolean.FALSE;
+		}
+		return null;
+	}
+
+	private void applyMobileHudModeFromProperty () {
+		Boolean parsed = parseBooleanLike(System.getProperty(MOBILE_HUD_ENABLED_PROP));
+		if (parsed == null) return;
+
+		try {
+			Class<?> settingsClass = Class.forName("com.megacrit.cardcrawl.core.Settings");
+			Field isMobileField = settingsClass.getDeclaredField("isMobile");
+			isMobileField.setAccessible(true);
+			boolean enabled = parsed.booleanValue();
+			if (isMobileField.getBoolean(null) != enabled) {
+				isMobileField.setBoolean(null, enabled);
+				System.out.println("[gdx-patch] Applied mobile HUD mode: " + enabled);
+			}
+		} catch (Throwable t) {
+			System.out.println("[gdx-patch] Failed to apply mobile HUD mode: " + t);
+		}
 	}
 
 	private void initialize () {
@@ -1109,6 +1144,7 @@ public class LwjglApplication implements Application {
 		}
 
 		ensureDisplayContextCurrent("create");
+		applyMobileHudModeFromProperty();
 		// Reduced log mode: listener.create begin log disabled.
 		// System.out.println("[gdx-patch][diag] listener.create begin");
 		listener.create();

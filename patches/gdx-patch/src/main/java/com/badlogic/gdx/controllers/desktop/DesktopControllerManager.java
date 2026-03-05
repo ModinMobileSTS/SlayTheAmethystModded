@@ -30,6 +30,7 @@ public class DesktopControllerManager implements ControllerManager {
     private static final byte BUTTON_RELEASE = 0;
     private static final byte BUTTON_PRESS = 1;
     private static final String TOUCHSCREEN_ENABLED_PROP = "amethyst.touchscreen_enabled";
+    private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 
     // Raw axis order in CallbackBridge gamepad buffers (GLFW standard)
     private static final int RAW_AXIS_LEFT_X = 0;
@@ -58,6 +59,7 @@ public class DesktopControllerManager implements ControllerManager {
     private boolean hasSeenInput = false;
     private boolean directInputEnableAttempted = false;
     private Boolean expectedTouchscreenEnabled = null;
+    private Boolean expectedMobileHudEnabled = null;
 
     public DesktopControllerManager() {
         buttonBuffer = createButtonBuffer();
@@ -132,9 +134,13 @@ public class DesktopControllerManager implements ControllerManager {
 
     private void enforceConfiguredTouchscreenMode() {
         boolean expectedTouchscreen = resolveExpectedTouchscreenEnabled();
+        boolean expectedMobileHud = resolveExpectedMobileHudEnabled();
         try {
             if (Settings.isTouchScreen != expectedTouchscreen) {
                 Settings.isTouchScreen = expectedTouchscreen;
+            }
+            if (Settings.isMobile != expectedMobileHud) {
+                Settings.isMobile = expectedMobileHud;
             }
             if (!hasSeenInput && Settings.isControllerMode) {
                 Settings.isControllerMode = false;
@@ -160,6 +166,26 @@ public class DesktopControllerManager implements ControllerManager {
         }
 
         expectedTouchscreenEnabled = expected;
+        return expected;
+    }
+
+    private boolean resolveExpectedMobileHudEnabled() {
+        if (expectedMobileHudEnabled != null) {
+            return expectedMobileHudEnabled;
+        }
+
+        boolean expected = false;
+        try {
+            expected = Settings.isMobile;
+        } catch (Throwable ignored) {
+        }
+
+        Boolean parsed = parseBooleanLike(System.getProperty(MOBILE_HUD_ENABLED_PROP));
+        if (parsed != null) {
+            expected = parsed;
+        }
+
+        expectedMobileHudEnabled = expected;
         return expected;
     }
 

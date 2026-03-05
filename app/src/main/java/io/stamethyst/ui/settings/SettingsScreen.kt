@@ -100,6 +100,7 @@ fun LauncherSettingsScreen(
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
+        onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
         onMobileHudEnabledChanged = { enabled -> viewModel.onMobileHudEnabledChanged(activity, enabled) },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
@@ -130,6 +131,7 @@ private fun LauncherSettingsScreenPreview() {
             showFloatingMouseWindow = true,
             longPressMouseShowsKeyboard = true,
             autoSwitchLeftAfterRightClick = true,
+            showModFileName = false,
             mobileHudEnabled = false,
             lwjglDebugEnabled = false,
             gdxPadCursorDebugEnabled = false,
@@ -161,6 +163,7 @@ private fun LauncherSettingsScreenContent(
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
+    onShowModFileNameChanged: (Boolean) -> Unit = {},
     onMobileHudEnabledChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
@@ -228,6 +231,7 @@ private fun LauncherSettingsScreenContent(
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
+                        onShowModFileNameChanged = onShowModFileNameChanged,
                         onMobileHudEnabledChanged = onMobileHudEnabledChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
@@ -461,6 +465,7 @@ private fun SettingsInputSection(
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
+    onShowModFileNameChanged: (Boolean) -> Unit,
     onMobileHudEnabledChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
@@ -525,6 +530,15 @@ private fun SettingsInputSection(
         disabledText = "右键后自动切回左键：禁用",
         description = "启用后，触发一次右键后会自动切换回左键模式。",
         onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.showModFileName,
+        enabled = !uiState.busy,
+        enabledText = "模组显示名：文件名",
+        disabledText = "模组显示名：原名",
+        description = "启用后，模组卡片标题使用导入文件名。",
+        onCheckedChange = onShowModFileNameChanged
     )
 
     SwitchSettingRow(

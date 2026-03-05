@@ -30,6 +30,7 @@ object LauncherConfig {
     private const val PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD =
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
+    private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_LAUNCHER_ICON = "launcher_icon"
@@ -53,6 +54,7 @@ object LauncherConfig {
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
+    const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
@@ -167,6 +169,19 @@ object LauncherConfig {
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK, enabled)
+        }
+    }
+
+    fun readShowModFileName(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_SHOW_MOD_FILE_NAME,
+            DEFAULT_SHOW_MOD_FILE_NAME
+        )
+    }
+
+    fun saveShowModFileName(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SHOW_MOD_FILE_NAME, enabled)
         }
     }
 

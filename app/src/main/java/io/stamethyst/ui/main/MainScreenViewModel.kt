@@ -4,9 +4,11 @@ import android.app.Activity
 import android.app.ApplicationExitInfo
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.FileProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +19,7 @@ import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
+import io.stamethyst.backend.file_interactive.SafExportActivity
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
@@ -27,23 +30,46 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.JvmLogShareService
 import io.stamethyst.ui.settings.ModImportResult
 import io.stamethyst.ui.settings.SettingsFileService
+import java.io.File
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.ArrayList
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Stable
 class MainScreenViewModel : ViewModel() {
+    data class ModFolder(
+        val id: String,
+        val name: String
+    )
+
+    data class FolderCollapseSnapshot(
+        val folderCollapsed: Map<String, Boolean>,
+        val unassignedCollapsed: Boolean
+    )
+
     data class UiState(
+        val initializing: Boolean = true,
         val busy: Boolean = false,
         val busyMessage: String? = null,
         val statusSummary: String = "",
         val optionalMods: List<ModItemUi> = emptyList(),
-        val controlsEnabled: Boolean = true
+        val controlsEnabled: Boolean = true,
+        val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
+        val modFolders: List<ModFolder> = emptyList(),
+        val folderAssignments: Map<String, String> = emptyMap(),
+        val folderCollapsed: Map<String, Boolean> = emptyMap(),
+        val unassignedCollapsed: Boolean = false,
+        val statusSummaryCollapsed: Boolean = false,
+        val unassignedFolderName: String = DEFAULT_UNASSIGNED_FOLDER_NAME,
+        val unassignedFolderOrder: Int = 0
     )
 
     private data class DependencyEnableResult(
@@ -53,8 +79,18 @@ class MainScreenViewModel : ViewModel() {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val optionalModsSnapshot = ArrayList<ModItemUi>()
+    private var optionalModsWithPendingSelectionCache: List<ModItemUi> = emptyList()
+    private var optionalModsWithPendingSelectionDirty = true
     private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
     private var pendingSelectionInitialized = false
+    private val modFolders = ArrayList<ModFolder>()
+    private val folderAssignments = LinkedHashMap<String, String>()
+    private val folderCollapsed = LinkedHashMap<String, Boolean>()
+    private var unassignedCollapsed = false
+    private var statusSummaryCollapsed = false
+    private var unassignedFolderName = DEFAULT_UNASSIGNED_FOLDER_NAME
+    private var unassignedFolderOrder = 0
+    private var folderStateLoaded = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -68,14 +104,19 @@ class MainScreenViewModel : ViewModel() {
         val mods = loadModItems(host)
         val optionalMods = mods.filter { !it.required }
 
+        ensureFolderStateLoaded(host)
         if (!pendingSelectionInitialized) {
             initializePendingSelection(optionalMods)
             pendingSelectionInitialized = true
         }
         optionalModsSnapshot.clear()
         optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
+        markOptionalModsWithPendingSelectionDirty()
         prunePendingSelectionToInstalled()
+        sanitizeFolderAssignments(optionalMods)
+        persistFolderState(host)
         publishUiState(
+            host = host,
             hasJar = hasJar,
             hasMts = hasMts,
             hasBaseMod = hasBaseMod,
@@ -87,6 +128,119 @@ class MainScreenViewModel : ViewModel() {
         onDeleteModRequested(host, mod)
     }
 
+    fun onExportMod(host: Activity, mod: ModItemUi) {
+        if (uiState.busy || !mod.installed) {
+            return
+        }
+        val sourceFile = resolveExportableModFile(mod)
+        if (sourceFile == null) {
+            Toast.makeText(host, "模组文件不存在，无法导出", Toast.LENGTH_LONG).show()
+            return
+        }
+        val exportIntent = Intent(host, SafExportActivity::class.java).apply {
+            putExtra(SafExportActivity.EXTRA_SOURCE_PATH, sourceFile.absolutePath)
+            putExtra(SafExportActivity.EXTRA_SUGGESTED_NAME, sourceFile.name)
+            putExtra(SafExportActivity.EXTRA_MIME_TYPE, "application/java-archive")
+        }
+        host.startActivity(exportIntent)
+    }
+
+    fun onShareMod(host: Activity, mod: ModItemUi) {
+        if (uiState.busy || !mod.installed) {
+            return
+        }
+        val sourceFile = resolveExportableModFile(mod)
+        if (sourceFile == null) {
+            Toast.makeText(host, "模组文件不存在，无法分享", Toast.LENGTH_LONG).show()
+            return
+        }
+        setBusy(true, "正在准备分享模组...")
+        executor.execute {
+            try {
+                val shareFile = prepareModShareFile(host, sourceFile)
+                val shareUri = FileProvider.getUriForFile(
+                    host,
+                    "${host.packageName}.fileprovider",
+                    shareFile
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    try {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/java-archive"
+                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                            putExtra(Intent.EXTRA_SUBJECT, sourceFile.name)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val chooserIntent = Intent.createChooser(
+                            shareIntent,
+                            host.getString(R.string.main_mod_share_chooser_title)
+                        )
+                        host.startActivity(chooserIntent)
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(host, "没有可用应用可分享该模组。", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    Toast.makeText(host, "分享模组失败：${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun onRenameModFile(host: Activity, mod: ModItemUi, newFileNameInput: String) {
+        if (uiState.busy || !mod.installed) {
+            return
+        }
+        val sourceFile = resolveExportableModFile(mod)
+        if (sourceFile == null) {
+            Toast.makeText(host, "模组文件不存在，无法重命名", Toast.LENGTH_LONG).show()
+            return
+        }
+        val normalizedFileName = normalizeModJarFileName(newFileNameInput)
+        if (normalizedFileName == null) {
+            Toast.makeText(host, "文件名不能为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (normalizedFileName.contains('/') || normalizedFileName.contains('\\')) {
+            Toast.makeText(host, "文件名不能包含路径分隔符", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val targetFile = File(sourceFile.parentFile, normalizedFileName)
+        if (targetFile.absolutePath == sourceFile.absolutePath) {
+            return
+        }
+        if (targetFile.exists()) {
+            Toast.makeText(host, "目标文件已存在：${targetFile.name}", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val assignedFolderId = resolveAssignedFolderId(mod)
+        setBusy(true, "正在重命名模组文件...")
+        executor.execute {
+            try {
+                moveFileReplacing(sourceFile, targetFile)
+                host.runOnUiThread {
+                    clearAssignmentForMod(mod)
+                    if (!assignedFolderId.isNullOrBlank()) {
+                        folderAssignments[targetFile.absolutePath] = assignedFolderId
+                        persistFolderState(host)
+                    }
+                    Toast.makeText(host, "已重命名为：${targetFile.name}", Toast.LENGTH_SHORT).show()
+                    refresh(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    Toast.makeText(host, "重命名失败：${error.message}", Toast.LENGTH_LONG).show()
+                    refresh(host)
+                }
+            }
+        }
+    }
+
     fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
         onModChecked(host, mod, enabled)
     }
@@ -96,6 +250,270 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD, forceJvmCrash = false)
+    }
+
+    fun suggestNextFolderName(): String {
+        return buildNextFolderName()
+    }
+
+    fun addFolder(host: Activity, name: String) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val input = name.trim()
+        if (input.isEmpty()) {
+            Toast.makeText(host, "文件夹名称不能为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uniqueName = ensureUniqueFolderName(input)
+        modFolders.add(ModFolder(id = UUID.randomUUID().toString(), name = uniqueName))
+        folderCollapsed[modFolders.last().id] = false
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun renameFolder(host: Activity, folderId: String, newName: String) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val input = newName.trim()
+        if (input.isEmpty()) {
+            Toast.makeText(host, "文件夹名称不能为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (folderId == UNASSIGNED_FOLDER_ID) {
+            if (input == unassignedFolderName) {
+                return
+            }
+            unassignedFolderName = input
+            persistFolderState(host)
+            republish(host)
+            return
+        }
+        val folderIndex = modFolders.indexOfFirst { it.id == folderId }
+        if (folderIndex < 0) {
+            return
+        }
+        val uniqueName = ensureUniqueFolderName(input, excludeFolderId = folderId)
+        if (uniqueName == modFolders[folderIndex].name) {
+            return
+        }
+        modFolders[folderIndex] = modFolders[folderIndex].copy(name = uniqueName)
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun deleteFolder(host: Activity, folderId: String) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val folder = modFolders.firstOrNull { it.id == folderId } ?: return
+        modFolders.removeAll { it.id == folderId }
+        folderAssignments.entries.removeIf { it.value == folderId }
+        folderCollapsed.remove(folderId)
+        unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
+        persistFolderState(host)
+        Toast.makeText(host, "已删除 ${folder.name}", Toast.LENGTH_SHORT).show()
+        republish(host)
+    }
+
+    fun assignModToFolder(host: Activity, modId: String, folderId: String) {
+        val target = findOptionalModByAnyId(modId) ?: return
+        assignModToFolder(host, target, folderId)
+    }
+
+    fun assignModToFolder(host: Activity, mod: ModItemUi, folderId: String) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        if (modFolders.none { it.id == folderId }) {
+            return
+        }
+        val key = resolveModAssignmentKey(mod) ?: return
+        val currentFolderId = resolveAssignedFolderId(mod)
+        if (currentFolderId == folderId) {
+            return
+        }
+        clearAssignmentForMod(mod)
+        folderAssignments[key] = folderId
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun moveModToUnassigned(host: Activity, modId: String) {
+        val target = findOptionalModByAnyId(modId) ?: return
+        moveModToUnassigned(host, target)
+    }
+
+    fun moveModToUnassigned(host: Activity, mod: ModItemUi) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        if (resolveAssignedFolderId(mod) == null) {
+            return
+        }
+        clearAssignmentForMod(mod)
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val targetMods = resolveOptionalModsWithPendingSelection().filter {
+            resolveAssignedFolderId(it) == folderId
+        }
+        if (targetMods.isEmpty()) {
+            Toast.makeText(host, "文件夹为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (selected) {
+            batchEnableMods(host, targetMods)
+        } else {
+            batchDisableMods(host, targetMods)
+        }
+        republish(host)
+    }
+
+    fun setUnassignedSelected(host: Activity, selected: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val targetMods = resolveOptionalModsWithPendingSelection().filter {
+            resolveAssignedFolderId(it) == null
+        }
+        if (targetMods.isEmpty()) {
+            Toast.makeText(host, "未分类文件夹为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (selected) {
+            batchEnableMods(host, targetMods)
+        } else {
+            batchDisableMods(host, targetMods)
+        }
+        republish(host)
+    }
+
+    fun toggleFolderCollapsed(host: Activity, folderId: String) {
+        if (modFolders.none { it.id == folderId }) {
+            return
+        }
+        setFolderCollapsed(host, folderId, !(folderCollapsed[folderId] == true))
+    }
+
+    fun setFolderCollapsed(host: Activity, folderId: String, collapsed: Boolean) {
+        ensureFolderStateLoaded(host)
+        if (modFolders.none { it.id == folderId }) {
+            return
+        }
+        if ((folderCollapsed[folderId] == true) == collapsed) {
+            return
+        }
+        folderCollapsed[folderId] = collapsed
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun toggleUnassignedCollapsed(host: Activity) {
+        setUnassignedCollapsed(host, !unassignedCollapsed)
+    }
+
+    fun setUnassignedCollapsed(host: Activity, collapsed: Boolean) {
+        ensureFolderStateLoaded(host)
+        if (unassignedCollapsed == collapsed) {
+            return
+        }
+        unassignedCollapsed = collapsed
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun toggleStatusSummaryCollapsed(host: Activity) {
+        setStatusSummaryCollapsed(host, !statusSummaryCollapsed)
+    }
+
+    fun setStatusSummaryCollapsed(host: Activity, collapsed: Boolean) {
+        ensureFolderStateLoaded(host)
+        if (statusSummaryCollapsed == collapsed) {
+            return
+        }
+        statusSummaryCollapsed = collapsed
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun moveFolderUp(host: Activity, folderId: String) {
+        moveFolderToken(host, folderId, -1)
+    }
+
+    fun moveFolderDown(host: Activity, folderId: String) {
+        moveFolderToken(host, folderId, 1)
+    }
+
+    fun moveUnassignedUp(host: Activity) {
+        moveFolderToken(host, UNASSIGNED_FOLDER_ID, -1)
+    }
+
+    fun moveUnassignedDown(host: Activity) {
+        moveFolderToken(host, UNASSIGNED_FOLDER_ID, 1)
+    }
+
+    fun moveFolderTokenToIndex(host: Activity, draggedFolderId: String, targetIndex: Int) {
+        ensureFolderStateLoaded(host)
+        val tokens = buildFolderOrderTokens().toMutableList()
+        val fromIndex = tokens.indexOf(draggedFolderId)
+        if (fromIndex < 0) {
+            return
+        }
+        val clampedTargetIndex = targetIndex.coerceIn(0, tokens.lastIndex)
+        if (fromIndex == clampedTargetIndex) {
+            return
+        }
+        val movingToken = tokens.removeAt(fromIndex)
+        val insertIndex = clampedTargetIndex.coerceIn(0, tokens.size)
+        tokens.add(insertIndex, movingToken)
+        applyFolderOrderTokens(tokens)
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun collapseAllFoldersForDragWithSnapshot(host: Activity): FolderCollapseSnapshot {
+        ensureFolderStateLoaded(host)
+        val snapshot = FolderCollapseSnapshot(
+            folderCollapsed = LinkedHashMap(folderCollapsed),
+            unassignedCollapsed = unassignedCollapsed
+        )
+        val collapsedAll = LinkedHashMap<String, Boolean>()
+        modFolders.forEach { collapsedAll[it.id] = true }
+        folderCollapsed.clear()
+        folderCollapsed.putAll(collapsedAll)
+        unassignedCollapsed = true
+        persistFolderState(host)
+        republish(host)
+        return snapshot
+    }
+
+    fun restoreFolderCollapseSnapshot(host: Activity, snapshot: FolderCollapseSnapshot?) {
+        if (snapshot == null) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val validIds = modFolders.map { it.id }.toHashSet()
+        val restored = LinkedHashMap<String, Boolean>()
+        modFolders.forEach { restored[it.id] = snapshot.folderCollapsed[it.id] == true }
+        folderCollapsed.clear()
+        folderCollapsed.putAll(restored.filterKeys { validIds.contains(it) })
+        unassignedCollapsed = snapshot.unassignedCollapsed
+        persistFolderState(host)
+        republish(host)
     }
 
     fun onModJarsPicked(host: Activity, uris: List<Uri>?) {
@@ -269,6 +687,7 @@ class MainScreenViewModel : ViewModel() {
             ).show()
         }
         publishUiState(
+            host = host,
             hasJar = RuntimePaths.importedStsJar(host).exists(),
             hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
@@ -305,6 +724,8 @@ class MainScreenViewModel : ViewModel() {
                         val deleted = ModManager.deleteOptionalMod(host, mod.modId)
                         host.runOnUiThread {
                             clearPendingSelectionForMod(mod)
+                            removeFolderAssignmentForDeletedMod(mod)
+                            persistFolderState(host)
                             if (deleted) {
                                 Toast.makeText(host, "已删除模组：$displayName", Toast.LENGTH_SHORT).show()
                             } else {
@@ -614,6 +1035,441 @@ class MainScreenViewModel : ViewModel() {
             .show()
     }
 
+    private fun resolveExportableModFile(mod: ModItemUi): File? {
+        val path = mod.storagePath.trim()
+        if (path.isEmpty()) {
+            return null
+        }
+        val file = File(path)
+        return if (file.exists() && file.isFile) file else null
+    }
+
+    private fun normalizeModJarFileName(input: String): String? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) {
+            return null
+        }
+        return if (trimmed.endsWith(".jar", ignoreCase = true)) {
+            trimmed
+        } else {
+            "$trimmed.jar"
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun moveFileReplacing(source: File, target: File) {
+        if (target.exists()) {
+            throw IOException("Target already exists: ${target.absolutePath}")
+        }
+        if (source.renameTo(target)) {
+            return
+        }
+        source.inputStream().use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+                output.flush()
+            }
+        }
+        if (!source.delete()) {
+            if (!target.delete()) {
+                // ignore cleanup failure, keep the copied file as best-effort output.
+            }
+            throw IOException("Failed to delete old file: ${source.absolutePath}")
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun prepareModShareFile(host: Activity, sourceFile: File): File {
+        val shareDir = File(host.cacheDir, "share/mods")
+        if (!shareDir.exists() && !shareDir.mkdirs()) {
+            throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
+        }
+        val safeName = sourceFile.name.ifBlank { "mod-export.jar" }
+        val targetFile = File(shareDir, safeName)
+        if (sourceFile.absolutePath == targetFile.absolutePath) {
+            return sourceFile
+        }
+        sourceFile.inputStream().use { input ->
+            targetFile.outputStream().use { output ->
+                input.copyTo(output)
+                output.flush()
+            }
+        }
+        return targetFile
+    }
+
+    private fun showBatchMissingDependencyDialog(host: Activity, missingDependencies: List<String>) {
+        val missing = missingDependencies
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toList()
+        if (missing.isEmpty()) {
+            return
+        }
+        val message = buildString {
+            append("批量启用完成，但缺少以下前置模组：\n")
+            missing.forEach { dep ->
+                append("- ").append(dep).append('\n')
+            }
+            append("\n请先导入缺失前置，否则游戏可能无法正常启动。")
+        }
+        AlertDialog.Builder(host)
+            .setTitle("检测到缺失前置模组")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun batchEnableMods(host: Activity, targetMods: List<ModItemUi>) {
+        val autoEnabled = LinkedHashSet<String>()
+        val missingDependencies = LinkedHashSet<String>()
+        targetMods.forEach { mod ->
+            if (!mod.installed || mod.required || isPendingOptionalModEnabled(mod)) {
+                return@forEach
+            }
+            val result = enableModWithDependencies(
+                host = host,
+                rootMod = mod,
+                optionalMods = resolveOptionalModsWithPendingSelection()
+            )
+            autoEnabled.addAll(result.autoEnabledModNames)
+            missingDependencies.addAll(result.missingDependencies)
+        }
+
+        if (autoEnabled.isNotEmpty()) {
+            Toast.makeText(
+                host,
+                "已自动启用前置模组：${autoEnabled.joinToString(", ")}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        if (missingDependencies.isNotEmpty()) {
+            showBatchMissingDependencyDialog(host, ArrayList(missingDependencies))
+        }
+    }
+
+    private fun batchDisableMods(host: Activity, targetMods: List<ModItemUi>) {
+        val exclusionIds = LinkedHashSet<String>()
+        targetMods.forEach { mod ->
+            collectModIdentityIds(mod).forEach { exclusionIds.add(it) }
+        }
+
+        val blocked = LinkedHashMap<String, List<String>>()
+        targetMods.forEach { mod ->
+            if (!isPendingOptionalModEnabled(mod)) {
+                return@forEach
+            }
+            val dependents = findEnabledDependentModNamesExcludingTargets(
+                targetMod = mod,
+                optionalMods = resolveOptionalModsWithPendingSelection(),
+                excludedIds = exclusionIds
+            )
+            if (dependents.isEmpty()) {
+                setPendingOptionalModEnabled(mod, false)
+            } else {
+                blocked[resolveModDisplayName(mod)] = dependents
+            }
+        }
+
+        if (blocked.isNotEmpty()) {
+            val detail = blocked.entries.joinToString("；") { entry ->
+                "「${entry.key}」被 ${entry.value.joinToString(", ")} 依赖"
+            }
+            Toast.makeText(host, "部分模组无法关闭：$detail", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun findEnabledDependentModNamesExcludingTargets(
+        targetMod: ModItemUi,
+        optionalMods: List<ModItemUi>,
+        excludedIds: Set<String>
+    ): List<String> {
+        val targetIds = collectModIdentityIds(targetMod)
+        if (targetIds.isEmpty()) {
+            return emptyList()
+        }
+        val dependentNames = LinkedHashSet<String>()
+        optionalMods.forEach { mod ->
+            if (!mod.enabled) {
+                return@forEach
+            }
+            val modIds = collectModIdentityIds(mod)
+            if (modIds.any { targetIds.contains(it) }) {
+                return@forEach
+            }
+            if (modIds.any { excludedIds.contains(it) }) {
+                return@forEach
+            }
+            val dependsOnTarget = mod.dependencies.any { dependency ->
+                val normalizedDependency = normalizeModId(dependency)
+                normalizedDependency.isNotEmpty() && targetIds.contains(normalizedDependency)
+            }
+            if (dependsOnTarget) {
+                dependentNames.add(resolveModDisplayName(mod))
+            }
+        }
+        return ArrayList(dependentNames)
+    }
+
+    private fun collectModIdentityIds(mod: ModItemUi): Set<String> {
+        val ids = LinkedHashSet<String>()
+        val normalizedModId = normalizeModId(mod.modId)
+        if (normalizedModId.isNotEmpty()) {
+            ids.add(normalizedModId)
+        }
+        val normalizedManifestId = normalizeModId(mod.manifestModId)
+        if (normalizedManifestId.isNotEmpty()) {
+            ids.add(normalizedManifestId)
+        }
+        return ids
+    }
+
+    private fun ensureFolderStateLoaded(host: Activity) {
+        if (folderStateLoaded) {
+            return
+        }
+        loadFolderState(host)
+        folderStateLoaded = true
+    }
+
+    private fun folderPrefs(host: Activity): SharedPreferences {
+        return host.getSharedPreferences(PREFS_MAIN_MOD_FOLDERS, Activity.MODE_PRIVATE)
+    }
+
+    private fun loadFolderState(host: Activity) {
+        val prefs = folderPrefs(host)
+        modFolders.clear()
+        folderAssignments.clear()
+        folderCollapsed.clear()
+
+        runCatching {
+            val array = JSONArray(prefs.getString(KEY_FOLDERS, "[]") ?: "[]")
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val id = item.optString("id").trim()
+                val name = item.optString("name").trim()
+                if (id.isEmpty() || name.isEmpty()) {
+                    continue
+                }
+                modFolders.add(ModFolder(id = id, name = name))
+            }
+        }
+
+        runCatching {
+            val obj = JSONObject(prefs.getString(KEY_ASSIGNMENTS, "{}") ?: "{}")
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val modKey = keys.next().trim()
+                val folderId = obj.optString(modKey).trim()
+                if (modKey.isNotEmpty() && folderId.isNotEmpty()) {
+                    folderAssignments[modKey] = folderId
+                }
+            }
+        }
+
+        runCatching {
+            val obj = JSONObject(prefs.getString(KEY_COLLAPSED, "{}") ?: "{}")
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val folderId = keys.next().trim()
+                if (folderId.isNotEmpty()) {
+                    folderCollapsed[folderId] = obj.optBoolean(folderId, false)
+                }
+            }
+        }
+
+        unassignedCollapsed = prefs.getBoolean(KEY_UNASSIGNED_COLLAPSED, false)
+        statusSummaryCollapsed = prefs.getBoolean(KEY_STATUS_SUMMARY_COLLAPSED, false)
+        unassignedFolderName = prefs.getString(KEY_UNASSIGNED_NAME, DEFAULT_UNASSIGNED_FOLDER_NAME)
+            ?.trim()
+            ?.ifEmpty { DEFAULT_UNASSIGNED_FOLDER_NAME }
+            ?: DEFAULT_UNASSIGNED_FOLDER_NAME
+        unassignedFolderOrder = prefs.getInt(KEY_UNASSIGNED_ORDER, 0).coerceIn(0, modFolders.size)
+    }
+
+    private fun persistFolderState(host: Activity) {
+        val foldersArray = JSONArray()
+        modFolders.forEach { folder ->
+            val item = JSONObject()
+            item.put("id", folder.id)
+            item.put("name", folder.name)
+            foldersArray.put(item)
+        }
+
+        val assignmentsObject = JSONObject()
+        folderAssignments.forEach { (modKey, folderId) ->
+            assignmentsObject.put(modKey, folderId)
+        }
+
+        val collapsedObject = JSONObject()
+        folderCollapsed.forEach { (folderId, collapsed) ->
+            collapsedObject.put(folderId, collapsed)
+        }
+
+        folderPrefs(host).edit()
+            .putString(KEY_FOLDERS, foldersArray.toString())
+            .putString(KEY_ASSIGNMENTS, assignmentsObject.toString())
+            .putString(KEY_COLLAPSED, collapsedObject.toString())
+            .putBoolean(KEY_UNASSIGNED_COLLAPSED, unassignedCollapsed)
+            .putBoolean(KEY_STATUS_SUMMARY_COLLAPSED, statusSummaryCollapsed)
+            .putString(KEY_UNASSIGNED_NAME, unassignedFolderName)
+            .putInt(KEY_UNASSIGNED_ORDER, unassignedFolderOrder.coerceIn(0, modFolders.size))
+            .apply()
+    }
+
+    private fun sanitizeFolderAssignments(optionalMods: List<ModItemUi>) {
+        val validFolderIds = modFolders.map { it.id }.toHashSet()
+        val normalized = LinkedHashMap<String, String>()
+
+        optionalMods.forEach { mod ->
+            val primaryKey = resolveModAssignmentKey(mod) ?: return@forEach
+            val assignedFolderId = resolveAssignedFolderId(mod)
+            if (assignedFolderId != null && validFolderIds.contains(assignedFolderId)) {
+                normalized[primaryKey] = assignedFolderId
+            }
+        }
+
+        folderAssignments.clear()
+        folderAssignments.putAll(normalized)
+
+        val normalizedCollapsed = LinkedHashMap<String, Boolean>()
+        modFolders.forEach { folder ->
+            normalizedCollapsed[folder.id] = folderCollapsed[folder.id] == true
+        }
+        folderCollapsed.clear()
+        folderCollapsed.putAll(normalizedCollapsed)
+
+        unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
+    }
+
+    private fun resolveModAssignmentKey(mod: ModItemUi): String? {
+        val storage = mod.storagePath.trim()
+        if (storage.isNotEmpty()) {
+            return storage
+        }
+        return resolveStoredOptionalModId(mod)
+    }
+
+    private fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
+        val keys = LinkedHashSet<String>()
+        val storage = mod.storagePath.trim()
+        if (storage.isNotEmpty()) {
+            keys.add(storage)
+        }
+        resolveStoredOptionalModId(mod)?.let { keys.add(it) }
+        val normalizedManifest = normalizeModId(mod.manifestModId)
+        if (normalizedManifest.isNotEmpty()) {
+            keys.add(normalizedManifest)
+        }
+        return ArrayList(keys)
+    }
+
+    private fun resolveAssignedFolderId(mod: ModItemUi): String? {
+        val candidates = resolveAssignmentKeyCandidates(mod)
+        for (candidate in candidates) {
+            val folderId = folderAssignments[candidate]
+            if (!folderId.isNullOrEmpty()) {
+                return folderId
+            }
+        }
+        return null
+    }
+
+    private fun clearAssignmentForMod(mod: ModItemUi) {
+        resolveAssignmentKeyCandidates(mod).forEach { candidate ->
+            folderAssignments.remove(candidate)
+        }
+    }
+
+    private fun removeFolderAssignmentForDeletedMod(mod: ModItemUi) {
+        clearAssignmentForMod(mod)
+    }
+
+    private fun buildFolderOrderTokens(): List<String> {
+        val tokens = modFolders.map { it.id }.toMutableList()
+        val insertIndex = unassignedFolderOrder.coerceIn(0, tokens.size)
+        tokens.add(insertIndex, UNASSIGNED_FOLDER_ID)
+        return tokens
+    }
+
+    private fun applyFolderOrderTokens(tokens: List<String>) {
+        val folderMap = modFolders.associateBy { it.id }
+        val reordered = tokens
+            .filter { it != UNASSIGNED_FOLDER_ID }
+            .mapNotNull { folderMap[it] }
+        modFolders.clear()
+        modFolders.addAll(reordered)
+        unassignedFolderOrder = tokens.indexOf(UNASSIGNED_FOLDER_ID).coerceAtLeast(0).coerceIn(0, modFolders.size)
+    }
+
+    private fun moveFolderToken(host: Activity, folderId: String, offset: Int) {
+        ensureFolderStateLoaded(host)
+        val tokens = buildFolderOrderTokens().toMutableList()
+        val fromIndex = tokens.indexOf(folderId)
+        if (fromIndex < 0) {
+            return
+        }
+        val toIndex = fromIndex + offset
+        if (toIndex !in tokens.indices) {
+            return
+        }
+        tokens.add(toIndex, tokens.removeAt(fromIndex))
+        applyFolderOrderTokens(tokens)
+        persistFolderState(host)
+        republish(host)
+    }
+
+    private fun findOptionalModByAnyId(id: String): ModItemUi? {
+        val input = id.trim()
+        if (input.isEmpty()) {
+            return null
+        }
+        val normalized = normalizeModId(input)
+        return resolveOptionalModsWithPendingSelection().firstOrNull { mod ->
+            mod.storagePath == input ||
+                normalizeModId(mod.modId) == normalized ||
+                normalizeModId(mod.manifestModId) == normalized
+        }
+    }
+
+    private fun buildNextFolderName(): String {
+        val exists = modFolders.map { it.name }.toHashSet()
+        var index = 1
+        while ("文件夹$index" in exists) {
+            index++
+        }
+        return "文件夹$index"
+    }
+
+    private fun ensureUniqueFolderName(baseName: String, excludeFolderId: String? = null): String {
+        val existingNames = modFolders
+            .filterNot { it.id == excludeFolderId }
+            .map { it.name }
+            .toHashSet()
+        if (!existingNames.contains(baseName)) {
+            return baseName
+        }
+        var index = 2
+        var candidate = "$baseName($index)"
+        while (existingNames.contains(candidate)) {
+            index++
+            candidate = "$baseName($index)"
+        }
+        return candidate
+    }
+
+    private fun republish(host: Activity) {
+        publishUiState(
+            host = host,
+            hasJar = RuntimePaths.importedStsJar(host).exists(),
+            hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
+            hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
+            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
+        )
+    }
+
     private fun maybeLaunchFromDebugExtra(host: Activity, intent: Intent) {
         val debugLaunchMode = intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_LAUNCH_MODE)
         val forceJvmCrash = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_FORCE_JVM_CRASH, false)
@@ -657,6 +1513,7 @@ class MainScreenViewModel : ViewModel() {
             ModItemUi(
                 modId = mod.modId,
                 manifestModId = mod.manifestModId,
+                storagePath = mod.jarFile.absolutePath,
                 name = mod.name,
                 version = mod.version,
                 description = mod.description,
@@ -729,6 +1586,7 @@ class MainScreenViewModel : ViewModel() {
             }
             resolveStoredOptionalModId(mod)?.let { pendingEnabledOptionalModIds.add(it) }
         }
+        markOptionalModsWithPendingSelectionDirty()
     }
 
     private fun ensurePendingSelectionInitialized(host: Activity) {
@@ -739,14 +1597,20 @@ class MainScreenViewModel : ViewModel() {
         initializePendingSelection(optionalMods)
         optionalModsSnapshot.clear()
         optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
+        markOptionalModsWithPendingSelectionDirty()
         prunePendingSelectionToInstalled()
         pendingSelectionInitialized = true
     }
 
     private fun resolveOptionalModsWithPendingSelection(): List<ModItemUi> {
-        return optionalModsSnapshot.map { mod ->
+        if (!optionalModsWithPendingSelectionDirty) {
+            return optionalModsWithPendingSelectionCache
+        }
+        optionalModsWithPendingSelectionCache = optionalModsSnapshot.map { mod ->
             mod.copy(enabled = isPendingOptionalModEnabled(mod))
         }
+        optionalModsWithPendingSelectionDirty = false
+        return optionalModsWithPendingSelectionCache
     }
 
     private fun isPendingOptionalModEnabled(mod: ModItemUi): Boolean {
@@ -760,16 +1624,26 @@ class MainScreenViewModel : ViewModel() {
 
     private fun setPendingOptionalModEnabled(mod: ModItemUi, enabled: Boolean) {
         val storedId = resolveStoredOptionalModId(mod)
+        var changed = false
         if (storedId != null) {
             if (enabled) {
-                pendingEnabledOptionalModIds.add(storedId)
+                if (pendingEnabledOptionalModIds.add(storedId)) {
+                    changed = true
+                }
             } else {
-                pendingEnabledOptionalModIds.remove(storedId)
+                if (pendingEnabledOptionalModIds.remove(storedId)) {
+                    changed = true
+                }
             }
         }
         val normalizedManifestId = normalizeModId(mod.manifestModId)
         if (normalizedManifestId.isNotEmpty() && !enabled) {
-            pendingEnabledOptionalModIds.remove(normalizedManifestId)
+            if (pendingEnabledOptionalModIds.remove(normalizedManifestId)) {
+                changed = true
+            }
+        }
+        if (changed) {
+            markOptionalModsWithPendingSelectionDirty()
         }
     }
 
@@ -801,10 +1675,19 @@ class MainScreenViewModel : ViewModel() {
                 installedIds.add(normalizedManifestId)
             }
         }
+        val oldSize = pendingEnabledOptionalModIds.size
         pendingEnabledOptionalModIds.retainAll(installedIds)
+        if (pendingEnabledOptionalModIds.size != oldSize) {
+            markOptionalModsWithPendingSelectionDirty()
+        }
+    }
+
+    private fun markOptionalModsWithPendingSelectionDirty() {
+        optionalModsWithPendingSelectionDirty = true
     }
 
     private fun publishUiState(
+        host: Activity,
         hasJar: Boolean,
         hasMts: Boolean,
         hasBaseMod: Boolean,
@@ -814,6 +1697,7 @@ class MainScreenViewModel : ViewModel() {
         val optionalTotal = optionalMods.size
         val optionalEnabled = optionalMods.count { it.enabled }
         uiState = uiState.copy(
+            initializing = false,
             busy = false,
             busyMessage = null,
             statusSummary = buildMainStatusSummary(
@@ -825,7 +1709,15 @@ class MainScreenViewModel : ViewModel() {
                 optionalTotalCount = optionalTotal
             ),
             optionalMods = optionalMods,
-            controlsEnabled = true
+            controlsEnabled = true,
+            showModFileName = LauncherPreferences.readShowModFileName(host),
+            modFolders = ArrayList(modFolders),
+            folderAssignments = LinkedHashMap(folderAssignments),
+            folderCollapsed = LinkedHashMap(folderCollapsed),
+            unassignedCollapsed = unassignedCollapsed,
+            statusSummaryCollapsed = statusSummaryCollapsed,
+            unassignedFolderName = unassignedFolderName,
+            unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
         )
     }
 
@@ -843,6 +1735,19 @@ class MainScreenViewModel : ViewModel() {
                 controlsEnabled = true
             )
         }
+    }
+
+    companion object {
+        private const val PREFS_MAIN_MOD_FOLDERS = "MainModFolders"
+        private const val KEY_FOLDERS = "folders"
+        private const val KEY_ASSIGNMENTS = "assignments"
+        private const val KEY_COLLAPSED = "collapsed"
+        private const val KEY_UNASSIGNED_COLLAPSED = "unassigned_collapsed"
+        private const val KEY_STATUS_SUMMARY_COLLAPSED = "status_summary_collapsed"
+        private const val KEY_UNASSIGNED_NAME = "unassigned_name"
+        private const val KEY_UNASSIGNED_ORDER = "unassigned_order"
+        private const val DEFAULT_UNASSIGNED_FOLDER_NAME = "未分类"
+        private const val UNASSIGNED_FOLDER_ID = "__unassigned__"
     }
 
     override fun onCleared() {

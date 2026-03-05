@@ -6,6 +6,7 @@ import androidx.compose.runtime.Stable
 data class ModItemUi(
     val modId: String,
     val manifestModId: String,
+    val storagePath: String,
     val name: String,
     val version: String,
     val description: String,

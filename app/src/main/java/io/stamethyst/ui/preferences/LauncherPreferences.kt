@@ -21,6 +21,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+    val DEFAULT_SHOW_MOD_FILE_NAME: Boolean
+        get() = LauncherConfig.DEFAULT_SHOW_MOD_FILE_NAME
     val DEFAULT_MOBILE_HUD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
     val DEFAULT_LWJGL_DEBUG: Boolean
@@ -85,6 +87,14 @@ object LauncherPreferences {
 
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         LauncherConfig.saveAutoSwitchLeftAfterRightClick(context, enabled)
+    }
+
+    fun readShowModFileName(context: Context): Boolean {
+        return LauncherConfig.readShowModFileName(context)
+    }
+
+    fun saveShowModFileName(context: Context, enabled: Boolean) {
+        LauncherConfig.saveShowModFileName(context, enabled)
     }
 
     fun readMobileHudEnabled(context: Context): Boolean {
