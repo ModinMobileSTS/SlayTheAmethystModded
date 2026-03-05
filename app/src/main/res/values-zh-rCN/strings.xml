@@ -118,4 +118,9 @@
     <string name="settings_author_release_notice">正式版仅会通过非限速网盘或 Github Release 发布。</string>
     <string name="settings_author_report_notice">如果你在其他来源下载到本项目，请顺手给该来源点一个举报。</string>
     <string name="settings_author_follow_notice">请关注官方发布渠道，以获取最新版本与公告。</string>
+    <string name="settings_unplayable_mods_entry_title">有模组玩不了？</string>
+    <string name="settings_unplayable_mods_dialog_title">上报无法游玩模组</string>
+    <string name="settings_unplayable_mods_dialog_message">该收集表记录当前无法游玩的模组及修复状态。你可以直接编辑这个收集表，补充无法游玩的模组信息，帮助我们更快完成兼容修复。</string>
+    <string name="settings_unplayable_mods_dialog_open">前往收集表</string>
+    <string name="settings_unplayable_mods_sheet_url">https://docs.qq.com/sheet/DS0xtV2FsVUVUSXhr?u=3f6b432cd4f7498b8388829a3a5e1555</string>
 </resources>

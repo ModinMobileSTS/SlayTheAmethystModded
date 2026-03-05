@@ -654,8 +654,11 @@ private fun SettingsStatusSection(
     onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
+    val unplayableModsSheetUrl = stringResource(R.string.settings_unplayable_mods_sheet_url)
     var showStatusDialog by rememberSaveable { mutableStateOf(false) }
     var showLogDialog by rememberSaveable { mutableStateOf(false) }
+    var showUnplayableModsDialog by rememberSaveable { mutableStateOf(false) }
     val statusPreview = remember(uiState.statusText) {
         uiState.statusText
             .lineSequence()
@@ -707,6 +710,11 @@ private fun SettingsStatusSection(
         enabled = uiState.logPathText.isNotBlank(),
         onClick = { showLogDialog = true }
     )
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_unplayable_mods_entry_title),
+        enabled = true,
+        onClick = { showUnplayableModsDialog = true }
+    )
 
     if (showStatusDialog) {
         AlertDialog(
@@ -743,6 +751,34 @@ private fun SettingsStatusSection(
             confirmButton = {
                 HapticTextButton(onClick = { showLogDialog = false }) {
                     Text("关闭")
+                }
+            }
+        )
+    }
+
+    if (showUnplayableModsDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnplayableModsDialog = false },
+            title = { Text(stringResource(R.string.settings_unplayable_mods_dialog_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_unplayable_mods_dialog_message),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        showUnplayableModsDialog = false
+                        uriHandler.openUri(unplayableModsSheetUrl)
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_unplayable_mods_dialog_open))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showUnplayableModsDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
                 }
             }
         )

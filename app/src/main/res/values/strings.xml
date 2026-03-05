@@ -118,4 +118,9 @@
     <string name="settings_author_release_notice">Official releases are distributed only through non-throttled cloud storage or Github Release.</string>
     <string name="settings_author_report_notice">If you downloaded this project from other sources, please report that source.</string>
     <string name="settings_author_follow_notice">Follow official release channels for the latest builds and announcements.</string>
+    <string name="settings_unplayable_mods_entry_title">Mod not playable?</string>
+    <string name="settings_unplayable_mods_dialog_title">Report unplayable mods</string>
+    <string name="settings_unplayable_mods_dialog_message">This sheet tracks mods that currently cannot be played and their fix status. You can edit the sheet directly and report unplayable mods to help us fix compatibility faster.</string>
+    <string name="settings_unplayable_mods_dialog_open">Open sheet</string>
+    <string name="settings_unplayable_mods_sheet_url">https://docs.qq.com/sheet/DS0xtV2FsVUVUSXhr?u=3f6b432cd4f7498b8388829a3a5e1555</string>
 </resources>

@@ -120,11 +120,6 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val hasJar = RuntimePaths.importedStsJar(host).exists()
-                val desktopJarVersion = if (hasJar) {
-                    resolveJarVersionFromFile(RuntimePaths.importedStsJar(host)) ?: "unknown"
-                } else {
-                    "unknown"
-                }
 
                 val renderScale = RenderScaleService.readValue(host)
                 val targetFps = readTargetFpsSelection(host)
@@ -181,8 +176,7 @@ class SettingsScreenViewModel : ViewModel() {
 
                 val status = buildString {
                     append("核心依赖状态")
-                    append("\ndesktop-1.0.jar: ")
-                    append(if (hasJar) "可用 (版本: $desktopJarVersion)" else "缺失")
+                    append("\ndesktop-1.0.jar: ").append(if (hasJar) "可用" else "缺失")
                     append('\n').append(formatCoreDependencyLine(coreMtsStatus))
                     append('\n').append(formatCoreDependencyLine(coreBaseModStatus))
                     append('\n').append(formatCoreDependencyLine(coreStsLibStatus))
