@@ -6,8 +6,6 @@
 #include <environ/environ.h>
 #include "osm_bridge.h"
 #define TAG __FILE_NAME__
-#include <log.h>
-
 static __thread osm_render_window_t* currentBundle;
 // a tiny buffer for rendering when there's nowhere t render
 static char no_render_buffer[4];
@@ -49,13 +47,13 @@ void osm_set_no_render_buffer(ANativeWindow_Buffer* buffer) {
 void osm_swap_surfaces(osm_render_window_t* bundle) {
     if(bundle->nativeSurface != NULL && bundle->newNativeSurface != bundle->nativeSurface) {
         if(!bundle->disable_rendering) {
-            LOGI("Unlocking for cleanup...");
+            ;
             ANativeWindow_unlockAndPost(bundle->nativeSurface);
         }
         ANativeWindow_release(bundle->nativeSurface);
     }
     if(bundle->newNativeSurface != NULL) {
-        LOGI("Switching to new native surface");
+        ;
         bundle->nativeSurface = bundle->newNativeSurface;
         bundle->newNativeSurface = NULL;
         ANativeWindow_acquire(bundle->nativeSurface);
@@ -63,7 +61,7 @@ void osm_swap_surfaces(osm_render_window_t* bundle) {
         bundle->disable_rendering = false;
         return;
     }else {
-        LOGI("No new native surface, switching to dummy framebuffer");
+        ;
         bundle->nativeSurface = NULL;
         osm_set_no_render_buffer(&bundle->buffer);
         bundle->disable_rendering = true;
@@ -95,7 +93,7 @@ void osm_make_current(osm_render_window_t* bundle) {
     currentBundle = bundle;
     if(pojav_environ->mainWindowBundle == NULL) {
         pojav_environ->mainWindowBundle = (basic_render_window_t*) bundle;
-        LOGI("Main window bundle is now %p", pojav_environ->mainWindowBundle);
+        ;
         pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
         hasSetMainWindow = true;
     }
@@ -129,7 +127,7 @@ void osm_swap_buffers() {
 
 void osm_setup_window() {
     if(pojav_environ->mainWindowBundle != NULL) {
-        LOGI("Main window bundle is not NULL, changing state");
+        ;
         pojav_environ->mainWindowBundle->state = STATE_RENDERER_NEW_WINDOW;
         pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
     }

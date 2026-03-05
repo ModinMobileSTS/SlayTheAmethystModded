@@ -1,0 +1,38 @@
+[versions]
+agp = "8.12.0"
+kotlin = "2.3.10"
+composeBom = "2026.02.00"
+androidx-appcompat = "1.7.1"
+androidx-activity = "1.12.4"
+androidx-core = "1.17.0"
+androidx-navigation3 = "1.0.1"
+androidx-lifecycle = "2.10.0"
+xz = "1.9"
+commonsCompress = "1.26.2"
+bytehook = "1.1.1"
+kotlinx-serialization = "1.10.0"
+reorderable = "2.4.3"
+
+[libraries]
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+tukaani-xz = { module = "org.tukaani:xz", version.ref = "xz" }
+apache-commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
+bytedance-bytehook = { module = "com.bytedance:bytehook", version.ref = "bytehook" }
+androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "androidx-navigation3" }
+androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "androidx-lifecycle" }
+kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

@@ -8,7 +8,7 @@
   "Show Card keys": "false",
   "Bigger Text": "true",
   "Long-press Enabled": "false",
-  "Screen Shake": "false",
+  "Screen Shake": "true",
   "Playtester Art": "false",
   "Controller Enabled": "true",
   "Touchscreen Enabled": "true",

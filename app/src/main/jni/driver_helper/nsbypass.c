@@ -4,7 +4,6 @@
 #include "nsbypass.h"
 #include <dlfcn.h>
 #include <android/dlext.h>
-#include <android/log.h>
 #include <sys/mman.h>
 #include <sys/user.h>
 #include <string.h>

@@ -1,3 +1,10 @@
+note.md
+$dir/
+artifacts/
+*/artifacts/
+tmp/
+RingOfDestiny/
+desktop-1.0.jar
 _tmp*
 .tmp*
 .gradle/
@@ -7,18 +14,21 @@ local.properties
 android-ndk-r10e/
 app/build/
 build/
+*.jks
+*.keystore
+*.p12
+*.pfx
 runtime-pack/*
 !runtime-pack/README.txt
-
-# local reverse-engineering / patch build artifacts
-tools/desktop-1.0.jar
-tools/gdx-patch-build/
-tools/gdx-patch-classes/
-tools/gdx-patch-classes-new/
-tools/gdx-patch-classes-java8/
+.kotlin
+.cxx
+signing/*
+!signing/upload_certificate.pem
 
 # local temporary workspace
 _tmp/
+tmp_render_scale.txt
+/com/
 
 # local runtime/debug outputs
 *.log
@@ -28,3 +38,8 @@ replay_pid*.log
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+app/src/main/assets/components/jre
+
+# generated patch build outputs
+patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class

@@ -1,11 +1,9 @@
 #include <jni.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#include "log.h"
-
 #include "utils.h"
 
 typedef int (*Main_Function_t)(int, char**);
@@ -93,7 +91,7 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setLdLibraryPath(
 		updateLdLibPath = dlsym(libdl_handle, "__loader_android_update_LD_LIBRARY_PATH");
 		if (updateLdLibPath == NULL) {
 			char *dl_error_c = dlerror();
-			LOGE("Error getting symbol android_update_LD_LIBRARY_PATH: %s", dl_error_c);
+			;
 			// (*env)->ThrowNew(env, exception_cls, dl_error_c);
 		}
 	}
@@ -108,9 +106,9 @@ JNIEXPORT jboolean JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_dlopen(JNIEnv
 	const char *nameUtf = (*env)->GetStringUTFChars(env, name, 0);
 	void* handle = dlopen(nameUtf, RTLD_GLOBAL | RTLD_LAZY);
 	if (!handle) {
-		LOGE("dlopen %s failed: %s", nameUtf, dlerror());
+		;
 	} else {
-		LOGD("dlopen %s success", nameUtf);
+		;
 	}
 	(*env)->ReleaseStringUTFChars(env, name, nameUtf);
 	return handle != NULL;
@@ -121,6 +119,51 @@ JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_chdir(JNIEnv *env
 	int retval = chdir(name);
 	(*env)->ReleaseStringUTFChars(env, nameStr, name);
 	return retval;
+}
+
+JNIEXPORT jboolean JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_redirectStdioToFile(
+    JNIEnv *env,
+    jclass clazz,
+    jstring filePath,
+    jboolean append
+) {
+    if (filePath == NULL) {
+        return JNI_FALSE;
+    }
+    const char *path = (*env)->GetStringUTFChars(env, filePath, NULL);
+    if (path == NULL) {
+        return JNI_FALSE;
+    }
+
+    int flags = O_CREAT | O_WRONLY | (append == JNI_TRUE ? O_APPEND : O_TRUNC);
+    int log_fd = open(path, flags, 0644);
+    if (log_fd < 0) {
+        (*env)->ReleaseStringUTFChars(env, filePath, path);
+        return JNI_FALSE;
+    }
+
+    bool redirected = true;
+    if (dup2(log_fd, STDOUT_FILENO) < 0) {
+        redirected = false;
+    } else if (dup2(log_fd, STDERR_FILENO) < 0) {
+        redirected = false;
+    }
+
+    if (log_fd > STDERR_FILENO) {
+        close(log_fd);
+    }
+
+    if (!redirected) {
+        (*env)->ReleaseStringUTFChars(env, filePath, path);
+        return JNI_FALSE;
+    }
+
+    // Line-buffer stdout and make stderr unbuffered for prompt crash detail flush.
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
+    (*env)->ReleaseStringUTFChars(env, filePath, path);
+    return JNI_TRUE;
 }
 
 JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_executeBinary(JNIEnv *env, jclass clazz, jobjectArray cmdArgs) {
@@ -135,7 +178,7 @@ JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_executeBinary(JNI
 	
 	char *exec_error_c = dlerror();
 	if (exec_error_c != NULL) {
-		LOGE("Error: %s", exec_error_c);
+		;
 		(*env)->ThrowNew(env, exception_cls, exec_error_c);
 		return -1;
 	}
@@ -145,7 +188,7 @@ JNIEXPORT jint JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_executeBinary(JNI
 	
 	exec_error_c = dlerror();
 	if (exec_error_c != NULL) {
-		LOGE("Error: %s", exec_error_c);
+		;
 		(*env)->ThrowNew(env, exception_cls, exec_error_c);
 		return -1;
 	}

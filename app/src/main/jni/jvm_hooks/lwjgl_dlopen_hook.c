@@ -13,8 +13,6 @@
 #include <stdlib.h>
 
 #define TAG __FILE_NAME__
-#include <log.h>
-
 extern void* maybe_load_vulkan();
 
 /**
@@ -49,10 +47,10 @@ static jlong ndlopen_bugfix(__attribute__((unused)) JNIEnv *env,
  * Install the LWJGL dlopen hook. This allows us to mitigate linker bugs and add custom library overrides.
  */
 void installLwjglDlopenHook(JNIEnv *env) {
-    LOGI("Installing LWJGL dlopen() hook");
+    ;
     jclass dynamicLinkLoader = (*env)->FindClass(env, "org/lwjgl/system/linux/DynamicLinkLoader");
     if(dynamicLinkLoader == NULL) {
-        LOGE("Failed to find the target class");
+        ;
         (*env)->ExceptionClear(env);
         return;
     }
@@ -60,7 +58,7 @@ void installLwjglDlopenHook(JNIEnv *env) {
             {"ndlopen", "(JI)J", &ndlopen_bugfix}
     };
     if((*env)->RegisterNatives(env, dynamicLinkLoader, ndlopenMethod, 1) != 0) {
-        LOGE("Failed to register the hooked method");
+        ;
         (*env)->ExceptionClear(env);
     }
 }

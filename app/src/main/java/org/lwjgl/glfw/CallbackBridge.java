@@ -146,6 +146,24 @@ public class CallbackBridge {
         isGrabbing = grabbing;
     }
 
+    private static boolean readBooleanProperty(String key, boolean defaultValue) {
+        String raw = System.getProperty(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        String normalized = raw.trim();
+        if (normalized.isEmpty()) {
+            return defaultValue;
+        }
+        if ("1".equals(normalized) || "true".equalsIgnoreCase(normalized) || "yes".equalsIgnoreCase(normalized) || "on".equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        if ("0".equals(normalized) || "false".equalsIgnoreCase(normalized) || "no".equalsIgnoreCase(normalized) || "off".equalsIgnoreCase(normalized)) {
+            return false;
+        }
+        return defaultValue;
+    }
+
     public static native void nativeSetUseInputStackQueue(boolean useInputStackQueue);
 
     private static native boolean nativeSendChar(char codepoint);
@@ -174,6 +192,8 @@ public class CallbackBridge {
 
     public static native boolean nativeEnableGamepadDirectInput();
 
+    private static native void nativeSetGlBridgeSwapHeartbeatLoggingEnabled(boolean enabled);
+
     public static native String nativeClipboard(int type, byte[] copySource);
 
     private static native ByteBuffer nativeCreateGamepadButtonBuffer();
@@ -182,6 +202,12 @@ public class CallbackBridge {
 
     static {
         System.loadLibrary("pojavexec");
+        boolean glBridgeSwapHeartbeatLoggingEnabled =
+                readBooleanProperty("amethyst.debug.glbridge_swap_heartbeat", false);
+        try {
+            nativeSetGlBridgeSwapHeartbeatLoggingEnabled(glBridgeSwapHeartbeatLoggingEnabled);
+        } catch (Throwable ignored) {
+        }
         sGamepadButtonBuffer = nativeCreateGamepadButtonBuffer();
         ByteBuffer axis = nativeCreateGamepadAxisBuffer();
         sGamepadAxisBuffer = axis.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();

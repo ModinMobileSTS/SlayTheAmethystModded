@@ -1,11 +1,18 @@
+/*
+ * Derived from PojavLauncher project sources.
+ * Source: https://github.com/AngelAuraMC/Amethyst-Android (branch: v3_openjdk)
+ * License: LGPL-3.0
+ * Modifications: adapted for the SlayTheAmethystModded Android integration.
+ */
+
 package net.kdt.pojavlaunch;
 
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
 import android.text.TextUtils;
+
+import io.stamethyst.backend.file_interactive.FileLinkOpener;
 
 public class MainActivity {
     public static ClipboardManager GLOBAL_CLIPBOARD;
@@ -30,15 +37,7 @@ public class MainActivity {
         if (TextUtils.isEmpty(value)) {
             return;
         }
-        Context context = requireContext();
-        Intent intent;
-        if (value.startsWith("http://") || value.startsWith("https://")) {
-            intent = new Intent(Intent.ACTION_VIEW, Uri.parse(value));
-        } else {
-            intent = new Intent(Intent.ACTION_VIEW, Uri.fromFile(new java.io.File(value)));
-        }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        context.startActivity(intent);
+        FileLinkOpener.open(requireContext(), value);
     }
 
     public static void querySystemClipboard() {

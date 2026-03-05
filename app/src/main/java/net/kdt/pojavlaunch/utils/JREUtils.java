@@ -1,14 +1,19 @@
+/*
+ * Derived from PojavLauncher project sources.
+ * Source: https://github.com/AngelAuraMC/Amethyst-Android (branch: v3_openjdk)
+ * License: LGPL-3.0
+ * Modifications: adapted for the SlayTheAmethystModded Android integration.
+ */
+
 package net.kdt.pojavlaunch.utils;
 
+import android.app.ActivityManager;
 import android.content.Context;
+import android.content.pm.ConfigurationInfo;
 import android.system.ErrnoException;
 import android.system.Os;
-import android.util.Log;
 
-import net.kdt.pojavlaunch.Logger;
-
-import io.stamethyst.RendererBackend;
-import io.stamethyst.RuntimePaths;
+import io.stamethyst.backend.render.RendererBackend;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -16,7 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class JREUtils {
-    private static final String TAG = "JREUtils";
 
     public static String LD_LIBRARY_PATH;
     public static String jvmLibraryPath;
@@ -79,8 +83,7 @@ public final class JREUtils {
             Context context,
             String javaHome,
             int windowWidth,
-            int windowHeight,
-            RendererBackend renderer
+            int windowHeight
     ) {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("POJAV_NATIVEDIR", context.getApplicationInfo().nativeLibraryDir);
@@ -109,51 +112,13 @@ public final class JREUtils {
         clearEnv("MG_PLUGIN_STATUS");
         clearEnv("MG_DIR_PATH");
 
-        RendererBackend effectiveRenderer = renderer == null
-                ? RendererBackend.OPENGL_ES2
-                : renderer;
-        switch (effectiveRenderer) {
-            case KOPPER_ZINK:
-                env.put("AMETHYST_RENDERER", RendererBackend.KOPPER_ZINK.rendererId());
-                env.put("LIBGL_ES", "3");
-                env.put("POJAVEXEC_EGL", "libEGL_mesa.so");
-                env.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
-                env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
-                env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
-                break;
-            case ANGLE:
-                env.put("AMETHYST_RENDERER", RendererBackend.ANGLE.rendererId());
-                env.put("LIBGL_ES", "2");
-                env.put("LIBGL_GLES", "libGLESv2_angle.so");
-                env.put("POJAVEXEC_EGL", "libEGL_angle.so");
-                break;
-            case MOBILEGLUES:
-                env.put("AMETHYST_RENDERER", RendererBackend.MOBILEGLUES.rendererId());
-                env.put("LIBGL_ES", "3");
-                env.put("POJAV_RENDERER", "opengles3");
-                env.put("POJAVEXEC_EGL", "libmobileglues.so");
-                env.put("LIBGL_EGL", "libmobileglues.so");
-                env.put("MG_PLUGIN_STATUS", "1");
-                File mobileGluesDir = new File(RuntimePaths.stsRoot(context), "mg");
-                if (!mobileGluesDir.exists() && !mobileGluesDir.mkdirs()) {
-                    Log.w(TAG, "Failed to create MobileGlues dir: " + mobileGluesDir.getAbsolutePath());
-                }
-                env.put("MG_DIR_PATH", mobileGluesDir.getAbsolutePath());
-                break;
-            case OPENGL_ES2:
-            default:
-                env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
-                env.put("LIBGL_ES", "2");
-                break;
-        }
+        env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
+        env.put("LIBGL_ES", supportsGles3(context) ? "3" : "2");
 
         for (Map.Entry<String, String> entry : env.entrySet()) {
             try {
                 Os.setenv(entry.getKey(), entry.getValue(), true);
-                Logger.appendToLog("env " + entry.getKey() + "=" + entry.getValue());
-            } catch (Throwable t) {
-                Log.e(TAG, "Failed to set env " + entry.getKey(), t);
-            }
+            } catch (Throwable ignored) {}
         }
 
         File serverFile = new File(javaHome + "/" + runtimeLibDir + "/server/libjvm.so");
@@ -164,7 +129,6 @@ public final class JREUtils {
     private static void clearEnv(String key) {
         try {
             Os.unsetenv(key);
-            Logger.appendToLog("env unset " + key);
         } catch (Throwable ignored) {
         }
     }
@@ -228,6 +192,22 @@ public final class JREUtils {
         }
     }
 
+    private static boolean supportsGles3(Context context) {
+        try {
+            ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (activityManager == null) {
+                return false;
+            }
+            ConfigurationInfo info = activityManager.getDeviceConfigurationInfo();
+            if (info == null) {
+                return false;
+            }
+            return info.reqGlEsVersion >= 0x00030000;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     public static native int chdir(String path);
 
     public static native boolean dlopen(String libPath);
@@ -241,6 +221,8 @@ public final class JREUtils {
     public static native void initializeHooks();
 
     public static native void setupExitMethod(Context context);
+
+    public static native boolean redirectStdioToFile(String filePath, boolean append);
 
     public static native int[] renderAWTScreenFrame();
 

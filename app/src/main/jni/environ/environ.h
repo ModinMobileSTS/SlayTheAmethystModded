@@ -64,6 +64,7 @@ struct pojav_environ_s {
     bool isInputReady, isCursorEntered, isUseStackQueueCall, shouldUpdateMouse;
     bool shouldUpdateMonitorSize, monitorSizeConsumed;
     int savedWidth, savedHeight;
+    atomic_int glContextGeneration;
     GLFWgamepadstate gamepadState;
 #define ADD_CALLBACK_WWIN(NAME) \
     GLFW_invoke_##NAME##_func* GLFW_invoke_##NAME;

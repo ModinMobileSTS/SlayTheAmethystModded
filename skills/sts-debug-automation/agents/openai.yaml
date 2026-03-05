@@ -1,0 +1,4 @@
+interface:
+  display_name: "STS Debug Automation"
+  short_description: "Launch, stop, pull logs, and capture STS screenshots"
+  default_prompt: "Use this skill to run SlayTheAmethyst debug automation via Gradle tasks and adb fallback, including screenshot capture."
