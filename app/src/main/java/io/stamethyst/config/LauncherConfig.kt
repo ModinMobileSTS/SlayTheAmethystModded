@@ -30,6 +30,7 @@ object LauncherConfig {
     private const val PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD =
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
+    private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_LAUNCHER_ICON = "launcher_icon"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
@@ -39,6 +40,8 @@ object LauncherConfig {
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
     private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
+    private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
+    private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
 
@@ -50,7 +53,10 @@ object LauncherConfig {
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
+    const val DEFAULT_MOBILE_HUD_ENABLED = false
     const val DEFAULT_LWJGL_DEBUG = false
+    const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
+    const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
     const val MIN_JVM_HEAP_MAX_MB = 512
@@ -164,6 +170,19 @@ object LauncherConfig {
         }
     }
 
+    fun readMobileHudEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_MOBILE_HUD_ENABLED,
+            DEFAULT_MOBILE_HUD_ENABLED
+        )
+    }
+
+    fun saveMobileHudEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_MOBILE_HUD_ENABLED, enabled)
+        }
+    }
+
     fun normalizeTargetFps(targetFps: Int): Int {
         return if (TARGET_FPS_OPTIONS.contains(targetFps)) {
             targetFps
@@ -271,6 +290,29 @@ object LauncherConfig {
     fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_LWJGL_DEBUG, enabled)
+        }
+    }
+
+    fun isGdxPadCursorDebugEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_GDX_PAD_CURSOR_DEBUG, DEFAULT_GDX_PAD_CURSOR_DEBUG)
+    }
+
+    fun setGdxPadCursorDebugEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_GDX_PAD_CURSOR_DEBUG, enabled)
+        }
+    }
+
+    fun isGlBridgeSwapHeartbeatDebugEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
+            DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
+        )
+    }
+
+    fun setGlBridgeSwapHeartbeatDebugEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG, enabled)
         }
     }
 

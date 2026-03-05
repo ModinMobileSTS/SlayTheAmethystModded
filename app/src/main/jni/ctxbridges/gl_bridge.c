@@ -22,6 +22,7 @@ static __thread gl_render_window_t* currentBundle;
 static EGLDisplay g_EglDisplay;
 static pthread_mutex_t g_surface_mutex = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_swap_diag_counter = 0;
+static bool g_swap_heartbeat_logging_enabled = false;
 
 #ifndef EGL_CONTEXT_LOST
 #define EGL_CONTEXT_LOST 0x300E
@@ -32,6 +33,10 @@ static int gl_get_context_client_version() {
     int libgl_es = (int)strtol(libglEsValue == NULL ? "2" : libglEsValue, NULL, 0);
     if (libgl_es < 0 || libgl_es > INT16_MAX) libgl_es = 2;
     return libgl_es;
+}
+
+void gl_set_swap_heartbeat_logging_enabled(bool enabled) {
+    g_swap_heartbeat_logging_enabled = enabled;
 }
 
 static void gl_advance_context_generation(const char* reason) {
@@ -436,10 +441,12 @@ void gl_swap_buffers() {
         }
     }
 
-    g_swap_diag_counter++;
-    if ((g_swap_diag_counter % 600) == 0) {
-        printf("GLBridgeDiag: swap heartbeat #%u surface=%p native=%p state=%d\n",
-               g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
+    if (g_swap_heartbeat_logging_enabled) {
+        g_swap_diag_counter++;
+        if ((g_swap_diag_counter % 600) == 0) {
+            printf("GLBridgeDiag: swap heartbeat #%u surface=%p native=%p state=%d\n",
+                   g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
+        }
     }
 
 }

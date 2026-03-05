@@ -24,6 +24,7 @@
 #include "utils.h"
 #include "environ/environ.h"
 #include "jvm_hooks/jvm_hooks.h"
+#include "ctxbridges/gl_bridge.h"
 
 #define EVENT_TYPE_CHAR 1000
 #define EVENT_TYPE_CHAR_MODS 1001
@@ -381,6 +382,15 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeEnableGamepadDirectInput(__attribute__(
     TRY_ATTACH_ENV(dvm_env, pojav_environ->dalvikJavaVMPtr, "nativeEnableGamepadDirectInput failed!\n", return JNI_FALSE;);
     (*dvm_env)->CallStaticVoidMethod(dvm_env, pojav_environ->bridgeClazz, pojav_environ->method_onDirectInputEnable);
     return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeSetGlBridgeSwapHeartbeatLoggingEnabled(
+    __attribute__((unused)) JNIEnv *env,
+    __attribute__((unused)) jclass clazz,
+    jboolean enabled
+) {
+    gl_set_swap_heartbeat_logging_enabled(enabled == JNI_TRUE);
 }
 
 jboolean critical_send_char(jchar codepoint) {

@@ -59,7 +59,10 @@ class SettingsScreenViewModel : ViewModel() {
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
+        val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
+        val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
+        val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
         val statusText: String = "",
         val logPathText: String = "",
@@ -104,7 +107,10 @@ class SettingsScreenViewModel : ViewModel() {
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
                 val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
+                val mobileHudEnabled = readMobileHudEnabledSelection(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
+                val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
+                val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
                 val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
@@ -134,6 +140,7 @@ class SettingsScreenViewModel : ViewModel() {
                     "\nJVM heap max: ${jvmHeapMaxMb} MB" +
                     "\nBack behavior: ${backBehavior.displayName()}" +
                     "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
+                    "\nMobile HUD Enabled: " + if (mobileHudEnabled) "ON" else "OFF" +
                     "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
                     "\n" + host.getString(
                         R.string.status_floating_touch_mouse_window_format,
@@ -145,6 +152,8 @@ class SettingsScreenViewModel : ViewModel() {
                     ) +
                     "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
                     "\nLWJGL Debug: " + if (lwjglDebugEnabled) "ON" else "OFF" +
+                    "\nGDX pad cursor debug log: " + if (gdxPadCursorDebugEnabled) "ON" else "OFF" +
+                    "\nGLBridge swap heartbeat log: " + if (glBridgeSwapHeartbeatDebugEnabled) "ON" else "OFF" +
                     "\nLauncher icon: ${selectedLauncherIcon.title}" +
                     "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
                     "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
@@ -165,7 +174,10 @@ class SettingsScreenViewModel : ViewModel() {
                         showFloatingMouseWindow = showFloatingMouseWindow,
                         longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
+                        mobileHudEnabled = mobileHudEnabled,
                         lwjglDebugEnabled = lwjglDebugEnabled,
+                        gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
+                        glBridgeSwapHeartbeatDebugEnabled = glBridgeSwapHeartbeatDebugEnabled,
                         touchscreenEnabled = touchscreenEnabled,
                         statusText = status,
                         logPathText = buildLogPathText(host)
@@ -362,6 +374,33 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(lwjglDebugEnabled = enabled)
         saveLwjglDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onGdxPadCursorDebugChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(gdxPadCursorDebugEnabled = enabled)
+        saveGdxPadCursorDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onGlBridgeSwapHeartbeatDebugChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(glBridgeSwapHeartbeatDebugEnabled = enabled)
+        saveGlBridgeSwapHeartbeatDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onMobileHudEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(mobileHudEnabled = enabled)
+        saveMobileHudEnabledSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -671,12 +710,36 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveAutoSwitchLeftAfterRightClick(host, enabled)
     }
 
+    private fun readMobileHudEnabledSelection(host: Activity): Boolean {
+        return LauncherPreferences.readMobileHudEnabled(host)
+    }
+
+    private fun saveMobileHudEnabledSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveMobileHudEnabled(host, enabled)
+    }
+
     private fun readLwjglDebugSelection(host: Activity): Boolean {
         return LauncherPreferences.isLwjglDebugEnabled(host)
     }
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
+    }
+
+    private fun readGdxPadCursorDebugSelection(host: Activity): Boolean {
+        return LauncherPreferences.isGdxPadCursorDebugEnabled(host)
+    }
+
+    private fun saveGdxPadCursorDebugSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setGdxPadCursorDebugEnabled(host, enabled)
+    }
+
+    private fun readGlBridgeSwapHeartbeatDebugSelection(host: Activity): Boolean {
+        return LauncherPreferences.isGlBridgeSwapHeartbeatDebugEnabled(host)
+    }
+
+    private fun saveGlBridgeSwapHeartbeatDebugSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(host, enabled)
     }
 
     private fun readTargetFpsSelection(host: Activity): Int {

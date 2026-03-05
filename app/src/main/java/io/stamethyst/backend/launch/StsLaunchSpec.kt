@@ -76,8 +76,16 @@ object StsLaunchSpec {
             args.add("-verbose:class")
         }
         val enableLwjglDebug = LauncherConfig.isLwjglDebugEnabled(context)
+        val enableGdxPadCursorDebug = LauncherConfig.isGdxPadCursorDebugEnabled(context)
+        val enableGlBridgeSwapHeartbeatDebug =
+            LauncherConfig.isGlBridgeSwapHeartbeatDebugEnabled(context)
         args.add("-Dorg.lwjgl.util.Debug=${if (enableLwjglDebug) "true" else "false"}")
         args.add("-Dorg.lwjgl.util.DebugLoader=${if (enableLwjglDebug) "true" else "false"}")
+        args.add("-Damethyst.debug.gdx_pad_cursor=${if (enableGdxPadCursorDebug) "true" else "false"}")
+        args.add(
+            "-Damethyst.debug.glbridge_swap_heartbeat=" +
+                if (enableGlBridgeSwapHeartbeatDebug) "true" else "false"
+        )
         args.add("-Djava.home=${javaHome.absolutePath}")
         args.add("-Djava.io.tmpdir=${context.cacheDir.absolutePath}")
         args.add("-Duser.home=${stsHome.absolutePath}")
@@ -85,6 +93,10 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.touchscreen_enabled=" +
                 if (LauncherConfig.readTouchscreenEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.mobile_hud_enabled=" +
+                if (LauncherConfig.readMobileHudEnabled(context)) "true" else "false"
         )
         args.add("-Duser.language=${Locale.getDefault().language}")
         args.add("-Duser.timezone=${TimeZone.getDefault().id}")

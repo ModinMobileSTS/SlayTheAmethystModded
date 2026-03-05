@@ -23,6 +23,7 @@ void gl_make_current(gl_render_window_t* bundle);
 void gl_swap_buffers();
 void gl_setup_window();
 void gl_swap_interval(int swapInterval);
+void gl_set_swap_heartbeat_logging_enabled(bool enabled);
 
 
 #endif //POJAVLAUNCHER_GL_BRIDGE_H

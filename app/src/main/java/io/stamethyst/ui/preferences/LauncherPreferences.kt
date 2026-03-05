@@ -21,8 +21,14 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+    val DEFAULT_MOBILE_HUD_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
     val DEFAULT_LWJGL_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_LWJGL_DEBUG
+    val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
+        get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
+    val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
+        get() = LauncherConfig.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
 
     val DEFAULT_JVM_HEAP_MAX_MB: Int
         get() = LauncherConfig.DEFAULT_JVM_HEAP_MAX_MB
@@ -81,12 +87,36 @@ object LauncherPreferences {
         LauncherConfig.saveAutoSwitchLeftAfterRightClick(context, enabled)
     }
 
+    fun readMobileHudEnabled(context: Context): Boolean {
+        return LauncherConfig.readMobileHudEnabled(context)
+    }
+
+    fun saveMobileHudEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.saveMobileHudEnabled(context, enabled)
+    }
+
     fun isLwjglDebugEnabled(context: Context): Boolean {
         return LauncherConfig.isLwjglDebugEnabled(context)
     }
 
     fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setLwjglDebugEnabled(context, enabled)
+    }
+
+    fun isGdxPadCursorDebugEnabled(context: Context): Boolean {
+        return LauncherConfig.isGdxPadCursorDebugEnabled(context)
+    }
+
+    fun setGdxPadCursorDebugEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setGdxPadCursorDebugEnabled(context, enabled)
+    }
+
+    fun isGlBridgeSwapHeartbeatDebugEnabled(context: Context): Boolean {
+        return LauncherConfig.isGlBridgeSwapHeartbeatDebugEnabled(context)
+    }
+
+    fun setGlBridgeSwapHeartbeatDebugEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setGlBridgeSwapHeartbeatDebugEnabled(context, enabled)
     }
 
     fun normalizeTargetFps(targetFps: Int): Int {

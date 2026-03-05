@@ -82,6 +82,8 @@ final public class LwjglInput implements Input {
 	private static long lastCursorDebugLogMs = 0L;
 	private static int lastCursorDebugReqX = Integer.MIN_VALUE;
 	private static int lastCursorDebugReqY = Integer.MIN_VALUE;
+	private static final boolean gdxPadCursorDebugEnabled =
+		java.lang.Boolean.parseBoolean(java.lang.System.getProperty("amethyst.debug.gdx_pad_cursor", "false"));
 
 	Pool<KeyEvent> usedKeyEvents = new Pool<KeyEvent>(16, 1000) {
 		protected KeyEvent newObject () {
@@ -1081,7 +1083,9 @@ final public class LwjglInput implements Input {
 
 		// Controller cursor diagnostics: trace requested vs effective logical cursor.
 		long now = System.currentTimeMillis();
-		if ((boundedX != lastCursorDebugReqX || boundedY != lastCursorDebugReqY) && now - lastCursorDebugLogMs >= 120L) {
+		if (gdxPadCursorDebugEnabled
+			&& (boundedX != lastCursorDebugReqX || boundedY != lastCursorDebugReqY)
+			&& now - lastCursorDebugLogMs >= 120L) {
 			boolean controllerMode = false;
 			boolean touchScreen = false;
 			try {

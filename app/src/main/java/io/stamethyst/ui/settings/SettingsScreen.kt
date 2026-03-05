@@ -98,7 +98,10 @@ fun LauncherSettingsScreen(
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
+        onMobileHudEnabledChanged = { enabled -> viewModel.onMobileHudEnabledChanged(activity, enabled) },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
+        onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
+        onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onLauncherIconSelected = { icon -> viewModel.onLauncherIconSelected(activity, icon) },
@@ -125,7 +128,10 @@ private fun LauncherSettingsScreenPreview() {
             showFloatingMouseWindow = true,
             longPressMouseShowsKeyboard = true,
             autoSwitchLeftAfterRightClick = true,
+            mobileHudEnabled = false,
             lwjglDebugEnabled = false,
+            gdxPadCursorDebugEnabled = false,
+            glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenEnabled = true,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
@@ -153,7 +159,10 @@ private fun LauncherSettingsScreenContent(
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
+    onMobileHudEnabledChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
+    onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
+    onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onLauncherIconSelected: (LauncherIcon) -> Unit = {},
@@ -217,6 +226,7 @@ private fun LauncherSettingsScreenContent(
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
+                        onMobileHudEnabledChanged = onMobileHudEnabledChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
                 }
@@ -244,8 +254,16 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = "状态与日志") {
                     SettingsStatusSection(
                         uiState = uiState,
-                        onLwjglDebugChanged = onLwjglDebugChanged
+                        onLwjglDebugChanged = onLwjglDebugChanged,
+                        onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
+                        onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged
                     )
+                }
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_author_info_title)) {
+                    SettingsAuthorInfoSection()
                 }
             }
         }
@@ -441,6 +459,7 @@ private fun SettingsInputSection(
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
+    onMobileHudEnabledChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
     Text(text = "Back 键行为", style = MaterialTheme.typography.bodyMedium)
@@ -504,6 +523,15 @@ private fun SettingsInputSection(
         disabledText = "右键后自动切回左键：禁用",
         description = "启用后，触发一次右键后会自动切换回左键模式。",
         onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.mobileHudEnabled,
+        enabled = !uiState.busy,
+        enabledText = "移动端 UI：启用",
+        disabledText = "移动端 UI：禁用",
+        description = "控制启动参数 -Damethyst.mobile_hud_enabled，重启后生效。",
+        onCheckedChange = onMobileHudEnabledChanged
     )
 
     SwitchSettingRow(
@@ -607,6 +635,8 @@ private fun SettingsLauncherIconSection(
 private fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState,
     onLwjglDebugChanged: (Boolean) -> Unit,
+    onGdxPadCursorDebugChanged: (Boolean) -> Unit,
+    onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
 ) {
     var showStatusDialog by rememberSaveable { mutableStateOf(false) }
     var showLogDialog by rememberSaveable { mutableStateOf(false) }
@@ -631,6 +661,22 @@ private fun SettingsStatusSection(
         disabledText = "LWJGL Debug：禁用",
         description = "控制 JVM 启动参数中的 org.lwjgl.util.Debug / DebugLoader / DebugFunctions。",
         onCheckedChange = onLwjglDebugChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.gdxPadCursorDebugEnabled,
+        enabled = !uiState.busy,
+        enabledText = "GDX 手柄光标日志：启用",
+        disabledText = "GDX 手柄光标日志：禁用",
+        description = "控制 [gdx-pad-debug] setCursorPosition 输出，默认禁用以减少日志刷屏。",
+        onCheckedChange = onGdxPadCursorDebugChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.glBridgeSwapHeartbeatDebugEnabled,
+        enabled = !uiState.busy,
+        enabledText = "GLBridge 心跳日志：启用",
+        disabledText = "GLBridge 心跳日志：禁用",
+        description = "控制 GLBridgeDiag 的 swap heartbeat 输出，默认禁用。",
+        onCheckedChange = onGlBridgeSwapHeartbeatDebugChanged
     )
 
     HorizontalDivider()
@@ -683,6 +729,43 @@ private fun SettingsStatusSection(
                     Text("关闭")
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun SettingsAuthorInfoSection() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.settings_author_repo_label),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        SelectionContainer {
+            Text(
+                text = stringResource(R.string.settings_author_repo_url),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Text(
+            text = stringResource(R.string.settings_author_contributors_label),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(R.string.settings_author_contributors_value),
+            style = MaterialTheme.typography.bodySmall
+        )
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.settings_author_release_notice),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_author_report_notice),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_author_follow_notice),
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }
