@@ -1,7 +1,9 @@
 package io.stamethyst.ui.settings
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.DialogInterface
+import android.os.Build
 import android.graphics.Color
 import android.net.Uri
 import android.widget.Toast
@@ -15,15 +17,23 @@ import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.LauncherIcon
 import io.stamethyst.LauncherIconManager
+import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.jar.Manifest
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
@@ -70,6 +80,20 @@ class SettingsScreenViewModel : ViewModel() {
         val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList()
     )
 
+    private data class CoreDependencyStatus(
+        val label: String,
+        val available: Boolean,
+        val source: String,
+        val version: String
+    )
+
+    private data class DeviceRuntimeStatus(
+        val cpuModel: String,
+        val cpuArch: String,
+        val availableMemoryBytes: Long,
+        val totalMemoryBytes: Long
+    )
+
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
 
@@ -96,9 +120,11 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val hasJar = RuntimePaths.importedStsJar(host).exists()
-                val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
-                val hasBaseMod = RuntimePaths.importedBaseModJar(host).exists() || hasBundledAsset(host, "components/mods/BaseMod.jar")
-                val hasStsLib = RuntimePaths.importedStsLibJar(host).exists() || hasBundledAsset(host, "components/mods/StSLib.jar")
+                val desktopJarVersion = if (hasJar) {
+                    resolveJarVersionFromFile(RuntimePaths.importedStsJar(host)) ?: "unknown"
+                } else {
+                    "unknown"
+                }
 
                 val renderScale = RenderScaleService.readValue(host)
                 val targetFps = readTargetFpsSelection(host)
@@ -117,6 +143,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val selectedLauncherIcon = LauncherIconManager.readEffectiveSelection(host)
                 val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
                 val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
+                val modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host)
                 val runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host)
                 val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
 
@@ -132,37 +159,86 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                 }
 
-                val status = (if (hasJar) "desktop-1.0.jar: OK" else "desktop-1.0.jar: missing") +
-                    "\nModTheSpire.jar: " + if (hasMts) "OK (bundled)" else "missing" +
-                    "\nBaseMod.jar: " + if (hasBaseMod) "OK (required)" else "missing (required)" +
-                    "\nStSLib.jar: " + if (hasStsLib) "OK (required, bundled)" else "missing (required)" +
-                    "\nOptional mods enabled: $optionalEnabled/$optionalTotal" +
-                    "\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)" +
-                    "\nTarget FPS: $targetFps" +
-                    "\nJVM heap max: ${jvmHeapMaxMb} MB" +
-                    "\nBack behavior: ${backBehavior.displayName()}" +
-                    "\nTouchscreen Enabled: " + if (touchscreenEnabled) "ON" else "OFF" +
-                    "\nMobile HUD Enabled: " + if (mobileHudEnabled) "ON" else "OFF" +
-                    "\nManual dismiss boot overlay: " + if (manualDismissBootOverlay) "ON" else "OFF" +
-                    "\n" + host.getString(
-                        R.string.status_floating_touch_mouse_window_format,
-                        if (showFloatingMouseWindow) "ON" else "OFF"
-                    ) +
-                    "\n" + host.getString(
-                        R.string.status_touch_mouse_long_press_keyboard_format,
-                        if (longPressMouseShowsKeyboard) "ON" else "OFF"
-                    ) +
-                    "\nRight click auto switch to left: " + if (autoSwitchLeftAfterRightClick) "ON" else "OFF" +
-                    "\nMod card name from file: " + if (showModFileName) "ON" else "OFF" +
-                    "\nLWJGL Debug: " + if (lwjglDebugEnabled) "ON" else "OFF" +
-                    "\nGDX pad cursor debug log: " + if (gdxPadCursorDebugEnabled) "ON" else "OFF" +
-                    "\nGLBridge swap heartbeat log: " + if (glBridgeSwapHeartbeatDebugEnabled) "ON" else "OFF" +
-                    "\nLauncher icon: ${selectedLauncherIcon.title}" +
-                    "\nVirtual FBO PoC: " + if (virtualFboPocEnabled) "ON" else "OFF" +
-                    "\nGlobal atlas filter compat: " + if (globalAtlasFilterCompatEnabled) "ON" else "OFF" +
-                    "\nRuntime texture compat: " + if (runtimeTextureCompatEnabled) "ON" else "OFF" +
-                    "\nForce linear mipmap filter: " + if (forceLinearMipmapFilterEnabled) "ON" else "OFF" +
-                    "\nBundled JRE path: app/src/main/assets/components/jre"
+                val coreMtsStatus = resolveCoreDependencyStatus(
+                    host = host,
+                    label = "ModTheSpire",
+                    importedJar = RuntimePaths.importedMtsJar(host),
+                    bundledAssetPath = "components/mods/ModTheSpire.jar"
+                )
+                val coreBaseModStatus = resolveCoreDependencyStatus(
+                    host = host,
+                    label = "BaseMod",
+                    importedJar = RuntimePaths.importedBaseModJar(host),
+                    bundledAssetPath = "components/mods/BaseMod.jar"
+                )
+                val coreStsLibStatus = resolveCoreDependencyStatus(
+                    host = host,
+                    label = "StSLib",
+                    importedJar = RuntimePaths.importedStsLibJar(host),
+                    bundledAssetPath = "components/mods/StSLib.jar"
+                )
+                val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
+
+                val status = buildString {
+                    append("核心依赖状态")
+                    append("\ndesktop-1.0.jar: ")
+                    append(if (hasJar) "可用 (版本: $desktopJarVersion)" else "缺失")
+                    append('\n').append(formatCoreDependencyLine(coreMtsStatus))
+                    append('\n').append(formatCoreDependencyLine(coreBaseModStatus))
+                    append('\n').append(formatCoreDependencyLine(coreStsLibStatus))
+                    append("\nOptional mods enabled: $optionalEnabled/$optionalTotal")
+
+                    append("\n\n设备信息")
+                    append("\nCPU 型号: ").append(deviceRuntimeStatus.cpuModel)
+                    append("\nCPU 架构: ").append(deviceRuntimeStatus.cpuArch)
+                    append("\n可用内存: ")
+                        .append(formatBytes(deviceRuntimeStatus.availableMemoryBytes))
+                    append(" / 总内存: ")
+                        .append(formatBytes(deviceRuntimeStatus.totalMemoryBytes))
+
+                    append("\n\n启动与兼容设置")
+                    append("\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)")
+                    append("\nTarget FPS: $targetFps")
+                    append("\nJVM heap max: ${jvmHeapMaxMb} MB")
+                    append("\nBack behavior: ${backBehavior.displayName()}")
+                    append("\nTouchscreen Enabled: ").append(if (touchscreenEnabled) "ON" else "OFF")
+                    append("\nMobile HUD Enabled: ").append(if (mobileHudEnabled) "ON" else "OFF")
+                    append("\nManual dismiss boot overlay: ")
+                        .append(if (manualDismissBootOverlay) "ON" else "OFF")
+                    append("\n")
+                        .append(
+                            host.getString(
+                                R.string.status_floating_touch_mouse_window_format,
+                                if (showFloatingMouseWindow) "ON" else "OFF"
+                            )
+                        )
+                    append("\n")
+                        .append(
+                            host.getString(
+                                R.string.status_touch_mouse_long_press_keyboard_format,
+                                if (longPressMouseShowsKeyboard) "ON" else "OFF"
+                            )
+                        )
+                    append("\nRight click auto switch to left: ")
+                        .append(if (autoSwitchLeftAfterRightClick) "ON" else "OFF")
+                    append("\nMod card name from file: ").append(if (showModFileName) "ON" else "OFF")
+                    append("\nLWJGL Debug: ").append(if (lwjglDebugEnabled) "ON" else "OFF")
+                    append("\nGDX pad cursor debug log: ")
+                        .append(if (gdxPadCursorDebugEnabled) "ON" else "OFF")
+                    append("\nGLBridge swap heartbeat log: ")
+                        .append(if (glBridgeSwapHeartbeatDebugEnabled) "ON" else "OFF")
+                    append("\nLauncher icon: ${selectedLauncherIcon.title}")
+                    append("\nVirtual FBO PoC: ").append(if (virtualFboPocEnabled) "ON" else "OFF")
+                    append("\nGlobal atlas filter compat: ")
+                        .append(if (globalAtlasFilterCompatEnabled) "ON" else "OFF")
+                    append("\nMod manifest root compat: ")
+                        .append(if (modManifestRootCompatEnabled) "ON" else "OFF")
+                    append("\nRuntime texture compat: ")
+                        .append(if (runtimeTextureCompatEnabled) "ON" else "OFF")
+                    append("\nForce linear mipmap filter: ")
+                        .append(if (forceLinearMipmapFilterEnabled) "ON" else "OFF")
+                    append("\nBundled JRE path: app/src/main/assets/components/jre")
+                }
 
                 host.runOnUiThread {
                     uiState = uiState.copy(
@@ -514,6 +590,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
                 if (patchedResults.isNotEmpty()) {
                     showAtlasPatchSummaryDialog(host, patchedResults)
+                    showManifestRootPatchSummaryDialog(host, patchedResults)
                 }
                 when {
                     importedCount > 0 && failedCount == 0 -> {
@@ -548,9 +625,23 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasAtlasPatched }) {
+            return
+        }
         AlertDialog.Builder(host)
             .setTitle("Atlas 已离线修补")
             .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showManifestRootPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasManifestRootPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle("ModID 结构已自动修复")
+            .setMessage(SettingsFileService.buildManifestRootPatchImportSummaryMessage(patchedResults))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
@@ -667,6 +758,297 @@ class SettingsScreenViewModel : ViewModel() {
         } catch (_: IOException) {
             false
         }
+    }
+
+    private fun resolveCoreDependencyStatus(
+        host: Activity,
+        label: String,
+        importedJar: File,
+        bundledAssetPath: String
+    ): CoreDependencyStatus {
+        if (importedJar.isFile) {
+            val importedVersion = resolveJarVersionFromFile(importedJar) ?: "unknown"
+            return CoreDependencyStatus(
+                label = label,
+                available = true,
+                source = "imported",
+                version = importedVersion
+            )
+        }
+
+        val bundledVersion = resolveJarVersionFromAsset(host, bundledAssetPath)
+        if (bundledVersion != null) {
+            return CoreDependencyStatus(
+                label = label,
+                available = true,
+                source = "bundled",
+                version = bundledVersion
+            )
+        }
+        if (hasBundledAsset(host, bundledAssetPath)) {
+            return CoreDependencyStatus(
+                label = label,
+                available = true,
+                source = "bundled",
+                version = "unknown"
+            )
+        }
+
+        return CoreDependencyStatus(
+            label = label,
+            available = false,
+            source = "missing",
+            version = "unknown"
+        )
+    }
+
+    private fun formatCoreDependencyLine(status: CoreDependencyStatus): String {
+        if (!status.available) {
+            return "${status.label}: 缺失"
+        }
+        val sourceLabel = when (status.source.lowercase(Locale.ROOT)) {
+            "imported" -> "本地文件"
+            "bundled" -> "内置组件"
+            else -> status.source
+        }
+        return "${status.label}: 可用 (来源: $sourceLabel, 版本: ${status.version})"
+    }
+
+    private fun collectDeviceRuntimeStatus(host: Activity): DeviceRuntimeStatus {
+        val activityManager = host.getSystemService(Activity.ACTIVITY_SERVICE) as? ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        val availableMemoryBytes: Long
+        val totalMemoryBytes: Long
+        if (activityManager != null) {
+            activityManager.getMemoryInfo(memoryInfo)
+            availableMemoryBytes = memoryInfo.availMem
+            totalMemoryBytes = memoryInfo.totalMem
+        } else {
+            availableMemoryBytes = 0L
+            totalMemoryBytes = 0L
+        }
+
+        return DeviceRuntimeStatus(
+            cpuModel = resolveCpuModel(),
+            cpuArch = resolveCpuArch(),
+            availableMemoryBytes = availableMemoryBytes,
+            totalMemoryBytes = totalMemoryBytes
+        )
+    }
+
+    private fun resolveCpuModel(): String {
+        val fromProcCpuInfo = readCpuModelFromProcCpuInfo()
+        if (!fromProcCpuInfo.isNullOrBlank()) {
+            return fromProcCpuInfo
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val socModel = normalizeInfoValue(Build.SOC_MODEL)
+            if (socModel != "unknown") {
+                return socModel
+            }
+        }
+
+        val hardware = normalizeInfoValue(Build.HARDWARE)
+        if (hardware != "unknown") {
+            return hardware
+        }
+
+        val model = normalizeInfoValue(Build.MODEL)
+        if (model != "unknown") {
+            return model
+        }
+        return "unknown"
+    }
+
+    private fun readCpuModelFromProcCpuInfo(): String? {
+        val cpuInfoFile = File("/proc/cpuinfo")
+        if (!cpuInfoFile.isFile) {
+            return null
+        }
+
+        var hardware: String? = null
+        var modelName: String? = null
+        var processor: String? = null
+        var cpuModel: String? = null
+        return try {
+            cpuInfoFile.forEachLine { rawLine ->
+                val separator = rawLine.indexOf(':')
+                if (separator <= 0) {
+                    return@forEachLine
+                }
+                val key = rawLine.substring(0, separator).trim().lowercase(Locale.ROOT)
+                val value = rawLine.substring(separator + 1).trim()
+                if (value.isEmpty()) {
+                    return@forEachLine
+                }
+                when (key) {
+                    "hardware" -> if (hardware.isNullOrBlank()) hardware = value
+                    "model name" -> if (modelName.isNullOrBlank()) modelName = value
+                    "processor" -> if (processor.isNullOrBlank()) processor = value
+                    "cpu model" -> if (cpuModel.isNullOrBlank()) cpuModel = value
+                }
+            }
+            hardware ?: modelName ?: processor ?: cpuModel
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun resolveCpuArch(): String {
+        val supportedAbis = Build.SUPPORTED_ABIS
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        val abiText = supportedAbis.joinToString(", ")
+        val osArch = normalizeInfoValue(System.getProperty("os.arch"))
+        return when {
+            abiText.isNotEmpty() && osArch != "unknown" -> "$osArch (ABI: $abiText)"
+            abiText.isNotEmpty() -> abiText
+            osArch != "unknown" -> osArch
+            else -> "unknown"
+        }
+    }
+
+    private fun normalizeInfoValue(value: String?): String {
+        return value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "unknown"
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes <= 0L) {
+            return "unknown"
+        }
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        var value = bytes.toDouble()
+        var unitIndex = 0
+        while (value >= 1024.0 && unitIndex < units.lastIndex) {
+            value /= 1024.0
+            unitIndex++
+        }
+        return if (unitIndex == 0) {
+            "${value.toLong()} ${units[unitIndex]}"
+        } else {
+            String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+        }
+    }
+
+    private fun resolveJarVersionFromFile(jarFile: File): String? {
+        if (!jarFile.isFile) {
+            return null
+        }
+        try {
+            val manifest = ModJarSupport.readModManifest(jarFile)
+            manifest.version.trim().takeIf { it.isNotEmpty() }?.let { return it }
+        } catch (_: Throwable) {
+        }
+
+        return try {
+            jarFile.inputStream().use { input ->
+                resolveJarVersionFromStream(input)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun resolveJarVersionFromAsset(host: Activity, assetPath: String): String? {
+        return try {
+            host.assets.open(assetPath).use { input ->
+                resolveJarVersionFromStream(input)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun resolveJarVersionFromStream(input: InputStream): String? {
+        ZipInputStream(BufferedInputStream(input)).use { zipInput ->
+            var modManifestVersion: String? = null
+            var jarManifestVersion: String? = null
+            while (true) {
+                val entry = zipInput.nextEntry ?: break
+                if (entry.isDirectory) {
+                    continue
+                }
+
+                val entryName = entry.name.trim()
+                if (modManifestVersion == null &&
+                    entryName.equals("ModTheSpire.json", ignoreCase = true)
+                ) {
+                    val jsonBytes = readCurrentZipEntryBytes(zipInput)
+                    modManifestVersion = parseModManifestVersionFromJson(String(jsonBytes, Charsets.UTF_8))
+                    if (!modManifestVersion.isNullOrBlank()) {
+                        return modManifestVersion
+                    }
+                    continue
+                }
+
+                if (jarManifestVersion == null &&
+                    entryName.equals("META-INF/MANIFEST.MF", ignoreCase = true)
+                ) {
+                    val manifestBytes = readCurrentZipEntryBytes(zipInput)
+                    jarManifestVersion = parseJarManifestVersionFromBytes(manifestBytes)
+                }
+            }
+            return jarManifestVersion
+        }
+    }
+
+    private fun readCurrentZipEntryBytes(zipInput: ZipInputStream): ByteArray {
+        val buffer = ByteArray(8192)
+        val output = ByteArrayOutputStream()
+        while (true) {
+            val read = zipInput.read(buffer)
+            if (read < 0) {
+                break
+            }
+            if (read == 0) {
+                continue
+            }
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
+    }
+
+    private fun parseJarManifestVersionFromBytes(manifestBytes: ByteArray): String? {
+        return try {
+            val attributes = Manifest(manifestBytes.inputStream()).mainAttributes
+            val keys = arrayOf(
+                "Implementation-Version",
+                "Bundle-Version",
+                "Specification-Version",
+                "Version"
+            )
+            for (key in keys) {
+                val value = attributes.getValue(key)?.trim()
+                if (!value.isNullOrEmpty()) {
+                    return value
+                }
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun parseModManifestVersionFromJson(jsonText: String): String? {
+        val regex = Regex("\"(?:version|Version)\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"")
+        val match = regex.find(jsonText) ?: return null
+        val rawVersion = match.groupValues.getOrNull(1) ?: return null
+        return unescapeJsonText(rawVersion)
+            .trim()
+            .takeIf { it.isNotEmpty() }
+    }
+
+    private fun unescapeJsonText(text: String): String {
+        return text
+            .replace("\\\"", "\"")
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\\\", "\\")
     }
 
     private fun updateStatusRenderScaleLine(normalizedRenderScale: String) {

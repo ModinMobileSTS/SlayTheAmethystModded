@@ -591,6 +591,7 @@ class MainScreenViewModel : ViewModel() {
                 }
                 if (patchedResults.isNotEmpty()) {
                     showAtlasPatchSummaryDialog(host, patchedResults)
+                    showManifestRootPatchSummaryDialog(host, patchedResults)
                 }
                 when {
                     importedCount > 0 && failedCount == 0 -> {
@@ -623,9 +624,23 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasAtlasPatched }) {
+            return
+        }
         AlertDialog.Builder(host)
             .setTitle("Atlas 已离线修补")
             .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showManifestRootPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasManifestRootPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle("ModID 结构已自动修复")
+            .setMessage(SettingsFileService.buildManifestRootPatchImportSummaryMessage(patchedResults))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }

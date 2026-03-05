@@ -52,6 +52,7 @@ fun LauncherCompatibilityScreen(
         onGoBack = navigator::goBack,
         onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
+        onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
@@ -69,6 +70,7 @@ private fun LauncherCompatibilityScreenPreview() {
             busy = false,
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
+            modManifestRootCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true
@@ -84,6 +86,7 @@ private fun LauncherCompatibilityScreenContent(
     onGoBack: () -> Unit = {},
     onVirtualFboPocToggled: (Boolean) -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
+    onModManifestRootCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -132,6 +135,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.globalAtlasFilterCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onGlobalAtlasFilterCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_mod_manifest_root_compat_title),
+                description = stringResource(R.string.compat_mod_manifest_root_compat_desc),
+                checked = uiState.modManifestRootCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onModManifestRootCompatToggled
             )
 
             CompatibilitySwitchRow(

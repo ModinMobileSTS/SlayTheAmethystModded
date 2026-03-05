@@ -1,6 +1,5 @@
 package io.stamethyst.ui.compatibility
 
-import android.app.Activity
 import android.content.Context
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -16,6 +15,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val busyMessage: String? = null,
         val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
+        val modManifestRootCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true
@@ -30,6 +30,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             busyMessage = null,
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
+            modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host)
@@ -50,6 +51,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setGlobalAtlasFilterCompatEnabled(host, enabled)
         uiState = uiState.copy(globalAtlasFilterCompatEnabled = enabled)
+    }
+
+    fun onModManifestRootCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setModManifestRootCompatEnabled(host, enabled)
+        uiState = uiState.copy(modManifestRootCompatEnabled = enabled)
     }
 
     fun onRuntimeTextureCompatToggled(host: Context, enabled: Boolean) {

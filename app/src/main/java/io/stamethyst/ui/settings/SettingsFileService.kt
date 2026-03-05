@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
+import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -41,10 +42,16 @@ internal data class ModImportResult(
     val modId: String,
     val modName: String,
     val patchedAtlasEntries: Int,
-    val patchedFilterLines: Int
+    val patchedFilterLines: Int,
+    val patchedManifestRootEntries: Int = 0,
+    val patchedManifestRootPrefix: String = ""
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
+    val wasManifestRootPatched: Boolean
+        get() = patchedManifestRootEntries > 0
+    val hasCompatibilityPatches: Boolean
+        get() = wasAtlasPatched || wasManifestRootPatched
 }
 
 internal data class ModBatchImportResult(
@@ -234,6 +241,14 @@ internal object SettingsFileService {
         val tempFile = File(modsDir, ".import-${System.nanoTime()}.tmp.jar")
         copyUriToFile(host, uri, tempFile)
         try {
+            var patchedManifestRootEntries = 0
+            var patchedManifestRootPrefix = ""
+            if (CompatibilitySettings.isModManifestRootCompatEnabled(host)) {
+                val patchResult = ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempFile)
+                patchedManifestRootEntries = patchResult.patchedFileEntries
+                patchedManifestRootPrefix = patchResult.sourceRootPrefix
+            }
+
             val manifest = try {
                 ModJarSupport.readModManifest(tempFile)
             } catch (error: Throwable) {
@@ -266,7 +281,9 @@ internal object SettingsFileService {
                 modId = modId,
                 modName = modName,
                 patchedAtlasEntries = patchedAtlasEntries,
-                patchedFilterLines = patchedFilterLines
+                patchedFilterLines = patchedFilterLines,
+                patchedManifestRootEntries = patchedManifestRootEntries,
+                patchedManifestRootPrefix = patchedManifestRootPrefix
             )
         } finally {
             if (tempFile.exists()) {
@@ -315,7 +332,7 @@ internal object SettingsFileService {
             try {
                 val result = importModJar(host, uri)
                 imported++
-                if (result.wasAtlasPatched) {
+                if (result.hasCompatibilityPatches) {
                     val existing = patchedMods[result.modId]
                     if (existing == null) {
                         patchedMods[result.modId] = result
@@ -323,7 +340,13 @@ internal object SettingsFileService {
                         patchedMods[result.modId] = existing.copy(
                             modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
                             patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
-                            patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines
+                            patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines,
+                            patchedManifestRootEntries = existing.patchedManifestRootEntries + result.patchedManifestRootEntries,
+                            patchedManifestRootPrefix = if (existing.patchedManifestRootPrefix.isNotBlank()) {
+                                existing.patchedManifestRootPrefix
+                            } else {
+                                result.patchedManifestRootPrefix
+                            }
                         )
                     }
                 }
@@ -469,6 +492,66 @@ internal object SettingsFileService {
             append('\n')
             append("修补规则：将包含 mipmap 的 filter 行改为 Linear,Linear。")
         }.trimEnd()
+    }
+
+    fun buildManifestRootPatchImportSummaryMessage(patchedResults: Collection<ModImportResult>): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasManifestRootPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedManifestRootEntries = existing.patchedManifestRootEntries + result.patchedManifestRootEntries,
+                    patchedManifestRootPrefix = if (existing.patchedManifestRootPrefix.isNotBlank()) {
+                        existing.patchedManifestRootPrefix
+                    } else {
+                        result.patchedManifestRootPrefix
+                    }
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return "本次导入没有发现需要修补的 ModTheSpire.json 根路径问题。"
+        }
+
+        return buildString {
+            append("以下模组在导入时已自动修补 ModTheSpire.json 根路径：\n")
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(result.modName.ifBlank { result.modId })
+                append("（modid: ")
+                append(result.modId)
+                append("）")
+                append('\n')
+                append("  已迁移文件: ")
+                append(result.patchedManifestRootEntries)
+                val normalizedPrefix = normalizeManifestRootPrefixForDisplay(result.patchedManifestRootPrefix)
+                if (normalizedPrefix.isNotEmpty()) {
+                    append("，原外层目录: ")
+                    append(normalizedPrefix)
+                }
+                append('\n')
+            }
+            append('\n')
+            append("修补规则：将“外层目录/ModTheSpire.json”结构扁平化到 jar 根目录。")
+        }.trimEnd()
+    }
+
+    private fun normalizeManifestRootPrefixForDisplay(prefix: String?): String {
+        var normalized = prefix?.trim().orEmpty().replace('\\', '/')
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1)
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.dropLast(1)
+        }
+        return normalized
     }
 
     @Throws(IOException::class)

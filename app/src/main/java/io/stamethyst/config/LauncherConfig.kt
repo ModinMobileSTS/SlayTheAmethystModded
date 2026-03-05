@@ -36,6 +36,7 @@ object LauncherConfig {
     private const val PREF_KEY_LAUNCHER_ICON = "launcher_icon"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
+    private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
@@ -265,6 +266,16 @@ object LauncherConfig {
     fun setGlobalAtlasFilterCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT, enabled)
+        }
+    }
+
+    fun isModManifestRootCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_MOD_MANIFEST_ROOT_COMPAT, true)
+    }
+
+    fun setModManifestRootCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_MOD_MANIFEST_ROOT_COMPAT, enabled)
         }
     }
 

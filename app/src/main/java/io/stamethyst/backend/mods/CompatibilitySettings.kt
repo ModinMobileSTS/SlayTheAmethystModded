@@ -25,6 +25,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isModManifestRootCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isModManifestRootCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setModManifestRootCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setModManifestRootCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isRuntimeTextureCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isRuntimeTextureCompatEnabled(context)
     }
