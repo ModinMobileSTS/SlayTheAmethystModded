@@ -115,6 +115,11 @@
     <string name="settings_author_icon_design_label">Icon design:</string>
     <string name="settings_author_contributor_raw_filter_name">Raw filter</string>
     <string name="settings_author_contributor_raw_filter_url">https://github.com/rawfilter</string>
+    <string name="settings_author_special_thanks_label">Special thanks:</string>
+    <string name="settings_author_special_thanks_item_1">1. Help from Butterfly Is Larva and members of their fan and test groups. Too many issue reporters to list one by one.</string>
+    <string name="settings_author_special_thanks_item_2">2. Front-end design ideas from this project\'s predecessor (mobile build).</string>
+    <string name="settings_author_special_thanks_item_3">3. Technical ideas from the Amethyst-android project.</string>
+    <string name="settings_author_special_thanks_footer">Sincere thanks to all friends above for their hard work.</string>
     <string name="settings_author_release_notice">Official releases are distributed only through non-throttled cloud storage or Github Release.</string>
     <string name="settings_author_report_notice">If you downloaded this project from other sources, please report that source.</string>
     <string name="settings_author_follow_notice">Follow official release channels for the latest builds and announcements.</string>

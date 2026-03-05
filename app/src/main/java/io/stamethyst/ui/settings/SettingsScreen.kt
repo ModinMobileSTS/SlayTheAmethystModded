@@ -823,6 +823,26 @@ private fun SettingsAuthorInfoSection() {
                 url = stringResource(R.string.settings_author_contributor_raw_filter_url),
             )
         }
+        Text(
+            text = stringResource(R.string.settings_author_special_thanks_label),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_author_special_thanks_item_1),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_author_special_thanks_item_2),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_author_special_thanks_item_3),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_author_special_thanks_footer),
+            style = MaterialTheme.typography.bodySmall
+        )
         HorizontalDivider()
         Text(
             text = stringResource(R.string.settings_author_release_notice),
