@@ -1,0 +1,126 @@
+name: Android Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    name: Build signed release APK
+    runs-on: ubuntu-latest
+    environment: release-signing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "Missing ANDROID_KEYSTORE_BASE64 secret in environment release-signing." >&2
+            exit 1
+          fi
+
+          keystore_path="$RUNNER_TEMP/release-signing.jks"
+          printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          echo "RELEASE_STORE_FILE=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Download and verify private build dependency bundle
+        shell: bash
+        env:
+          BUILD_DEPS_REPO: ${{ vars.BUILD_DEPS_REPO }}
+          BUILD_DEPS_RELEASE_TAG: ${{ vars.BUILD_DEPS_RELEASE_TAG }}
+          BUILD_DEPS_ASSET_NAME: ${{ vars.BUILD_DEPS_ASSET_NAME }}
+          BUILD_DEPS_SHA256: ${{ vars.BUILD_DEPS_SHA256 }}
+          GH_TOKEN: ${{ secrets.BUILD_DEPS_GH_TOKEN || github.token }}
+          GH_REPO_CURRENT: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUILD_DEPS_RELEASE_TAG:-}" ]; then
+            echo "Missing environment variable BUILD_DEPS_RELEASE_TAG." >&2
+            exit 1
+          fi
+          if [ -z "${BUILD_DEPS_SHA256:-}" ]; then
+            echo "Missing environment variable BUILD_DEPS_SHA256." >&2
+            exit 1
+          fi
+
+          deps_repo="${BUILD_DEPS_REPO:-$GH_REPO_CURRENT}"
+          asset_name="${BUILD_DEPS_ASSET_NAME:-build-deps.tar.gz}"
+          archive_path="$RUNNER_TEMP/$asset_name"
+
+          gh release download "$BUILD_DEPS_RELEASE_TAG" \
+            --repo "$deps_repo" \
+            --pattern "$asset_name" \
+            --dir "$RUNNER_TEMP" \
+            --clobber
+
+          echo "$BUILD_DEPS_SHA256  $archive_path" | sha256sum --check --status
+
+          deps_root="$RUNNER_TEMP/build-deps"
+          mkdir -p "$deps_root"
+          tar -xzf "$archive_path" -C "$deps_root"
+          if [ -d "$deps_root/build-deps" ]; then
+            deps_root="$deps_root/build-deps"
+          fi
+
+          if [ ! -f "$deps_root/steamapps/common/SlayTheSpire/desktop-1.0.jar" ]; then
+            echo "Missing desktop jar in dependency bundle: $deps_root/steamapps/common/SlayTheSpire/desktop-1.0.jar" >&2
+            exit 1
+          fi
+
+          if [ ! -f "$deps_root/runtime-pack/jre8-pojav.zip" ]; then
+            echo "Missing runtime pack zip in dependency bundle: $deps_root/runtime-pack/jre8-pojav.zip" >&2
+            exit 1
+          fi
+          if [ ! -f "$deps_root/runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so" ]; then
+            echo "Missing gdx-video arm64 native in dependency bundle." >&2
+            exit 1
+          fi
+          if [ ! -f "$deps_root/runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so" ]; then
+            echo "Missing gdx-video arm native in dependency bundle." >&2
+            exit 1
+          fi
+
+          mkdir -p runtime-pack
+          cp -R "$deps_root/runtime-pack/." runtime-pack/
+          echo "STEAM_PATH=$deps_root/steamapps" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          STEAM_PATH: ${{ env.STEAM_PATH }}
+          RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SlayTheAmethyst-${{ github.ref_name }}-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/*.APK
+          if-no-files-found: error
