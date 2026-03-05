@@ -35,12 +35,12 @@ internal fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
 }
 
 internal fun resolveStoredOptionalModId(mod: ModItemUi): String? {
-    val normalizedManifest = normalizeModId(mod.manifestModId)
-    if (normalizedManifest.isNotEmpty()) {
-        return normalizedManifest
-    }
     val normalizedModId = normalizeModId(mod.modId)
-    return normalizedModId.ifEmpty { null }
+    if (normalizedModId.isNotEmpty()) {
+        return normalizedModId
+    }
+    val normalizedManifest = normalizeModId(mod.manifestModId)
+    return normalizedManifest.ifEmpty { null }
 }
 
 internal fun normalizeModId(raw: String?): String {
@@ -63,7 +63,7 @@ internal fun resolveModDisplayName(mod: ModItemUi, showModFileName: Boolean = fa
     }
 }
 
-private fun resolveModFileNameWithoutJar(storagePath: String): String? {
+internal fun resolveModFileNameWithoutJar(storagePath: String): String? {
     val path = storagePath.trim()
     if (path.isEmpty()) {
         return null

@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.ApplicationExitInfo
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.SharedPreferences
 import android.net.Uri
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -40,8 +39,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import org.json.JSONArray
-import org.json.JSONObject
 
 @Stable
 class MainScreenViewModel : ViewModel() {
@@ -83,14 +80,33 @@ class MainScreenViewModel : ViewModel() {
     private var optionalModsWithPendingSelectionDirty = true
     private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
     private var pendingSelectionInitialized = false
-    private val modFolders = ArrayList<ModFolder>()
-    private val folderAssignments = LinkedHashMap<String, String>()
-    private val folderCollapsed = LinkedHashMap<String, Boolean>()
-    private var unassignedCollapsed = false
-    private var statusSummaryCollapsed = false
-    private var unassignedFolderName = DEFAULT_UNASSIGNED_FOLDER_NAME
-    private var unassignedFolderOrder = 0
-    private var folderStateLoaded = false
+    private val folderStateStore = MainFolderStateStore()
+    private val modFolders: MutableList<ModFolder>
+        get() = folderStateStore.folders
+    private val folderAssignments: MutableMap<String, String>
+        get() = folderStateStore.assignments
+    private val folderCollapsed: MutableMap<String, Boolean>
+        get() = folderStateStore.collapsedMap
+    private var unassignedCollapsed: Boolean
+        get() = folderStateStore.unassignedIsCollapsed
+        set(value) {
+            folderStateStore.unassignedIsCollapsed = value
+        }
+    private var statusSummaryCollapsed: Boolean
+        get() = folderStateStore.statusSummaryIsCollapsed
+        set(value) {
+            folderStateStore.statusSummaryIsCollapsed = value
+        }
+    private var unassignedFolderName: String
+        get() = folderStateStore.unassignedName
+        set(value) {
+            folderStateStore.unassignedName = value
+        }
+    private var unassignedFolderOrder: Int
+        get() = folderStateStore.unassignedOrder
+        set(value) {
+            folderStateStore.unassignedOrder = value
+        }
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -499,6 +515,37 @@ class MainScreenViewModel : ViewModel() {
         persistFolderState(host)
         republish(host)
         return snapshot
+    }
+
+    fun collapseAllFoldersForModDrag(host: Activity) {
+        ensureFolderStateLoaded(host)
+        val collapsedAll = LinkedHashMap<String, Boolean>()
+        modFolders.forEach { collapsedAll[it.id] = true }
+        folderCollapsed.clear()
+        folderCollapsed.putAll(collapsedAll)
+        unassignedCollapsed = true
+        persistFolderState(host)
+        republish(host)
+    }
+
+    fun expandOnlySourceFolderAfterModDrag(host: Activity, folderTokenId: String) {
+        ensureFolderStateLoaded(host)
+        val collapsedAll = LinkedHashMap<String, Boolean>()
+        modFolders.forEach { collapsedAll[it.id] = true }
+        folderCollapsed.clear()
+        folderCollapsed.putAll(collapsedAll)
+        unassignedCollapsed = true
+
+        if (folderTokenId == UNASSIGNED_FOLDER_ID) {
+            unassignedCollapsed = false
+        } else if (modFolders.any { it.id == folderTokenId }) {
+            folderCollapsed[folderTokenId] = false
+        } else {
+            unassignedCollapsed = false
+        }
+
+        persistFolderState(host)
+        republish(host)
     }
 
     fun restoreFolderCollapseSnapshot(host: Activity, snapshot: FolderCollapseSnapshot?) {
@@ -1227,121 +1274,15 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun ensureFolderStateLoaded(host: Activity) {
-        if (folderStateLoaded) {
-            return
-        }
-        loadFolderState(host)
-        folderStateLoaded = true
-    }
-
-    private fun folderPrefs(host: Activity): SharedPreferences {
-        return host.getSharedPreferences(PREFS_MAIN_MOD_FOLDERS, Activity.MODE_PRIVATE)
-    }
-
-    private fun loadFolderState(host: Activity) {
-        val prefs = folderPrefs(host)
-        modFolders.clear()
-        folderAssignments.clear()
-        folderCollapsed.clear()
-
-        runCatching {
-            val array = JSONArray(prefs.getString(KEY_FOLDERS, "[]") ?: "[]")
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val id = item.optString("id").trim()
-                val name = item.optString("name").trim()
-                if (id.isEmpty() || name.isEmpty()) {
-                    continue
-                }
-                modFolders.add(ModFolder(id = id, name = name))
-            }
-        }
-
-        runCatching {
-            val obj = JSONObject(prefs.getString(KEY_ASSIGNMENTS, "{}") ?: "{}")
-            val keys = obj.keys()
-            while (keys.hasNext()) {
-                val modKey = keys.next().trim()
-                val folderId = obj.optString(modKey).trim()
-                if (modKey.isNotEmpty() && folderId.isNotEmpty()) {
-                    folderAssignments[modKey] = folderId
-                }
-            }
-        }
-
-        runCatching {
-            val obj = JSONObject(prefs.getString(KEY_COLLAPSED, "{}") ?: "{}")
-            val keys = obj.keys()
-            while (keys.hasNext()) {
-                val folderId = keys.next().trim()
-                if (folderId.isNotEmpty()) {
-                    folderCollapsed[folderId] = obj.optBoolean(folderId, false)
-                }
-            }
-        }
-
-        unassignedCollapsed = prefs.getBoolean(KEY_UNASSIGNED_COLLAPSED, false)
-        statusSummaryCollapsed = prefs.getBoolean(KEY_STATUS_SUMMARY_COLLAPSED, false)
-        unassignedFolderName = prefs.getString(KEY_UNASSIGNED_NAME, DEFAULT_UNASSIGNED_FOLDER_NAME)
-            ?.trim()
-            ?.ifEmpty { DEFAULT_UNASSIGNED_FOLDER_NAME }
-            ?: DEFAULT_UNASSIGNED_FOLDER_NAME
-        unassignedFolderOrder = prefs.getInt(KEY_UNASSIGNED_ORDER, 0).coerceIn(0, modFolders.size)
+        folderStateStore.ensureLoaded(host)
     }
 
     private fun persistFolderState(host: Activity) {
-        val foldersArray = JSONArray()
-        modFolders.forEach { folder ->
-            val item = JSONObject()
-            item.put("id", folder.id)
-            item.put("name", folder.name)
-            foldersArray.put(item)
-        }
-
-        val assignmentsObject = JSONObject()
-        folderAssignments.forEach { (modKey, folderId) ->
-            assignmentsObject.put(modKey, folderId)
-        }
-
-        val collapsedObject = JSONObject()
-        folderCollapsed.forEach { (folderId, collapsed) ->
-            collapsedObject.put(folderId, collapsed)
-        }
-
-        folderPrefs(host).edit()
-            .putString(KEY_FOLDERS, foldersArray.toString())
-            .putString(KEY_ASSIGNMENTS, assignmentsObject.toString())
-            .putString(KEY_COLLAPSED, collapsedObject.toString())
-            .putBoolean(KEY_UNASSIGNED_COLLAPSED, unassignedCollapsed)
-            .putBoolean(KEY_STATUS_SUMMARY_COLLAPSED, statusSummaryCollapsed)
-            .putString(KEY_UNASSIGNED_NAME, unassignedFolderName)
-            .putInt(KEY_UNASSIGNED_ORDER, unassignedFolderOrder.coerceIn(0, modFolders.size))
-            .apply()
+        folderStateStore.persist(host)
     }
 
     private fun sanitizeFolderAssignments(optionalMods: List<ModItemUi>) {
-        val validFolderIds = modFolders.map { it.id }.toHashSet()
-        val normalized = LinkedHashMap<String, String>()
-
-        optionalMods.forEach { mod ->
-            val primaryKey = resolveModAssignmentKey(mod) ?: return@forEach
-            val assignedFolderId = resolveAssignedFolderId(mod)
-            if (assignedFolderId != null && validFolderIds.contains(assignedFolderId)) {
-                normalized[primaryKey] = assignedFolderId
-            }
-        }
-
-        folderAssignments.clear()
-        folderAssignments.putAll(normalized)
-
-        val normalizedCollapsed = LinkedHashMap<String, Boolean>()
-        modFolders.forEach { folder ->
-            normalizedCollapsed[folder.id] = folderCollapsed[folder.id] == true
-        }
-        folderCollapsed.clear()
-        folderCollapsed.putAll(normalizedCollapsed)
-
-        unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
+        folderStateStore.sanitize(optionalMods)
     }
 
     private fun resolveModAssignmentKey(mod: ModItemUi): String? {
@@ -1353,28 +1294,16 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
-        val keys = LinkedHashSet<String>()
-        val storage = mod.storagePath.trim()
-        if (storage.isNotEmpty()) {
-            keys.add(storage)
-        }
-        resolveStoredOptionalModId(mod)?.let { keys.add(it) }
-        val normalizedManifest = normalizeModId(mod.manifestModId)
-        if (normalizedManifest.isNotEmpty()) {
-            keys.add(normalizedManifest)
-        }
-        return ArrayList(keys)
+        return io.stamethyst.ui.main.resolveAssignmentKeyCandidates(mod)
     }
 
     private fun resolveAssignedFolderId(mod: ModItemUi): String? {
-        val candidates = resolveAssignmentKeyCandidates(mod)
-        for (candidate in candidates) {
-            val folderId = folderAssignments[candidate]
-            if (!folderId.isNullOrEmpty()) {
-                return folderId
-            }
-        }
-        return null
+        val folderIds = modFolders.map { it.id }.toHashSet()
+        return io.stamethyst.ui.main.resolveAssignedFolderId(
+            mod = mod,
+            folderAssignments = folderAssignments,
+            validFolderIds = folderIds
+        )
     }
 
     private fun clearAssignmentForMod(mod: ModItemUi) {
@@ -1388,37 +1317,18 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun buildFolderOrderTokens(): List<String> {
-        val tokens = modFolders.map { it.id }.toMutableList()
-        val insertIndex = unassignedFolderOrder.coerceIn(0, tokens.size)
-        tokens.add(insertIndex, UNASSIGNED_FOLDER_ID)
-        return tokens
+        return folderStateStore.buildFolderOrderTokens()
     }
 
     private fun applyFolderOrderTokens(tokens: List<String>) {
-        val folderMap = modFolders.associateBy { it.id }
-        val reordered = tokens
-            .filter { it != UNASSIGNED_FOLDER_ID }
-            .mapNotNull { folderMap[it] }
-        modFolders.clear()
-        modFolders.addAll(reordered)
-        unassignedFolderOrder = tokens.indexOf(UNASSIGNED_FOLDER_ID).coerceAtLeast(0).coerceIn(0, modFolders.size)
+        folderStateStore.applyFolderOrderTokens(tokens)
     }
 
     private fun moveFolderToken(host: Activity, folderId: String, offset: Int) {
-        ensureFolderStateLoaded(host)
-        val tokens = buildFolderOrderTokens().toMutableList()
-        val fromIndex = tokens.indexOf(folderId)
-        if (fromIndex < 0) {
-            return
+        val moved = folderStateStore.moveFolderToken(host, folderId, offset)
+        if (moved) {
+            republish(host)
         }
-        val toIndex = fromIndex + offset
-        if (toIndex !in tokens.indices) {
-            return
-        }
-        tokens.add(toIndex, tokens.removeAt(fromIndex))
-        applyFolderOrderTokens(tokens)
-        persistFolderState(host)
-        republish(host)
     }
 
     private fun findOptionalModByAnyId(id: String): ModItemUi? {
@@ -1565,9 +1475,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun resolveModDisplayName(mod: ModItemUi): String {
-        return mod.name.ifBlank {
-            mod.manifestModId.ifBlank { mod.modId }
-        }
+        return io.stamethyst.ui.main.resolveModDisplayName(mod, showModFileName = false)
     }
 
     private fun readBackBehaviorSelection(host: Activity): BackBehavior {
@@ -1652,12 +1560,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun resolveStoredOptionalModId(mod: ModItemUi): String? {
-        val normalizedModId = normalizeModId(mod.modId)
-        if (normalizedModId.isNotEmpty()) {
-            return normalizedModId
-        }
-        val normalizedManifestId = normalizeModId(mod.manifestModId)
-        return normalizedManifestId.ifEmpty { null }
+        return io.stamethyst.ui.main.resolveStoredOptionalModId(mod)
     }
 
     private fun prunePendingSelectionToInstalled() {
@@ -1738,16 +1641,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     companion object {
-        private const val PREFS_MAIN_MOD_FOLDERS = "MainModFolders"
-        private const val KEY_FOLDERS = "folders"
-        private const val KEY_ASSIGNMENTS = "assignments"
-        private const val KEY_COLLAPSED = "collapsed"
-        private const val KEY_UNASSIGNED_COLLAPSED = "unassigned_collapsed"
-        private const val KEY_STATUS_SUMMARY_COLLAPSED = "status_summary_collapsed"
-        private const val KEY_UNASSIGNED_NAME = "unassigned_name"
-        private const val KEY_UNASSIGNED_ORDER = "unassigned_order"
         private const val DEFAULT_UNASSIGNED_FOLDER_NAME = "未分类"
-        private const val UNASSIGNED_FOLDER_ID = "__unassigned__"
     }
 
     override fun onCleared() {

@@ -4,19 +4,24 @@ import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,7 +50,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -74,6 +81,11 @@ fun LauncherMainScreen(
             viewModel.onModJarsPicked(hostActivity, uris)
         }
     }
+    val actions = rememberMainScreenActions(
+        viewModel = viewModel,
+        hostActivity = hostActivity,
+        importModsLauncher = importModsLauncher
+    )
 
     LaunchedEffect(hostActivity) {
         if (hostActivity != null) {
@@ -101,133 +113,8 @@ fun LauncherMainScreen(
     LauncherMainScreenContent(
         modifier = modifier,
         uiState = uiState,
-        hostActivity = hostActivity,
-        onOpenSettings = onOpenSettings,
-        onSuggestNextFolderName = { viewModel.suggestNextFolderName() },
-        onAddFolder = { name ->
-            if (hostActivity != null) {
-                viewModel.addFolder(hostActivity, name)
-            }
-        },
-        onRenameFolder = { folderId, name ->
-            if (hostActivity != null) {
-                viewModel.renameFolder(hostActivity, folderId, name)
-            }
-        },
-        onDeleteFolder = { folderId ->
-            if (hostActivity != null) {
-                viewModel.deleteFolder(hostActivity, folderId)
-            }
-        },
-        onDeleteMod = { mod ->
-            if (hostActivity != null) {
-                viewModel.onDeleteMod(hostActivity, mod)
-            }
-        },
-        onExportMod = { mod ->
-            if (hostActivity != null) {
-                viewModel.onExportMod(hostActivity, mod)
-            }
-        },
-        onShareMod = { mod ->
-            if (hostActivity != null) {
-                viewModel.onShareMod(hostActivity, mod)
-            }
-        },
-        onRenameModFile = { mod, newFileName ->
-            if (hostActivity != null) {
-                viewModel.onRenameModFile(hostActivity, mod, newFileName)
-            }
-        },
-        onToggleMod = { mod, checked ->
-            if (hostActivity != null) {
-                viewModel.onToggleMod(hostActivity, mod, checked)
-            }
-        },
-        onSetFolderSelected = { folderId, selected ->
-            if (hostActivity != null) {
-                viewModel.setFolderSelected(hostActivity, folderId, selected)
-            }
-        },
-        onSetUnassignedSelected = { selected ->
-            if (hostActivity != null) {
-                viewModel.setUnassignedSelected(hostActivity, selected)
-            }
-        },
-        onToggleFolderCollapsed = { folderId ->
-            if (hostActivity != null) {
-                viewModel.toggleFolderCollapsed(hostActivity, folderId)
-            }
-        },
-        onToggleUnassignedCollapsed = {
-            if (hostActivity != null) {
-                viewModel.toggleUnassignedCollapsed(hostActivity)
-            }
-        },
-        onToggleStatusSummaryCollapsed = {
-            if (hostActivity != null) {
-                viewModel.toggleStatusSummaryCollapsed(hostActivity)
-            }
-        },
-        onMoveFolderUp = { folderId ->
-            if (hostActivity != null) {
-                viewModel.moveFolderUp(hostActivity, folderId)
-            }
-        },
-        onMoveFolderDown = { folderId ->
-            if (hostActivity != null) {
-                viewModel.moveFolderDown(hostActivity, folderId)
-            }
-        },
-        onMoveUnassignedUp = {
-            if (hostActivity != null) {
-                viewModel.moveUnassignedUp(hostActivity)
-            }
-        },
-        onMoveUnassignedDown = {
-            if (hostActivity != null) {
-                viewModel.moveUnassignedDown(hostActivity)
-            }
-        },
-        onMoveFolderTokenToIndex = { folderId, targetIndex ->
-            if (hostActivity != null) {
-                viewModel.moveFolderTokenToIndex(hostActivity, folderId, targetIndex)
-            }
-        },
-        onAssignModToFolder = { mod, folderId ->
-            if (hostActivity != null) {
-                viewModel.assignModToFolder(hostActivity, mod, folderId)
-            }
-        },
-        onMoveModToUnassigned = { mod ->
-            if (hostActivity != null) {
-                viewModel.moveModToUnassigned(hostActivity, mod)
-            }
-        },
-        onCollapseAllFoldersForDragWithSnapshot = {
-            if (hostActivity != null) {
-                viewModel.collapseAllFoldersForDragWithSnapshot(hostActivity)
-            } else {
-                null
-            }
-        },
-        onRestoreFolderCollapseSnapshot = { snapshot ->
-            if (hostActivity != null) {
-                viewModel.restoreFolderCollapseSnapshot(hostActivity, snapshot)
-            }
-        },
-        onImportMods = {
-            if (hostActivity != null) {
-                importModsLauncher.launch(
-                    arrayOf("application/java-archive", "application/octet-stream", "*/*")
-                )
-            }
-        },
-        onLaunch = {
-            if (hostActivity != null) {
-                viewModel.onLaunch(hostActivity)
-            }
-        }
+        actions = actions,
+        onOpenSettings = onOpenSettings
     )
 }
 
@@ -258,7 +145,8 @@ private fun LauncherMainScreenPreview() {
             modFolders = listOf(
                 MainScreenViewModel.ModFolder(id = "folder-demo", name = "示例文件夹")
             )
-        )
+        ),
+        actions = MainScreenActions(isHostAvailable = true)
     )
 }
 
@@ -267,33 +155,8 @@ private fun LauncherMainScreenPreview() {
 private fun LauncherMainScreenContent(
     modifier: Modifier = Modifier,
     uiState: MainScreenViewModel.UiState,
-    hostActivity: Activity? = null,
+    actions: MainScreenActions = MainScreenActions(isHostAvailable = false),
     onOpenSettings: () -> Unit = {},
-    onSuggestNextFolderName: () -> String = { "文件夹1" },
-    onAddFolder: (String) -> Unit = {},
-    onRenameFolder: (String, String) -> Unit = { _, _ -> },
-    onDeleteFolder: (String) -> Unit = {},
-    onDeleteMod: (ModItemUi) -> Unit = {},
-    onExportMod: (ModItemUi) -> Unit = {},
-    onShareMod: (ModItemUi) -> Unit = {},
-    onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
-    onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
-    onSetFolderSelected: (String, Boolean) -> Unit = { _, _ -> },
-    onSetUnassignedSelected: (Boolean) -> Unit = {},
-    onToggleFolderCollapsed: (String) -> Unit = {},
-    onToggleUnassignedCollapsed: () -> Unit = {},
-    onToggleStatusSummaryCollapsed: () -> Unit = {},
-    onMoveFolderUp: (String) -> Unit = {},
-    onMoveFolderDown: (String) -> Unit = {},
-    onMoveUnassignedUp: () -> Unit = {},
-    onMoveUnassignedDown: () -> Unit = {},
-    onMoveFolderTokenToIndex: (String, Int) -> Unit = { _, _ -> },
-    onAssignModToFolder: (ModItemUi, String) -> Unit = { _, _ -> },
-    onMoveModToUnassigned: (ModItemUi) -> Unit = {},
-    onCollapseAllFoldersForDragWithSnapshot: () -> MainScreenViewModel.FolderCollapseSnapshot? = { null },
-    onRestoreFolderCollapseSnapshot: (MainScreenViewModel.FolderCollapseSnapshot?) -> Unit = {},
-    onImportMods: () -> Unit = {},
-    onLaunch: () -> Unit = {},
 ) {
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var actionBarHeightPx by remember { mutableStateOf(0) }
@@ -309,83 +172,35 @@ private fun LauncherMainScreenContent(
         minimumLoadingElapsed = true
     }
 
-    if (showCreateFolderDialog) {
-        FolderNameInputDialog(
-            title = stringResource(R.string.main_folder_dialog_create_title),
-            initialText = onSuggestNextFolderName(),
-            onDismiss = { showCreateFolderDialog = false },
-            onConfirm = { name ->
-                showCreateFolderDialog = false
-                onAddFolder(name)
-            }
-        )
-    }
+    FolderNameDialog(
+        visible = showCreateFolderDialog,
+        title = stringResource(R.string.main_folder_dialog_create_title),
+        initialText = actions.onSuggestNextFolderName(),
+        onDismiss = { showCreateFolderDialog = false },
+        onConfirm = { name ->
+            showCreateFolderDialog = false
+            actions.onAddFolder(name)
+        }
+    )
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.main_app_title)) },
-                actions = {
-                    IconButton(
-                        onClick = { showCreateFolderDialog = true },
-                        enabled = uiState.controlsEnabled && hostActivity != null
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_folder_add),
-                            contentDescription = stringResource(R.string.main_action_add_folder)
-                        )
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Settings,
-                            contentDescription = stringResource(R.string.main_open_settings)
-                        )
-                    }
-                }
+            MainTopBar(
+                controlsEnabled = uiState.controlsEnabled,
+                hostAvailable = actions.isHostAvailable,
+                onAddFolderClick = { showCreateFolderDialog = true },
+                onOpenSettings = onOpenSettings
             )
         },
         floatingActionButtonPosition = FabPosition.Center,
         floatingActionButton = {
-            Surface(
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .onSizeChanged { actionBarHeightPx = it.height },
-                color = Color.Transparent,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val floatingButtonElevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 4.dp,
-                        disabledElevation = 0.dp
-                    )
-                    Button(
-                        onClick = onImportMods,
-                        enabled = uiState.controlsEnabled,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        elevation = floatingButtonElevation
-                    ) {
-                        Text(stringResource(R.string.main_import_mods))
-                    }
-                    Button(
-                        onClick = onLaunch,
-                        enabled = uiState.controlsEnabled,
-                        elevation = floatingButtonElevation
-                    ) {
-                        Text(stringResource(R.string.main_launch_game))
-                    }
-                }
-            }
+            MainBottomFixedActions(
+                controlsEnabled = uiState.controlsEnabled,
+                onImportMods = actions.onImportMods,
+                onLaunch = actions.onLaunch,
+                onMeasured = { actionBarHeightPx = it }
+            )
         }
     ) { paddingValues ->
         Column(
@@ -407,116 +222,209 @@ private fun LauncherMainScreenContent(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            AnimatedContent(
-                targetState = showInitializing,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(durationMillis = 180, delayMillis = 60)) togetherWith
-                        fadeOut(animationSpec = tween(durationMillis = 120))
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                label = "mainLoadingContent"
-            ) { loading ->
-                if (loading) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            CircularProgressIndicator()
-                            Text(
-                                text = stringResource(R.string.main_loading_mods),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (uiState.optionalMods.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.main_no_mods_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
+            MainContentSwitcher(
+                uiState = uiState,
+                showInitializing = showInitializing,
+                actionBarBottomPadding = actionBarBottomPadding,
+                actions = actions
+            )
+        }
+    }
+}
 
-                        ModFolderSection(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            uiState = uiState,
-                            statusSummary = uiState.statusSummary,
-                            contentBottomInset = actionBarBottomPadding,
-                            hostActivity = hostActivity,
-                            onToggleMod = onToggleMod,
-                            onDeleteMod = onDeleteMod,
-                            onExportMod = onExportMod,
-                            onShareMod = onShareMod,
-                            onRenameModFile = onRenameModFile,
-                            onRenameFolder = onRenameFolder,
-                            onDeleteFolder = onDeleteFolder,
-                            onSetFolderSelected = onSetFolderSelected,
-                            onSetUnassignedSelected = onSetUnassignedSelected,
-                            onToggleFolderCollapsed = onToggleFolderCollapsed,
-                            onToggleUnassignedCollapsed = onToggleUnassignedCollapsed,
-                            onToggleStatusSummaryCollapsed = onToggleStatusSummaryCollapsed,
-                            onMoveFolderUp = onMoveFolderUp,
-                            onMoveFolderDown = onMoveFolderDown,
-                            onMoveUnassignedUp = onMoveUnassignedUp,
-                            onMoveUnassignedDown = onMoveUnassignedDown,
-                            onMoveFolderTokenToIndex = onMoveFolderTokenToIndex,
-                            onAssignModToFolder = onAssignModToFolder,
-                            onMoveModToUnassigned = onMoveModToUnassigned,
-                            onCollapseAllFoldersForDragWithSnapshot = onCollapseAllFoldersForDragWithSnapshot,
-                            onRestoreFolderCollapseSnapshot = onRestoreFolderCollapseSnapshot
-                        )
-                    }
-                }
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun MainTopBar(
+    controlsEnabled: Boolean,
+    hostAvailable: Boolean,
+    onAddFolderClick: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    TopAppBar(
+        title = { Text(stringResource(R.string.main_app_title)) },
+        actions = {
+            IconButton(
+                onClick = onAddFolderClick,
+                enabled = controlsEnabled && hostAvailable
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_folder_add),
+                    contentDescription = stringResource(R.string.main_action_add_folder)
+                )
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Settings,
+                    contentDescription = stringResource(R.string.main_open_settings)
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun MainBottomFixedActions(
+    controlsEnabled: Boolean,
+    onImportMods: () -> Unit,
+    onLaunch: () -> Unit,
+    onMeasured: (Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .onSizeChanged { onMeasured(it.height) },
+        color = Color.Transparent,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        val buttonShape = RoundedCornerShape(16.dp)
+        val buttonWidth = 120.dp
+        val buttonHeight = 44.dp
+        val flatButtonElevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 0.dp,
+            pressedElevation = 0.dp,
+            disabledElevation = 0.dp
+        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onImportMods,
+                enabled = controlsEnabled,
+                shape = buttonShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                ),
+                elevation = flatButtonElevation,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(buttonWidth)
+                    .height(buttonHeight)
+            ) {
+                Text(
+                    text = stringResource(R.string.main_import_mods),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Button(
+                onClick = onLaunch,
+                enabled = controlsEnabled,
+                shape = buttonShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                ),
+                elevation = flatButtonElevation,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(buttonWidth)
+                    .height(buttonHeight)
+            ) {
+                Text(
+                    text = stringResource(R.string.main_launch_game),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
 }
 
 @Composable
-private fun FolderNameInputDialog(
-    title: String,
-    initialText: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+private fun ColumnScope.MainContentSwitcher(
+    uiState: MainScreenViewModel.UiState,
+    showInitializing: Boolean,
+    actionBarBottomPadding: Dp,
+    actions: MainScreenActions
 ) {
-    var value by remember(initialText) { mutableStateOf(initialText) }
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            androidx.compose.material3.OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                singleLine = true,
-                label = { Text(stringResource(R.string.main_folder_dialog_name_hint)) }
-            )
+    AnimatedContent(
+        targetState = showInitializing,
+        transitionSpec = {
+            fadeIn(animationSpec = tween(durationMillis = 180, delayMillis = 60)) togetherWith
+                fadeOut(animationSpec = tween(durationMillis = 120))
         },
-        confirmButton = {
-            androidx.compose.material3.TextButton(
-                onClick = {
-                    onConfirm(value.trim())
-                }
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f),
+        label = "mainLoadingContent"
+    ) { loading ->
+        if (loading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Text(stringResource(R.string.main_folder_dialog_confirm))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = stringResource(R.string.main_loading_mods),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.main_folder_dialog_cancel))
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (uiState.optionalMods.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_no_mods_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+
+                ModFolderSection(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    uiState = uiState,
+                    statusSummary = uiState.statusSummary,
+                    contentBottomInset = actionBarBottomPadding,
+                    hostAvailable = actions.isHostAvailable,
+                    callbacks = ModFolderSectionCallbacks(
+                        onToggleMod = actions.onToggleMod,
+                        onDeleteMod = actions.onDeleteMod,
+                        onExportMod = actions.onExportMod,
+                        onShareMod = actions.onShareMod,
+                        onRenameModFile = actions.onRenameModFile,
+                        onRenameFolder = actions.onRenameFolder,
+                        onDeleteFolder = actions.onDeleteFolder,
+                        onSetFolderSelected = actions.onSetFolderSelected,
+                        onSetUnassignedSelected = actions.onSetUnassignedSelected,
+                        onToggleFolderCollapsed = actions.onToggleFolderCollapsed,
+                        onToggleUnassignedCollapsed = actions.onToggleUnassignedCollapsed,
+                        onToggleStatusSummaryCollapsed = actions.onToggleStatusSummaryCollapsed,
+                        onMoveFolderUp = actions.onMoveFolderUp,
+                        onMoveFolderDown = actions.onMoveFolderDown,
+                        onMoveUnassignedUp = actions.onMoveUnassignedUp,
+                        onMoveUnassignedDown = actions.onMoveUnassignedDown,
+                        onMoveFolderTokenToIndex = actions.onMoveFolderTokenToIndex,
+                        onAssignModToFolder = actions.onAssignModToFolder,
+                        onMoveModToUnassigned = actions.onMoveModToUnassigned,
+                        onCollapseAllFoldersForModDrag = actions.onCollapseAllFoldersForModDrag,
+                        onExpandOnlySourceFolderAfterModDrag = actions.onExpandOnlySourceFolderAfterModDrag,
+                        onCollapseAllFoldersForDragWithSnapshot = actions.onCollapseAllFoldersForDragWithSnapshot,
+                        onRestoreFolderCollapseSnapshot = actions.onRestoreFolderCollapseSnapshot
+                    )
+                )
             }
         }
-    )
+    }
 }
