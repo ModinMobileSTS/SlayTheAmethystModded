@@ -3,6 +3,9 @@
     <files-path
         name="app_files"
         path="." />
+    <external-files-path
+        name="app_external_files"
+        path="." />
     <cache-path
         name="app_cache"
         path="." />

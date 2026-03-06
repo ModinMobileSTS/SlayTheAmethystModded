@@ -13,6 +13,7 @@ import android.content.pm.ConfigurationInfo;
 import android.system.ErrnoException;
 import android.system.Os;
 
+import io.stamethyst.config.RuntimePaths;
 import io.stamethyst.backend.render.RendererBackend;
 
 import java.io.File;
@@ -88,7 +89,7 @@ public final class JREUtils {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("POJAV_NATIVEDIR", context.getApplicationInfo().nativeLibraryDir);
         env.put("JAVA_HOME", javaHome);
-        env.put("HOME", context.getFilesDir().getAbsolutePath());
+        env.put("HOME", RuntimePaths.stsHome(context).getAbsolutePath());
         env.put("TMPDIR", context.getCacheDir().getAbsolutePath());
         env.put("LD_LIBRARY_PATH", LD_LIBRARY_PATH);
         env.put("PATH", javaHome + "/bin:" + safeGetEnv("PATH"));

@@ -35,7 +35,7 @@ object StsLaunchSpec {
         forceJvmCrash: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
-        val stsHome = File(stsRoot, "home")
+        val stsHome = RuntimePaths.stsHome(context)
         if (!stsHome.exists()) {
             stsHome.mkdirs()
         }

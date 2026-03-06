@@ -4,12 +4,28 @@ import android.content.Context
 import java.io.File
 
 object RuntimePaths {
+    private const val STS_DIR_NAME = "sts"
     private const val LATEST_LOG_FILE_NAME = "latest.log"
     private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
 
     @JvmStatic
-    fun stsRoot(context: Context): File = File(context.filesDir, "sts")
+    fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
+
+    @JvmStatic
+    fun usesExternalStsStorage(context: Context): Boolean = appExternalFilesRoot(context) != null
+
+    @JvmStatic
+    fun legacyInternalStsRoot(context: Context): File = File(context.filesDir, STS_DIR_NAME)
+
+    @JvmStatic
+    fun storageRoot(context: Context): File = appExternalFilesRoot(context) ?: context.filesDir
+
+    @JvmStatic
+    fun stsRoot(context: Context): File = File(storageRoot(context), STS_DIR_NAME)
+
+    @JvmStatic
+    fun stsHome(context: Context): File = File(stsRoot(context), "home")
 
     @JvmStatic
     fun importedStsJar(context: Context): File = File(stsRoot(context), "desktop-1.0.jar")
@@ -109,8 +125,62 @@ object RuntimePaths {
     fun runtimeRoot(context: Context): File = File(File(context.filesDir, "runtimes"), "Internal")
 
     @JvmStatic
+    fun normalizeLegacyInternalStsPath(context: Context, rawPath: String?): String? {
+        val raw = rawPath?.trim() ?: return null
+        if (raw.isEmpty()) {
+            return null
+        }
+
+        val absolutePath = File(raw).absolutePath
+        val currentRootPath = stsRoot(context).absolutePath
+        legacyInternalStsRootCandidates(context).forEach { legacyRootPath ->
+            if (legacyRootPath == currentRootPath) {
+                return absolutePath
+            }
+            when {
+                absolutePath == legacyRootPath -> return currentRootPath
+                absolutePath.startsWith("$legacyRootPath${File.separator}") ->
+                    return currentRootPath + absolutePath.substring(legacyRootPath.length)
+            }
+        }
+        return absolutePath
+    }
+
+    @JvmStatic
+    fun legacyInternalPathForCurrent(context: Context, currentPath: String?): String? {
+        val raw = currentPath?.trim() ?: return null
+        if (raw.isEmpty()) {
+            return null
+        }
+
+        val absolutePath = File(raw).absolutePath
+        val legacyRootPath = legacyInternalStsRoot(context).absolutePath
+        val currentRootPath = stsRoot(context).absolutePath
+        if (legacyRootPath == currentRootPath) {
+            return null
+        }
+
+        return when {
+            absolutePath == currentRootPath -> legacyRootPath
+            absolutePath.startsWith("$currentRootPath${File.separator}") ->
+                legacyRootPath + absolutePath.substring(currentRootPath.length)
+            else -> null
+        }
+    }
+
+    private fun legacyInternalStsRootCandidates(context: Context): List<String> {
+        val packageName = context.packageName
+        return linkedSetOf(
+            legacyInternalStsRoot(context).absolutePath,
+            "/data/user/0/$packageName/files/$STS_DIR_NAME",
+            "/data/data/$packageName/files/$STS_DIR_NAME"
+        ).toList()
+    }
+
+    @JvmStatic
     fun ensureBaseDirs(context: Context) {
         stsRoot(context).mkdirs()
+        stsHome(context).mkdirs()
         modsDir(context).mkdirs()
         jvmLogsDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()

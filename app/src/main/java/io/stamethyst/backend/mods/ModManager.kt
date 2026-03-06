@@ -102,7 +102,7 @@ object ModManager {
         }
 
         val rawSelection = readEnabledOptionalModKeysSafely(context)
-        val normalizedSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val normalizedSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         maybePersistSelectionNormalization(context, rawSelection, normalizedSelection)
 
         val result: MutableSet<String> = LinkedHashSet()
@@ -121,10 +121,10 @@ object ModManager {
         if (optionalModFiles.isEmpty()) {
             return
         }
-        val targetKey = resolveSelectionKey(modKeyOrId, optionalModFiles) ?: return
+        val targetKey = resolveSelectionKey(context, modKeyOrId, optionalModFiles) ?: return
 
         val rawSelection = readEnabledOptionalModKeys(context)
-        val normalizedSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val normalizedSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         val changed = if (enabled) {
             normalizedSelection.add(targetKey)
         } else {
@@ -139,7 +139,7 @@ object ModManager {
     @Throws(IOException::class)
     fun replaceEnabledOptionalModIds(context: Context, modKeysOrIds: Collection<String>) {
         val optionalModFiles = findOptionalModFiles(context)
-        val selected = normalizeEnabledOptionalSelection(modKeysOrIds, optionalModFiles)
+        val selected = normalizeEnabledOptionalSelection(context, modKeysOrIds, optionalModFiles)
         writeEnabledOptionalModKeys(context, selected)
     }
 
@@ -147,14 +147,14 @@ object ModManager {
     @Throws(IOException::class)
     fun deleteOptionalMod(context: Context, modKeyOrId: String): Boolean {
         val optionalModFiles = findOptionalModFiles(context)
-        val targetKey = resolveSelectionKey(modKeyOrId, optionalModFiles) ?: return false
+        val targetKey = resolveSelectionKey(context, modKeyOrId, optionalModFiles) ?: return false
         return deleteOptionalModByStoragePath(context, targetKey)
     }
 
     @JvmStatic
     @Throws(IOException::class)
     fun deleteOptionalModByStoragePath(context: Context, storagePath: String): Boolean {
-        val normalizedPath = normalizeSelectionToken(storagePath)
+        val normalizedPath = normalizeSelectionToken(context, storagePath)
         if (!looksLikePathToken(normalizedPath)) {
             return false
         }
@@ -171,7 +171,7 @@ object ModManager {
         val storageKey = resolveOptionalStorageKey(target)
 
         val rawSelection = readEnabledOptionalModKeysSafely(context)
-        val normalizedSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val normalizedSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         val removedFromSelection = normalizedSelection.remove(storageKey)
         if (removedFromSelection || rawSelection != normalizedSelection) {
             writeEnabledOptionalModKeys(context, normalizedSelection)
@@ -205,7 +205,7 @@ object ModManager {
 
         val optionalModFiles = findOptionalModFiles(context)
         val rawSelection = readEnabledOptionalModKeysSafely(context)
-        val enabledSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
 
         for (entry in optionalModFiles) {
@@ -260,7 +260,7 @@ object ModManager {
 
         val optionalModFiles = findOptionalModFiles(context)
         val rawSelection = readEnabledOptionalModKeys(context)
-        val enabledSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
 
         val launchModIds = ArrayList<String>()
@@ -407,7 +407,7 @@ object ModManager {
                 BufferedReader(reader).use { buffered ->
                     while (true) {
                         val line = buffered.readLine() ?: break
-                        val token = normalizeSelectionToken(line)
+                        val token = normalizeSelectionToken(context, line)
                         if (token.isNotEmpty()) {
                             keys.add(token)
                         }
@@ -429,7 +429,7 @@ object ModManager {
             OutputStreamWriter(output, StandardCharsets.UTF_8).use { writer ->
                 BufferedWriter(writer).use { buffered ->
                     for (modKey in modKeys) {
-                        val token = normalizeSelectionToken(modKey)
+                        val token = normalizeSelectionToken(context, modKey)
                         if (token.isEmpty()) {
                             continue
                         }
@@ -502,10 +502,11 @@ object ModManager {
     }
 
     private fun resolveSelectionKey(
+        context: Context,
         modKeyOrId: String,
         optionalModFiles: List<OptionalModFileEntry>
     ): String? {
-        val normalizedInput = normalizeSelectionToken(modKeyOrId)
+        val normalizedInput = normalizeSelectionToken(context, modKeyOrId)
         if (normalizedInput.isEmpty()) {
             return null
         }
@@ -527,6 +528,7 @@ object ModManager {
     }
 
     private fun normalizeEnabledOptionalSelection(
+        context: Context,
         selection: Collection<String>,
         optionalModFiles: List<OptionalModFileEntry>
     ): MutableSet<String> {
@@ -544,7 +546,7 @@ object ModManager {
         }
 
         selection.forEach { raw ->
-            val token = normalizeSelectionToken(raw)
+            val token = normalizeSelectionToken(context, raw)
             if (token.isEmpty()) {
                 return@forEach
             }
@@ -555,7 +557,7 @@ object ModManager {
         }
 
         selection.forEach { raw ->
-            val token = normalizeSelectionToken(raw)
+            val token = normalizeSelectionToken(context, raw)
             if (token.isEmpty() || looksLikePathToken(token)) {
                 return@forEach
             }
@@ -574,13 +576,14 @@ object ModManager {
         return normalized
     }
 
-    private fun normalizeSelectionToken(raw: String?): String {
+    private fun normalizeSelectionToken(context: Context, raw: String?): String {
         val trimmed = raw?.trim() ?: ""
         if (trimmed.isEmpty()) {
             return ""
         }
         return if (looksLikePathToken(trimmed)) {
-            File(trimmed).absolutePath
+            RuntimePaths.normalizeLegacyInternalStsPath(context = context, rawPath = trimmed)
+                ?: ""
         } else {
             normalizeModId(trimmed)
         }

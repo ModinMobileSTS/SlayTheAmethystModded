@@ -12,6 +12,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.MaterialTheme
+import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.navigation.Route
@@ -50,6 +51,8 @@ class LauncherActivity : AppCompatActivity() {
     private val mainViewModel: MainScreenViewModel by viewModels()
     private val settingsViewModel: SettingsScreenViewModel by viewModels()
     private var pendingImportDialog: AlertDialog? = null
+    private var pendingStorageMigrationDialog: AlertDialog? = null
+    private var queuedImportUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +69,10 @@ class LauncherActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
+
+        val storageMigrationResult = runCatching {
+            LegacyStsStorageMigration.migrateIfNeeded(this)
+        }.getOrNull()
 
         val initialRoute = if (RuntimePaths.importedStsJar(this).isFile) {
             Route.Main
@@ -84,6 +91,9 @@ class LauncherActivity : AppCompatActivity() {
         }
 
         mainViewModel.handleIncomingIntent(this, intent)
+        if (storageMigrationResult != null) {
+            showStorageMigrationDialog(storageMigrationResult)
+        }
         maybeImportModJarFromIntent(intent)
     }
 
@@ -95,13 +105,20 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        queuedImportUri = null
         pendingImportDialog?.dismiss()
         pendingImportDialog = null
+        pendingStorageMigrationDialog?.dismiss()
+        pendingStorageMigrationDialog = null
         super.onDestroy()
     }
 
     private fun maybeImportModJarFromIntent(incomingIntent: Intent?) {
         val uri = consumeJarImportUri(incomingIntent) ?: return
+        if (pendingStorageMigrationDialog?.isShowing == true) {
+            queuedImportUri = uri
+            return
+        }
         loadModImportPreviewAndPrompt(uri)
     }
 
@@ -189,6 +206,75 @@ class LauncherActivity : AppCompatActivity() {
         }
         pendingImportDialog = dialog
         dialog.show()
+    }
+
+    private fun showStorageMigrationDialog(result: LegacyStsStorageMigration.Result) {
+        pendingStorageMigrationDialog?.dismiss()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("存储位置已迁移")
+            .setMessage(buildStorageMigrationDialogMessage(result))
+            .setPositiveButton("知道了", null)
+            .create()
+        dialog.setOnDismissListener {
+            if (pendingStorageMigrationDialog === dialog) {
+                pendingStorageMigrationDialog = null
+            }
+            drainQueuedImportUri()
+        }
+        pendingStorageMigrationDialog = dialog
+        dialog.show()
+    }
+
+    private fun buildStorageMigrationDialogMessage(result: LegacyStsStorageMigration.Result): String {
+        return buildString {
+            append("检测到旧版数据保存在应用私有存储，现已自动迁移到：\n")
+            append(result.targetRootPath)
+            append("\n\n")
+            append("旧目录共扫描到 ")
+            append(result.scannedFileCount)
+            append(" 个文件")
+            if (result.copiedFileCount > 0) {
+                append("，本次同步了 ")
+                append(result.copiedFileCount)
+                append(" 个文件（约 ")
+                append(formatByteCount(result.copiedByteCount))
+                append("）")
+            }
+            append("。\n后续存档、导入模组和相关配置都会继续写入这个新目录。")
+            append("\n\n旧目录：\n")
+            append(result.sourceRootPath)
+        }
+    }
+
+    private fun drainQueuedImportUri() {
+        if (isFinishing || isDestroyed) {
+            queuedImportUri = null
+            return
+        }
+        if (pendingStorageMigrationDialog?.isShowing == true) {
+            return
+        }
+        val uri = queuedImportUri ?: return
+        queuedImportUri = null
+        loadModImportPreviewAndPrompt(uri)
+    }
+
+    private fun formatByteCount(bytes: Long): String {
+        if (bytes <= 0L) {
+            return "0 B"
+        }
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        var value = bytes.toDouble()
+        var unitIndex = 0
+        while (value >= 1024.0 && unitIndex < units.lastIndex) {
+            value /= 1024.0
+            unitIndex++
+        }
+        return if (unitIndex == 0) {
+            "${value.toLong()} ${units[unitIndex]}"
+        } else {
+            String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+        }
     }
 
     private fun buildModImportDialogMessage(preview: ModImportPreview): String {

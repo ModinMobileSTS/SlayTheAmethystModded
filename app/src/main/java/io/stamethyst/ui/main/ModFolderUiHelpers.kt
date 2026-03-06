@@ -22,6 +22,7 @@ internal fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
     val storage = mod.storagePath.trim()
     if (storage.isNotEmpty()) {
         keys.add(storage)
+        resolveLegacyInternalStorageCandidates(storage).forEach { keys.add(it) }
     }
     val storedId = resolveStoredOptionalModId(mod)
     if (!storedId.isNullOrBlank()) {
@@ -81,4 +82,42 @@ internal fun resolveModFileNameWithoutJar(storagePath: String): String? {
     } else {
         fileName
     }
+}
+
+private fun resolveLegacyInternalStorageCandidates(storagePath: String): List<String> {
+    val normalizedPath = storagePath.trim().replace('\\', '/')
+    if (normalizedPath.isEmpty()) {
+        return emptyList()
+    }
+
+    val packageMarker = "/Android/data/"
+    val packageStart = normalizedPath.indexOf(packageMarker)
+    if (packageStart < 0) {
+        return emptyList()
+    }
+    val packageNameStart = packageStart + packageMarker.length
+    val packageNameEnd = normalizedPath.indexOf("/files/", packageNameStart)
+    if (packageNameEnd <= packageNameStart) {
+        return emptyList()
+    }
+
+    val relativeMarker = "/files/sts/"
+    val relativeStart = normalizedPath.indexOf(relativeMarker, packageNameEnd)
+    if (relativeStart < 0) {
+        return emptyList()
+    }
+
+    val packageName = normalizedPath.substring(packageNameStart, packageNameEnd).trim()
+    if (packageName.isEmpty()) {
+        return emptyList()
+    }
+    val relativePath = normalizedPath.substring(relativeStart + relativeMarker.length)
+    if (relativePath.isEmpty()) {
+        return emptyList()
+    }
+
+    val candidates = LinkedHashSet<String>()
+    candidates.add("/data/user/0/$packageName/files/sts/$relativePath")
+    candidates.add("/data/data/$packageName/files/sts/$relativePath")
+    return candidates.toList()
 }
