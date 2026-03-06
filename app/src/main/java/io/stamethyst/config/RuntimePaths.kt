@@ -4,6 +4,11 @@ import android.content.Context
 import java.io.File
 
 object RuntimePaths {
+    private const val ANDROID_DATA_SEGMENT = "data"
+    private const val ANDROID_FILES_SEGMENT = "files"
+    private const val ANDROID_PATH_SEPARATOR = "/"
+    private const val ANDROID_USER_SEGMENT = "user"
+    private const val ANDROID_USER_ZERO_SEGMENT = "0"
     private const val STS_DIR_NAME = "sts"
     private const val LATEST_LOG_FILE_NAME = "latest.log"
     private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
@@ -124,6 +129,9 @@ object RuntimePaths {
     @JvmStatic
     fun runtimeRoot(context: Context): File = File(File(context.filesDir, "runtimes"), "Internal")
 
+    internal fun legacyInternalStsRootCandidates(packageName: String): List<String> =
+        legacyInternalStsRootCandidates(packageName, null)
+
     @JvmStatic
     fun normalizeLegacyInternalStsPath(context: Context, rawPath: String?): String? {
         val raw = rawPath?.trim() ?: return null
@@ -168,14 +176,88 @@ object RuntimePaths {
         }
     }
 
-    private fun legacyInternalStsRootCandidates(context: Context): List<String> {
-        val packageName = context.packageName
-        return linkedSetOf(
-            legacyInternalStsRoot(context).absolutePath,
-            "/data/user/0/$packageName/files/$STS_DIR_NAME",
-            "/data/data/$packageName/files/$STS_DIR_NAME"
-        ).toList()
+    private fun legacyInternalStsRootCandidates(context: Context): List<String> =
+        legacyInternalStsRootCandidates(context.packageName, context.filesDir)
+
+    private fun legacyInternalStsRootCandidates(
+        packageName: String,
+        filesDir: File?
+    ): List<String> {
+        val roots = LinkedHashSet<String>()
+        filesDir?.let { actualFilesDir ->
+            buildLegacyStsRoots(actualFilesDir).forEach(roots::add)
+        }
+        buildFallbackLegacyStsRoots(packageName).forEach(roots::add)
+        return roots.toList()
     }
+
+    private fun buildLegacyStsRoots(filesDir: File): List<String> {
+        val roots = LinkedHashSet<String>()
+        roots.add(File(filesDir, STS_DIR_NAME).absolutePath)
+        runCatching {
+            File(filesDir.canonicalFile, STS_DIR_NAME).absolutePath
+        }.getOrNull()?.let(roots::add)
+        resolveAlternateLegacyFilesDir(filesDir)?.let { alternateFilesDir ->
+            roots.add(File(alternateFilesDir, STS_DIR_NAME).path)
+        }
+        return roots.toList()
+    }
+
+    private fun buildFallbackLegacyStsRoots(packageName: String): List<String> {
+        val filesPathSegments = listOf(packageName, ANDROID_FILES_SEGMENT, STS_DIR_NAME)
+        return listOf(
+            buildAndroidAbsolutePath(
+                listOf(
+                    ANDROID_DATA_SEGMENT,
+                    ANDROID_USER_SEGMENT,
+                    ANDROID_USER_ZERO_SEGMENT
+                ) + filesPathSegments
+            ),
+            buildAndroidAbsolutePath(
+                listOf(
+                    ANDROID_DATA_SEGMENT,
+                    ANDROID_DATA_SEGMENT
+                ) + filesPathSegments
+            )
+        )
+    }
+
+    private fun resolveAlternateLegacyFilesDir(filesDir: File): File? {
+        val segments = filesDir.path
+            .replace('\\', '/')
+            .split(ANDROID_PATH_SEPARATOR)
+            .filter { it.isNotEmpty() }
+        if (segments.lastOrNull() != ANDROID_FILES_SEGMENT) {
+            return null
+        }
+        val alternatePath = when {
+            segments.size >= 5 &&
+                segments[0] == ANDROID_DATA_SEGMENT &&
+                segments[1] == ANDROID_USER_SEGMENT &&
+                segments[2] == ANDROID_USER_ZERO_SEGMENT ->
+                buildAndroidAbsolutePath(
+                    listOf(
+                        ANDROID_DATA_SEGMENT,
+                        ANDROID_DATA_SEGMENT
+                    ) + segments.drop(3)
+                )
+            segments.size >= 4 &&
+                segments[0] == ANDROID_DATA_SEGMENT &&
+                segments[1] == ANDROID_DATA_SEGMENT ->
+                buildAndroidAbsolutePath(
+                    listOf(
+                        ANDROID_DATA_SEGMENT,
+                        ANDROID_USER_SEGMENT,
+                        ANDROID_USER_ZERO_SEGMENT
+                    ) + segments.drop(2)
+                )
+            else -> null
+        }
+        return alternatePath?.let(::File)
+    }
+
+    private fun buildAndroidAbsolutePath(segments: List<String>): String =
+        ANDROID_PATH_SEPARATOR + segments.joinToString(ANDROID_PATH_SEPARATOR)
 
     @JvmStatic
     fun ensureBaseDirs(context: Context) {

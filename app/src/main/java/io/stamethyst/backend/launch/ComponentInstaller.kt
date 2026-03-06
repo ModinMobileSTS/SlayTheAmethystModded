@@ -211,9 +211,9 @@ object ComponentInstaller {
             output.write(script.toByteArray(StandardCharsets.UTF_8))
         }
 
-        javaShim.setReadable(true, false)
+        javaShim.setReadable(true, true)
         javaShim.setWritable(true, true)
-        if (!javaShim.setExecutable(true, false)) {
+        if (!javaShim.setExecutable(true, true)) {
             throw IOException("Failed to mark MTS jre shim executable: ${javaShim.absolutePath}")
         }
     }

@@ -1,7 +1,6 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
-import android.app.ApplicationExitInfo
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -1099,10 +1098,9 @@ class MainScreenViewModel : ViewModel() {
         if (summary == null) {
             return false
         }
-        val isSignal = summary.reason == ApplicationExitInfo.REASON_SIGNALED
         val message = buildString {
             append("检测到上次运行异常退出。\n")
-            if (isSignal) {
+            if (summary.isSignal) {
                 append(host.getString(R.string.sts_signal_exit, summary.status))
             } else {
                 append("退出原因：").append(summary.reasonName).append(" (status=").append(summary.status).append(')')

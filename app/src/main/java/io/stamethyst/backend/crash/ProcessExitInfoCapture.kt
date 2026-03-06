@@ -47,7 +47,8 @@ object ProcessExitInfoCapture {
             reasonName = reasonName,
             status = latest.status,
             timestamp = latest.timestamp,
-            description = description
+            description = description,
+            isSignal = latest.reason == ApplicationExitInfo.REASON_SIGNALED
         )
     }
 

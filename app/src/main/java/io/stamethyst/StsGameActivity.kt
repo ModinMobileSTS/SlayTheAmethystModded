@@ -476,14 +476,7 @@ class StsGameActivity : AppCompatActivity() {
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager?
         val triggerAt = SystemClock.elapsedRealtime() + BACK_FORCE_RESTART_DELAY_MS
         val scheduledByAlarm = if (alarmManager != null) {
-            try {
-                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
-                true
-            } catch (_: SecurityException) {
-                false
-            } catch (_: Throwable) {
-                false
-            }
+            scheduleLauncherRestart(alarmManager, triggerAt, pendingIntent)
         } else {
             false
         }
@@ -495,6 +488,26 @@ class StsGameActivity : AppCompatActivity() {
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
         exitProcess(0)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun scheduleLauncherRestart(
+        alarmManager: AlarmManager,
+        triggerAt: Long,
+        pendingIntent: PendingIntent
+    ): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            }
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     // ==================== Crash Reporting ====================

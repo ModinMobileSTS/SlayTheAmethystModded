@@ -177,8 +177,8 @@ object RuntimePackInstaller {
                             }
                         }
 
-                        outFile.setExecutable((current.mode and 0b001001001) != 0, false)
-                        outFile.setReadable(true, false)
+                        outFile.setExecutable((current.mode and 0b001001001) != 0, true)
+                        outFile.setReadable(true, true)
                         outFile.setWritable(true, true)
                     }
                 }

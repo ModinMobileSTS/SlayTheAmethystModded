@@ -6,5 +6,6 @@ data class ProcessExitSummary(
     val reasonName: String,
     val status: Int,
     val timestamp: Long,
-    val description: String
+    val description: String,
+    val isSignal: Boolean = false
 )

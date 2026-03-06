@@ -1,6 +1,5 @@
 package io.stamethyst
 
-import android.os.Build
 import android.text.InputType
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -541,9 +540,7 @@ internal class FloatingMouseOverlayController(
         init {
             isFocusable = true
             isFocusableInTouchMode = true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            }
+            importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
 
         override fun onCheckIsTextEditor(): Boolean {

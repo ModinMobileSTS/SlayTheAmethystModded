@@ -107,6 +107,11 @@ jobs:
           cp -R "$deps_root/runtime-pack/." runtime-pack/
           echo "STEAM_PATH=$deps_root/steamapps" >> "$GITHUB_ENV"
 
+      - name: Run Android lint
+        env:
+          STEAM_PATH: ${{ env.STEAM_PATH }}
+        run: ./gradlew :app:lintDebug --stacktrace
+
       - name: Build signed release APK
         env:
           STEAM_PATH: ${{ env.STEAM_PATH }}
