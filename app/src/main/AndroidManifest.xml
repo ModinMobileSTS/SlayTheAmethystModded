@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -13,14 +14,16 @@
         android:label="SlayTheAmethyst"
         android:roundIcon="@mipmap/ic_launcher_amethyst_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SlayTheAmethyst">
+        android:theme="@style/Theme.SlayTheAmethyst"
+        tools:targetApi="30">
 
         <activity
             android:name="io.stamethyst.StsGameActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="false"
             android:enableOnBackInvokedCallback="true"
-            android:screenOrientation="sensorLandscape" />
+            android:screenOrientation="sensorLandscape"
+            tools:targetApi="33" />
 
         <activity
             android:name="io.stamethyst.backend.file_interactive.SafExportActivity"
@@ -37,7 +40,8 @@
         <activity
             android:name="io.stamethyst.LauncherActivity"
             android:exported="true"
-            android:enableOnBackInvokedCallback="false">
+            android:enableOnBackInvokedCallback="false"
+            tools:targetApi="33">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

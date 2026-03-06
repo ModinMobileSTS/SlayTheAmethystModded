@@ -1,5 +1,6 @@
 package io.stamethyst.ui.main
 
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
 import java.io.File
 
@@ -116,8 +117,7 @@ private fun resolveLegacyInternalStorageCandidates(storagePath: String): List<St
         return emptyList()
     }
 
-    val candidates = LinkedHashSet<String>()
-    candidates.add("/data/user/0/$packageName/files/sts/$relativePath")
-    candidates.add("/data/data/$packageName/files/sts/$relativePath")
-    return candidates.toList()
+    return RuntimePaths.legacyInternalStsRootCandidates(packageName)
+        .map { candidateRoot -> "$candidateRoot/$relativePath" }
+        .distinct()
 }
