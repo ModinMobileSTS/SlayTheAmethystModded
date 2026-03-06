@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
+import androidx.annotation.RequiresApi
 import io.stamethyst.config.RuntimePaths
 import java.nio.charset.StandardCharsets
 
@@ -13,6 +14,11 @@ object ProcessExitInfoCapture {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return null
         }
+        return captureLatestProcessExitInfoApi30(context)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun captureLatestProcessExitInfoApi30(context: Context): ProcessExitSummary? {
         val manager = context.getSystemService(ActivityManager::class.java) ?: return null
         val reasons = try {
             manager.getHistoricalProcessExitReasons(context.packageName, 0, 24)
@@ -45,6 +51,7 @@ object ProcessExitInfoCapture {
         )
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun buildExitMarker(exitInfo: ApplicationExitInfo): String {
         return buildString(96) {
             append(exitInfo.pid).append(':')
@@ -78,6 +85,7 @@ object ProcessExitInfoCapture {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun reasonName(reason: Int): String {
         return when (reason) {
             ApplicationExitInfo.REASON_ANR -> "REASON_ANR"
@@ -101,6 +109,7 @@ object ProcessExitInfoCapture {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun isInterestingExitReason(exitInfo: ApplicationExitInfo): Boolean {
         return when (exitInfo.reason) {
             ApplicationExitInfo.REASON_CRASH,
