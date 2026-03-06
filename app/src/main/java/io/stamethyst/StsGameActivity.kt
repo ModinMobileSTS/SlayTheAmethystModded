@@ -378,11 +378,6 @@ class StsGameActivity : AppCompatActivity() {
         }
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        handleAndroidBackPressed()
-    }
-
     private fun requestBackExitToLauncher() {
         if (backExitRequested) return
         backExitRequested = true
