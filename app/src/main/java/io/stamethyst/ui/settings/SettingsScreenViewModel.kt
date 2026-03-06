@@ -55,6 +55,7 @@ class SettingsScreenViewModel : ViewModel() {
     data class UiState(
         val busy: Boolean = false,
         val busyMessage: String? = null,
+        val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
@@ -119,6 +120,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val hasJar = RuntimePaths.importedStsJar(host).exists()
 
                 val renderScale = RenderScaleService.readValue(host)
+                val playerName = readPlayerNameSelection(host)
                 val targetFps = readTargetFpsSelection(host)
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
                 val backBehavior = readBackBehaviorSelection(host)
@@ -187,6 +189,7 @@ class SettingsScreenViewModel : ViewModel() {
                         .append(formatBytes(deviceRuntimeStatus.totalMemoryBytes))
 
                     append("\n\n启动与兼容设置")
+                    append("\nPlayer name: ").append(playerName)
                     append("\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)")
                     append("\nTarget FPS: $targetFps")
                     append("\nJVM heap max: ${jvmHeapMaxMb} MB")
@@ -233,6 +236,7 @@ class SettingsScreenViewModel : ViewModel() {
                     uiState = uiState.copy(
                         busy = if (clearBusy) false else uiState.busy,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
+                        playerName = playerName,
                         selectedRenderScale = renderScale,
                         selectedTargetFps = targetFps,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
@@ -389,6 +393,22 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(selectedJvmHeapMaxMb = normalizedHeapMax)
         saveJvmHeapMaxSelection(host, normalizedHeapMax)
         refreshStatus(host)
+    }
+
+    fun onPlayerNameChanged(host: Activity, name: String): Boolean {
+        if (uiState.busy) {
+            return false
+        }
+        val normalizedPlayerName = LauncherPreferences.normalizePlayerName(name)
+        if (normalizedPlayerName == uiState.playerName) {
+            return true
+        }
+        if (!savePlayerNameSelection(host, normalizedPlayerName)) {
+            return false
+        }
+        uiState = uiState.copy(playerName = normalizedPlayerName)
+        refreshStatus(host)
+        return true
     }
 
     fun onBackBehaviorChanged(host: Activity, behavior: BackBehavior) {
@@ -1117,6 +1137,24 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun readTargetFpsSelection(host: Activity): Int {
         return LauncherPreferences.readTargetFps(host)
+    }
+
+    private fun readPlayerNameSelection(host: Activity): String {
+        return LauncherPreferences.readPlayerName(host)
+    }
+
+    private fun savePlayerNameSelection(host: Activity, name: String): Boolean {
+        return try {
+            LauncherPreferences.savePlayerName(host, name)
+            true
+        } catch (error: IOException) {
+            Toast.makeText(
+                host,
+                "Failed to save player name: ${error.message}",
+                Toast.LENGTH_SHORT
+            ).show()
+            false
+        }
     }
 
     private fun saveTargetFpsSelection(host: Activity, targetFps: Int) {

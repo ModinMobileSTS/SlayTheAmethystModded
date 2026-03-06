@@ -102,6 +102,11 @@
     <string name="main_mod_version_format">Version: %1$s</string>
     <string name="main_mod_dependencies_format">Prerequisites: %1$s</string>
     <string name="main_mod_share_chooser_title">Share mod to</string>
+    <string name="settings_player_name_title">Player name</string>
+    <string name="settings_player_name_desc">Changes the Slay the Spire profile name. Takes effect after you enter the game again.</string>
+    <string name="settings_player_name_dialog_title">Set player name</string>
+    <string name="settings_player_name_hint">Player name</string>
+    <string name="settings_player_name_dialog_message">Leave it blank to restore the default name: player.</string>
     <string name="settings_author_info_title">Project info</string>
     <string name="settings_author_repo_label">Repository URL</string>
     <string name="settings_author_repo_url">https://github.com/ModinMobileSTS/SlayTheAmethystModded</string>

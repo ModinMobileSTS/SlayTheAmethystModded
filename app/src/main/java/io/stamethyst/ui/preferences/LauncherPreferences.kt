@@ -31,6 +31,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
+    val DEFAULT_PLAYER_NAME: String
+        get() = LauncherConfig.DEFAULT_PLAYER_NAME
 
     val DEFAULT_JVM_HEAP_MAX_MB: Int
         get() = LauncherConfig.DEFAULT_JVM_HEAP_MAX_MB
@@ -151,5 +153,17 @@ object LauncherPreferences {
 
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {
         LauncherConfig.saveJvmHeapMaxMb(context, heapMaxMb)
+    }
+
+    fun normalizePlayerName(name: String): String {
+        return LauncherConfig.normalizePlayerName(name)
+    }
+
+    fun readPlayerName(context: Context): String {
+        return LauncherConfig.readPlayerName(context)
+    }
+
+    fun savePlayerName(context: Context, name: String) {
+        LauncherConfig.savePlayerName(context, name)
     }
 }
