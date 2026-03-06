@@ -12,11 +12,9 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
-import java.util.Arrays
 import java.util.HashSet
 import java.util.LinkedHashSet
 import java.util.Locale
-import java.util.TreeMap
 
 object ModManager {
     const val MOD_ID_BASEMOD = "basemod"
@@ -43,6 +41,13 @@ object ModManager {
         @JvmField
         val dependencies: List<String> = dependencies ?: ArrayList()
     }
+
+    private data class OptionalModFileEntry(
+        val storageKey: String,
+        val jarFile: File,
+        val normalizedModId: String,
+        val rawModId: String
+    )
 
     @JvmStatic
     fun normalizeModId(modId: String?): String {
@@ -83,57 +88,95 @@ object ModManager {
     }
 
     @JvmStatic
+    fun resolveStorageFileForImportedMod(context: Context, requestedFileName: String?): File {
+        val modsDir = RuntimePaths.modsDir(context)
+        val preferredName = sanitizeImportedJarFileName(requestedFileName)
+        return buildUniqueImportTarget(modsDir, preferredName)
+    }
+
+    @JvmStatic
     fun listEnabledOptionalModIds(context: Context): Set<String> {
-        return LinkedHashSet(readEnabledOptionalModIdsSafely(context))
-    }
-
-    @JvmStatic
-    @Throws(IOException::class)
-    fun setOptionalModEnabled(context: Context, modId: String, enabled: Boolean) {
-        val normalized = normalizeModId(modId)
-        if (normalized.isEmpty() || isRequiredModId(normalized)) {
-            return
+        val optionalModFiles = findOptionalModFiles(context)
+        if (optionalModFiles.isEmpty()) {
+            return emptySet()
         }
-        val selected = readEnabledOptionalModIds(context)
-        val changed = if (enabled) selected.add(normalized) else selected.remove(normalized)
-        if (changed) {
-            writeEnabledOptionalModIds(context, selected)
-        }
-    }
 
-    @JvmStatic
-    @Throws(IOException::class)
-    fun replaceEnabledOptionalModIds(context: Context, modIds: Collection<String>) {
-        val selected: MutableSet<String> = LinkedHashSet()
-        for (modId in modIds) {
-            val normalized = normalizeModId(modId)
-            if (normalized.isNotEmpty() && !isRequiredModId(normalized)) {
-                selected.add(normalized)
+        val rawSelection = readEnabledOptionalModKeysSafely(context)
+        val normalizedSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        maybePersistSelectionNormalization(context, rawSelection, normalizedSelection)
+
+        val result: MutableSet<String> = LinkedHashSet()
+        optionalModFiles.forEach { entry ->
+            if (normalizedSelection.contains(entry.storageKey)) {
+                result.add(entry.normalizedModId)
             }
         }
-        if (selected.isNotEmpty()) {
-            val optionalModFiles = findOptionalModFiles(context)
-            selected.retainAll(optionalModFiles.keys)
-        }
-        writeEnabledOptionalModIds(context, selected)
+        return result
     }
 
     @JvmStatic
     @Throws(IOException::class)
-    fun deleteOptionalMod(context: Context, modId: String): Boolean {
-        val normalized = normalizeModId(modId)
-        if (normalized.isEmpty() || isRequiredModId(normalized)) {
+    fun setOptionalModEnabled(context: Context, modKeyOrId: String, enabled: Boolean) {
+        val optionalModFiles = findOptionalModFiles(context)
+        if (optionalModFiles.isEmpty()) {
+            return
+        }
+        val targetKey = resolveSelectionKey(modKeyOrId, optionalModFiles) ?: return
+
+        val rawSelection = readEnabledOptionalModKeys(context)
+        val normalizedSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val changed = if (enabled) {
+            normalizedSelection.add(targetKey)
+        } else {
+            normalizedSelection.remove(targetKey)
+        }
+        if (changed || rawSelection != normalizedSelection) {
+            writeEnabledOptionalModKeys(context, normalizedSelection)
+        }
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun replaceEnabledOptionalModIds(context: Context, modKeysOrIds: Collection<String>) {
+        val optionalModFiles = findOptionalModFiles(context)
+        val selected = normalizeEnabledOptionalSelection(modKeysOrIds, optionalModFiles)
+        writeEnabledOptionalModKeys(context, selected)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun deleteOptionalMod(context: Context, modKeyOrId: String): Boolean {
+        val optionalModFiles = findOptionalModFiles(context)
+        val targetKey = resolveSelectionKey(modKeyOrId, optionalModFiles) ?: return false
+        return deleteOptionalModByStoragePath(context, targetKey)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun deleteOptionalModByStoragePath(context: Context, storagePath: String): Boolean {
+        val normalizedPath = normalizeSelectionToken(storagePath)
+        if (!looksLikePathToken(normalizedPath)) {
+            return false
+        }
+        val target = File(normalizedPath)
+        if (!target.isFile || isReservedJarName(target.name)) {
+            return false
+        }
+        val expectedDirPath = RuntimePaths.modsDir(context).absolutePath
+        if (target.parentFile?.absolutePath != expectedDirPath) {
             return false
         }
 
         val optionalModFiles = findOptionalModFiles(context)
-        val target = optionalModFiles[normalized]
+        val storageKey = resolveOptionalStorageKey(target)
 
-        setOptionalModEnabled(context, normalized, false)
-
-        if (target == null || !target.isFile) {
-            return false
+        val rawSelection = readEnabledOptionalModKeysSafely(context)
+        val normalizedSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        val removedFromSelection = normalizedSelection.remove(storageKey)
+        if (removedFromSelection || rawSelection != normalizedSelection) {
+            writeEnabledOptionalModKeys(context, normalizedSelection)
         }
+
         if (!target.delete()) {
             throw IOException("Failed to delete mod file: ${target.absolutePath}")
         }
@@ -160,20 +203,22 @@ object ModManager {
             )
         )
 
-        val enabledOptional = readEnabledOptionalModIdsSafely(context)
         val optionalModFiles = findOptionalModFiles(context)
-        maybePruneEnabledSelection(context, enabledOptional, optionalModFiles.keys)
+        val rawSelection = readEnabledOptionalModKeysSafely(context)
+        val enabledSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
 
-        for (modId in optionalModFiles.keys) {
-            val jarFile = optionalModFiles[modId] ?: continue
-            var manifestModId = modId
+        for (entry in optionalModFiles) {
+            val jarFile = entry.jarFile
+            val modId = entry.normalizedModId
+            var manifestModId = entry.rawModId
             var name = modId
             var version = ""
             var description = ""
             var dependencies: List<String> = ArrayList()
             try {
                 val manifest = ModJarSupport.readModManifest(jarFile)
-                manifestModId = defaultIfBlank(manifest.modId, modId)
+                manifestModId = defaultIfBlank(manifest.modId, manifestModId)
                 name = defaultIfBlank(manifest.name, manifestModId)
                 version = trimToEmpty(manifest.version)
                 description = trimToEmpty(manifest.description)
@@ -192,7 +237,7 @@ object ModManager {
                     jarFile,
                     false,
                     true,
-                    enabledOptional.contains(modId)
+                    enabledSelection.contains(entry.storageKey)
                 )
             )
         }
@@ -213,21 +258,22 @@ object ModManager {
             "StSLib.jar"
         )
 
-        val enabledOptional = readEnabledOptionalModIds(context)
         val optionalModFiles = findOptionalModFiles(context)
-        maybePruneEnabledSelection(context, enabledOptional, optionalModFiles.keys)
+        val rawSelection = readEnabledOptionalModKeys(context)
+        val enabledSelection = normalizeEnabledOptionalSelection(rawSelection, optionalModFiles)
+        maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
 
         val launchModIds = ArrayList<String>()
         launchModIds.add(baseModId)
         launchModIds.add(stsLibId)
 
-        for (modId in enabledOptional) {
-            val modJar = optionalModFiles[modId]
-            if (modJar != null) {
-                val rawModId = resolveRawModId(modJar)
-                if (rawModId.isNotEmpty()) {
-                    launchModIds.add(rawModId)
-                }
+        for (entry in optionalModFiles) {
+            if (!enabledSelection.contains(entry.storageKey)) {
+                continue
+            }
+            val rawModId = entry.rawModId.trim()
+            if (rawModId.isNotEmpty()) {
+                launchModIds.add(rawModId)
             }
         }
         return launchModIds
@@ -302,32 +348,38 @@ object ModManager {
         return raw
     }
 
-    private fun findOptionalModFiles(context: Context): TreeMap<String, File> {
-        val modsById = TreeMap<String, File>()
+    private fun findOptionalModFiles(context: Context): List<OptionalModFileEntry> {
+        val result = ArrayList<OptionalModFileEntry>()
         val modsDir = RuntimePaths.modsDir(context)
-        val files = modsDir.listFiles() ?: return modsById
-        for (file in files) {
-            if (!file.isFile) {
-                continue
-            }
-            val name = file.name
-            if (!name.lowercase(Locale.ROOT).endsWith(".jar")) {
-                continue
-            }
-            if (isReservedJarName(name)) {
-                continue
-            }
-            val modId: String = try {
-                normalizeModId(ModJarSupport.resolveModId(file))
+        val files = modsDir.listFiles() ?: return result
+        val sortedFiles = files
+            .asSequence()
+            .filter { it.isFile }
+            .filter { it.name.lowercase(Locale.ROOT).endsWith(".jar") }
+            .filterNot { isReservedJarName(it.name) }
+            .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
+            .toList()
+
+        sortedFiles.forEach { file ->
+            val rawModId = try {
+                resolveRawModId(file)
             } catch (_: Throwable) {
-                continue
+                return@forEach
             }
-            if (modId.isEmpty() || isRequiredModId(modId) || modsById.containsKey(modId)) {
-                continue
+            val normalizedModId = normalizeModId(rawModId)
+            if (normalizedModId.isEmpty() || isRequiredModId(normalizedModId)) {
+                return@forEach
             }
-            modsById[modId] = file
+            result.add(
+                OptionalModFileEntry(
+                    storageKey = resolveOptionalStorageKey(file),
+                    jarFile = file,
+                    normalizedModId = normalizedModId,
+                    rawModId = rawModId.trim()
+                )
+            )
         }
-        return modsById
+        return result
     }
 
     private fun isReservedJarName(fileName: String): Boolean {
@@ -335,39 +387,39 @@ object ModManager {
         return "basemod.jar" == normalized || "stslib.jar" == normalized
     }
 
-    private fun readEnabledOptionalModIdsSafely(context: Context): MutableSet<String> {
+    private fun readEnabledOptionalModKeysSafely(context: Context): MutableSet<String> {
         return try {
-            readEnabledOptionalModIds(context)
+            readEnabledOptionalModKeys(context)
         } catch (_: Throwable) {
             LinkedHashSet()
         }
     }
 
     @Throws(IOException::class)
-    private fun readEnabledOptionalModIds(context: Context): MutableSet<String> {
-        val ids: MutableSet<String> = LinkedHashSet()
+    private fun readEnabledOptionalModKeys(context: Context): MutableSet<String> {
+        val keys: MutableSet<String> = LinkedHashSet()
         val config = RuntimePaths.enabledModsConfig(context)
         if (!config.isFile) {
-            return ids
+            return keys
         }
         FileInputStream(config).use { input ->
             InputStreamReader(input, StandardCharsets.UTF_8).use { reader ->
                 BufferedReader(reader).use { buffered ->
                     while (true) {
                         val line = buffered.readLine() ?: break
-                        val modId = normalizeModId(line)
-                        if (modId.isNotEmpty() && !isRequiredModId(modId)) {
-                            ids.add(modId)
+                        val token = normalizeSelectionToken(line)
+                        if (token.isNotEmpty()) {
+                            keys.add(token)
                         }
                     }
                 }
             }
         }
-        return ids
+        return keys
     }
 
     @Throws(IOException::class)
-    private fun writeEnabledOptionalModIds(context: Context, modIds: Set<String>) {
+    private fun writeEnabledOptionalModKeys(context: Context, modKeys: Set<String>) {
         val config = RuntimePaths.enabledModsConfig(context)
         val parent = config.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -376,12 +428,15 @@ object ModManager {
         FileOutputStream(config, false).use { output ->
             OutputStreamWriter(output, StandardCharsets.UTF_8).use { writer ->
                 BufferedWriter(writer).use { buffered ->
-                    for (modId in modIds) {
-                        val normalized = normalizeModId(modId)
-                        if (normalized.isEmpty() || isRequiredModId(normalized)) {
+                    for (modKey in modKeys) {
+                        val token = normalizeSelectionToken(modKey)
+                        if (token.isEmpty()) {
                             continue
                         }
-                        buffered.write(normalized)
+                        if (!looksLikePathToken(token) && isRequiredModId(token)) {
+                            continue
+                        }
+                        buffered.write(token)
                         buffered.newLine()
                     }
                 }
@@ -389,25 +444,18 @@ object ModManager {
         }
     }
 
-    private fun maybePruneEnabledSelection(
+    private fun maybePersistSelectionNormalization(
         context: Context,
-        enabledOptional: MutableSet<String>,
-        installedOptional: Set<String>
+        rawSelection: Set<String>,
+        normalizedSelection: Set<String>
     ) {
-        if (enabledOptional.isEmpty()) {
-            return
-        }
-        val pruned = LinkedHashSet(enabledOptional)
-        pruned.retainAll(installedOptional)
-        if (pruned == enabledOptional) {
+        if (rawSelection == normalizedSelection) {
             return
         }
         try {
-            writeEnabledOptionalModIds(context, pruned)
+            writeEnabledOptionalModKeys(context, normalizedSelection)
         } catch (_: Throwable) {
         }
-        enabledOptional.clear()
-        enabledOptional.addAll(pruned)
     }
 
     private fun sanitizeFileName(value: String?): String {
@@ -451,5 +499,144 @@ object ModManager {
     private fun resolveRawModId(jarFile: File): String {
         val raw = ModJarSupport.resolveModId(jarFile)
         return raw.trim()
+    }
+
+    private fun resolveSelectionKey(
+        modKeyOrId: String,
+        optionalModFiles: List<OptionalModFileEntry>
+    ): String? {
+        val normalizedInput = normalizeSelectionToken(modKeyOrId)
+        if (normalizedInput.isEmpty()) {
+            return null
+        }
+        optionalModFiles.forEach { entry ->
+            if (entry.storageKey == normalizedInput) {
+                return entry.storageKey
+            }
+        }
+        val normalizedModId = normalizeModId(normalizedInput)
+        if (normalizedModId.isEmpty() || isRequiredModId(normalizedModId)) {
+            return null
+        }
+        optionalModFiles.forEach { entry ->
+            if (entry.normalizedModId == normalizedModId) {
+                return entry.storageKey
+            }
+        }
+        return null
+    }
+
+    private fun normalizeEnabledOptionalSelection(
+        selection: Collection<String>,
+        optionalModFiles: List<OptionalModFileEntry>
+    ): MutableSet<String> {
+        val normalized: MutableSet<String> = LinkedHashSet()
+        if (selection.isEmpty() || optionalModFiles.isEmpty()) {
+            return normalized
+        }
+
+        val keyMap: MutableMap<String, OptionalModFileEntry> = HashMap()
+        val modIdMap: MutableMap<String, MutableList<OptionalModFileEntry>> = HashMap()
+        optionalModFiles.forEach { entry ->
+            keyMap[entry.storageKey] = entry
+            val list = modIdMap.getOrPut(entry.normalizedModId) { ArrayList() }
+            list.add(entry)
+        }
+
+        selection.forEach { raw ->
+            val token = normalizeSelectionToken(raw)
+            if (token.isEmpty()) {
+                return@forEach
+            }
+            val direct = keyMap[token]
+            if (direct != null) {
+                normalized.add(direct.storageKey)
+            }
+        }
+
+        selection.forEach { raw ->
+            val token = normalizeSelectionToken(raw)
+            if (token.isEmpty() || looksLikePathToken(token)) {
+                return@forEach
+            }
+            val normalizedModId = normalizeModId(token)
+            if (normalizedModId.isEmpty() || isRequiredModId(normalizedModId)) {
+                return@forEach
+            }
+            val candidates = modIdMap[normalizedModId] ?: return@forEach
+            val next = candidates.firstOrNull { !normalized.contains(it.storageKey) }
+                ?: candidates.firstOrNull()
+            if (next != null) {
+                normalized.add(next.storageKey)
+            }
+        }
+
+        return normalized
+    }
+
+    private fun normalizeSelectionToken(raw: String?): String {
+        val trimmed = raw?.trim() ?: ""
+        if (trimmed.isEmpty()) {
+            return ""
+        }
+        return if (looksLikePathToken(trimmed)) {
+            File(trimmed).absolutePath
+        } else {
+            normalizeModId(trimmed)
+        }
+    }
+
+    private fun looksLikePathToken(token: String): Boolean {
+        return token.contains('/') || token.contains('\\')
+    }
+
+    private fun resolveOptionalStorageKey(file: File): String {
+        return file.absolutePath
+    }
+
+    private fun sanitizeImportedJarFileName(requestedFileName: String?): String {
+        val raw = requestedFileName?.trim().orEmpty()
+        val leafName = if (raw.isEmpty()) {
+            "mod.jar"
+        } else {
+            File(raw).name
+        }
+        var sanitized = leafName
+            .replace('/', '_')
+            .replace('\\', '_')
+            .trim()
+        if (sanitized.isEmpty() || sanitized == "." || sanitized == "..") {
+            sanitized = "mod.jar"
+        }
+        if (!sanitized.lowercase(Locale.ROOT).endsWith(".jar")) {
+            sanitized += ".jar"
+        }
+        return sanitized
+    }
+
+    private fun buildUniqueImportTarget(modsDir: File, preferredName: String): File {
+        val normalizedName = sanitizeImportedJarFileName(preferredName)
+        val baseName = removeJarSuffix(normalizedName).ifBlank { "mod" }
+        var index = 1
+        while (true) {
+            val candidateName = if (index == 1) {
+                "$baseName.jar"
+            } else {
+                "$baseName ($index).jar"
+            }
+            val candidate = File(modsDir, candidateName)
+            if (!candidate.exists() && !isReservedJarName(candidate.name)) {
+                return candidate
+            }
+            index++
+        }
+    }
+
+    private fun removeJarSuffix(fileName: String): String {
+        return if (fileName.lowercase(Locale.ROOT).endsWith(".jar")) {
+            fileName.substring(0, fileName.length - 4)
+        } else {
+            fileName
+        }
     }
 }

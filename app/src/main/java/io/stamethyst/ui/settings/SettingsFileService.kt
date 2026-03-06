@@ -274,7 +274,8 @@ internal object SettingsFileService {
                 patchedAtlasEntries = patchResult.patchedAtlasEntries
                 patchedFilterLines = patchResult.patchedFilterLines
             }
-            val targetFile = ModManager.resolveStorageFileForModId(host, modId)
+            val requestedFileName = if (displayName.isNotBlank()) displayName else "$modId.jar"
+            val targetFile = ModManager.resolveStorageFileForImportedMod(host, requestedFileName)
             moveFileReplacing(tempFile, targetFile)
             val modName = manifest.name.trim().ifBlank { modId }
             return ModImportResult(
