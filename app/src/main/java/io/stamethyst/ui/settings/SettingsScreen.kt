@@ -31,6 +31,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -94,6 +95,7 @@ fun LauncherSettingsScreen(
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
+        onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
@@ -117,6 +119,7 @@ private fun LauncherSettingsScreenPreview() {
     LauncherSettingsScreenContent(
         uiState = SettingsScreenViewModel.UiState(
             busy = false,
+            playerName = "player",
             selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
             selectedJvmHeapMaxMb = 512,
@@ -155,6 +158,7 @@ private fun LauncherSettingsScreenContent(
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
+    onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
@@ -222,6 +226,7 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = "输入与交互") {
                     SettingsInputSection(
                         uiState = uiState,
+                        onPlayerNameChanged = onPlayerNameChanged,
                         onBackBehaviorChanged = onBackBehaviorChanged,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
@@ -447,6 +452,7 @@ private fun heapSliderToStep(value: Float, min: Int, step: Int): Int {
 @Composable
 private fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
+    onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
@@ -456,6 +462,23 @@ private fun SettingsInputSection(
     onMobileHudEnabledChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
+    var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_player_name_title),
+        supportingText = uiState.playerName,
+        enabled = !uiState.busy,
+        onClick = {
+            pendingPlayerName = uiState.playerName
+            showPlayerNameDialog = true
+        }
+    )
+    Text(
+        text = stringResource(R.string.settings_player_name_desc),
+        style = MaterialTheme.typography.bodySmall
+    )
+
     Text(text = "Back 键行为", style = MaterialTheme.typography.bodyMedium)
     BackBehaviorOptionRow(
         behavior = BackBehavior.EXIT_TO_LAUNCHER,
@@ -545,6 +568,44 @@ private fun SettingsInputSection(
         description = "控制是否使用原生触控适配模式，关闭后会显示鼠标指针，启用电脑版 UI。",
         onCheckedChange = onTouchscreenEnabledChanged
     )
+
+    if (showPlayerNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showPlayerNameDialog = false },
+            title = { Text(stringResource(R.string.settings_player_name_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pendingPlayerName,
+                        onValueChange = { pendingPlayerName = it },
+                        singleLine = true,
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_player_name_hint)) }
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_player_name_dialog_message),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        if (onPlayerNameChanged(pendingPlayerName)) {
+                            showPlayerNameDialog = false
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showPlayerNameDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -593,12 +654,22 @@ private fun SettingsCompatibilitySection(
 @Composable
 private fun SettingsActionListItem(
     title: String,
+    supportingText: String? = null,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
     ListItem(
         headlineContent = {
             Text(text = title)
+        },
+        supportingContent = supportingText?.let { value ->
+            {
+                Text(
+                    text = value,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         },
         trailingContent = {
             Text(

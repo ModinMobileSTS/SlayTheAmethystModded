@@ -102,6 +102,11 @@
     <string name="main_mod_version_format">版本: %1$s</string>
     <string name="main_mod_dependencies_format">前置: %1$s</string>
     <string name="main_mod_share_chooser_title">分享模组到</string>
+    <string name="settings_player_name_title">玩家名字</string>
+    <string name="settings_player_name_desc">修改 Slay the Spire 档案名，重新进入游戏后生效。</string>
+    <string name="settings_player_name_dialog_title">设置玩家名字</string>
+    <string name="settings_player_name_hint">玩家名字</string>
+    <string name="settings_player_name_dialog_message">留空时会恢复为默认名字：player。</string>
     <string name="settings_author_info_title">项目信息</string>
     <string name="settings_author_repo_label">仓库地址</string>
     <string name="settings_author_repo_url">https://github.com/ModinMobileSTS/SlayTheAmethystModded</string>

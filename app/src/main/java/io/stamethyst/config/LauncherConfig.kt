@@ -69,11 +69,26 @@ object LauncherConfig {
     const val MAX_RENDER_SCALE = 1.00f
 
     const val DEFAULT_TOUCHSCREEN_ENABLED = true
+    const val DEFAULT_PLAYER_NAME = "player"
 
     private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
     private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
     private const val GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH =
         "components/default_saves/preferences/STSGameplaySettings"
+    private const val PLAYER_SETTINGS_FILE_NAME = "STSPlayer"
+    private const val PLAYER_SETTINGS_BACKUP_FILE_NAME = "STSPlayer.backUp"
+    private const val PLAYER_SETTINGS_KEY_NAME = "name"
+    private const val PLAYER_SETTINGS_DEFAULT_ASSET_PATH =
+        "components/default_saves/preferences/STSPlayer"
+    private const val PLAYER_SETTINGS_BACKUP_DEFAULT_ASSET_PATH =
+        "components/default_saves/preferences/STSPlayer.backUp"
+    private const val SAVE_SLOTS_SETTINGS_FILE_NAME = "STSSaveSlots"
+    private const val SAVE_SLOTS_SETTINGS_BACKUP_FILE_NAME = "STSSaveSlots.backUp"
+    private const val SAVE_SLOTS_SETTINGS_KEY_PROFILE_NAME = "PROFILE_NAME"
+    private const val SAVE_SLOTS_SETTINGS_DEFAULT_ASSET_PATH =
+        "components/default_saves/preferences/STSSaveSlots"
+    private const val SAVE_SLOTS_SETTINGS_BACKUP_DEFAULT_ASSET_PATH =
+        "components/default_saves/preferences/STSSaveSlots.backUp"
 
     fun readBackBehavior(context: Context): BackBehavior {
         val preferences = prefs(context)
@@ -434,6 +449,65 @@ object LauncherConfig {
         )
     }
 
+    fun normalizePlayerName(name: String): String {
+        val sanitized = sanitizeSingleLineText(name)
+        return sanitized.ifEmpty { DEFAULT_PLAYER_NAME }
+    }
+
+    fun readPlayerName(context: Context): String {
+        val files = arrayOf(
+            File(RuntimePaths.preferencesDir(context), SAVE_SLOTS_SETTINGS_FILE_NAME),
+            File(RuntimePaths.preferencesDir(context), SAVE_SLOTS_SETTINGS_BACKUP_FILE_NAME),
+            File(RuntimePaths.preferencesDir(context), PLAYER_SETTINGS_FILE_NAME),
+            File(RuntimePaths.preferencesDir(context), PLAYER_SETTINGS_BACKUP_FILE_NAME)
+        )
+        for (file in files) {
+            val key = when (file.name) {
+                SAVE_SLOTS_SETTINGS_FILE_NAME, SAVE_SLOTS_SETTINGS_BACKUP_FILE_NAME ->
+                    SAVE_SLOTS_SETTINGS_KEY_PROFILE_NAME
+                else -> PLAYER_SETTINGS_KEY_NAME
+            }
+            val value = readPlayerSettingsString(file, key)
+            if (value != null) {
+                return normalizePlayerName(value)
+            }
+        }
+        return DEFAULT_PLAYER_NAME
+    }
+
+    @Throws(IOException::class)
+    fun savePlayerName(context: Context, name: String) {
+        val normalizedName = normalizePlayerName(name)
+        writePlayerSettingsValue(
+            context,
+            File(RuntimePaths.preferencesDir(context), PLAYER_SETTINGS_FILE_NAME),
+            PLAYER_SETTINGS_KEY_NAME,
+            normalizedName,
+            PLAYER_SETTINGS_DEFAULT_ASSET_PATH
+        )
+        writePlayerSettingsValue(
+            context,
+            File(RuntimePaths.preferencesDir(context), PLAYER_SETTINGS_BACKUP_FILE_NAME),
+            PLAYER_SETTINGS_KEY_NAME,
+            normalizedName,
+            PLAYER_SETTINGS_BACKUP_DEFAULT_ASSET_PATH
+        )
+        writePlayerSettingsValue(
+            context,
+            File(RuntimePaths.preferencesDir(context), SAVE_SLOTS_SETTINGS_FILE_NAME),
+            SAVE_SLOTS_SETTINGS_KEY_PROFILE_NAME,
+            normalizedName,
+            SAVE_SLOTS_SETTINGS_DEFAULT_ASSET_PATH
+        )
+        writePlayerSettingsValue(
+            context,
+            File(RuntimePaths.preferencesDir(context), SAVE_SLOTS_SETTINGS_BACKUP_FILE_NAME),
+            SAVE_SLOTS_SETTINGS_KEY_PROFILE_NAME,
+            normalizedName,
+            SAVE_SLOTS_SETTINGS_BACKUP_DEFAULT_ASSET_PATH
+        )
+    }
+
     private fun writeGameplaySettingsValue(context: Context, file: File, key: String, value: String) {
         val parent = file.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -459,8 +533,47 @@ object LauncherConfig {
     }
 
     private fun readBundledGameplaySettingsDefaults(context: Context): JSONObject? {
+        return readBundledJsonObject(context, GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH)
+    }
+
+    private fun writePlayerSettingsValue(
+        context: Context,
+        file: File,
+        key: String,
+        name: String,
+        defaultAssetPath: String
+    ) {
+        val parent = file.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        val root = mergeJsonObjects(
+            readBundledPlayerSettingsDefaults(context, defaultAssetPath),
+            readJsonObject(file)
+        )
+        root.put(key, name)
+        FileOutputStream(file, false).use { out ->
+            out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
+            out.write('\n'.code)
+        }
+    }
+
+    private fun readPlayerSettingsString(file: File, key: String): String? {
+        val objectValue = readJsonObject(file) ?: return null
+        if (!objectValue.has(key)) {
+            return null
+        }
+        val value = objectValue.opt(key)?.toString() ?: return null
+        return sanitizeSingleLineText(value)
+    }
+
+    private fun readBundledPlayerSettingsDefaults(context: Context, assetPath: String): JSONObject? {
+        return readBundledJsonObject(context, assetPath)
+    }
+
+    private fun readBundledJsonObject(context: Context, assetPath: String): JSONObject? {
         return try {
-            context.assets.open(GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH).use { input ->
+            context.assets.open(assetPath).use { input ->
                 val text = input.readBytes().toString(StandardCharsets.UTF_8).trim()
                 if (text.isEmpty()) {
                     JSONObject()
@@ -524,6 +637,13 @@ object LauncherConfig {
 
             else -> fallback
         }
+    }
+
+    private fun sanitizeSingleLineText(value: String): String {
+        return value
+            .replace('\r', ' ')
+            .replace('\n', ' ')
+            .trim()
     }
 
     private fun renderScaleFile(context: Context): File {
