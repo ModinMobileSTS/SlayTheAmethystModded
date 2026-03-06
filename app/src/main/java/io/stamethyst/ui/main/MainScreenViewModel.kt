@@ -783,7 +783,7 @@ class MainScreenViewModel : ViewModel() {
                 setBusy(true, "正在删除模组...")
                 executor.execute {
                     try {
-                        val deleted = ModManager.deleteOptionalMod(host, mod.modId)
+                        val deleted = ModManager.deleteOptionalModByStoragePath(host, mod.storagePath)
                         host.runOnUiThread {
                             clearPendingSelectionForMod(mod)
                             removeFolderAssignmentForDeletedMod(mod)
@@ -963,6 +963,59 @@ class MainScreenViewModel : ViewModel() {
         }
         AlertDialog.Builder(host)
             .setTitle("检测到缺失前置模组")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun findEnabledDuplicateModIdGroups(optionalMods: List<ModItemUi>): Map<String, List<ModItemUi>> {
+        val grouped = LinkedHashMap<String, MutableList<ModItemUi>>()
+        optionalMods.forEach { mod ->
+            if (!mod.enabled || !mod.installed || mod.required) {
+                return@forEach
+            }
+            val normalized = normalizeModId(mod.modId).ifBlank {
+                normalizeModId(mod.manifestModId)
+            }
+            if (normalized.isEmpty()) {
+                return@forEach
+            }
+            grouped.getOrPut(normalized) { ArrayList() }.add(mod)
+        }
+
+        val duplicates = LinkedHashMap<String, List<ModItemUi>>()
+        grouped.keys.sorted().forEach { modId ->
+            val conflicts = grouped[modId] ?: return@forEach
+            if (conflicts.size <= 1) {
+                return@forEach
+            }
+            duplicates[modId] = conflicts.sortedBy { resolveModFileName(it.storagePath).lowercase(Locale.ROOT) }
+        }
+        return duplicates
+    }
+
+    private fun showDuplicateModIdDialog(host: Activity, duplicateGroups: Map<String, List<ModItemUi>>) {
+        if (duplicateGroups.isEmpty()) {
+            return
+        }
+        val message = buildString {
+            append("检测到同时启用了多个 modid 相同的模组：\n")
+            duplicateGroups.forEach { (modId, mods) ->
+                append("\nmodid: ").append(modId).append('\n')
+                mods.forEach { mod ->
+                    append("- ")
+                    append(resolveModDisplayName(mod))
+                    val fileName = resolveModFileName(mod.storagePath)
+                    if (fileName.isNotBlank()) {
+                        append(" [").append(fileName).append("]")
+                    }
+                    append('\n')
+                }
+            }
+            append("\n请先只保留一个同 modid 模组为启用状态，再启动游戏。")
+        }.trimEnd()
+        AlertDialog.Builder(host)
+            .setTitle("检测到重复 modid")
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, null)
             .show()
@@ -1409,6 +1462,14 @@ class MainScreenViewModel : ViewModel() {
 
     private fun prepareAndLaunch(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
         ensurePendingSelectionInitialized(host)
+        if (launchMode == StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD) {
+            val optionalMods = resolveOptionalModsWithPendingSelection()
+            val duplicateGroups = findEnabledDuplicateModIdGroups(optionalMods)
+            if (duplicateGroups.isNotEmpty()) {
+                showDuplicateModIdDialog(host, duplicateGroups)
+                return
+            }
+        }
         try {
             ModManager.replaceEnabledOptionalModIds(host, pendingEnabledOptionalModIds)
         } catch (error: Throwable) {
@@ -1493,6 +1554,14 @@ class MainScreenViewModel : ViewModel() {
         return io.stamethyst.ui.main.resolveModDisplayName(mod, showModFileName = false)
     }
 
+    private fun resolveModFileName(storagePath: String): String {
+        val normalized = storagePath.trim()
+        if (normalized.isEmpty()) {
+            return ""
+        }
+        return File(normalized).name.trim()
+    }
+
     private fun readBackBehaviorSelection(host: Activity): BackBehavior {
         return LauncherPreferences.readBackBehavior(host)
     }
@@ -1541,8 +1610,7 @@ class MainScreenViewModel : ViewModel() {
         if (storedId != null && pendingEnabledOptionalModIds.contains(storedId)) {
             return true
         }
-        val normalizedManifestId = normalizeModId(mod.manifestModId)
-        return normalizedManifestId.isNotEmpty() && pendingEnabledOptionalModIds.contains(normalizedManifestId)
+        return false
     }
 
     private fun setPendingOptionalModEnabled(mod: ModItemUi, enabled: Boolean) {
@@ -1557,12 +1625,6 @@ class MainScreenViewModel : ViewModel() {
                 if (pendingEnabledOptionalModIds.remove(storedId)) {
                     changed = true
                 }
-            }
-        }
-        val normalizedManifestId = normalizeModId(mod.manifestModId)
-        if (normalizedManifestId.isNotEmpty() && !enabled) {
-            if (pendingEnabledOptionalModIds.remove(normalizedManifestId)) {
-                changed = true
             }
         }
         if (changed) {
@@ -1587,10 +1649,6 @@ class MainScreenViewModel : ViewModel() {
             val storedId = resolveStoredOptionalModId(mod)
             if (storedId != null) {
                 installedIds.add(storedId)
-            }
-            val normalizedManifestId = normalizeModId(mod.manifestModId)
-            if (normalizedManifestId.isNotEmpty()) {
-                installedIds.add(normalizedManifestId)
             }
         }
         val oldSize = pendingEnabledOptionalModIds.size

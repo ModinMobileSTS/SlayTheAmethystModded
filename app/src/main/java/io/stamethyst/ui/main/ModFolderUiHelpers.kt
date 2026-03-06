@@ -35,6 +35,10 @@ internal fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
 }
 
 internal fun resolveStoredOptionalModId(mod: ModItemUi): String? {
+    val storage = mod.storagePath.trim()
+    if (storage.isNotEmpty()) {
+        return storage
+    }
     val normalizedModId = normalizeModId(mod.modId)
     if (normalizedModId.isNotEmpty()) {
         return normalizedModId
