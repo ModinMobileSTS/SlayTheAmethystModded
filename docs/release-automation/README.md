@@ -101,8 +101,8 @@ Tag-based release (publishes GitHub Release automatically):
 ```bash
 git checkout main
 git pull --ff-only origin main
-git tag v0.0.13
-git push origin v0.0.13
+git tag -a v1.0.1 HEAD^ -m "Release v1.0.0"  
+git push origin v1.0.0
 ```
 
 Behavior:
