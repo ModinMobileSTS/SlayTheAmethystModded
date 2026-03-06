@@ -88,6 +88,7 @@ fun LauncherSettingsScreen(
         uiState = uiState,
         onGoBack = navigator::goBack,
         onImportMods = viewModel::onImportMods,
+        onExportMods = viewModel::onExportMods,
         onImportSaves = viewModel::onImportSaves,
         onExportSaves = viewModel::onExportSaves,
         onExportLogs = { viewModel.onExportLogs(activity) },
@@ -151,6 +152,7 @@ private fun LauncherSettingsScreenContent(
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
     onImportMods: () -> Unit = {},
+    onExportMods: () -> Unit = {},
     onImportSaves: () -> Unit = {},
     onExportSaves: () -> Unit = {},
     onExportLogs: () -> Unit = {},
@@ -203,6 +205,7 @@ private fun LauncherSettingsScreenContent(
                     SettingsImportSection(
                         busy = uiState.busy,
                         onImportMods = onImportMods,
+                        onExportMods = onExportMods,
                         onImportSaves = onImportSaves,
                         onExportSaves = onExportSaves,
                         onExportLogs = onExportLogs,
@@ -310,6 +313,7 @@ private fun SettingsSectionCard(
 private fun SettingsImportSection(
     busy: Boolean,
     onImportMods: () -> Unit,
+    onExportMods: () -> Unit,
     onImportSaves: () -> Unit,
     onExportSaves: () -> Unit,
     onExportLogs: () -> Unit,
@@ -320,6 +324,11 @@ private fun SettingsImportSection(
             title = "导入模组",
             enabled = !busy,
             onClick = onImportMods
+        )
+        SettingsActionListItem(
+            title = "导出所有模组",
+            enabled = !busy,
+            onClick = onExportMods
         )
         SettingsActionListItem(
             title = "导入存档",
@@ -933,6 +942,9 @@ fun SettingsEffectsHandler(
     val importSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.onSavesArchivePicked(activity, uri)
     }
+    val exportModsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        viewModel.onModsExportPicked(activity, uri)
+    }
     val exportSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onSavesExportPicked(activity, uri)
     }
@@ -959,6 +971,10 @@ fun SettingsEffectsHandler(
                     importSavesLauncher.launch(
                         arrayOf("application/zip", "application/x-zip-compressed", "*/*")
                     )
+                }
+
+                is SettingsScreenViewModel.Effect.OpenExportModsPicker -> {
+                    exportModsLauncher.launch(effect.fileName)
                 }
 
                 is SettingsScreenViewModel.Effect.OpenExportSavesPicker -> {

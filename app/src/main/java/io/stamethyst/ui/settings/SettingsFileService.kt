@@ -76,6 +76,12 @@ private data class SaveArchiveScanResult(
     val targetTopLevelDirs: Set<String>
 )
 
+private data class ModExportSource(
+    val entryName: String,
+    val file: File? = null,
+    val assetPath: String? = null
+)
+
 internal object SettingsFileService {
     class ReservedModImportException(
         @JvmField val blockedComponent: String
@@ -156,6 +162,11 @@ internal object SettingsFileService {
         return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
     }
 
+    fun buildModsExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-mods-export-${formatter.format(Date())}.zip"
+    }
+
     @Throws(IOException::class)
     fun resolveJvmLogsShareUri(host: Activity): Uri {
         val shareDir = File(host.cacheDir, "share")
@@ -204,6 +215,43 @@ internal object SettingsFileService {
                     zipOutput.closeEntry()
                 }
                 return exportedCount
+            }
+        }
+    }
+
+    @Throws(IOException::class)
+    fun exportModsBundle(host: Activity, uri: Uri): Int {
+        host.contentResolver.openOutputStream(uri).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
+            ZipOutputStream(output).use { zipOutput ->
+                val sources = collectModExportSources(host)
+                if (sources.isEmpty()) {
+                    val entry = ZipEntry("mods/README.txt")
+                    zipOutput.putNextEntry(entry)
+                    val message = "No mod jars found yet.\n" +
+                        "Expected files:\n" +
+                        "- ${RuntimePaths.importedMtsJar(host).absolutePath}\n" +
+                        "- ${RuntimePaths.modsDir(host).absolutePath}\n"
+                    zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
+                    zipOutput.closeEntry()
+                    return 0
+                }
+
+                sources.forEach { source ->
+                    val entryName = "mods/${source.entryName}"
+                    val file = source.file
+                    if (file != null) {
+                        writeFileToZip(zipOutput, file, entryName)
+                        return@forEach
+                    }
+                    val assetPath = source.assetPath
+                    if (!assetPath.isNullOrBlank()) {
+                        writeAssetToZip(host, zipOutput, assetPath, entryName)
+                    }
+                }
+                return sources.size
             }
         }
     }
@@ -1149,6 +1197,61 @@ internal object SettingsFileService {
         }
     }
 
+    private fun collectModExportSources(host: Activity): List<ModExportSource> {
+        val sources = LinkedHashMap<String, ModExportSource>()
+
+        fun addFile(file: File?) {
+            if (file == null || !file.isFile) {
+                return
+            }
+            val entryName = file.name.trim()
+            if (entryName.isEmpty()) {
+                return
+            }
+            sources.putIfAbsent(entryName, ModExportSource(entryName = entryName, file = file))
+        }
+
+        fun addAssetIfMissing(entryName: String, assetPath: String) {
+            val normalizedEntryName = entryName.trim()
+            if (normalizedEntryName.isEmpty() || sources.containsKey(normalizedEntryName)) {
+                return
+            }
+            if (!hasAsset(host, assetPath)) {
+                return
+            }
+            sources[normalizedEntryName] = ModExportSource(
+                entryName = normalizedEntryName,
+                assetPath = assetPath
+            )
+        }
+
+        addFile(RuntimePaths.importedMtsJar(host))
+
+        val modFiles = RuntimePaths.modsDir(host)
+            .listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile }
+            ?.filter { it.name.endsWith(".jar", ignoreCase = true) }
+            ?.sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }))
+            ?.toList()
+            .orEmpty()
+        modFiles.forEach(::addFile)
+
+        addAssetIfMissing("ModTheSpire.jar", "components/mods/ModTheSpire.jar")
+        addAssetIfMissing("BaseMod.jar", "components/mods/BaseMod.jar")
+        addAssetIfMissing("StSLib.jar", "components/mods/StSLib.jar")
+
+        return sources.values.toList()
+    }
+
+    private fun hasAsset(host: Activity, assetPath: String): Boolean {
+        return try {
+            host.assets.open(assetPath).use { true }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun resolveSaveExportSourceFolder(stsRoot: File, sourceFolder: String): File? {
         val candidates = when (sourceFolder.lowercase(Locale.ROOT)) {
             "multiplayer" -> arrayOf("multiplayer", "multiple")
@@ -1275,6 +1378,31 @@ internal object SettingsFileService {
                 val read = input.read(buffer)
                 if (read < 0) {
                     break
+                }
+                zipOutput.write(buffer, 0, read)
+            }
+        }
+        zipOutput.closeEntry()
+    }
+
+    @Throws(IOException::class)
+    private fun writeAssetToZip(
+        host: Activity,
+        zipOutput: ZipOutputStream,
+        assetPath: String,
+        entryName: String
+    ) {
+        val entry = ZipEntry(entryName)
+        zipOutput.putNextEntry(entry)
+        host.assets.open(assetPath).use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) {
+                    break
+                }
+                if (read == 0) {
+                    continue
                 }
                 zipOutput.write(buffer, 0, read)
             }

@@ -46,6 +46,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportJarPicker : Effect
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
+        data class OpenExportModsPicker(val fileName: String) : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
         data class OpenExportLogsPicker(val fileName: String) : Effect
         data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
@@ -312,6 +313,13 @@ class SettingsScreenViewModel : ViewModel() {
         _effects.tryEmit(Effect.OpenImportSavesPicker)
     }
 
+    fun onExportMods() {
+        if (uiState.busy) {
+            return
+        }
+        _effects.tryEmit(Effect.OpenExportModsPicker(SettingsFileService.buildModsExportFileName()))
+    }
+
     fun onExportSaves() {
         if (uiState.busy) {
             return
@@ -366,6 +374,31 @@ class SettingsScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     Toast.makeText(host, "Log export failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus(host)
+                }
+            }
+        }
+    }
+
+    fun onModsExportPicked(host: Activity, uri: Uri?) {
+        if (uri == null) {
+            return
+        }
+        setBusy(true, "Exporting mods archive...")
+        executor.execute {
+            try {
+                val exportedCount = SettingsFileService.exportModsBundle(host, uri)
+                host.runOnUiThread {
+                    if (exportedCount > 0) {
+                        Toast.makeText(host, "Mod archive exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(host, "Mod archive exported (no mods yet)", Toast.LENGTH_LONG).show()
+                    }
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    Toast.makeText(host, "Mod export failed: ${error.message}", Toast.LENGTH_LONG).show()
                     refreshStatus(host)
                 }
             }
