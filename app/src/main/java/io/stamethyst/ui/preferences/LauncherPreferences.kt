@@ -3,6 +3,7 @@ package io.stamethyst.ui.preferences
 import android.content.Context
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.RenderSurfaceBackend
 
 object LauncherPreferences {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior
@@ -15,6 +16,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_TARGET_FPS
     val TARGET_FPS_OPTIONS: IntArray
         get() = LauncherConfig.TARGET_FPS_OPTIONS.copyOf()
+    val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend
+        get() = LauncherConfig.DEFAULT_RENDER_SURFACE_BACKEND
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
@@ -89,6 +92,14 @@ object LauncherPreferences {
 
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         LauncherConfig.saveAutoSwitchLeftAfterRightClick(context, enabled)
+    }
+
+    fun readRenderSurfaceBackend(context: Context): RenderSurfaceBackend {
+        return LauncherConfig.readRenderSurfaceBackend(context)
+    }
+
+    fun saveRenderSurfaceBackend(context: Context, backend: RenderSurfaceBackend) {
+        LauncherConfig.saveRenderSurfaceBackend(context, backend)
     }
 
     fun readShowModFileName(context: Context): Boolean {

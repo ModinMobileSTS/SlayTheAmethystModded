@@ -19,6 +19,7 @@ import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -59,6 +60,7 @@ class SettingsScreenViewModel : ViewModel() {
         val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
+        val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val jvmHeapMinMb: Int = LauncherPreferences.MIN_JVM_HEAP_MAX_MB,
         val jvmHeapMaxMb: Int = LauncherPreferences.MAX_JVM_HEAP_MAX_MB,
@@ -123,6 +125,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val renderScale = RenderScaleService.readValue(host)
                 val playerName = readPlayerNameSelection(host)
                 val targetFps = readTargetFpsSelection(host)
+                val renderSurfaceBackend = readRenderSurfaceBackendSelection(host)
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
                 val backBehavior = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
@@ -193,6 +196,8 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nPlayer name: ").append(playerName)
                     append("\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)")
                     append("\nTarget FPS: $targetFps")
+                    append("\nRender surface: ")
+                        .append(renderSurfaceBackend.displayName(host))
                     append("\nJVM heap max: ${jvmHeapMaxMb} MB")
                     append("\nBack behavior: ${backBehavior.displayName()}")
                     append("\nTouchscreen Enabled: ").append(if (touchscreenEnabled) "ON" else "OFF")
@@ -240,6 +245,7 @@ class SettingsScreenViewModel : ViewModel() {
                         playerName = playerName,
                         selectedRenderScale = renderScale,
                         selectedTargetFps = targetFps,
+                        renderSurfaceBackend = renderSurfaceBackend,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
                         backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
@@ -412,6 +418,15 @@ class SettingsScreenViewModel : ViewModel() {
         val normalizedTargetFps = LauncherPreferences.normalizeTargetFps(targetFps)
         uiState = uiState.copy(selectedTargetFps = normalizedTargetFps)
         saveTargetFpsSelection(host, normalizedTargetFps)
+        refreshStatus(host)
+    }
+
+    fun onRenderSurfaceBackendChanged(host: Activity, backend: RenderSurfaceBackend) {
+        if (uiState.busy || uiState.renderSurfaceBackend == backend) {
+            return
+        }
+        uiState = uiState.copy(renderSurfaceBackend = backend)
+        saveRenderSurfaceBackendSelection(host, backend)
         refreshStatus(host)
     }
 
@@ -1172,6 +1187,10 @@ class SettingsScreenViewModel : ViewModel() {
         return LauncherPreferences.readTargetFps(host)
     }
 
+    private fun readRenderSurfaceBackendSelection(host: Activity): RenderSurfaceBackend {
+        return LauncherPreferences.readRenderSurfaceBackend(host)
+    }
+
     private fun readPlayerNameSelection(host: Activity): String {
         return LauncherPreferences.readPlayerName(host)
     }
@@ -1192,6 +1211,13 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveTargetFpsSelection(host: Activity, targetFps: Int) {
         LauncherPreferences.saveTargetFps(host, targetFps)
+    }
+
+    private fun saveRenderSurfaceBackendSelection(
+        host: Activity,
+        backend: RenderSurfaceBackend
+    ) {
+        LauncherPreferences.saveRenderSurfaceBackend(host, backend)
     }
 
     private fun readJvmHeapMaxSelection(host: Activity): Int {
@@ -1249,6 +1275,15 @@ class SettingsScreenViewModel : ViewModel() {
             BackBehavior.EXIT_TO_LAUNCHER -> "Exit to launcher"
             BackBehavior.SEND_ESCAPE -> "Send Esc"
             BackBehavior.NONE -> "No action"
+        }
+    }
+
+    private fun RenderSurfaceBackend.displayName(host: Activity): String {
+        return when (this) {
+            RenderSurfaceBackend.SURFACE_VIEW ->
+                host.getString(R.string.settings_render_surface_backend_surface_view_short)
+            RenderSurfaceBackend.TEXTURE_VIEW ->
+                host.getString(R.string.settings_render_surface_backend_texture_view_short)
         }
     }
 }

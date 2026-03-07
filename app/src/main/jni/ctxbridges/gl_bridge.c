@@ -296,7 +296,32 @@ void gl_swap_surface(gl_render_window_t* bundle) {
     if(queuedSurface != NULL) {
         ;
         bundle->nativeSurface = queuedSurface;
-        ANativeWindow_setBuffersGeometry(bundle->nativeSurface, 0, 0, bundle->format);
+        // Preserve the Java-synchronized window size across surface recreation so
+        // render scale does not silently snap back to the platform default buffer size.
+        int geometryWidth = 0;
+        int geometryHeight = 0;
+        if (pojav_environ != NULL) {
+            if (pojav_environ->savedWidth > 0) {
+                geometryWidth = pojav_environ->savedWidth;
+            }
+            if (pojav_environ->savedHeight > 0) {
+                geometryHeight = pojav_environ->savedHeight;
+            }
+        }
+        int geometryResult = ANativeWindow_setBuffersGeometry(
+            bundle->nativeSurface,
+            geometryWidth,
+            geometryHeight,
+            bundle->format
+        );
+        if (geometryResult != 0) {
+            printf(
+                "GLBridgeDiag: ANativeWindow_setBuffersGeometry(%d,%d) failed: %d\n",
+                geometryWidth,
+                geometryHeight,
+                geometryResult
+            );
+        }
         bundle->surface = eglCreateWindowSurface_p(g_EglDisplay, bundle->config, bundle->nativeSurface, NULL);
         printf("GLBridgeDiag: created WINDOW surface=%p native=%p\n", bundle->surface, bundle->nativeSurface);
     }else{

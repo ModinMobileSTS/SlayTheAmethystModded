@@ -29,6 +29,7 @@ object LauncherConfig {
     private const val PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD =
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
+    private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
@@ -50,6 +51,7 @@ object LauncherConfig {
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_TARGET_FPS = 120
     val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
+    val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
@@ -182,6 +184,20 @@ object LauncherConfig {
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK, enabled)
+        }
+    }
+
+    fun readRenderSurfaceBackend(context: Context): RenderSurfaceBackend {
+        val stored = prefs(context).getString(
+            PREF_KEY_RENDER_SURFACE_BACKEND,
+            DEFAULT_RENDER_SURFACE_BACKEND.persistedValue
+        )
+        return RenderSurfaceBackend.fromPersistedValue(stored) ?: DEFAULT_RENDER_SURFACE_BACKEND
+    }
+
+    fun saveRenderSurfaceBackend(context: Context, backend: RenderSurfaceBackend) {
+        prefs(context).edit {
+            putString(PREF_KEY_RENDER_SURFACE_BACKEND, backend.persistedValue)
         }
     }
 

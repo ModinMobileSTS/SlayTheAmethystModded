@@ -61,6 +61,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
@@ -95,6 +96,9 @@ fun LauncherSettingsScreen(
         onExportLogsToFile = viewModel::onExportLogsToFile,
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
+        onRenderSurfaceBackendChanged = { backend ->
+            viewModel.onRenderSurfaceBackendChanged(activity, backend)
+        },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
@@ -123,6 +127,7 @@ private fun LauncherSettingsScreenPreview() {
             playerName = "player",
             selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
+            renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             selectedJvmHeapMaxMb = 512,
             jvmHeapMinMb = 256,
             jvmHeapMaxMb = 2048,
@@ -159,6 +164,7 @@ private fun LauncherSettingsScreenContent(
     onExportLogsToFile: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
+    onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
@@ -220,6 +226,7 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
+                        onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
                     )
                 }
@@ -358,6 +365,7 @@ private fun SettingsRenderSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
+    onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
 ) {
     val view = LocalView.current
@@ -416,6 +424,29 @@ private fun SettingsRenderSection(
             onSelect = onTargetFpsSelected
         )
     }
+
+    Text(
+        text = stringResource(R.string.settings_render_surface_backend_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    SurfaceBackendOptionRow(
+        backend = RenderSurfaceBackend.SURFACE_VIEW,
+        selected = uiState.renderSurfaceBackend == RenderSurfaceBackend.SURFACE_VIEW,
+        enabled = !uiState.busy,
+        text = stringResource(R.string.settings_render_surface_backend_surface_view),
+        onSelect = onRenderSurfaceBackendChanged
+    )
+    SurfaceBackendOptionRow(
+        backend = RenderSurfaceBackend.TEXTURE_VIEW,
+        selected = uiState.renderSurfaceBackend == RenderSurfaceBackend.TEXTURE_VIEW,
+        enabled = !uiState.busy,
+        text = stringResource(R.string.settings_render_surface_backend_texture_view),
+        onSelect = onRenderSurfaceBackendChanged
+    )
+    Text(
+        text = stringResource(R.string.settings_render_surface_backend_desc),
+        style = MaterialTheme.typography.bodySmall
+    )
 
     Text(text = "JVM 堆上限", style = MaterialTheme.typography.bodyMedium)
     Text(
@@ -1005,25 +1036,12 @@ private fun TargetFpsOptionRow(
     enabled: Boolean,
     onSelect: (Int) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .hapticToggleable(
-                value = selected,
-                enabled = enabled,
-                onValueChange = { onSelect(fps) }
-            )
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = null,
-            enabled = enabled
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text = "$fps FPS")
-    }
+    SettingsRadioOptionRow(
+        selected = selected,
+        enabled = enabled,
+        text = "$fps FPS",
+        onSelect = { onSelect(fps) }
+    )
 }
 
 @Composable
@@ -1034,13 +1052,44 @@ private fun BackBehaviorOptionRow(
     text: String,
     onSelect: (BackBehavior) -> Unit,
 ) {
+    SettingsRadioOptionRow(
+        selected = selected,
+        enabled = enabled,
+        text = text,
+        onSelect = { onSelect(behavior) }
+    )
+}
+
+@Composable
+private fun SurfaceBackendOptionRow(
+    backend: RenderSurfaceBackend,
+    selected: Boolean,
+    enabled: Boolean,
+    text: String,
+    onSelect: (RenderSurfaceBackend) -> Unit,
+) {
+    SettingsRadioOptionRow(
+        selected = selected,
+        enabled = enabled,
+        text = text,
+        onSelect = { onSelect(backend) }
+    )
+}
+
+@Composable
+private fun SettingsRadioOptionRow(
+    selected: Boolean,
+    enabled: Boolean,
+    text: String,
+    onSelect: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .hapticToggleable(
                 value = selected,
                 enabled = enabled,
-                onValueChange = { onSelect(behavior) }
+                onValueChange = { onSelect() }
             )
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically

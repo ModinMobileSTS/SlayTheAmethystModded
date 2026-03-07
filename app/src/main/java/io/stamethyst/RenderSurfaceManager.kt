@@ -42,6 +42,8 @@ class RenderSurfaceManager(
         private set
     var surfaceBufferHeight = 0
         private set
+    private var lastPhysicalWidth = 0
+    private var lastPhysicalHeight = 0
 
     @Volatile
     var bridgeSurfaceReady = false
@@ -80,8 +82,7 @@ class RenderSurfaceManager(
             root.addView(view, renderLayoutParams)
             view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                 override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                    surfaceBufferWidth = width.coerceAtLeast(1)
-                    surfaceBufferHeight = height.coerceAtLeast(1)
+                    rememberPhysicalSize(width, height)
                     applyTextureBufferSize(surface)
                     releaseTextureSurfaceIfNeeded()
                     textureSurface = Surface(surface)
@@ -92,8 +93,7 @@ class RenderSurfaceManager(
                 }
 
                 override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-                    surfaceBufferWidth = width.coerceAtLeast(1)
-                    surfaceBufferHeight = height.coerceAtLeast(1)
+                    rememberPhysicalSize(width, height)
                     applyTextureBufferSize(surface)
                     updateWindowSize()
                     onSurfaceReady()
@@ -105,6 +105,8 @@ class RenderSurfaceManager(
                     releaseTextureSurfaceIfNeeded()
                     surfaceBufferWidth = 0
                     surfaceBufferHeight = 0
+                    lastPhysicalWidth = 0
+                    lastPhysicalHeight = 0
                     onSurfaceDestroyed()
                     return true
                 }
@@ -123,9 +125,9 @@ class RenderSurfaceManager(
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     val frame = holder.surfaceFrame
                     if (frame != null) {
-                        surfaceBufferWidth = frame.width()
-                        surfaceBufferHeight = frame.height()
+                        rememberPhysicalSize(frame.width(), frame.height())
                     }
+                    reapplySurfaceViewConfiguration(holder)
                     JREUtils.setupBridgeWindow(holder.surface)
                     bridgeSurfaceReady = true
                     updateWindowSize()
@@ -133,8 +135,10 @@ class RenderSurfaceManager(
                 }
 
                 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    surfaceBufferWidth = width
-                    surfaceBufferHeight = height
+                    surfaceBufferWidth = width.coerceAtLeast(1)
+                    surfaceBufferHeight = height.coerceAtLeast(1)
+                    rememberPhysicalSizeFromView()
+                    applySurfaceFrameRateHint(holder.surface)
                     updateWindowSize()
                     onSurfaceReady()
                 }
@@ -142,6 +146,10 @@ class RenderSurfaceManager(
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     bridgeSurfaceReady = false
                     JREUtils.releaseBridgeWindow()
+                    surfaceBufferWidth = 0
+                    surfaceBufferHeight = 0
+                    lastPhysicalWidth = 0
+                    lastPhysicalHeight = 0
                     onSurfaceDestroyed()
                 }
             })
@@ -149,6 +157,20 @@ class RenderSurfaceManager(
 
         renderView.isFocusable = true
         renderView.isFocusableInTouchMode = true
+        renderView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val width = (right - left).coerceAtLeast(0)
+            val height = (bottom - top).coerceAtLeast(0)
+            val oldWidth = (oldRight - oldLeft).coerceAtLeast(0)
+            val oldHeight = (oldBottom - oldTop).coerceAtLeast(0)
+            if (width == oldWidth && height == oldHeight) {
+                return@addOnLayoutChangeListener
+            }
+            rememberPhysicalSize(width, height)
+            if (!useTextureViewSurface) {
+                reapplySurfaceViewConfiguration()
+            }
+            updateWindowSize()
+        }
     }
 
     fun onDestroy() {
@@ -177,6 +199,8 @@ class RenderSurfaceManager(
     fun resyncAfterForeground() {
         if (useTextureViewSurface) {
             reapplyTextureBufferSizeFromView()
+        } else {
+            reapplySurfaceViewConfiguration()
         }
         updateWindowSize()
 
@@ -186,6 +210,8 @@ class RenderSurfaceManager(
             if (activity.isFinishing || activity.isDestroyed) return@post
             if (useTextureViewSurface) {
                 reapplyTextureBufferSizeFromView()
+            } else {
+                reapplySurfaceViewConfiguration()
             }
             updateWindowSize()
         }
@@ -207,44 +233,93 @@ class RenderSurfaceManager(
 
     private fun resolveRawPhysicalWidth(): Int {
         val viewWidth = if (::renderView.isInitialized) renderView.width else 0
-        return (if (surfaceBufferWidth > 0) surfaceBufferWidth else viewWidth).coerceAtLeast(1)
+        return when {
+            viewWidth > 0 -> viewWidth
+            lastPhysicalWidth > 0 -> lastPhysicalWidth
+            surfaceBufferWidth > 0 -> surfaceBufferWidth
+            else -> 1
+        }
     }
 
     private fun resolveRawPhysicalHeight(): Int {
         val viewHeight = if (::renderView.isInitialized) renderView.height else 0
-        return (if (surfaceBufferHeight > 0) surfaceBufferHeight else viewHeight).coerceAtLeast(1)
+        return when {
+            viewHeight > 0 -> viewHeight
+            lastPhysicalHeight > 0 -> lastPhysicalHeight
+            surfaceBufferHeight > 0 -> surfaceBufferHeight
+            else -> 1
+        }
     }
 
     private fun applyTextureBufferSize(surface: SurfaceTexture) {
-        val rawWidth = if (surfaceBufferWidth > 0) {
-            surfaceBufferWidth
-        } else if (::renderView.isInitialized) {
-            renderView.width
-        } else {
-            0
-        }
-        val rawHeight = if (surfaceBufferHeight > 0) {
-            surfaceBufferHeight
-        } else if (::renderView.isInitialized) {
-            renderView.height
-        } else {
-            0
-        }
+        val rawWidth = resolveRawPhysicalWidth()
+        val rawHeight = resolveRawPhysicalHeight()
         val scaledWidth = (rawWidth.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
         val scaledHeight = (rawHeight.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
+        surfaceBufferWidth = scaledWidth
+        surfaceBufferHeight = scaledHeight
         surface.setDefaultBufferSize(scaledWidth, scaledHeight)
     }
 
     private fun reapplyTextureBufferSizeFromView() {
         val view = textureView ?: return
         val surfaceTexture = view.surfaceTexture ?: return
-        if (view.width > 0) {
-            surfaceBufferWidth = view.width
-        }
-        if (view.height > 0) {
-            surfaceBufferHeight = view.height
-        }
+        rememberPhysicalSize(view.width, view.height)
         applyTextureBufferSize(surfaceTexture)
+    }
+
+    private fun reapplySurfaceViewConfiguration(holder: SurfaceHolder? = surfaceView?.holder) {
+        val targetHolder = holder ?: return
+        applySurfaceViewBufferSize(targetHolder)
+        applySurfaceFrameRateHint(targetHolder.surface)
+    }
+
+    private fun applySurfaceViewBufferSize(holder: SurfaceHolder) {
+        val rawWidth = resolveRawPhysicalWidth()
+        val rawHeight = resolveRawPhysicalHeight()
+        val scaledWidth = (rawWidth * renderScale).roundToInt().coerceAtLeast(1)
+        val scaledHeight = (rawHeight * renderScale).roundToInt().coerceAtLeast(1)
+        surfaceBufferWidth = scaledWidth
+        surfaceBufferHeight = scaledHeight
+        try {
+            holder.setFixedSize(scaledWidth, scaledHeight)
+        } catch (_: Throwable) {}
+    }
+
+    private fun applySurfaceFrameRateHint(surface: Surface?) {
+        if (surface == null || !surface.isValid || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return
+        }
+        val preferredFrameRate = targetFps.coerceAtLeast(1).toFloat()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                surface.setFrameRate(
+                    preferredFrameRate,
+                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
+                )
+            } else {
+                surface.setFrameRate(
+                    preferredFrameRate,
+                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE
+                )
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun rememberPhysicalSize(width: Int, height: Int) {
+        if (width > 0) {
+            lastPhysicalWidth = width
+        }
+        if (height > 0) {
+            lastPhysicalHeight = height
+        }
+    }
+
+    private fun rememberPhysicalSizeFromView() {
+        val width = if (::renderView.isInitialized) renderView.width else 0
+        val height = if (::renderView.isInitialized) renderView.height else 0
+        rememberPhysicalSize(width, height)
     }
 
     private fun releaseTextureSurfaceIfNeeded() {

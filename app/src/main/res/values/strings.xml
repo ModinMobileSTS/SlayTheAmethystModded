@@ -35,6 +35,12 @@
     <string name="settings_touch_mouse_long_press_keyboard_disabled">Long-press touch mouse to open keyboard: Disabled</string>
     <string name="settings_touch_mouse_long_press_keyboard_desc">Controls whether long-pressing the touch mouse button opens the soft keyboard.</string>
     <string name="status_touch_mouse_long_press_keyboard_format">Long-press touch mouse to open keyboard: %1$s</string>
+    <string name="settings_render_surface_backend_title">Render surface backend</string>
+    <string name="settings_render_surface_backend_surface_view">SurfaceView (default, faster but can stutter on some systems)</string>
+    <string name="settings_render_surface_backend_texture_view">TextureView (compatibility fallback, usually steadier but heavier)</string>
+    <string name="settings_render_surface_backend_surface_view_short">SurfaceView</string>
+    <string name="settings_render_surface_backend_texture_view_short">TextureView</string>
+    <string name="settings_render_surface_backend_desc">Controls which Android view hosts the game surface. Changes take effect the next time the game launches. If SurfaceView stutters on some ROMs or becomes smoother when screen recording is enabled, try TextureView.</string>
     <string name="boot_overlay_button_close">Close loading overlay</string>
     <string name="boot_overlay_button_enter_game">Enter game</string>
     <string name="boot_overlay_logs_placeholder">Waiting for JVM log output...</string>

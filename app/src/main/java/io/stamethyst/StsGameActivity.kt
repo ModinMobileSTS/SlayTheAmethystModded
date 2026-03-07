@@ -24,6 +24,7 @@ import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.input.GameInputHandler
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
@@ -73,7 +74,10 @@ class StsGameActivity : AppCompatActivity() {
     private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     private var longPressMouseShowsKeyboard = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     private var autoSwitchLeftAfterRightClick = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
-    private var useTextureViewSurface = false
+    private var renderSurfaceBackend: RenderSurfaceBackend =
+        LauncherConfig.DEFAULT_RENDER_SURFACE_BACKEND
+    private val useTextureViewSurface: Boolean
+        get() = renderSurfaceBackend.usesTextureViewSurface
 
     // State
     @Volatile
@@ -159,6 +163,7 @@ class StsGameActivity : AppCompatActivity() {
         showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(this)
         longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(this)
         autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(this)
+        renderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(this)
         targetFps = LauncherConfig.normalizeTargetFps(
             intent.getIntExtra(EXTRA_TARGET_FPS, LauncherConfig.DEFAULT_TARGET_FPS)
         )
