@@ -19,6 +19,7 @@ import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.file_interactive.SafExportActivity
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.R
@@ -71,6 +72,11 @@ class MainScreenViewModel : ViewModel() {
     private data class DependencyEnableResult(
         val autoEnabledModNames: List<String>,
         val missingDependencies: List<String>
+    )
+
+    private data class MtsLaunchValidationIssue(
+        val mod: ModItemUi,
+        val reason: String
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -1020,6 +1026,47 @@ class MainScreenViewModel : ViewModel() {
             .show()
     }
 
+    private fun findEnabledMtsLaunchValidationIssues(optionalMods: List<ModItemUi>): List<MtsLaunchValidationIssue> {
+        val issues = ArrayList<MtsLaunchValidationIssue>()
+        optionalMods.forEach { mod ->
+            if (!mod.enabled || !mod.installed) {
+                return@forEach
+            }
+            val failure = MtsLaunchManifestValidator.validateModJar(File(mod.storagePath))
+                ?: return@forEach
+            issues.add(
+                MtsLaunchValidationIssue(
+                    mod = mod,
+                    reason = failure.reason
+                )
+            )
+        }
+        return issues
+    }
+
+    private fun showMtsLaunchValidationDialog(host: Activity, issues: List<MtsLaunchValidationIssue>) {
+        if (issues.isEmpty()) {
+            return
+        }
+        val message = buildString {
+            append("检测到以下已勾选模组无法被 ModTheSpire 在启动时解析：\n")
+            issues.forEach { issue ->
+                append("\n- ").append(resolveModDisplayName(issue.mod))
+                val fileName = resolveModFileName(issue.mod.storagePath)
+                if (fileName.isNotBlank()) {
+                    append(" [").append(fileName).append("]")
+                }
+                append("\n  原因：").append(issue.reason)
+            }
+            append("\n\n请删除这些模组后重新导入，再重新启动游戏。")
+        }.trimEnd()
+        AlertDialog.Builder(host)
+            .setTitle("检测到需要重新导入的模组")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
     private fun maybeShowCrashDialog(
         host: Activity,
         intent: Intent
@@ -1465,6 +1512,11 @@ class MainScreenViewModel : ViewModel() {
             val duplicateGroups = findEnabledDuplicateModIdGroups(optionalMods)
             if (duplicateGroups.isNotEmpty()) {
                 showDuplicateModIdDialog(host, duplicateGroups)
+                return
+            }
+            val invalidMods = findEnabledMtsLaunchValidationIssues(optionalMods)
+            if (invalidMods.isNotEmpty()) {
+                showMtsLaunchValidationDialog(host, invalidMods)
                 return
             }
         }
