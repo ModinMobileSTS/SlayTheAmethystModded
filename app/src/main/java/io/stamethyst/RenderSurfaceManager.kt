@@ -1,59 +1,60 @@
 package io.stamethyst
 
-import android.graphics.SurfaceTexture
-import android.os.Build
-import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.TextureView
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
-import io.stamethyst.backend.render.DisplayPerformanceController
-import io.stamethyst.config.LauncherConfig
+import io.stamethyst.backend.render.ForegroundResyncScheduler
+import io.stamethyst.backend.render.RenderPacingController
+import io.stamethyst.backend.render.RenderSurfaceState
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
-import kotlin.math.roundToInt
 
 /**
- * Manages render surface (SurfaceView or TextureView), window sizing, and display configuration.
+ * Coordinates render surface hosting, size synchronization, and frame pacing.
  */
 class RenderSurfaceManager(
     private val activity: StsGameActivity,
-    private val renderScale: Float,
+    renderScale: Float,
     private val targetFps: Int,
-    private val useTextureViewSurface: Boolean,
+    useTextureViewSurface: Boolean,
     private val onSurfaceReady: () -> Unit,
     private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
 ) {
-    private var surfaceView: SurfaceView? = null
-    private var textureView: TextureView? = null
-    private var textureSurface: Surface? = null
+    private val state = RenderSurfaceState(renderScale)
+    private val resyncScheduler = ForegroundResyncScheduler()
+    private val pacingController = RenderPacingController(activity, targetFps)
+    private val renderHost: RenderSurfaceHost = if (useTextureViewSurface) {
+        TextureViewHost(activity)
+    } else {
+        SurfaceViewHost(activity)
+    }
+    private var pendingSurfaceReadyCallback = false
+    private var lastResyncReasonSummary = "init"
+    private var resyncApplyCount = 0
+    private var resyncSkipCount = 0
+
+    private val foregroundResyncRunnable = Runnable {
+        applyQueuedResync()
+    }
 
     lateinit var renderView: View
         private set
 
-    var surfaceBufferWidth = 0
-        private set
-    var surfaceBufferHeight = 0
-        private set
-    private var lastPhysicalWidth = 0
-    private var lastPhysicalHeight = 0
+    val surfaceBufferWidth: Int
+        get() = state.surfaceBufferWidth
 
-    @Volatile
-    var bridgeSurfaceReady = false
-        private set
+    val surfaceBufferHeight: Int
+        get() = state.surfaceBufferHeight
 
-    @Volatile
-    private var lastTextureFrameTimestampNs = 0L
+    val bridgeSurfaceReady: Boolean
+        get() = state.bridgeSurfaceReady
 
-    fun getLastTextureFrameTimestampNs(): Long = lastTextureFrameTimestampNs
+    fun getLastTextureFrameTimestampNs(): Long = state.lastTextureFrameTimestampNs
 
     fun requestRenderViewFocus() {
         if (::renderView.isInitialized) {
@@ -70,99 +71,41 @@ class RenderSurfaceManager(
     }
 
     fun init(root: FrameLayout) {
-        val renderLayoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-
-        if (useTextureViewSurface) {
-            val view = TextureView(activity)
-            view.isOpaque = true
-            textureView = view
-            renderView = view
-            root.addView(view, renderLayoutParams)
-            view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                    rememberPhysicalSize(width, height)
-                    applyTextureBufferSize(surface)
-                    releaseTextureSurfaceIfNeeded()
-                    textureSurface = Surface(surface)
-                    reapplyWindowFrameRateHint()
-                    applyRenderSurfaceFrameRateHint(textureSurface)
-                    JREUtils.setupBridgeWindow(textureSurface)
-                    bridgeSurfaceReady = true
-                    updateWindowSize()
-                    onSurfaceReady()
-                }
-
-                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-                    rememberPhysicalSize(width, height)
-                    applyTextureBufferSize(surface)
-                    reapplyWindowFrameRateHint()
-                    applyRenderSurfaceFrameRateHint(textureSurface)
-                    updateWindowSize()
-                    onSurfaceReady()
-                }
-
-                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                    bridgeSurfaceReady = false
-                    JREUtils.releaseBridgeWindow()
-                    releaseTextureSurfaceIfNeeded()
-                    surfaceBufferWidth = 0
-                    surfaceBufferHeight = 0
-                    lastPhysicalWidth = 0
-                    lastPhysicalHeight = 0
-                    onSurfaceDestroyed()
-                    return true
-                }
-
-                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-                    lastTextureFrameTimestampNs = surface.timestamp
-                    onTextureFrameUpdate(lastTextureFrameTimestampNs)
-                }
+        renderHost.attach(root, object : RenderSurfaceHost.Callbacks {
+            override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
+                state.markSurfaceAvailable(surfaceGeneration, width, height)
+                connectBridgeSurfaceIfNeeded()
+                pendingSurfaceReadyCallback = true
+                requestForegroundResync("surface_available")
             }
-        } else {
-            val view = SurfaceView(activity)
-            surfaceView = view
-            renderView = view
-            root.addView(view, renderLayoutParams)
-            view.holder.addCallback(object : SurfaceHolder.Callback {
-                override fun surfaceCreated(holder: SurfaceHolder) {
-                    val frame = holder.surfaceFrame
-                    if (frame != null) {
-                        rememberPhysicalSize(frame.width(), frame.height())
-                    }
-                    reapplySurfaceViewConfiguration(holder)
-                    JREUtils.setupBridgeWindow(holder.surface)
-                    bridgeSurfaceReady = true
-                    updateWindowSize()
-                    onSurfaceReady()
-                }
 
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    surfaceBufferWidth = width.coerceAtLeast(1)
-                    surfaceBufferHeight = height.coerceAtLeast(1)
-                    rememberPhysicalSizeFromView()
-                    reapplyWindowFrameRateHint()
-                    applyRenderSurfaceFrameRateHint(holder.surface)
-                    updateWindowSize()
-                    onSurfaceReady()
+            override fun onSurfaceSizeChanged(surfaceGeneration: Int, width: Int, height: Int) {
+                if (renderHost.usesTextureView) {
+                    state.rememberPhysicalSize(width, height)
+                } else if (::renderView.isInitialized) {
+                    state.rememberPhysicalSize(renderView.width, renderView.height)
                 }
+                pendingSurfaceReadyCallback = true
+                requestForegroundResync("surface_size_changed")
+            }
 
-                override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    bridgeSurfaceReady = false
-                    JREUtils.releaseBridgeWindow()
-                    surfaceBufferWidth = 0
-                    surfaceBufferHeight = 0
-                    lastPhysicalWidth = 0
-                    lastPhysicalHeight = 0
-                    onSurfaceDestroyed()
-                }
-            })
-        }
+            override fun onSurfaceDestroyed(surfaceGeneration: Int) {
+                pendingSurfaceReadyCallback = false
+                disconnectBridgeSurfaceIfNeeded()
+                pacingController.resetSurfaceTracking()
+                state.markSurfaceDestroyed()
+                onSurfaceDestroyed()
+            }
 
+            override fun onTextureFrameUpdated(timestampNs: Long) {
+                state.updateTextureFrameTimestamp(timestampNs)
+                onTextureFrameUpdate(timestampNs)
+            }
+        })
+        renderView = renderHost.renderView
         renderView.isFocusable = true
         renderView.isFocusableInTouchMode = true
+        state.rememberPhysicalSize(renderView.width, renderView.height)
         renderView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val width = (right - left).coerceAtLeast(0)
             val height = (bottom - top).coerceAtLeast(0)
@@ -171,63 +114,56 @@ class RenderSurfaceManager(
             if (width == oldWidth && height == oldHeight) {
                 return@addOnLayoutChangeListener
             }
-            rememberPhysicalSize(width, height)
-            if (!useTextureViewSurface) {
-                reapplySurfaceViewConfiguration()
-            } else {
-                reapplyWindowFrameRateHint()
-                applyRenderSurfaceFrameRateHint(textureSurface)
+            val changed = state.rememberPhysicalSize(width, height)
+            if (changed) {
+                requestForegroundResync("layout")
             }
-            updateWindowSize()
+        }
+        if (renderHost.currentSurface != null || pendingSurfaceReadyCallback) {
+            requestForegroundResync("attach_complete")
         }
     }
 
     fun onDestroy() {
-        if (useTextureViewSurface) {
-            try {
-                JREUtils.releaseBridgeWindow()
-            } catch (_: Throwable) {}
+        if (::renderView.isInitialized) {
+            renderView.removeCallbacks(foregroundResyncRunnable)
         }
-        releaseTextureSurfaceIfNeeded()
-        bridgeSurfaceReady = false
+        disconnectBridgeSurfaceIfNeeded()
+        renderHost.release()
     }
 
-    fun updateWindowSize() {
-        val physicalWidth = resolvePhysicalWidth()
-        val physicalHeight = resolvePhysicalHeight()
-        val windowWidth = (physicalWidth * renderScale).roundToInt().coerceAtLeast(1)
-        val windowHeight = (physicalHeight * renderScale).roundToInt().coerceAtLeast(1)
+    fun onForegroundChanged(foreground: Boolean) {
+        state.markForeground(foreground)
+        if (foreground) {
+            requestForegroundResync("resume")
+        }
+    }
 
-        CallbackBridge.physicalWidth = physicalWidth
-        CallbackBridge.physicalHeight = physicalHeight
-        CallbackBridge.windowWidth = windowWidth
-        CallbackBridge.windowHeight = windowHeight
-        CallbackBridge.sendUpdateWindowSize(windowWidth, windowHeight)
+    fun onWindowFocusChanged(hasFocus: Boolean) {
+        state.markWindowFocus(hasFocus)
+        if (hasFocus) {
+            requestForegroundResync("focus")
+        }
     }
 
     fun resyncAfterForeground() {
-        if (useTextureViewSurface) {
-            reapplyTextureBufferSizeFromView()
-            reapplyWindowFrameRateHint()
-            applyRenderSurfaceFrameRateHint(textureSurface)
-        } else {
-            reapplySurfaceViewConfiguration()
-        }
-        updateWindowSize()
+        requestForegroundResync("legacy_foreground")
+    }
 
-        if (!::renderView.isInitialized) return
-
-        renderView.post {
-            if (activity.isFinishing || activity.isDestroyed) return@post
-            if (useTextureViewSurface) {
-                reapplyTextureBufferSizeFromView()
-                reapplyWindowFrameRateHint()
-                applyRenderSurfaceFrameRateHint(textureSurface)
-            } else {
-                reapplySurfaceViewConfiguration()
-            }
-            updateWindowSize()
+    fun requestForegroundResync(reason: String) {
+        if (!::renderView.isInitialized) {
+            return
         }
+        if (resyncScheduler.request(reason)) {
+            renderView.post(foregroundResyncRunnable)
+        }
+    }
+
+    fun updateWindowSize() {
+        if (!::renderView.isInitialized) {
+            return
+        }
+        dispatchWindowSize(state.buildApplyPlan(renderView.width, renderView.height))
     }
 
     fun syncDisplayConfigToSurfaceSize() {
@@ -235,121 +171,155 @@ class RenderSurfaceManager(
         val windowHeight = CallbackBridge.windowHeight.coerceAtLeast(1)
         try {
             DisplayConfigSync.syncToCurrentResolution(activity, windowWidth, windowHeight, targetFps)
-        } catch (_: Throwable) {}
-    }
-
-    fun logRenderInfo() {}
-
-    fun resolvePhysicalWidth(): Int = resolveRawPhysicalWidth()
-
-    fun resolvePhysicalHeight(): Int = resolveRawPhysicalHeight()
-
-    private fun resolveRawPhysicalWidth(): Int {
-        val viewWidth = if (::renderView.isInitialized) renderView.width else 0
-        return when {
-            viewWidth > 0 -> viewWidth
-            lastPhysicalWidth > 0 -> lastPhysicalWidth
-            surfaceBufferWidth > 0 -> surfaceBufferWidth
-            else -> 1
+        } catch (_: Throwable) {
         }
     }
 
-    private fun resolveRawPhysicalHeight(): Int {
-        val viewHeight = if (::renderView.isInitialized) renderView.height else 0
-        return when {
-            viewHeight > 0 -> viewHeight
-            lastPhysicalHeight > 0 -> lastPhysicalHeight
-            surfaceBufferHeight > 0 -> surfaceBufferHeight
-            else -> 1
-        }
+    fun logRenderInfo() {
+        println(buildDiagnostics(prefix = "snapshot"))
     }
 
-    private fun applyTextureBufferSize(surface: SurfaceTexture) {
-        val rawWidth = resolveRawPhysicalWidth()
-        val rawHeight = resolveRawPhysicalHeight()
-        val scaledWidth = (rawWidth.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
-        val scaledHeight = (rawHeight.coerceAtLeast(1) * renderScale).roundToInt().coerceAtLeast(1)
-        surfaceBufferWidth = scaledWidth
-        surfaceBufferHeight = scaledHeight
-        surface.setDefaultBufferSize(scaledWidth, scaledHeight)
+    fun resolvePhysicalWidth(): Int {
+        return state.resolvePhysicalWidth(if (::renderView.isInitialized) renderView.width else 0)
     }
 
-    private fun reapplyTextureBufferSizeFromView() {
-        val view = textureView ?: return
-        val surfaceTexture = view.surfaceTexture ?: return
-        rememberPhysicalSize(view.width, view.height)
-        applyTextureBufferSize(surfaceTexture)
+    fun resolvePhysicalHeight(): Int {
+        return state.resolvePhysicalHeight(if (::renderView.isInitialized) renderView.height else 0)
     }
 
-    private fun reapplySurfaceViewConfiguration(holder: SurfaceHolder? = surfaceView?.holder) {
-        val targetHolder = holder ?: return
-        applySurfaceViewBufferSize(targetHolder)
-        reapplyWindowFrameRateHint()
-        applyRenderSurfaceFrameRateHint(targetHolder.surface)
-    }
-
-    private fun applySurfaceViewBufferSize(holder: SurfaceHolder) {
-        val rawWidth = resolveRawPhysicalWidth()
-        val rawHeight = resolveRawPhysicalHeight()
-        val scaledWidth = (rawWidth * renderScale).roundToInt().coerceAtLeast(1)
-        val scaledHeight = (rawHeight * renderScale).roundToInt().coerceAtLeast(1)
-        surfaceBufferWidth = scaledWidth
-        surfaceBufferHeight = scaledHeight
-        try {
-            holder.setFixedSize(scaledWidth, scaledHeight)
-        } catch (_: Throwable) {}
-    }
-
-    private fun reapplyWindowFrameRateHint() {
-        if (!::renderView.isInitialized) {
+    private fun applyQueuedResync() {
+        if (!::renderView.isInitialized || activity.isFinishing || activity.isDestroyed) {
             return
         }
-        DisplayPerformanceController.applyWindowFrameRateHint(activity, renderView, targetFps)
+        val reasons = resyncScheduler.drain()
+        val reasonSummary = reasons.joinToString("+").ifBlank { "unspecified" }
+        lastResyncReasonSummary = reasonSummary
+        val plan = state.buildApplyPlan(renderView.width, renderView.height)
+        var anyApplied = false
+
+        val surface = renderHost.currentSurface
+        if (plan.shouldApplyBufferSize && surface != null) {
+            val applied = renderHost.applyBufferSize(
+                width = plan.bufferWidth,
+                height = plan.bufferHeight,
+                surfaceGeneration = renderHost.surfaceGeneration
+            )
+            state.recordBufferApply(
+                plan = plan,
+                applied = applied,
+                incrementsHolderResize = !renderHost.usesTextureView
+            )
+            anyApplied = anyApplied || applied
+        } else {
+            state.recordBufferApply(plan = plan, applied = false, incrementsHolderResize = false)
+        }
+
+        if (pacingController.applyWindowPreference(renderView)) {
+            anyApplied = true
+        }
+        if (surface != null && pacingController.applySurfacePreference(surface, renderHost.surfaceGeneration)) {
+            anyApplied = true
+        }
+
+        connectBridgeSurfaceIfNeeded()
+        if (dispatchWindowSize(plan)) {
+            anyApplied = true
+        }
+
+        if (pendingSurfaceReadyCallback && state.bridgeSurfaceReady) {
+            pendingSurfaceReadyCallback = false
+            onSurfaceReady()
+        }
+
+        if (anyApplied) {
+            resyncApplyCount++
+        } else {
+            resyncSkipCount++
+        }
+        println(buildDiagnostics(prefix = "resync"))
     }
 
-    private fun applyRenderSurfaceFrameRateHint(surface: Surface?) {
-        if (surface == null || !surface.isValid || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    private fun connectBridgeSurfaceIfNeeded() {
+        if (state.bridgeSurfaceReady) {
             return
         }
-        val preferredFrameRate = targetFps.coerceAtLeast(1).toFloat()
+        val surface = renderHost.currentSurface ?: return
+        JREUtils.setupBridgeWindow(surface)
+        state.markBridgeSurfaceReady(true)
+    }
+
+    private fun disconnectBridgeSurfaceIfNeeded() {
+        if (!state.bridgeSurfaceReady) {
+            return
+        }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                surface.setFrameRate(
-                    preferredFrameRate,
-                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
-                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
-                )
-            } else {
-                surface.setFrameRate(
-                    preferredFrameRate,
-                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
-                )
-            }
-        } catch (_: Throwable) {}
+            JREUtils.releaseBridgeWindow()
+        } catch (_: Throwable) {
+        }
+        state.markBridgeSurfaceReady(false)
     }
 
-    private fun rememberPhysicalSize(width: Int, height: Int) {
-        if (width > 0) {
-            lastPhysicalWidth = width
+    private fun dispatchWindowSize(plan: RenderSurfaceState.ApplyPlan): Boolean {
+        if (!plan.shouldDispatchWindowSize) {
+            state.recordWindowSizeDispatch(plan, dispatched = false)
+            return false
         }
-        if (height > 0) {
-            lastPhysicalHeight = height
-        }
+        CallbackBridge.physicalWidth = plan.physicalWidth
+        CallbackBridge.physicalHeight = plan.physicalHeight
+        CallbackBridge.windowWidth = plan.windowWidth
+        CallbackBridge.windowHeight = plan.windowHeight
+        CallbackBridge.sendUpdateWindowSize(plan.windowWidth, plan.windowHeight)
+        state.recordWindowSizeDispatch(plan, dispatched = true)
+        return true
     }
 
-    private fun rememberPhysicalSizeFromView() {
-        val width = if (::renderView.isInitialized) renderView.width else 0
-        val height = if (::renderView.isInitialized) renderView.height else 0
-        rememberPhysicalSize(width, height)
-    }
-
-    private fun releaseTextureSurfaceIfNeeded() {
-        textureSurface?.let {
-            try {
-                it.release()
-            } catch (_: Throwable) {}
+    private fun buildDiagnostics(prefix: String): String {
+        return buildString(256) {
+            append("RenderSurfaceDiag: ")
+            append(prefix)
+            append(", backend=")
+            append(if (renderHost.usesTextureView) "TextureView" else "SurfaceView")
+            append(", reasons=")
+            append(lastResyncReasonSummary)
+            append(", surfaceGeneration=")
+            append(renderHost.surfaceGeneration)
+            append(", bridgeReady=")
+            append(state.bridgeSurfaceReady)
+            append(", foreground=")
+            append(state.isForeground)
+            append(", focus=")
+            append(state.hasWindowFocus)
+            append(", physical=")
+            append(resolvePhysicalWidth())
+            append("x")
+            append(resolvePhysicalHeight())
+            append(", buffer=")
+            append(state.surfaceBufferWidth)
+            append("x")
+            append(state.surfaceBufferHeight)
+            append(", resyncApplied=")
+            append(resyncApplyCount)
+            append(", resyncSkipped=")
+            append(resyncSkipCount)
+            append(", holderResizeCount=")
+            append(state.holderResizeCount)
+            append(", bufferApply=")
+            append(state.bufferApplyCount)
+            append("/")
+            append(state.bufferSkipCount)
+            append(", windowDispatch=")
+            append(state.windowSizeDispatchCount)
+            append("/")
+            append(state.windowSizeSkipCount)
+            append(", windowHint=")
+            append(pacingController.windowApplyCount)
+            append("/")
+            append(pacingController.windowSkipCount)
+            append(", surfaceHint=")
+            append(pacingController.surfaceApplyCount)
+            append("/")
+            append(pacingController.surfaceSkipCount)
         }
-        textureSurface = null
     }
 
     fun applyImmersiveMode() {
@@ -361,10 +331,17 @@ class RenderSurfaceManager(
     }
 
     private fun applyDisplayCutoutMode() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+            return
+        }
         val attributes = activity.window.attributes
-        if (attributes.layoutInDisplayCutoutMode == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) return
-        attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        if (attributes.layoutInDisplayCutoutMode ==
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        ) {
+            return
+        }
+        attributes.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         activity.window.attributes = attributes
     }
 }

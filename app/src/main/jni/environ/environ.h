@@ -6,6 +6,7 @@
 #define POJAVLAUNCHER_ENVIRON_H
 
 #include <ctxbridges/common.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 #include <jni.h>
 
@@ -64,6 +65,11 @@ struct pojav_environ_s {
     bool isInputReady, isCursorEntered, isUseStackQueueCall, shouldUpdateMouse;
     bool shouldUpdateMonitorSize, monitorSizeConsumed;
     int savedWidth, savedHeight;
+    bool hasAppliedWindowGeometry;
+    struct ANativeWindow* lastGeometryWindow;
+    int lastGeometryWidth;
+    int lastGeometryHeight;
+    int lastGeometryFormat;
     atomic_int glContextGeneration;
     GLFWgamepadstate gamepadState;
 #define ADD_CALLBACK_WWIN(NAME) \
@@ -79,5 +85,48 @@ struct pojav_environ_s {
 #undef ADD_CALLBACK_WWIN
 };
 extern struct pojav_environ_s *pojav_environ;
+
+static inline bool pojav_window_geometry_matches(
+    const struct pojav_environ_s* env,
+    const struct ANativeWindow* window,
+    int width,
+    int height,
+    int format
+) {
+    return env != NULL &&
+        env->hasAppliedWindowGeometry &&
+        env->lastGeometryWindow == window &&
+        env->lastGeometryWidth == width &&
+        env->lastGeometryHeight == height &&
+        env->lastGeometryFormat == format;
+}
+
+static inline void pojav_record_window_geometry(
+    struct pojav_environ_s* env,
+    struct ANativeWindow* window,
+    int width,
+    int height,
+    int format
+) {
+    if (env == NULL) {
+        return;
+    }
+    env->hasAppliedWindowGeometry = true;
+    env->lastGeometryWindow = window;
+    env->lastGeometryWidth = width;
+    env->lastGeometryHeight = height;
+    env->lastGeometryFormat = format;
+}
+
+static inline void pojav_reset_window_geometry_cache(struct pojav_environ_s* env) {
+    if (env == NULL) {
+        return;
+    }
+    env->hasAppliedWindowGeometry = false;
+    env->lastGeometryWindow = NULL;
+    env->lastGeometryWidth = 0;
+    env->lastGeometryHeight = 0;
+    env->lastGeometryFormat = 0;
+}
 
 #endif //POJAVLAUNCHER_ENVIRON_H

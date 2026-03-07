@@ -133,7 +133,7 @@ class StsGameActivity : AppCompatActivity() {
         DisplayPerformanceController.applySustainedPerformanceMode(this, true)
         renderSurfaceManager.applyImmersiveMode()
         inputHandler.resetGamepadState()
-        renderSurfaceManager.resyncAfterForeground()
+        renderSurfaceManager.onForegroundChanged(true)
         performanceOverlayController.onResume()
         applyForegroundWindowState()
         updateFloatingMouseVisibility()
@@ -145,6 +145,7 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.resetGamepadState()
         inputHandler.hideSoftKeyboard()
         performanceOverlayController.onPause()
+        renderSurfaceManager.onForegroundChanged(false)
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
         applyBackgroundWindowState()
         super.onPause()
@@ -152,9 +153,9 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        renderSurfaceManager.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             renderSurfaceManager.applyImmersiveMode()
-            renderSurfaceManager.resyncAfterForeground()
         }
         updatePerformanceOverlayVisibility()
         syncFocusStateToNative(hasFocus)
