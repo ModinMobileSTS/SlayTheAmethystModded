@@ -31,7 +31,6 @@ import io.stamethyst.input.GameInputHandler
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
-import kotlin.system.exitProcess
 
 class StsGameActivity : AppCompatActivity() {
     companion object {
@@ -42,6 +41,7 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
+        private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
 
         @JvmStatic
         fun launch(
@@ -85,6 +85,8 @@ class StsGameActivity : AppCompatActivity() {
     // State
     @Volatile
     private var backExitRequested = false
+    @Volatile
+    private var backExitHardRestartTriggered = false
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
 
@@ -421,12 +423,21 @@ class StsGameActivity : AppCompatActivity() {
 
         jvmLaunchController.interrupt()
 
+        if (!jvmLaunchController.runtimeLifecycleReady) {
+            returnToLauncher()
+            return
+        }
+
         try {
             CallbackBridge.nativeSetInputReady(false)
         } catch (_: Throwable) {}
 
-        requestJvmCloseSignal()
-        scheduleLauncherRestartAndKillProcess()
+        val closeRequested = requestJvmCloseSignal()
+        if (!closeRequested || !jvmLaunchController.runtimeLifecycleReady) {
+            forceRestartLauncherAndTerminateProcess()
+            return
+        }
+        scheduleBackExitForceRestart()
     }
 
     private fun registerSystemBackInvokedCallback() {
@@ -467,6 +478,14 @@ class StsGameActivity : AppCompatActivity() {
         }
     }
 
+    private fun scheduleBackExitForceRestart() {
+        renderSurfaceManager.renderView.postDelayed({
+            if (backExitRequested) {
+                forceRestartLauncherAndTerminateProcess()
+            }
+        }, BACK_FORCE_KILL_FALLBACK_MS)
+    }
+
     private fun parseBackBehaviorExtra(): BackBehavior {
         val parsedBehavior = BackBehavior.fromPersistedValue(
             intent.getStringExtra(EXTRA_BACK_BEHAVIOR)
@@ -498,10 +517,25 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.dispatchKeyboardEventToGame(up)
     }
 
-    private fun scheduleLauncherRestartAndKillProcess() {
+    private fun returnToLauncher() {
+        val launcherIntent = Intent(this, LauncherActivity::class.java)
+        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        startActivity(launcherIntent)
+        finish()
+    }
+
+    private fun forceRestartLauncherAndTerminateProcess() {
+        if (backExitHardRestartTriggered) {
+            return
+        }
+        backExitHardRestartTriggered = true
+        BackExitNotice.markExpectedBackExitRestartScheduled(this)
+
         val launcherIntent = Intent(this, LauncherActivity::class.java)
         launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        val flags = PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        val flags = PendingIntent.FLAG_CANCEL_CURRENT or
+            PendingIntent.FLAG_ONE_SHOT or
+            PendingIntent.FLAG_IMMUTABLE
         val pendingIntent = PendingIntent.getActivity(this, 0x71A7, launcherIntent, flags)
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager?
         val triggerAt = SystemClock.elapsedRealtime() + BACK_FORCE_RESTART_DELAY_MS
@@ -517,7 +551,6 @@ class StsGameActivity : AppCompatActivity() {
         }
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
-        exitProcess(0)
     }
 
     @SuppressLint("MissingPermission")

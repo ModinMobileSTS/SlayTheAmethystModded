@@ -24,23 +24,21 @@ _Noreturn void nominal_exit(int code, bool is_signal, const char* detail) {
     if(errorCode != JNI_OK) {
         killpg(getpgrp(), SIGTERM);
     }
-    if(code != 0) {
-        jstring detailString = NULL;
-        if(detail != NULL && detail[0] != '\0') {
-            detailString = (*env)->NewStringUTF(env, detail);
-        }
-        (*env)->CallStaticVoidMethod(
-            env,
-            exitTrap_exitClass,
-            exitTrap_staticMethod,
-            exitTrap_ctx,
-            code,
-            is_signal,
-            detailString
-        );
-        if(detailString != NULL) {
-            (*env)->DeleteLocalRef(env, detailString);
-        }
+    jstring detailString = NULL;
+    if(detail != NULL && detail[0] != '\0') {
+        detailString = (*env)->NewStringUTF(env, detail);
+    }
+    (*env)->CallStaticVoidMethod(
+        env,
+        exitTrap_exitClass,
+        exitTrap_staticMethod,
+        exitTrap_ctx,
+        code,
+        is_signal,
+        detailString
+    );
+    if(detailString != NULL) {
+        (*env)->DeleteLocalRef(env, detailString);
     }
     (*env)->DeleteGlobalRef(env, exitTrap_ctx);
     (*env)->DeleteGlobalRef(env, exitTrap_exitClass);

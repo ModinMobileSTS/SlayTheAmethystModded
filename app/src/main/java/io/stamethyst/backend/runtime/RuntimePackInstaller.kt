@@ -25,6 +25,13 @@ object RuntimePackInstaller {
     private const val ARCHIVE_ARM64 = "bin-arm64.tar.xz"
     private const val ARCHIVE_ARM32 = "bin-arm.tar.xz"
 
+    @Throws(IOException::class)
+    private fun throwIfInterrupted() {
+        if (Thread.currentThread().isInterrupted) {
+            throw IOException("Runtime install cancelled")
+        }
+    }
+
     @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context) {
@@ -34,6 +41,7 @@ object RuntimePackInstaller {
     @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
+        throwIfInterrupted()
         reportProgress(progressCallback, 2, "Checking runtime pack...")
         RuntimePaths.ensureBaseDirs(context)
         val assets = context.assets
@@ -62,34 +70,43 @@ object RuntimePackInstaller {
             }
         }
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 10, "Preparing runtime directory...")
         prepareCleanDirectory(runtimeRoot, "runtime root")
 
         val stagingDir = File(context.cacheDir, "runtime-staging")
+        throwIfInterrupted()
         reportProgress(progressCallback, 18, "Preparing runtime staging...")
         prepareCleanDirectory(stagingDir, "staging directory")
 
         val requiredFiles = arrayOf(ARCHIVE_UNIVERSAL, archArchive, ARCHIVE_VERSION)
+        throwIfInterrupted()
         reportProgress(progressCallback, 26, "Copying runtime archives...")
         for (i in requiredFiles.indices) {
+            throwIfInterrupted()
             val required = requiredFiles[i]
             copyAssetToFile(assets, "components/jre/$required", File(stagingDir, required))
             val copiedPercent = 26 + ((i + 1) * 14f / requiredFiles.size).roundToInt()
             reportProgress(progressCallback, copiedPercent, "Copied $required")
         }
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 42, "Extracting universal runtime...")
         extractTarXz(File(stagingDir, ARCHIVE_UNIVERSAL), runtimeRoot)
+        throwIfInterrupted()
         reportProgress(progressCallback, 62, "Extracting architecture runtime...")
         extractTarXz(File(stagingDir, archArchive), runtimeRoot)
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 78, "Unpacking runtime pack200 files...")
         unpackPack200Files(context, runtimeRoot, progressCallback)
 
+        throwIfInterrupted()
         val javaHome = locateJavaHome(runtimeRoot)
             ?: throw IOException(
                 "Runtime install failed: libjli.so not found under ${runtimeRoot.absolutePath}"
             )
+        throwIfInterrupted()
         reportProgress(progressCallback, 92, "Finalizing runtime setup...")
         postPrepareRuntime(context, javaHome)
         if (!isRuntimeReady(javaHome)) {
@@ -98,6 +115,7 @@ object RuntimePackInstaller {
             )
         }
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 98, "Writing runtime install marker...")
         Files.write(markerFile.toPath(), bundledMarker.toByteArray(StandardCharsets.UTF_8))
         reportProgress(progressCallback, 100, "Runtime pack ready")
@@ -136,12 +154,14 @@ object RuntimePackInstaller {
 
     @Throws(IOException::class)
     private fun extractTarXz(tarXzFile: File, destination: File) {
+        throwIfInterrupted()
         FileInputStream(tarXzFile).use { fileInput ->
             XZInputStream(fileInput).use { xzInput ->
                 TarArchiveInputStream(xzInput).use { tarInput ->
                     val buffer = ByteArray(8192)
                     var entry: TarArchiveEntry?
                     while (tarInput.nextEntry.also { entry = it } != null) {
+                        throwIfInterrupted()
                         val current = entry!!
                         val outFile = File(destination, current.name)
                         if (current.isDirectory) {
@@ -169,6 +189,7 @@ object RuntimePackInstaller {
 
                         FileOutputStream(outFile).use { output ->
                             while (true) {
+                                throwIfInterrupted()
                                 val read = tarInput.read(buffer)
                                 if (read <= 0) {
                                     break
@@ -197,6 +218,7 @@ object RuntimePackInstaller {
         runtimeRoot: File,
         progressCallback: StartupProgressCallback?
     ) {
+        throwIfInterrupted()
         val packFiles = ArrayList<File>()
         collectPackFiles(runtimeRoot, packFiles)
         if (packFiles.isEmpty()) {
@@ -210,6 +232,7 @@ object RuntimePackInstaller {
 
         val processBuilder = ProcessBuilder().directory(File(context.applicationInfo.nativeLibraryDir))
         for (i in packFiles.indices) {
+            throwIfInterrupted()
             val packFile = packFiles[i]
             val startPercent = 78 + (i * 10f / packFiles.size).roundToInt()
             reportProgress(
@@ -249,6 +272,9 @@ object RuntimePackInstaller {
     }
 
     private fun collectPackFiles(root: File?, out: MutableList<File>) {
+        if (Thread.currentThread().isInterrupted) {
+            return
+        }
         if (root == null || !root.exists()) {
             return
         }
@@ -266,6 +292,7 @@ object RuntimePackInstaller {
 
     @Throws(IOException::class)
     private fun postPrepareRuntime(context: Context, javaHome: File) {
+        throwIfInterrupted()
         val archLibDir = findRuntimeArchLibDir(javaHome) ?: return
 
         val freetypeVersioned = File(archLibDir, "libfreetype.so.6")
@@ -367,6 +394,7 @@ object RuntimePackInstaller {
         val buffer = ByteArray(4096)
         ByteArrayOutputStream().use { output ->
             while (true) {
+                throwIfInterrupted()
                 val read = stream.read(buffer)
                 if (read <= 0) {
                     break
@@ -379,10 +407,12 @@ object RuntimePackInstaller {
 
     @Throws(IOException::class)
     private fun readAssetAsString(assets: AssetManager, assetPath: String): String {
+        throwIfInterrupted()
         assets.open(assetPath).use { input ->
             val data = ByteArray(4096)
             val out = StringBuilder()
             while (true) {
+                throwIfInterrupted()
                 val read = input.read(data)
                 if (read <= 0) {
                     break
@@ -395,6 +425,7 @@ object RuntimePackInstaller {
 
     @Throws(IOException::class)
     private fun copyAssetToFile(assets: AssetManager, assetPath: String, targetFile: File) {
+        throwIfInterrupted()
         val parent = targetFile.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create asset target directory: $parent")
@@ -403,6 +434,7 @@ object RuntimePackInstaller {
             FileOutputStream(targetFile, false).use { output ->
                 val buffer = ByteArray(8192)
                 while (true) {
+                    throwIfInterrupted()
                     val read = input.read(buffer)
                     if (read <= 0) {
                         break
@@ -415,6 +447,7 @@ object RuntimePackInstaller {
 
     @Throws(IOException::class)
     private fun copyFile(source: File, target: File) {
+        throwIfInterrupted()
         val parent = target.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create target directory: $parent")
@@ -423,6 +456,7 @@ object RuntimePackInstaller {
             FileOutputStream(target, false).use { output ->
                 val buffer = ByteArray(8192)
                 while (true) {
+                    throwIfInterrupted()
                     val read = input.read(buffer)
                     if (read <= 0) {
                         break
@@ -435,6 +469,7 @@ object RuntimePackInstaller {
 
     @Throws(IOException::class)
     private fun prepareCleanDirectory(directory: File, label: String) {
+        throwIfInterrupted()
         val parent = directory.parentFile
         if (parent != null) {
             if (parent.exists() && !parent.isDirectory) {
@@ -464,6 +499,7 @@ object RuntimePackInstaller {
         }
 
         for (child in remaining) {
+            throwIfInterrupted()
             deleteRecursively(child)
         }
         val stillRemaining = directory.listFiles()
@@ -473,6 +509,9 @@ object RuntimePackInstaller {
     }
 
     private fun deleteRecursively(file: File?): Boolean {
+        if (Thread.currentThread().isInterrupted) {
+            return false
+        }
         if (file == null || !file.exists()) {
             return true
         }
@@ -481,6 +520,9 @@ object RuntimePackInstaller {
             val children = file.listFiles()
             if (children != null) {
                 for (child in children) {
+                    if (Thread.currentThread().isInterrupted) {
+                        return false
+                    }
                     deleted = deleted and deleteRecursively(child)
                 }
             }

@@ -11,6 +11,13 @@ import java.io.IOException
 import kotlin.math.roundToInt
 
 object LaunchPreparationService {
+    @Throws(IOException::class)
+    private fun throwIfInterrupted() {
+        if (Thread.currentThread().isInterrupted) {
+            throw IOException("Launch preparation cancelled")
+        }
+    }
+
     @JvmStatic
     @Throws(IOException::class)
     fun prepare(context: Context, launchMode: String) {
@@ -20,29 +27,36 @@ object LaunchPreparationService {
     @JvmStatic
     @Throws(IOException::class)
     fun prepare(context: Context, launchMode: String, progressCallback: StartupProgressCallback?) {
+        throwIfInterrupted()
         reportProgress(progressCallback, 3, "Installing launcher components...")
         ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 5, 35))
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 36, "Preparing Java runtime...")
         RuntimePackInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 36, 76))
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 78, "Ensuring runtime directories...")
         RuntimePaths.ensureBaseDirs(context)
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 86, "Validating desktop-1.0.jar...")
         StsJarValidator.validate(RuntimePaths.importedStsJar(context))
 
         if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+            throwIfInterrupted()
             reportProgress(progressCallback, 90, "Validating required mod jars...")
             ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
             ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(context))
             ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(context))
 
+            throwIfInterrupted()
             reportProgress(progressCallback, 95, "Preparing MTS classpath...")
             ModJarSupport.prepareMtsClasspath(context)
             ModManager.resolveLaunchModIds(context)
         }
 
+        throwIfInterrupted()
         reportProgress(progressCallback, 100, "Launch preparation complete")
     }
 

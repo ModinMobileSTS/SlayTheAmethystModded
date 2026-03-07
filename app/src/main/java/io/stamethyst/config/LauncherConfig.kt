@@ -46,6 +46,7 @@ object LauncherConfig {
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
+    private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
 
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
@@ -391,7 +392,32 @@ object LauncherConfig {
     fun markExpectedBackExit(context: Context) {
         prefs(context).edit(commit = true) {
             putLong(PREF_KEY_EXPECTED_BACK_EXIT_AT_MS, System.currentTimeMillis())
+            remove(PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS)
         }
+    }
+
+    fun isExpectedBackExitRecent(context: Context): Boolean {
+        val markedAtMs = prefs(context).getLong(PREF_KEY_EXPECTED_BACK_EXIT_AT_MS, -1L)
+        if (markedAtMs <= 0L) {
+            return false
+        }
+        val deltaMs = System.currentTimeMillis() - markedAtMs
+        return deltaMs >= 0L && deltaMs <= EXPECTED_BACK_EXIT_VALID_WINDOW_MS
+    }
+
+    fun markExpectedBackExitRestartScheduled(context: Context) {
+        prefs(context).edit(commit = true) {
+            putLong(PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS, System.currentTimeMillis())
+        }
+    }
+
+    fun isExpectedBackExitRestartScheduledRecent(context: Context): Boolean {
+        val scheduledAtMs = prefs(context).getLong(PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS, -1L)
+        if (scheduledAtMs <= 0L) {
+            return false
+        }
+        val deltaMs = System.currentTimeMillis() - scheduledAtMs
+        return deltaMs >= 0L && deltaMs <= EXPECTED_BACK_EXIT_VALID_WINDOW_MS
     }
 
     fun consumeExpectedBackExitIfRecent(context: Context): Boolean {
@@ -399,6 +425,7 @@ object LauncherConfig {
         val markedAtMs = preferences.getLong(PREF_KEY_EXPECTED_BACK_EXIT_AT_MS, -1L)
         preferences.edit {
             remove(PREF_KEY_EXPECTED_BACK_EXIT_AT_MS)
+            remove(PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS)
         }
         if (markedAtMs <= 0L) {
             return false

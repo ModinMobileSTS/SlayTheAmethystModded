@@ -9,6 +9,7 @@ import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.util.ArrayList
@@ -29,6 +30,8 @@ class JvmLaunchController(
     private val getWindowWidth: () -> Int,
     private val getWindowHeight: () -> Int
 ) {
+    private class LaunchCancelledException : IOException("Launch cancelled")
+
     companion object {
         const val CRASH_CODE_BOOT_FAILURE = -2
         const val CRASH_CODE_OUT_OF_MEMORY = -8
@@ -70,6 +73,9 @@ class JvmLaunchController(
     @Volatile
     private var bootBridgeDismissSignaled = false
 
+    @Volatile
+    private var cancelRequested = false
+
     private var bootBridgeEventOffset = 0L
     private var bootBridgeEventRemainder = ""
 
@@ -81,23 +87,28 @@ class JvmLaunchController(
         vmStarted = true
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
+        cancelRequested = false
 
         onProgressUpdate(8, "Starting JVM...")
 
         val launchThread = Thread({
             try {
+                throwIfCancelled()
                 LaunchPreparationService.prepare(activity, launchMode) { percent, message ->
+                    throwIfCancelled()
                     onProgressUpdate(
                         bootOverlayController?.mapBootOverlayPreparationProgress(percent) ?: percent,
                         message
                     )
                 }
 
+                throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(activity)
                 val resolvedJavaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot)
                     ?: javaHome.takeIf { it.exists() }
                     ?: throw IllegalStateException("No Java home found in ${runtimeRoot.absolutePath}")
 
+                throwIfCancelled()
                 RuntimePaths.ensureBaseDirs(activity)
                 try {
                     JvmLogRotationManager.prepareForNewSession(activity)
@@ -118,8 +129,10 @@ class JvmLaunchController(
                     ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
                 }
 
+                throwIfCancelled()
                 onSurfaceSizeSync()
 
+                throwIfCancelled()
                 JREUtils.relocateLibPath(activity.applicationInfo.nativeLibraryDir, resolvedJavaHome.absolutePath)
                 JREUtils.setJavaEnvironment(
                     activity,
@@ -127,11 +140,14 @@ class JvmLaunchController(
                     getWindowWidth().coerceAtLeast(1),
                     getWindowHeight().coerceAtLeast(1)
                 )
+                throwIfCancelled()
                 JREUtils.initJavaRuntime(resolvedJavaHome.absolutePath)
+                throwIfCancelled()
                 JREUtils.setupExitMethod(activity.applicationContext)
                 JREUtils.initializeHooks()
                 JREUtils.chdir(RuntimePaths.stsRoot(activity).absolutePath)
 
+                throwIfCancelled()
                 CallbackBridge.nativeSetUseInputStackQueue(true)
                 CallbackBridge.nativeSetInputReady(true)
 
@@ -155,6 +171,7 @@ class JvmLaunchController(
                     onProgressUpdate(85, "Launching game...")
                 }
 
+                throwIfCancelled()
                 val exitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
                 onLaunchComplete(exitCode)
 
@@ -175,10 +192,12 @@ class JvmLaunchController(
     }
 
     fun interrupt() {
+        cancelRequested = true
         jvmLaunchThread?.interrupt()
     }
 
     fun cleanup() {
+        cancelRequested = true
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()
@@ -186,6 +205,13 @@ class JvmLaunchController(
         stopBootBridgeEventMonitor()
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
+    }
+
+    @Throws(LaunchCancelledException::class)
+    private fun throwIfCancelled() {
+        if (cancelRequested || Thread.currentThread().isInterrupted) {
+            throw LaunchCancelledException()
+        }
     }
 
     private fun startLatestLogCapMonitor(logFile: File) {
