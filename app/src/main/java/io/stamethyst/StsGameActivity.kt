@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -116,6 +117,7 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         unregisterSystemBackInvokedCallback()
+        DisplayPerformanceController.applySustainedPerformanceMode(this, false)
         inputHandler.onDestroy()
         renderSurfaceManager.onDestroy()
         bootOverlayController.onDestroy()
@@ -126,6 +128,7 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        DisplayPerformanceController.applySustainedPerformanceMode(this, true)
         renderSurfaceManager.applyImmersiveMode()
         inputHandler.resetGamepadState()
         renderSurfaceManager.resyncAfterForeground()
@@ -140,6 +143,7 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.resetGamepadState()
         inputHandler.hideSoftKeyboard()
         performanceOverlayController.onPause()
+        DisplayPerformanceController.applySustainedPerformanceMode(this, false)
         applyBackgroundWindowState()
         super.onPause()
     }

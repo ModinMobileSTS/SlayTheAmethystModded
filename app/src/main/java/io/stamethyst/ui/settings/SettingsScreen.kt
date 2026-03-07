@@ -65,6 +65,7 @@ import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -190,12 +191,16 @@ private fun LauncherSettingsScreenContent(
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
 ) {
+    val modImportInteractionLocked = uiState.busyOperation == UiBusyOperation.MOD_IMPORT
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("设置") },
                 navigationIcon = {
-                    HapticIconButton(onClick = onGoBack) {
+                    HapticIconButton(
+                        onClick = onGoBack,
+                        enabled = !modImportInteractionLocked
+                    ) {
                         Icon(
                             imageVector = Icons.ArrowBack,
                             contentDescription = "返回",

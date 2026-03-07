@@ -22,6 +22,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
+import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -56,6 +57,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     data class UiState(
         val busy: Boolean = false,
+        val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
         val busyMessage: String? = null,
         val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
@@ -249,6 +251,7 @@ class SettingsScreenViewModel : ViewModel() {
                 host.runOnUiThread {
                     uiState = uiState.copy(
                         busy = if (clearBusy) false else uiState.busy,
+                        busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
                         playerName = playerName,
                         selectedRenderScale = renderScale,
@@ -632,63 +635,77 @@ class SettingsScreenViewModel : ViewModel() {
         uris: List<Uri>?,
         onCompleted: (() -> Unit)? = null
     ) {
-        if (uris.isNullOrEmpty()) {
+        if (uiState.busy || uris.isNullOrEmpty()) {
             return
         }
-        setBusy(true, "Importing selected mod jars...")
+        setBusy(
+            busy = true,
+            message = "Importing selected mod jars...",
+            operation = UiBusyOperation.MOD_IMPORT
+        )
         executor.execute {
-            val batchResult = SettingsFileService.importModJars(host, uris)
-            val importedCount = batchResult.importedCount
-            val failedCount = batchResult.failedCount
-            val blockedCount = batchResult.blockedCount
-            val compressedArchiveCount = batchResult.compressedArchiveCount
-            val firstError = batchResult.firstError
-            val blockedList = batchResult.blockedComponents
-            val compressedArchiveList = batchResult.compressedArchives
-            val patchedResults = batchResult.patchedResults
-            host.runOnUiThread {
-                if (blockedList.isNotEmpty()) {
-                    AlertDialog.Builder(host)
-                        .setTitle("禁止导入内置核心组件")
-                        .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                }
-                if (compressedArchiveList.isNotEmpty()) {
-                    showCompressedArchiveWarningDialog(host, compressedArchiveList)
-                }
-                if (patchedResults.isNotEmpty()) {
-                    showAtlasPatchSummaryDialog(host, patchedResults)
-                    showManifestRootPatchSummaryDialog(host, patchedResults)
-                }
-                when {
-                    importedCount > 0 && failedCount == 0 -> {
-                        Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
+            try {
+                val batchResult = SettingsFileService.importModJars(host, uris)
+                val importedCount = batchResult.importedCount
+                val failedCount = batchResult.failedCount
+                val blockedCount = batchResult.blockedCount
+                val compressedArchiveCount = batchResult.compressedArchiveCount
+                val firstError = batchResult.firstError
+                val blockedList = batchResult.blockedComponents
+                val compressedArchiveList = batchResult.compressedArchives
+                val patchedResults = batchResult.patchedResults
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (blockedList.isNotEmpty()) {
+                        AlertDialog.Builder(host)
+                            .setTitle("禁止导入内置核心组件")
+                            .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
                     }
+                    if (compressedArchiveList.isNotEmpty()) {
+                        showCompressedArchiveWarningDialog(host, compressedArchiveList)
+                    }
+                    if (patchedResults.isNotEmpty()) {
+                        showAtlasPatchSummaryDialog(host, patchedResults)
+                        showManifestRootPatchSummaryDialog(host, patchedResults)
+                    }
+                    when {
+                        importedCount > 0 && failedCount == 0 -> {
+                            Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
+                        }
 
-                    importedCount > 0 -> {
-                        Toast.makeText(
-                            host,
-                            "Imported $importedCount, failed $failedCount ($firstError)",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
+                        importedCount > 0 -> {
+                            Toast.makeText(
+                                host,
+                                "Imported $importedCount, failed $failedCount ($firstError)",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
 
-                    failedCount > 0 -> {
-                        Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
-                    }
+                        failedCount > 0 -> {
+                            Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
+                        }
 
-                    blockedCount > 0 -> {
-                        Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
-                    }
+                        blockedCount > 0 -> {
+                            Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
+                        }
 
-                    compressedArchiveCount > 0 -> {
-                        Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                        compressedArchiveCount > 0 -> {
+                            Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                }
-                refreshStatus(host)
-                onCompleted?.invoke()
+                    refreshStatus(host)
+                    onCompleted?.invoke()
 //                todo host.notifyMainDataChanged()
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    Toast.makeText(host, "Mod import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refreshStatus(host)
+                    onCompleted?.invoke()
+                }
             }
         }
     }
@@ -805,15 +822,21 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun setBusy(busy: Boolean, message: String?) {
+    private fun setBusy(
+        busy: Boolean,
+        message: String?,
+        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+    ) {
         uiState = if (busy) {
             uiState.copy(
                 busy = true,
+                busyOperation = operation,
                 busyMessage = message
             )
         } else {
             uiState.copy(
                 busy = false,
+                busyOperation = UiBusyOperation.NONE,
                 busyMessage = null
             )
         }

@@ -252,7 +252,10 @@ private fun MainTopBar(
                     contentDescription = stringResource(R.string.main_action_add_folder)
                 )
             }
-            IconButton(onClick = onOpenSettings) {
+            IconButton(
+                onClick = onOpenSettings,
+                enabled = controlsEnabled
+            ) {
                 Icon(
                     imageVector = Icons.Settings,
                     contentDescription = stringResource(R.string.main_open_settings)

@@ -25,6 +25,7 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.JvmLogShareService
 import io.stamethyst.ui.settings.ModImportResult
@@ -55,6 +56,7 @@ class MainScreenViewModel : ViewModel() {
     data class UiState(
         val initializing: Boolean = true,
         val busy: Boolean = false,
+        val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
         val busyMessage: String? = null,
         val statusSummary: String = "",
         val optionalMods: List<ModItemUi> = emptyList(),
@@ -572,58 +574,71 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy || uris.isNullOrEmpty()) {
             return
         }
-        setBusy(true, "Importing selected mod jars...")
+        setBusy(
+            busy = true,
+            message = "Importing selected mod jars...",
+            operation = UiBusyOperation.MOD_IMPORT
+        )
         executor.execute {
-            val batchResult = SettingsFileService.importModJars(host, uris)
-            val importedCount = batchResult.importedCount
-            val failedCount = batchResult.failedCount
-            val blockedCount = batchResult.blockedCount
-            val compressedArchiveCount = batchResult.compressedArchiveCount
-            val firstError = batchResult.firstError
-            val blockedList = batchResult.blockedComponents
-            val compressedArchiveList = batchResult.compressedArchives
-            val patchedResults = batchResult.patchedResults
-            host.runOnUiThread {
-                if (blockedList.isNotEmpty()) {
-                    AlertDialog.Builder(host)
-                        .setTitle("禁止导入内置核心组件")
-                        .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                }
-                if (compressedArchiveList.isNotEmpty()) {
-                    showCompressedArchiveWarningDialog(host, compressedArchiveList)
-                }
-                if (patchedResults.isNotEmpty()) {
-                    showAtlasPatchSummaryDialog(host, patchedResults)
-                    showManifestRootPatchSummaryDialog(host, patchedResults)
-                }
-                when {
-                    importedCount > 0 && failedCount == 0 -> {
-                        Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
+            try {
+                val batchResult = SettingsFileService.importModJars(host, uris)
+                val importedCount = batchResult.importedCount
+                val failedCount = batchResult.failedCount
+                val blockedCount = batchResult.blockedCount
+                val compressedArchiveCount = batchResult.compressedArchiveCount
+                val firstError = batchResult.firstError
+                val blockedList = batchResult.blockedComponents
+                val compressedArchiveList = batchResult.compressedArchives
+                val patchedResults = batchResult.patchedResults
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (blockedList.isNotEmpty()) {
+                        AlertDialog.Builder(host)
+                            .setTitle("禁止导入内置核心组件")
+                            .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
                     }
+                    if (compressedArchiveList.isNotEmpty()) {
+                        showCompressedArchiveWarningDialog(host, compressedArchiveList)
+                    }
+                    if (patchedResults.isNotEmpty()) {
+                        showAtlasPatchSummaryDialog(host, patchedResults)
+                        showManifestRootPatchSummaryDialog(host, patchedResults)
+                    }
+                    when {
+                        importedCount > 0 && failedCount == 0 -> {
+                            Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
+                        }
 
-                    importedCount > 0 -> {
-                        Toast.makeText(
-                            host,
-                            "Imported $importedCount, failed $failedCount ($firstError)",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
+                        importedCount > 0 -> {
+                            Toast.makeText(
+                                host,
+                                "Imported $importedCount, failed $failedCount ($firstError)",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
 
-                    failedCount > 0 -> {
-                        Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
-                    }
+                        failedCount > 0 -> {
+                            Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
+                        }
 
-                    blockedCount > 0 -> {
-                        Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
-                    }
+                        blockedCount > 0 -> {
+                            Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
+                        }
 
-                    compressedArchiveCount > 0 -> {
-                        Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                        compressedArchiveCount > 0 -> {
+                            Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                        }
                     }
+                    refresh(host)
                 }
-                refresh(host)
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    Toast.makeText(host, "Mod import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    refresh(host)
+                }
             }
         }
     }
@@ -1725,6 +1740,7 @@ class MainScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             initializing = false,
             busy = false,
+            busyOperation = UiBusyOperation.NONE,
             busyMessage = null,
             statusSummary = buildMainStatusSummary(
                 hasJar = hasJar,
@@ -1747,16 +1763,22 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun setBusy(busy: Boolean, message: String?) {
+    private fun setBusy(
+        busy: Boolean,
+        message: String?,
+        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+    ) {
         uiState = if (busy) {
             uiState.copy(
                 busy = true,
+                busyOperation = operation,
                 busyMessage = message,
                 controlsEnabled = false
             )
         } else {
             uiState.copy(
                 busy = false,
+                busyOperation = UiBusyOperation.NONE,
                 busyMessage = null,
                 controlsEnabled = true
             )
