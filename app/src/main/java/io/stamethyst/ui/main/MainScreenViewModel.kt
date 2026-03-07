@@ -124,6 +124,10 @@ class MainScreenViewModel : ViewModel() {
     var uiState by mutableStateOf(UiState())
         private set
 
+    private fun canEditMainScreenState(): Boolean {
+        return resolveControlsEnabled(uiState.busy, uiState.busyOperation)
+    }
+
     fun refresh(host: Activity) {
         val hasJar = RuntimePaths.importedStsJar(host).exists()
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
@@ -253,6 +257,7 @@ class MainScreenViewModel : ViewModel() {
             try {
                 moveFileReplacing(sourceFile, targetFile)
                 host.runOnUiThread {
+                    setBusy(false, null)
                     clearAssignmentForMod(mod)
                     if (!assignedFolderId.isNullOrBlank()) {
                         folderAssignments[targetFile.absolutePath] = assignedFolderId
@@ -263,6 +268,7 @@ class MainScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
+                    setBusy(false, null)
                     Toast.makeText(host, "重命名失败：${error.message}", Toast.LENGTH_LONG).show()
                     refresh(host)
                 }
@@ -286,7 +292,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun addFolder(host: Activity, name: String) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -303,7 +309,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun renameFolder(host: Activity, folderId: String, newName: String) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -335,7 +341,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun deleteFolder(host: Activity, folderId: String) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -355,7 +361,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun assignModToFolder(host: Activity, mod: ModItemUi, folderId: String) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -379,7 +385,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun moveModToUnassigned(host: Activity, mod: ModItemUi) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -392,7 +398,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -412,7 +418,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun setUnassignedSelected(host: Activity, selected: Boolean) {
-        if (uiState.busy) {
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -432,6 +438,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun toggleFolderCollapsed(host: Activity, folderId: String) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         if (modFolders.none { it.id == folderId }) {
             return
         }
@@ -439,6 +448,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun setFolderCollapsed(host: Activity, folderId: String, collapsed: Boolean) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         ensureFolderStateLoaded(host)
         if (modFolders.none { it.id == folderId }) {
             return
@@ -456,6 +468,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun setUnassignedCollapsed(host: Activity, collapsed: Boolean) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         ensureFolderStateLoaded(host)
         if (unassignedCollapsed == collapsed) {
             return
@@ -470,6 +485,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun setStatusSummaryCollapsed(host: Activity, collapsed: Boolean) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         ensureFolderStateLoaded(host)
         if (statusSummaryCollapsed == collapsed) {
             return
@@ -496,6 +514,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun moveFolderTokenToIndex(host: Activity, draggedFolderId: String, targetIndex: Int) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         ensureFolderStateLoaded(host)
         val tokens = buildFolderOrderTokens().toMutableList()
         val fromIndex = tokens.indexOf(draggedFolderId)
@@ -515,6 +536,12 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun collapseAllFoldersForDragWithSnapshot(host: Activity): FolderCollapseSnapshot {
+        if (!canEditMainScreenState()) {
+            return FolderCollapseSnapshot(
+                folderCollapsed = LinkedHashMap(folderCollapsed),
+                unassignedCollapsed = unassignedCollapsed
+            )
+        }
         ensureFolderStateLoaded(host)
         val snapshot = FolderCollapseSnapshot(
             folderCollapsed = LinkedHashMap(folderCollapsed),
@@ -531,6 +558,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun collapseAllFoldersForModDrag(host: Activity) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         ensureFolderStateLoaded(host)
         val collapsedAll = LinkedHashMap<String, Boolean>()
         modFolders.forEach { collapsedAll[it.id] = true }
@@ -542,6 +572,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun expandOnlySourceFolderAfterModDrag(host: Activity, folderTokenId: String) {
+        if (!canEditMainScreenState()) {
+            return
+        }
         ensureFolderStateLoaded(host)
         val collapsedAll = LinkedHashMap<String, Boolean>()
         modFolders.forEach { collapsedAll[it.id] = true }
@@ -563,6 +596,9 @@ class MainScreenViewModel : ViewModel() {
 
     fun restoreFolderCollapseSnapshot(host: Activity, snapshot: FolderCollapseSnapshot?) {
         if (snapshot == null) {
+            return
+        }
+        if (!canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -732,7 +768,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun onModChecked(host: Activity, mod: ModItemUi, enabled: Boolean) {
-        if (uiState.busy || mod.required) {
+        if (!canEditMainScreenState() || mod.required) {
             return
         }
         try {
@@ -811,6 +847,7 @@ class MainScreenViewModel : ViewModel() {
                     try {
                         val deleted = ModManager.deleteOptionalModByStoragePath(host, mod.storagePath)
                         host.runOnUiThread {
+                            setBusy(false, null)
                             clearPendingSelectionForMod(mod)
                             removeFolderAssignmentForDeletedMod(mod)
                             persistFolderState(host)
@@ -823,6 +860,7 @@ class MainScreenViewModel : ViewModel() {
                         }
                     } catch (error: Throwable) {
                         host.runOnUiThread {
+                            setBusy(false, null)
                             Toast.makeText(
                                 host,
                                 "删除模组失败：${error.message}",
@@ -1815,14 +1853,17 @@ class MainScreenViewModel : ViewModel() {
         hasBaseMod: Boolean,
         hasStsLib: Boolean
     ) {
+        val currentBusy = uiState.busy
+        val currentBusyOperation = uiState.busyOperation
+        val currentBusyMessage = uiState.busyMessage
         val optionalMods = resolveOptionalModsWithPendingSelection()
         val optionalTotal = optionalMods.size
         val optionalEnabled = optionalMods.count { it.enabled }
         uiState = uiState.copy(
             initializing = false,
-            busy = false,
-            busyOperation = UiBusyOperation.NONE,
-            busyMessage = null,
+            busy = currentBusy,
+            busyOperation = if (currentBusy) currentBusyOperation else UiBusyOperation.NONE,
+            busyMessage = if (currentBusy) currentBusyMessage else null,
             statusSummary = buildMainStatusSummary(
                 hasJar = hasJar,
                 hasMts = hasMts,
@@ -1832,7 +1873,7 @@ class MainScreenViewModel : ViewModel() {
                 optionalTotalCount = optionalTotal
             ),
             optionalMods = optionalMods,
-            controlsEnabled = true,
+            controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation),
             showModFileName = LauncherPreferences.readShowModFileName(host),
             modFolders = ArrayList(modFolders),
             folderAssignments = LinkedHashMap(folderAssignments),
@@ -1854,7 +1895,7 @@ class MainScreenViewModel : ViewModel() {
                 busy = true,
                 busyOperation = operation,
                 busyMessage = message,
-                controlsEnabled = false
+                controlsEnabled = resolveControlsEnabled(true, operation)
             )
         } else {
             uiState.copy(
@@ -1864,6 +1905,10 @@ class MainScreenViewModel : ViewModel() {
                 controlsEnabled = true
             )
         }
+    }
+
+    private fun resolveControlsEnabled(busy: Boolean, operation: UiBusyOperation): Boolean {
+        return !busy || operation == UiBusyOperation.MOD_IMPORT
     }
 
     companion object {

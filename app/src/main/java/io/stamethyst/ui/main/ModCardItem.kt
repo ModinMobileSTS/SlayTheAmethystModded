@@ -85,7 +85,9 @@ internal fun ModCard(
     isDraggedInOverlay: Boolean,
     showModFileName: Boolean,
     setExpanded: (Boolean) -> Unit,
-    controlsEnabled: Boolean,
+    selectionEnabled: Boolean,
+    fileActionsEnabled: Boolean,
+    dragEnabled: Boolean,
     callbacks: ModCardCallbacks
 ) {
     val context = LocalContext.current
@@ -101,7 +103,10 @@ internal fun ModCard(
 
     val dragHandleGestureModifier = Modifier
         .onGloballyPositioned { handleCoordinates = it }
-        .pointerInput(mod.storagePath) {
+        .pointerInput(mod.storagePath, dragEnabled) {
+            if (!dragEnabled) {
+                return@pointerInput
+            }
             detectDragGestures(
                 onDragStart = { start ->
                     val pointerPosition = handleCoordinates?.localToWindow(start)
@@ -184,14 +189,14 @@ internal fun ModCard(
             isExpanded = isExpanded,
             showModFileName = showModFileName,
             showActionsButton = true,
-            actionsEnabled = controlsEnabled,
+            actionsEnabled = fileActionsEnabled,
             onActionsClick = {
-                if (controlsEnabled) {
+                if (fileActionsEnabled) {
                     showActionsDialog = true
                 }
             },
             headerTrailing = {
-                if (controlsEnabled) {
+                if (selectionEnabled) {
                     Checkbox(
                         checked = mod.enabled,
                         onCheckedChange = { checked ->
@@ -215,7 +220,11 @@ internal fun ModCard(
                     Icon(
                         painter = painterResource(R.drawable.ic_drag_handle),
                         contentDescription = stringResource(R.string.main_mod_drag),
-                        tint = MaterialTheme.colorScheme.outline
+                        tint = if (dragEnabled) {
+                            MaterialTheme.colorScheme.outline
+                        } else {
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
+                        }
                     )
                 }
             }
@@ -224,7 +233,7 @@ internal fun ModCard(
 
     ModActionsDialog(
         visible = showActionsDialog,
-        controlsEnabled = controlsEnabled,
+        controlsEnabled = fileActionsEnabled,
         showModFileName = showModFileName,
         onDismiss = { showActionsDialog = false },
         onExport = { callbacks.onExportMod(mod) },
@@ -239,7 +248,7 @@ internal fun ModCard(
     RenameModFileDialog(
         visible = showRenameDialog,
         value = renameInput,
-        controlsEnabled = controlsEnabled,
+        controlsEnabled = fileActionsEnabled,
         onValueChange = { renameInput = it },
         onDismiss = { showRenameDialog = false },
         onConfirm = {

@@ -28,6 +28,7 @@ import sh.calvin.reorderable.ReorderableCollectionItemScope
 @Composable
 internal fun FolderOrderHandle(
     reorderScope: ReorderableCollectionItemScope,
+    enabled: Boolean,
     folderId: String,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
@@ -39,7 +40,7 @@ internal fun FolderOrderHandle(
     var menuExpanded by remember(folderId) { mutableStateOf(false) }
     val handleModifier = with(reorderScope) {
         Modifier.draggableHandle(
-            enabled = true,
+            enabled = enabled,
             interactionSource = null,
             onDragStarted = {
                 onDragStarted()
@@ -50,7 +51,10 @@ internal fun FolderOrderHandle(
         )
     }
     Box(modifier = handleModifier) {
-        IconButton(onClick = { menuExpanded = true }) {
+        IconButton(
+            enabled = enabled,
+            onClick = { menuExpanded = true }
+        ) {
             Icon(
                 painter = painterResource(R.drawable.ic_drag_handle),
                 contentDescription = stringResource(R.string.main_folder_reorder)
@@ -62,7 +66,7 @@ internal fun FolderOrderHandle(
         ) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.main_folder_move_up)) },
-                enabled = canMoveUp,
+                enabled = enabled && canMoveUp,
                 onClick = {
                     menuExpanded = false
                     onMoveUp()
@@ -70,7 +74,7 @@ internal fun FolderOrderHandle(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.main_folder_move_down)) },
-                enabled = canMoveDown,
+                enabled = enabled && canMoveDown,
                 onClick = {
                     menuExpanded = false
                     onMoveDown()

@@ -82,6 +82,8 @@ internal fun ModFolderSection(
     val folderTargetIds = remember(folders, unassignedFolderOrder) {
         buildFolderTargetIds(folders = folders, unassignedFolderOrder = unassignedFolderOrder)
     }
+    val organizationControlsEnabled = uiState.controlsEnabled && hostAvailable
+    val modFileActionsEnabled = !uiState.busy && hostAvailable
     val interactionState = rememberModFolderSectionInteractionState(folderTargetIds = folderTargetIds)
     val filterText = interactionState.filterText
     val filteredMods = remember(mods, filterText) {
@@ -394,6 +396,7 @@ internal fun ModFolderSection(
                             ) {
                                 FolderOrderHandle(
                                     reorderScope = reorderableItemScope,
+                                    enabled = organizationControlsEnabled,
                                     folderId = folderTokenId,
                                     canMoveUp = (folderDisplayIndexMap[folderTokenId] ?: 0) > 0,
                                     canMoveDown = (folderDisplayIndexMap[folderTokenId] ?: 0) < displayFolderTargetIds.lastIndex,
@@ -436,9 +439,9 @@ internal fun ModFolderSection(
                                 )
                                 TriStateCheckbox(
                                     state = folderUiModel.toggleState,
-                                    enabled = folderUiModel.mods.isNotEmpty() && hostAvailable,
+                                    enabled = folderUiModel.mods.isNotEmpty() && organizationControlsEnabled,
                                     onClick = {
-                                        if (hostAvailable) {
+                                        if (organizationControlsEnabled) {
                                             if (folderUiModel.isUnassigned) {
                                                 callbacks.onSetUnassignedSelected(folderUiModel.toggleState != ToggleableState.On)
                                             } else {
@@ -463,6 +466,7 @@ internal fun ModFolderSection(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 IconButton(
+                                    enabled = uiState.controlsEnabled,
                                     onClick = {
                                         if (folderUiModel.isUnassigned) {
                                             callbacks.onToggleUnassignedCollapsed()
@@ -481,7 +485,10 @@ internal fun ModFolderSection(
                                     )
                                 }
                                 Box {
-                                    IconButton(onClick = { manageMenuExpanded = true }) {
+                                    IconButton(
+                                        enabled = organizationControlsEnabled,
+                                        onClick = { manageMenuExpanded = true }
+                                    ) {
                                         Icon(
                                             painter = painterResource(R.drawable.ic_more_vert),
                                             contentDescription = stringResource(R.string.main_folder_manage)
@@ -493,7 +500,7 @@ internal fun ModFolderSection(
                                     ) {
                                         DropdownMenuItem(
                                             text = { Text(stringResource(R.string.main_folder_rename)) },
-                                            enabled = hostAvailable,
+                                            enabled = organizationControlsEnabled,
                                             onClick = {
                                                 manageMenuExpanded = false
                                                 renameDialog = true
@@ -502,7 +509,7 @@ internal fun ModFolderSection(
                                         if (!folderUiModel.isUnassigned) {
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.main_folder_delete)) },
-                                                enabled = hostAvailable,
+                                                enabled = organizationControlsEnabled,
                                                 onClick = {
                                                     manageMenuExpanded = false
                                                     callbacks.onDeleteFolder(folderTokenId)
@@ -549,7 +556,9 @@ internal fun ModFolderSection(
                                                     isDraggedInOverlay = interactionState.activeDragModStoragePath == mod.storagePath,
                                                     showModFileName = showModFileName,
                                                     setExpanded = { interactionState.expandedCards[mod.storagePath] = it },
-                                                    controlsEnabled = uiState.controlsEnabled && mod.installed && hostAvailable,
+                                                    selectionEnabled = organizationControlsEnabled && mod.installed,
+                                                    fileActionsEnabled = modFileActionsEnabled && mod.installed,
+                                                    dragEnabled = organizationControlsEnabled && mod.installed,
                                                     callbacks = ModCardCallbacks(
                                                         onToggleMod = callbacks.onToggleMod,
                                                         onDeleteMod = callbacks.onDeleteMod,

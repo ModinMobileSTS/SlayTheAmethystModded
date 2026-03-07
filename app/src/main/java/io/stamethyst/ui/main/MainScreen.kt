@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.Settings
 import kotlinx.coroutines.delay
 
@@ -187,7 +188,8 @@ private fun LauncherMainScreenContent(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             MainTopBar(
-                controlsEnabled = uiState.controlsEnabled,
+                folderControlsEnabled = uiState.controlsEnabled,
+                settingsEnabled = !uiState.busy,
                 hostAvailable = actions.isHostAvailable,
                 onAddFolderClick = { showCreateFolderDialog = true },
                 onOpenSettings = onOpenSettings
@@ -196,7 +198,8 @@ private fun LauncherMainScreenContent(
         floatingActionButtonPosition = FabPosition.Center,
         floatingActionButton = {
             MainBottomFixedActions(
-                controlsEnabled = uiState.controlsEnabled,
+                importEnabled = !uiState.busy,
+                launchEnabled = !uiState.busy,
                 onImportMods = actions.onImportMods,
                 onLaunch = actions.onLaunch,
                 onMeasured = { actionBarHeightPx = it }
@@ -210,7 +213,7 @@ private fun LauncherMainScreenContent(
                 .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (uiState.busy) {
+            if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 uiState.busyMessage?.let {
                     Text(text = it, style = MaterialTheme.typography.bodyMedium)
@@ -235,7 +238,8 @@ private fun LauncherMainScreenContent(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun MainTopBar(
-    controlsEnabled: Boolean,
+    folderControlsEnabled: Boolean,
+    settingsEnabled: Boolean,
     hostAvailable: Boolean,
     onAddFolderClick: () -> Unit,
     onOpenSettings: () -> Unit
@@ -245,7 +249,7 @@ private fun MainTopBar(
         actions = {
             IconButton(
                 onClick = onAddFolderClick,
-                enabled = controlsEnabled && hostAvailable
+                enabled = folderControlsEnabled && hostAvailable
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_folder_add),
@@ -254,7 +258,7 @@ private fun MainTopBar(
             }
             IconButton(
                 onClick = onOpenSettings,
-                enabled = controlsEnabled
+                enabled = settingsEnabled
             ) {
                 Icon(
                     imageVector = Icons.Settings,
@@ -267,7 +271,8 @@ private fun MainTopBar(
 
 @Composable
 private fun MainBottomFixedActions(
-    controlsEnabled: Boolean,
+    importEnabled: Boolean,
+    launchEnabled: Boolean,
     onImportMods: () -> Unit,
     onLaunch: () -> Unit,
     onMeasured: (Int) -> Unit
@@ -293,7 +298,7 @@ private fun MainBottomFixedActions(
         Box(modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = onImportMods,
-                enabled = controlsEnabled,
+                enabled = importEnabled,
                 shape = buttonShape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -318,7 +323,7 @@ private fun MainBottomFixedActions(
             }
             Button(
                 onClick = onLaunch,
-                enabled = controlsEnabled,
+                enabled = launchEnabled,
                 shape = buttonShape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
