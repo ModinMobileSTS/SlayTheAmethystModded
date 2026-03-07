@@ -14,6 +14,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
+import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.config.LauncherConfig
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
@@ -86,6 +87,8 @@ class RenderSurfaceManager(
                     applyTextureBufferSize(surface)
                     releaseTextureSurfaceIfNeeded()
                     textureSurface = Surface(surface)
+                    reapplyWindowFrameRateHint()
+                    applyRenderSurfaceFrameRateHint(textureSurface)
                     JREUtils.setupBridgeWindow(textureSurface)
                     bridgeSurfaceReady = true
                     updateWindowSize()
@@ -95,6 +98,8 @@ class RenderSurfaceManager(
                 override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
                     rememberPhysicalSize(width, height)
                     applyTextureBufferSize(surface)
+                    reapplyWindowFrameRateHint()
+                    applyRenderSurfaceFrameRateHint(textureSurface)
                     updateWindowSize()
                     onSurfaceReady()
                 }
@@ -138,7 +143,8 @@ class RenderSurfaceManager(
                     surfaceBufferWidth = width.coerceAtLeast(1)
                     surfaceBufferHeight = height.coerceAtLeast(1)
                     rememberPhysicalSizeFromView()
-                    applySurfaceFrameRateHint(holder.surface)
+                    reapplyWindowFrameRateHint()
+                    applyRenderSurfaceFrameRateHint(holder.surface)
                     updateWindowSize()
                     onSurfaceReady()
                 }
@@ -168,6 +174,9 @@ class RenderSurfaceManager(
             rememberPhysicalSize(width, height)
             if (!useTextureViewSurface) {
                 reapplySurfaceViewConfiguration()
+            } else {
+                reapplyWindowFrameRateHint()
+                applyRenderSurfaceFrameRateHint(textureSurface)
             }
             updateWindowSize()
         }
@@ -199,6 +208,8 @@ class RenderSurfaceManager(
     fun resyncAfterForeground() {
         if (useTextureViewSurface) {
             reapplyTextureBufferSizeFromView()
+            reapplyWindowFrameRateHint()
+            applyRenderSurfaceFrameRateHint(textureSurface)
         } else {
             reapplySurfaceViewConfiguration()
         }
@@ -210,6 +221,8 @@ class RenderSurfaceManager(
             if (activity.isFinishing || activity.isDestroyed) return@post
             if (useTextureViewSurface) {
                 reapplyTextureBufferSizeFromView()
+                reapplyWindowFrameRateHint()
+                applyRenderSurfaceFrameRateHint(textureSurface)
             } else {
                 reapplySurfaceViewConfiguration()
             }
@@ -271,7 +284,8 @@ class RenderSurfaceManager(
     private fun reapplySurfaceViewConfiguration(holder: SurfaceHolder? = surfaceView?.holder) {
         val targetHolder = holder ?: return
         applySurfaceViewBufferSize(targetHolder)
-        applySurfaceFrameRateHint(targetHolder.surface)
+        reapplyWindowFrameRateHint()
+        applyRenderSurfaceFrameRateHint(targetHolder.surface)
     }
 
     private fun applySurfaceViewBufferSize(holder: SurfaceHolder) {
@@ -286,7 +300,14 @@ class RenderSurfaceManager(
         } catch (_: Throwable) {}
     }
 
-    private fun applySurfaceFrameRateHint(surface: Surface?) {
+    private fun reapplyWindowFrameRateHint() {
+        if (!::renderView.isInitialized) {
+            return
+        }
+        DisplayPerformanceController.applyWindowFrameRateHint(activity, renderView, targetFps)
+    }
+
+    private fun applyRenderSurfaceFrameRateHint(surface: Surface?) {
         if (surface == null || !surface.isValid || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return
         }
@@ -295,13 +316,13 @@ class RenderSurfaceManager(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 surface.setFrameRate(
                     preferredFrameRate,
-                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
                     Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
                 )
             } else {
                 surface.setFrameRate(
                     preferredFrameRate,
-                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE
+                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
                 )
             }
         } catch (_: Throwable) {}

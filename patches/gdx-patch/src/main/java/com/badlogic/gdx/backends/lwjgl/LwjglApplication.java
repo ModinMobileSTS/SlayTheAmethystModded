@@ -69,6 +69,7 @@ public class LwjglApplication implements Application {
 	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
+	private static final int VSYNC_SOFTWARE_SYNC_MARGIN_FPS = 1;
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
 		{"glBindFramebufferEXT", "glBindFramebuffer"},
 		{"glDeleteFramebuffersEXT", "glDeleteFramebuffers"},
@@ -282,6 +283,38 @@ public class LwjglApplication implements Application {
 			}
 		};
 		mainLoopThread.start();
+	}
+
+	private boolean shouldUseSoftwareSync (boolean renderedFrame, boolean isActive, int frameRate) {
+		if (frameRate <= 0) return false;
+		if (!renderedFrame) return true;
+		if (!isActive) return true;
+		if (!graphics.vsync) return true;
+
+		int refreshRate = resolveActiveRefreshRate();
+		if (refreshRate <= 0) return true;
+
+		// Avoid double-throttling when swap interval is already pacing us near the active refresh rate.
+		return frameRate + VSYNC_SOFTWARE_SYNC_MARGIN_FPS < refreshRate;
+	}
+
+	private int resolveActiveRefreshRate () {
+		try {
+			org.lwjgl.opengl.DisplayMode currentMode = Display.getDisplayMode();
+			if (currentMode != null && currentMode.getFrequency() > 0) {
+				return currentMode.getFrequency();
+			}
+		} catch (Throwable ignored) {
+		}
+
+		try {
+			com.badlogic.gdx.Graphics.DisplayMode desktopMode = graphics.getDisplayMode();
+			if (desktopMode != null && desktopMode.refreshRate > 0) {
+				return desktopMode.refreshRate;
+			}
+		} catch (Throwable ignored) {
+		}
+		return -1;
 	}
 
 	private int queryNativeContextGeneration () {
@@ -1252,6 +1285,7 @@ public class LwjglApplication implements Application {
 				shouldRender = false;
 			}
 			int frameRate = isActive ? graphics.config.foregroundFPS : graphics.config.backgroundFPS;
+			boolean renderedFrame = false;
 			if (shouldRender) {
 				if (!firstRenderFrameLogged) {
 					boolean isCurrent = false;
@@ -1296,13 +1330,14 @@ public class LwjglApplication implements Application {
 					org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT);
 				}
 				Display.update(false);
+				renderedFrame = true;
 			} else {
 				// Sleeps to avoid wasting CPU in an empty loop.
 				if (frameRate == -1) frameRate = 10;
 				if (frameRate == 0) frameRate = graphics.config.backgroundFPS;
 				if (frameRate == 0) frameRate = 30;
 			}
-			if (frameRate > 0) Display.sync(frameRate);
+			if (shouldUseSoftwareSync(renderedFrame, isActive, frameRate)) Display.sync(frameRate);
 		}
 
 		synchronized (lifecycleListeners) {
