@@ -14,6 +14,7 @@ import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
+import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -314,6 +315,11 @@ internal object SettingsFileService {
             if (blockedComponent != null) {
                 throw ReservedModImportException(blockedComponent)
             }
+            val launchModId = try {
+                MtsLaunchManifestValidator.resolveLaunchModId(tempFile).trim()
+            } catch (_: Throwable) {
+                ""
+            }
 
             var patchedAtlasEntries = 0
             var patchedFilterLines = 0
@@ -322,6 +328,12 @@ internal object SettingsFileService {
                 patchedAtlasEntries = patchResult.patchedAtlasEntries
                 patchedFilterLines = patchResult.patchedFilterLines
             }
+            ModManager.removeExistingOptionalModsForImport(
+                context = host,
+                normalizedModId = modId,
+                launchModId = launchModId,
+                excludedPath = tempFile.absolutePath
+            )
             val requestedFileName = if (displayName.isNotBlank()) displayName else "$modId.jar"
             val targetFile = ModManager.resolveStorageFileForImportedMod(host, requestedFileName)
             moveFileReplacing(tempFile, targetFile)

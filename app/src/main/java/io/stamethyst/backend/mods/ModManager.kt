@@ -12,6 +12,7 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
+import java.util.ArrayList
 import java.util.HashSet
 import java.util.LinkedHashSet
 import java.util.Locale
@@ -48,6 +49,14 @@ object ModManager {
         val normalizedModId: String,
         val rawModId: String
     )
+
+    class LaunchIdConflict(
+        @JvmField val launchModId: String,
+        jarFiles: List<File>
+    ) {
+        @JvmField
+        val jarFiles: List<File> = ArrayList(jarFiles)
+    }
 
     @JvmStatic
     fun normalizeModId(modId: String?): String {
@@ -92,6 +101,94 @@ object ModManager {
         val modsDir = RuntimePaths.modsDir(context)
         val preferredName = sanitizeImportedJarFileName(requestedFileName)
         return buildUniqueImportTarget(modsDir, preferredName)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun removeExistingOptionalModsForImport(
+        context: Context,
+        normalizedModId: String,
+        launchModId: String?,
+        excludedPath: String? = null
+    ) {
+        val targetNormalizedModId = normalizeModId(normalizedModId)
+        val targetLaunchModId = launchModId?.trim().orEmpty()
+        val excludedAbsolutePath = excludedPath?.trim().orEmpty()
+        if (targetNormalizedModId.isEmpty() && targetLaunchModId.isEmpty()) {
+            return
+        }
+
+        val rawSelection = readEnabledOptionalModKeysSafely(context)
+        val optionalModFiles = findOptionalModFiles(context)
+        val normalizedSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
+        var selectionChanged = rawSelection != normalizedSelection
+        var deletedAny = false
+
+        listJarFilesInModsDir(context).forEach { file ->
+            if (excludedAbsolutePath.isNotEmpty() && file.absolutePath == excludedAbsolutePath) {
+                return@forEach
+            }
+            if (isReservedJarName(file.name)) {
+                return@forEach
+            }
+            if (!shouldReplaceImportedModFile(file, targetNormalizedModId, targetLaunchModId)) {
+                return@forEach
+            }
+            val storageKey = resolveOptionalStorageKey(file)
+            if (normalizedSelection.remove(storageKey)) {
+                selectionChanged = true
+            }
+            if (!file.delete()) {
+                throw IOException("Failed to delete mod file: ${file.absolutePath}")
+            }
+            deletedAny = true
+        }
+
+        if (deletedAny || selectionChanged) {
+            writeEnabledOptionalModKeys(context, normalizedSelection)
+        }
+    }
+
+    @JvmStatic
+    fun findModsDirLaunchIdConflicts(context: Context, launchModIds: Collection<String>): List<LaunchIdConflict> {
+        val requestedIds: MutableSet<String> = LinkedHashSet()
+        launchModIds.forEach { launchModId ->
+            val value = launchModId.trim()
+            if (value.isNotEmpty()) {
+                requestedIds.add(value)
+            }
+        }
+        if (requestedIds.isEmpty()) {
+            return emptyList()
+        }
+
+        val filesByLaunchId: MutableMap<String, MutableList<File>> = LinkedHashMap()
+        listJarFilesInModsDir(context).forEach { file ->
+            val launchModId = try {
+                MtsLaunchManifestValidator.resolveLaunchModId(file).trim()
+            } catch (_: Throwable) {
+                return@forEach
+            }
+            if (launchModId.isEmpty() || !requestedIds.contains(launchModId)) {
+                return@forEach
+            }
+            filesByLaunchId.getOrPut(launchModId) { ArrayList() }.add(file)
+        }
+
+        val conflicts = ArrayList<LaunchIdConflict>()
+        requestedIds.forEach { launchModId ->
+            val files = filesByLaunchId[launchModId] ?: return@forEach
+            if (files.size <= 1) {
+                return@forEach
+            }
+            conflicts.add(
+                LaunchIdConflict(
+                    launchModId = launchModId,
+                    jarFiles = files.sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
+                )
+            )
+        }
+        return conflicts
     }
 
     @JvmStatic
@@ -271,9 +368,9 @@ object ModManager {
             if (!enabledSelection.contains(entry.storageKey)) {
                 continue
             }
-            val rawModId = entry.rawModId.trim()
-            if (rawModId.isNotEmpty()) {
-                launchModIds.add(rawModId)
+            val launchModId = MtsLaunchManifestValidator.resolveLaunchModId(entry.jarFile).trim()
+            if (launchModId.isNotEmpty()) {
+                launchModIds.add(launchModId)
             }
         }
         return launchModIds
@@ -387,6 +484,17 @@ object ModManager {
         return "basemod.jar" == normalized || "stslib.jar" == normalized
     }
 
+    private fun listJarFilesInModsDir(context: Context): List<File> {
+        val modsDir = RuntimePaths.modsDir(context)
+        val files = modsDir.listFiles() ?: return emptyList()
+        return files
+            .asSequence()
+            .filter { it.isFile }
+            .filter { it.name.lowercase(Locale.ROOT).endsWith(".jar") }
+            .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
+            .toList()
+    }
+
     private fun readEnabledOptionalModKeysSafely(context: Context): MutableSet<String> {
         return try {
             readEnabledOptionalModKeys(context)
@@ -493,6 +601,35 @@ object ModManager {
             return trimmed
         }
         return trimToEmpty(fallback)
+    }
+
+    private fun shouldReplaceImportedModFile(
+        file: File,
+        normalizedModId: String,
+        launchModId: String
+    ): Boolean {
+        if (!file.isFile) {
+            return false
+        }
+        if (normalizedModId.isNotEmpty()) {
+            val existingNormalized = try {
+                normalizeModId(resolveRawModId(file))
+            } catch (_: Throwable) {
+                ""
+            }
+            if (existingNormalized == normalizedModId) {
+                return true
+            }
+        }
+        if (launchModId.isEmpty()) {
+            return false
+        }
+        val existingLaunchModId = try {
+            MtsLaunchManifestValidator.resolveLaunchModId(file).trim()
+        } catch (_: Throwable) {
+            ""
+        }
+        return existingLaunchModId == launchModId
     }
 
     @Throws(IOException::class)
