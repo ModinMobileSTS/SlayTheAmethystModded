@@ -91,6 +91,9 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow
         nextWindow = ANativeWindow_fromSurface(env, surface);
     }
     pojav_environ->pojavWindow = nextWindow;
+    if (previousWindow != nextWindow) {
+        pojav_reset_window_geometry_cache(pojav_environ);
+    }
     if (previousWindow != NULL) {
         ANativeWindow_release(previousWindow);
     }
@@ -104,6 +107,7 @@ JNIEXPORT void JNICALL
 Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(ABI_COMPAT JNIEnv *env, ABI_COMPAT jclass clazz) {
     ANativeWindow* window = pojav_environ->pojavWindow;
     pojav_environ->pojavWindow = NULL;
+    pojav_reset_window_geometry_cache(pojav_environ);
     if (br_setup_window != NULL) {
         // Notify renderer bridge that the window is gone so it can switch to pbuffer early.
         br_setup_window();
@@ -262,15 +266,37 @@ EXTERNAL_API int pojavInit() {
     if (isKopperRenderer) {
         printf("EGLBridge: skip ANativeWindow_setBuffersGeometry for Kopper renderer\n");
     } else {
-        int geometryResult = ANativeWindow_setBuffersGeometry(
+        const int geometryWidth = pojav_environ->savedWidth;
+        const int geometryHeight = pojav_environ->savedHeight;
+        const int geometryFormat = AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM;
+        if (pojav_window_geometry_matches(
+                pojav_environ,
                 window,
-                pojav_environ->savedWidth,
-                pojav_environ->savedHeight,
-                AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
-        );
-        if (geometryResult != 0) {
-            printf("EGLBridge: ANativeWindow_setBuffersGeometry(%dx%d) failed: %d\n",
-                   pojav_environ->savedWidth, pojav_environ->savedHeight, geometryResult);
+                geometryWidth,
+                geometryHeight,
+                geometryFormat
+        )) {
+            printf("EGLBridge: skip duplicate geometry %dx%d fmt=%d\n",
+                   geometryWidth, geometryHeight, geometryFormat);
+        } else {
+            int geometryResult = ANativeWindow_setBuffersGeometry(
+                    window,
+                    geometryWidth,
+                    geometryHeight,
+                    geometryFormat
+            );
+            if (geometryResult != 0) {
+                printf("EGLBridge: ANativeWindow_setBuffersGeometry(%dx%d) failed: %d\n",
+                       geometryWidth, geometryHeight, geometryResult);
+            } else {
+                pojav_record_window_geometry(
+                        pojav_environ,
+                        window,
+                        geometryWidth,
+                        geometryHeight,
+                        geometryFormat
+                );
+            }
         }
     }
     updateMonitorSize(pojav_environ->savedWidth, pojav_environ->savedHeight);

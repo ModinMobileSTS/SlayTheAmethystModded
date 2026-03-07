@@ -9,10 +9,32 @@ import android.view.View
 import kotlin.math.abs
 
 object DisplayPerformanceController {
-    private const val REFRESH_RATE_TOLERANCE = 0.6f
+    internal const val REFRESH_RATE_TOLERANCE = 0.6f
 
-    fun applyWindowFrameRateHint(activity: Activity, anchorView: View?, targetFps: Int) {
-        val preference = resolveFrameRatePreference(activity, anchorView, targetFps) ?: return
+    internal data class DisplayModeSpec(
+        val refreshRate: Float,
+        val modeId: Int,
+        val physicalWidth: Int,
+        val physicalHeight: Int
+    )
+
+    internal data class FrameRatePreference(
+        val refreshRate: Float,
+        val modeId: Int
+    )
+
+    internal fun resolveWindowFrameRatePreference(
+        activity: Activity,
+        anchorView: View?,
+        targetFps: Int
+    ): FrameRatePreference? {
+        return resolveFrameRatePreference(activity, anchorView, targetFps)
+    }
+
+    internal fun applyWindowFrameRateHint(
+        activity: Activity,
+        preference: FrameRatePreference
+    ): Boolean {
         val attributes = activity.window.attributes
         val refreshRateChanged = abs(attributes.preferredRefreshRate - preference.refreshRate) > 0.01f
         val modeChanged = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -21,13 +43,14 @@ object DisplayPerformanceController {
             false
         }
         if (!refreshRateChanged && !modeChanged) {
-            return
+            return false
         }
         attributes.preferredRefreshRate = preference.refreshRate
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             attributes.preferredDisplayModeId = preference.modeId
         }
         activity.window.attributes = attributes
+        return true
     }
 
     fun applySustainedPerformanceMode(activity: Activity, enabled: Boolean) {
@@ -60,7 +83,24 @@ object DisplayPerformanceController {
                         mode.physicalHeight == currentMode.physicalHeight
                 }
                 .ifEmpty { display.supportedModes.toList() }
-            val preferredMode = choosePreferredMode(candidateModes, targetFps) ?: currentMode
+                .map { mode ->
+                    DisplayModeSpec(
+                        refreshRate = mode.refreshRate,
+                        modeId = mode.modeId,
+                        physicalWidth = mode.physicalWidth,
+                        physicalHeight = mode.physicalHeight
+                    )
+                }
+            val preferredMode = choosePreferredMode(
+                modes = candidateModes,
+                currentMode = DisplayModeSpec(
+                    refreshRate = currentMode.refreshRate,
+                    modeId = currentMode.modeId,
+                    physicalWidth = currentMode.physicalWidth,
+                    physicalHeight = currentMode.physicalHeight
+                ),
+                targetFps = targetFps
+            ) ?: return null
             return FrameRatePreference(preferredMode.refreshRate, preferredMode.modeId)
         }
         val refreshRate = display.refreshRate
@@ -83,12 +123,13 @@ object DisplayPerformanceController {
         return displayManager.getDisplay(Display.DEFAULT_DISPLAY)
     }
 
-    private fun choosePreferredMode(
-        modes: List<Display.Mode>,
+    internal fun choosePreferredMode(
+        modes: List<DisplayModeSpec>,
+        currentMode: DisplayModeSpec?,
         targetFps: Int
-    ): Display.Mode? {
+    ): DisplayModeSpec? {
         if (modes.isEmpty()) {
-            return null
+            return currentMode
         }
         val targetRefreshRate = targetFps.toFloat()
         val exactMatch = modes.firstOrNull { mode ->
@@ -97,19 +138,6 @@ object DisplayPerformanceController {
         if (exactMatch != null) {
             return exactMatch
         }
-        val aboveTarget = modes
-            .filter { mode -> mode.refreshRate > targetRefreshRate + REFRESH_RATE_TOLERANCE }
-            .minByOrNull { mode -> mode.refreshRate }
-        if (aboveTarget != null) {
-            return aboveTarget
-        }
-        return modes
-            .filter { mode -> mode.refreshRate > 0f }
-            .maxByOrNull { mode -> mode.refreshRate }
+        return currentMode
     }
-
-    private data class FrameRatePreference(
-        val refreshRate: Float,
-        val modeId: Int
-    )
 }

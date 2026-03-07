@@ -312,19 +312,42 @@ void gl_swap_surface(gl_render_window_t* bundle) {
                 geometryHeight = pojav_environ->savedHeight;
             }
         }
-        int geometryResult = ANativeWindow_setBuffersGeometry(
-            bundle->nativeSurface,
-            geometryWidth,
-            geometryHeight,
-            bundle->format
-        );
-        if (geometryResult != 0) {
-            printf(
-                "GLBridgeDiag: ANativeWindow_setBuffersGeometry(%d,%d) failed: %d\n",
+        if (pojav_window_geometry_matches(
+                pojav_environ,
+                bundle->nativeSurface,
                 geometryWidth,
                 geometryHeight,
-                geometryResult
+                bundle->format
+        )) {
+            printf(
+                "GLBridgeDiag: skip duplicate geometry %d,%d fmt=%d\n",
+                geometryWidth,
+                geometryHeight,
+                bundle->format
             );
+        } else {
+            int geometryResult = ANativeWindow_setBuffersGeometry(
+                bundle->nativeSurface,
+                geometryWidth,
+                geometryHeight,
+                bundle->format
+            );
+            if (geometryResult != 0) {
+                printf(
+                    "GLBridgeDiag: ANativeWindow_setBuffersGeometry(%d,%d) failed: %d\n",
+                    geometryWidth,
+                    geometryHeight,
+                    geometryResult
+                );
+            } else {
+                pojav_record_window_geometry(
+                    pojav_environ,
+                    bundle->nativeSurface,
+                    geometryWidth,
+                    geometryHeight,
+                    bundle->format
+                );
+            }
         }
         bundle->surface = eglCreateWindowSurface_p(g_EglDisplay, bundle->config, bundle->nativeSurface, NULL);
         printf("GLBridgeDiag: created WINDOW surface=%p native=%p\n", bundle->surface, bundle->nativeSurface);
