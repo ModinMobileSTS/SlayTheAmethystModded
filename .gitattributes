@@ -2,5 +2,10 @@
 # This repository reuses native code from upstream projects (see README credits).
 app/src/main/jni/** linguist-vendored
 
+# Windows batch files must use CRLF so cmd.exe parses them correctly.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
 # If you add your own native code later, un-vendor it with a more specific rule:
 # app/src/main/jni/my_native/** -linguist-vendored

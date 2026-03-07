@@ -96,19 +96,39 @@ Token permissions:
 
 ## 5. Trigger a Release
 
+Recommended local release flow:
+
+```bash
+bash scripts/prepare-release.sh
+```
+
+```bat
+scripts\prepare-release.bat
+```
+
+What the script does:
+- Read `application.version.name` from `gradle.properties`.
+- Ask whether to release `v<version>`.
+- Create `docs/release/note/v<version>.md` with `新特性` and `修复` sections if it does not already exist.
+- Wait for you to finish editing the release note.
+- Commit only the release note and `gradle.properties` when it has local changes.
+- Create and push annotated tag `v<version>`.
+
+Notes:
+- The script intentionally does not include unrelated working tree changes in the release commit.
+- On Windows, run it from Git Bash or another Bash environment.
+- On Windows Command Prompt or PowerShell, you can use `scripts\prepare-release.bat`.
+
 Tag-based release (publishes GitHub Release automatically):
 
 ```bash
-git checkout main
-git pull --ff-only origin main
-git tag -a v1.0.1 HEAD^ -m "Release v1.0.0"  
-git push origin v1.0.0
+bash scripts/prepare-release.sh
 ```
 
 Behavior:
 - Workflow builds signed APK.
 - Workflow uploads artifact to Actions run.
-- Workflow creates or updates GitHub Release with tag `v0.0.13` and uploads APK.
+- Workflow creates or updates GitHub Release with tag `v*` and uploads APK.
 
 Manual run:
 - `workflow_dispatch` builds APK and uploads run artifact.
