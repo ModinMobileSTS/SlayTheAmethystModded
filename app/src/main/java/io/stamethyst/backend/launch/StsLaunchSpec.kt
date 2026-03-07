@@ -52,10 +52,16 @@ object StsLaunchSpec {
             args.add("-XX:+TieredCompilation")
         }
         if (is64BitRuntime) {
+            val useCompressedPointers = LauncherConfig.isJvmCompressedPointersEnabled(context)
             // Some OpenJDK 8 aarch64 builds crash in VM init with compressed pointers on newer Android stacks.
             // Disable compressed pointers to prefer startup stability over peak performance.
-            args.add("-XX:-UseCompressedOops")
-            args.add("-XX:-UseCompressedClassPointers")
+            if (useCompressedPointers) {
+                args.add("-XX:+UseCompressedOops")
+                args.add("-XX:+UseCompressedClassPointers")
+            } else {
+                args.add("-XX:-UseCompressedOops")
+                args.add("-XX:-UseCompressedClassPointers")
+            }
         }
         val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
         val heapStartMb = minOf(LauncherConfig.DEFAULT_JVM_HEAP_MAX_MB, heapMaxMb)

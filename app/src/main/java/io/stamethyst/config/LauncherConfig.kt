@@ -32,7 +32,9 @@ object LauncherConfig {
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
+    private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
+    private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
@@ -57,6 +59,7 @@ object LauncherConfig {
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
+    const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
@@ -65,6 +68,7 @@ object LauncherConfig {
     const val MIN_JVM_HEAP_MAX_MB = 256
     const val MAX_JVM_HEAP_MAX_MB = 2048
     const val JVM_HEAP_STEP_MB = 128
+    const val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED = false
 
     const val DEFAULT_RENDER_SCALE = 1.0f
     const val MIN_RENDER_SCALE = 0.50f
@@ -262,6 +266,32 @@ object LauncherConfig {
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {
         prefs(context).edit {
             putInt(PREF_KEY_JVM_HEAP_MAX_MB, normalizeJvmHeapMaxMb(heapMaxMb))
+        }
+    }
+
+    fun isGamePerformanceOverlayEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY,
+            DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
+        )
+    }
+
+    fun setGamePerformanceOverlayEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY, enabled)
+        }
+    }
+
+    fun isJvmCompressedPointersEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED,
+            DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED
+        )
+    }
+
+    fun setJvmCompressedPointersEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED, enabled)
         }
     }
 

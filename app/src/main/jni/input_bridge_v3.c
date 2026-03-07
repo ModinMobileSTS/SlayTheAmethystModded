@@ -393,6 +393,14 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeSetGlBridgeSwapHeartbeatLoggingEnabled(
     gl_set_swap_heartbeat_logging_enabled(enabled == JNI_TRUE);
 }
 
+JNIEXPORT jint JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlSwapCount(
+    __attribute__((unused)) JNIEnv *env,
+    __attribute__((unused)) jclass clazz
+) {
+    return (jint) gl_get_swap_count();
+}
+
 jboolean critical_send_char(jchar codepoint) {
     if (pojav_environ->GLFW_invoke_Char && pojav_environ->isInputReady) {
         if (pojav_environ->isUseStackQueueCall) {

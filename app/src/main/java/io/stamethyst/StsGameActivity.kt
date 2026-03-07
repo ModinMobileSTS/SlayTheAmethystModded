@@ -15,6 +15,7 @@ import android.view.View
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.launch.BackExitNotice
@@ -72,6 +73,7 @@ class StsGameActivity : AppCompatActivity() {
     private var manualDismissBootOverlay = false
     private var forceJvmCrash = false
     private var showFloatingMouseWindow = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+    private var showGamePerformanceOverlay = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     private var longPressMouseShowsKeyboard = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     private var autoSwitchLeftAfterRightClick = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     private var renderSurfaceBackend: RenderSurfaceBackend =
@@ -89,6 +91,7 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var renderSurfaceManager: RenderSurfaceManager
     private lateinit var inputHandler: GameInputHandler
     private lateinit var bootOverlayController: BootOverlayController
+    private lateinit var performanceOverlayController: GamePerformanceOverlayController
     private lateinit var jvmLaunchController: JvmLaunchController
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
 
@@ -116,6 +119,7 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.onDestroy()
         renderSurfaceManager.onDestroy()
         bootOverlayController.onDestroy()
+        performanceOverlayController.onDestroy()
         jvmLaunchController.cleanup()
         super.onDestroy()
     }
@@ -125,14 +129,17 @@ class StsGameActivity : AppCompatActivity() {
         renderSurfaceManager.applyImmersiveMode()
         inputHandler.resetGamepadState()
         renderSurfaceManager.resyncAfterForeground()
+        performanceOverlayController.onResume()
         applyForegroundWindowState()
         updateFloatingMouseVisibility()
+        updatePerformanceOverlayVisibility()
         tryStartJvmWhenSurfaceReady()
     }
 
     override fun onPause() {
         inputHandler.resetGamepadState()
         inputHandler.hideSoftKeyboard()
+        performanceOverlayController.onPause()
         applyBackgroundWindowState()
         super.onPause()
     }
@@ -143,6 +150,7 @@ class StsGameActivity : AppCompatActivity() {
             renderSurfaceManager.applyImmersiveMode()
             renderSurfaceManager.resyncAfterForeground()
         }
+        updatePerformanceOverlayVisibility()
         syncFocusStateToNative(hasFocus)
     }
 
@@ -161,6 +169,7 @@ class StsGameActivity : AppCompatActivity() {
         )
         forceJvmCrash = intent.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false)
         showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(this)
+        showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(this)
         longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(this)
         autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(this)
         renderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(this)
@@ -174,7 +183,10 @@ class StsGameActivity : AppCompatActivity() {
             activity = this,
             manualDismissBootOverlay = manualDismissBootOverlay,
             useTextureViewSurface = useTextureViewSurface,
-            onDismissed = { updateFloatingMouseVisibility() },
+            onDismissed = {
+                updateFloatingMouseVisibility()
+                updatePerformanceOverlayVisibility()
+            },
             onRequestEarlyDismiss = {
                 bootOverlayController.setEarlyDismissRequestTimestamp(
                     renderSurfaceManager.getLastTextureFrameTimestampNs()
@@ -200,6 +212,7 @@ class StsGameActivity : AppCompatActivity() {
                 runOnUiThread {
                     applyForegroundWindowState()
                     updateFloatingMouseVisibility()
+                    updatePerformanceOverlayVisibility()
                 }
             },
             onSurfaceSizeSync = {
@@ -251,6 +264,11 @@ class StsGameActivity : AppCompatActivity() {
         renderSurfaceManager.init(root)
 
         bootOverlayController.init()
+        performanceOverlayController = GamePerformanceOverlayController(
+            activity = this,
+            overlayView = findViewById<TextView>(R.id.gamePerformanceOverlay)
+        )
+        performanceOverlayController.init()
 
         val host = findViewById<FrameLayout>(R.id.gameHost)
         inputHandler.initFloatingMouseControls(
@@ -259,6 +277,7 @@ class StsGameActivity : AppCompatActivity() {
             longPressMouseShowsKeyboard = longPressMouseShowsKeyboard
         )
         updateFloatingMouseVisibility()
+        updatePerformanceOverlayVisibility()
 
         renderSurfaceManager.renderView.setOnTouchListener { _, event -> inputHandler.handleTouchEvent(event) }
         renderSurfaceManager.renderView.requestFocus()
@@ -390,6 +409,7 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.hideSoftKeyboard()
         inputHandler.resetGamepadState()
         updateFloatingMouseVisibility()
+        updatePerformanceOverlayVisibility()
         BackExitNotice.markExpectedBackExit(this)
 
         bootOverlayController.updateProgress(100, "Stopping game...")
@@ -624,5 +644,17 @@ class StsGameActivity : AppCompatActivity() {
             bootOverlayController.isDismissed,
             backExitRequested
         )
+    }
+
+    private fun updatePerformanceOverlayVisibility() {
+        if (!::performanceOverlayController.isInitialized) {
+            return
+        }
+        val shouldShow = !backExitRequested &&
+            showGamePerformanceOverlay &&
+            jvmLaunchController.runtimeLifecycleReady &&
+            bootOverlayController.isDismissed &&
+            hasWindowFocus()
+        performanceOverlayController.setVisible(shouldShow)
     }
 }

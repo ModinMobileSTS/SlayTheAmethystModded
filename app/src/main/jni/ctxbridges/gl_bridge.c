@@ -39,6 +39,10 @@ void gl_set_swap_heartbeat_logging_enabled(bool enabled) {
     g_swap_heartbeat_logging_enabled = enabled;
 }
 
+uint32_t gl_get_swap_count(void) {
+    return g_swap_diag_counter;
+}
+
 static void gl_advance_context_generation(const char* reason) {
     if (pojav_environ == NULL) return;
     int generation = atomic_fetch_add_explicit(&pojav_environ->glContextGeneration, 1, memory_order_relaxed) + 1;
@@ -466,8 +470,8 @@ void gl_swap_buffers() {
         }
     }
 
+    g_swap_diag_counter++;
     if (g_swap_heartbeat_logging_enabled) {
-        g_swap_diag_counter++;
         if ((g_swap_diag_counter % 600) == 0) {
             printf("GLBridgeDiag: swap heartbeat #%u surface=%p native=%p state=%d\n",
                    g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);

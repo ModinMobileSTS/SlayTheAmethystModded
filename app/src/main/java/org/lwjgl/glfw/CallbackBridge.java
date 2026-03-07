@@ -194,6 +194,8 @@ public class CallbackBridge {
 
     private static native void nativeSetGlBridgeSwapHeartbeatLoggingEnabled(boolean enabled);
 
+    public static native int nativeGetGlSwapCount();
+
     public static native String nativeClipboard(int type, byte[] copySource);
 
     private static native ByteBuffer nativeCreateGamepadButtonBuffer();

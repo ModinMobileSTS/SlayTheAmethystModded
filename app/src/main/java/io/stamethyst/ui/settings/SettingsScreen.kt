@@ -100,6 +100,9 @@ fun LauncherSettingsScreen(
             viewModel.onRenderSurfaceBackendChanged(activity, backend)
         },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
+        onJvmCompressedPointersChanged = { enabled ->
+            viewModel.onJvmCompressedPointersChanged(activity, enabled)
+        },
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
@@ -108,6 +111,9 @@ fun LauncherSettingsScreen(
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
         onMobileHudEnabledChanged = { enabled -> viewModel.onMobileHudEnabledChanged(activity, enabled) },
+        onGamePerformanceOverlayChanged = { enabled ->
+            viewModel.onGamePerformanceOverlayChanged(activity, enabled)
+        },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
@@ -129,6 +135,7 @@ private fun LauncherSettingsScreenPreview() {
             selectedTargetFps = 60,
             renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             selectedJvmHeapMaxMb = 512,
+            compressedPointersEnabled = false,
             jvmHeapMinMb = 256,
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
@@ -139,6 +146,7 @@ private fun LauncherSettingsScreenPreview() {
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
             mobileHudEnabled = false,
+            showGamePerformanceOverlay = false,
             lwjglDebugEnabled = false,
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
@@ -166,6 +174,7 @@ private fun LauncherSettingsScreenContent(
     onTargetFpsSelected: (Int) -> Unit = {},
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
+    onJvmCompressedPointersChanged: (Boolean) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
@@ -174,6 +183,7 @@ private fun LauncherSettingsScreenContent(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onMobileHudEnabledChanged: (Boolean) -> Unit = {},
+    onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
@@ -228,6 +238,7 @@ private fun LauncherSettingsScreenContent(
                         onTargetFpsSelected = onTargetFpsSelected,
                         onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
+                        onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
                     )
                 }
             }
@@ -244,6 +255,7 @@ private fun LauncherSettingsScreenContent(
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onMobileHudEnabledChanged = onMobileHudEnabledChanged,
+                        onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
                 }
@@ -367,6 +379,7 @@ private fun SettingsRenderSection(
     onTargetFpsSelected: (Int) -> Unit,
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
+    onJvmCompressedPointersChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
@@ -478,6 +491,15 @@ private fun SettingsRenderSection(
         text = "如果你不知道你在做什么，请勿修改此项。如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
         style = MaterialTheme.typography.bodySmall
     )
+
+    SwitchSettingRow(
+        checked = uiState.compressedPointersEnabled,
+        enabled = !uiState.busy,
+        enabledText = "Compressed Oops / Class Pointers：启用",
+        disabledText = "Compressed Oops / Class Pointers：禁用",
+        description = "控制 64 位 JVM 是否启用压缩对象指针和类指针。默认关闭以优先兼容性，启用后可能降低内存占用，但也可能引入设备相关启动问题。",
+        onCheckedChange = onJvmCompressedPointersChanged
+    )
 }
 
 private fun renderScaleToStep(value: Float): Int {
@@ -500,6 +522,7 @@ private fun SettingsInputSection(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onMobileHudEnabledChanged: (Boolean) -> Unit,
+    onGamePerformanceOverlayChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
     var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
@@ -598,6 +621,15 @@ private fun SettingsInputSection(
         disabledText = "移动端 UI：禁用",
         description = "控制是否启用原生移动端 UI，启用后 UI 会部分变大，但是可能会出现一些模组渲染不兼容的问题，例如 loadout 控制台不会出现。",
         onCheckedChange = onMobileHudEnabledChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.showGamePerformanceOverlay,
+        enabled = !uiState.busy,
+        enabledText = "性能浮窗：启用",
+        disabledText = "性能浮窗：禁用",
+        description = "控制游戏内右上角的 FPS / 内存实时监控浮窗是否显示。",
+        onCheckedChange = onGamePerformanceOverlayChanged
     )
 
     SwitchSettingRow(

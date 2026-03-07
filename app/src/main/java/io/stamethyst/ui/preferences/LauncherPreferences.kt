@@ -28,6 +28,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SHOW_MOD_FILE_NAME
     val DEFAULT_MOBILE_HUD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
+    val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
+        get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_LWJGL_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_LWJGL_DEBUG
     val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
@@ -45,6 +47,8 @@ object LauncherPreferences {
         get() = LauncherConfig.MAX_JVM_HEAP_MAX_MB
     val JVM_HEAP_STEP_MB: Int
         get() = LauncherConfig.JVM_HEAP_STEP_MB
+    val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED
 
     fun readBackBehavior(context: Context): BackBehavior {
         return LauncherConfig.readBackBehavior(context)
@@ -118,6 +122,14 @@ object LauncherPreferences {
         LauncherConfig.saveMobileHudEnabled(context, enabled)
     }
 
+    fun isGamePerformanceOverlayEnabled(context: Context): Boolean {
+        return LauncherConfig.isGamePerformanceOverlayEnabled(context)
+    }
+
+    fun setGamePerformanceOverlayEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setGamePerformanceOverlayEnabled(context, enabled)
+    }
+
     fun isLwjglDebugEnabled(context: Context): Boolean {
         return LauncherConfig.isLwjglDebugEnabled(context)
     }
@@ -164,6 +176,14 @@ object LauncherPreferences {
 
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {
         LauncherConfig.saveJvmHeapMaxMb(context, heapMaxMb)
+    }
+
+    fun isJvmCompressedPointersEnabled(context: Context): Boolean {
+        return LauncherConfig.isJvmCompressedPointersEnabled(context)
+    }
+
+    fun setJvmCompressedPointersEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setJvmCompressedPointersEnabled(context, enabled)
     }
 
     fun normalizePlayerName(name: String): String {

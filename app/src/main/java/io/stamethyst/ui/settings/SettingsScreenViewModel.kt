@@ -62,6 +62,7 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
+        val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
         val jvmHeapMinMb: Int = LauncherPreferences.MIN_JVM_HEAP_MAX_MB,
         val jvmHeapMaxMb: Int = LauncherPreferences.MAX_JVM_HEAP_MAX_MB,
         val jvmHeapStepMb: Int = LauncherPreferences.JVM_HEAP_STEP_MB,
@@ -72,6 +73,7 @@ class SettingsScreenViewModel : ViewModel() {
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
+        val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
@@ -127,6 +129,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val targetFps = readTargetFpsSelection(host)
                 val renderSurfaceBackend = readRenderSurfaceBackendSelection(host)
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
+                val compressedPointersEnabled = readJvmCompressedPointersSelection(host)
                 val backBehavior = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
@@ -134,6 +137,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
                 val showModFileName = readShowModFileNameSelection(host)
                 val mobileHudEnabled = readMobileHudEnabledSelection(host)
+                val showGamePerformanceOverlay = readGamePerformanceOverlaySelection(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
                 val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
@@ -199,9 +203,13 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nRender surface: ")
                         .append(renderSurfaceBackend.displayName(host))
                     append("\nJVM heap max: ${jvmHeapMaxMb} MB")
+                    append("\nCompressed Oops / Class Pointers: ")
+                        .append(if (compressedPointersEnabled) "ON" else "OFF")
                     append("\nBack behavior: ${backBehavior.displayName()}")
                     append("\nTouchscreen Enabled: ").append(if (touchscreenEnabled) "ON" else "OFF")
                     append("\nMobile HUD Enabled: ").append(if (mobileHudEnabled) "ON" else "OFF")
+                    append("\nPerformance overlay: ")
+                        .append(if (showGamePerformanceOverlay) "ON" else "OFF")
                     append("\nManual dismiss boot overlay: ")
                         .append(if (manualDismissBootOverlay) "ON" else "OFF")
                     append("\n")
@@ -247,6 +255,7 @@ class SettingsScreenViewModel : ViewModel() {
                         selectedTargetFps = targetFps,
                         renderSurfaceBackend = renderSurfaceBackend,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
+                        compressedPointersEnabled = compressedPointersEnabled,
                         backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
@@ -254,6 +263,7 @@ class SettingsScreenViewModel : ViewModel() {
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
                         showModFileName = showModFileName,
                         mobileHudEnabled = mobileHudEnabled,
+                        showGamePerformanceOverlay = showGamePerformanceOverlay,
                         lwjglDebugEnabled = lwjglDebugEnabled,
                         gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
                         glBridgeSwapHeartbeatDebugEnabled = glBridgeSwapHeartbeatDebugEnabled,
@@ -443,6 +453,18 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onJvmCompressedPointersChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        if (enabled == uiState.compressedPointersEnabled) {
+            return
+        }
+        uiState = uiState.copy(compressedPointersEnabled = enabled)
+        saveJvmCompressedPointersSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onPlayerNameChanged(host: Activity, name: String): Boolean {
         if (uiState.busy) {
             return false
@@ -546,6 +568,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(mobileHudEnabled = enabled)
         saveMobileHudEnabledSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onGamePerformanceOverlayChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(showGamePerformanceOverlay = enabled)
+        saveGamePerformanceOverlaySelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -1226,6 +1257,22 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveJvmHeapMaxSelection(host: Activity, heapMaxMb: Int) {
         LauncherPreferences.saveJvmHeapMaxMb(host, heapMaxMb)
+    }
+
+    private fun readJvmCompressedPointersSelection(host: Activity): Boolean {
+        return LauncherPreferences.isJvmCompressedPointersEnabled(host)
+    }
+
+    private fun saveJvmCompressedPointersSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setJvmCompressedPointersEnabled(host, enabled)
+    }
+
+    private fun readGamePerformanceOverlaySelection(host: Activity): Boolean {
+        return LauncherPreferences.isGamePerformanceOverlayEnabled(host)
+    }
+
+    private fun saveGamePerformanceOverlaySelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setGamePerformanceOverlayEnabled(host, enabled)
     }
 
     private fun readTouchscreenEnabledSelection(host: Activity): Boolean {
