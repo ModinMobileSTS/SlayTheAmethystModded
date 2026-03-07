@@ -1,6 +1,9 @@
 package io.stamethyst.backend.launch
 
 import android.content.Context
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.res.AssetManager
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.config.RuntimePaths
@@ -11,6 +14,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 object ComponentInstaller {
+    private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
     private const val GDX_VIDEO_NATIVE_ASSET_DIR = "components/gdx_video_natives"
     private const val LEGACY_HINA_VIDEO_PATCH_JAR = "hina-video-compat.jar"
@@ -26,6 +30,13 @@ object ComponentInstaller {
         fun validate(jarFile: File)
     }
 
+    @Throws(IOException::class)
+    private fun throwIfInterrupted() {
+        if (Thread.currentThread().isInterrupted) {
+            throw IOException("Component install cancelled")
+        }
+    }
+
     @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context) {
@@ -35,35 +46,63 @@ object ComponentInstaller {
     @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
+        throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
         val assets = context.assets
+        val packagedComponentsMarker = resolvePackagedComponentsMarker(context)
 
+        throwIfInterrupted()
+        if (arePackagedComponentsCurrent(context, assets, packagedComponentsMarker)) {
+            reportProgress(progressCallback, 72, "Launcher components already up to date")
+        } else {
+            installPackagedComponents(context, assets, progressCallback)
+            writeInstallMarker(componentInstallMarkerFile(context), packagedComponentsMarker)
+        }
+
+        throwIfInterrupted()
+        reportProgress(progressCallback, 72, "Installing bundled mods...")
+        installBundledMods(assets, context)
+        throwIfInterrupted()
+        reportProgress(progressCallback, 87, "Preparing local java shim...")
+        ensureMtsLocalJreShim(context)
+        throwIfInterrupted()
+        reportProgress(progressCallback, 96, "Checking default preferences...")
+        ensureDefaultPreferencesIfMissing(assets, context)
+        throwIfInterrupted()
+        reportProgress(progressCallback, 100, "Components ready")
+    }
+
+    @Throws(IOException::class)
+    private fun installPackagedComponents(
+        context: Context,
+        assets: AssetManager,
+        progressCallback: StartupProgressCallback?
+    ) {
+        throwIfInterrupted()
         reportProgress(progressCallback, 5, "Installing LWJGL bridge...")
-        copyAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context))
+        replaceAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context))
+        throwIfInterrupted()
         reportProgress(progressCallback, 15, "Installing startup bridge...")
-        copyAssetTree(assets, "components/boot_bridge", RuntimePaths.bootBridgeDir(context))
+        replaceAssetTree(assets, "components/boot_bridge", RuntimePaths.bootBridgeDir(context))
+        throwIfInterrupted()
         reportProgress(progressCallback, 25, "Installing LWJGL2 injector...")
-        copyAssetTree(
+        replaceAssetTree(
             assets,
             "components/lwjgl2_methods_injector",
             RuntimePaths.lwjgl2InjectorDir(context)
         )
+        throwIfInterrupted()
         reportProgress(progressCallback, 40, "Installing gdx patches...")
-        copyAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
+        replaceAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
         removeLegacyCompatArtifacts(RuntimePaths.gdxPatchDir(context))
+        throwIfInterrupted()
         reportProgress(progressCallback, 48, "Installing gdx video natives...")
         if (hasAssetChildren(assets, GDX_VIDEO_NATIVE_ASSET_DIR)) {
             copyAssetTree(assets, GDX_VIDEO_NATIVE_ASSET_DIR, RuntimePaths.gdxPatchNativesDir(context))
         }
+        throwIfInterrupted()
         reportProgress(progressCallback, 55, "Installing Caciocavallo runtime...")
-        copyAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
-        reportProgress(progressCallback, 72, "Installing bundled mods...")
-        installBundledMods(assets, context)
-        reportProgress(progressCallback, 87, "Preparing local java shim...")
-        ensureMtsLocalJreShim(context)
-        reportProgress(progressCallback, 96, "Checking default preferences...")
-        ensureDefaultPreferencesIfMissing(assets, context)
-        reportProgress(progressCallback, 100, "Components ready")
+        replaceAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
     }
 
     @Throws(IOException::class)
@@ -90,6 +129,7 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun copyAssetTree(assets: AssetManager, assetPath: String, targetDir: File) {
+        throwIfInterrupted()
         val names = assets.list(assetPath) ?: throw IOException("Asset listing failed: $assetPath")
         if (names.isEmpty()) {
             copyFile(assets, assetPath, File(targetDir.parentFile, File(assetPath).name))
@@ -99,6 +139,7 @@ object ComponentInstaller {
             throw IOException("Failed to create: $targetDir")
         }
         for (name in names) {
+            throwIfInterrupted()
             val childAssetPath = "$assetPath/$name"
             val childList = assets.list(childAssetPath)
             val childFile = File(targetDir, name)
@@ -111,7 +152,14 @@ object ComponentInstaller {
     }
 
     @Throws(IOException::class)
+    private fun replaceAssetTree(assets: AssetManager, assetPath: String, targetDir: File) {
+        prepareCleanDirectory(targetDir, "component directory")
+        copyAssetTree(assets, assetPath, targetDir)
+    }
+
+    @Throws(IOException::class)
     private fun copyAssetTreeIfMissing(assets: AssetManager, assetPath: String, targetDir: File) {
+        throwIfInterrupted()
         val names = assets.list(assetPath) ?: throw IOException("Asset listing failed: $assetPath")
         if (names.isEmpty()) {
             copyFileIfMissing(assets, assetPath, File(targetDir.parentFile, File(assetPath).name))
@@ -121,6 +169,7 @@ object ComponentInstaller {
             throw IOException("Failed to create: $targetDir")
         }
         for (name in names) {
+            throwIfInterrupted()
             val childAssetPath = "$assetPath/$name"
             val childList = assets.list(childAssetPath)
             val childFile = File(targetDir, name)
@@ -134,6 +183,7 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun copyFile(assets: AssetManager, assetPath: String, targetFile: File) {
+        throwIfInterrupted()
         val parent = targetFile.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create parent: $parent")
@@ -142,6 +192,7 @@ object ComponentInstaller {
             FileOutputStream(targetFile, false).use { output ->
                 val buffer = ByteArray(8192)
                 while (true) {
+                    throwIfInterrupted()
                     val read = input.read(buffer)
                     if (read < 0) {
                         break
@@ -167,6 +218,7 @@ object ComponentInstaller {
         targetFile: File,
         validator: JarValidator
     ) {
+        throwIfInterrupted()
         if (targetFile.isFile && targetFile.length() > 0) {
             try {
                 validator.validate(targetFile)
@@ -193,6 +245,7 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun ensureMtsLocalJreShim(context: Context) {
+        throwIfInterrupted()
         val javaShim = RuntimePaths.mtsLocalJavaShim(context)
         val parent = javaShim.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -220,6 +273,7 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun ensureDefaultPreferencesIfMissing(assets: AssetManager, context: Context) {
+        throwIfInterrupted()
         if (!hasAssetChildren(assets, DEFAULT_PREFS_ASSET_DIR)) {
             return
         }
@@ -229,6 +283,7 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun ensureDefaultPreferencesForDir(assets: AssetManager, preferencesDir: File) {
+        throwIfInterrupted()
         if (!shouldInstallDefaultPreferences(preferencesDir)) {
             return
         }
@@ -254,6 +309,7 @@ object ComponentInstaller {
         fileName: String,
         requiredToken: String
     ) {
+        throwIfInterrupted()
         val target = File(preferencesDir, fileName)
         if (fileContainsToken(target, requiredToken)) {
             return
@@ -297,6 +353,94 @@ object ComponentInstaller {
         }
     }
 
+    private fun componentInstallMarkerFile(context: Context): File {
+        return File(RuntimePaths.componentRoot(context), COMPONENT_INSTALL_MARKER_FILE_NAME)
+    }
+
+    private fun arePackagedComponentsCurrent(
+        context: Context,
+        assets: AssetManager,
+        expectedMarker: String
+    ): Boolean {
+        val markerFile = componentInstallMarkerFile(context)
+        if (!markerFile.isFile) {
+            return false
+        }
+        val installedMarker = try {
+            markerFile.readText(StandardCharsets.UTF_8).trim()
+        } catch (_: Throwable) {
+            return false
+        }
+        if (installedMarker != expectedMarker) {
+            return false
+        }
+        return hasInstalledPackagedComponents(context, assets)
+    }
+
+    private fun hasInstalledPackagedComponents(context: Context, assets: AssetManager): Boolean {
+        if (!File(RuntimePaths.lwjglDir(context), "version").isFile ||
+            !RuntimePaths.lwjglJar(context).isFile
+        ) {
+            return false
+        }
+        if (!RuntimePaths.bootBridgeJar(context).isFile) {
+            return false
+        }
+        if (!File(RuntimePaths.lwjgl2InjectorDir(context), "version").isFile ||
+            !RuntimePaths.lwjgl2InjectorJar(context).isFile
+        ) {
+            return false
+        }
+        if (!RuntimePaths.gdxPatchJar(context).isFile) {
+            return false
+        }
+        if (!File(RuntimePaths.cacioDir(context), "version").isFile) {
+            return false
+        }
+        if (hasAssetChildren(assets, GDX_VIDEO_NATIVE_ASSET_DIR)) {
+            val nativeFiles = RuntimePaths.gdxPatchNativesDir(context).listFiles()
+            if (nativeFiles.isNullOrEmpty() || nativeFiles.none { it.isFile && it.length() > 0L }) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun resolvePackagedComponentsMarker(context: Context): String {
+        val packageInfo = loadPackageInfo(context)
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toLong()
+        }
+        return "$versionCode|${packageInfo.lastUpdateTime}"
+    }
+
+    private fun loadPackageInfo(context: Context): PackageInfo {
+        val packageManager = context.packageManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(context.packageName, 0)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun writeInstallMarker(markerFile: File, marker: String) {
+        val parent = markerFile.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create component marker directory: $parent")
+        }
+        FileOutputStream(markerFile, false).use { output ->
+            output.write(marker.toByteArray(StandardCharsets.UTF_8))
+        }
+    }
+
     private fun reportProgress(callback: StartupProgressCallback?, percent: Int, message: String) {
         if (callback == null) {
             return
@@ -310,5 +454,43 @@ object ComponentInstaller {
         if (legacyHinaPatch.isFile) {
             legacyHinaPatch.delete()
         }
+    }
+
+    @Throws(IOException::class)
+    private fun prepareCleanDirectory(directory: File, label: String) {
+        throwIfInterrupted()
+        val parent = directory.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create $label parent: $parent")
+        }
+        deleteRecursively(directory)
+        if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
+            throw IOException("Failed to create $label: ${directory.absolutePath}")
+        }
+    }
+
+    private fun deleteRecursively(file: File?): Boolean {
+        if (Thread.currentThread().isInterrupted) {
+            return false
+        }
+        if (file == null || !file.exists()) {
+            return true
+        }
+        var deleted = true
+        if (file.isDirectory) {
+            val children = file.listFiles()
+            if (children != null) {
+                for (child in children) {
+                    if (Thread.currentThread().isInterrupted) {
+                        return false
+                    }
+                    deleted = deleted && deleteRecursively(child)
+                }
+            }
+        }
+        if (!file.delete() && file.exists()) {
+            deleted = false
+        }
+        return deleted
     }
 }

@@ -55,6 +55,15 @@ final class BootBridgeReporter {
         sink.write("FAIL", -1, sanitizeMessage(message));
     }
 
+    void memory(long heapUsedBytes, long heapMaxBytes) {
+        if (failSent.get()) {
+            return;
+        }
+        long safeUsedBytes = Math.max(0L, heapUsedBytes);
+        long safeMaxBytes = Math.max(0L, heapMaxBytes);
+        sink.write("MEM", -1, "heapUsed=" + safeUsedBytes + ";heapMax=" + safeMaxBytes);
+    }
+
     void markConsoleReadyHint() {
         consoleReadyHint.set(true);
     }

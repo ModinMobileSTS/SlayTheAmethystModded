@@ -270,7 +270,8 @@ class StsGameActivity : AppCompatActivity() {
         bootOverlayController.init()
         performanceOverlayController = GamePerformanceOverlayController(
             activity = this,
-            overlayView = findViewById<TextView>(R.id.gamePerformanceOverlay)
+            overlayView = findViewById<TextView>(R.id.gamePerformanceOverlay),
+            readJvmRuntimeMemorySnapshot = { jvmLaunchController.runtimeMemorySnapshot }
         )
         performanceOverlayController.init()
 

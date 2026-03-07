@@ -1,5 +1,6 @@
 package io.stamethyst.backend.launch
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import io.stamethyst.config.RuntimePaths
@@ -14,6 +15,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 object StsLaunchSpec {
+    private const val BYTES_PER_MB = 1024L * 1024L
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS_BASEMOD = "mts_basemod"
 
@@ -64,7 +66,7 @@ object StsLaunchSpec {
             }
         }
         val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
-        val heapStartMb = minOf(LauncherConfig.DEFAULT_JVM_HEAP_MAX_MB, heapMaxMb)
+        val heapStartMb = resolveJvmHeapStartMb(context, heapMaxMb, is64BitRuntime)
         args.add("-Xms${heapStartMb}M")
         args.add("-Xmx${heapMaxMb}M")
         args.add("-XX:+DisableExplicitGC")
@@ -243,6 +245,32 @@ object StsLaunchSpec {
         return File(javaHome, "lib/aarch64").isDirectory ||
             File(javaHome, "lib/arm64").isDirectory ||
             File(javaHome, "lib/x86_64").isDirectory
+    }
+
+    private fun resolveJvmHeapStartMb(
+        context: Context,
+        heapMaxMb: Int,
+        is64BitRuntime: Boolean
+    ): Int {
+        val minimumStartMb = LauncherConfig.MIN_JVM_HEAP_MAX_MB / 2
+        val maxReasonableStartMb = (heapMaxMb / 2).coerceAtLeast(minimumStartMb)
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        val totalMemoryMb = if (activityManager != null) {
+            activityManager.getMemoryInfo(memoryInfo)
+            (memoryInfo.totalMem / BYTES_PER_MB).coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        val deviceTierStartMb = when {
+            !is64BitRuntime -> minimumStartMb
+            activityManager?.isLowRamDevice == true -> minimumStartMb
+            totalMemoryMb in 1..4096L -> minimumStartMb
+            totalMemoryMb in 4097..8192L -> 192
+            else -> 256
+        }
+        return minOf(deviceTierStartMb, maxReasonableStartMb, heapMaxMb)
+            .coerceAtLeast(minimumStartMb)
     }
 
 }

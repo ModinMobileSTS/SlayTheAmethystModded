@@ -49,6 +49,10 @@ class JvmLaunchController(
         private set
 
     @Volatile
+    internal var runtimeMemorySnapshot: JvmRuntimeMemorySnapshot? = null
+        private set
+
+    @Volatile
     private var jvmLaunchThread: Thread? = null
 
     @Volatile
@@ -76,6 +80,7 @@ class JvmLaunchController(
         if (vmStarted) return
         vmStarted = true
         runtimeLifecycleReady = false
+        runtimeMemorySnapshot = null
 
         onProgressUpdate(8, "Starting JVM...")
 
@@ -158,6 +163,7 @@ class JvmLaunchController(
                 onLaunchFailed(t)
             } finally {
                 runtimeLifecycleReady = false
+                runtimeMemorySnapshot = null
                 stopLatestLogCapMonitor()
                 stopBootBridgeEventMonitor()
                 jvmLaunchThread = null
@@ -179,6 +185,7 @@ class JvmLaunchController(
         stopLatestLogCapMonitor()
         stopBootBridgeEventMonitor()
         runtimeLifecycleReady = false
+        runtimeMemorySnapshot = null
     }
 
     private fun startLatestLogCapMonitor(logFile: File) {
@@ -342,7 +349,38 @@ class JvmLaunchController(
                 val detail = message.ifEmpty { "Boot bridge signaled failure" }
                 bootOverlayController?.signalLaunchFailure(detail)
             }
+
+            "MEM" -> {
+                runtimeMemorySnapshot = parseRuntimeMemorySnapshot(message)
+            }
         }
+    }
+
+    private fun parseRuntimeMemorySnapshot(message: String): JvmRuntimeMemorySnapshot? {
+        if (message.isBlank()) {
+            return null
+        }
+        var heapUsedBytes: Long? = null
+        var heapMaxBytes: Long? = null
+        val entries = message.split(';')
+        for (entry in entries) {
+            val separatorIndex = entry.indexOf('=')
+            if (separatorIndex <= 0 || separatorIndex >= entry.length - 1) {
+                continue
+            }
+            val key = entry.substring(0, separatorIndex).trim()
+            val value = entry.substring(separatorIndex + 1).trim().toLongOrNull() ?: continue
+            when (key) {
+                "heapUsed" -> heapUsedBytes = value.coerceAtLeast(0L)
+                "heapMax" -> heapMaxBytes = value.coerceAtLeast(0L)
+            }
+        }
+        val safeHeapUsedBytes = heapUsedBytes ?: return null
+        val safeHeapMaxBytes = heapMaxBytes ?: return null
+        return JvmRuntimeMemorySnapshot(
+            heapUsedBytes = safeHeapUsedBytes,
+            heapMaxBytes = safeHeapMaxBytes
+        )
     }
 
     private fun signalDismissFromBootBridge(

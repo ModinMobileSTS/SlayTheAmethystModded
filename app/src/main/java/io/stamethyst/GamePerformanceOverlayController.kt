@@ -11,12 +11,14 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import io.stamethyst.backend.launch.JvmRuntimeMemorySnapshot
 import org.lwjgl.glfw.CallbackBridge
 import java.util.Locale
 
 internal class GamePerformanceOverlayController(
     private val activity: AppCompatActivity,
-    private val overlayView: TextView
+    private val overlayView: TextView,
+    private val readJvmRuntimeMemorySnapshot: () -> JvmRuntimeMemorySnapshot?
 ) {
     companion object {
         private const val REFRESH_INTERVAL_MS = 1000L
@@ -24,6 +26,13 @@ internal class GamePerformanceOverlayController(
         private const val OVERLAY_TOP_MARGIN_DP = 40
         private const val BYTES_PER_MB = 1024.0 * 1024.0
     }
+
+    private data class ProcessMemorySnapshot(
+        val totalPssBytes: Long,
+        val dalvikPssBytes: Long,
+        val nativePssBytes: Long,
+        val otherPssBytes: Long
+    )
 
     private val activityManager =
         activity.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -119,24 +128,30 @@ internal class GamePerformanceOverlayController(
         lastSampleElapsedMs = nowMs
         lastSwapCount = swapCount
 
-        val runtime = Runtime.getRuntime()
-        val heapUsedBytes = runtime.totalMemory() - runtime.freeMemory()
-        val heapMaxBytes = runtime.maxMemory()
         val nativeHeapBytes = Debug.getNativeHeapAllocatedSize()
-        val processPssBytes = readProcessPssBytes()
+        val processMemorySnapshot = readProcessMemorySnapshot()
+        val jvmRuntimeMemorySnapshot = readJvmRuntimeMemorySnapshot()
 
-        overlayView.text = buildString(96) {
+        overlayView.text = buildString(160) {
             append("FPS ")
             append(String.format(Locale.US, "%.1f", fps))
             append("  PSS ")
-            append(processPssBytes?.let(::formatMb) ?: "--")
+            append(processMemorySnapshot?.totalPssBytes?.let(::formatMb) ?: "--")
             append('\n')
-            append("Heap ")
-            append(formatMb(heapUsedBytes))
+            append("JvmHeap ")
+            append(jvmRuntimeMemorySnapshot?.heapUsedBytes?.let(::formatMb) ?: "--")
             append(" / ")
-            append(formatMb(heapMaxBytes))
-            append("  Native ")
+            append(jvmRuntimeMemorySnapshot?.heapMaxBytes?.let(::formatMb) ?: "--")
+            append("  NHeap ")
             append(formatMb(nativeHeapBytes))
+            append('\n')
+            append("PSS Dalvik ")
+            append(processMemorySnapshot?.dalvikPssBytes?.let(::formatMb) ?: "--")
+            append("  Native ")
+            append(processMemorySnapshot?.nativePssBytes?.let(::formatMb) ?: "--")
+            append('\n')
+            append("PSS Other ")
+            append(processMemorySnapshot?.otherPssBytes?.let(::formatMb) ?: "--")
         }
     }
 
@@ -148,13 +163,18 @@ internal class GamePerformanceOverlayController(
         }
     }
 
-    private fun readProcessPssBytes(): Long? {
+    private fun readProcessMemorySnapshot(): ProcessMemorySnapshot? {
         val manager = activityManager ?: return null
         return try {
             val info = manager.getProcessMemoryInfo(intArrayOf(processId))
                 ?.firstOrNull()
                 ?: return null
-            info.totalPss.toLong().coerceAtLeast(0L) * 1024L
+            ProcessMemorySnapshot(
+                totalPssBytes = info.totalPss.toLong().coerceAtLeast(0L) * 1024L,
+                dalvikPssBytes = info.dalvikPss.toLong().coerceAtLeast(0L) * 1024L,
+                nativePssBytes = info.nativePss.toLong().coerceAtLeast(0L) * 1024L,
+                otherPssBytes = info.otherPss.toLong().coerceAtLeast(0L) * 1024L
+            )
         } catch (_: Throwable) {
             null
         }
