@@ -113,6 +113,7 @@ What the script does:
 - Wait for you to finish editing the release note.
 - Commit only the release note and `gradle.properties` when it has local changes.
 - Create and push annotated tag `v<version>`.
+- When the GitHub Actions release workflow runs, that same `docs/release/note/v<version>.md` file is used as the GitHub Release body.
 
 Notes:
 - The script intentionally does not include unrelated working tree changes in the release commit.
@@ -128,7 +129,7 @@ bash scripts/prepare-release.sh
 Behavior:
 - Workflow builds signed APK.
 - Workflow uploads artifact to Actions run.
-- Workflow creates or updates GitHub Release with tag `v*` and uploads APK.
+- Workflow creates or updates GitHub Release with tag `v*`, uploads APK, and uses `docs/release/note/v<version>.md` as the release notes when the file exists.
 
 Manual run:
 - `workflow_dispatch` builds APK and uploads run artifact.

@@ -139,6 +139,7 @@ jobs:
           set -euo pipefail
 
           tag="${GITHUB_REF_NAME}"
+          notes_file="docs/release/note/${tag}.md"
           shopt -s nullglob
           assets=(app/build/outputs/apk/release/*.apk app/build/outputs/apk/release/*.APK)
           if [ "${#assets[@]}" -eq 0 ]; then
@@ -148,6 +149,13 @@ jobs:
 
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${assets[@]}" --clobber
+            if [ -f "$notes_file" ]; then
+              gh release edit "$tag" --title "$tag" --notes-file "$notes_file"
+            fi
           else
-            gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+            if [ -f "$notes_file" ]; then
+              gh release create "$tag" "${assets[@]}" --title "$tag" --notes-file "$notes_file"
+            else
+              gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+            fi
           fi
