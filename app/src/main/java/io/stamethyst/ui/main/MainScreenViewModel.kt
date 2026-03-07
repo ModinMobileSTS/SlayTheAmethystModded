@@ -18,6 +18,7 @@ import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.file_interactive.SafExportActivity
+import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.config.BackBehavior
@@ -79,6 +80,11 @@ class MainScreenViewModel : ViewModel() {
     private data class MtsLaunchValidationIssue(
         val mod: ModItemUi,
         val reason: String
+    )
+
+    private data class MtsModsDirConflictIssue(
+        val launchModId: String,
+        val jarFiles: List<File>
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -1073,10 +1079,80 @@ class MainScreenViewModel : ViewModel() {
                 }
                 append("\n  原因：").append(issue.reason)
             }
-            append("\n\n请删除这些模组后重新导入，再重新启动游戏。")
+            append("\n\n请检查这些模组的 ModTheSpire.json 是否符合 ModTheSpire 格式。")
+            append("\n如果这些 jar 是从压缩包二次解包/重打包得到的，建议重新获取原始 jar 后再导入。")
         }.trimEnd()
         AlertDialog.Builder(host)
             .setTitle("检测到需要重新导入的模组")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun findModsDirLaunchConflicts(
+        host: Activity,
+        optionalMods: List<ModItemUi>
+    ): List<MtsModsDirConflictIssue> {
+        val launchModIds = LinkedHashSet<String>()
+        val baseModId = try {
+            ModJarSupport.resolveModId(RuntimePaths.importedBaseModJar(host)).trim()
+        } catch (_: Throwable) {
+            ModManager.MOD_ID_BASEMOD
+        }
+        if (baseModId.isNotEmpty()) {
+            launchModIds.add(baseModId)
+        }
+        val stsLibId = try {
+            ModJarSupport.resolveModId(RuntimePaths.importedStsLibJar(host)).trim()
+        } catch (_: Throwable) {
+            ModManager.MOD_ID_STSLIB
+        }
+        if (stsLibId.isNotEmpty()) {
+            launchModIds.add(stsLibId)
+        }
+
+        optionalMods.forEach { mod ->
+            if (!mod.enabled || !mod.installed) {
+                return@forEach
+            }
+            val launchModId = try {
+                MtsLaunchManifestValidator.resolveLaunchModId(File(mod.storagePath)).trim()
+            } catch (_: Throwable) {
+                ""
+            }
+            if (launchModId.isNotEmpty()) {
+                launchModIds.add(launchModId)
+            }
+        }
+        if (launchModIds.isEmpty()) {
+            return emptyList()
+        }
+
+        return ModManager.findModsDirLaunchIdConflicts(host, launchModIds)
+            .map { conflict ->
+                MtsModsDirConflictIssue(
+                    launchModId = conflict.launchModId,
+                    jarFiles = conflict.jarFiles
+                )
+            }
+    }
+
+    private fun showModsDirLaunchConflictDialog(host: Activity, conflicts: List<MtsModsDirConflictIssue>) {
+        if (conflicts.isEmpty()) {
+            return
+        }
+        val message = buildString {
+            append("检测到 mods 目录中存在会影响本次启动的重复模组文件：\n")
+            conflicts.forEach { conflict ->
+                append("\nmodid: ").append(conflict.launchModId).append('\n')
+                conflict.jarFiles.forEach { file ->
+                    append("- ").append(file.name).append('\n')
+                }
+            }
+            append("\n请删除这些重复文件，只保留每个 modid 的一个 jar 后再启动。")
+        }.trimEnd()
+        AlertDialog.Builder(host)
+            .setTitle("检测到 mods 目录残留重复模组")
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, null)
             .show()
@@ -1532,6 +1608,11 @@ class MainScreenViewModel : ViewModel() {
             val invalidMods = findEnabledMtsLaunchValidationIssues(optionalMods)
             if (invalidMods.isNotEmpty()) {
                 showMtsLaunchValidationDialog(host, invalidMods)
+                return
+            }
+            val modsDirConflicts = findModsDirLaunchConflicts(host, optionalMods)
+            if (modsDirConflicts.isNotEmpty()) {
+                showModsDirLaunchConflictDialog(host, modsDirConflicts)
                 return
             }
         }
