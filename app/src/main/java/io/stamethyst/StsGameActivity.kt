@@ -1,8 +1,6 @@
 package io.stamethyst
 
 import android.annotation.SuppressLint
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -21,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.JvmLaunchController
+import io.stamethyst.backend.launch.LauncherReturnCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.BackBehavior
@@ -413,6 +412,7 @@ class StsGameActivity : AppCompatActivity() {
     private fun requestBackExitToLauncher() {
         if (backExitRequested) return
         backExitRequested = true
+        val bootOverlayActive = !bootOverlayController.isDismissed
 
         inputHandler.hideSoftKeyboard()
         inputHandler.resetGamepadState()
@@ -425,7 +425,7 @@ class StsGameActivity : AppCompatActivity() {
         jvmLaunchController.interrupt()
 
         if (!jvmLaunchController.runtimeLifecycleReady) {
-            returnToLauncher()
+            LauncherReturnCoordinator.returnToLauncher(this)
             return
         }
 
@@ -434,6 +434,13 @@ class StsGameActivity : AppCompatActivity() {
         } catch (_: Throwable) {}
 
         val closeRequested = requestJvmCloseSignal()
+        if (bootOverlayActive) {
+            // During boot-overlay loading, prefer handing control back to the launcher
+            // and letting the JVM shutdown finish asynchronously. Hard-killing the
+            // process here is more likely to drop the user to the home screen.
+            LauncherReturnCoordinator.returnToLauncher(this)
+            return
+        }
         if (!closeRequested || !jvmLaunchController.runtimeLifecycleReady) {
             forceRestartLauncherAndTerminateProcess()
             return
@@ -518,60 +525,18 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.dispatchKeyboardEventToGame(up)
     }
 
-    private fun returnToLauncher() {
-        val launcherIntent = Intent(this, LauncherActivity::class.java)
-        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        startActivity(launcherIntent)
-        finish()
-    }
-
     private fun forceRestartLauncherAndTerminateProcess() {
         if (backExitHardRestartTriggered) {
             return
         }
         backExitHardRestartTriggered = true
-        BackExitNotice.markExpectedBackExitRestartScheduled(this)
-
-        val launcherIntent = Intent(this, LauncherActivity::class.java)
-        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        val flags = PendingIntent.FLAG_CANCEL_CURRENT or
-            PendingIntent.FLAG_ONE_SHOT or
-            PendingIntent.FLAG_IMMUTABLE
-        val pendingIntent = PendingIntent.getActivity(this, 0x71A7, launcherIntent, flags)
-        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager?
-        val triggerAt = SystemClock.elapsedRealtime() + BACK_FORCE_RESTART_DELAY_MS
-        val scheduledByAlarm = if (alarmManager != null) {
-            scheduleLauncherRestart(alarmManager, triggerAt, pendingIntent)
-        } else {
-            false
-        }
-        if (!scheduledByAlarm) {
-            try {
-                pendingIntent.send()
-            } catch (_: PendingIntent.CanceledException) {}
-        }
+        LauncherReturnCoordinator.scheduleLauncherRestart(
+            context = this,
+            delayMs = BACK_FORCE_RESTART_DELAY_MS,
+            markExpectedBackExitRestart = true
+        )
         finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun scheduleLauncherRestart(
-        alarmManager: AlarmManager,
-        triggerAt: Long,
-        pendingIntent: PendingIntent
-    ): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
-            } else {
-                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
-            }
-            true
-        } catch (_: SecurityException) {
-            false
-        } catch (_: Throwable) {
-            false
-        }
     }
 
     // ==================== Crash Reporting ====================
@@ -581,17 +546,7 @@ class StsGameActivity : AppCompatActivity() {
             finish()
             return
         }
-
-        val launcherIntent = Intent(this, LauncherActivity::class.java)
-        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, true)
-        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_CODE, code)
-        launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL, isSignal)
-        if (!detail.isNullOrBlank()) {
-            launcherIntent.putExtra(LauncherActivity.EXTRA_CRASH_DETAIL, detail.trim())
-        }
-        launcherIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        startActivity(launcherIntent)
-        finish()
+        LauncherReturnCoordinator.showCrashAndFinish(this, code, isSignal, detail)
     }
 
     // ==================== Input Event Dispatch ====================
