@@ -1222,21 +1222,26 @@ class MainScreenViewModel : ViewModel() {
             .setTitle(R.string.sts_crash_dialog_title)
             .setMessage(message)
             .setNeutralButton(R.string.sts_share_crash_report) { _, _ ->
-                shareCrashLogs(host)
+                shareCrashLogs(host, code, isSignal, detail)
             }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
     }
 
-    private fun shareCrashLogs(host: Activity) {
+    private fun shareCrashLogs(host: Activity, code: Int, isSignal: Boolean, detail: String?) {
         if (uiState.busy) {
             return
         }
         setBusy(true, "Preparing JVM log bundle...")
         executor.execute {
             try {
-                val payload = JvmLogShareService.prepareSharePayload(host)
+                val payload = JvmLogShareService.prepareCrashSharePayload(
+                    host,
+                    code,
+                    isSignal,
+                    detail
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     try {

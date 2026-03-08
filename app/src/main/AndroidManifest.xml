@@ -33,6 +33,16 @@
             android:noHistory="true"
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
 
+        <service
+            android:name="io.stamethyst.backend.launch.LaunchPreparationProcessService"
+            android:exported="false"
+            android:process=":prep" />
+
+        <service
+            android:name="io.stamethyst.backend.diag.DiagnosticsProcessService"
+            android:exported="false"
+            android:process=":diag" />
+
         <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"
             android:exported="false"

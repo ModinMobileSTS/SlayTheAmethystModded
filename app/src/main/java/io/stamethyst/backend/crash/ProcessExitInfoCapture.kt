@@ -17,21 +17,17 @@ object ProcessExitInfoCapture {
         return captureLatestProcessExitInfoApi30(context)
     }
 
+    @JvmStatic
+    fun peekLatestInterestingProcessExitInfo(context: Context): ProcessExitSummary? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return null
+        }
+        return peekLatestInterestingProcessExitInfoApi30(context)
+    }
+
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureLatestProcessExitInfoApi30(context: Context): ProcessExitSummary? {
-        val manager = context.getSystemService(ActivityManager::class.java) ?: return null
-        val reasons = try {
-            manager.getHistoricalProcessExitReasons(context.packageName, 0, 24)
-        } catch (_: Throwable) {
-            return null
-        }
-        if (reasons.isNullOrEmpty()) {
-            return null
-        }
-        val latest = reasons
-            .asSequence()
-            .sortedByDescending { it.timestamp }
-            .firstOrNull { isInterestingExitReason(it) } ?: return null
+        val latest = resolveLatestInterestingExitInfo(context) ?: return null
 
         val markerValue = buildExitMarker(latest)
         if (!isNewExitMarker(context, markerValue)) {
@@ -50,6 +46,37 @@ object ProcessExitInfoCapture {
             description = description,
             isSignal = latest.reason == ApplicationExitInfo.REASON_SIGNALED
         )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun peekLatestInterestingProcessExitInfoApi30(context: Context): ProcessExitSummary? {
+        val latest = resolveLatestInterestingExitInfo(context) ?: return null
+        return ProcessExitSummary(
+            pid = latest.pid,
+            reason = latest.reason,
+            reasonName = reasonName(latest.reason),
+            status = latest.status,
+            timestamp = latest.timestamp,
+            description = latest.description?.trim().orEmpty(),
+            isSignal = latest.reason == ApplicationExitInfo.REASON_SIGNALED
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun resolveLatestInterestingExitInfo(context: Context): ApplicationExitInfo? {
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return null
+        val reasons = try {
+            manager.getHistoricalProcessExitReasons(context.packageName, 0, 24)
+        } catch (_: Throwable) {
+            return null
+        }
+        if (reasons.isNullOrEmpty()) {
+            return null
+        }
+        return reasons
+            .asSequence()
+            .sortedByDescending { it.timestamp }
+            .firstOrNull { isInterestingExitReason(it) }
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

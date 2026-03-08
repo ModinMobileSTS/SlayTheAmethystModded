@@ -18,6 +18,7 @@ public final class BootBridgeLauncher {
         installUncaughtExceptionBridge(reporter);
         BootBridgeJvmMemoryWatcher.start(reporter);
         BootBridgeJvmHeapSnapshotWriter.startFromSystemProperty();
+        BootBridgeGcHistogramDumper.startFromSystemProperties();
         BootBridgeMtsProgressBridge.tryInstall(reporter);
         BootBridgeGameStateWatcher.start(reporter);
         triggerForcedCrashIfRequested(reporter);

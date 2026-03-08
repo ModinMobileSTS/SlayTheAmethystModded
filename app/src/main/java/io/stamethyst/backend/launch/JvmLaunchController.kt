@@ -13,6 +13,7 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.util.ArrayList
+import android.os.SystemClock
 
 /**
  * Manages JVM launch lifecycle: preparation, argument building, and thread management.
@@ -57,6 +58,10 @@ class JvmLaunchController(
         private set
 
     @Volatile
+    var jvmLaunchStartedElapsedMs = 0L
+        private set
+
+    @Volatile
     private var jvmLaunchThread: Thread? = null
 
     @Volatile
@@ -94,6 +99,7 @@ class JvmLaunchController(
         vmStarted = true
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
+        jvmLaunchStartedElapsedMs = SystemClock.elapsedRealtime()
         cancelRequested = false
 
         onProgressUpdate(8, "Starting JVM...")
@@ -101,13 +107,18 @@ class JvmLaunchController(
         val launchThread = Thread({
             try {
                 throwIfCancelled()
-                LaunchPreparationService.prepare(activity, launchMode) { percent, message ->
-                    throwIfCancelled()
-                    onProgressUpdate(
-                        bootOverlayController?.mapBootOverlayPreparationProgress(percent) ?: percent,
-                        message
-                    )
-                }
+                LaunchPreparationProcessClient.prepare(
+                    context = activity,
+                    launchMode = launchMode,
+                    progressCallback = StartupProgressCallback { percent, message ->
+                        onProgressUpdate(
+                            bootOverlayController?.mapBootOverlayPreparationProgress(percent)
+                                ?: percent,
+                            message
+                        )
+                    },
+                    throwIfCancelled = { throwIfCancelled() }
+                )
 
                 throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(activity)
@@ -203,6 +214,7 @@ class JvmLaunchController(
             } finally {
                 runtimeLifecycleReady = false
                 runtimeMemorySnapshot = null
+                jvmLaunchStartedElapsedMs = 0L
                 stopLatestLogCapMonitor()
                 stopRuntimeHeapSnapshotMonitor()
                 stopBootBridgeEventMonitor()
@@ -216,11 +228,13 @@ class JvmLaunchController(
 
     fun interrupt() {
         cancelRequested = true
+        LaunchPreparationProcessClient.cancel(activity)
         jvmLaunchThread?.interrupt()
     }
 
     fun cleanup() {
         cancelRequested = true
+        LaunchPreparationProcessClient.cancel(activity)
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()
@@ -229,6 +243,7 @@ class JvmLaunchController(
         stopBootBridgeEventMonitor()
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
+        jvmLaunchStartedElapsedMs = 0L
     }
 
     @Throws(LaunchCancelledException::class)

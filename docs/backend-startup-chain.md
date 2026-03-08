@@ -6,6 +6,8 @@ Verified against implementation on 2026-03-08:
 - `MainScreenViewModel.onLaunch(...)`
 - `StsGameActivity`
 - `GameSessionCoordinator`
+- `DiagnosticsProcessService`
+- `LaunchPreparationProcessService`
 - `JvmLaunchController`
 - `LaunchPreparationService`
 - `StsLaunchSpec`
@@ -47,8 +49,10 @@ Verified against implementation on 2026-03-08:
 - `GameSessionCoordinator` waits for valid render surface size/orientation
 - Calls `startJvmOnce()` only after readiness checks pass
 
-4. Preflight in game process
-- `LaunchPreparationService.prepare(...)`
+4. Preflight in short-lived prep process
+- `JvmLaunchController` starts `LaunchPreparationProcessService` in `:prep`
+- The service runs `LaunchPreparationService.prepare(...)` and streams progress back to `:game`
+- Once preparation completes, the `:prep` process exits and `:game` continues JVM bootstrap
 - Internally runs:
   - `ComponentInstaller.ensureInstalled(...)`
   - `RuntimePackInstaller.ensureInstalled(...)`
@@ -78,6 +82,7 @@ Verified against implementation on 2026-03-08:
 - `JvmLaunchController` returns exit code to `StsGameActivity`
 - `StsGameActivity` forwards crash metadata via extras back to `LauncherActivity`
 - Native fatal/signal path can return through `ExitActivity.showExitMessage(...)`
+- Log export, histogram summarization, and crash bundle assembly now run in `DiagnosticsProcessService` under `:diag`
 
 ## 3. Launch Modes and Entrypoint
 
@@ -98,7 +103,12 @@ Verified against implementation on 2026-03-08:
 - `app/src/main/java/io/stamethyst/StsGameActivity.kt`
 - `app/src/main/java/io/stamethyst/GameSessionCoordinator.kt`
 - `app/src/main/java/io/stamethyst/GameSessionConfig.kt`
+- `app/src/main/java/io/stamethyst/backend/diag/DiagnosticsArchiveBuilder.kt`
+- `app/src/main/java/io/stamethyst/backend/diag/DiagnosticsProcessService.kt`
+- `app/src/main/java/io/stamethyst/backend/diag/DiagnosticsProcessClient.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/JvmLaunchController.kt`
+- `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationProcessService.kt`
+- `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationProcessClient.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationService.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/StsLaunchSpec.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/ComponentInstaller.kt`
@@ -143,8 +153,8 @@ Verified against implementation on 2026-03-08:
 2. Split startup progress channels
 - Startup state is distributed across preparation progress callbacks, `latest.log` parsing, and boot bridge events
 
-3. Cross-process launcher/runtime boundary
-- Launcher UI and game runtime are now intentionally split across the default process and `:game`, so shared state must continue to flow through intents, preferences, or files instead of in-memory singletons
+3. Cross-process launcher/prep/diag/runtime boundary
+- Launcher UI, short-lived preparation work, diagnostics packaging, and game runtime are now split across the default process, `:prep`, `:diag`, and `:game`, so shared state must continue to flow through intents, `ResultReceiver`, preferences, or files instead of in-memory singletons
 
 4. Log export behavior drift risk
 - Gradle `stsPullLogs` bundle and Settings "Share Logs" bundle are intentionally close but currently not identical

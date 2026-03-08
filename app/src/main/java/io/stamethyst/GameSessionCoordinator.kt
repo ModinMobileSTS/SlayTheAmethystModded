@@ -88,7 +88,8 @@ internal class GameSessionCoordinator(
             performanceOverlayController = GamePerformanceOverlayController(
                 activity = activity,
                 overlayView = overlayView,
-                readJvmRuntimeMemorySnapshot = { jvmLaunchController.runtimeMemorySnapshot }
+                readJvmRuntimeMemorySnapshot = { jvmLaunchController.runtimeMemorySnapshot },
+                readJvmLaunchStartedElapsedMs = { jvmLaunchController.jvmLaunchStartedElapsedMs }
             )
         }
         performanceOverlayController?.init()

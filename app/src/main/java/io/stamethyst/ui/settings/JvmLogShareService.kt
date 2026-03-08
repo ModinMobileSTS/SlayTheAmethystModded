@@ -4,6 +4,9 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
+import io.stamethyst.backend.diag.CrashArchiveContext
+import io.stamethyst.backend.diag.DiagnosticsProcessClient
 
 data class JvmLogsSharePayload(
     val uri: Uri,
@@ -12,8 +15,39 @@ data class JvmLogsSharePayload(
 
 internal object JvmLogShareService {
     fun prepareSharePayload(host: Activity): JvmLogsSharePayload {
-        val fileName = SettingsFileService.buildJvmLogExportFileName()
-        val shareUri = SettingsFileService.resolveJvmLogsShareUri(host)
+        val archiveResult = DiagnosticsProcessClient.buildJvmLogShareArchive(host)
+        val fileName = archiveResult.archiveFile.name
+        val shareUri = FileProvider.getUriForFile(
+            host,
+            "${host.packageName}.fileprovider",
+            archiveResult.archiveFile
+        )
+        return JvmLogsSharePayload(
+            uri = shareUri,
+            fileName = fileName
+        )
+    }
+
+    fun prepareCrashSharePayload(
+        host: Activity,
+        code: Int,
+        isSignal: Boolean,
+        detail: String?
+    ): JvmLogsSharePayload {
+        val archiveResult = DiagnosticsProcessClient.buildCrashShareArchive(
+            host,
+            CrashArchiveContext(
+                code = code,
+                isSignal = isSignal,
+                detail = detail
+            )
+        )
+        val fileName = archiveResult.archiveFile.name
+        val shareUri = FileProvider.getUriForFile(
+            host,
+            "${host.packageName}.fileprovider",
+            archiveResult.archiveFile
+        )
         return JvmLogsSharePayload(
             uri = shareUri,
             fileName = fileName

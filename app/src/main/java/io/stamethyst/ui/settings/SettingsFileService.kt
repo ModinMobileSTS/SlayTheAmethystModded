@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
@@ -170,27 +171,13 @@ internal object SettingsFileService {
 
     @Throws(IOException::class)
     fun resolveJvmLogsShareUri(host: Activity): Uri {
-        val shareDir = File(host.cacheDir, "share")
-        if (!shareDir.exists() && !shareDir.mkdirs()) {
-            throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
-        }
-
-        val archiveFile = File(shareDir, buildJvmLogExportFileName())
-        FileOutputStream(archiveFile, false).use { output ->
-            writeJvmLogsBundle(host, output)
-        }
-
+        val archiveFile = DiagnosticsProcessClient.buildJvmLogShareArchive(host).archiveFile
         return FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", archiveFile)
     }
 
     @Throws(IOException::class)
     fun exportJvmLogBundle(host: Activity, uri: Uri): Int {
-        host.contentResolver.openOutputStream(uri).use { output ->
-            if (output == null) {
-                throw IOException("Unable to open destination file")
-            }
-            return writeJvmLogsBundle(host, output)
-        }
+        return DiagnosticsProcessClient.exportJvmLogBundle(host, uri)
     }
 
     @Throws(IOException::class)
