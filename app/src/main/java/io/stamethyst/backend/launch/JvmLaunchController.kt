@@ -278,6 +278,7 @@ class JvmLaunchController(
         bootBridgeEventOffset = 0L
         bootBridgeEventRemainder = ""
         bootBridgeDismissSignaled = false
+        runtimeMemorySnapshot = null
     }
 
     private fun pollBootBridgeEvents(eventsFile: File, bootOverlayController: BootOverlayController?) {
@@ -328,19 +329,30 @@ class JvmLaunchController(
             }
 
             for (line in lines) {
-                processBootBridgeEventLine(line, bootOverlayController)
+                val reachedTerminalEvent =
+                    processBootBridgeEventLine(line, bootOverlayController)
+                if (reachedTerminalEvent) {
+                    stopBootBridgeEventMonitor()
+                    break
+                }
+                if (!bootBridgeEventMonitorRunning || Thread.currentThread().isInterrupted) {
+                    break
+                }
             }
         }
     }
 
-    private fun processBootBridgeEventLine(rawLine: String, bootOverlayController: BootOverlayController?) {
+    private fun processBootBridgeEventLine(
+        rawLine: String,
+        bootOverlayController: BootOverlayController?
+    ): Boolean {
         val line = rawLine.trim()
         if (line.isEmpty()) {
-            return
+            return false
         }
         val parts = line.split('\t', limit = 3)
         if (parts.isEmpty()) {
-            return
+            return false
         }
         val eventType = parts[0].trim().uppercase()
         val progress = parts.getOrNull(1)?.trim()?.toIntOrNull()
@@ -369,17 +381,20 @@ class JvmLaunchController(
                     bootOverlayController,
                     message.ifEmpty { "Game ready" }
                 )
+                return true
             }
 
             "FAIL" -> {
                 val detail = message.ifEmpty { "Boot bridge signaled failure" }
                 bootOverlayController?.signalLaunchFailure(detail)
+                return true
             }
 
             "MEM" -> {
                 runtimeMemorySnapshot = parseRuntimeMemorySnapshot(message)
             }
         }
+        return false
     }
 
     private fun parseRuntimeMemorySnapshot(message: String): JvmRuntimeMemorySnapshot? {

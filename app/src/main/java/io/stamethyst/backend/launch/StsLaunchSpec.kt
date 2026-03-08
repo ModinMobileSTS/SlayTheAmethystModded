@@ -47,7 +47,7 @@ object StsLaunchSpec {
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.
-        // Create files/sts/compat_xint.flag to force interpreted mode on unstable devices.
+        // Create <stsRoot>/compat_xint.flag to force interpreted mode on unstable devices.
         if (forceInterpreterFlag.exists()) {
             args.add("-Xint")
         } else {

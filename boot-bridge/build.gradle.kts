@@ -13,3 +13,7 @@ java {
 tasks.jar {
     archiveFileName = "boot-bridge.jar"
 }
+
+dependencies {
+    testImplementation(libs.junit4)
+}

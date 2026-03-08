@@ -4,23 +4,30 @@ final class BootBridgeJvmMemoryWatcher {
     private static final long SAMPLE_INTERVAL_MS = 1000L;
 
     private final BootBridgeReporter reporter;
+    private final long sampleIntervalMs;
 
-    private BootBridgeJvmMemoryWatcher(BootBridgeReporter reporter) {
+    private BootBridgeJvmMemoryWatcher(BootBridgeReporter reporter, long sampleIntervalMs) {
         this.reporter = reporter;
+        this.sampleIntervalMs = Math.max(1L, sampleIntervalMs);
     }
 
-    static void start(BootBridgeReporter reporter) {
-        new BootBridgeJvmMemoryWatcher(reporter).startThread();
+    static Thread start(BootBridgeReporter reporter) {
+        return start(reporter, SAMPLE_INTERVAL_MS);
     }
 
-    private void startThread() {
+    static Thread start(BootBridgeReporter reporter, long sampleIntervalMs) {
+        return new BootBridgeJvmMemoryWatcher(reporter, sampleIntervalMs).startThread();
+    }
+
+    private Thread startThread() {
         Thread watcher = new Thread(this::runLoop, "Amethyst-BootBridge-MemoryWatcher");
         watcher.setDaemon(true);
         watcher.start();
+        return watcher;
     }
 
     private void runLoop() {
-        while (!reporter.isFailSent() && !Thread.currentThread().isInterrupted()) {
+        while (!reporter.isReadySent() && !reporter.isFailSent() && !Thread.currentThread().isInterrupted()) {
             try {
                 Runtime runtime = Runtime.getRuntime();
                 long heapUsedBytes = runtime.totalMemory() - runtime.freeMemory();
@@ -28,7 +35,7 @@ final class BootBridgeJvmMemoryWatcher {
                 reporter.memory(heapUsedBytes, heapMaxBytes);
             } catch (Throwable ignored) {
             }
-            sleepQuietly(SAMPLE_INTERVAL_MS);
+            sleepQuietly(sampleIntervalMs);
         }
     }
 

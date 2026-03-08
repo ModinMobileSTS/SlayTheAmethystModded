@@ -22,6 +22,7 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="false"
             android:enableOnBackInvokedCallback="true"
+            android:process=":game"
             android:screenOrientation="sensorLandscape"
             tools:targetApi="33" />
 

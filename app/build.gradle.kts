@@ -184,6 +184,21 @@ val gdxVideoNativeAssetFiles = listOf(
 val supportedLaunchModes = setOf("mts_basemod", "vanilla")
 val stsJvmLogExportMaxSlots = 5
 
+enum class RemoteFileAccessMode {
+    SHELL,
+    RUN_AS
+}
+
+data class DeviceStsPaths(
+    val stsRoot: String,
+    val accessMode: RemoteFileAccessMode
+)
+
+data class AdbCommandResult(
+    val exitCode: Int,
+    val stdout: String
+)
+
 val launchMode: String = readGradleProperty("launchMode", "mts_basemod")
 val forceJvmCrash: String = readGradleProperty("forceJvmCrash", "false")
 val deviceSerial: String = readGradleProperty("deviceSerial")
@@ -283,7 +298,7 @@ val stsPullLogs by tasks.registering {
         val content: String
     )
 
-    fun runAdbCommand(args: List<String>): String {
+    fun runAdbCommand(args: List<String>): AdbCommandResult {
         val output = providers.exec {
             val command = mutableListOf(adb)
             if (deviceSerial.isNotEmpty()) {
@@ -293,39 +308,99 @@ val stsPullLogs by tasks.registering {
             commandLine(command)
             isIgnoreExitValue = true
         }
-        if (output.result.get().exitValue != 0) {
-            return ""
-        }
-        return output.standardOutput.asText.get()
-    }
-
-    fun remoteFileExists(remotePath: String): Boolean {
-        val checkScript = "[ -f $remotePath ] && echo 1"
-        return runAdbCommand(
-            listOf("exec-out", "run-as", packageName, "sh", "-c", checkScript)
-        ).trim() == "1"
-    }
-
-    fun readRemoteFile(remotePath: String): String {
-        return runAdbCommand(
-            listOf(
-                "exec-out",
-                "run-as",
-                packageName,
-                "sh",
-                "-c",
-                "cat $remotePath 2>/dev/null"
-            )
+        return AdbCommandResult(
+            exitCode = output.result.get().exitValue,
+            stdout = output.standardOutput.asText.get()
         )
     }
 
-    fun listArchivedJvmLogNames(): List<String> {
-        val listScript = "for f in files/sts/jvm_logs/jvm_log_*.log; do [ -f \"${'$'}f\" ] && echo \"${'$'}{f##*/}\"; done"
-        return runAdbCommand(
-            listOf("exec-out", "run-as", packageName, "sh", "-c", listScript)
-        ).lineSequence()
+    fun runDeviceCommand(
+        accessMode: RemoteFileAccessMode,
+        shellArgs: List<String>,
+        runAsArgs: List<String> = shellArgs
+    ): AdbCommandResult {
+        val command = when (accessMode) {
+            RemoteFileAccessMode.SHELL -> listOf("shell") + shellArgs
+            RemoteFileAccessMode.RUN_AS -> listOf("shell", "run-as", packageName) + runAsArgs
+        }
+        return runAdbCommand(command)
+    }
+
+    fun devicePathExists(
+        remotePath: String,
+        accessMode: RemoteFileAccessMode
+    ): Boolean {
+        return runDeviceCommand(
+            accessMode = accessMode,
+            shellArgs = listOf("ls", remotePath)
+        ).exitCode == 0
+    }
+
+    fun resolveDeviceStsPaths(): DeviceStsPaths {
+        val externalFilesCandidates = linkedSetOf(
+            "/sdcard/Android/data/$packageName/files",
+            "/storage/emulated/0/Android/data/$packageName/files"
+        )
+
+        for (externalFilesDir in externalFilesCandidates) {
+            if (devicePathExists(externalFilesDir, RemoteFileAccessMode.SHELL)) {
+                return DeviceStsPaths(
+                    stsRoot = "$externalFilesDir/sts",
+                    accessMode = RemoteFileAccessMode.SHELL
+                )
+            }
+        }
+
+        if (devicePathExists("files/sts", RemoteFileAccessMode.RUN_AS)) {
+            return DeviceStsPaths(
+                stsRoot = "files/sts",
+                accessMode = RemoteFileAccessMode.RUN_AS
+            )
+        }
+
+        return DeviceStsPaths(
+            stsRoot = "/sdcard/Android/data/$packageName/files/sts",
+            accessMode = RemoteFileAccessMode.SHELL
+        )
+    }
+
+    fun resolveRemotePath(paths: DeviceStsPaths, relativePath: String): String {
+        val trimmed = relativePath.trimStart('/')
+        return if (paths.accessMode == RemoteFileAccessMode.RUN_AS) {
+            "${paths.stsRoot}/$trimmed"
+        } else {
+            "${paths.stsRoot}/$trimmed"
+        }
+    }
+
+    fun remoteFileExists(paths: DeviceStsPaths, relativePath: String): Boolean {
+        return devicePathExists(
+            resolveRemotePath(paths, relativePath),
+            paths.accessMode
+        )
+    }
+
+    fun readRemoteFile(paths: DeviceStsPaths, relativePath: String): String {
+        val remotePath = resolveRemotePath(paths, relativePath)
+        val result = runDeviceCommand(
+            accessMode = paths.accessMode,
+            shellArgs = listOf("cat", remotePath)
+        )
+        return if (result.exitCode == 0) result.stdout else ""
+    }
+
+    fun listArchivedJvmLogNames(paths: DeviceStsPaths): List<String> {
+        val logsDirPath = resolveRemotePath(paths, "jvm_logs")
+        val result = runDeviceCommand(
+            accessMode = paths.accessMode,
+            shellArgs = listOf("ls", logsDirPath)
+        )
+        if (result.exitCode != 0) {
+            return emptyList()
+        }
+        return result.stdout.lineSequence()
             .map { it.trim() }
-            .filter { it.isNotEmpty() }
+            .filter { it.matches(Regex("""jvm_log_.*\.log""")) }
             .distinct()
             .sortedDescending()
             .toList()
@@ -345,28 +420,30 @@ val stsPullLogs by tasks.registering {
         outputDir.mkdirs()
 
         val pulledLogs = mutableListOf<PulledLog>()
+        val deviceStsPaths = resolveDeviceStsPaths()
+        logger.lifecycle(
+            "Resolved device stsRoot: ${deviceStsPaths.stsRoot} (${deviceStsPaths.accessMode.name.lowercase(Locale.US)})"
+        )
 
-        val latestRemotePath = "files/sts/latest.log"
-        val latestExists = remoteFileExists(latestRemotePath)
+        val latestExists = remoteFileExists(deviceStsPaths, "latest.log")
         if (latestExists) {
             logger.lifecycle("Pulling shared JVM log: latest.log")
             pulledLogs.add(
                 PulledLog(
                     fileName = "latest.log",
-                    content = readRemoteFile(latestRemotePath)
+                    content = readRemoteFile(deviceStsPaths, "latest.log")
                 )
             )
         } else {
             logger.lifecycle("latest.log not found on device.")
         }
 
-        val bootBridgeEventsRemotePath = "files/sts/boot_bridge_events.log"
-        if (remoteFileExists(bootBridgeEventsRemotePath)) {
+        if (remoteFileExists(deviceStsPaths, "boot_bridge_events.log")) {
             logger.lifecycle("Pulling shared JVM log: boot_bridge_events.log")
             pulledLogs.add(
                 PulledLog(
                     fileName = "boot_bridge_events.log",
-                    content = readRemoteFile(bootBridgeEventsRemotePath)
+                    content = readRemoteFile(deviceStsPaths, "boot_bridge_events.log")
                 )
             )
         } else {
@@ -378,17 +455,21 @@ val stsPullLogs by tasks.registering {
         } else {
             stsJvmLogExportMaxSlots
         }
-        val archivedNames = listArchivedJvmLogNames().take(archivedLimit)
+        val archivedNames = listArchivedJvmLogNames(deviceStsPaths).take(archivedLimit)
         if (archivedNames.isEmpty()) {
             logger.lifecycle("No archived jvm_log_*.log found on device.")
         }
         for (name in archivedNames) {
-            val remotePath = "files/sts/jvm_logs/$name"
-            if (!remoteFileExists(remotePath)) {
+            if (!remoteFileExists(deviceStsPaths, "jvm_logs/$name")) {
                 continue
             }
             logger.lifecycle("Pulling shared JVM log: $name")
-            pulledLogs.add(PulledLog(fileName = name, content = readRemoteFile(remotePath)))
+            pulledLogs.add(
+                PulledLog(
+                    fileName = name,
+                    content = readRemoteFile(deviceStsPaths, "jvm_logs/$name")
+                )
+            )
         }
 
         val archiveFile = File(outputDir, buildJvmLogExportFileName())
@@ -399,8 +480,8 @@ val stsPullLogs by tasks.registering {
                     zipOutput.putNextEntry(entry)
                     val message = "No JVM logs found.\n" +
                         "Expected files:\n" +
-                        "- /data/user/0/$packageName/files/sts/latest.log\n" +
-                        "- /data/user/0/$packageName/files/sts/jvm_logs\n"
+                        "- ${resolveRemotePath(deviceStsPaths, "latest.log")}\n" +
+                        "- ${resolveRemotePath(deviceStsPaths, "jvm_logs")}\n"
                     zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
                     zipOutput.closeEntry()
                 } else {

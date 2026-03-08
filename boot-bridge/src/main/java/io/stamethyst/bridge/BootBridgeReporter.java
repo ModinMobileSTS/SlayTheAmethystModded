@@ -18,7 +18,7 @@ final class BootBridgeReporter {
     }
 
     void phase(int progress, String message) {
-        if (failSent.get()) {
+        if (readySent.get() || failSent.get()) {
             return;
         }
         int bounded = clamp(progress, 0, 100);
@@ -32,7 +32,7 @@ final class BootBridgeReporter {
     }
 
     void splash(String message) {
-        if (failSent.get()) {
+        if (readySent.get() || failSent.get()) {
             return;
         }
         sink.write("SPLASH", 94, sanitizeMessage(message));
@@ -49,14 +49,14 @@ final class BootBridgeReporter {
     }
 
     void fail(String message) {
-        if (failSent.getAndSet(true)) {
+        if (readySent.get() || failSent.getAndSet(true)) {
             return;
         }
         sink.write("FAIL", -1, sanitizeMessage(message));
     }
 
     void memory(long heapUsedBytes, long heapMaxBytes) {
-        if (failSent.get()) {
+        if (readySent.get() || failSent.get()) {
             return;
         }
         long safeUsedBytes = Math.max(0L, heapUsedBytes);

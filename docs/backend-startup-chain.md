@@ -2,9 +2,10 @@
 
 This document maps the backend launch path for SlayTheAmethyst from runtime bridge initialization to game entrypoint.
 
-Verified against implementation on 2026-03-05:
+Verified against implementation on 2026-03-08:
 - `MainScreenViewModel.onLaunch(...)`
 - `StsGameActivity`
+- `GameSessionCoordinator`
 - `JvmLaunchController`
 - `LaunchPreparationService`
 - `StsLaunchSpec`
@@ -34,6 +35,7 @@ Verified against implementation on 2026-03-05:
 1. Android entry
 - `AndroidManifest.xml` launcher activity is `io.stamethyst.LauncherActivity` (no launcher alias)
 - `StsApplication.onCreate()` initializes shared bridge context via `MainActivity.init(...)`
+- `LauncherActivity` stays in the default app process; `StsGameActivity` runs in the dedicated `:game` process
 
 2. User action -> backend launch
 - `MainScreenViewModel.onLaunch(...)` calls `prepareAndLaunch(...)`
@@ -41,7 +43,8 @@ Verified against implementation on 2026-03-05:
 - Flow starts `StsGameActivity` directly
 
 3. Surface ready gate
-- `StsGameActivity` waits for valid render surface size/orientation
+- `StsGameActivity` owns the render surface and input dispatch
+- `GameSessionCoordinator` waits for valid render surface size/orientation
 - Calls `startJvmOnce()` only after readiness checks pass
 
 4. Preflight in game process
@@ -55,8 +58,10 @@ Verified against implementation on 2026-03-05:
 
 5. Runtime bootstrap
 - Resolve `javaHome` under `files/runtimes/Internal`
-- Rotate/archive old log slots and redirect stdio to `files/sts/latest.log`
-- Start boot bridge event monitor for `files/sts/boot_bridge_events.log`
+- Resolve runtime content root via `RuntimePaths.stsRoot(context)`; this currently prefers `externalFilesDir(...)/sts` and falls back to internal `files/sts`
+- Rotate/archive old log slots and redirect stdio to `RuntimePaths.latestLog(context)`
+- Start boot bridge event monitor for `RuntimePaths.bootBridgeEventsLog(context)`
+- Boot bridge events are now startup-only: the Android-side monitor stops after the first terminal event (`READY` or `FAIL`)
 - Sync surface/display resolution to runtime config
 
 6. Native/JVM init
@@ -80,7 +85,7 @@ Verified against implementation on 2026-03-05:
 - JVM main class: `io.stamethyst.bridge.BootBridgeLauncher`
 - Boot bridge delegate: `com.evacipated.cardcrawl.modthespire.Loader`
 - Passes `--jre51`, `--skip-launcher`, and `--mods <resolved list>`
-- Boot bridge emits phase/ready/fail events to `boot_bridge_events.log`
+- Boot bridge emits phase/splash/ready/fail/memory events only during startup; once `READY` or `FAIL` is sent, subsequent boot events are suppressed
 
 2. Vanilla mode (`vanilla`, debug launch entry)
 - JVM main class is still `io.stamethyst.bridge.BootBridgeLauncher`
@@ -91,6 +96,8 @@ Verified against implementation on 2026-03-05:
 
 1. Launch orchestration
 - `app/src/main/java/io/stamethyst/StsGameActivity.kt`
+- `app/src/main/java/io/stamethyst/GameSessionCoordinator.kt`
+- `app/src/main/java/io/stamethyst/GameSessionConfig.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/JvmLaunchController.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationService.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/StsLaunchSpec.kt`
@@ -116,30 +123,33 @@ Verified against implementation on 2026-03-05:
 4. MTS boot bridge
 - `boot-bridge/src/main/java/io/stamethyst/bridge/BootBridgeLauncher.java`
 
-## 5. Runtime Artifacts (`filesDir`)
+## 5. Runtime Artifacts (`RuntimePaths.stsRoot(context)`)
 
-- `files/sts/desktop-1.0.jar`
-- `files/sts/ModTheSpire.jar`
-- `files/sts/mods/*.jar`
-- `files/sts/enabled_mods.txt`
-- `files/sts/latest.log`
-- `files/sts/jvm_logs/jvm_log_*.log`
-- `files/sts/boot_bridge_events.log`
+- `desktop-1.0.jar`
+- `ModTheSpire.jar`
+- `mods/*.jar`
+- `enabled_mods.txt`
+- `latest.log`
+- `jvm_logs/jvm_log_*.log`
+- `boot_bridge_events.log`
 - `files/runtimes/Internal/...`
 - `files/lwjgl3/lwjgl-glfw-classes.jar`
 
 ## 6. Current Maintainability Risks
 
 1. High coupling in `StsGameActivity`
-- It still coordinates UI lifecycle, input bridge, boot overlay, and launch/session control in one class
+- It now focuses on lifecycle, surface hosting, and input dispatch, but still owns direct wiring for render/input/session controller creation
 
 2. Split startup progress channels
 - Startup state is distributed across preparation progress callbacks, `latest.log` parsing, and boot bridge events
 
-3. Log export behavior drift risk
+3. Cross-process launcher/runtime boundary
+- Launcher UI and game runtime are now intentionally split across the default process and `:game`, so shared state must continue to flow through intents, preferences, or files instead of in-memory singletons
+
+4. Log export behavior drift risk
 - Gradle `stsPullLogs` bundle and Settings "Share Logs" bundle are intentionally close but currently not identical
 
-4. Mixed concerns in `ModJarSupport`
+5. Mixed concerns in `ModJarSupport`
 - Validation, compatibility patching, diagnostics, and classpath prep live in one large utility
 
 ## 7. Suggested Refactor Order
@@ -148,7 +158,7 @@ Verified against implementation on 2026-03-05:
 - Define one phase schema consumed by preparation, boot bridge monitor, and boot overlay
 
 2. Extract launch-session service
-- Keep `StsGameActivity` focused on surface/input/lifecycle, move orchestration to a dedicated service class
+- Keep `StsGameActivity` focused on surface/input/lifecycle, continue shrinking its remaining wiring around `GameSessionCoordinator`
 
 3. Unify log bundle assembly
 - Reuse one JVM log bundle builder for both Settings export and Gradle automation task

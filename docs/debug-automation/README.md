@@ -30,6 +30,7 @@ Windows:
 ## `stsPullLogs` Output
 
 - One zip bundle named `sts-jvm-logs-export-<timestamp>.zip`
+- The task resolves the same runtime root as the app: external app files `.../Android/data/<package>/files/sts` when available, otherwise the legacy internal `files/sts`
 - Bundle contents (Gradle task output):
   - `sts/jvm_logs/latest.log` (if present)
   - `sts/jvm_logs/boot_bridge_events.log` (if present)
