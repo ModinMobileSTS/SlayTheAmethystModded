@@ -13,6 +13,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.stamethyst.backend.launch.JvmRuntimeMemorySnapshot
 import org.lwjgl.glfw.CallbackBridge
+import java.io.File
 import java.util.Locale
 
 internal class GamePerformanceOverlayController(
@@ -22,12 +23,13 @@ internal class GamePerformanceOverlayController(
 ) {
     companion object {
         private const val REFRESH_INTERVAL_MS = 1000L
+        private const val PSS_REFRESH_INTERVAL_MS = 10_000L
         private const val OVERLAY_SIDE_MARGIN_DP = 12
         private const val OVERLAY_TOP_MARGIN_DP = 40
         private const val BYTES_PER_MB = 1024.0 * 1024.0
     }
 
-    private data class ProcessMemorySnapshot(
+    private data class PssMemorySnapshot(
         val totalPssBytes: Long,
         val dalvikPssBytes: Long,
         val nativePssBytes: Long,
@@ -37,11 +39,27 @@ internal class GamePerformanceOverlayController(
     private val activityManager =
         activity.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
     private val processId = Process.myPid()
+    private val procStatusFile = File("/proc/self/status")
 
     private var running = false
     private var visible = false
     private var lastSampleElapsedMs = 0L
     private var lastSwapCount = 0
+
+    @Volatile
+    private var latestRssBytes: Long? = null
+
+    @Volatile
+    private var latestPssSnapshot: PssMemorySnapshot? = null
+
+    @Volatile
+    private var latestPssSampleElapsedMs = 0L
+
+    @Volatile
+    private var memorySamplerRunning = false
+
+    @Volatile
+    private var memorySamplerThread: Thread? = null
 
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -68,6 +86,7 @@ internal class GamePerformanceOverlayController(
         running = true
         if (visible) {
             primeSamplingState()
+            startMemorySampler()
             renderSnapshot()
             scheduleNextUpdate()
         }
@@ -76,10 +95,12 @@ internal class GamePerformanceOverlayController(
     fun onPause() {
         running = false
         stopUpdates()
+        stopMemorySampler()
     }
 
     fun onDestroy() {
         stopUpdates()
+        stopMemorySampler()
     }
 
     fun setVisible(visible: Boolean) {
@@ -90,9 +111,11 @@ internal class GamePerformanceOverlayController(
         overlayView.visibility = if (visible) View.VISIBLE else View.GONE
         if (!visible) {
             stopUpdates()
+            stopMemorySampler()
             return
         }
         primeSamplingState()
+        startMemorySampler()
         renderSnapshot()
         if (running) {
             scheduleNextUpdate()
@@ -129,14 +152,20 @@ internal class GamePerformanceOverlayController(
         lastSwapCount = swapCount
 
         val nativeHeapBytes = Debug.getNativeHeapAllocatedSize()
-        val processMemorySnapshot = readProcessMemorySnapshot()
+        val rssBytes = latestRssBytes
+        val pssSnapshot = latestPssSnapshot
         val jvmRuntimeMemorySnapshot = readJvmRuntimeMemorySnapshot()
+        val pssAgeSeconds = if (pssSnapshot != null && latestPssSampleElapsedMs > 0L) {
+            ((nowMs - latestPssSampleElapsedMs).coerceAtLeast(0L) / 1000L).toInt()
+        } else {
+            null
+        }
 
-        overlayView.text = buildString(160) {
+        overlayView.text = buildString(192) {
             append("FPS ")
             append(String.format(Locale.US, "%.1f", fps))
-            append("  PSS ")
-            append(processMemorySnapshot?.totalPssBytes?.let(::formatMb) ?: "--")
+            append("  RSS ")
+            append(rssBytes?.let(::formatMb) ?: "--")
             append('\n')
             append("JvmHeap ")
             append(jvmRuntimeMemorySnapshot?.heapUsedBytes?.let(::formatMb) ?: "--")
@@ -145,14 +174,56 @@ internal class GamePerformanceOverlayController(
             append("  NHeap ")
             append(formatMb(nativeHeapBytes))
             append('\n')
-            append("PSS Dalvik ")
-            append(processMemorySnapshot?.dalvikPssBytes?.let(::formatMb) ?: "--")
-            append("  Native ")
-            append(processMemorySnapshot?.nativePssBytes?.let(::formatMb) ?: "--")
+            append("PSS* ")
+            append(pssSnapshot?.totalPssBytes?.let(::formatMb) ?: "--")
+            pssAgeSeconds?.let {
+                append(" (")
+                append(it)
+                append("s)")
+            }
+            append("  Dalvik ")
+            append(pssSnapshot?.dalvikPssBytes?.let(::formatMb) ?: "--")
             append('\n')
-            append("PSS Other ")
-            append(processMemorySnapshot?.otherPssBytes?.let(::formatMb) ?: "--")
+            append("PSS Native ")
+            append(pssSnapshot?.nativePssBytes?.let(::formatMb) ?: "--")
+            append("  Other ")
+            append(pssSnapshot?.otherPssBytes?.let(::formatMb) ?: "--")
         }
+    }
+
+    private fun startMemorySampler() {
+        if (memorySamplerRunning) {
+            return
+        }
+        memorySamplerRunning = true
+        if (latestPssSampleElapsedMs == 0L) {
+            latestPssSampleElapsedMs = SystemClock.elapsedRealtime() - PSS_REFRESH_INTERVAL_MS
+        }
+        val samplerThread = Thread({
+            while (memorySamplerRunning && !Thread.currentThread().isInterrupted) {
+                val nowMs = SystemClock.elapsedRealtime()
+                latestRssBytes = readRssBytes()
+                if (nowMs - latestPssSampleElapsedMs >= PSS_REFRESH_INTERVAL_MS) {
+                    latestPssSnapshot = readPssSnapshot()
+                    latestPssSampleElapsedMs = nowMs
+                }
+                try {
+                    Thread.sleep(REFRESH_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, "STS-PerfOverlayMemory")
+        samplerThread.isDaemon = true
+        memorySamplerThread = samplerThread
+        samplerThread.start()
+    }
+
+    private fun stopMemorySampler() {
+        memorySamplerRunning = false
+        val samplerThread = memorySamplerThread
+        memorySamplerThread = null
+        samplerThread?.interrupt()
     }
 
     private fun readSwapCount(): Int {
@@ -163,13 +234,29 @@ internal class GamePerformanceOverlayController(
         }
     }
 
-    private fun readProcessMemorySnapshot(): ProcessMemorySnapshot? {
+    private fun readRssBytes(): Long? {
+        return try {
+            procStatusFile.useLines { lines ->
+                lines.firstNotNullOfOrNull { line ->
+                    if (!line.startsWith("VmRSS:")) {
+                        return@firstNotNullOfOrNull null
+                    }
+                    val parts = line.trim().split(Regex("\\s+"))
+                    parts.getOrNull(1)?.toLongOrNull()?.coerceAtLeast(0L)?.times(1024L)
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun readPssSnapshot(): PssMemorySnapshot? {
         val manager = activityManager ?: return null
         return try {
             val info = manager.getProcessMemoryInfo(intArrayOf(processId))
                 ?.firstOrNull()
                 ?: return null
-            ProcessMemorySnapshot(
+            PssMemorySnapshot(
                 totalPssBytes = info.totalPss.toLong().coerceAtLeast(0L) * 1024L,
                 dalvikPssBytes = info.dalvikPss.toLong().coerceAtLeast(0L) * 1024L,
                 nativePssBytes = info.nativePss.toLong().coerceAtLeast(0L) * 1024L,
