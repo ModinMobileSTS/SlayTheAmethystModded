@@ -1,6 +1,5 @@
 package io.stamethyst.backend.launch
 
-import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import io.stamethyst.config.RuntimePaths
@@ -15,7 +14,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 object StsLaunchSpec {
-    private const val BYTES_PER_MB = 1024L * 1024L
+    private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 50
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS_BASEMOD = "mts_basemod"
 
@@ -66,20 +65,30 @@ object StsLaunchSpec {
             }
         }
         val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
-        val heapStartMb = resolveJvmHeapStartMb(context, heapMaxMb, is64BitRuntime)
+        val heapStartMb = heapMaxMb
         args.add("-Xms${heapStartMb}M")
         args.add("-Xmx${heapMaxMb}M")
+        args.add(
+            "-XX:ActiveProcessorCount=${Runtime.getRuntime().availableProcessors().coerceAtLeast(1)}"
+        )
         args.add("-XX:+DisableExplicitGC")
         if (is64BitRuntime) {
             // Reduce periodic frame hitching from stop-the-world pauses.
             args.add("-XX:+UseG1GC")
-            args.add("-XX:MaxGCPauseMillis=25")
+            args.add("-XX:MaxGCPauseMillis=$DEFAULT_G1_MAX_PAUSE_MILLIS")
             args.add("-XX:+ParallelRefProcEnabled")
+            if (LauncherConfig.isJvmStringDeduplicationEnabled(context)) {
+                args.add("-XX:+UseStringDeduplication")
+            } else {
+                args.add("-XX:-UseStringDeduplication")
+            }
         }
         args.add("-XX:ErrorFile=/dev/null")
-        args.add("-XX:+UnlockDiagnosticVMOptions")
-        args.add("-verbose:gc")
-        args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
+        if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
+            args.add("-XX:+UnlockDiagnosticVMOptions")
+            args.add("-verbose:gc")
+            args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
+        }
         if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
             args.add("-noverify")
@@ -169,8 +178,10 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
-        args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
-        args.add("-Damethyst.bridge.gc_histogram_dir=${RuntimePaths.jvmHistogramsDir(context).absolutePath}")
+        if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
+            args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
+            args.add("-Damethyst.bridge.gc_histogram_dir=${RuntimePaths.jvmHistogramsDir(context).absolutePath}")
+        }
 
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 
@@ -250,31 +261,4 @@ object StsLaunchSpec {
             File(javaHome, "lib/arm64").isDirectory ||
             File(javaHome, "lib/x86_64").isDirectory
     }
-
-    private fun resolveJvmHeapStartMb(
-        context: Context,
-        heapMaxMb: Int,
-        is64BitRuntime: Boolean
-    ): Int {
-        val minimumStartMb = LauncherConfig.MIN_JVM_HEAP_MAX_MB / 2
-        val maxReasonableStartMb = (heapMaxMb / 2).coerceAtLeast(minimumStartMb)
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        val memoryInfo = ActivityManager.MemoryInfo()
-        val totalMemoryMb = if (activityManager != null) {
-            activityManager.getMemoryInfo(memoryInfo)
-            (memoryInfo.totalMem / BYTES_PER_MB).coerceAtLeast(0L)
-        } else {
-            0L
-        }
-        val deviceTierStartMb = when {
-            !is64BitRuntime -> minimumStartMb
-            activityManager?.isLowRamDevice == true -> minimumStartMb
-            totalMemoryMb in 1..4096L -> minimumStartMb
-            totalMemoryMb in 4097..8192L -> 192
-            else -> 256
-        }
-        return minOf(deviceTierStartMb, maxReasonableStartMb, heapMaxMb)
-            .coerceAtLeast(minimumStartMb)
-    }
-
 }

@@ -35,6 +35,8 @@ object LauncherConfig {
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
+    private const val PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED =
+        "jvm_string_deduplication_enabled"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
@@ -70,6 +72,7 @@ object LauncherConfig {
     const val MAX_JVM_HEAP_MAX_MB = 2048
     const val JVM_HEAP_STEP_MB = 128
     const val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED = false
+    const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
 
     const val DEFAULT_RENDER_SCALE = 1.0f
     const val MIN_RENDER_SCALE = 0.50f
@@ -293,6 +296,19 @@ object LauncherConfig {
     fun setJvmCompressedPointersEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED, enabled)
+        }
+    }
+
+    fun isJvmStringDeduplicationEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED,
+            DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED
+        )
+    }
+
+    fun setJvmStringDeduplicationEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED, enabled)
         }
     }
 

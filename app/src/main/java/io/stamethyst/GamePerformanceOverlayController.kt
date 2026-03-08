@@ -35,14 +35,79 @@ internal class GamePerformanceOverlayController(
         private const val OVERLAY_SIDE_MARGIN_DP = 12
         private const val OVERLAY_TOP_MARGIN_DP = 40
         private const val BYTES_PER_MB = 1024.0 * 1024.0
+        private const val BYTES_PER_KB = 1024L
     }
 
     private data class PssMemorySnapshot(
         val totalPssBytes: Long,
         val dalvikPssBytes: Long,
         val nativePssBytes: Long,
-        val otherPssBytes: Long
+        val otherPssBytes: Long,
+        val nativeHeapSummaryBytes: Long?,
+        val graphicsSummaryBytes: Long?,
+        val glMtrackPssBytes: Long?,
+        val unknownPssBytes: Long?
     )
+
+    private object MemoryInfoDetailReader {
+        private const val FALLBACK_OTHER_UNKNOWN_DEV = 5
+        private const val FALLBACK_OTHER_GL = 15
+        private const val FALLBACK_OTHER_UNKNOWN_MAP = 17
+
+        private val memoryInfoClass = Debug.MemoryInfo::class.java
+        private val getOtherPssMethod = runCatching {
+            memoryInfoClass.getMethod("getOtherPss", Int::class.javaPrimitiveType!!).apply {
+                isAccessible = true
+            }
+        }.getOrNull()
+
+        private val otherGlIndex = resolveIndex("OTHER_GL", FALLBACK_OTHER_GL)
+        private val otherUnknownDevIndex =
+            resolveIndex("OTHER_UNKNOWN_DEV", FALLBACK_OTHER_UNKNOWN_DEV)
+        private val otherUnknownMapIndex =
+            resolveIndex("OTHER_UNKNOWN_MAP", FALLBACK_OTHER_UNKNOWN_MAP)
+
+        fun readGlMtrackPssBytes(info: Debug.MemoryInfo): Long? {
+            return readOtherPssBytes(info, otherGlIndex)
+        }
+
+        fun readUnknownPssBytes(info: Debug.MemoryInfo): Long? {
+            return sumBytes(
+                readOtherPssBytes(info, otherUnknownDevIndex),
+                readOtherPssBytes(info, otherUnknownMapIndex)
+            )
+        }
+
+        private fun resolveIndex(fieldName: String, fallbackValue: Int): Int {
+            return runCatching {
+                memoryInfoClass.getField(fieldName).getInt(null)
+            }.recoverCatching {
+                memoryInfoClass.getDeclaredField(fieldName).apply {
+                    isAccessible = true
+                }.getInt(null)
+            }.getOrElse {
+                fallbackValue
+            }
+        }
+
+        private fun readOtherPssBytes(info: Debug.MemoryInfo, index: Int): Long? {
+            val method = getOtherPssMethod ?: return null
+            return runCatching {
+                val valueKb = (method.invoke(info, index) as? Number)
+                    ?.toLong()
+                    ?.coerceAtLeast(0L)
+                    ?: return null
+                valueKb * BYTES_PER_KB
+            }.getOrNull()
+        }
+
+        private fun sumBytes(first: Long?, second: Long?): Long? {
+            if (first == null && second == null) {
+                return null
+            }
+            return (first ?: 0L) + (second ?: 0L)
+        }
+    }
 
     private val activityManager =
         activity.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -188,7 +253,7 @@ internal class GamePerformanceOverlayController(
             null
         }
 
-        overlayView.text = buildString(192) {
+        overlayView.text = buildString(320) {
             append("FPS ")
             append(String.format(Locale.US, "%.1f", fps))
             append("  RSS ")
@@ -223,6 +288,16 @@ internal class GamePerformanceOverlayController(
             append(pssSnapshot?.nativePssBytes?.let(::formatMb) ?: "--")
             append("  Other ")
             append(pssSnapshot?.otherPssBytes?.let(::formatMb) ?: "--")
+            append('\n')
+            append("NativeHeap ")
+            append(pssSnapshot?.nativeHeapSummaryBytes?.let(::formatMb) ?: "--")
+            append("  Graphics ")
+            append(pssSnapshot?.graphicsSummaryBytes?.let(::formatMb) ?: "--")
+            append('\n')
+            append("GL mtrack ")
+            append(pssSnapshot?.glMtrackPssBytes?.let(::formatMb) ?: "--")
+            append("  Unknown ")
+            append(pssSnapshot?.unknownPssBytes?.let(::formatMb) ?: "--")
         }
     }
 
@@ -486,15 +561,32 @@ internal class GamePerformanceOverlayController(
             val info = manager.getProcessMemoryInfo(intArrayOf(processId))
                 ?.firstOrNull()
                 ?: return null
+            val nativeHeapSummaryBytes = readMemoryStatBytes(info, "summary.native-heap")
+            val graphicsSummaryBytes = readMemoryStatBytes(info, "summary.graphics")
+            val glMtrackPssBytes = MemoryInfoDetailReader.readGlMtrackPssBytes(info)
+            val unknownPssBytes = MemoryInfoDetailReader.readUnknownPssBytes(info)
+                ?: readMemoryStatBytes(info, "summary.private-other")
             PssMemorySnapshot(
-                totalPssBytes = info.totalPss.toLong().coerceAtLeast(0L) * 1024L,
-                dalvikPssBytes = info.dalvikPss.toLong().coerceAtLeast(0L) * 1024L,
-                nativePssBytes = info.nativePss.toLong().coerceAtLeast(0L) * 1024L,
-                otherPssBytes = info.otherPss.toLong().coerceAtLeast(0L) * 1024L
+                totalPssBytes = info.totalPss.toLong().coerceAtLeast(0L) * BYTES_PER_KB,
+                dalvikPssBytes = info.dalvikPss.toLong().coerceAtLeast(0L) * BYTES_PER_KB,
+                nativePssBytes = info.nativePss.toLong().coerceAtLeast(0L) * BYTES_PER_KB,
+                otherPssBytes = info.otherPss.toLong().coerceAtLeast(0L) * BYTES_PER_KB,
+                nativeHeapSummaryBytes = nativeHeapSummaryBytes,
+                graphicsSummaryBytes = graphicsSummaryBytes,
+                glMtrackPssBytes = glMtrackPssBytes,
+                unknownPssBytes = unknownPssBytes
             )
         } catch (_: Throwable) {
             null
         }
+    }
+
+    private fun readMemoryStatBytes(info: Debug.MemoryInfo, key: String): Long? {
+        return info.getMemoryStat(key)
+            ?.trim()
+            ?.toLongOrNull()
+            ?.coerceAtLeast(0L)
+            ?.times(BYTES_PER_KB)
     }
 
     private fun formatMb(bytes: Long): String {
