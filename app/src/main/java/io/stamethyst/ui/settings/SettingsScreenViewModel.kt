@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.launch.JvmLogRotationManager
+import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.R
@@ -612,10 +613,15 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, "Importing desktop-1.0.jar...")
         executor.execute {
             try {
+                MtsClasspathWarmupCoordinator.invalidateCache(host)
                 SettingsFileService.copyUriToFile(host, uri, RuntimePaths.importedStsJar(host))
                 StsJarValidator.validate(RuntimePaths.importedStsJar(host))
+                val warmupWarning = prewarmMtsClasspathAfterImport(host)
                 host.runOnUiThread {
                     Toast.makeText(host, "Imported desktop-1.0.jar", Toast.LENGTH_SHORT).show()
+                    if (warmupWarning != null) {
+                        Toast.makeText(host, warmupWarning, Toast.LENGTH_LONG).show()
+                    }
                     refreshStatus(host)
                     onCompleted?.invoke(true)
 //                    todo: host.notifyMainDataChanged()
@@ -738,6 +744,23 @@ class SettingsScreenViewModel : ViewModel() {
             .setMessage(SettingsFileService.buildCompressedArchiveImportMessage(archiveDisplayNames))
             .setPositiveButton(android.R.string.ok, null)
             .show()
+    }
+
+    private fun prewarmMtsClasspathAfterImport(host: Activity): String? {
+        return try {
+            val prepared = MtsClasspathWarmupCoordinator.prewarmIfReady(host) { _, message ->
+                host.runOnUiThread {
+                    setBusy(true, message)
+                }
+            }
+            if (prepared) {
+                null
+            } else {
+                null
+            }
+        } catch (error: Throwable) {
+            "MTS startup cache prewarm failed: ${error.message ?: error.javaClass.simpleName}"
+        }
     }
 
     fun onSavesArchivePicked(host: Activity, uri: Uri?) {

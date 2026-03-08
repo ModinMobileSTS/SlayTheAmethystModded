@@ -51,8 +51,18 @@ object LaunchPreparationService {
             ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(context))
 
             throwIfInterrupted()
-            reportProgress(progressCallback, 95, "Preparing MTS classpath...")
-            ModJarSupport.prepareMtsClasspath(context)
+            if (MtsClasspathWarmupCoordinator.isCacheCurrent(context)) {
+                reportProgress(progressCallback, 95, "Using prepared MTS classpath cache...")
+            } else {
+                reportProgress(progressCallback, 95, "Preparing MTS classpath...")
+                ModJarSupport.prepareMtsClasspath(
+                    context,
+                    mapProgressRange(progressCallback, 95, 99)
+                )
+                MtsClasspathWarmupCoordinator.markPrepared(context)
+            }
+            throwIfInterrupted()
+            reportProgress(progressCallback, 99, "Resolving enabled mod launch list...")
             ModManager.resolveLaunchModIds(context)
         }
 

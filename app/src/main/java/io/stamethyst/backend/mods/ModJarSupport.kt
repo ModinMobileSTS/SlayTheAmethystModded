@@ -1,6 +1,7 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
+import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
@@ -81,20 +82,66 @@ object ModJarSupport {
     @JvmStatic
     @Throws(IOException::class)
     fun prepareMtsClasspath(context: Context) {
+        prepareMtsClasspath(context, null)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun prepareMtsClasspath(context: Context, progressCallback: StartupProgressCallback?) {
         val stsJar = RuntimePaths.importedStsJar(context)
         val patchJar = RuntimePaths.gdxPatchJar(context)
         val baseModJar = RuntimePaths.importedBaseModJar(context)
         ModCompatibilityDiagnostics.appendCompatLog(context, "prepare classpath start")
+        reportProgress(progressCallback, 0, "Patching desktop jar for MTS...")
         StsDesktopJarPatcher.ensurePatchedStsJar(stsJar, patchJar)
+        reportProgress(progressCallback, 18, "Applying compatibility patches...")
         ModCompatibilityPatchCoordinator.applyCompatPatchRules(context)
-        ModClasspathJarBuilder.ensureGdxApiJar(stsJar, RuntimePaths.mtsGdxApiJar(context))
-        ModClasspathJarBuilder.ensureStsResourceJar(stsJar, RuntimePaths.mtsStsResourcesJar(context))
-        ModClasspathJarBuilder.ensureBaseModResourceJar(baseModJar, RuntimePaths.mtsBaseModResourcesJar(context))
+        ModClasspathJarBuilder.ensureGdxApiJar(
+            stsJar = stsJar,
+            targetJar = RuntimePaths.mtsGdxApiJar(context),
+            progressCallback = buildRangeProgressCallback(progressCallback, 24, 36)
+        )
+        ModClasspathJarBuilder.ensureStsResourceJar(
+            stsJar = stsJar,
+            targetJar = RuntimePaths.mtsStsResourcesJar(context),
+            progressCallback = buildRangeProgressCallback(progressCallback, 37, 84)
+        )
+        ModClasspathJarBuilder.ensureBaseModResourceJar(
+            baseModJar = baseModJar,
+            targetJar = RuntimePaths.mtsBaseModResourcesJar(context),
+            progressCallback = buildRangeProgressCallback(progressCallback, 85, 96)
+        )
         ModCompatibilityDiagnostics.appendCompatLog(context, "prepare classpath done")
+        reportProgress(progressCallback, 100, "MTS classpath cache ready")
     }
 
     @JvmStatic
     fun appendCompatDiagnosticSnapshot(context: Context, stage: String) {
         ModCompatibilityDiagnostics.appendCompatDiagnostics(context, stage)
+    }
+
+    private fun buildRangeProgressCallback(
+        callback: StartupProgressCallback?,
+        startPercent: Int,
+        endPercent: Int
+    ): ModClasspathJarBuilder.BuildProgressCallback? {
+        if (callback == null) {
+            return null
+        }
+        val safeStart = startPercent.coerceIn(0, 100)
+        val safeEnd = endPercent.coerceIn(0, 100)
+        return ModClasspathJarBuilder.BuildProgressCallback { percent, message ->
+            val bounded = percent.coerceIn(0, 100)
+            val mapped = safeStart + (((safeEnd - safeStart) * bounded) / 100f).toInt()
+            callback.onProgress(mapped.coerceIn(0, 100), message)
+        }
+    }
+
+    private fun reportProgress(
+        callback: StartupProgressCallback?,
+        percent: Int,
+        message: String
+    ) {
+        callback?.onProgress(percent.coerceIn(0, 100), message)
     }
 }

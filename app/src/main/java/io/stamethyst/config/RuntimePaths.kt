@@ -16,6 +16,7 @@ object RuntimePaths {
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
+    private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
 
     @JvmStatic
     fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
@@ -100,6 +101,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun jvmHistogramsDir(context: Context): File = File(stsRoot(context), JVM_HISTOGRAM_DIR_NAME)
+
+    @JvmStatic
+    fun mtsClasspathCacheMarker(context: Context): File =
+        File(stsRoot(context), MTS_CLASSPATH_CACHE_MARKER_FILE_NAME)
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
