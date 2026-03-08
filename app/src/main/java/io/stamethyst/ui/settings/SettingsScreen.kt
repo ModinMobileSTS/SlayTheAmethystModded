@@ -104,6 +104,9 @@ fun LauncherSettingsScreen(
         onJvmCompressedPointersChanged = { enabled ->
             viewModel.onJvmCompressedPointersChanged(activity, enabled)
         },
+        onJvmStringDeduplicationChanged = { enabled ->
+            viewModel.onJvmStringDeduplicationChanged(activity, enabled)
+        },
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
@@ -137,6 +140,7 @@ private fun LauncherSettingsScreenPreview() {
             renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             selectedJvmHeapMaxMb = 512,
             compressedPointersEnabled = false,
+            stringDeduplicationEnabled = false,
             jvmHeapMinMb = 256,
             jvmHeapMaxMb = 2048,
             jvmHeapStepMb = 128,
@@ -176,6 +180,7 @@ private fun LauncherSettingsScreenContent(
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
     onJvmCompressedPointersChanged: (Boolean) -> Unit = {},
+    onJvmStringDeduplicationChanged: (Boolean) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
@@ -244,6 +249,7 @@ private fun LauncherSettingsScreenContent(
                         onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
                         onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
+                        onJvmStringDeduplicationChanged = onJvmStringDeduplicationChanged,
                     )
                 }
             }
@@ -385,6 +391,7 @@ private fun SettingsRenderSection(
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
     onJvmCompressedPointersChanged: (Boolean) -> Unit,
+    onJvmStringDeduplicationChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
@@ -504,6 +511,15 @@ private fun SettingsRenderSection(
         disabledText = "Compressed Oops / Class Pointers：禁用",
         description = "控制 64 位 JVM 是否启用压缩对象指针和类指针。默认关闭以优先兼容性，启用后可能降低内存占用，但也可能引入设备相关启动问题。",
         onCheckedChange = onJvmCompressedPointersChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.stringDeduplicationEnabled,
+        enabled = !uiState.busy,
+        enabledText = "String Deduplication：启用",
+        disabledText = "String Deduplication：禁用",
+        description = "控制 64 位 G1GC 是否启用字符串去重。启用后可能降低堆占用，但会带来额外的 GC CPU 开销。",
+        onCheckedChange = onJvmStringDeduplicationChanged
     )
 }
 

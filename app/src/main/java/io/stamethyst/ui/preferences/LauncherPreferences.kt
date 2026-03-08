@@ -49,6 +49,8 @@ object LauncherPreferences {
         get() = LauncherConfig.JVM_HEAP_STEP_MB
     val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED
+    val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED
 
     fun readBackBehavior(context: Context): BackBehavior {
         return LauncherConfig.readBackBehavior(context)
@@ -184,6 +186,14 @@ object LauncherPreferences {
 
     fun setJvmCompressedPointersEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setJvmCompressedPointersEnabled(context, enabled)
+    }
+
+    fun isJvmStringDeduplicationEnabled(context: Context): Boolean {
+        return LauncherConfig.isJvmStringDeduplicationEnabled(context)
+    }
+
+    fun setJvmStringDeduplicationEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setJvmStringDeduplicationEnabled(context, enabled)
     }
 
     fun normalizePlayerName(name: String): String {

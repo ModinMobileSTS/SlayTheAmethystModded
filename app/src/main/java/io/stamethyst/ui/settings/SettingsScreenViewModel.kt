@@ -66,6 +66,8 @@ class SettingsScreenViewModel : ViewModel() {
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
+        val stringDeduplicationEnabled: Boolean =
+            LauncherPreferences.DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED,
         val jvmHeapMinMb: Int = LauncherPreferences.MIN_JVM_HEAP_MAX_MB,
         val jvmHeapMaxMb: Int = LauncherPreferences.MAX_JVM_HEAP_MAX_MB,
         val jvmHeapStepMb: Int = LauncherPreferences.JVM_HEAP_STEP_MB,
@@ -133,6 +135,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val renderSurfaceBackend = readRenderSurfaceBackendSelection(host)
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
                 val compressedPointersEnabled = readJvmCompressedPointersSelection(host)
+                val stringDeduplicationEnabled = readJvmStringDeduplicationSelection(host)
                 val backBehavior = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
@@ -208,6 +211,8 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nJVM heap max: ${jvmHeapMaxMb} MB")
                     append("\nCompressed Oops / Class Pointers: ")
                         .append(if (compressedPointersEnabled) "ON" else "OFF")
+                    append("\nString Deduplication: ")
+                        .append(if (stringDeduplicationEnabled) "ON" else "OFF")
                     append("\nBack behavior: ${backBehavior.displayName()}")
                     append("\nTouchscreen Enabled: ").append(if (touchscreenEnabled) "ON" else "OFF")
                     append("\nMobile HUD Enabled: ").append(if (mobileHudEnabled) "ON" else "OFF")
@@ -260,6 +265,7 @@ class SettingsScreenViewModel : ViewModel() {
                         renderSurfaceBackend = renderSurfaceBackend,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
                         compressedPointersEnabled = compressedPointersEnabled,
+                        stringDeduplicationEnabled = stringDeduplicationEnabled,
                         backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
@@ -466,6 +472,18 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(compressedPointersEnabled = enabled)
         saveJvmCompressedPointersSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onJvmStringDeduplicationChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        if (enabled == uiState.stringDeduplicationEnabled) {
+            return
+        }
+        uiState = uiState.copy(stringDeduplicationEnabled = enabled)
+        saveJvmStringDeduplicationSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -1311,6 +1329,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveJvmCompressedPointersSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setJvmCompressedPointersEnabled(host, enabled)
+    }
+
+    private fun readJvmStringDeduplicationSelection(host: Activity): Boolean {
+        return LauncherPreferences.isJvmStringDeduplicationEnabled(host)
+    }
+
+    private fun saveJvmStringDeduplicationSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setJvmStringDeduplicationEnabled(host, enabled)
     }
 
     private fun readGamePerformanceOverlaySelection(host: Activity): Boolean {
