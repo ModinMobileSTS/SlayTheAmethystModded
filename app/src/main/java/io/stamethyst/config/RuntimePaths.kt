@@ -13,6 +13,8 @@ object RuntimePaths {
     private const val LATEST_LOG_FILE_NAME = "latest.log"
     private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
+    private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
+    private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
 
     @JvmStatic
     fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
@@ -88,6 +90,12 @@ object RuntimePaths {
 
     @JvmStatic
     fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)
+
+    @JvmStatic
+    fun jvmGcLog(context: Context): File = File(stsRoot(context), JVM_GC_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun jvmHeapSnapshot(context: Context): File = File(stsRoot(context), JVM_HEAP_SNAPSHOT_FILE_NAME)
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")

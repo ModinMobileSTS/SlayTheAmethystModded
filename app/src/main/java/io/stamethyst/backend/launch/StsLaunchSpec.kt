@@ -78,6 +78,8 @@ object StsLaunchSpec {
         }
         args.add("-XX:ErrorFile=/dev/null")
         args.add("-XX:+UnlockDiagnosticVMOptions")
+        args.add("-verbose:gc")
+        args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
         if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
             args.add("-noverify")
@@ -167,6 +169,7 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
+        args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
 
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 

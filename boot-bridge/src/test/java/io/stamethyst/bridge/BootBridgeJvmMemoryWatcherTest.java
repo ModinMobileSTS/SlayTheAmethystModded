@@ -14,6 +14,7 @@ import static org.junit.Assert.assertTrue;
 
 public class BootBridgeJvmMemoryWatcherTest {
     private static final String PROP_EVENTS = "amethyst.bridge.events";
+    private static final String PROP_HEAP_SNAPSHOT = "amethyst.bridge.heap_snapshot";
     private static final long JOIN_TIMEOUT_MS = 1_000L;
     private static final long AWAIT_TIMEOUT_MS = 500L;
     private static final long SAMPLE_INTERVAL_MS = 5L;
@@ -73,13 +74,41 @@ public class BootBridgeJvmMemoryWatcherTest {
         }
     }
 
+    @Test
+    public void heapSnapshotWriterCreatesSnapshotFile() throws Exception {
+        WatcherHarness harness = createHarness();
+        try {
+            Thread writer = BootBridgeJvmHeapSnapshotWriter.startFromSystemProperty();
+            assertTrue("Heap snapshot writer should start when property is present", writer != null);
+            awaitCondition(() -> harness.heapSnapshotFile.isFile() && harness.heapSnapshotFile.length() > 0L, AWAIT_TIMEOUT_MS);
+            writer.interrupt();
+            writer.join(JOIN_TIMEOUT_MS);
+
+            String content = new String(Files.readAllBytes(harness.heapSnapshotFile.toPath()), StandardCharsets.UTF_8);
+            assertTrue("Snapshot should include heapUsed", content.contains("heapUsed="));
+            assertTrue("Snapshot should include heapMax", content.contains("heapMax="));
+        } finally {
+            harness.close();
+        }
+    }
+
     private static WatcherHarness createHarness() throws Exception {
         File tempDir = Files.createTempDirectory("boot-bridge-memory-watcher").toFile();
         File eventsFile = new File(tempDir, "boot_bridge_events.log");
+        File heapSnapshotFile = new File(tempDir, "jvm_heap_snapshot.txt");
         String previousPath = System.getProperty(PROP_EVENTS);
+        String previousHeapSnapshotPath = System.getProperty(PROP_HEAP_SNAPSHOT);
         System.setProperty(PROP_EVENTS, eventsFile.getAbsolutePath());
+        System.setProperty(PROP_HEAP_SNAPSHOT, heapSnapshotFile.getAbsolutePath());
         BootBridgeReporter reporter = new BootBridgeReporter(BootBridgeEventSink.fromSystemProperty());
-        return new WatcherHarness(tempDir, eventsFile, previousPath, reporter);
+        return new WatcherHarness(
+                tempDir,
+                eventsFile,
+                heapSnapshotFile,
+                previousPath,
+                previousHeapSnapshotPath,
+                reporter
+        );
     }
 
     private static int countEventLines(File file, String type) {
@@ -113,13 +142,24 @@ public class BootBridgeJvmMemoryWatcherTest {
     private static final class WatcherHarness implements AutoCloseable {
         private final File tempDir;
         private final File eventsFile;
+        private final File heapSnapshotFile;
         private final String previousPath;
+        private final String previousHeapSnapshotPath;
         private final BootBridgeReporter reporter;
 
-        private WatcherHarness(File tempDir, File eventsFile, String previousPath, BootBridgeReporter reporter) {
+        private WatcherHarness(
+                File tempDir,
+                File eventsFile,
+                File heapSnapshotFile,
+                String previousPath,
+                String previousHeapSnapshotPath,
+                BootBridgeReporter reporter
+        ) {
             this.tempDir = tempDir;
             this.eventsFile = eventsFile;
+            this.heapSnapshotFile = heapSnapshotFile;
             this.previousPath = previousPath;
+            this.previousHeapSnapshotPath = previousHeapSnapshotPath;
             this.reporter = reporter;
         }
 
@@ -129,6 +169,11 @@ public class BootBridgeJvmMemoryWatcherTest {
                 System.clearProperty(PROP_EVENTS);
             } else {
                 System.setProperty(PROP_EVENTS, previousPath);
+            }
+            if (previousHeapSnapshotPath == null) {
+                System.clearProperty(PROP_HEAP_SNAPSHOT);
+            } else {
+                System.setProperty(PROP_HEAP_SNAPSHOT, previousHeapSnapshotPath);
             }
             deleteRecursively(tempDir);
         }

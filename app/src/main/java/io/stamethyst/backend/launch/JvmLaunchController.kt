@@ -41,6 +41,7 @@ class JvmLaunchController(
         private const val BOOT_BRIDGE_EVENT_POLL_INTERVAL_MS = 180L
         private const val BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES = 32 * 1024
         private const val BOOT_BRIDGE_SPLASH_PROGRESS = 94
+        private const val RUNTIME_HEAP_SNAPSHOT_POLL_INTERVAL_MS = 1_000L
     }
 
     @Volatile
@@ -72,6 +73,12 @@ class JvmLaunchController(
 
     @Volatile
     private var bootBridgeDismissSignaled = false
+
+    @Volatile
+    private var runtimeHeapSnapshotMonitorThread: Thread? = null
+
+    @Volatile
+    private var runtimeHeapSnapshotMonitorRunning = false
 
     @Volatile
     private var cancelRequested = false
@@ -114,12 +121,27 @@ class JvmLaunchController(
                     JvmLogRotationManager.prepareForNewSession(activity)
                 } catch (_: Throwable) {
                 }
+                try {
+                    val jvmGcLogFile = RuntimePaths.jvmGcLog(activity)
+                    if (jvmGcLogFile.exists()) {
+                        jvmGcLogFile.delete()
+                    }
+                } catch (_: Throwable) {
+                }
+                try {
+                    val jvmHeapSnapshotFile = RuntimePaths.jvmHeapSnapshot(activity)
+                    if (jvmHeapSnapshotFile.exists()) {
+                        jvmHeapSnapshotFile.delete()
+                    }
+                } catch (_: Throwable) {
+                }
                 val latestLogFile = RuntimePaths.latestLog(activity)
                 try {
                     JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)
                 } catch (_: Throwable) {
                 }
                 startLatestLogCapMonitor(latestLogFile)
+                startRuntimeHeapSnapshotMonitor(RuntimePaths.jvmHeapSnapshot(activity))
                 startBootBridgeEventMonitor(
                     RuntimePaths.bootBridgeEventsLog(activity),
                     bootOverlayController
@@ -182,6 +204,7 @@ class JvmLaunchController(
                 runtimeLifecycleReady = false
                 runtimeMemorySnapshot = null
                 stopLatestLogCapMonitor()
+                stopRuntimeHeapSnapshotMonitor()
                 stopBootBridgeEventMonitor()
                 jvmLaunchThread = null
             }
@@ -202,6 +225,7 @@ class JvmLaunchController(
         jvmLaunchThread = null
         launchThread?.interrupt()
         stopLatestLogCapMonitor()
+        stopRuntimeHeapSnapshotMonitor()
         stopBootBridgeEventMonitor()
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
@@ -239,6 +263,34 @@ class JvmLaunchController(
         latestLogCapMonitorRunning = false
         val monitorThread = latestLogCapMonitorThread
         latestLogCapMonitorThread = null
+        monitorThread?.interrupt()
+    }
+
+    private fun startRuntimeHeapSnapshotMonitor(snapshotFile: File) {
+        stopRuntimeHeapSnapshotMonitor()
+        runtimeHeapSnapshotMonitorRunning = true
+        val monitorThread = Thread({
+            while (runtimeHeapSnapshotMonitorRunning && !Thread.currentThread().isInterrupted) {
+                try {
+                    runtimeMemorySnapshot = readRuntimeHeapSnapshot(snapshotFile)
+                } catch (_: Throwable) {
+                }
+                try {
+                    Thread.sleep(RUNTIME_HEAP_SNAPSHOT_POLL_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, "STS-RuntimeHeap")
+        monitorThread.isDaemon = true
+        runtimeHeapSnapshotMonitorThread = monitorThread
+        monitorThread.start()
+    }
+
+    private fun stopRuntimeHeapSnapshotMonitor() {
+        runtimeHeapSnapshotMonitorRunning = false
+        val monitorThread = runtimeHeapSnapshotMonitorThread
+        runtimeHeapSnapshotMonitorThread = null
         monitorThread?.interrupt()
     }
 
@@ -422,6 +474,18 @@ class JvmLaunchController(
             heapUsedBytes = safeHeapUsedBytes,
             heapMaxBytes = safeHeapMaxBytes
         )
+    }
+
+    private fun readRuntimeHeapSnapshot(snapshotFile: File): JvmRuntimeMemorySnapshot? {
+        if (!snapshotFile.isFile) {
+            return null
+        }
+        val snapshot = try {
+            snapshotFile.readText(StandardCharsets.UTF_8)
+        } catch (_: Throwable) {
+            return null
+        }
+        return parseRuntimeMemorySnapshot(snapshot)
     }
 
     private fun signalDismissFromBootBridge(
