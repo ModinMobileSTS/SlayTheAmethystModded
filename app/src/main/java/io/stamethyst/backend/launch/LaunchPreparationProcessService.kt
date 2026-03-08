@@ -2,7 +2,6 @@ package io.stamethyst.backend.launch
 
 import android.app.Service
 import android.content.Intent
-import android.app.Application
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -82,9 +81,7 @@ class LaunchPreparationProcessService : Service() {
         workerThread = null
         thread?.interrupt()
         super.onDestroy()
-        if (isPrepProcess()) {
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     private fun runPreparation(
@@ -144,10 +141,5 @@ class LaunchPreparationProcessService : Service() {
         }
         val message = throwable.message?.lowercase().orEmpty()
         return message.contains("cancel")
-    }
-
-    private fun isPrepProcess(): Boolean {
-        val processName = Application.getProcessName().orEmpty()
-        return processName == "$packageName:prep"
     }
 }

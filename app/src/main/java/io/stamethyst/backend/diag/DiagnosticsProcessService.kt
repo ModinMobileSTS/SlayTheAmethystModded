@@ -1,6 +1,5 @@
 package io.stamethyst.backend.diag
 
-import android.app.Application
 import android.app.Service
 import android.content.Intent
 import android.net.Uri
@@ -59,9 +58,7 @@ class DiagnosticsProcessService : Service() {
         workerThread = null
         thread?.interrupt()
         super.onDestroy()
-        if (isDiagProcess()) {
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     private fun runRequest(
@@ -146,10 +143,5 @@ class DiagnosticsProcessService : Service() {
             putString(EXTRA_ERROR_MESSAGE, throwable.message)
             putString(EXTRA_ERROR_STACKTRACE, stackTraceWriter.toString())
         }
-    }
-
-    private fun isDiagProcess(): Boolean {
-        val processName = Application.getProcessName().orEmpty()
-        return processName == "$packageName:diag"
     }
 }
