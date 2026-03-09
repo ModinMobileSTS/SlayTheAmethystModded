@@ -30,6 +30,7 @@ object LauncherConfig {
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
+    private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
@@ -66,6 +67,7 @@ object LauncherConfig {
     const val DEFAULT_TARGET_FPS = 120
     val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW
+    val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
@@ -218,6 +220,20 @@ object LauncherConfig {
     fun saveRenderSurfaceBackend(context: Context, backend: RenderSurfaceBackend) {
         prefs(context).edit {
             putString(PREF_KEY_RENDER_SURFACE_BACKEND, backend.persistedValue)
+        }
+    }
+
+    fun readThemeMode(context: Context): LauncherThemeMode {
+        val stored = prefs(context).getString(
+            PREF_KEY_THEME_MODE,
+            DEFAULT_THEME_MODE.persistedValue
+        )
+        return LauncherThemeMode.fromPersistedValue(stored) ?: DEFAULT_THEME_MODE
+    }
+
+    fun saveThemeMode(context: Context, themeMode: LauncherThemeMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_THEME_MODE, themeMode.persistedValue)
         }
     }
 

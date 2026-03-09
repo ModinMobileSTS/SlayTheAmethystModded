@@ -20,6 +20,7 @@ class LauncherUpdateServiceParsingTest {
         assertNotNull(parsed)
         assertEquals("v1.0.6-hotfix1", parsed?.rawTagName)
         assertEquals("1.0.6-hotfix1", parsed?.normalizedVersion)
+        assertEquals("# Fixes\n- one\n- two\n- three", parsed?.notesText)
         assertEquals("SlayTheAmethyst-dev-1.0.6-hotfix1.APK", parsed?.assetName)
         assertEquals(
             "https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases/download/v1.0.6-hotfix1/SlayTheAmethyst-dev-1.0.6-hotfix1.APK",

@@ -1,5 +1,6 @@
 package io.stamethyst.backend.update
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,16 @@ class LauncherUpdateVersioningTest {
             LauncherUpdateVersioning.isRemoteNewer(
                 currentVersion = "nightly",
                 remoteVersionTag = "nightly-2"
+            )
+        )
+    }
+
+    @Test
+    fun normalizeReleaseNotesText_preservesFullBodyAndMarkdownStructure() {
+        assertEquals(
+            "# Fixes\n- one\n\n## More\n- two",
+            LauncherUpdateVersioning.normalizeReleaseNotesText(
+                "\uFEFF# Fixes\r\n- one\r\n\r\n## More\r\n- two\r\n"
             )
         )
     }

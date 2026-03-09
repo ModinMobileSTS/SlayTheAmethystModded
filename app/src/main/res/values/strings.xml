@@ -115,6 +115,12 @@
     <string name="settings_player_name_dialog_title">Set player name</string>
     <string name="settings_player_name_hint">Player name</string>
     <string name="settings_player_name_dialog_message">Leave it blank to restore the default name: player.</string>
+    <string name="settings_appearance_section_title">Appearance</string>
+    <string name="settings_theme_mode_title">Theme</string>
+    <string name="settings_theme_mode_desc">Choose whether the launcher follows the system appearance or always uses light or dark mode.</string>
+    <string name="settings_theme_mode_follow_system">Follow system</string>
+    <string name="settings_theme_mode_light">Light</string>
+    <string name="settings_theme_mode_dark">Dark</string>
     <string name="update_section_title">Updates</string>
     <string name="update_auto_check_enabled">Auto-check updates: Enabled</string>
     <string name="update_auto_check_disabled">Auto-check updates: Disabled</string>

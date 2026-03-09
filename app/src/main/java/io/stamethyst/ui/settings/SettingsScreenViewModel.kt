@@ -29,6 +29,8 @@ import io.stamethyst.backend.update.UpdateUiMessage
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherThemeController
+import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
@@ -73,7 +75,7 @@ class SettingsScreenViewModel : ViewModel() {
         val latestVersion: String,
         val publishedAtText: String,
         val downloadSourceDisplayName: String,
-        val notesPreview: String,
+        val notesText: String,
         val downloadUrl: String,
     )
 
@@ -85,6 +87,7 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
+        val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
         val stringDeduplicationEnabled: Boolean =
@@ -144,6 +147,7 @@ class SettingsScreenViewModel : ViewModel() {
         activity: Activity,
         targetFpsOptions: IntArray = LauncherPreferences.TARGET_FPS_OPTIONS
     ) {
+        syncThemeMode(activity)
         val options = targetFpsOptions.toList()
         if (uiState.targetFpsOptions != options) {
             uiState = uiState.copy(targetFpsOptions = options)
@@ -170,6 +174,15 @@ class SettingsScreenViewModel : ViewModel() {
     fun onAutoCheckUpdatesChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setAutoCheckUpdatesEnabled(host, enabled)
         syncStoredUpdateState(host)
+    }
+
+    fun syncThemeMode(host: Activity) {
+        uiState = uiState.copy(themeMode = readThemeModeSelection(host))
+    }
+
+    fun onThemeModeChanged(host: Activity, themeMode: LauncherThemeMode) {
+        saveThemeModeSelection(host, themeMode)
+        syncThemeMode(host)
     }
 
     fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
@@ -299,7 +312,7 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.update_unknown_date)
             },
             downloadSourceDisplayName = resolvedDownload.source.displayName,
-            notesPreview = release.notesPreview.ifBlank {
+            notesText = release.notesText.ifBlank {
                 host.getString(R.string.update_dialog_notes_empty)
             },
             downloadUrl = resolvedDownload.resolvedUrl
@@ -1595,6 +1608,10 @@ class SettingsScreenViewModel : ViewModel() {
         return LauncherPreferences.readPlayerName(host)
     }
 
+    private fun readThemeModeSelection(host: Activity): LauncherThemeMode {
+        return LauncherPreferences.readThemeMode(host)
+    }
+
     private fun savePlayerNameSelection(host: Activity, name: String): Boolean {
         return try {
             LauncherPreferences.savePlayerName(host, name)
@@ -1618,6 +1635,11 @@ class SettingsScreenViewModel : ViewModel() {
         backend: RenderSurfaceBackend
     ) {
         LauncherPreferences.saveRenderSurfaceBackend(host, backend)
+    }
+
+    private fun saveThemeModeSelection(host: Activity, themeMode: LauncherThemeMode) {
+        LauncherPreferences.saveThemeMode(host, themeMode)
+        LauncherThemeController.apply(themeMode)
     }
 
     private fun readJvmHeapMaxSelection(host: Activity): Int {

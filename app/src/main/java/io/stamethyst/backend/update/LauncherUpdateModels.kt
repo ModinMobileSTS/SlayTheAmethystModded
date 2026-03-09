@@ -115,7 +115,7 @@ data class UpdateReleaseInfo(
     val normalizedVersion: String,
     val publishedAtRaw: String?,
     val publishedAtDisplayText: String,
-    val notesPreview: String,
+    val notesText: String,
     val assetName: String,
     val assetDownloadUrl: String,
 )
@@ -174,27 +174,13 @@ object LauncherUpdateVersioning {
         }.getOrElse { normalized }
     }
 
-    fun buildNotesPreview(value: String?): String {
-        val normalized = value
+    fun normalizeReleaseNotesText(value: String?): String {
+        return value
             .orEmpty()
             .removePrefix("\uFEFF")
             .replace("\r\n", "\n")
+            .replace('\r', '\n')
             .trim()
-        if (normalized.isEmpty()) {
-            return ""
-        }
-        val lines = normalized.lineSequence()
-            .map { line ->
-                val trimmed = line.trim()
-                when {
-                    trimmed.startsWith("#") -> trimmed.trimStart('#').trim()
-                    else -> trimmed
-                }
-            }
-            .filter { it.isNotEmpty() }
-            .take(3)
-            .toList()
-        return lines.joinToString("\n").take(240)
     }
 
     private data class ParsedReleaseVersion(

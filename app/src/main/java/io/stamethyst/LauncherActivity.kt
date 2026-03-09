@@ -11,7 +11,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.material3.MaterialTheme
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
@@ -20,6 +19,7 @@ import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.settings.SettingsFileService
 import io.stamethyst.ui.settings.SettingsScreenViewModel
+import io.stamethyst.ui.theme.LauncherTheme
 import java.io.File
 import java.util.Locale
 
@@ -81,8 +81,9 @@ class LauncherActivity : AppCompatActivity() {
             Route.QuickStart
         }
 
+        settingsViewModel.syncThemeMode(this)
         setContent {
-            MaterialTheme {
+            LauncherTheme(themeMode = settingsViewModel.uiState.themeMode) {
                 LauncherContent(
                     initialRoute = initialRoute,
                     mainViewModel = mainViewModel,

@@ -63,7 +63,7 @@ class LauncherUpdateUiReducerTest {
             normalizedVersion = "1.0.6-hotfix1",
             publishedAtRaw = "2026-03-09T04:20:00Z",
             publishedAtDisplayText = "2026-03-09 12:20",
-            notesPreview = "Fixes",
+            notesText = "Fixes",
             assetName = "SlayTheAmethyst-dev-1.0.6-hotfix1.APK",
             assetDownloadUrl = "https://github.com/example/release.apk"
         )

@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
@@ -104,6 +105,9 @@ fun LauncherSettingsScreen(
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onRenderSurfaceBackendChanged = { backend ->
             viewModel.onRenderSurfaceBackendChanged(activity, backend)
+        },
+        onThemeModeChanged = { themeMode ->
+            viewModel.onThemeModeChanged(activity, themeMode)
         },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onJvmCompressedPointersChanged = { enabled ->
@@ -154,6 +158,7 @@ private fun LauncherSettingsScreenPreview() {
             selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
             renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
+            themeMode = LauncherThemeMode.FOLLOW_SYSTEM,
             selectedJvmHeapMaxMb = 512,
             compressedPointersEnabled = false,
             stringDeduplicationEnabled = false,
@@ -201,6 +206,7 @@ private fun LauncherSettingsScreenContent(
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
+    onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
     onJvmCompressedPointersChanged: (Boolean) -> Unit = {},
     onJvmStringDeduplicationChanged: (Boolean) -> Unit = {},
@@ -262,6 +268,15 @@ private fun LauncherSettingsScreenContent(
                     busy = uiState.busy,
                     onOpenFeedback = onOpenFeedback
                 )
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_appearance_section_title)) {
+                    SettingsAppearanceSection(
+                        uiState = uiState,
+                        onThemeModeChanged = onThemeModeChanged
+                    )
+                }
             }
 
             item {
@@ -383,6 +398,66 @@ private fun LauncherSettingsScreenContent(
 }
 
 @Composable
+private fun SettingsAppearanceSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onThemeModeChanged: (LauncherThemeMode) -> Unit,
+) {
+    var showThemeModeDialog by rememberSaveable { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_theme_mode_title),
+            supportingText = themeModeDisplayName(uiState.themeMode),
+            enabled = !uiState.busy,
+            onClick = { showThemeModeDialog = true }
+        )
+        Text(
+            text = stringResource(R.string.settings_theme_mode_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
+    if (showThemeModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeModeDialog = false },
+            title = { Text(stringResource(R.string.settings_theme_mode_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LauncherThemeMode.entries.forEach { themeMode ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.themeMode == themeMode,
+                            enabled = !uiState.busy,
+                            text = themeModeDisplayName(themeMode),
+                            onSelect = {
+                                onThemeModeChanged(themeMode)
+                                showThemeModeDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showThemeModeDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun themeModeDisplayName(themeMode: LauncherThemeMode): String {
+    return when (themeMode) {
+        LauncherThemeMode.FOLLOW_SYSTEM ->
+            stringResource(R.string.settings_theme_mode_follow_system)
+        LauncherThemeMode.LIGHT ->
+            stringResource(R.string.settings_theme_mode_light)
+        LauncherThemeMode.DARK ->
+            stringResource(R.string.settings_theme_mode_dark)
+    }
+}
+
+@Composable
 private fun SettingsUpdateSection(
     uiState: SettingsScreenViewModel.UiState,
     onAutoCheckUpdatesChanged: (Boolean) -> Unit,
@@ -487,7 +562,7 @@ private fun SettingsFeedbackEntryCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFE3F2FD)
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {

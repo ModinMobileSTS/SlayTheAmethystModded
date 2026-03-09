@@ -3,6 +3,7 @@ package io.stamethyst.ui.preferences
 import android.content.Context
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 
 object LauncherPreferences {
@@ -18,6 +19,8 @@ object LauncherPreferences {
         get() = LauncherConfig.TARGET_FPS_OPTIONS.copyOf()
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend
         get() = LauncherConfig.DEFAULT_RENDER_SURFACE_BACKEND
+    val DEFAULT_THEME_MODE: LauncherThemeMode
+        get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
@@ -112,6 +115,14 @@ object LauncherPreferences {
 
     fun saveRenderSurfaceBackend(context: Context, backend: RenderSurfaceBackend) {
         LauncherConfig.saveRenderSurfaceBackend(context, backend)
+    }
+
+    fun readThemeMode(context: Context): LauncherThemeMode {
+        return LauncherConfig.readThemeMode(context)
+    }
+
+    fun saveThemeMode(context: Context, themeMode: LauncherThemeMode) {
+        LauncherConfig.saveThemeMode(context, themeMode)
     }
 
     fun readShowModFileName(context: Context): Boolean {

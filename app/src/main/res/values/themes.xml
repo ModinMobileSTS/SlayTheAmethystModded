@@ -1,6 +1,6 @@
 <resources>
-    <style name="Theme.SlayTheAmethyst" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
+    <style name="Theme.SlayTheAmethyst" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
     </style>
-    <style name="Theme.SlayTheAmethyst.Dialog" parent="Theme.AppCompat.Light.Dialog" />
+    <style name="Theme.SlayTheAmethyst.Dialog" parent="Theme.AppCompat.DayNight.Dialog" />
 </resources>

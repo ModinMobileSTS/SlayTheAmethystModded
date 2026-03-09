@@ -100,7 +100,7 @@ fun QuickStartScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -151,7 +151,7 @@ fun QuickStartScreen(
                             .fillMaxWidth(0.64f)
                             .widthIn(max = 232.dp)
                             .clip(shape = RoundedCornerShape(14.dp))
-                            .background(Color(0xFFF3F3F3))
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
                             .dashedBorder(
                                 color = MaterialTheme.colorScheme.outline,
                                 cornerRadius = 14.dp,
@@ -256,7 +256,7 @@ fun QuickStartScreen(
                         .fillMaxWidth(0.88f)
                         .widthIn(max = 360.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White)
+                        .background(MaterialTheme.colorScheme.surface)
                         .clickable(
                             interactionSource = noopInteraction,
                             indication = null

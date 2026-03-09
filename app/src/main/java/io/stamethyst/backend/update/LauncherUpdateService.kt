@@ -103,7 +103,7 @@ object LauncherUpdateService {
             publishedAtDisplayText = LauncherUpdateVersioning.formatPublishedAt(
                 root.optString("published_at").trim().ifEmpty { null }
             ),
-            notesPreview = LauncherUpdateVersioning.buildNotesPreview(root.optString("body")),
+            notesText = LauncherUpdateVersioning.normalizeReleaseNotesText(root.optString("body")),
             assetName = assetName,
             assetDownloadUrl = assetDownloadUrl
         )
