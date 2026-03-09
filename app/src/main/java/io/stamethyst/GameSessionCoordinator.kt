@@ -32,8 +32,16 @@ internal class GameSessionCoordinator(
     @Volatile
     private var backExitHardRestartTriggered = false
 
+    @Volatile
+    private var backExitLauncherShown = false
+
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
+    private val backExitForceRestartRunnable = Runnable {
+        if (backExitRequested) {
+            forceRestartLauncherAndTerminateProcess()
+        }
+    }
 
     private val bootOverlayController: BootOverlayController = BootOverlayController(
         activity = activity,
@@ -101,6 +109,7 @@ internal class GameSessionCoordinator(
     }
 
     fun onDestroy() {
+        cancelBackExitForceRestart()
         bootOverlayController.onDestroy()
         performanceOverlayController?.onDestroy()
         jvmLaunchController.cleanup()
@@ -223,6 +232,7 @@ internal class GameSessionCoordinator(
 
     private fun handleJvmExit(exitCode: Int) {
         if (backExitRequested) {
+            cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
             return
         }
@@ -236,6 +246,7 @@ internal class GameSessionCoordinator(
 
     private fun handleJvmLaunchFailed(throwable: Throwable) {
         if (backExitRequested) {
+            cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
             return
         }
@@ -245,6 +256,7 @@ internal class GameSessionCoordinator(
 
     private fun signalLaunchFailure(detail: String) {
         if (backExitRequested) {
+            cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
             return
         }
@@ -263,6 +275,7 @@ internal class GameSessionCoordinator(
             return
         }
         backExitRequested = true
+        backExitLauncherShown = false
         val bootOverlayActive = !bootOverlayController.isDismissed
 
         inputHandler.hideSoftKeyboard()
@@ -276,7 +289,8 @@ internal class GameSessionCoordinator(
         jvmLaunchController.interrupt()
 
         if (!jvmLaunchController.runtimeLifecycleReady) {
-            LauncherReturnCoordinator.returnToLauncher(activity)
+            showLauncherForExpectedBackExit()
+            activity.finish()
             return
         }
 
@@ -287,9 +301,11 @@ internal class GameSessionCoordinator(
 
         val closeRequested = requestJvmCloseSignal()
         if (bootOverlayActive) {
-            LauncherReturnCoordinator.returnToLauncher(activity)
+            showLauncherForExpectedBackExit()
+            activity.finish()
             return
         }
+        showLauncherForExpectedBackExit()
         if (!closeRequested || !jvmLaunchController.runtimeLifecycleReady) {
             forceRestartLauncherAndTerminateProcess()
             return
@@ -306,11 +322,18 @@ internal class GameSessionCoordinator(
     }
 
     private fun scheduleBackExitForceRestart() {
-        renderSurfaceManager.renderView.postDelayed({
-            if (backExitRequested) {
-                forceRestartLauncherAndTerminateProcess()
-            }
-        }, BACK_FORCE_KILL_FALLBACK_MS)
+        cancelBackExitForceRestart()
+        renderSurfaceManager.renderView.postDelayed(
+            backExitForceRestartRunnable,
+            BACK_FORCE_KILL_FALLBACK_MS
+        )
+    }
+
+    private fun cancelBackExitForceRestart() {
+        try {
+            renderSurfaceManager.renderView.removeCallbacks(backExitForceRestartRunnable)
+        } catch (_: UninitializedPropertyAccessException) {
+        }
     }
 
     private fun sendEscapeKeyToGame() {
@@ -328,11 +351,13 @@ internal class GameSessionCoordinator(
             return
         }
         backExitHardRestartTriggered = true
-        LauncherReturnCoordinator.scheduleLauncherRestart(
-            context = activity,
-            delayMs = BACK_FORCE_RESTART_DELAY_MS,
-            markExpectedBackExitRestart = true
-        )
+        if (!backExitLauncherShown) {
+            LauncherReturnCoordinator.scheduleLauncherRestart(
+                context = activity,
+                delayMs = BACK_FORCE_RESTART_DELAY_MS,
+                markExpectedBackExitRestart = true
+            )
+        }
         activity.finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
     }
@@ -343,6 +368,15 @@ internal class GameSessionCoordinator(
             return
         }
         LauncherReturnCoordinator.showCrashAndFinish(activity, code, isSignal, detail)
+    }
+
+    private fun showLauncherForExpectedBackExit() {
+        if (backExitLauncherShown) {
+            return
+        }
+        backExitLauncherShown = true
+        BackExitNotice.markLauncherReturnHandledInProcess()
+        activity.startActivity(LauncherReturnCoordinator.createReturnIntent(activity))
     }
 
     private fun applyForegroundWindowState() {

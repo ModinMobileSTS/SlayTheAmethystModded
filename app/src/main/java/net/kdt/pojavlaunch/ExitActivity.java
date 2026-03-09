@@ -35,6 +35,9 @@ public class ExitActivity extends AppCompatActivity {
     }
 
     public static void showExitMessage(Context context, int code, boolean isSignal, @Nullable String detail) {
+        if (BackExitNotice.isLauncherReturnHandledInProcess()) {
+            return;
+        }
         if (BackExitNotice.isExpectedBackExitRecent(context)) {
             if (BackExitNotice.isExpectedBackExitRestartScheduledRecent(context)) {
                 return;
