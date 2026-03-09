@@ -965,6 +965,7 @@ class SettingsScreenViewModel : ViewModel() {
                     if (patchedResults.isNotEmpty()) {
                         showAtlasPatchSummaryDialog(host, patchedResults)
                         showManifestRootPatchSummaryDialog(host, patchedResults)
+                        showFrierenPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -1024,6 +1025,17 @@ class SettingsScreenViewModel : ViewModel() {
         AlertDialog.Builder(host)
             .setTitle("ModID 结构已自动修复")
             .setMessage(SettingsFileService.buildManifestRootPatchImportSummaryMessage(patchedResults))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showFrierenPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasFrierenAntiPiratePatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle("FrierenMod 已自动修补")
+            .setMessage(SettingsFileService.buildFrierenPatchImportSummaryMessage(patchedResults))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }

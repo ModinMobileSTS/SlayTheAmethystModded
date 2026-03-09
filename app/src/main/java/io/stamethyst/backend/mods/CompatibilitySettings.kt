@@ -35,6 +35,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isFrierenModCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isFrierenModCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setFrierenModCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setFrierenModCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isRuntimeTextureCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isRuntimeTextureCompatEnabled(context)
     }

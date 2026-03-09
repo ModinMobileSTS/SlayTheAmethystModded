@@ -16,6 +16,8 @@
     <string name="compat_global_atlas_filter_compat_desc">现在导入模组时会离线修补：将 atlas 中包含 mipmap 的 filter 行改为 Linear,Linear，开启兼容性更高，关闭则不会修补新导入的模组。修复案例为命运之戒模组主菜单出现黑块。</string>
     <string name="compat_mod_manifest_root_compat_title">ModTheSpire 清单根路径兼容补丁</string>
     <string name="compat_mod_manifest_root_compat_desc">导入模组时会自动修补：当 ModTheSpire.json 被错误打包在外层目录（例如 Fabricate/ModTheSpire.json）时，自动改写到 jar 根目录。开启兼容性更高，关闭则不会修补新导入模组。发生自动修补后会弹窗提示。</string>
+    <string name="compat_frieren_mod_compat_title">葬送的芙莉莲模组兼容</string>
+    <string name="compat_frieren_mod_compat_desc">开启后，导入 frierenmod 时会自动修补 FrierenMod/utils/AntiPirateHelper.antiPirate()，移除会让 Android 启动卡在 97% 的桌面反盗版弹窗逻辑。关闭后不会修补新导入的 FrierenMod。</string>
     <string name="compat_runtime_texture_compat_title">运行时纹理兼容补丁</string>
     <string name="compat_runtime_texture_compat_desc">用于修复运行时动态创建纹理导致的黑块问题，如果出现材质丢失的问题，可以考虑打开。优点：可继续修复导入期未覆盖的黑块问题。缺点：会增加启动阶段 managed texture 扫描带来的 CPU/GPU 开销，且运行时 Linear/Clamp 兜底可能让部分纹理变糊。默认关闭以优先性能。</string>
     <string name="compat_force_linear_mipmap_filter_title">强制线性 mipmap 过滤</string>

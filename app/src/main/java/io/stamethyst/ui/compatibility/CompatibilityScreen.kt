@@ -53,6 +53,7 @@ fun LauncherCompatibilityScreen(
         onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
         onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
+        onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
@@ -71,6 +72,7 @@ private fun LauncherCompatibilityScreenPreview() {
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
             modManifestRootCompatEnabled = true,
+            frierenModCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true
@@ -87,6 +89,7 @@ private fun LauncherCompatibilityScreenContent(
     onVirtualFboPocToggled: (Boolean) -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
     onModManifestRootCompatToggled: (Boolean) -> Unit = {},
+    onFrierenModCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -143,6 +146,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.modManifestRootCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onModManifestRootCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_frieren_mod_compat_title),
+                description = stringResource(R.string.compat_frieren_mod_compat_desc),
+                checked = uiState.frierenModCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onFrierenModCompatToggled
             )
 
             CompatibilitySwitchRow(

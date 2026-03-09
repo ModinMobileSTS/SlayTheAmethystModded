@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.backend.mods.FrierenModCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
@@ -46,14 +47,17 @@ internal data class ModImportResult(
     val patchedAtlasEntries: Int,
     val patchedFilterLines: Int,
     val patchedManifestRootEntries: Int = 0,
-    val patchedManifestRootPrefix: String = ""
+    val patchedManifestRootPrefix: String = "",
+    val patchedFrierenAntiPirateMethod: Boolean = false
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
     val wasManifestRootPatched: Boolean
         get() = patchedManifestRootEntries > 0
+    val wasFrierenAntiPiratePatched: Boolean
+        get() = patchedFrierenAntiPirateMethod
     val hasCompatibilityPatches: Boolean
-        get() = wasAtlasPatched || wasManifestRootPatched
+        get() = wasAtlasPatched || wasManifestRootPatched || wasFrierenAntiPiratePatched
 }
 
 internal data class ModBatchImportResult(
@@ -92,6 +96,7 @@ internal object SettingsFileService {
     private const val RESERVED_COMPONENT_BASEMOD = "BaseMod"
     private const val RESERVED_COMPONENT_STSLIB = "StSLib"
     private const val RESERVED_COMPONENT_MTS = "ModTheSpire"
+    private const val FRIEREN_MOD_ID = "frierenmod"
     private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
         ".zip",
@@ -315,6 +320,13 @@ internal object SettingsFileService {
                 patchedAtlasEntries = patchResult.patchedAtlasEntries
                 patchedFilterLines = patchResult.patchedFilterLines
             }
+            var patchedFrierenAntiPirateMethod = false
+            if (CompatibilitySettings.isFrierenModCompatEnabled(host)
+                && modId == FRIEREN_MOD_ID
+            ) {
+                patchedFrierenAntiPirateMethod =
+                    FrierenModCompatPatcher.patchAntiPirateInPlace(tempFile).patchedAntiPirateMethod
+            }
             ModManager.removeExistingOptionalModsForImport(
                 context = host,
                 normalizedModId = modId,
@@ -331,7 +343,8 @@ internal object SettingsFileService {
                 patchedAtlasEntries = patchedAtlasEntries,
                 patchedFilterLines = patchedFilterLines,
                 patchedManifestRootEntries = patchedManifestRootEntries,
-                patchedManifestRootPrefix = patchedManifestRootPrefix
+                patchedManifestRootPrefix = patchedManifestRootPrefix,
+                patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod
             )
         } finally {
             if (tempFile.exists()) {
@@ -394,7 +407,9 @@ internal object SettingsFileService {
                                 existing.patchedManifestRootPrefix
                             } else {
                                 result.patchedManifestRootPrefix
-                            }
+                            },
+                            patchedFrierenAntiPirateMethod = existing.patchedFrierenAntiPirateMethod ||
+                                result.patchedFrierenAntiPirateMethod
                         )
                     }
                 }
@@ -588,6 +603,45 @@ internal object SettingsFileService {
             }
             append('\n')
             append("修补规则：将“外层目录/ModTheSpire.json”结构扁平化到 jar 根目录。")
+        }.trimEnd()
+    }
+
+    fun buildFrierenPatchImportSummaryMessage(patchedResults: Collection<ModImportResult>): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasFrierenAntiPiratePatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedFrierenAntiPirateMethod = existing.patchedFrierenAntiPirateMethod ||
+                        result.patchedFrierenAntiPirateMethod
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return "本次导入没有发现需要修补的 FrierenMod 启动阻塞逻辑。"
+        }
+
+        return buildString {
+            append("以下模组在导入时已自动修补 FrierenMod 启动阻塞逻辑：\n")
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(result.modName.ifBlank { result.modId })
+                append("（modid: ")
+                append(result.modId)
+                append("）")
+                append('\n')
+                append("  已移除 FrierenMod/utils/AntiPirateHelper.antiPirate() 的桌面弹窗阻塞逻辑")
+                append('\n')
+            }
+            append('\n')
+            append("修补规则：将 antiPirate() 方法改为空实现，避免 Android 启动卡在 97%。")
         }.trimEnd()
     }
 
