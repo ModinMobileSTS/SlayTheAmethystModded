@@ -101,6 +101,7 @@ class SettingsScreenViewModel : ViewModel() {
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
+        val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
@@ -410,6 +411,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val mobileHudEnabled = readMobileHudEnabledSelection(host)
                 val showGamePerformanceOverlay = readGamePerformanceOverlaySelection(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
+                val jvmLogcatMirrorEnabled = readJvmLogcatMirrorSelection(host)
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
                 val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
@@ -503,6 +505,7 @@ class SettingsScreenViewModel : ViewModel() {
                         .append(if (autoSwitchLeftAfterRightClick) "ON" else "OFF")
                     append("\nMod card name from file: ").append(if (showModFileName) "ON" else "OFF")
                     append("\nLWJGL Debug: ").append(if (lwjglDebugEnabled) "ON" else "OFF")
+                    append("\nJVM logcat mirror: ").append(if (jvmLogcatMirrorEnabled) "ON" else "OFF")
                     append("\nGDX pad cursor debug log: ")
                         .append(if (gdxPadCursorDebugEnabled) "ON" else "OFF")
                     append("\nGLBridge swap heartbeat log: ")
@@ -540,6 +543,7 @@ class SettingsScreenViewModel : ViewModel() {
                         mobileHudEnabled = mobileHudEnabled,
                         showGamePerformanceOverlay = showGamePerformanceOverlay,
                         lwjglDebugEnabled = lwjglDebugEnabled,
+                        jvmLogcatMirrorEnabled = jvmLogcatMirrorEnabled,
                         gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
                         glBridgeSwapHeartbeatDebugEnabled = glBridgeSwapHeartbeatDebugEnabled,
                         touchscreenEnabled = touchscreenEnabled,
@@ -828,6 +832,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(lwjglDebugEnabled = enabled)
         saveLwjglDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onJvmLogcatMirrorChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(jvmLogcatMirrorEnabled = enabled)
+        saveJvmLogcatMirrorSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -1544,6 +1557,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
+    }
+
+    private fun readJvmLogcatMirrorSelection(host: Activity): Boolean {
+        return LauncherPreferences.isJvmLogcatMirrorEnabled(host)
+    }
+
+    private fun saveJvmLogcatMirrorSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setJvmLogcatMirrorEnabled(host, enabled)
     }
 
     private fun readGdxPadCursorDebugSelection(host: Activity): Boolean {

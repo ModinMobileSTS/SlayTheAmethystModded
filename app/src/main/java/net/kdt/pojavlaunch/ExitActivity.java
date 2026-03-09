@@ -14,6 +14,8 @@ import android.os.Bundle;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
+import io.stamethyst.backend.crash.LatestLogCrashDetector;
+import io.stamethyst.backend.crash.LatestLogCrashSummary;
 import io.stamethyst.backend.launch.BackExitNotice;
 import io.stamethyst.backend.launch.LauncherReturnCoordinator;
 
@@ -49,19 +51,30 @@ public class ExitActivity extends AppCompatActivity {
             );
             return;
         }
-        if (code == 0) {
+        LatestLogCrashSummary logCrash = LatestLogCrashDetector.detect(context);
+        String crashDetail = normalizeDetail(detail);
+        if ((crashDetail == null || crashDetail.isEmpty()) && logCrash != null) {
+            crashDetail = logCrash.getDetail();
+        }
+        if (code == 0 && logCrash == null) {
             return;
         }
         Intent intent = new Intent(context, ExitActivity.class);
-        intent.putExtra(EXTRA_CODE, code);
+        intent.putExtra(EXTRA_CODE, code != 0 ? code : -1);
         intent.putExtra(EXTRA_IS_SIGNAL, isSignal);
-        if (detail != null) {
-            String trimmed = detail.trim();
-            if (!trimmed.isEmpty()) {
-                intent.putExtra(EXTRA_DETAIL, trimmed);
-            }
+        if (crashDetail != null && !crashDetail.isEmpty()) {
+            intent.putExtra(EXTRA_DETAIL, crashDetail);
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         context.startActivity(intent);
+    }
+
+    @Nullable
+    private static String normalizeDetail(@Nullable String detail) {
+        if (detail == null) {
+            return null;
+        }
+        String trimmed = detail.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

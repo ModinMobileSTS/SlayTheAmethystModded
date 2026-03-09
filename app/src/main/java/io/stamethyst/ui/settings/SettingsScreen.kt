@@ -124,6 +124,7 @@ fun LauncherSettingsScreen(
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
         },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
+        onJvmLogcatMirrorChanged = { enabled -> viewModel.onJvmLogcatMirrorChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
@@ -168,6 +169,7 @@ private fun LauncherSettingsScreenPreview() {
             mobileHudEnabled = false,
             showGamePerformanceOverlay = false,
             lwjglDebugEnabled = false,
+            jvmLogcatMirrorEnabled = false,
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenEnabled = true,
@@ -212,6 +214,7 @@ private fun LauncherSettingsScreenContent(
     onMobileHudEnabledChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
+    onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
@@ -332,6 +335,7 @@ private fun LauncherSettingsScreenContent(
                     SettingsStatusSection(
                         uiState = uiState,
                         onLwjglDebugChanged = onLwjglDebugChanged,
+                        onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged
                     )
@@ -503,7 +507,6 @@ private fun SettingsFeedbackEntryCard(
             )
             SettingsActionListItem(
                 title = "打开反馈表单",
-                supportingText = "建议从这里进入反馈系统",
                 enabled = !busy,
                 onClick = onOpenFeedback
             )
@@ -997,6 +1000,7 @@ private fun SettingsActionListItem(
 private fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState,
     onLwjglDebugChanged: (Boolean) -> Unit,
+    onJvmLogcatMirrorChanged: (Boolean) -> Unit,
     onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
 ) {
@@ -1026,6 +1030,14 @@ private fun SettingsStatusSection(
         disabledText = "LWJGL Debug：禁用",
         description = "控制 JVM 启动参数中的 org.lwjgl.util.Debug / DebugLoader / DebugFunctions。",
         onCheckedChange = onLwjglDebugChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.jvmLogcatMirrorEnabled,
+        enabled = !uiState.busy,
+        enabledText = "JVM 日志转发到 logcat：启用",
+        disabledText = "JVM 日志转发到 logcat：禁用",
+        description = "将 latest.log 的新增内容同步输出到 logcat，默认禁用；修改后在下次启动游戏时生效。",
+        onCheckedChange = onJvmLogcatMirrorChanged
     )
     SwitchSettingRow(
         checked = uiState.gdxPadCursorDebugEnabled,

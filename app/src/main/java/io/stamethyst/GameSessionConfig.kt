@@ -16,6 +16,7 @@ internal data class GameSessionConfig(
     val forceJvmCrash: Boolean,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
+    val mirrorJvmLogsToLogcat: Boolean,
     val longPressMouseShowsKeyboard: Boolean,
     val autoSwitchLeftAfterRightClick: Boolean,
     val renderSurfaceBackend: RenderSurfaceBackend
@@ -49,6 +50,7 @@ internal data class GameSessionConfig(
                 forceJvmCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_JVM_CRASH, false),
                 showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(context),
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
+                mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(context),
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
                 renderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(context)

@@ -58,9 +58,6 @@ object RuntimePaths {
     fun preferencesDir(context: Context): File = File(stsRoot(context), "preferences")
 
     @JvmStatic
-    fun betaPreferencesDir(context: Context): File = File(stsRoot(context), "betaPreferences")
-
-    @JvmStatic
     fun mtsGdxApiJar(context: Context): File = File(stsRoot(context), "mts-gdx-api.jar")
 
     @JvmStatic

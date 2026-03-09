@@ -32,6 +32,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_LWJGL_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_LWJGL_DEBUG
+    val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED
     val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
@@ -142,6 +144,14 @@ object LauncherPreferences {
 
     fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setLwjglDebugEnabled(context, enabled)
+    }
+
+    fun isJvmLogcatMirrorEnabled(context: Context): Boolean {
+        return LauncherConfig.isJvmLogcatMirrorEnabled(context)
+    }
+
+    fun setJvmLogcatMirrorEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setJvmLogcatMirrorEnabled(context, enabled)
     }
 
     fun isGdxPadCursorDebugEnabled(context: Context): Boolean {

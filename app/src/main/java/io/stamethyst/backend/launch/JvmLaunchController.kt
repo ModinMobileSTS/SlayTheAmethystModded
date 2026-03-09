@@ -1,8 +1,11 @@
 package io.stamethyst.backend.launch
 
+import android.os.SystemClock
+import android.util.Log
 import com.oracle.dalvik.VMLauncher
 import io.stamethyst.BootOverlayController
 import io.stamethyst.StsGameActivity
+import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.RuntimePaths
@@ -13,7 +16,6 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.util.ArrayList
-import android.os.SystemClock
 
 /**
  * Manages JVM launch lifecycle: preparation, argument building, and thread management.
@@ -23,9 +25,11 @@ class JvmLaunchController(
     private val launchMode: String,
     private val targetFps: Int,
     private val forceJvmCrash: Boolean,
+    private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
     private val onLaunchComplete: (exitCode: Int) -> Unit,
     private val onLaunchFailed: (Throwable) -> Unit,
+    private val onRuntimeCrashDetected: (detail: String) -> Unit,
     private val onRuntimeReady: () -> Unit,
     private val onSurfaceSizeSync: () -> Unit,
     private val getWindowWidth: () -> Int,
@@ -39,10 +43,13 @@ class JvmLaunchController(
         private const val LATEST_LOG_MAX_BYTES = 64L * 1024L * 1024L
         private const val LATEST_LOG_KEEP_BYTES = 8L * 1024L * 1024L
         private const val LATEST_LOG_MONITOR_INTERVAL_MS = 12_000L
+        private const val LATEST_LOG_LOGCAT_POLL_INTERVAL_MS = 2_000L
+        private const val LATEST_LOG_LOGCAT_SCAN_MAX_BYTES = 32 * 1024
         private const val BOOT_BRIDGE_EVENT_POLL_INTERVAL_MS = 180L
         private const val BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES = 32 * 1024
         private const val BOOT_BRIDGE_SPLASH_PROGRESS = 94
         private const val RUNTIME_HEAP_SNAPSHOT_POLL_INTERVAL_MS = 1_000L
+        private const val LOGCAT_TAG = "STS-JVM"
     }
 
     @Volatile
@@ -71,6 +78,15 @@ class JvmLaunchController(
     private var latestLogCapMonitorRunning = false
 
     @Volatile
+    private var latestLogLogcatMirrorThread: Thread? = null
+
+    @Volatile
+    private var latestLogLogcatMirrorRunning = false
+
+    @Volatile
+    private var latestLogRuntimeCrashDetected = false
+
+    @Volatile
     private var bootBridgeEventMonitorThread: Thread? = null
 
     @Volatile
@@ -88,6 +104,8 @@ class JvmLaunchController(
     @Volatile
     private var cancelRequested = false
 
+    private var latestLogLogcatMirrorOffset = 0L
+    private var latestLogLogcatMirrorRemainder = ""
     private var bootBridgeEventOffset = 0L
     private var bootBridgeEventRemainder = ""
 
@@ -102,6 +120,7 @@ class JvmLaunchController(
         jvmLaunchStartedElapsedMs = SystemClock.elapsedRealtime()
         cancelRequested = false
 
+        latestLogRuntimeCrashDetected = false
         onProgressUpdate(8, "Starting JVM...")
 
         val launchThread = Thread({
@@ -151,6 +170,7 @@ class JvmLaunchController(
                     JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)
                 } catch (_: Throwable) {
                 }
+                startLatestLogLogcatMirror(latestLogFile)
                 startLatestLogCapMonitor(latestLogFile)
                 startRuntimeHeapSnapshotMonitor(RuntimePaths.jvmHeapSnapshot(activity))
                 startBootBridgeEventMonitor(
@@ -215,6 +235,7 @@ class JvmLaunchController(
                 runtimeLifecycleReady = false
                 runtimeMemorySnapshot = null
                 jvmLaunchStartedElapsedMs = 0L
+                stopLatestLogLogcatMirror()
                 stopLatestLogCapMonitor()
                 stopRuntimeHeapSnapshotMonitor()
                 stopBootBridgeEventMonitor()
@@ -238,6 +259,7 @@ class JvmLaunchController(
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()
+        stopLatestLogLogcatMirror()
         stopLatestLogCapMonitor()
         stopRuntimeHeapSnapshotMonitor()
         stopBootBridgeEventMonitor()
@@ -274,11 +296,45 @@ class JvmLaunchController(
         monitorThread.start()
     }
 
+    private fun startLatestLogLogcatMirror(logFile: File) {
+        stopLatestLogLogcatMirror()
+        latestLogLogcatMirrorOffset = 0L
+        latestLogLogcatMirrorRemainder = ""
+        latestLogRuntimeCrashDetected = false
+        latestLogLogcatMirrorRunning = true
+        val monitorThread = Thread({
+            while (latestLogLogcatMirrorRunning && !Thread.currentThread().isInterrupted) {
+                try {
+                    pollLatestLogForLogcat(logFile)
+                } catch (_: Throwable) {
+                }
+                try {
+                    Thread.sleep(LATEST_LOG_LOGCAT_POLL_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }, "STS-LatestLogcat")
+        monitorThread.isDaemon = true
+        latestLogLogcatMirrorThread = monitorThread
+        monitorThread.start()
+    }
+
     private fun stopLatestLogCapMonitor() {
         latestLogCapMonitorRunning = false
         val monitorThread = latestLogCapMonitorThread
         latestLogCapMonitorThread = null
         monitorThread?.interrupt()
+    }
+
+    private fun stopLatestLogLogcatMirror() {
+        latestLogLogcatMirrorRunning = false
+        val monitorThread = latestLogLogcatMirrorThread
+        latestLogLogcatMirrorThread = null
+        monitorThread?.interrupt()
+        flushLatestLogLogcatRemainder()
+        latestLogLogcatMirrorOffset = 0L
+        latestLogLogcatMirrorRemainder = ""
     }
 
     private fun startRuntimeHeapSnapshotMonitor(snapshotFile: File) {
@@ -464,6 +520,75 @@ class JvmLaunchController(
         return false
     }
 
+    private fun pollLatestLogForLogcat(logFile: File) {
+        if (!logFile.isFile) {
+            return
+        }
+        val knownLength = logFile.length().coerceAtLeast(0L)
+        if (latestLogLogcatMirrorOffset > knownLength) {
+            latestLogLogcatMirrorOffset = 0L
+            latestLogLogcatMirrorRemainder = ""
+        }
+
+        var startOffset = latestLogLogcatMirrorOffset
+        var bytesToReadLong = knownLength - startOffset
+        if (bytesToReadLong <= 0L) {
+            return
+        }
+        if (bytesToReadLong > LATEST_LOG_LOGCAT_SCAN_MAX_BYTES) {
+            val droppedBytes = bytesToReadLong - LATEST_LOG_LOGCAT_SCAN_MAX_BYTES
+            startOffset = knownLength - LATEST_LOG_LOGCAT_SCAN_MAX_BYTES
+            bytesToReadLong = LATEST_LOG_LOGCAT_SCAN_MAX_BYTES.toLong()
+            latestLogLogcatMirrorRemainder = ""
+            Log.w(LOGCAT_TAG, "Dropped $droppedBytes bytes while mirroring latest.log to logcat")
+        }
+
+        val bytesToRead = bytesToReadLong.toInt()
+        if (bytesToRead <= 0) {
+            return
+        }
+
+        RandomAccessFile(logFile, "r").use { raf ->
+            raf.seek(startOffset)
+            val buffer = ByteArray(bytesToRead)
+            raf.readFully(buffer)
+            latestLogLogcatMirrorOffset = startOffset + bytesToRead
+
+            var chunkText = String(buffer, StandardCharsets.UTF_8)
+            if (latestLogLogcatMirrorRemainder.isNotEmpty()) {
+                chunkText = latestLogLogcatMirrorRemainder + chunkText
+            }
+
+            val endsWithLineBreak = chunkText.endsWith("\n") || chunkText.endsWith("\r")
+            val parts = chunkText.split('\n')
+            val lines = if (endsWithLineBreak) {
+                latestLogLogcatMirrorRemainder = ""
+                parts
+            } else {
+                latestLogLogcatMirrorRemainder = parts.lastOrNull() ?: ""
+                if (parts.isNotEmpty()) parts.dropLast(1) else emptyList()
+            }
+
+            for (line in lines) {
+                val normalized = line.trimEnd('\r')
+                if (normalized.isEmpty()) {
+                    continue
+                }
+                if (mirrorJvmLogsToLogcat) {
+                    Log.i(LOGCAT_TAG, normalized)
+                }
+                if (!latestLogRuntimeCrashDetected && isRuntimeCrashMarkerLine(normalized)) {
+                    latestLogRuntimeCrashDetected = true
+                    val summary = LatestLogCrashDetector.detect(logFile)
+                    val detail = summary?.detail?.ifBlank { null } ?: normalized
+                    onRuntimeCrashDetected(detail)
+                    latestLogLogcatMirrorRunning = false
+                    break
+                }
+            }
+        }
+    }
+
     private fun parseRuntimeMemorySnapshot(message: String): JvmRuntimeMemorySnapshot? {
         if (message.isBlank()) {
             return null
@@ -538,5 +663,18 @@ class JvmLaunchController(
             raf.write(buffer)
             raf.fd.sync()
         }
+    }
+
+    private fun flushLatestLogLogcatRemainder() {
+        val remainder = latestLogLogcatMirrorRemainder.trimEnd('\r')
+        if (remainder.isNotEmpty() && mirrorJvmLogsToLogcat) {
+            Log.i(LOGCAT_TAG, remainder)
+        }
+    }
+
+    private fun isRuntimeCrashMarkerLine(line: String): Boolean {
+        return line.contains("Game crashed.", ignoreCase = true) ||
+            line.contains("Exception occurred in CardCrawlGame render method!", ignoreCase = true) ||
+            line.contains("Exception in thread \"LWJGL Application\"", ignoreCase = true)
     }
 }

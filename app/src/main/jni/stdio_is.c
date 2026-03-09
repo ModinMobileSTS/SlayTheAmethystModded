@@ -15,14 +15,20 @@ static volatile jclass exitTrap_exitClass;
 static volatile jmethodID exitTrap_staticMethod;
 static JavaVM *exitTrap_jvm;
 
-_Noreturn void nominal_exit(int code, bool is_signal, const char* detail) {
-    JNIEnv *env;
+void nominal_exit(int code, bool is_signal, const char* detail) {
+    if(exitTrap_jvm == NULL || exitTrap_ctx == NULL || exitTrap_exitClass == NULL || exitTrap_staticMethod == NULL) {
+        return;
+    }
+
+    JNIEnv *env = NULL;
+    bool attached = false;
     jint errorCode = (*exitTrap_jvm)->GetEnv(exitTrap_jvm, (void**)&env, JNI_VERSION_1_6);
     if(errorCode == JNI_EDETACHED) {
         errorCode = (*exitTrap_jvm)->AttachCurrentThread(exitTrap_jvm, &env, NULL);
+        attached = errorCode == JNI_OK;
     }
-    if(errorCode != JNI_OK) {
-        killpg(getpgrp(), SIGTERM);
+    if(errorCode != JNI_OK || env == NULL) {
+        return;
     }
     jstring detailString = NULL;
     if(detail != NULL && detail[0] != '\0') {
@@ -40,13 +46,21 @@ _Noreturn void nominal_exit(int code, bool is_signal, const char* detail) {
     if(detailString != NULL) {
         (*env)->DeleteLocalRef(env, detailString);
     }
-    (*env)->DeleteGlobalRef(env, exitTrap_ctx);
-    (*env)->DeleteGlobalRef(env, exitTrap_exitClass);
-
-    jclass systemClass = (*env)->FindClass(env,"java/lang/System");
-    jmethodID exitMethod = (*env)->GetStaticMethodID(env, systemClass, "exit", "(I)V");
-    (*env)->CallStaticVoidMethod(env, systemClass, exitMethod, 0);
-    while(1) {}
+    if((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+    if(exitTrap_ctx != NULL) {
+        (*env)->DeleteGlobalRef(env, exitTrap_ctx);
+        exitTrap_ctx = NULL;
+    }
+    if(exitTrap_exitClass != NULL) {
+        (*env)->DeleteGlobalRef(env, exitTrap_exitClass);
+        exitTrap_exitClass = NULL;
+    }
+    exitTrap_staticMethod = NULL;
+    if(attached) {
+        (*exitTrap_jvm)->DetachCurrentThread(exitTrap_jvm);
+    }
 }
 
 JNIEXPORT void JNICALL

@@ -3,6 +3,7 @@ package io.stamethyst
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.TextView
+import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
@@ -35,6 +36,9 @@ internal class GameSessionCoordinator(
     @Volatile
     private var backExitLauncherShown = false
 
+    @Volatile
+    private var crashReturnTriggered = false
+
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
     private val backExitForceRestartRunnable = Runnable {
@@ -64,6 +68,7 @@ internal class GameSessionCoordinator(
         launchMode = config.launchMode,
         targetFps = config.targetFps,
         forceJvmCrash = config.forceJvmCrash,
+        mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
             bootOverlayController.updateProgress(
                 percent,
@@ -72,6 +77,7 @@ internal class GameSessionCoordinator(
         },
         onLaunchComplete = { exitCode -> handleJvmExit(exitCode) },
         onLaunchFailed = { throwable -> handleJvmLaunchFailed(throwable) },
+        onRuntimeCrashDetected = { detail -> handleRuntimeCrashDetected(detail) },
         onRuntimeReady = {
             activity.runOnUiThread {
                 applyForegroundWindowState()
@@ -231,20 +237,39 @@ internal class GameSessionCoordinator(
     }
 
     private fun handleJvmExit(exitCode: Int) {
+        if (crashReturnTriggered) {
+            return
+        }
         if (backExitRequested) {
             cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
             return
         }
 
-        if (exitCode == 0) {
-            activity.runOnUiThread { activity.finish() }
+        val latestCrash = if (exitCode == 0) {
+            LatestLogCrashDetector.detect(activity)
         } else {
-            activity.runOnUiThread { reportCrashAndReturn(exitCode, false, null) }
+            null
+        }
+
+        activity.runOnUiThread {
+            if (latestCrash != null) {
+                reportCrashAndReturn(-1, false, latestCrash.detail)
+                return@runOnUiThread
+            }
+
+            if (exitCode == 0) {
+                activity.finish()
+            } else {
+                reportCrashAndReturn(exitCode, false, null)
+            }
         }
     }
 
     private fun handleJvmLaunchFailed(throwable: Throwable) {
+        if (crashReturnTriggered) {
+            return
+        }
         if (backExitRequested) {
             cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
@@ -255,6 +280,9 @@ internal class GameSessionCoordinator(
     }
 
     private fun signalLaunchFailure(detail: String) {
+        if (crashReturnTriggered) {
+            return
+        }
         if (backExitRequested) {
             cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
@@ -268,6 +296,20 @@ internal class GameSessionCoordinator(
         }
 
         activity.runOnUiThread { reportCrashAndReturn(crashCode, false, detail) }
+    }
+
+    private fun handleRuntimeCrashDetected(detail: String) {
+        if (backExitRequested || !tryMarkCrashReturnTriggered()) {
+            return
+        }
+        activity.runOnUiThread {
+            launchCrashReturn(
+                code = -1,
+                isSignal = false,
+                detail = detail,
+                terminateProcessAfterReturn = true
+            )
+        }
     }
 
     private fun requestBackExitToLauncher() {
@@ -362,12 +404,47 @@ internal class GameSessionCoordinator(
         android.os.Process.killProcess(android.os.Process.myPid())
     }
 
-    private fun reportCrashAndReturn(code: Int, isSignal: Boolean, detail: String?) {
+    private fun reportCrashAndReturn(
+        code: Int,
+        isSignal: Boolean,
+        detail: String?,
+        terminateProcessAfterReturn: Boolean = false
+    ) {
         if (backExitRequested) {
             activity.finish()
             return
         }
-        LauncherReturnCoordinator.showCrashAndFinish(activity, code, isSignal, detail)
+        if (!tryMarkCrashReturnTriggered()) {
+            activity.finish()
+            return
+        }
+        launchCrashReturn(code, isSignal, detail, terminateProcessAfterReturn)
+    }
+
+    private fun launchCrashReturn(
+        code: Int,
+        isSignal: Boolean,
+        detail: String?,
+        terminateProcessAfterReturn: Boolean
+    ) {
+        activity.startActivity(LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail))
+        if (terminateProcessAfterReturn) {
+            activity.finishAffinity()
+            renderSurfaceManager.renderView.postDelayed({
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }, 180L)
+            return
+        }
+        activity.finish()
+    }
+
+    @Synchronized
+    private fun tryMarkCrashReturnTriggered(): Boolean {
+        if (crashReturnTriggered) {
+            return false
+        }
+        crashReturnTriggered = true
+        return true
     }
 
     private fun showLauncherForExpectedBackExit() {

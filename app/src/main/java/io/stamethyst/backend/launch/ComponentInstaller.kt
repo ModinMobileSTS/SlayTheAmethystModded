@@ -278,7 +278,6 @@ object ComponentInstaller {
             return
         }
         ensureDefaultPreferencesForDir(assets, RuntimePaths.preferencesDir(context))
-        ensureDefaultPreferencesForDir(assets, RuntimePaths.betaPreferencesDir(context))
     }
 
     @Throws(IOException::class)

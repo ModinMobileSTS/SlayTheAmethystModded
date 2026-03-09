@@ -135,10 +135,6 @@ internal object SettingsFileService {
     )
 
     private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
-        "betaPreferences",
-        "betapreferences",
-        "betaPerferences",
-        "betaperferences",
         "perference",
         "preferences",
         "perferences",
@@ -1071,9 +1067,7 @@ internal object SettingsFileService {
         val mappedFolder = when (folder.lowercase(Locale.ROOT)) {
             "preferences",
             "perference",
-            "perferences",
-            "betapreferences",
-            "betaperferences" -> "preferences"
+            "perferences" -> "preferences"
             "multiplayer",
             "multiple" -> "multiplayer"
             else -> folder
@@ -1126,16 +1120,10 @@ internal object SettingsFileService {
             when (topLevel.lowercase(Locale.ROOT)) {
                 "preferences",
                 "perference",
-                "perferences",
-                "betapreferences",
-                "betaperferences" -> {
+                "perferences" -> {
                     clearTargets.add("preferences")
                     clearTargets.add("perference")
                     clearTargets.add("perferences")
-                    clearTargets.add("betaPreferences")
-                    clearTargets.add("betapreferences")
-                    clearTargets.add("betaPerferences")
-                    clearTargets.add("betaperferences")
                 }
 
                 "multiplayer",
@@ -1173,11 +1161,9 @@ internal object SettingsFileService {
     }
 
     private fun isLikelySaveTopLevel(folder: String): Boolean {
-        return folder == "betapreferences"
-            || folder == "perference"
+        return folder == "perference"
             || folder == "preferences"
             || folder == "perferences"
-            || folder == "betaperferences"
             || folder == "saves"
             || folder == "sendtodevs"
             || folder == "runs"

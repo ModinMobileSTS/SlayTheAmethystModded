@@ -7,6 +7,6 @@
 
 #include <stdbool.h>
 
-_Noreturn void nominal_exit(int code, bool is_signal, const char* detail);
+void nominal_exit(int code, bool is_signal, const char* detail);
 
 #endif //POJAVLAUNCHER_STDIO_IS_H
