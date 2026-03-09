@@ -36,6 +36,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
+    val DEFAULT_AUTO_CHECK_UPDATES_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_AUTO_CHECK_UPDATES_ENABLED
+    val DEFAULT_PREFERRED_UPDATE_MIRROR_ID: String
+        get() = LauncherConfig.DEFAULT_PREFERRED_UPDATE_MIRROR_ID
     val DEFAULT_PLAYER_NAME: String
         get() = LauncherConfig.DEFAULT_PLAYER_NAME
 
@@ -154,6 +158,62 @@ object LauncherPreferences {
 
     fun setGlBridgeSwapHeartbeatDebugEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setGlBridgeSwapHeartbeatDebugEnabled(context, enabled)
+    }
+
+    fun isAutoCheckUpdatesEnabled(context: Context): Boolean {
+        return LauncherConfig.isAutoCheckUpdatesEnabled(context)
+    }
+
+    fun setAutoCheckUpdatesEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setAutoCheckUpdatesEnabled(context, enabled)
+    }
+
+    fun readPreferredUpdateMirrorId(context: Context): String {
+        return LauncherConfig.readPreferredUpdateMirrorId(context)
+    }
+
+    fun savePreferredUpdateMirrorId(context: Context, mirrorId: String) {
+        LauncherConfig.savePreferredUpdateMirrorId(context, mirrorId)
+    }
+
+    fun readLastUpdateCheckAtMs(context: Context): Long {
+        return LauncherConfig.readLastUpdateCheckAtMs(context)
+    }
+
+    fun saveLastUpdateCheckAtMs(context: Context, timestampMs: Long) {
+        LauncherConfig.saveLastUpdateCheckAtMs(context, timestampMs)
+    }
+
+    fun readLastKnownRemoteTag(context: Context): String? {
+        return LauncherConfig.readLastKnownRemoteTag(context)
+    }
+
+    fun saveLastKnownRemoteTag(context: Context, tag: String?) {
+        LauncherConfig.saveLastKnownRemoteTag(context, tag)
+    }
+
+    fun readLastSuccessfulMetadataSourceId(context: Context): String? {
+        return LauncherConfig.readLastSuccessfulMetadataSourceId(context)
+    }
+
+    fun saveLastSuccessfulMetadataSourceId(context: Context, sourceId: String?) {
+        LauncherConfig.saveLastSuccessfulMetadataSourceId(context, sourceId)
+    }
+
+    fun readLastSuccessfulDownloadSourceId(context: Context): String? {
+        return LauncherConfig.readLastSuccessfulDownloadSourceId(context)
+    }
+
+    fun saveLastSuccessfulDownloadSourceId(context: Context, sourceId: String?) {
+        LauncherConfig.saveLastSuccessfulDownloadSourceId(context, sourceId)
+    }
+
+    fun readLastUpdateErrorSummary(context: Context): String? {
+        return LauncherConfig.readLastUpdateErrorSummary(context)
+    }
+
+    fun saveLastUpdateErrorSummary(context: Context, summary: String?) {
+        LauncherConfig.saveLastUpdateErrorSummary(context, summary)
     }
 
     fun normalizeTargetFps(targetFps: Int): Int {

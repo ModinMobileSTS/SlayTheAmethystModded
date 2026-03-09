@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.navigation.Route
@@ -126,6 +127,13 @@ fun LauncherSettingsScreen(
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
+        onAutoCheckUpdatesChanged = { enabled ->
+            viewModel.onAutoCheckUpdatesChanged(activity, enabled)
+        },
+        onPreferredUpdateMirrorChanged = { source ->
+            viewModel.onPreferredUpdateMirrorChanged(activity, source)
+        },
+        onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onOpenFeedback = viewModel::onOpenFeedback,
         feedbackSubmissionNotice = feedbackSubmissionNotice,
@@ -166,6 +174,7 @@ private fun LauncherSettingsScreenPreview() {
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
             targetFpsOptions = listOf(60, 90, 120, 240),
+            updateStatusSummary = "最近检查：2026-03-09 11:20\n远端版本：1.0.6-hotfix1\n结果：发现新版本\n下载源：ghproxy.vip",
         ),
         feedbackSubmissionNotice = FeedbackSubmissionNotice(
             title = "反馈已提交",
@@ -206,6 +215,9 @@ private fun LauncherSettingsScreenContent(
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
+    onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
+    onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
+    onManualCheckUpdates: () -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onOpenFeedback: () -> Unit = {},
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
@@ -296,6 +308,17 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
+                SettingsSectionCard(title = stringResource(R.string.update_section_title)) {
+                    SettingsUpdateSection(
+                        uiState = uiState,
+                        onAutoCheckUpdatesChanged = onAutoCheckUpdatesChanged,
+                        onPreferredUpdateMirrorChanged = onPreferredUpdateMirrorChanged,
+                        onManualCheckUpdates = onManualCheckUpdates
+                    )
+                }
+            }
+
+            item {
                 SettingsSectionCard(title = stringResource(R.string.compat_settings_title)) {
                     SettingsCompatibilitySection(
                         busy = uiState.busy,
@@ -349,6 +372,103 @@ private fun LauncherSettingsScreenContent(
                     TextButton(onClick = onDismissFeedbackSubmissionNotice) {
                         Text("知道了")
                     }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsUpdateSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onAutoCheckUpdatesChanged: (Boolean) -> Unit,
+    onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit,
+    onManualCheckUpdates: () -> Unit,
+) {
+    var showMirrorDialog by rememberSaveable { mutableStateOf(false) }
+    val controlsEnabled = !uiState.busy && !uiState.updateCheckInProgress
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SwitchSettingRow(
+            checked = uiState.autoCheckUpdatesEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.update_auto_check_enabled),
+            disabledText = stringResource(R.string.update_auto_check_disabled),
+            description = stringResource(R.string.update_auto_check_desc),
+            onCheckedChange = onAutoCheckUpdatesChanged
+        )
+
+        SettingsActionListItem(
+            title = stringResource(R.string.update_mirror_title),
+            supportingText = uiState.preferredUpdateMirror.displayName,
+            enabled = controlsEnabled,
+            onClick = { showMirrorDialog = true }
+        )
+        Text(
+            text = stringResource(R.string.update_mirror_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        if (uiState.updateCheckInProgress) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        SettingsActionListItem(
+            title = stringResource(
+                if (uiState.updateCheckInProgress) {
+                    R.string.update_manual_check_running
+                } else {
+                    R.string.update_manual_check_title
+                }
+            ),
+            enabled = controlsEnabled,
+            onClick = onManualCheckUpdates
+        )
+
+        Text(
+            text = stringResource(R.string.update_current_version, uiState.currentVersionText),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.update_status_title),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        SelectionContainer {
+            Text(
+                text = uiState.updateStatusSummary.ifBlank {
+                    stringResource(R.string.update_status_not_checked)
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+
+    if (showMirrorDialog) {
+        AlertDialog(
+            onDismissRequest = { showMirrorDialog = false },
+            title = { Text(stringResource(R.string.update_mirror_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    uiState.availableUpdateMirrors.forEach { source ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.preferredUpdateMirror == source,
+                            enabled = !uiState.busy,
+                            text = source.displayName,
+                            onSelect = {
+                                onPreferredUpdateMirrorChanged(source)
+                                showMirrorDialog = false
+                            }
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.update_mirror_desc),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showMirrorDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
                 }
             }
         )

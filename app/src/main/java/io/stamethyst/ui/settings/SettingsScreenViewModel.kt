@@ -13,11 +13,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import io.stamethyst.BuildConfig
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.update.LauncherUpdateService
+import io.stamethyst.backend.update.LauncherUpdateUiReducer
+import io.stamethyst.backend.update.LauncherUpdateVersioning
+import io.stamethyst.backend.update.UpdateCheckExecutionResult
+import io.stamethyst.backend.update.UpdateDownloadResolution
+import io.stamethyst.backend.update.UpdateReleaseInfo
+import io.stamethyst.backend.update.UpdateUiMessage
+import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
@@ -30,6 +39,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -56,6 +67,15 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenCompatibility : Effect
         data object OpenFeedback : Effect
     }
+
+    data class UpdatePromptState(
+        val currentVersion: String,
+        val latestVersion: String,
+        val publishedAtText: String,
+        val downloadSourceDisplayName: String,
+        val notesPreview: String,
+        val downloadUrl: String,
+    )
 
     data class UiState(
         val busy: Boolean = false,
@@ -86,7 +106,14 @@ class SettingsScreenViewModel : ViewModel() {
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
         val statusText: String = "",
         val logPathText: String = "",
-        val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList()
+        val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList(),
+        val autoCheckUpdatesEnabled: Boolean = LauncherPreferences.DEFAULT_AUTO_CHECK_UPDATES_ENABLED,
+        val preferredUpdateMirror: UpdateSource = UpdateSource.DEFAULT_PREFERRED_USER_SOURCE,
+        val availableUpdateMirrors: List<UpdateSource> = UpdateSource.userSelectableSources(),
+        val currentVersionText: String = BuildConfig.VERSION_NAME,
+        val updateStatusSummary: String = "",
+        val updateCheckInProgress: Boolean = false,
+        val updatePromptState: UpdatePromptState? = null,
     )
 
     private data class CoreDependencyStatus(
@@ -105,6 +132,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
+    private var startupAutoUpdateCheckRequested = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -119,10 +147,246 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.targetFpsOptions != options) {
             uiState = uiState.copy(targetFpsOptions = options)
         }
+        syncStoredUpdateState(activity)
 
         if (uiState.statusText.isBlank()) {
             refreshStatus(activity, clearBusy = false)
         }
+    }
+
+    fun startStartupAutoUpdateCheck(host: Activity) {
+        if (startupAutoUpdateCheckRequested) {
+            return
+        }
+        startupAutoUpdateCheckRequested = true
+        syncStoredUpdateState(host)
+        if (!LauncherPreferences.isAutoCheckUpdatesEnabled(host)) {
+            return
+        }
+        runUpdateCheck(host, userInitiated = false)
+    }
+
+    fun onAutoCheckUpdatesChanged(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setAutoCheckUpdatesEnabled(host, enabled)
+        syncStoredUpdateState(host)
+    }
+
+    fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
+        if (!source.userSelectable) {
+            return
+        }
+        LauncherPreferences.savePreferredUpdateMirrorId(host, source.id)
+        syncStoredUpdateState(host)
+    }
+
+    fun onManualCheckUpdates(host: Activity) {
+        if (uiState.updateCheckInProgress || uiState.busy) {
+            return
+        }
+        runUpdateCheck(host, userInitiated = true)
+    }
+
+    fun dismissUpdatePrompt() {
+        if (uiState.updatePromptState != null) {
+            uiState = uiState.copy(updatePromptState = null)
+        }
+    }
+
+    private fun runUpdateCheck(host: Activity, userInitiated: Boolean) {
+        if (uiState.updateCheckInProgress) {
+            return
+        }
+        uiState = uiState.copy(updateCheckInProgress = true)
+        val preferredSource = UpdateSource.normalizePreferredUserSource(
+            LauncherPreferences.readPreferredUpdateMirrorId(host)
+        )
+        executor.execute {
+            val result = LauncherUpdateService.checkForUpdates(
+                currentVersion = BuildConfig.VERSION_NAME,
+                preferredUserSource = preferredSource
+            )
+            host.runOnUiThread {
+                val toastMessage = when (result) {
+                    is UpdateCheckExecutionResult.Success ->
+                        handleUpdateCheckSuccess(host, result, userInitiated)
+                    is UpdateCheckExecutionResult.Failure ->
+                        handleUpdateCheckFailure(host, result, userInitiated)
+                }
+                if (!toastMessage.isNullOrBlank()) {
+                    Toast.makeText(host, toastMessage, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun handleUpdateCheckSuccess(
+        host: Activity,
+        result: UpdateCheckExecutionResult.Success,
+        userInitiated: Boolean,
+    ): String? {
+        val decision = LauncherUpdateUiReducer.reduce(result, userInitiated)
+        val checkedAtMs = System.currentTimeMillis()
+        LauncherPreferences.saveLastUpdateCheckAtMs(host, checkedAtMs)
+        LauncherPreferences.saveLastKnownRemoteTag(host, result.release.normalizedVersion)
+        LauncherPreferences.saveLastSuccessfulMetadataSourceId(host, result.metadataSource.id)
+        LauncherPreferences.saveLastUpdateErrorSummary(host, null)
+        if (result.downloadResolution != null) {
+            LauncherPreferences.saveLastSuccessfulDownloadSourceId(
+                host,
+                result.downloadResolution.source.id
+            )
+        }
+        val promptState = if (decision.showPrompt) {
+            buildUpdatePromptState(host, result.release, result.downloadResolution)
+        } else {
+            null
+        }
+        syncStoredUpdateState(
+            host = host,
+            updateCheckInProgress = false,
+            updatePromptState = promptState
+        )
+        return when (decision.message) {
+            UpdateUiMessage.LATEST -> host.getString(R.string.update_check_result_latest)
+            UpdateUiMessage.FAILURE -> host.getString(
+                R.string.update_check_result_failed,
+                host.getString(R.string.update_status_result_failed)
+            )
+            null -> null
+        }
+    }
+
+    private fun handleUpdateCheckFailure(
+        host: Activity,
+        result: UpdateCheckExecutionResult.Failure,
+        userInitiated: Boolean,
+    ): String? {
+        val decision = LauncherUpdateUiReducer.reduce(result, userInitiated)
+        LauncherPreferences.saveLastUpdateCheckAtMs(host, System.currentTimeMillis())
+        LauncherPreferences.saveLastUpdateErrorSummary(host, result.errorSummary)
+        if (result.release != null) {
+            LauncherPreferences.saveLastKnownRemoteTag(host, result.release.normalizedVersion)
+        }
+        if (result.metadataSource != null) {
+            LauncherPreferences.saveLastSuccessfulMetadataSourceId(host, result.metadataSource.id)
+        }
+        syncStoredUpdateState(
+            host = host,
+            updateCheckInProgress = false,
+            updatePromptState = null
+        )
+        return when (decision.message) {
+            UpdateUiMessage.FAILURE -> {
+                host.getString(R.string.update_check_result_failed, result.errorSummary)
+            }
+
+            UpdateUiMessage.LATEST -> host.getString(R.string.update_check_result_latest)
+            null -> null
+        }
+    }
+
+    private fun buildUpdatePromptState(
+        host: Activity,
+        release: UpdateReleaseInfo,
+        downloadResolution: UpdateDownloadResolution?,
+    ): UpdatePromptState? {
+        val resolvedDownload = downloadResolution ?: return null
+        return UpdatePromptState(
+            currentVersion = BuildConfig.VERSION_NAME,
+            latestVersion = release.normalizedVersion,
+            publishedAtText = release.publishedAtDisplayText.ifBlank {
+                host.getString(R.string.update_unknown_date)
+            },
+            downloadSourceDisplayName = resolvedDownload.source.displayName,
+            notesPreview = release.notesPreview.ifBlank {
+                host.getString(R.string.update_dialog_notes_empty)
+            },
+            downloadUrl = resolvedDownload.resolvedUrl
+        )
+    }
+
+    private fun syncStoredUpdateState(
+        host: Activity,
+        updateCheckInProgress: Boolean = uiState.updateCheckInProgress,
+        updatePromptState: UpdatePromptState? = uiState.updatePromptState,
+    ) {
+        uiState = uiState.copy(
+            autoCheckUpdatesEnabled = LauncherPreferences.isAutoCheckUpdatesEnabled(host),
+            preferredUpdateMirror = UpdateSource.normalizePreferredUserSource(
+                LauncherPreferences.readPreferredUpdateMirrorId(host)
+            ),
+            availableUpdateMirrors = UpdateSource.userSelectableSources(),
+            currentVersionText = BuildConfig.VERSION_NAME,
+            updateStatusSummary = buildUpdateStatusSummary(host),
+            updateCheckInProgress = updateCheckInProgress,
+            updatePromptState = updatePromptState
+        )
+    }
+
+    private fun buildUpdateStatusSummary(host: Activity): String {
+        val lastCheckedAtMs = LauncherPreferences.readLastUpdateCheckAtMs(host)
+        if (lastCheckedAtMs <= 0L) {
+            return host.getString(R.string.update_status_not_checked)
+        }
+
+        val lines = mutableListOf<String>()
+        lines += host.getString(
+            R.string.update_status_last_checked,
+            formatUpdateCheckTime(lastCheckedAtMs)
+        )
+
+        val remoteTag = LauncherPreferences.readLastKnownRemoteTag(host)
+        if (!remoteTag.isNullOrBlank()) {
+            lines += host.getString(R.string.update_status_remote_version, remoteTag)
+        }
+
+        val metadataSource = resolveUpdateSourceDisplayName(
+            LauncherPreferences.readLastSuccessfulMetadataSourceId(host)
+        )
+        if (metadataSource != null) {
+            lines += host.getString(R.string.update_status_metadata_source, metadataSource)
+        }
+
+        val errorSummary = LauncherPreferences.readLastUpdateErrorSummary(host)
+        if (!errorSummary.isNullOrBlank()) {
+            lines += host.getString(
+                R.string.update_status_result,
+                host.getString(R.string.update_status_result_failed)
+            )
+            lines += errorSummary
+            return lines.joinToString("\n")
+        }
+
+        val hasUpdate = !remoteTag.isNullOrBlank() &&
+            LauncherUpdateVersioning.isRemoteNewer(BuildConfig.VERSION_NAME, remoteTag)
+        lines += host.getString(
+            R.string.update_status_result,
+            if (hasUpdate) {
+                host.getString(R.string.update_status_result_available)
+            } else {
+                host.getString(R.string.update_status_result_latest)
+            }
+        )
+
+        if (hasUpdate) {
+            val downloadSource = resolveUpdateSourceDisplayName(
+                LauncherPreferences.readLastSuccessfulDownloadSourceId(host)
+            )
+            if (downloadSource != null) {
+                lines += host.getString(R.string.update_status_download_source, downloadSource)
+            }
+        }
+
+        return lines.joinToString("\n")
+    }
+
+    private fun resolveUpdateSourceDisplayName(sourceId: String?): String? {
+        return UpdateSource.fromPersistedValue(sourceId)?.displayName
+    }
+
+    private fun formatUpdateCheckTime(timestampMs: Long): String {
+        return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            .format(Date(timestampMs))
     }
 
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {

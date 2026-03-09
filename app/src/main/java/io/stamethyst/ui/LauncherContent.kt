@@ -22,10 +22,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
+import io.stamethyst.R
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
@@ -49,6 +54,7 @@ fun LauncherContent(
     settingsViewModel: SettingsScreenViewModel,
 ) {
     val navigator = rememberAppNavigator(initialRoute)
+    val uriHandler = LocalUriHandler.current
     var pendingFeedbackNotice by remember {
         mutableStateOf<FeedbackSubmissionNotice?>(null)
     }
@@ -148,6 +154,67 @@ fun LauncherContent(
             if (isModImportInteractionLocked) {
                 ModImportInteractionBlocker(
                     message = modImportBusyMessage ?: "Importing selected mod jars..."
+                )
+            }
+            settingsUiState.updatePromptState?.let { promptState ->
+                AlertDialog(
+                    onDismissRequest = settingsViewModel::dismissUpdatePrompt,
+                    title = { Text(stringResource(R.string.update_dialog_title)) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(
+                                    R.string.update_dialog_current_version,
+                                    promptState.currentVersion
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.update_dialog_latest_version,
+                                    promptState.latestVersion
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.update_dialog_published_at,
+                                    promptState.publishedAtText
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.update_dialog_download_source,
+                                    promptState.downloadSourceDisplayName
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = stringResource(R.string.update_dialog_notes_title),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = promptState.notesPreview,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                settingsViewModel.dismissUpdatePrompt()
+                                uriHandler.openUri(promptState.downloadUrl)
+                            }
+                        ) {
+                            Text(stringResource(R.string.update_dialog_action_download))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = settingsViewModel::dismissUpdatePrompt) {
+                            Text(stringResource(R.string.update_dialog_action_later))
+                        }
+                    }
                 )
             }
         }

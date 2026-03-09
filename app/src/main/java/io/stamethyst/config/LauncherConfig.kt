@@ -47,6 +47,13 @@ object LauncherConfig {
     private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
+    private const val PREF_KEY_AUTO_CHECK_UPDATES_ENABLED = "auto_check_updates_enabled"
+    private const val PREF_KEY_PREFERRED_UPDATE_MIRROR_ID = "preferred_update_mirror_id"
+    private const val PREF_KEY_LAST_UPDATE_CHECK_AT_MS = "last_update_check_at_ms"
+    private const val PREF_KEY_LAST_KNOWN_REMOTE_TAG = "last_known_remote_tag"
+    private const val PREF_KEY_LAST_SUCCESSFUL_METADATA_SOURCE_ID = "last_successful_metadata_source_id"
+    private const val PREF_KEY_LAST_SUCCESSFUL_DOWNLOAD_SOURCE_ID = "last_successful_download_source_id"
+    private const val PREF_KEY_LAST_UPDATE_ERROR_SUMMARY = "last_update_error_summary"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -66,6 +73,8 @@ object LauncherConfig {
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
+    const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
+    const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "ghproxy_vip"
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
     const val MIN_JVM_HEAP_MAX_MB = 256
@@ -402,6 +411,106 @@ object LauncherConfig {
     fun setGlBridgeSwapHeartbeatDebugEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG, enabled)
+        }
+    }
+
+    fun isAutoCheckUpdatesEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_AUTO_CHECK_UPDATES_ENABLED,
+            DEFAULT_AUTO_CHECK_UPDATES_ENABLED
+        )
+    }
+
+    fun setAutoCheckUpdatesEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_AUTO_CHECK_UPDATES_ENABLED, enabled)
+        }
+    }
+
+    fun readPreferredUpdateMirrorId(context: Context): String {
+        return prefs(context).getString(
+            PREF_KEY_PREFERRED_UPDATE_MIRROR_ID,
+            DEFAULT_PREFERRED_UPDATE_MIRROR_ID
+        ) ?: DEFAULT_PREFERRED_UPDATE_MIRROR_ID
+    }
+
+    fun savePreferredUpdateMirrorId(context: Context, mirrorId: String) {
+        prefs(context).edit {
+            putString(PREF_KEY_PREFERRED_UPDATE_MIRROR_ID, mirrorId)
+        }
+    }
+
+    fun readLastUpdateCheckAtMs(context: Context): Long {
+        return prefs(context).getLong(PREF_KEY_LAST_UPDATE_CHECK_AT_MS, 0L)
+    }
+
+    fun saveLastUpdateCheckAtMs(context: Context, timestampMs: Long) {
+        prefs(context).edit {
+            putLong(PREF_KEY_LAST_UPDATE_CHECK_AT_MS, timestampMs)
+        }
+    }
+
+    fun readLastKnownRemoteTag(context: Context): String? {
+        return prefs(context).getString(PREF_KEY_LAST_KNOWN_REMOTE_TAG, null)
+            ?.trim()
+            ?.ifEmpty { null }
+    }
+
+    fun saveLastKnownRemoteTag(context: Context, tag: String?) {
+        prefs(context).edit {
+            if (tag.isNullOrBlank()) {
+                remove(PREF_KEY_LAST_KNOWN_REMOTE_TAG)
+            } else {
+                putString(PREF_KEY_LAST_KNOWN_REMOTE_TAG, tag.trim())
+            }
+        }
+    }
+
+    fun readLastSuccessfulMetadataSourceId(context: Context): String? {
+        return prefs(context).getString(PREF_KEY_LAST_SUCCESSFUL_METADATA_SOURCE_ID, null)
+            ?.trim()
+            ?.ifEmpty { null }
+    }
+
+    fun saveLastSuccessfulMetadataSourceId(context: Context, sourceId: String?) {
+        prefs(context).edit {
+            if (sourceId.isNullOrBlank()) {
+                remove(PREF_KEY_LAST_SUCCESSFUL_METADATA_SOURCE_ID)
+            } else {
+                putString(PREF_KEY_LAST_SUCCESSFUL_METADATA_SOURCE_ID, sourceId.trim())
+            }
+        }
+    }
+
+    fun readLastSuccessfulDownloadSourceId(context: Context): String? {
+        return prefs(context).getString(PREF_KEY_LAST_SUCCESSFUL_DOWNLOAD_SOURCE_ID, null)
+            ?.trim()
+            ?.ifEmpty { null }
+    }
+
+    fun saveLastSuccessfulDownloadSourceId(context: Context, sourceId: String?) {
+        prefs(context).edit {
+            if (sourceId.isNullOrBlank()) {
+                remove(PREF_KEY_LAST_SUCCESSFUL_DOWNLOAD_SOURCE_ID)
+            } else {
+                putString(PREF_KEY_LAST_SUCCESSFUL_DOWNLOAD_SOURCE_ID, sourceId.trim())
+            }
+        }
+    }
+
+    fun readLastUpdateErrorSummary(context: Context): String? {
+        return prefs(context).getString(PREF_KEY_LAST_UPDATE_ERROR_SUMMARY, null)
+            ?.trim()
+            ?.ifEmpty { null }
+    }
+
+    fun saveLastUpdateErrorSummary(context: Context, summary: String?) {
+        prefs(context).edit {
+            if (summary.isNullOrBlank()) {
+                remove(PREF_KEY_LAST_UPDATE_ERROR_SUMMARY)
+            } else {
+                putString(PREF_KEY_LAST_UPDATE_ERROR_SUMMARY, summary.trim())
+            }
         }
     }
 

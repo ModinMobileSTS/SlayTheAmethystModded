@@ -160,6 +160,7 @@ dependencies {
     implementation(libs.tukaani.xz)
     implementation(libs.apache.commons.compress)
     implementation(libs.bytedance.bytehook)
+    testImplementation("org.json:json:20240303")
     testImplementation(libs.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

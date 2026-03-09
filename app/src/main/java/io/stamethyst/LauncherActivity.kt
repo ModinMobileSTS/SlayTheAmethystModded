@@ -53,6 +53,7 @@ class LauncherActivity : AppCompatActivity() {
     private var pendingImportDialog: AlertDialog? = null
     private var pendingStorageMigrationDialog: AlertDialog? = null
     private var queuedImportUri: Uri? = null
+    private var pendingModImportFlow = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,6 +96,7 @@ class LauncherActivity : AppCompatActivity() {
             showStorageMigrationDialog(storageMigrationResult)
         }
         maybeImportModJarFromIntent(intent)
+        maybeStartStartupAutoUpdateCheck()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -115,6 +117,7 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun maybeImportModJarFromIntent(incomingIntent: Intent?) {
         val uri = consumeJarImportUri(incomingIntent) ?: return
+        pendingModImportFlow = true
         if (pendingStorageMigrationDialog?.isShowing == true) {
             queuedImportUri = uri
             return
@@ -156,6 +159,8 @@ class LauncherActivity : AppCompatActivity() {
             val preview = buildModImportPreview(uri)
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
+                    pendingModImportFlow = false
+                    maybeStartStartupAutoUpdateCheck()
                     return@runOnUiThread
                 }
                 showModImportDialog(preview)
@@ -187,7 +192,9 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun showModImportDialog(preview: ModImportPreview) {
-        pendingImportDialog?.dismiss()
+        val previousDialog = pendingImportDialog
+        pendingImportDialog = null
+        previousDialog?.dismiss()
         val message = buildModImportDialogMessage(preview)
         val dialog = AlertDialog.Builder(this)
             .setTitle("导入模组")
@@ -202,6 +209,8 @@ class LauncherActivity : AppCompatActivity() {
         dialog.setOnDismissListener {
             if (pendingImportDialog === dialog) {
                 pendingImportDialog = null
+                pendingModImportFlow = false
+                maybeStartStartupAutoUpdateCheck()
             }
         }
         pendingImportDialog = dialog
@@ -220,6 +229,7 @@ class LauncherActivity : AppCompatActivity() {
                 pendingStorageMigrationDialog = null
             }
             drainQueuedImportUri()
+            maybeStartStartupAutoUpdateCheck()
         }
         pendingStorageMigrationDialog = dialog
         dialog.show()
@@ -249,6 +259,7 @@ class LauncherActivity : AppCompatActivity() {
     private fun drainQueuedImportUri() {
         if (isFinishing || isDestroyed) {
             queuedImportUri = null
+            pendingModImportFlow = false
             return
         }
         if (pendingStorageMigrationDialog?.isShowing == true) {
@@ -257,6 +268,19 @@ class LauncherActivity : AppCompatActivity() {
         val uri = queuedImportUri ?: return
         queuedImportUri = null
         loadModImportPreviewAndPrompt(uri)
+    }
+
+    private fun maybeStartStartupAutoUpdateCheck() {
+        if (isFinishing || isDestroyed) {
+            return
+        }
+        if (pendingStorageMigrationDialog?.isShowing == true) {
+            return
+        }
+        if (queuedImportUri != null || pendingModImportFlow || pendingImportDialog?.isShowing == true) {
+            return
+        }
+        settingsViewModel.startStartupAutoUpdateCheck(this)
     }
 
     private fun formatByteCount(bytes: Long): String {
