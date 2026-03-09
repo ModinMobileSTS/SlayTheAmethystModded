@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com</domain>
+    </domain-config>
+</network-security-config>

@@ -52,9 +52,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -64,6 +65,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
+import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
@@ -75,6 +77,8 @@ import kotlinx.coroutines.delay
 fun LauncherSettingsScreen(
     viewModel: SettingsScreenViewModel,
     modifier: Modifier = Modifier,
+    feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
+    onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
     val activity = requireNotNull(LocalActivity.current)
     val navigator = currentNavigator
@@ -123,6 +127,9 @@ fun LauncherSettingsScreen(
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
+        onOpenFeedback = viewModel::onOpenFeedback,
+        feedbackSubmissionNotice = feedbackSubmissionNotice,
+        onDismissFeedbackSubmissionNotice = onDismissFeedbackSubmissionNotice,
     )
     SettingsEffectsHandler(viewModel = viewModel)
 }
@@ -159,6 +166,11 @@ private fun LauncherSettingsScreenPreview() {
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
             targetFpsOptions = listOf(60, 90, 120, 240),
+        ),
+        feedbackSubmissionNotice = FeedbackSubmissionNotice(
+            title = "反馈已提交",
+            message = "GitHub Issue #10 已创建。",
+            issueUrl = "https://github.com/ModinMobileSTS/SlayTheAmethystModded/issues/10"
         )
     )
 }
@@ -195,8 +207,12 @@ private fun LauncherSettingsScreenContent(
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
+    onOpenFeedback: () -> Unit = {},
+    feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
+    onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
     val modImportInteractionLocked = uiState.busyOperation == UiBusyOperation.MOD_IMPORT
+    val uriHandler = LocalUriHandler.current
     Scaffold(
         topBar = {
             TopAppBar(
@@ -224,6 +240,13 @@ private fun LauncherSettingsScreenContent(
         ) {
             item {
                 SettingsBusyIndicator(uiState = uiState)
+            }
+
+            item {
+                SettingsFeedbackEntryCard(
+                    busy = uiState.busy,
+                    onOpenFeedback = onOpenFeedback
+                )
             }
 
             item {
@@ -297,6 +320,73 @@ private fun LauncherSettingsScreenContent(
                     SettingsAuthorInfoSection()
                 }
             }
+        }
+    }
+
+    feedbackSubmissionNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = onDismissFeedbackSubmissionNotice,
+            title = { Text(notice.title) },
+            text = { Text(notice.message) },
+            confirmButton = {
+                if (!notice.issueUrl.isNullOrBlank()) {
+                    TextButton(
+                        onClick = {
+                            onDismissFeedbackSubmissionNotice()
+                            uriHandler.openUri(notice.issueUrl)
+                        }
+                    ) {
+                        Text("打开 Issue")
+                    }
+                } else {
+                    TextButton(onClick = onDismissFeedbackSubmissionNotice) {
+                        Text("知道了")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!notice.issueUrl.isNullOrBlank()) {
+                    TextButton(onClick = onDismissFeedbackSubmissionNotice) {
+                        Text("知道了")
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsFeedbackEntryCard(
+    busy: Boolean,
+    onOpenFeedback: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFE3F2FD)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "问题反馈",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "提交启动器问题、游戏内问题和功能建议。此汇报方式优于其他汇报方式。",
+                style = MaterialTheme.typography.bodySmall
+            )
+            SettingsActionListItem(
+                title = "打开反馈表单",
+                supportingText = "建议从这里进入反馈系统",
+                enabled = !busy,
+                onClick = onOpenFeedback
+            )
         }
     }
 }
@@ -1077,9 +1167,14 @@ fun SettingsEffectsHandler(
                 SettingsScreenViewModel.Effect.OpenCompatibility -> {
                     navigator.push(Route.Compatibility)
                 }
+
+                SettingsScreenViewModel.Effect.OpenFeedback -> {
+                    navigator.push(Route.Feedback)
+                }
             }
         }
     }
+
 }
 
 @Composable

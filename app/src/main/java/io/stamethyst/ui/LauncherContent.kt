@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -30,6 +34,8 @@ import io.stamethyst.navigation.LocalNavigator
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.rememberAppNavigator
 import io.stamethyst.ui.compatibility.LauncherCompatibilityScreen
+import io.stamethyst.ui.feedback.LauncherFeedbackScreen
+import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
@@ -43,6 +49,9 @@ fun LauncherContent(
     settingsViewModel: SettingsScreenViewModel,
 ) {
     val navigator = rememberAppNavigator(initialRoute)
+    var pendingFeedbackNotice by remember {
+        mutableStateOf<FeedbackSubmissionNotice?>(null)
+    }
     val mainUiState = mainViewModel.uiState
     val settingsUiState = settingsViewModel.uiState
     val isModImportInteractionLocked =
@@ -112,12 +121,26 @@ fun LauncherContent(
                         LauncherSettingsScreen(
                             viewModel = settingsViewModel,
                             modifier = Modifier.fillMaxSize(),
+                            feedbackSubmissionNotice = pendingFeedbackNotice,
+                            onDismissFeedbackSubmissionNotice = {
+                                pendingFeedbackNotice = null
+                            }
                         )
                     }
 
                     entry<Route.Compatibility> {
                         LauncherCompatibilityScreen(
                             modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    entry<Route.Feedback> {
+                        LauncherFeedbackScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onSubmissionCompleted = { notice ->
+                                pendingFeedbackNotice = notice
+                                navigator.goBack()
+                            }
                         )
                     }
                 }

@@ -1,0 +1,19 @@
+{
+  "name": "sts-feedback-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud function relay for SlayTheAmethyst feedback submissions",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "check": "node -e \"process.env.GITHUB_TOKEN='test';process.env.GITHUB_OWNER='test';process.env.GITHUB_REPO='test';require('./app')\"",
+    "check:app": "node -e \"process.env.GITHUB_OWNER='test';process.env.GITHUB_REPO='test';process.env.GITHUB_APP_ID='123';process.env.GITHUB_APP_INSTALLATION_ID='456';process.env.GITHUB_APP_PRIVATE_KEY='-----BEGIN RSA PRIVATE KEY-----\\\\nMIIBOgIBAAJBAL3Jfakekeyforloadtestonly1234567890\\\\n-----END RSA PRIVATE KEY-----';require('./app')\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}

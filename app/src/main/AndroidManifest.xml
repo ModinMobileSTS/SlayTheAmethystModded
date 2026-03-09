@@ -12,9 +12,11 @@
         android:allowNativeHeapPointerTagging="false"
         android:icon="@mipmap/ic_launcher_amethyst"
         android:label="SlayTheAmethyst"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_amethyst_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.SlayTheAmethyst"
+        android:usesCleartextTraffic="true"
         tools:targetApi="30">
 
         <activity

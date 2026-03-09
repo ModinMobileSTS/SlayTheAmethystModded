@@ -54,6 +54,7 @@ class SettingsScreenViewModel : ViewModel() {
         data class OpenExportLogsPicker(val fileName: String) : Effect
         data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
         data object OpenCompatibility : Effect
+        data object OpenFeedback : Effect
     }
 
     data class UiState(
@@ -618,6 +619,13 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         _effects.tryEmit(Effect.OpenCompatibility)
+    }
+
+    fun onOpenFeedback() {
+        if (uiState.busy) {
+            return
+        }
+        _effects.tryEmit(Effect.OpenFeedback)
     }
 
     fun onJarPicked(

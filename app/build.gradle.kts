@@ -55,6 +55,8 @@ android {
         targetSdk = 33
         versionCode = appVersionCode
         versionName = appVersionName
+        buildConfigField("String", "FEEDBACK_ENDPOINT", "\"http://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com/api/sts-feedback\"")
+        buildConfigField("String", "FEEDBACK_API_KEY", feedbackApiKey.toBuildConfigStringLiteral())
 
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -124,6 +126,7 @@ android {
     buildFeatures {
         compose = true
         prefab = true
+        buildConfig = true
     }
 
     applicationVariants.all {
@@ -203,6 +206,7 @@ val launchMode: String = readGradleProperty("launchMode", "mts_basemod")
 val forceJvmCrash: String = readGradleProperty("forceJvmCrash", "false")
 val deviceSerial: String = readGradleProperty("deviceSerial")
 val logsDir: String = readGradleProperty("logsDir")
+val feedbackApiKey: String = readGradleProperty("feedback.apiKey")
 require(launchMode in supportedLaunchModes) {
     "Unsupported launchMode: $launchMode. Supported: ${supportedLaunchModes.joinToString(", ")}"
 }
@@ -267,6 +271,11 @@ tasks.preBuild.configure {
     dependsOn(installPatchJars)
     dependsOn(installGdxVideoNatives)
     dependsOn(installRuntimePackAssets)
+}
+
+private fun String?.toBuildConfigStringLiteral(): String {
+    val value = this ?: ""
+    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
 val stsStart by tasks.registering(Exec::class) {
