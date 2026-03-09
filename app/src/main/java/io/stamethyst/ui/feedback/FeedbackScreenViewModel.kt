@@ -71,6 +71,7 @@ class FeedbackScreenViewModel : ViewModel() {
         val detail: String = "",
         val reproductionSteps: String = "",
         val email: String = "",
+        val emailNotificationsEnabled: Boolean = true,
         val screenshots: List<ScreenshotItem> = emptyList()
     )
 
@@ -162,6 +163,10 @@ class FeedbackScreenViewModel : ViewModel() {
 
     fun onEmailChanged(value: String) {
         uiState = uiState.copy(email = value)
+    }
+
+    fun onEmailNotificationsEnabledChanged(enabled: Boolean) {
+        uiState = uiState.copy(emailNotificationsEnabled = enabled)
     }
 
     fun onAddScreenshots() {
@@ -367,8 +372,13 @@ class FeedbackScreenViewModel : ViewModel() {
         if (uiState.summary.trim().isEmpty()) {
             return "请先填写一句话总结。"
         }
-        if (uiState.email.isNotBlank() && !Patterns.EMAIL_ADDRESS.matcher(uiState.email.trim()).matches()) {
-            return "邮箱格式看起来不正确。"
+        if (uiState.emailNotificationsEnabled) {
+            if (uiState.email.trim().isEmpty()) {
+                return "如需邮件通知，请先填写邮箱。"
+            }
+            if (!Patterns.EMAIL_ADDRESS.matcher(uiState.email.trim()).matches()) {
+                return "邮箱格式看起来不正确。"
+            }
         }
         return when (category) {
             FeedbackCategory.FEATURE_REQUEST -> {
@@ -417,7 +427,12 @@ class FeedbackScreenViewModel : ViewModel() {
             summary = uiState.summary.trim(),
             detail = uiState.detail.trim(),
             reproductionSteps = uiState.reproductionSteps.trim(),
-            email = uiState.email.trim().ifEmpty { null },
+            email = if (uiState.emailNotificationsEnabled) {
+                uiState.email.trim().ifEmpty { null }
+            } else {
+                null
+            },
+            emailNotificationsEnabled = uiState.emailNotificationsEnabled,
             reproducedOnLastRun = uiState.reproducedOnLastRun,
             gameIssueType = uiState.gameIssueType,
             suspectedMods = selectedMods,

@@ -263,8 +263,6 @@ object FeedbackSubmissionService {
                 }
                 append('\n')
             }
-            append("## 联系方式\n")
-            append(draft.email?.takeIf { it.isNotBlank() } ?: "(未提供)").append("\n\n")
             append("## 附件\n")
             append("- 诊断压缩包：已上传 multipart bundle\n")
             append("- 截图数量：").append(draft.screenshots.size).append('\n')
@@ -293,6 +291,7 @@ object FeedbackSubmissionService {
             put("detail", draft.detail.trim())
             put("reproductionSteps", draft.reproductionSteps.trim())
             put("email", draft.email?.trim().orEmpty())
+            put("notifyByEmail", draft.emailNotificationsEnabled)
             put("reproducedOnLastRun", draft.reproducedOnLastRun)
             put("gameIssueType", draft.gameIssueType?.name ?: "")
             put("gameIssueTypeLabel", draft.gameIssueType?.displayName ?: "")

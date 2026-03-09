@@ -35,6 +35,7 @@ data class FeedbackSubmissionDraft(
     val detail: String,
     val reproductionSteps: String,
     val email: String?,
+    val emailNotificationsEnabled: Boolean,
     val reproducedOnLastRun: Boolean?,
     val gameIssueType: GameIssueType?,
     val suspectedMods: List<FeedbackSelectedMod>,

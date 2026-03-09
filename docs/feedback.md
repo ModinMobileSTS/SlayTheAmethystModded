@@ -6,6 +6,7 @@
 
 - 设置页顶部新增了一个“问题反馈”卡片，作为统一入口。
 - 入口会跳转到新的反馈表单页面。
+- 邮箱现在只会在用户勾选“邮件通知”后随反馈提交，且不会公开显示在 GitHub Issue 正文里。
 
 ### 反馈类型
 
@@ -97,9 +98,12 @@ X-Feedback-Key: <feedback.apiKey>
 2. 接收 `payload_json`、`issue_title`、`issue_body` 与 `bundle`
 3. 将诊断压缩包与 metadata JSON 上传到 GitHub `Release assets`，默认存到 `SlayTheDiagnostics` 仓库
 4. 如果是“功能建议”，会在创建 Issue 前从正文里剔除“环境信息”“启用模组快照”“latest.log 关键行”三段
-5. 调用 GitHub Issues API 创建 Issue
-6. 在 Issue 正文末尾追加一段“云函数记录”，写入 `Request ID` 和诊断包链接
-7. 返回 JSON，包含：
+5. 从公开 Issue 正文中移除邮箱，只保留“邮件通知已开启/未开启”的状态说明
+6. 调用 GitHub Issues API 创建 Issue
+7. 如用户已同意邮件通知，则把通知状态写入私有 diagnostics Release assets，并尝试发送一封较美观的“Issue 已创建”邮件
+8. 在 Issue 正文末尾追加一段“云函数记录”，写入 `Request ID` 和诊断包链接
+9. 提供 `POST /github/webhook` 入口，接收 GitHub `issues` 与 `issue_comment` webhook，在目标 Issue 关闭或收到新评论时发送邮件
+10. 返回 JSON，包含：
    - `issueNumber`
    - `issueUrl`
    - `diagnosticBundle`
@@ -119,12 +123,24 @@ X-Feedback-Key: <feedback.apiKey>
 可选：
 
 - `FEEDBACK_SHARED_SECRET`
+- `GITHUB_WEBHOOK_SECRET`
 - `GITHUB_TOKEN`
 - `GITHUB_ISSUE_LABELS`
 - `GITHUB_DIAGNOSTICS_OWNER`
 - `GITHUB_DIAGNOSTICS_REPO`
 - `GITHUB_DIAGNOSTICS_BRANCH`
 - `GITHUB_DIAGNOSTICS_RELEASE_PREFIX`
+- `GITHUB_NOTIFICATION_STATE_OWNER`
+- `GITHUB_NOTIFICATION_STATE_REPO`
+- `GITHUB_NOTIFICATION_STATE_BRANCH`
+- `GITHUB_NOTIFICATION_STATE_RELEASE_PREFIX`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM`
+- `SMTP_REPLY_TO`
 - `BUNDLE_MAX_BYTES`
 - `PORT`
 
@@ -132,11 +148,15 @@ X-Feedback-Key: <feedback.apiKey>
 
 诊断资源不会写进 Git 提交历史，而是写到 diagnostics 仓库的每日 Release assets 中。
 
+邮件通知状态也不会写进 Git 历史，而是按月写到 diagnostics 仓库的 mail-state Release assets 中，每个 Issue 对应一个小 JSON。
+
 如果配置了 `GITHUB_APP_*`，Issue 与 diagnostics 上传会归属于 GitHub App，而不是个人账号。
 
 `GITHUB_TOKEN` 仅作为兼容回退方案保留；默认部署应使用 GitHub App installation token。
 
 如果诊断压缩包持久化失败，云函数仍会继续创建 Issue，但会在“云函数记录”里标明上传失败原因。
+
+如果 SMTP 未配置，Issue 仍会照常创建；只是不会发出创建/评论/关闭邮件。
 
 ### 部署入口
 
@@ -144,6 +164,12 @@ X-Feedback-Key: <feedback.apiKey>
 
 ```text
 POST /api/sts-feedback
+```
+
+邮件通知 webhook 入口：
+
+```text
+POST /github/webhook
 ```
 
 健康检查：

@@ -74,6 +74,7 @@ fun LauncherFeedbackScreen(
         onDetailChanged = viewModel::onDetailChanged,
         onReproductionStepsChanged = viewModel::onReproductionStepsChanged,
         onEmailChanged = viewModel::onEmailChanged,
+        onEmailNotificationsEnabledChanged = viewModel::onEmailNotificationsEnabledChanged,
         onAddScreenshots = viewModel::onAddScreenshots,
         onRemoveScreenshot = viewModel::onRemoveScreenshot,
         onSubmit = { viewModel.onSubmit(activity) }
@@ -99,6 +100,7 @@ private fun LauncherFeedbackScreenContent(
     onDetailChanged: (String) -> Unit = {},
     onReproductionStepsChanged: (String) -> Unit = {},
     onEmailChanged: (String) -> Unit = {},
+    onEmailNotificationsEnabledChanged: (Boolean) -> Unit = {},
     onAddScreenshots: () -> Unit = {},
     onRemoveScreenshot: (String) -> Unit = {},
     onSubmit: () -> Unit = {},
@@ -353,16 +355,19 @@ private fun LauncherFeedbackScreenContent(
             }
 
             item {
-                FeedbackSectionCard(title = if (isGameBug) "7. 邮箱（可选）" else "4. 邮箱（可选）") {
-                    Text(
-                        text = "如果你希望后续联系或回访，可以留下邮箱；不填也能提交。",
-                        style = MaterialTheme.typography.bodySmall
+                FeedbackSectionCard(title = if (isGameBug) "7. 邮箱通知（可选）" else "4. 邮箱通知（可选）") {
+                    FeedbackCheckboxRow(
+                        checked = uiState.emailNotificationsEnabled,
+                        enabled = !uiState.busy,
+                        title = "勾选后，在您的反馈有进展时向您发送邮件消息。",
+                        subtitle = "邮件地址不会公开显示在 GitHub Issue 中。",
+                        onCheckedChange = onEmailNotificationsEnabledChanged
                     )
                     OutlinedTextField(
                         value = uiState.email,
                         onValueChange = onEmailChanged,
                         enabled = !uiState.busy,
-                        label = { Text("邮箱地址") },
+                        label = { Text("通知邮箱地址") },
                         placeholder = { Text("name@example.com") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
