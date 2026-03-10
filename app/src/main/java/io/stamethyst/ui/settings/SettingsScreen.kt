@@ -141,6 +141,7 @@ fun LauncherSettingsScreen(
         onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onOpenFeedback = viewModel::onOpenFeedback,
+        onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
         feedbackSubmissionNotice = feedbackSubmissionNotice,
         onDismissFeedbackSubmissionNotice = onDismissFeedbackSubmissionNotice,
     )
@@ -229,6 +230,7 @@ private fun LauncherSettingsScreenContent(
     onManualCheckUpdates: () -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onOpenFeedback: () -> Unit = {},
+    onOpenFeedbackSubscriptions: () -> Unit = {},
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
@@ -266,7 +268,8 @@ private fun LauncherSettingsScreenContent(
             item {
                 SettingsFeedbackEntryCard(
                     busy = uiState.busy,
-                    onOpenFeedback = onOpenFeedback
+                    onOpenFeedback = onOpenFeedback,
+                    onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions
                 )
             }
 
@@ -558,6 +561,7 @@ private fun SettingsUpdateSection(
 private fun SettingsFeedbackEntryCard(
     busy: Boolean,
     onOpenFeedback: () -> Unit,
+    onOpenFeedbackSubscriptions: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -581,9 +585,14 @@ private fun SettingsFeedbackEntryCard(
                 style = MaterialTheme.typography.bodySmall
             )
             SettingsActionListItem(
-                title = "打开反馈表单",
+                title = "反馈新问题",
                 enabled = !busy,
                 onClick = onOpenFeedback
+            )
+            SettingsActionListItem(
+                title = "已订阅议题",
+                enabled = !busy,
+                onClick = onOpenFeedbackSubscriptions
             )
         }
     }

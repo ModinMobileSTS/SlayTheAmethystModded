@@ -9,10 +9,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -70,6 +73,8 @@ fun LauncherMainScreen(
     modifier: Modifier = Modifier,
     viewModel: MainScreenViewModel = MainScreenViewModel(),
     onOpenSettings: () -> Unit = {},
+    feedbackUnreadCount: Int = 0,
+    onOpenFeedbackUpdates: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val hostActivity = context as? Activity
@@ -115,7 +120,9 @@ fun LauncherMainScreen(
         modifier = modifier,
         uiState = uiState,
         actions = actions,
-        onOpenSettings = onOpenSettings
+        onOpenSettings = onOpenSettings,
+        feedbackUnreadCount = feedbackUnreadCount,
+        onOpenFeedbackUpdates = onOpenFeedbackUpdates
     )
 }
 
@@ -158,6 +165,8 @@ private fun LauncherMainScreenContent(
     uiState: MainScreenViewModel.UiState,
     actions: MainScreenActions = MainScreenActions(isHostAvailable = false),
     onOpenSettings: () -> Unit = {},
+    feedbackUnreadCount: Int = 0,
+    onOpenFeedbackUpdates: () -> Unit = {},
 ) {
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var actionBarHeightPx by remember { mutableStateOf(0) }
@@ -191,8 +200,10 @@ private fun LauncherMainScreenContent(
                 folderControlsEnabled = uiState.controlsEnabled,
                 settingsEnabled = !uiState.busy,
                 hostAvailable = actions.isHostAvailable,
+                feedbackUnreadCount = feedbackUnreadCount,
                 onAddFolderClick = { showCreateFolderDialog = true },
-                onOpenSettings = onOpenSettings
+                onOpenSettings = onOpenSettings,
+                onOpenFeedbackUpdates = onOpenFeedbackUpdates
             )
         },
         floatingActionButtonPosition = FabPosition.Center,
@@ -241,12 +252,30 @@ private fun MainTopBar(
     folderControlsEnabled: Boolean,
     settingsEnabled: Boolean,
     hostAvailable: Boolean,
+    feedbackUnreadCount: Int,
     onAddFolderClick: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenFeedbackUpdates: () -> Unit
 ) {
     TopAppBar(
         title = { Text(stringResource(R.string.main_app_title)) },
         actions = {
+            if (feedbackUnreadCount > 0) {
+                IconButton(
+                    onClick = onOpenFeedbackUpdates,
+                    enabled = settingsEnabled
+                ) {
+                    NotificationBadge(
+                        count = feedbackUnreadCount,
+                        badgeShape = RoundedCornerShape(999.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_feedback_updates),
+                            contentDescription = "反馈有更新"
+                        )
+                    }
+                }
+            }
             IconButton(
                 onClick = onAddFolderClick,
                 enabled = folderControlsEnabled && hostAvailable
@@ -267,6 +296,33 @@ private fun MainTopBar(
             }
         }
     )
+}
+
+@Composable
+private fun NotificationBadge(
+    count: Int,
+    badgeShape: Shape,
+    content: @Composable () -> Unit
+) {
+    Box {
+        content()
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 6.dp, y = (-4).dp)
+                .background(
+                    color = MaterialTheme.colorScheme.error,
+                    shape = badgeShape
+                )
+                .padding(horizontal = 5.dp, vertical = 1.dp)
+        ) {
+            Text(
+                text = if (count > 99) "99+" else count.toString(),
+                color = MaterialTheme.colorScheme.onError,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
 }
 
 @Composable

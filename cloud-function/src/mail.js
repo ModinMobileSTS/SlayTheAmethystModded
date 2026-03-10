@@ -255,10 +255,10 @@ function buildMailLayoutHtml(options) {
   const detailBody = escapeHtml(options.detailBody || '').replace(/\r\n/g, '\n').replace(/\n/g, '<br>');
   const detailTitle = escapeHtml(options.detailTitle || '详情');
   const logoHtml = fs.existsSync(MAIL_LOGO_PATH)
-    ? `<img src="cid:${MAIL_LOGO_CID}" alt="Slay The Amethyst" width="56" height="56" style="display:block;width:56px;height:56px;border-radius:16px;box-shadow:0 10px 24px rgba(77,32,128,0.22);">`
+    ? `<img src="cid:${MAIL_LOGO_CID}" alt="Slay The Amethyst" width="56" height="56" style="display:block;width:56px;height:56px;border-radius:16px;">`
     : '';
   const buttonHtml = options.buttonUrl
-    ? `<p style="margin:24px 0 0;"><a href="${escapeHtmlAttribute(options.buttonUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#6e42b6;color:#ffffff;text-decoration:none;font-weight:700;box-shadow:0 10px 24px rgba(78,35,130,0.22);">${escapeHtml(options.buttonLabel || '查看详情')}</a></p>`
+    ? `<p style="margin:24px 0 0;"><a href="${escapeHtmlAttribute(options.buttonUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#6e42b6;color:#ffffff;text-decoration:none;font-weight:700;">${escapeHtml(options.buttonLabel || '查看详情')}</a></p>`
     : '';
   const secondaryMetaHtml = Array.isArray(options.secondaryMetaLines) && options.secondaryMetaLines.length > 0
     ? `<div style="margin-top:16px;padding:12px 14px;border-radius:14px;background:#f3ebff;color:#55307f;font-size:13px;line-height:1.7;border:1px solid #e4d4ff;">${options.secondaryMetaLines.map((line) => escapeHtml(line)).join('<br>')}</div>`
@@ -271,7 +271,7 @@ function buildMailLayoutHtml(options) {
     '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>',
     '<body style="margin:0;padding:0;background:#f4effc;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Hiragino Sans GB,Microsoft YaHei,sans-serif;color:#24133d;">',
     '<div style="max-width:680px;margin:0 auto;padding:32px 16px;">',
-    '<div style="border-radius:24px;overflow:hidden;background:#ffffff;box-shadow:0 20px 56px rgba(61,24,107,0.14);border:1px solid #eadfff;">',
+    '<div style="border-radius:4px;overflow:hidden;background:#ffffff;border:1px solid #eadfff;">',
     '<div style="padding:28px;background:#e3d2fb;border-bottom:1px solid #d8c3fb;">',
     '<div style="display:flex;align-items:center;justify-content:center;gap:16px;">',
     logoHtml,

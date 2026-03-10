@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -41,8 +43,11 @@ import androidx.navigation3.ui.NavDisplay
 import io.stamethyst.navigation.LocalNavigator
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.rememberAppNavigator
+import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.ui.compatibility.LauncherCompatibilityScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackScreen
+import io.stamethyst.ui.feedback.LauncherFeedbackConversationScreen
+import io.stamethyst.ui.feedback.LauncherFeedbackSubscriptionsScreen
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
@@ -56,11 +61,13 @@ fun LauncherContent(
     mainViewModel: MainScreenViewModel,
     settingsViewModel: SettingsScreenViewModel,
 ) {
+    val activity = requireNotNull(LocalActivity.current)
     val navigator = rememberAppNavigator(initialRoute)
     val uriHandler = LocalUriHandler.current
     var pendingFeedbackNotice by remember {
         mutableStateOf<FeedbackSubmissionNotice?>(null)
     }
+    val feedbackInboxState by FeedbackInboxCoordinator.uiState.collectAsState()
     val mainUiState = mainViewModel.uiState
     val settingsUiState = settingsViewModel.uiState
     val isModImportInteractionLocked =
@@ -75,6 +82,10 @@ fun LauncherContent(
     CompositionLocalProvider(
         LocalNavigator provides navigator,
     ) {
+        androidx.compose.runtime.LaunchedEffect(activity) {
+            FeedbackInboxCoordinator.bind(activity.applicationContext)
+            FeedbackInboxCoordinator.startPolling(activity.applicationContext)
+        }
         Box(modifier = Modifier.fillMaxSize()) {
             NavDisplay(
                 entryDecorators = listOf(
@@ -123,6 +134,22 @@ fun LauncherContent(
                             viewModel = mainViewModel,
                             modifier = Modifier.fillMaxSize(),
                             onOpenSettings = { navigator.push(Route.Settings) },
+                            feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
+                            onOpenFeedbackUpdates = {
+                                val unreadIssues = feedbackInboxState.subscriptions
+                                    .filter { it.unread }
+                                when {
+                                    unreadIssues.size == 1 -> {
+                                        navigator.push(
+                                            Route.FeedbackConversation(unreadIssues.first().issueNumber)
+                                        )
+                                    }
+
+                                    else -> {
+                                        navigator.push(Route.FeedbackSubscriptions)
+                                    }
+                                }
+                            }
                         )
                     }
 
@@ -149,7 +176,23 @@ fun LauncherContent(
                             onSubmissionCompleted = { notice ->
                                 pendingFeedbackNotice = notice
                                 navigator.goBack()
+                            },
+                        )
+                    }
+
+                    entry<Route.FeedbackSubscriptions> {
+                        LauncherFeedbackSubscriptionsScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onOpenConversation = { issueNumber ->
+                                navigator.push(Route.FeedbackConversation(issueNumber))
                             }
+                        )
+                    }
+
+                    entry<Route.FeedbackConversation> { route ->
+                        LauncherFeedbackConversationScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            issueNumber = route.issueNumber
                         )
                     }
                 }
@@ -222,6 +265,47 @@ fun LauncherContent(
                     dismissButton = {
                         TextButton(onClick = settingsViewModel::dismissUpdatePrompt) {
                             Text(stringResource(R.string.update_dialog_action_later))
+                        }
+                    }
+                )
+            }
+            feedbackInboxState.pendingNotice?.let { notice ->
+                AlertDialog(
+                    onDismissRequest = FeedbackInboxCoordinator::dismissUnreadNotice,
+                    title = { Text("你的反馈有新的进展") },
+                    text = {
+                        Text(
+                            if (notice.unreadIssueCount == 1) {
+                                "有 1 个已订阅的反馈议题出现了新的更新。"
+                            } else {
+                                "有 ${notice.unreadIssueCount} 个已订阅的反馈议题出现了新的更新。"
+                            }
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                FeedbackInboxCoordinator.dismissUnreadNotice()
+                                val unreadIssues = feedbackInboxState.subscriptions.filter { it.unread }
+                                when {
+                                    unreadIssues.size == 1 -> {
+                                        navigator.push(
+                                            Route.FeedbackConversation(unreadIssues.first().issueNumber)
+                                        )
+                                    }
+
+                                    else -> {
+                                        navigator.push(Route.FeedbackSubscriptions)
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("查看")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = FeedbackInboxCoordinator::dismissUnreadNotice) {
+                            Text("稍后")
                         }
                     }
                 )

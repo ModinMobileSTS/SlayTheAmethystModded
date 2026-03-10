@@ -18,6 +18,78 @@ internal object ModClasspathJarBuilder {
     }
 
     @Throws(IOException::class)
+    fun ensureLog4jRuntimeJar(
+        stsJar: File?,
+        targetJar: File?,
+        progressCallback: BuildProgressCallback? = null
+    ) {
+        reportProgress(progressCallback, 0, "Checking Log4j runtime classpath jar...")
+        if (stsJar == null || !stsJar.isFile) {
+            throw IOException("desktop-1.0.jar not found")
+        }
+        if (targetJar == null) {
+            throw IOException("Target jar is null")
+        }
+        if (targetJar.isFile &&
+            targetJar.length() > 0 &&
+            targetJar.lastModified() >= stsJar.lastModified() &&
+            hasRequiredLog4jRuntime(targetJar)
+        ) {
+            reportProgress(progressCallback, 100, "Log4j runtime classpath jar ready")
+            return
+        }
+
+        val parent = targetJar.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+
+        val tempJar = File(targetJar.absolutePath + ".tmp")
+        var copiedEntries = 0
+        ZipFile(stsJar).use { zipFile ->
+            FileOutputStream(tempJar, false).use { outputStream ->
+                ZipOutputStream(outputStream).use { zipOut ->
+                    reportProgress(progressCallback, 5, "Building Log4j runtime classpath jar...")
+                    val entries = zipFile.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        val name = entry.name
+                        if (entry.isDirectory || !shouldCopyLog4jRuntimeEntry(name)) {
+                            continue
+                        }
+                        val outEntry = ZipEntry(name)
+                        if (entry.time > 0) {
+                            outEntry.time = entry.time
+                        }
+                        zipOut.putNextEntry(outEntry)
+                        zipFile.getInputStream(entry).use { input ->
+                            JarFileIoUtils.copyStream(input, zipOut)
+                        }
+                        zipOut.closeEntry()
+                        copiedEntries++
+                    }
+                }
+            }
+        }
+
+        if (copiedEntries == 0 || !hasRequiredLog4jRuntime(tempJar)) {
+            if (tempJar.exists()) {
+                tempJar.delete()
+            }
+            throw IOException("Failed to build Log4j runtime classpath jar")
+        }
+
+        if (targetJar.exists() && !targetJar.delete()) {
+            throw IOException("Failed to replace ${targetJar.absolutePath}")
+        }
+        if (!tempJar.renameTo(targetJar)) {
+            throw IOException("Failed to move ${tempJar.absolutePath} -> ${targetJar.absolutePath}")
+        }
+        targetJar.setLastModified(stsJar.lastModified())
+        reportProgress(progressCallback, 100, "Log4j runtime classpath jar ready")
+    }
+
+    @Throws(IOException::class)
     fun ensureStsResourceJar(
         stsJar: File?,
         targetJar: File?,
@@ -254,6 +326,24 @@ internal object ModClasspathJarBuilder {
         }
     }
 
+    fun hasRequiredLog4jRuntime(jarFile: File?): Boolean {
+        if (jarFile == null) {
+            return false
+        }
+        return try {
+            ZipFile(jarFile).use { zipFile ->
+                if (zipFile.getEntry(LOG4J_PROVIDER_SERVICE_SENTINEL) == null ||
+                    zipFile.getEntry(LOG4J_PLUGIN_CACHE_SENTINEL) == null
+                ) {
+                    return false
+                }
+                REQUIRED_LOG4J_CLASSES.all { classEntry -> zipFile.getEntry(classEntry) != null }
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     @Throws(IOException::class)
     fun ensureGdxBridgeJar(sourcePatchJar: File?, targetJar: File?) {
         if (sourcePatchJar == null || !sourcePatchJar.isFile) {
@@ -356,5 +446,11 @@ internal object ModClasspathJarBuilder {
         message: String
     ) {
         progressCallback?.onProgress(percent.coerceIn(0, 100), message)
+    }
+
+    private fun shouldCopyLog4jRuntimeEntry(entryName: String): Boolean {
+        return entryName.startsWith("org/apache/logging/log4j/") ||
+            entryName.startsWith("META-INF/org/apache/logging/log4j/") ||
+            entryName.startsWith("META-INF/services/org.apache.logging.log4j.")
     }
 }

@@ -101,10 +101,15 @@ object ModJarSupport {
             targetJar = RuntimePaths.mtsGdxApiJar(context),
             progressCallback = buildRangeProgressCallback(progressCallback, 24, 36)
         )
+        ModClasspathJarBuilder.ensureLog4jRuntimeJar(
+            stsJar = stsJar,
+            targetJar = RuntimePaths.mtsLog4jRuntimeJar(context),
+            progressCallback = buildRangeProgressCallback(progressCallback, 37, 48)
+        )
         ModClasspathJarBuilder.ensureStsResourceJar(
             stsJar = stsJar,
             targetJar = RuntimePaths.mtsStsResourcesJar(context),
-            progressCallback = buildRangeProgressCallback(progressCallback, 37, 84)
+            progressCallback = buildRangeProgressCallback(progressCallback, 49, 84)
         )
         ModClasspathJarBuilder.ensureBaseModResourceJar(
             baseModJar = baseModJar,

@@ -17,7 +17,17 @@ const {
   prepareIssueBody,
   appendRelaySection
 } = require('./submission');
-const { createGithubIssue } = require('./github');
+const {
+  parseIssueMessageRequest,
+  parseIssueStateRequest,
+  uploadIssueMessageScreenshots,
+  buildIssueMessageCommentBody
+} = require('./feedbackIssues');
+const {
+  createGithubIssue,
+  createGithubIssueComment,
+  updateGithubIssueState
+} = require('./github');
 const {
   maybeHandleIssueCreatedNotification,
   maybeHandleIssueClosedNotification,
@@ -189,8 +199,59 @@ function createApp(config) {
     }
   };
 
+  const handleIssueMessage = async (req, res, next) => {
+    try {
+      enforceSharedSecret(req, config);
+
+      const messageRequest = parseIssueMessageRequest(req);
+      const attachments = await uploadIssueMessageScreenshots(messageRequest, config);
+      const commentRequest = buildIssueMessageCommentBody(messageRequest, attachments);
+      const comment = await createGithubIssueComment(
+        messageRequest.issueNumber,
+        commentRequest.body,
+        config
+      );
+
+      res.status(201).json({
+        ok: true,
+        issueNumber: messageRequest.issueNumber,
+        commentId: Number(comment.id),
+        commentUrl: comment.html_url || null,
+        createdAt: comment.created_at || commentRequest.sentAt,
+        attachments
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  const handleIssueState = async (req, res, next) => {
+    try {
+      enforceSharedSecret(req, config);
+
+      const stateRequest = parseIssueStateRequest(req);
+      const issue = await updateGithubIssueState(
+        stateRequest.issueNumber,
+        stateRequest.targetState,
+        config
+      );
+
+      res.json({
+        ok: true,
+        issueNumber: Number(issue.number),
+        issueUrl: issue.html_url || null,
+        state: issue.state || stateRequest.targetState,
+        updatedAt: issue.updated_at || new Date().toISOString()
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   app.post('/', upload.single('bundle'), handleFeedbackSubmission);
   app.post('/api/sts-feedback', upload.single('bundle'), handleFeedbackSubmission);
+  app.post('/api/feedback-issues/message', upload.array('screenshots', 4), handleIssueMessage);
+  app.post('/api/feedback-issues/state', handleIssueState);
   app.post('/github/webhook', handleGithubWebhook);
 
   app.use((error, _req, res, _next) => {

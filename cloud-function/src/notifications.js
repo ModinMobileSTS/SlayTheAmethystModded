@@ -20,7 +20,8 @@ const {
   parseBoolean,
   looksLikeEmailAddress,
   httpError,
-  summarizeInlineErrorMessage
+  summarizeInlineErrorMessage,
+  parseFeedbackProxyMarker
 } = require('./utils');
 
 async function maybeHandleIssueCreatedNotification(submission, issue, preparedIssueBody, currentConfig) {
@@ -162,6 +163,15 @@ async function maybeHandleIssueCommentNotification(payload, currentConfig) {
     }
 
     const notificationState = normalizeNotificationStateRecord(lookup.record);
+    const proxyMarker = parseFeedbackProxyMarker(comment && comment.body);
+    if (proxyMarker && String(proxyMarker.origin || '').toLowerCase() === 'user') {
+      return {
+        enabled: true,
+        issueNumber: notificationState.issue.number,
+        commentEmailSent: false,
+        commentEmailSkippedReason: 'self_proxy_comment'
+      };
+    }
     const deliveredCommentIds = notificationState.notifications.comments.deliveredCommentIds;
     if (deliveredCommentIds.includes(commentId)) {
       return {

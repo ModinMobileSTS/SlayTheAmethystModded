@@ -200,6 +200,28 @@ function summarizeInlineErrorMessage(error) {
     .slice(0, 180);
 }
 
+function buildFeedbackProxyMarker(payload) {
+  return `<!-- sts-feedback-proxy:${JSON.stringify(payload)} -->`;
+}
+
+function parseFeedbackProxyMarker(text) {
+  const match = /<!--\s*sts-feedback-proxy:(\{.*?\})\s*-->/s.exec(String(text || ''));
+  if (!match) {
+    return null;
+  }
+  try {
+    return JSON.parse(match[1]);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function stripFeedbackProxyMarker(text) {
+  return String(text || '')
+    .replace(/<!--\s*sts-feedback-proxy:(\{.*?\})\s*-->/gs, '')
+    .trim();
+}
+
 module.exports = {
   escapeHtml,
   escapeHtmlAttribute,
@@ -226,5 +248,8 @@ module.exports = {
   normalizeStatusCode,
   normalizeErrorCode,
   normalizeErrorMessage,
-  summarizeInlineErrorMessage
+  summarizeInlineErrorMessage,
+  buildFeedbackProxyMarker,
+  parseFeedbackProxyMarker,
+  stripFeedbackProxyMarker
 };

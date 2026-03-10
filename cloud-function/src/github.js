@@ -161,6 +161,32 @@ async function createGithubIssue(issueRequest, currentConfig) {
   );
 }
 
+async function createGithubIssueComment(issueNumber, commentBody, currentConfig) {
+  return githubFetchJson(
+    `/repos/${encodePathSegment(currentConfig.githubOwner)}/${encodePathSegment(currentConfig.githubRepo)}/issues/${encodePathSegment(issueNumber)}/comments`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        body: commentBody
+      })
+    },
+    currentConfig
+  );
+}
+
+async function updateGithubIssueState(issueNumber, targetState, currentConfig) {
+  return githubFetchJson(
+    `/repos/${encodePathSegment(currentConfig.githubOwner)}/${encodePathSegment(currentConfig.githubRepo)}/issues/${encodePathSegment(issueNumber)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        state: targetState
+      })
+    },
+    currentConfig
+  );
+}
+
 async function githubFetchJson(path, init, currentConfig) {
   return githubFetchJsonInternal(path, init, currentConfig, false);
 }
@@ -350,6 +376,8 @@ module.exports = {
   deleteReleaseAsset,
   downloadReleaseAssetContent,
   createGithubIssue,
+  createGithubIssueComment,
+  updateGithubIssueState,
   githubFetchJson,
   githubFetchJsonAllowNotFound,
   getGithubInstallationAuthorization,

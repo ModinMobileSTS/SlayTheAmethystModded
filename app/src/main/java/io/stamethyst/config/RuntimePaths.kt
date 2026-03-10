@@ -67,6 +67,9 @@ object RuntimePaths {
     fun mtsBaseModResourcesJar(context: Context): File = File(stsRoot(context), "mts-basemod-resources.jar")
 
     @JvmStatic
+    fun mtsLog4jRuntimeJar(context: Context): File = File(stsRoot(context), "mts-log4j-runtime.jar")
+
+    @JvmStatic
     fun mtsGdxBridgeJar(context: Context): File = File(stsRoot(context), "mts-gdx-bridge.jar")
 
     @JvmStatic

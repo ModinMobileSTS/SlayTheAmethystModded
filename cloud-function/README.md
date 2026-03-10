@@ -109,3 +109,17 @@ GET /
 GET /healthz
 POST /github/webhook
 ```
+
+## Packaging for Tencent SCF
+
+Deploy from a zip whose root directly contains `app.js`, `node_modules/`, and `scf_bootstrap`.
+
+On Windows, do not zip the working tree manually from Explorer if `scf_bootstrap` has been checked out with `CRLF`; the custom runtime may fail to start with an error like `[./scf_bootstrap] no such file or directory`.
+
+Use the repository packaging script instead:
+
+```powershell
+.\scripts\package-cloud-function.ps1
+```
+
+It writes `artifacts/cloud-function-scf.zip` and forces `cloud-function/scf_bootstrap` to UTF-8 without BOM and `LF` line endings inside the archive.

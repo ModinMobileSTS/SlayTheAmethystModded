@@ -15,4 +15,10 @@ sealed interface Route : NavKey {
     data object Compatibility : Route
     @Serializable
     data object Feedback : Route
+    @Serializable
+    data object FeedbackSubscriptions : Route
+    @Serializable
+    data class FeedbackConversation(
+        val issueNumber: Long
+    ) : Route
 }

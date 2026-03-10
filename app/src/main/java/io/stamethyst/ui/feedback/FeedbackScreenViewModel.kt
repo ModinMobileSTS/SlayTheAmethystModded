@@ -11,6 +11,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.feedback.FeedbackCategory
+import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
+import io.stamethyst.backend.feedback.FeedbackIssueSyncService
 import io.stamethyst.backend.feedback.FeedbackScreenshotAttachment
 import io.stamethyst.backend.feedback.FeedbackSelectedMod
 import io.stamethyst.backend.feedback.FeedbackSubmissionDraft
@@ -250,8 +252,11 @@ class FeedbackScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val result = FeedbackSubmissionService.submit(host, draft)
+                val autoSubscribed = runCatching {
+                    autoSubscribeCreatedIssue(host, draft, result)
+                }.getOrDefault(false)
                 host.runOnUiThread {
-                    val notice = buildSubmissionNotice(result)
+                    val notice = buildSubmissionNotice(result, autoSubscribed)
                     applySubmissionSuccess()
                     _effects.tryEmit(Effect.SubmissionCompleted(notice))
                 }
@@ -456,17 +461,87 @@ class FeedbackScreenViewModel : ViewModel() {
         )
     }
 
-    private fun buildSubmissionNotice(result: FeedbackUploadResult): FeedbackSubmissionNotice {
+    private fun autoSubscribeCreatedIssue(
+        host: Activity,
+        draft: FeedbackSubmissionDraft,
+        result: FeedbackUploadResult
+    ): Boolean {
+        val issueNumber = resolveCreatedIssueNumber(result) ?: return false
+        val issueUrl = result.issueUrl ?: FeedbackIssueSyncService.buildIssueUrl(issueNumber)
+        FeedbackIssueSyncService.saveLocalSubscription(
+            context = host,
+            issueNumber = issueNumber,
+            issueUrl = issueUrl,
+            title = buildSubmittedIssueTitle(draft),
+            issueBody = buildSubmittedIssueBodyPreview(draft)
+        )
+        FeedbackInboxCoordinator.refreshFromStorage(host)
+        return true
+    }
+
+    private fun buildSubmissionNotice(
+        result: FeedbackUploadResult,
+        autoSubscribed: Boolean
+    ): FeedbackSubmissionNotice {
         val message = when {
-            result.issueNumber != null -> "反馈已提交，GitHub Issue #${result.issueNumber} 已创建。"
+            result.issueNumber != null && autoSubscribed -> {
+                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建，并已自动加入“已订阅议题”。\n\n后续可从 设置 -> 问题反馈 -> 已订阅议题 跟进这个反馈；如果有新的进展，主界面右上角也会显示反馈更新提示。"
+            }
+            result.issueNumber != null -> {
+                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建。\n\n后续可从 设置 -> 问题反馈 -> 已订阅议题 跟进这个反馈。"
+            }
             !result.issueUrl.isNullOrBlank() -> "反馈已提交，Issue 已创建。"
             else -> "反馈已提交，云函数已接收请求。"
         }
         return FeedbackSubmissionNotice(
             title = "反馈已提交",
             message = message,
-            issueUrl = result.issueUrl
+            issueUrl = result.issueUrl ?: result.issueNumber?.let { issueNumber ->
+                FeedbackIssueSyncService.buildIssueUrl(issueNumber)
+            }
         )
+    }
+
+    private fun resolveCreatedIssueNumber(result: FeedbackUploadResult): Long? {
+        result.issueNumber?.takeIf { it > 0L }?.let { return it }
+        val issueUrl = result.issueUrl?.trim().orEmpty()
+        if (issueUrl.isEmpty()) {
+            return null
+        }
+        return Regex(""".*/issues/(\d+)(?:[/?#].*)?$""")
+            .matchEntire(issueUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+    }
+
+    private fun buildSubmittedIssueTitle(draft: FeedbackSubmissionDraft): String {
+        val prefix = when (draft.category) {
+            FeedbackCategory.FEATURE_REQUEST -> "[${draft.category.issuePrefix}]"
+            FeedbackCategory.LAUNCHER_BUG -> "[${draft.category.issuePrefix}]"
+            FeedbackCategory.GAME_BUG -> {
+                val issueType = draft.gameIssueType
+                if (issueType == null) {
+                    "[${draft.category.issuePrefix}]"
+                } else {
+                    "[${draft.category.issuePrefix}][${issueType.issuePrefix}]"
+                }
+            }
+        }
+        return "$prefix ${draft.summary.trim().replace('\n', ' ')}".take(120)
+    }
+
+    private fun buildSubmittedIssueBodyPreview(draft: FeedbackSubmissionDraft): String {
+        return buildString {
+            append(draft.detail.trim())
+            if (draft.reproductionSteps.isNotBlank()) {
+                if (isNotEmpty()) {
+                    append("\n\n")
+                }
+                append("复现步骤：\n")
+                append(draft.reproductionSteps.trim())
+            }
+        }
     }
 
     private fun clearWorkingDir() {

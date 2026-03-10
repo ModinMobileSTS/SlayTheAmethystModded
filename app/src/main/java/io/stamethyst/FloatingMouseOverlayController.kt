@@ -1,6 +1,9 @@
 package io.stamethyst
 
+import android.util.Log
+import android.text.Editable
 import android.text.InputType
+import android.text.Selection
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
@@ -19,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
+import net.kdt.pojavlaunch.AWTInputBridge
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import kotlin.math.abs
@@ -36,7 +40,13 @@ internal class FloatingMouseOverlayController(
         RIGHT
     }
 
+    private enum class SoftKeyboardTarget {
+        GLFW,
+        AWT
+    }
+
     companion object {
+        private const val IME_LOG_TAG = "STS-IME"
         private const val FLOATING_MOUSE_IDLE_ALPHA = 0.2f
         private const val FLOATING_MOUSE_ACTIVE_ALPHA = 1.0f
         private const val FLOATING_MOUSE_ACTIVE_KEEP_MS = 1500L
@@ -49,6 +59,19 @@ internal class FloatingMouseOverlayController(
         private const val SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP = 12f
         private const val SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP = 46
         private const val SPECIAL_KEYS_BUTTON_SPACING_DP = 6
+        private const val AWT_VK_ENTER = 10
+        private const val AWT_VK_BACK_SPACE = 8
+        private const val AWT_VK_TAB = 9
+        private const val AWT_VK_SHIFT = 16
+        private const val AWT_VK_CONTROL = 17
+        private const val AWT_VK_ALT = 18
+        private const val AWT_VK_CAPS_LOCK = 20
+        private const val AWT_VK_ESCAPE = 27
+        private const val AWT_VK_LEFT = 37
+        private const val AWT_VK_UP = 38
+        private const val AWT_VK_RIGHT = 39
+        private const val AWT_VK_DOWN = 40
+        private const val AWT_VK_DELETE = 127
     }
 
     private var hostView: FrameLayout? = null
@@ -444,24 +467,38 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun sendSoftKeyboardText(text: CharSequence?): Boolean {
-        if (text.isNullOrEmpty() || !isNativeInputDispatchReady.invoke()) {
+        val ready = isNativeInputDispatchReady.invoke()
+        if (text.isNullOrEmpty() || !ready) {
+            logIme("commitText payload=${describeText(text)} ready=$ready")
             return false
         }
+        val target = resolveSoftKeyboardTarget()
+        logIme("commitText payload=${describeText(text)} ready=$ready target=$target")
+        return when (target) {
+            SoftKeyboardTarget.GLFW -> sendSoftKeyboardTextToGame(text)
+            SoftKeyboardTarget.AWT -> sendSoftKeyboardTextToAwt(text)
+        }
+    }
+
+    private fun sendSoftKeyboardTextToGame(text: CharSequence): Boolean {
         var handled = false
         for (ch in text) {
             when (ch) {
                 '\n', '\r' -> {
-                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
+                    logIme("commitText[GLFW] mapped newline -> KEYCODE_ENTER")
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER, SoftKeyboardTarget.GLFW)
                     handled = true
                 }
 
                 '\b' -> {
-                    sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+                    logIme("commitText[GLFW] mapped backspace -> KEYCODE_DEL")
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL, SoftKeyboardTarget.GLFW)
                     handled = true
                 }
 
                 else -> {
                     if (!Character.isISOControl(ch)) {
+                        logIme("commitText[GLFW] sendChar char=${describeChar(ch)} mods=${CallbackBridge.getCurrentMods()}")
                         CallbackBridge.sendChar(ch, CallbackBridge.getCurrentMods())
                         handled = true
                     }
@@ -471,9 +508,51 @@ internal class FloatingMouseOverlayController(
         return handled
     }
 
-    private fun sendSyntheticSoftKey(androidKeyCode: Int) {
-        dispatchKeyboardEventToGame(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode))
-        dispatchKeyboardEventToGame(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode))
+    private fun sendSoftKeyboardTextToAwt(text: CharSequence): Boolean {
+        var handled = false
+        for (ch in text) {
+            when (ch) {
+                '\n', '\r' -> {
+                    logIme("commitText[AWT] mapped newline -> KEYCODE_ENTER")
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER, SoftKeyboardTarget.AWT)
+                    handled = true
+                }
+
+                '\b' -> {
+                    logIme("commitText[AWT] mapped backspace -> KEYCODE_DEL")
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL, SoftKeyboardTarget.AWT)
+                    handled = true
+                }
+
+                '\t' -> {
+                    logIme("commitText[AWT] mapped tab -> KEYCODE_TAB")
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_TAB, SoftKeyboardTarget.AWT)
+                    handled = true
+                }
+
+                else -> {
+                    if (ch.code == AWT_VK_DELETE) {
+                        logIme("commitText[AWT] mapped delete -> KEYCODE_FORWARD_DEL")
+                        sendSyntheticSoftKey(KeyEvent.KEYCODE_FORWARD_DEL, SoftKeyboardTarget.AWT)
+                        handled = true
+                    } else if (!Character.isISOControl(ch)) {
+                        logIme("commitText[AWT] sendChar char=${describeChar(ch)}")
+                        AWTInputBridge.sendChar(ch)
+                        handled = true
+                    }
+                }
+            }
+        }
+        return handled
+    }
+
+    private fun sendSyntheticSoftKey(
+        androidKeyCode: Int,
+        target: SoftKeyboardTarget = resolveSoftKeyboardTarget()
+    ) {
+        logIme("sendSyntheticSoftKey androidKey=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target")
+        dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)
+        dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
     }
 
     private fun dispatchSoftKeyboardKeyEvent(event: KeyEvent): Boolean {
@@ -481,18 +560,103 @@ internal class FloatingMouseOverlayController(
             return false
         }
         if (!isNativeInputDispatchReady.invoke()) {
+            logIme("dispatchSoftKeyboardKeyEvent dropped: native input not ready")
             return true
         }
-        return dispatchKeyboardEventToGame(event)
+        val target = resolveSoftKeyboardTarget()
+        logIme("dispatchSoftKeyboardKeyEvent event=${describeKeyEvent(event)} target=$target")
+        return dispatchKeyboardEvent(event, target)
+    }
+
+    private fun dispatchKeyboardEvent(event: KeyEvent, target: SoftKeyboardTarget): Boolean {
+        return when (target) {
+            SoftKeyboardTarget.GLFW -> dispatchKeyboardEventToGame(event)
+            SoftKeyboardTarget.AWT -> dispatchKeyboardEventToAwt(event)
+        }
+    }
+
+    private fun dispatchKeyboardEventToAwt(event: KeyEvent): Boolean {
+        if (!isNativeInputDispatchReady.invoke()) {
+            logIme("dispatchKeyboardEventToAwt ignored: native input not ready event=${describeKeyEvent(event)}")
+            return false
+        }
+        if (event.action == KeyEvent.ACTION_MULTIPLE) {
+            val chars = event.characters
+            logIme("dispatchKeyboardEventToAwt ACTION_MULTIPLE chars=${describeText(chars)}")
+            return if (!chars.isNullOrEmpty()) {
+                sendSoftKeyboardTextToAwt(chars)
+            } else {
+                true
+            }
+        }
+        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
+            return false
+        }
+
+        val awtKeyCode = toAwtKeyCode(event.keyCode)
+        if (awtKeyCode != null) {
+            val isDown = event.action == KeyEvent.ACTION_DOWN
+            logIme(
+                "dispatchKeyboardEventToAwt key " +
+                    "android=${KeyEvent.keyCodeToString(event.keyCode)} " +
+                    "awt=$awtKeyCode action=${describeAction(event.action)}"
+            )
+            AWTInputBridge.sendKey(Char.MIN_VALUE, awtKeyCode, if (isDown) 1 else 0)
+            return true
+        }
+
+        val unicode = event.unicodeChar
+        if (event.action == KeyEvent.ACTION_DOWN && unicode > 0 && !Character.isISOControl(unicode)) {
+            logIme(
+                "dispatchKeyboardEventToAwt ignored printable key event " +
+                    "char=${describeChar(unicode.toChar())}; waiting for commitText"
+            )
+            return true
+        }
+
+        logIme("dispatchKeyboardEventToAwt handled=false event=${describeKeyEvent(event)}")
+        return false
+    }
+
+    private fun toAwtKeyCode(androidKeyCode: Int): Int? {
+        return when (androidKeyCode) {
+            KeyEvent.KEYCODE_DEL -> AWT_VK_BACK_SPACE
+            KeyEvent.KEYCODE_FORWARD_DEL -> AWT_VK_DELETE
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> AWT_VK_ENTER
+            KeyEvent.KEYCODE_TAB -> AWT_VK_TAB
+            KeyEvent.KEYCODE_ESCAPE -> AWT_VK_ESCAPE
+            KeyEvent.KEYCODE_DPAD_LEFT -> AWT_VK_LEFT
+            KeyEvent.KEYCODE_DPAD_UP -> AWT_VK_UP
+            KeyEvent.KEYCODE_DPAD_RIGHT -> AWT_VK_RIGHT
+            KeyEvent.KEYCODE_DPAD_DOWN -> AWT_VK_DOWN
+            KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> AWT_VK_SHIFT
+            KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> AWT_VK_CONTROL
+            KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> AWT_VK_ALT
+            KeyEvent.KEYCODE_CAPS_LOCK -> AWT_VK_CAPS_LOCK
+            else -> null
+        }
+    }
+
+    private fun resolveSoftKeyboardTarget(): SoftKeyboardTarget {
+        val awtTextFocused = AWTInputBridge.isTextInputFocused()
+        val target = if (awtTextFocused) {
+            SoftKeyboardTarget.AWT
+        } else {
+            SoftKeyboardTarget.GLFW
+        }
+        logIme("resolveSoftKeyboardTarget awtTextFocused=$awtTextFocused target=$target")
+        return target
     }
 
     @Suppress("DEPRECATION")
     private fun dispatchKeyboardEventToGame(event: KeyEvent): Boolean {
         if (!isNativeInputDispatchReady.invoke()) {
+            logIme("dispatchKeyboardEventToGame ignored: native input not ready event=${describeKeyEvent(event)}")
             return false
         }
         if (event.action == KeyEvent.ACTION_MULTIPLE) {
             val chars = event.characters
+            logIme("dispatchKeyboardEventToGame ACTION_MULTIPLE chars=${describeText(chars)}")
             return if (!chars.isNullOrEmpty()) {
                 sendSoftKeyboardText(chars)
             } else {
@@ -507,17 +671,83 @@ internal class FloatingMouseOverlayController(
         var handled = false
         if (glfwKey != AndroidGlfwKeycode.GLFW_KEY_UNKNOWN) {
             val isDown = event.action == KeyEvent.ACTION_DOWN
+            logIme(
+                "dispatchKeyboardEventToGame key " +
+                    "android=${KeyEvent.keyCodeToString(event.keyCode)} " +
+                    "glfw=$glfwKey action=${describeAction(event.action)} modsBefore=${CallbackBridge.getCurrentMods()}"
+            )
             CallbackBridge.setModifiers(glfwKey, isDown)
             CallbackBridge.sendKeyPress(glfwKey, 0, CallbackBridge.getCurrentMods(), isDown)
             handled = true
         }
 
         val unicode = event.unicodeChar
-        if (event.action == KeyEvent.ACTION_DOWN && unicode > 0 && !Character.isISOControl(unicode)) {
-            CallbackBridge.sendChar(unicode.toChar(), CallbackBridge.getCurrentMods())
+        val typedChar = when {
+            event.action != KeyEvent.ACTION_DOWN -> null
+            event.keyCode == KeyEvent.KEYCODE_DEL -> '\b'
+            event.keyCode == KeyEvent.KEYCODE_FORWARD_DEL -> 127.toChar()
+            unicode > 0 && !Character.isISOControl(unicode) -> unicode.toChar()
+            else -> null
+        }
+        if (typedChar != null) {
+            logIme("dispatchKeyboardEventToGame typed char=${describeChar(typedChar)} mods=${CallbackBridge.getCurrentMods()}")
+            CallbackBridge.sendChar(typedChar, CallbackBridge.getCurrentMods())
             handled = true
         }
+        logIme("dispatchKeyboardEventToGame handled=$handled event=${describeKeyEvent(event)}")
         return handled
+    }
+
+    private fun logIme(message: String) {
+        Log.d(IME_LOG_TAG, message)
+    }
+
+    private fun describeAction(action: Int): String {
+        return when (action) {
+            KeyEvent.ACTION_DOWN -> "DOWN"
+            KeyEvent.ACTION_UP -> "UP"
+            KeyEvent.ACTION_MULTIPLE -> "MULTIPLE"
+            else -> action.toString()
+        }
+    }
+
+    private fun describeKeyEvent(event: KeyEvent): String {
+        return buildString {
+            append(describeAction(event.action))
+            append('/')
+            append(KeyEvent.keyCodeToString(event.keyCode))
+            append(" repeat=").append(event.repeatCount)
+            append(" unicode=").append(event.unicodeChar)
+            if (!event.characters.isNullOrEmpty()) {
+                append(" chars=").append(describeText(event.characters))
+            }
+        }
+    }
+
+    private fun describeText(text: CharSequence?): String {
+        if (text == null) {
+            return "<null>"
+        }
+        return buildString {
+            append('"')
+            text.forEach { append(describeChar(it)) }
+            append('"')
+            append(" len=").append(text.length)
+        }
+    }
+
+    private fun describeChar(ch: Char): String {
+        return when (ch) {
+            '\b' -> "\\b"
+            '\n' -> "\\n"
+            '\r' -> "\\r"
+            '\t' -> "\\t"
+            else -> if (Character.isISOControl(ch)) {
+                "\\u" + ch.code.toString(16).padStart(4, '0')
+            } else {
+                ch.toString()
+            }
+        }
     }
 
     private fun dpToPx(dp: Int): Int {
@@ -553,35 +783,74 @@ internal class FloatingMouseOverlayController(
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
             return object : BaseInputConnection(this, false) {
+                // Mirror committed text locally so IMEs keep delete/backspace enabled.
+                private val editable = Editable.Factory.getInstance().newEditable("").also {
+                    Selection.setSelection(it, 0)
+                }
+
+                override fun getEditable(): Editable {
+                    logIme("getEditable state=${describeEditableState(editable)}")
+                    return editable
+                }
+
                 override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                    val result = super.commitText(text, newCursorPosition)
+                    logIme(
+                        "InputConnection.commitText text=${describeText(text)} " +
+                            "cursor=$newCursorPosition result=$result state=${describeEditableState(editable)}"
+                    )
                     sendSoftKeyboardText(text)
                     return true
                 }
 
                 override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
                     // Keep composition internal to IME and only forward committed text.
-                    return true
+                    val result = super.setComposingText(text, newCursorPosition)
+                    logIme(
+                        "InputConnection.setComposingText text=${describeText(text)} " +
+                            "cursor=$newCursorPosition result=$result state=${describeEditableState(editable)}"
+                    )
+                    return result
                 }
 
                 override fun finishComposingText(): Boolean {
-                    return true
+                    val result = super.finishComposingText()
+                    logIme("InputConnection.finishComposingText result=$result state=${describeEditableState(editable)}")
+                    return result
                 }
 
                 override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                    val count = if (beforeLength > 0) beforeLength else 1
-                    repeat(count) {
+                    val beforeState = describeEditableState(editable)
+                    val result = super.deleteSurroundingText(beforeLength, afterLength)
+                    logIme(
+                        "InputConnection.deleteSurroundingText before=$beforeLength after=$afterLength " +
+                            "result=$result stateBefore=$beforeState stateAfter=${describeEditableState(editable)}"
+                    )
+                    repeat(beforeLength.coerceAtLeast(0)) {
+                        sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+                    }
+                    repeat(afterLength.coerceAtLeast(0)) {
+                        sendSyntheticSoftKey(KeyEvent.KEYCODE_FORWARD_DEL)
+                    }
+                    if (beforeLength <= 0 && afterLength <= 0) {
                         sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
                     }
                     return true
                 }
 
                 override fun sendKeyEvent(event: KeyEvent): Boolean {
+                    logIme("InputConnection.sendKeyEvent event=${describeKeyEvent(event)} state=${describeEditableState(editable)}")
                     return dispatchSoftKeyboardKeyEvent(event)
                 }
 
                 override fun performEditorAction(actionCode: Int): Boolean {
+                    logIme("InputConnection.performEditorAction actionCode=$actionCode")
                     sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
                     return true
+                }
+
+                private fun describeEditableState(value: Editable): String {
+                    return "text=${describeText(value)} sel=${Selection.getSelectionStart(value)}..${Selection.getSelectionEnd(value)}"
                 }
             }
         }

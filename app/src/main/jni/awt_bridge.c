@@ -32,6 +32,82 @@ jmethodID method_SystemClipboardDataReceived = NULL;
 jfieldID field_x;
 jfieldID field_y;
 
+jclass class_KeyboardFocusManager = NULL;
+jmethodID method_GetCurrentKeyboardFocusManager = NULL;
+jmethodID method_GetFocusOwner = NULL;
+jclass class_TextComponent = NULL;
+jclass class_JTextComponent = NULL;
+
+static jboolean ensureRuntimeInputEnv() {
+    if (runtimeJNIEnvPtr_INPUT != NULL) {
+        return JNI_TRUE;
+    }
+    if (runtimeJavaVMPtr == NULL) {
+        return JNI_FALSE;
+    }
+    return (*runtimeJavaVMPtr)->AttachCurrentThread(runtimeJavaVMPtr, &runtimeJNIEnvPtr_INPUT, NULL) == 0
+           ? JNI_TRUE
+           : JNI_FALSE;
+}
+
+static jboolean ensureAwtFocusLookup(JNIEnv* env) {
+    if (class_KeyboardFocusManager == NULL) {
+        jclass localKeyboardFocusManager = (*env)->FindClass(env, "java/awt/KeyboardFocusManager");
+        if (localKeyboardFocusManager == NULL || (*env)->ExceptionCheck(env) == JNI_TRUE) {
+            (*env)->ExceptionClear(env);
+            return JNI_FALSE;
+        }
+        class_KeyboardFocusManager = (*env)->NewGlobalRef(env, localKeyboardFocusManager);
+        (*env)->DeleteLocalRef(env, localKeyboardFocusManager);
+        if (class_KeyboardFocusManager == NULL) {
+            return JNI_FALSE;
+        }
+        method_GetCurrentKeyboardFocusManager = (*env)->GetStaticMethodID(
+                env,
+                class_KeyboardFocusManager,
+                "getCurrentKeyboardFocusManager",
+                "()Ljava/awt/KeyboardFocusManager;"
+        );
+        method_GetFocusOwner = (*env)->GetMethodID(
+                env,
+                class_KeyboardFocusManager,
+                "getFocusOwner",
+                "()Ljava/awt/Component;"
+        );
+        if (method_GetCurrentKeyboardFocusManager == NULL || method_GetFocusOwner == NULL) {
+            (*env)->ExceptionClear(env);
+            return JNI_FALSE;
+        }
+    }
+
+    if (class_TextComponent == NULL) {
+        jclass localTextComponent = (*env)->FindClass(env, "java/awt/TextComponent");
+        if (localTextComponent != NULL && (*env)->ExceptionCheck(env) != JNI_TRUE) {
+            class_TextComponent = (*env)->NewGlobalRef(env, localTextComponent);
+            (*env)->DeleteLocalRef(env, localTextComponent);
+        } else {
+            (*env)->ExceptionClear(env);
+        }
+    }
+
+    if (class_JTextComponent == NULL) {
+        jclass localJTextComponent = (*env)->FindClass(env, "javax/swing/text/JTextComponent");
+        if (localJTextComponent != NULL && (*env)->ExceptionCheck(env) != JNI_TRUE) {
+            class_JTextComponent = (*env)->NewGlobalRef(env, localJTextComponent);
+            (*env)->DeleteLocalRef(env, localJTextComponent);
+        } else {
+            (*env)->ExceptionClear(env);
+        }
+    }
+
+    return class_KeyboardFocusManager != NULL &&
+           method_GetCurrentKeyboardFocusManager != NULL &&
+           method_GetFocusOwner != NULL &&
+           (class_TextComponent != NULL || class_JTextComponent != NULL)
+           ? JNI_TRUE
+           : JNI_FALSE;
+}
+
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     if (dalvikJavaVMPtr == NULL) {
         //Save dalvik global JavaVM pointer
@@ -51,12 +127,8 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 }
 
 JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_AWTInputBridge_nativeSendData(JNIEnv* env, jclass clazz, jint type, jint i1, jint i2, jint i3, jint i4) {
-    if (runtimeJNIEnvPtr_INPUT == NULL) {
-        if (runtimeJavaVMPtr == NULL) {
-            return;
-        } else {
-            (*runtimeJavaVMPtr)->AttachCurrentThread(runtimeJavaVMPtr, &runtimeJNIEnvPtr_INPUT, NULL);
-        }
+    if (!ensureRuntimeInputEnv()) {
+        return;
     }
 
     if (method_ReceiveInput == NULL) {
@@ -75,6 +147,53 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_AWTInputBridge_nativeSendData(JN
         method_ReceiveInput,
         type, i1, i2, i3, i4
     );
+}
+
+JNIEXPORT jboolean JNICALL Java_net_kdt_pojavlaunch_AWTInputBridge_nativeIsTextInputFocused(JNIEnv* env, jclass clazz) {
+    if (!ensureRuntimeInputEnv()) {
+        return JNI_FALSE;
+    }
+    if (!ensureAwtFocusLookup(runtimeJNIEnvPtr_INPUT)) {
+        return JNI_FALSE;
+    }
+
+    jobject focusManager = (*runtimeJNIEnvPtr_INPUT)->CallStaticObjectMethod(
+            runtimeJNIEnvPtr_INPUT,
+            class_KeyboardFocusManager,
+            method_GetCurrentKeyboardFocusManager
+    );
+    if ((*runtimeJNIEnvPtr_INPUT)->ExceptionCheck(runtimeJNIEnvPtr_INPUT) == JNI_TRUE) {
+        (*runtimeJNIEnvPtr_INPUT)->ExceptionClear(runtimeJNIEnvPtr_INPUT);
+        return JNI_FALSE;
+    }
+    if (focusManager == NULL) {
+        return JNI_FALSE;
+    }
+
+    jobject focusOwner = (*runtimeJNIEnvPtr_INPUT)->CallObjectMethod(
+            runtimeJNIEnvPtr_INPUT,
+            focusManager,
+            method_GetFocusOwner
+    );
+    (*runtimeJNIEnvPtr_INPUT)->DeleteLocalRef(runtimeJNIEnvPtr_INPUT, focusManager);
+    if ((*runtimeJNIEnvPtr_INPUT)->ExceptionCheck(runtimeJNIEnvPtr_INPUT) == JNI_TRUE) {
+        (*runtimeJNIEnvPtr_INPUT)->ExceptionClear(runtimeJNIEnvPtr_INPUT);
+        return JNI_FALSE;
+    }
+    if (focusOwner == NULL) {
+        return JNI_FALSE;
+    }
+
+    jboolean focused = JNI_FALSE;
+    if (class_TextComponent != NULL &&
+        (*runtimeJNIEnvPtr_INPUT)->IsInstanceOf(runtimeJNIEnvPtr_INPUT, focusOwner, class_TextComponent) == JNI_TRUE) {
+        focused = JNI_TRUE;
+    } else if (class_JTextComponent != NULL &&
+               (*runtimeJNIEnvPtr_INPUT)->IsInstanceOf(runtimeJNIEnvPtr_INPUT, focusOwner, class_JTextComponent) == JNI_TRUE) {
+        focused = JNI_TRUE;
+    }
+    (*runtimeJNIEnvPtr_INPUT)->DeleteLocalRef(runtimeJNIEnvPtr_INPUT, focusOwner);
+    return focused;
 }
 
 // TODO: check for memory leaks

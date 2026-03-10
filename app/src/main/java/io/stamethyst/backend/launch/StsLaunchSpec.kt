@@ -192,6 +192,7 @@ object StsLaunchSpec {
                 RuntimePaths.bootBridgeJar(context).absolutePath +
                     ":" + RuntimePaths.lwjglJar(context).absolutePath +
                     ":" + RuntimePaths.mtsGdxApiJar(context).absolutePath +
+                    ":" + RuntimePaths.mtsLog4jRuntimeJar(context).absolutePath +
                     ":" + RuntimePaths.mtsStsResourcesJar(context).absolutePath +
                     ":" + RuntimePaths.mtsBaseModResourcesJar(context).absolutePath +
                     ":" + RuntimePaths.importedMtsJar(context).absolutePath

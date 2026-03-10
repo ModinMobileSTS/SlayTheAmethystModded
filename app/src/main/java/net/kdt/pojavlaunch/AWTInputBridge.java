@@ -26,6 +26,14 @@ public class AWTInputBridge {
         nativeSendData(EVENT_TYPE_CHAR, keychar, 0, 0, 0);
     }
 
+    public static boolean isTextInputFocused() {
+        try {
+            return nativeIsTextInputFocused();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     public static void sendMousePress(int awtButtons, boolean isDown) {
         nativeSendData(EVENT_TYPE_MOUSE_BUTTON, awtButtons, isDown ? 1 : 0, 0, 0);
     }
@@ -39,6 +47,8 @@ public class AWTInputBridge {
     }
 
     public static native void nativeSendData(int type, int i1, int i2, int i3, int i4);
+
+    public static native boolean nativeIsTextInputFocused();
 
     public static native void nativeClipboardReceived(String data, String mimeTypeSub);
 
