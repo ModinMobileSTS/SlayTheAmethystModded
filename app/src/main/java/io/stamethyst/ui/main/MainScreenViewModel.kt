@@ -15,8 +15,6 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
-import io.stamethyst.backend.crash.ProcessExitInfoCapture
-import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.file_interactive.SafExportActivity
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -716,9 +714,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun handleIncomingIntent(host: Activity, intent: Intent?) {
-        val exitSummary = ProcessExitInfoCapture.captureLatestProcessExitInfo(host)
         if (intent == null) {
-            maybeShowProcessExitDialog(host, exitSummary)
             return
         }
 
@@ -730,12 +726,7 @@ class MainScreenViewModel : ViewModel() {
         }
 
         val showedCrashDialog = maybeShowCrashDialog(host, intent)
-        val showedProcessExitDialog = if (showedCrashDialog) {
-            false
-        } else {
-            maybeShowProcessExitDialog(host, exitSummary)
-        }
-        if (!showedCrashDialog && !showedProcessExitDialog) {
+        if (!showedCrashDialog) {
             maybeLaunchFromDebugExtra(host, intent)
         }
     }
@@ -1270,32 +1261,6 @@ class MainScreenViewModel : ViewModel() {
                 }
             }
         }
-    }
-
-    private fun maybeShowProcessExitDialog(
-        host: Activity,
-        summary: ProcessExitSummary?
-    ): Boolean {
-        if (summary == null) {
-            return false
-        }
-        val message = buildString {
-            append("检测到上次运行异常退出。\n")
-            if (summary.isSignal) {
-                append(host.getString(R.string.sts_signal_exit, summary.status))
-            } else {
-                append("退出原因：").append(summary.reasonName).append(" (status=").append(summary.status).append(')')
-            }
-            if (summary.description.isNotBlank()) {
-                append("\n").append(summary.description)
-            }
-        }
-        AlertDialog.Builder(host)
-            .setTitle(R.string.sts_crash_dialog_title)
-            .setMessage(message)
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-        return true
     }
 
     private fun clearCrashExtras(intent: Intent) {
