@@ -21,6 +21,7 @@ class RenderSurfaceManager(
     renderScale: Float,
     private val targetFps: Int,
     useTextureViewSurface: Boolean,
+    private val avoidDisplayCutout: Boolean,
     private val onSurfaceReady: () -> Unit,
     private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
@@ -335,13 +336,15 @@ class RenderSurfaceManager(
             return
         }
         val attributes = activity.window.attributes
-        if (attributes.layoutInDisplayCutoutMode ==
+        val targetMode = if (avoidDisplayCutout) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+        } else {
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        ) {
+        }
+        if (attributes.layoutInDisplayCutoutMode == targetMode) {
             return
         }
-        attributes.layoutInDisplayCutoutMode =
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        attributes.layoutInDisplayCutoutMode = targetMode
         activity.window.attributes = attributes
     }
 }

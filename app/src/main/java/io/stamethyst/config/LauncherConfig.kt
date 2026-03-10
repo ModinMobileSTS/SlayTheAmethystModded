@@ -33,6 +33,7 @@ object LauncherConfig {
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
+    private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
@@ -73,6 +74,7 @@ object LauncherConfig {
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
+    const val DEFAULT_AVOID_DISPLAY_CUTOUT = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
@@ -260,6 +262,19 @@ object LauncherConfig {
     fun saveMobileHudEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_MOBILE_HUD_ENABLED, enabled)
+        }
+    }
+
+    fun isDisplayCutoutAvoidanceEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_AVOID_DISPLAY_CUTOUT,
+            DEFAULT_AVOID_DISPLAY_CUTOUT
+        )
+    }
+
+    fun setDisplayCutoutAvoidanceEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_AVOID_DISPLAY_CUTOUT, enabled)
         }
     }
 

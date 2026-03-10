@@ -8,12 +8,14 @@ import com.badlogic.gdx.controllers.PovDirection;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import com.megacrit.cardcrawl.core.Settings;
+import com.megacrit.cardcrawl.helpers.controller.CInputHelper;
 
 import org.lwjgl.glfw.CallbackBridge;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.lang.reflect.Field;
 import java.util.Arrays;
 
 /**
@@ -58,6 +60,7 @@ public class DesktopControllerManager implements ControllerManager {
     private boolean controllerRegistered = false;
     private boolean hasSeenInput = false;
     private boolean directInputEnableAttempted = false;
+    private boolean stsControllerBound = false;
     private Boolean expectedTouchscreenEnabled = null;
     private Boolean expectedMobileHudEnabled = null;
 
@@ -67,7 +70,6 @@ public class DesktopControllerManager implements ControllerManager {
         resetBufferedState();
         Arrays.fill(lastButtons, BUTTON_RELEASE);
         Arrays.fill(lastAxes, 0f);
-        registerControllerIfNeeded();
         tryEnableDirectInput();
         if (Gdx.app != null) {
             Gdx.app.postRunnable(new PollRunnable());
@@ -119,6 +121,9 @@ public class DesktopControllerManager implements ControllerManager {
         enforceConfiguredTouchscreenMode();
         if (!hasSeenInput) {
             if (!hasLiveInput()) {
+                return;
+            }
+            if (!activateControllerForLiveInput()) {
                 return;
             }
             hasSeenInput = true;
@@ -219,6 +224,43 @@ public class DesktopControllerManager implements ControllerManager {
         }
         controllers.add(controller);
         controllerRegistered = true;
+    }
+
+    private boolean activateControllerForLiveInput() {
+        registerControllerIfNeeded();
+        if (stsControllerBound) {
+            return true;
+        }
+        if (!bindControllerToSts()) {
+            controllers.removeValue(controller, true);
+            controllerRegistered = false;
+            return false;
+        }
+
+        connectedNotified = false;
+        Arrays.fill(lastButtons, BUTTON_RELEASE);
+        Arrays.fill(lastAxes, 0f);
+        lastPovDirection = PovDirection.center;
+        return true;
+    }
+
+    private boolean bindControllerToSts() {
+        try {
+            Field initializedControllerField =
+                    CInputHelper.class.getDeclaredField("initializedController");
+            initializedControllerField.setAccessible(true);
+            initializedControllerField.setBoolean(null, false);
+
+            CInputHelper.controllers = null;
+            CInputHelper.controller = null;
+            CInputHelper.listener = null;
+            CInputHelper.model = null;
+            CInputHelper.initializeIfAble();
+            stsControllerBound = CInputHelper.controller == controller;
+            return stsControllerBound;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private void resetBufferedState() {

@@ -4,6 +4,7 @@ import android.util.Log
 import android.text.Editable
 import android.text.InputType
 import android.text.Selection
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
@@ -59,6 +60,7 @@ internal class FloatingMouseOverlayController(
         private const val SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP = 12f
         private const val SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP = 46
         private const val SPECIAL_KEYS_BUTTON_SPACING_DP = 6
+        private const val SOFT_KEY_MIN_PRESS_MS = 70L
         private const val AWT_VK_ENTER = 10
         private const val AWT_VK_BACK_SPACE = 8
         private const val AWT_VK_TAB = 9
@@ -90,6 +92,7 @@ internal class FloatingMouseOverlayController(
     private var floatingMouseDownRawY = 0f
     private var floatingMouseDownLeft = 0
     private var floatingMouseDownTop = 0
+    private val pendingSoftKeyReleaseRunnables = mutableMapOf<Int, Runnable>()
 
     fun attachToHost(host: FrameLayout) {
         detachViews()
@@ -179,6 +182,7 @@ internal class FloatingMouseOverlayController(
     }
 
     fun onDestroy() {
+        flushPendingSoftKeyReleases()
         hideSoftKeyboard()
         cancelFloatingMouseLongPress()
         clearIdleRunnable()
@@ -229,6 +233,7 @@ internal class FloatingMouseOverlayController(
     }
 
     fun hideSoftKeyboard() {
+        flushPendingSoftKeyReleases()
         specialKeysBar?.visibility = View.GONE
         val inputView = imeProxyView ?: return
         val imm = activity.getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
@@ -551,8 +556,10 @@ internal class FloatingMouseOverlayController(
         target: SoftKeyboardTarget = resolveSoftKeyboardTarget()
     ) {
         logIme("sendSyntheticSoftKey androidKey=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target")
-        dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)
-        dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+        dispatchSoftKeyboardKeyEventToTarget(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)
+        if (!shouldDelaySoftKeyRelease(androidKeyCode, target)) {
+            dispatchSoftKeyboardKeyEventToTarget(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+        }
     }
 
     private fun dispatchSoftKeyboardKeyEvent(event: KeyEvent): Boolean {
@@ -565,7 +572,7 @@ internal class FloatingMouseOverlayController(
         }
         val target = resolveSoftKeyboardTarget()
         logIme("dispatchSoftKeyboardKeyEvent event=${describeKeyEvent(event)} target=$target")
-        return dispatchKeyboardEvent(event, target)
+        return dispatchSoftKeyboardKeyEventToTarget(event, target)
     }
 
     private fun dispatchKeyboardEvent(event: KeyEvent, target: SoftKeyboardTarget): Boolean {
@@ -573,6 +580,77 @@ internal class FloatingMouseOverlayController(
             SoftKeyboardTarget.GLFW -> dispatchKeyboardEventToGame(event)
             SoftKeyboardTarget.AWT -> dispatchKeyboardEventToAwt(event)
         }
+    }
+
+    private fun dispatchSoftKeyboardKeyEventToTarget(event: KeyEvent, target: SoftKeyboardTarget): Boolean {
+        if (!shouldDelaySoftKeyRelease(event.keyCode, target)) {
+            return dispatchKeyboardEvent(event, target)
+        }
+
+        return when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                flushPendingSoftKeyRelease(event.keyCode)
+                val handled = dispatchKeyboardEvent(event, target)
+                scheduleSoftKeyRelease(event.keyCode, target)
+                handled
+            }
+
+            KeyEvent.ACTION_UP -> {
+                logIme(
+                    "dispatchSoftKeyboardKeyEvent delayed release " +
+                        "android=${KeyEvent.keyCodeToString(event.keyCode)} target=$target"
+                )
+                true
+            }
+
+            else -> dispatchKeyboardEvent(event, target)
+        }
+    }
+
+    private fun shouldDelaySoftKeyRelease(androidKeyCode: Int, target: SoftKeyboardTarget): Boolean {
+        return target == SoftKeyboardTarget.GLFW &&
+            (androidKeyCode == KeyEvent.KEYCODE_DEL || androidKeyCode == KeyEvent.KEYCODE_FORWARD_DEL)
+    }
+
+    private fun scheduleSoftKeyRelease(androidKeyCode: Int, target: SoftKeyboardTarget) {
+        val inputView = imeProxyView
+        if (inputView == null) {
+            logIme(
+                "scheduleSoftKeyRelease fallback immediate " +
+                    "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target"
+            )
+            dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+            return
+        }
+
+        val downAt = SystemClock.uptimeMillis()
+        val releaseRunnable = Runnable {
+            pendingSoftKeyReleaseRunnables.remove(androidKeyCode)
+            val heldFor = SystemClock.uptimeMillis() - downAt
+            logIme(
+                "scheduleSoftKeyRelease dispatch " +
+                    "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target heldMs=$heldFor"
+            )
+            dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+        }
+        pendingSoftKeyReleaseRunnables[androidKeyCode] = releaseRunnable
+        inputView.postDelayed(releaseRunnable, SOFT_KEY_MIN_PRESS_MS)
+        logIme(
+            "scheduleSoftKeyRelease queued " +
+                "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target delayMs=$SOFT_KEY_MIN_PRESS_MS"
+        )
+    }
+
+    private fun flushPendingSoftKeyRelease(androidKeyCode: Int) {
+        val releaseRunnable = pendingSoftKeyReleaseRunnables.remove(androidKeyCode) ?: return
+        imeProxyView?.removeCallbacks(releaseRunnable)
+        logIme("flushPendingSoftKeyRelease android=${KeyEvent.keyCodeToString(androidKeyCode)}")
+        releaseRunnable.run()
+    }
+
+    private fun flushPendingSoftKeyReleases() {
+        val pendingKeys = pendingSoftKeyReleaseRunnables.keys.toList()
+        pendingKeys.forEach(::flushPendingSoftKeyRelease)
     }
 
     private fun dispatchKeyboardEventToAwt(event: KeyEvent): Boolean {

@@ -124,6 +124,9 @@ fun LauncherSettingsScreen(
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
         onMobileHudEnabledChanged = { enabled -> viewModel.onMobileHudEnabledChanged(activity, enabled) },
+        onDisplayCutoutAvoidanceChanged = { enabled ->
+            viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
+        },
         onGamePerformanceOverlayChanged = { enabled ->
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
         },
@@ -173,6 +176,7 @@ private fun LauncherSettingsScreenPreview() {
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
             mobileHudEnabled = false,
+            avoidDisplayCutout = false,
             showGamePerformanceOverlay = false,
             lwjglDebugEnabled = false,
             jvmLogcatMirrorEnabled = false,
@@ -219,6 +223,7 @@ private fun LauncherSettingsScreenContent(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onMobileHudEnabledChanged: (Boolean) -> Unit = {},
+    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
@@ -322,6 +327,7 @@ private fun LauncherSettingsScreenContent(
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onMobileHudEnabledChanged = onMobileHudEnabledChanged,
+                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
@@ -840,6 +846,7 @@ private fun SettingsInputSection(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onMobileHudEnabledChanged: (Boolean) -> Unit,
+    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
@@ -939,6 +946,15 @@ private fun SettingsInputSection(
         disabledText = "移动端 UI：禁用",
         description = "控制是否启用原生移动端 UI，启用后 UI 会部分变大，但是可能会出现一些模组渲染不兼容的问题，例如 loadout 控制台不会出现。",
         onCheckedChange = onMobileHudEnabledChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.avoidDisplayCutout,
+        enabled = !uiState.busy,
+        enabledText = "避让摄像头显示：启用",
+        disabledText = "避让摄像头显示：禁用",
+        description = "启用后，游戏会避开刘海或挖孔区域显示，减少前置摄像头遮挡内容的问题。",
+        onCheckedChange = onDisplayCutoutAvoidanceChanged
     )
 
     SwitchSettingRow(
@@ -1120,7 +1136,7 @@ private fun SettingsStatusSection(
         enabled = !uiState.busy,
         enabledText = "JVM 日志转发到 logcat：启用",
         disabledText = "JVM 日志转发到 logcat：禁用",
-        description = "将 latest.log 的新增内容同步输出到 logcat，默认禁用；修改后在下次启动游戏时生效。",
+        description = "将 latest.log 的新增内容同步输出到 logcat，默认禁用。",
         onCheckedChange = onJvmLogcatMirrorChanged
     )
     SwitchSettingRow(

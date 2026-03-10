@@ -70,6 +70,7 @@ class StsGameActivity : AppCompatActivity() {
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         initControllers()
+        renderSurfaceManager.applyImmersiveMode()
         initViews()
         registerSystemBackInvokedCallback()
     }
@@ -140,6 +141,7 @@ class StsGameActivity : AppCompatActivity() {
             renderScale = sessionConfig.renderScale,
             targetFps = sessionConfig.targetFps,
             useTextureViewSurface = sessionConfig.useTextureViewSurface,
+            avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             onSurfaceReady = { sessionCoordinator.onSurfaceReady() },
             onSurfaceDestroyed = { },
             onTextureFrameUpdate = { timestampNs ->

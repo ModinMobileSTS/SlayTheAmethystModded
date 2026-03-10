@@ -31,6 +31,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SHOW_MOD_FILE_NAME
     val DEFAULT_MOBILE_HUD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
+    val DEFAULT_AVOID_DISPLAY_CUTOUT: Boolean
+        get() = LauncherConfig.DEFAULT_AVOID_DISPLAY_CUTOUT
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_LWJGL_DEBUG: Boolean
@@ -139,6 +141,14 @@ object LauncherPreferences {
 
     fun saveMobileHudEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.saveMobileHudEnabled(context, enabled)
+    }
+
+    fun isDisplayCutoutAvoidanceEnabled(context: Context): Boolean {
+        return LauncherConfig.isDisplayCutoutAvoidanceEnabled(context)
+    }
+
+    fun setDisplayCutoutAvoidanceEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setDisplayCutoutAvoidanceEnabled(context, enabled)
     }
 
     fun isGamePerformanceOverlayEnabled(context: Context): Boolean {

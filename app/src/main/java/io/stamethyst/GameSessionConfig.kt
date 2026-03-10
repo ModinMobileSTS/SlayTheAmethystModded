@@ -19,7 +19,8 @@ internal data class GameSessionConfig(
     val mirrorJvmLogsToLogcat: Boolean,
     val longPressMouseShowsKeyboard: Boolean,
     val autoSwitchLeftAfterRightClick: Boolean,
-    val renderSurfaceBackend: RenderSurfaceBackend
+    val renderSurfaceBackend: RenderSurfaceBackend,
+    val avoidDisplayCutout: Boolean
 ) {
     val useTextureViewSurface: Boolean
         get() = renderSurfaceBackend.usesTextureViewSurface
@@ -53,7 +54,8 @@ internal data class GameSessionConfig(
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(context),
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
-                renderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(context)
+                renderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(context),
+                avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context)
             )
         }
 

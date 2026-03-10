@@ -3,9 +3,9 @@ package io.stamethyst.backend.feedback
 import java.io.File
 
 enum class FeedbackCategory(val displayName: String, val issuePrefix: String) {
+    GAME_BUG(displayName = "游戏内 Bug", issuePrefix = "Game Bug"),
     FEATURE_REQUEST(displayName = "功能建议", issuePrefix = "Feature"),
-    LAUNCHER_BUG(displayName = "启动器 Bug", issuePrefix = "Launcher Bug"),
-    GAME_BUG(displayName = "游戏内 Bug", issuePrefix = "Game Bug")
+    LAUNCHER_BUG(displayName = "启动器 Bug", issuePrefix = "Launcher Bug")
 }
 
 enum class GameIssueType(val displayName: String, val issuePrefix: String) {

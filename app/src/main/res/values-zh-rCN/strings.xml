@@ -42,7 +42,7 @@
     <string name="settings_render_surface_backend_texture_view">TextureView（兼容回退，通常更稳但开销更高）</string>
     <string name="settings_render_surface_backend_surface_view_short">SurfaceView</string>
     <string name="settings_render_surface_backend_texture_view_short">TextureView</string>
-    <string name="settings_render_surface_backend_desc">控制承载游戏画面的 Android View 类型。更改后会在下次启动游戏时生效；如果某些系统在 SurfaceView 下出现卡顿，或开启录屏后明显变顺，可以尝试切换到 TextureView。</string>
+    <string name="settings_render_surface_backend_desc">控制承载游戏画面的 Android View 类型。如果某些系统在 SurfaceView 下出现卡顿，或开启录屏后明显变顺，可以尝试切换到 TextureView。</string>
     <string name="boot_overlay_button_close">关闭加载层</string>
     <string name="boot_overlay_button_enter_game">进入游戏</string>
     <string name="boot_overlay_logs_placeholder">等待 JVM 输出日志…</string>
