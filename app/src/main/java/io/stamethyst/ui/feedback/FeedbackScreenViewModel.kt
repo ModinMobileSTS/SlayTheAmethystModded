@@ -485,10 +485,10 @@ class FeedbackScreenViewModel : ViewModel() {
     ): FeedbackSubmissionNotice {
         val message = when {
             result.issueNumber != null && autoSubscribed -> {
-                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建，并已自动加入“已订阅议题”。\n\n后续可从 设置 -> 问题反馈 -> 已订阅议题 跟进这个反馈；如果有新的进展，主界面右上角也会显示反馈更新提示。"
+                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建，并已自动加入“我关注的议题”。\n\n后续可从 设置 -> 问题反馈 -> 我关注的议题 跟进这个反馈；如果有新的进展，主界面右上角也会显示反馈更新提示。"
             }
             result.issueNumber != null -> {
-                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建。\n\n后续可从 设置 -> 问题反馈 -> 已订阅议题 跟进这个反馈。"
+                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建。\n\n后续可从 设置 -> 问题反馈 -> 我关注的议题 跟进这个反馈。"
             }
             !result.issueUrl.isNullOrBlank() -> "反馈已提交，Issue 已创建。"
             else -> "反馈已提交，云函数已接收请求。"

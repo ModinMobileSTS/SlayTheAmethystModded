@@ -145,6 +145,7 @@ fun LauncherSettingsScreen(
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onOpenFeedback = viewModel::onOpenFeedback,
         onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
+        onOpenFeedbackIssueBrowser = { navigator.push(Route.FeedbackIssueBrowser) },
         feedbackSubmissionNotice = feedbackSubmissionNotice,
         onDismissFeedbackSubmissionNotice = onDismissFeedbackSubmissionNotice,
     )
@@ -236,6 +237,7 @@ private fun LauncherSettingsScreenContent(
     onOpenCompatibility: () -> Unit = {},
     onOpenFeedback: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
+    onOpenFeedbackIssueBrowser: () -> Unit = {},
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
@@ -274,7 +276,8 @@ private fun LauncherSettingsScreenContent(
                 SettingsFeedbackEntryCard(
                     busy = uiState.busy,
                     onOpenFeedback = onOpenFeedback,
-                    onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions
+                    onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
+                    onOpenFeedbackIssueBrowser = onOpenFeedbackIssueBrowser
                 )
             }
 
@@ -568,6 +571,7 @@ private fun SettingsFeedbackEntryCard(
     busy: Boolean,
     onOpenFeedback: () -> Unit,
     onOpenFeedbackSubscriptions: () -> Unit,
+    onOpenFeedbackIssueBrowser: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -596,9 +600,14 @@ private fun SettingsFeedbackEntryCard(
                 onClick = onOpenFeedback
             )
             SettingsActionListItem(
-                title = "已订阅议题",
+                title = "我关注的议题",
                 enabled = !busy,
                 onClick = onOpenFeedbackSubscriptions
+            )
+            SettingsActionListItem(
+                title = "关注新议题",
+                enabled = !busy,
+                onClick = onOpenFeedbackIssueBrowser
             )
         }
     }

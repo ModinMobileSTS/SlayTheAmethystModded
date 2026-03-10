@@ -20,6 +20,8 @@ const {
 const {
   parseIssueMessageRequest,
   parseIssueStateRequest,
+  parseIssueBrowseRequest,
+  listBrowsableIssues,
   uploadIssueMessageScreenshots,
   buildIssueMessageCommentBody
 } = require('./feedbackIssues');
@@ -248,8 +250,24 @@ function createApp(config) {
     }
   };
 
+  const handleIssueBrowse = async (req, res, next) => {
+    try {
+      enforceSharedSecret(req, config);
+
+      const browseRequest = parseIssueBrowseRequest(req);
+      const result = await listBrowsableIssues(browseRequest, config);
+      res.json({
+        ok: true,
+        ...result
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   app.post('/', upload.single('bundle'), handleFeedbackSubmission);
   app.post('/api/sts-feedback', upload.single('bundle'), handleFeedbackSubmission);
+  app.get('/api/feedback-issues/browse', handleIssueBrowse);
   app.post('/api/feedback-issues/message', upload.array('screenshots', 4), handleIssueMessage);
   app.post('/api/feedback-issues/state', handleIssueState);
   app.post('/github/webhook', handleGithubWebhook);

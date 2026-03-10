@@ -45,11 +45,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.backend.feedback.FeedbackCategory
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackInboxUiState
+import io.stamethyst.backend.feedback.FeedbackIssueBrowseItem
 import io.stamethyst.backend.feedback.FeedbackIssueSubscription
 import io.stamethyst.backend.feedback.GameIssueType
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,13 +114,37 @@ fun LauncherFeedbackSubscriptionsScreen(
         uiState = subscriptionsViewModel.uiState,
         inboxState = inboxState,
         onGoBack = navigator::goBack,
-        onIssueNumberChanged = subscriptionsViewModel::onIssueNumberChanged,
-        onSubscribeIssue = { subscriptionsViewModel.onSubscribe(activity) },
         onRefreshSubscriptions = { subscriptionsViewModel.onRefreshAll(activity) },
         onUnsubscribeIssue = { issueNumber ->
             subscriptionsViewModel.onUnsubscribe(activity, issueNumber)
         },
         onOpenConversation = onOpenConversation
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LauncherFeedbackIssueBrowserScreen(
+    modifier: Modifier = Modifier
+) {
+    val activity = requireNotNull(LocalActivity.current)
+    val navigator = currentNavigator
+    val browserViewModel: FeedbackIssueBrowserViewModel = viewModel()
+    val inboxState by FeedbackInboxCoordinator.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        browserViewModel.bind(activity)
+        FeedbackInboxCoordinator.bind(activity.applicationContext)
+    }
+
+    LauncherFeedbackIssueBrowserScreenContent(
+        modifier = modifier,
+        uiState = browserViewModel.uiState,
+        followedIssueNumbers = inboxState.subscriptions.map { it.issueNumber }.toSet(),
+        onGoBack = navigator::goBack,
+        onRefreshIssues = { browserViewModel.onRefresh(activity) },
+        onLoadMoreIssues = { browserViewModel.onLoadMore(activity) },
+        onFollowIssue = { issueNumber -> browserViewModel.onSubscribe(activity, issueNumber) }
     )
 }
 
@@ -188,8 +216,6 @@ private fun LauncherFeedbackSubscriptionsScreenContent(
     uiState: FeedbackSubscriptionsViewModel.UiState,
     inboxState: FeedbackInboxUiState,
     onGoBack: () -> Unit = {},
-    onIssueNumberChanged: (String) -> Unit = {},
-    onSubscribeIssue: () -> Unit = {},
     onRefreshSubscriptions: () -> Unit = {},
     onUnsubscribeIssue: (Long) -> Unit = {},
     onOpenConversation: (Long) -> Unit = {}
@@ -200,9 +226,9 @@ private fun LauncherFeedbackSubscriptionsScreenContent(
                 title = {
                     Text(
                         if (inboxState.unreadIssueCount > 0) {
-                            "已订阅议题 (${inboxState.unreadIssueCount})"
+                            "我关注的议题 (${inboxState.unreadIssueCount})"
                         } else {
-                            "已订阅议题"
+                            "我关注的议题"
                         }
                     )
                 },
@@ -223,11 +249,48 @@ private fun LauncherFeedbackSubscriptionsScreenContent(
                 .padding(paddingValues),
             uiState = uiState,
             inboxState = inboxState,
-            onIssueNumberChanged = onIssueNumberChanged,
-            onSubscribeIssue = onSubscribeIssue,
             onRefreshSubscriptions = onRefreshSubscriptions,
             onUnsubscribeIssue = onUnsubscribeIssue,
             onOpenConversation = onOpenConversation
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LauncherFeedbackIssueBrowserScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: FeedbackIssueBrowserViewModel.UiState,
+    followedIssueNumbers: Set<Long>,
+    onGoBack: () -> Unit = {},
+    onRefreshIssues: () -> Unit = {},
+    onLoadMoreIssues: () -> Unit = {},
+    onFollowIssue: (Long) -> Unit = {}
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("关注新议题") },
+                navigationIcon = {
+                    IconButton(onClick = onGoBack) {
+                        Icon(
+                            imageVector = Icons.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        FeedbackIssueBrowserContent(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            uiState = uiState,
+            followedIssueNumbers = followedIssueNumbers,
+            onRefreshIssues = onRefreshIssues,
+            onLoadMoreIssues = onLoadMoreIssues,
+            onFollowIssue = onFollowIssue
         )
     }
 }
@@ -296,10 +359,10 @@ private fun FeedbackSubmissionTabContent(
         item {
             FeedbackSectionCard(title = "1. 反馈类型") {
                 FeedbackRadioRow(
-                    selected = uiState.category == FeedbackCategory.FEATURE_REQUEST,
+                    selected = uiState.category == FeedbackCategory.GAME_BUG,
                     enabled = !uiState.busy,
-                    text = "功能建议",
-                    onClick = { onCategorySelected(FeedbackCategory.FEATURE_REQUEST) }
+                    text = "游戏内 Bug",
+                    onClick = { onCategorySelected(FeedbackCategory.GAME_BUG) }
                 )
                 FeedbackRadioRow(
                     selected = uiState.category == FeedbackCategory.LAUNCHER_BUG,
@@ -308,10 +371,10 @@ private fun FeedbackSubmissionTabContent(
                     onClick = { onCategorySelected(FeedbackCategory.LAUNCHER_BUG) }
                 )
                 FeedbackRadioRow(
-                    selected = uiState.category == FeedbackCategory.GAME_BUG,
+                    selected = uiState.category == FeedbackCategory.FEATURE_REQUEST,
                     enabled = !uiState.busy,
-                    text = "游戏内 Bug",
-                    onClick = { onCategorySelected(FeedbackCategory.GAME_BUG) }
+                    text = "功能建议",
+                    onClick = { onCategorySelected(FeedbackCategory.FEATURE_REQUEST) }
                 )
             }
         }
@@ -520,8 +583,6 @@ private fun FeedbackSubscriptionsContent(
     modifier: Modifier = Modifier,
     uiState: FeedbackSubscriptionsViewModel.UiState,
     inboxState: FeedbackInboxUiState,
-    onIssueNumberChanged: (String) -> Unit = {},
-    onSubscribeIssue: () -> Unit = {},
     onRefreshSubscriptions: () -> Unit = {},
     onUnsubscribeIssue: (Long) -> Unit = {},
     onOpenConversation: (Long) -> Unit = {}
@@ -535,7 +596,7 @@ private fun FeedbackSubscriptionsContent(
             if (uiState.busy || inboxState.syncing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    text = uiState.busyMessage ?: "正在同步订阅议题...",
+                    text = uiState.busyMessage ?: "正在同步我关注的议题...",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)
                 )
@@ -543,42 +604,25 @@ private fun FeedbackSubscriptionsContent(
         }
 
         item {
-            FeedbackSectionCard(title = "订阅 Issue") {
+            FeedbackSectionCard(title = "说明") {
                 Text(
-                    text = "输入当前项目仓库中的 Issue 编号，即可订阅该反馈，并在后续通过启动器继续对话。",
+                    text = "这里显示你已经关注的反馈议题。你可以在这里继续查看进展、打开对话，或取消关注。",
                     style = MaterialTheme.typography.bodySmall
                 )
-                OutlinedTextField(
-                    value = uiState.issueNumberText,
-                    onValueChange = onIssueNumberChanged,
-                    enabled = !uiState.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Issue 编号") },
-                    placeholder = { Text("例如 123") },
-                    singleLine = true
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = onSubscribeIssue,
-                        enabled = !uiState.busy
-                    ) {
-                        Text("订阅此 Issue")
-                    }
-                    OutlinedButton(
-                        onClick = onRefreshSubscriptions,
-                        enabled = !uiState.busy
-                    ) {
-                        Text("立即同步")
-                    }
+                OutlinedButton(
+                    onClick = onRefreshSubscriptions,
+                    enabled = !uiState.busy
+                ) {
+                    Text("立即同步")
                 }
             }
         }
 
         item {
-            FeedbackSectionCard(title = "已订阅议题") {
+            FeedbackSectionCard(title = "我关注的议题") {
                 if (inboxState.subscriptions.isEmpty()) {
                     Text(
-                        text = "当前还没有订阅任何反馈议题。",
+                        text = "当前还没有关注任何反馈议题。",
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
@@ -592,6 +636,100 @@ private fun FeedbackSubscriptionsContent(
                             onUnsubscribe = { onUnsubscribeIssue(subscription.issueNumber) }
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackIssueBrowserContent(
+    modifier: Modifier = Modifier,
+    uiState: FeedbackIssueBrowserViewModel.UiState,
+    followedIssueNumbers: Set<Long>,
+    onRefreshIssues: () -> Unit = {},
+    onLoadMoreIssues: () -> Unit = {},
+    onFollowIssue: (Long) -> Unit = {}
+) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            if (uiState.busy) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                uiState.busyMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        }
+
+        item {
+            FeedbackSectionCard(title = "仓库议题列表") {
+                Text(
+                    text = "这里会按最近更新时间显示当前仓库里的所有反馈议题。找到你想继续跟进的议题后，直接点“关注”即可。",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedButton(
+                    onClick = onRefreshIssues,
+                    enabled = !uiState.busy && !uiState.loadingMore
+                ) {
+                    Text("刷新列表")
+                }
+            }
+        }
+
+        item {
+            FeedbackSectionCard(title = "可关注的议题") {
+                if (!uiState.initialLoaded && !uiState.busy) {
+                    Text(
+                        text = "正在准备议题列表...",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else if (uiState.issues.isEmpty()) {
+                    Text(
+                        text = "当前没有可展示的议题。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        uiState.issues.forEachIndexed { index, issue ->
+                            if (index > 0) {
+                                HorizontalDivider()
+                            }
+                            FeedbackIssueBrowserRow(
+                                issue = issue,
+                                followed = followedIssueNumbers.contains(issue.issueNumber),
+                                busy = uiState.busy,
+                                onFollowIssue = { onFollowIssue(issue.issueNumber) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (uiState.issues.isNotEmpty()) {
+            item {
+                if (uiState.loadingMore) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else if (uiState.hasMore) {
+                    OutlinedButton(
+                        onClick = onLoadMoreIssues,
+                        enabled = !uiState.busy
+                    ) {
+                        Text("加载更多议题")
+                    }
+                } else {
+                    Text(
+                        text = "已经加载完当前可见的议题列表。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         }
@@ -645,6 +783,87 @@ private fun FeedbackSubscriptionRow(
             }
             TextButton(onClick = onUnsubscribe) {
                 Text("取消订阅")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackIssueBrowserRow(
+    issue: FeedbackIssueBrowseItem,
+    followed: Boolean,
+    busy: Boolean,
+    onFollowIssue: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = issue.title.ifBlank { "Issue #${issue.issueNumber}" },
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (followed) {
+                Text(
+                    text = "已关注",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Text(
+            text = buildString {
+                append("#").append(issue.issueNumber)
+                append(" · ")
+                append(if (issue.isClosed) "已关闭" else "进行中")
+                append(" · ")
+                append(formatFeedbackIssueListTime(issue.updatedAtMs))
+                append(" · ")
+                append(issue.commentCount).append(" 条评论")
+            },
+            style = MaterialTheme.typography.bodySmall
+        )
+        if (issue.bodyPreview.isNotBlank()) {
+            Text(
+                text = issue.bodyPreview,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "发起者：${issue.authorLabel}",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            if (followed) {
+                OutlinedButton(
+                    onClick = {},
+                    enabled = false
+                ) {
+                    Text("已关注")
+                }
+            } else {
+                Button(
+                    onClick = onFollowIssue,
+                    enabled = !busy
+                ) {
+                    Text("关注")
+                }
             }
         }
     }
@@ -814,4 +1033,11 @@ private fun reproductionPlaceholder(uiState: FeedbackScreenViewModel.UiState): S
     } else {
         "按顺序写出你做了哪些操作，越具体越好。"
     }
+}
+
+private fun formatFeedbackIssueListTime(timestampMs: Long): String {
+    if (timestampMs <= 0L) {
+        return "未知时间"
+    }
+    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestampMs))
 }

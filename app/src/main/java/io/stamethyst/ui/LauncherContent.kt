@@ -47,6 +47,7 @@ import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.ui.compatibility.LauncherCompatibilityScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackConversationScreen
+import io.stamethyst.ui.feedback.LauncherFeedbackIssueBrowserScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackSubscriptionsScreen
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
@@ -189,6 +190,12 @@ fun LauncherContent(
                         )
                     }
 
+                    entry<Route.FeedbackIssueBrowser> {
+                        LauncherFeedbackIssueBrowserScreen(
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
                     entry<Route.FeedbackConversation> { route ->
                         LauncherFeedbackConversationScreen(
                             modifier = Modifier.fillMaxSize(),
@@ -276,9 +283,9 @@ fun LauncherContent(
                     text = {
                         Text(
                             if (notice.unreadIssueCount == 1) {
-                                "有 1 个已订阅的反馈议题出现了新的更新。"
+                                "有 1 个我关注的议题出现了新的更新。"
                             } else {
-                                "有 ${notice.unreadIssueCount} 个已订阅的反馈议题出现了新的更新。"
+                                "有 ${notice.unreadIssueCount} 个我关注的议题出现了新的更新。"
                             }
                         )
                     },

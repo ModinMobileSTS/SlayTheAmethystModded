@@ -55,8 +55,11 @@ android {
         targetSdk = 33
         versionCode = appVersionCode
         versionName = appVersionName
+        buildConfigField("String", "FEEDBACK_BASE_URL", "\"http://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com\"")
         buildConfigField("String", "FEEDBACK_ENDPOINT", "\"http://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com/api/sts-feedback\"")
         buildConfigField("String", "FEEDBACK_API_KEY", feedbackApiKey.toBuildConfigStringLiteral())
+        buildConfigField("String", "FEEDBACK_GITHUB_OWNER", "\"ModinMobileSTS\"")
+        buildConfigField("String", "FEEDBACK_GITHUB_REPO", "\"SlayTheAmethystModded\"")
 
         ndk {
             //noinspection ChromeOsAbiSupport

@@ -6,6 +6,8 @@ app/src/main/jni/** linguist-vendored
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+*.sh text eol=lf
+cloud-function/scf_bootstrap text eol=lf
 
 # If you add your own native code later, un-vendor it with a more specific rule:
 # app/src/main/jni/my_native/** -linguist-vendored
