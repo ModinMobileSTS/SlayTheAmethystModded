@@ -570,6 +570,13 @@ internal class FloatingMouseOverlayController(
             logIme("dispatchSoftKeyboardKeyEvent dropped: native input not ready")
             return true
         }
+        if (shouldIgnorePrintableSoftKeyEvent(event)) {
+            logIme(
+                "dispatchSoftKeyboardKeyEvent ignored printable key event " +
+                    "event=${describeKeyEvent(event)}; waiting for commitText"
+            )
+            return true
+        }
         val target = resolveSoftKeyboardTarget()
         logIme("dispatchSoftKeyboardKeyEvent event=${describeKeyEvent(event)} target=$target")
         return dispatchSoftKeyboardKeyEventToTarget(event, target)
@@ -605,6 +612,17 @@ internal class FloatingMouseOverlayController(
 
             else -> dispatchKeyboardEvent(event, target)
         }
+    }
+
+    private fun shouldIgnorePrintableSoftKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
+            return false
+        }
+        if (event.isPrintingKey) {
+            return true
+        }
+        val unicode = event.unicodeChar
+        return unicode > 0 && !Character.isISOControl(unicode)
     }
 
     private fun shouldDelaySoftKeyRelease(androidKeyCode: Int, target: SoftKeyboardTarget): Boolean {

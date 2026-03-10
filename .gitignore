@@ -43,3 +43,53 @@ app/src/main/assets/components/jre
 
 # generated patch build outputs
 patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class
+/app/$out/sts-jvm-logs-export-20260304-204350.zip
+/app/$outDir/sts-jvm-logs-export-20260304-171409.zip
+/app/$outDir/sts-jvm-logs-export-20260306-002405.zip
+/app/debug-artifacts/blackscreen-investigate-20260304_204302/sts_t6.png
+/app/debug-artifacts/blackscreen-investigate-20260304_204302/sts_t14.png
+/app/debug-artifacts/blackscreen-investigate-20260304_204302/sts_t24.png
+/app/debug-artifacts/blackscreen-investigate-20260304_204302/sts_t_now.png
+/app/debug-artifacts/blackscreen-investigate-20260304_204302/sts_t_now8.png
+/app/debug-artifacts/blackscreen-investigate-20260304_204302/sts_t_now16.png
+/app/debug-artifacts/ots-5a-strategy-check/sts-jvm-logs-export-20260304-183836.zip
+/app/debug-artifacts/ots-check-20260304-181232/loop1/sts-jvm-logs-export-20260304-181335.zip
+/app/debug-artifacts/ots-check-20260304-181232/loop2/sts-jvm-logs-export-20260304-181427.zip
+/app/debug-artifacts/ots-check-20260304-181232/loop3/sts-jvm-logs-export-20260304-181520.zip
+/app/debug-artifacts/ots-check-20260304-181232/sts-later.png
+/app/debug-artifacts/ots-check-20260304-181232/sts-now.png
+/app/debug-artifacts/ots-postfix-check/sts-jvm-logs-export-20260304-182106.zip
+/app/debug-artifacts/sts-check-20260304-1716/sts-jvm-logs-export-20260304-171528.zip
+/app/debug-artifacts/sts-diagnose/sts-jvm-logs-export-20260305-143054.zip
+/app/debug-artifacts/sts-ots-loop1/sts-jvm-logs-export-20260304-180117.zip
+/app/debug-artifacts/sts-5a-strategy.png
+/app/debug-artifacts/sts-postfix-50s.png
+/app/debug-artifacts/sts-snap-18s.png
+/app/app/debug-artifacts/sts-ots-loop1-r2/sts-jvm-logs-export-20260304-180515.zip
+/app/app/debug-artifacts/sts-ots-loop2-r2/sts-jvm-logs-export-20260304-180628.zip
+/app/app/debug-artifacts/sts-ots-loop3-r2/sts-jvm-logs-export-20260304-180738.zip
+
+# local Codex/tool workspace state
+/.codex/
+/.codex_tmp/
+
+# local Java compile outputs
+/boot-bridge/bin/
+/gradle/build-logic/bin/
+/patches/gdx-patch/bin/
+
+# extracted mod/workshop contents at repo root
+/Fabricate/
+/META-INF/
+/ModTheSpire.json
+/audio/
+/effects/
+/images/
+/localization/
+/org/
+/pinacolada/
+
+# local debug bundles and packaged artifacts
+/debug-artifacts/
+/tmp-feedback-smoke/
+/cloud-function*.zip
