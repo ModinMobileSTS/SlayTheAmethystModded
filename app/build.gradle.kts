@@ -182,6 +182,11 @@ androidComponents.onVariants { variant ->
 val patchProjectPaths = listOf(
     ":patches:gdx-patch"
 )
+val log4jRuntimeComponents by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isVisible = false
+}
 val adb: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
 val runtimePackZip: RegularFile = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
 val gdxVideoNativeAssetFiles = listOf(
@@ -213,6 +218,11 @@ val logsDir: String = readGradleProperty("logsDir")
 val feedbackApiKey: String = readGradleProperty("feedback.apiKey")
 require(launchMode in supportedLaunchModes) {
     "Unsupported launchMode: $launchMode. Supported: ${supportedLaunchModes.joinToString(", ")}"
+}
+
+dependencies {
+    add(log4jRuntimeComponents.name, libs.log4j.api)
+    add(log4jRuntimeComponents.name, libs.log4j.core)
 }
 
 private fun adbCommand(
@@ -254,6 +264,30 @@ val installGdxVideoNatives by tasks.registering(Sync::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_video_natives") })
 }
 
+val installLog4jRuntimeAssets by tasks.registering(Sync::class) {
+    from(log4jRuntimeComponents) {
+        include("log4j-api-*.jar")
+        rename { "log4j-api.jar" }
+    }
+    from(log4jRuntimeComponents) {
+        include("log4j-core-*.jar")
+        rename { "log4j-core.jar" }
+    }
+    into(generatedRuntimeAssetsDir.map { it.dir("components/log4j_runtime") })
+    doLast {
+        val outputDir = generatedRuntimeAssetsDir.get().dir("components/log4j_runtime").asFile
+        val requiredJars = listOf(
+            File(outputDir, "log4j-api.jar"),
+            File(outputDir, "log4j-core.jar")
+        )
+        requiredJars.forEach { jarFile ->
+            if (!jarFile.isFile || jarFile.length() <= 0L) {
+                throw GradleException("Missing packaged Log4j runtime asset: ${jarFile.absolutePath}")
+            }
+        }
+    }
+}
+
 val installRuntimePackAssets by tasks.registering(Sync::class) {
     doFirst {
         val runtimePackFile = runtimePackZip.asFile
@@ -274,6 +308,7 @@ tasks.preBuild.configure {
     dependsOn(installBootBridgeJar)
     dependsOn(installPatchJars)
     dependsOn(installGdxVideoNatives)
+    dependsOn(installLog4jRuntimeAssets)
     dependsOn(installRuntimePackAssets)
 }
 

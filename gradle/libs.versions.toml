@@ -13,6 +13,7 @@ bytehook = "1.1.1"
 kotlinx-serialization = "1.10.0"
 reorderable = "2.4.3"
 junit4 = "4.13.2"
+log4j = "2.17.0"
 
 [libraries]
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
@@ -32,6 +33,8 @@ androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecy
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
+log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
+log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "log4j" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

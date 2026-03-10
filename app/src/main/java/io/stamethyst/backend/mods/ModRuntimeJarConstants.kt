@@ -116,18 +116,6 @@ internal const val STS_PATCH_BUILD_PROPERTIES = "build.properties"
 internal const val STS_RESOURCE_SENTINEL = "build.properties"
 internal const val BASEMOD_RESOURCE_SENTINEL =
     "localization/basemod/eng/customMods.json"
-internal const val LOG4J_PROVIDER_SERVICE_SENTINEL =
-    "META-INF/services/org.apache.logging.log4j.spi.Provider"
-internal const val LOG4J_PLUGIN_CACHE_SENTINEL =
-    "META-INF/org/apache/logging/log4j/core/config/plugins/Log4j2Plugins.dat"
-
-internal val REQUIRED_LOG4J_CLASSES: Set<String> = HashSet(
-    listOf(
-        "org/apache/logging/log4j/LogManager.class",
-        "org/apache/logging/log4j/core/LoggerContext.class",
-        "org/apache/logging/log4j/core/config/Configurator.class"
-    )
-)
 
 internal const val COMPAT_LOG_PREFIX = "[compat] "
 

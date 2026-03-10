@@ -54,7 +54,6 @@ object MtsClasspathWarmupCoordinator {
             return false
         }
         return ModClasspathJarBuilder.hasRequiredGdxApi(RuntimePaths.mtsGdxApiJar(context)) &&
-            ModClasspathJarBuilder.hasRequiredLog4jRuntime(RuntimePaths.mtsLog4jRuntimeJar(context)) &&
             ModClasspathJarBuilder.hasRequiredResource(
                 RuntimePaths.mtsStsResourcesJar(context),
                 STS_RESOURCE_SENTINEL

@@ -2,10 +2,10 @@ package io.stamethyst.backend.launch
 
 import android.content.Context
 import android.os.Build
-import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.AWTCanvasView
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
@@ -188,15 +188,21 @@ object StsLaunchSpec {
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
         args.add("-cp")
         if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
-            args.add(
-                RuntimePaths.bootBridgeJar(context).absolutePath +
-                    ":" + RuntimePaths.lwjglJar(context).absolutePath +
-                    ":" + RuntimePaths.mtsGdxApiJar(context).absolutePath +
-                    ":" + RuntimePaths.mtsLog4jRuntimeJar(context).absolutePath +
-                    ":" + RuntimePaths.mtsStsResourcesJar(context).absolutePath +
-                    ":" + RuntimePaths.mtsBaseModResourcesJar(context).absolutePath +
-                    ":" + RuntimePaths.importedMtsJar(context).absolutePath
+            val classpathEntries = arrayListOf(
+                RuntimePaths.bootBridgeJar(context).absolutePath,
+                RuntimePaths.lwjglJar(context).absolutePath,
+                RuntimePaths.mtsGdxApiJar(context).absolutePath
             )
+            if (RuntimePaths.bundledLog4jApiJar(context).isFile) {
+                classpathEntries.add(RuntimePaths.bundledLog4jApiJar(context).absolutePath)
+            }
+            if (RuntimePaths.bundledLog4jCoreJar(context).isFile) {
+                classpathEntries.add(RuntimePaths.bundledLog4jCoreJar(context).absolutePath)
+            }
+            classpathEntries.add(RuntimePaths.mtsStsResourcesJar(context).absolutePath)
+            classpathEntries.add(RuntimePaths.mtsBaseModResourcesJar(context).absolutePath)
+            classpathEntries.add(RuntimePaths.importedMtsJar(context).absolutePath)
+            args.add(classpathEntries.joinToString(":"))
             args.add("io.stamethyst.bridge.BootBridgeLauncher")
             // Prevent ModTheSpire from attempting desktop-style self-restart via jre1.8.0_51
             // and exiting the Android process immediately.

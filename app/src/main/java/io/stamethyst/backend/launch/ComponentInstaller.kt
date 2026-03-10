@@ -101,7 +101,14 @@ object ComponentInstaller {
             copyAssetTree(assets, GDX_VIDEO_NATIVE_ASSET_DIR, RuntimePaths.gdxPatchNativesDir(context))
         }
         throwIfInterrupted()
-        reportProgress(progressCallback, 55, "Installing Caciocavallo runtime...")
+        reportProgress(progressCallback, 60, "Installing bundled Log4j runtime...")
+        replaceAssetTree(
+            assets,
+            "components/log4j_runtime",
+            RuntimePaths.bundledLog4jRuntimeDir(context)
+        )
+        throwIfInterrupted()
+        reportProgress(progressCallback, 70, "Installing Caciocavallo runtime...")
         replaceAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
     }
 
@@ -391,6 +398,11 @@ object ComponentInstaller {
             return false
         }
         if (!RuntimePaths.gdxPatchJar(context).isFile) {
+            return false
+        }
+        if (!RuntimePaths.bundledLog4jApiJar(context).isFile ||
+            !RuntimePaths.bundledLog4jCoreJar(context).isFile
+        ) {
             return false
         }
         if (!File(RuntimePaths.cacioDir(context), "version").isFile) {

@@ -67,10 +67,16 @@ object RuntimePaths {
     fun mtsBaseModResourcesJar(context: Context): File = File(stsRoot(context), "mts-basemod-resources.jar")
 
     @JvmStatic
-    fun mtsLog4jRuntimeJar(context: Context): File = File(stsRoot(context), "mts-log4j-runtime.jar")
+    fun mtsGdxBridgeJar(context: Context): File = File(stsRoot(context), "mts-gdx-bridge.jar")
 
     @JvmStatic
-    fun mtsGdxBridgeJar(context: Context): File = File(stsRoot(context), "mts-gdx-bridge.jar")
+    fun bundledLog4jRuntimeDir(context: Context): File = File(componentRoot(context), "log4j_runtime")
+
+    @JvmStatic
+    fun bundledLog4jApiJar(context: Context): File = File(bundledLog4jRuntimeDir(context), "log4j-api.jar")
+
+    @JvmStatic
+    fun bundledLog4jCoreJar(context: Context): File = File(bundledLog4jRuntimeDir(context), "log4j-core.jar")
 
     @JvmStatic
     fun mtsLocalJreDir(context: Context): File = File(stsRoot(context), "jre")
@@ -289,6 +295,7 @@ object RuntimePaths {
         bootBridgeDir(context).mkdirs()
         gdxPatchDir(context).mkdirs()
         gdxPatchNativesDir(context).mkdirs()
+        bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         runtimeRoot(context).mkdirs()
     }
