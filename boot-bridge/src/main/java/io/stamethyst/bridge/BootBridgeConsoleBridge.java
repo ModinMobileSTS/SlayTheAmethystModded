@@ -5,30 +5,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 
 final class BootBridgeConsoleBridge {
-    private static final String[] READY_HINT_FRAGMENTS = new String[]{
-            "basemod.basemod> publishaddcustommodemods",
-            "stats.statsscreen> loading character stats.",
-            "core.displayconfig> displayconfig successfully read.",
-            "characters.charactermanager> successfully recreated"
-    };
-
-    private static final PhaseRule[] PHASE_RULES = new PhaseRule[]{
-            PhaseRule.startsWith("Searching for workshop items", 30),
-            PhaseRule.startsWith("Begin patching", 36),
-            PhaseRule.startsWith("Patching enums", 44),
-            PhaseRule.startsWith("Finding core patches", 52),
-            PhaseRule.startsWith("Finding patches", 60),
-            PhaseRule.startsWith("Busting enums", 72),
-            PhaseRule.startsWith("Setting isModded = true", 80),
-            PhaseRule.startsWith("Adding ModTheSpire to version", 84),
-            PhaseRule.startsWith("Initializing mods", 90),
-            PhaseRule.startsWith("Starting game", 93),
-            PhaseRule.contains("DesktopLauncher> Launching application", 95),
-            PhaseRule.contains("CardCrawlGame> No migration", 96)
-    };
 
     private BootBridgeConsoleBridge() {
     }
@@ -51,80 +29,23 @@ final class BootBridgeConsoleBridge {
     }
 
     private static void onConsoleLine(String rawLine, boolean isErrorStream, BootBridgeReporter reporter) {
-        String line = normalizeConsoleLine(rawLine);
+        String line = BootBridgePhaseMapper.normalize(rawLine);
         if (line.isEmpty()) {
             return;
         }
 
         if (isErrorStream && line.startsWith("ERROR:")) {
-            reporter.fail("MTS: " + line);
+            reporter.fail(BootBridgePhaseMapper.encodeConsoleError(line));
             return;
         }
 
-        int mappedPercent = mapConsolePhase(line);
-        if (mappedPercent >= 0) {
-            reporter.phase(mappedPercent, line);
+        BootBridgePhaseMapper.PhaseMatch match = BootBridgePhaseMapper.matchPhase(line);
+        if (match != null) {
+            reporter.phase(match.progress, match.message);
         }
-        if (isReadyConsoleLine(line)) {
+        if (BootBridgePhaseMapper.isReadyConsoleLine(line)) {
             reporter.markConsoleReadyHint();
-            reporter.phase(97, "Console ready hint");
-        }
-    }
-
-    private static int mapConsolePhase(String line) {
-        String value = line.trim();
-        for (PhaseRule rule : PHASE_RULES) {
-            if (rule.matches(value)) {
-                return rule.progress;
-            }
-        }
-        return -1;
-    }
-
-    private static boolean isReadyConsoleLine(String line) {
-        String lower = line.toLowerCase(Locale.ROOT);
-        for (String fragment : READY_HINT_FRAGMENTS) {
-            if (lower.contains(fragment)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String normalizeConsoleLine(String line) {
-        if (line == null) {
-            return "";
-        }
-        return line.replace('\r', ' ')
-                .replace('\n', ' ')
-                .replace('\t', ' ')
-                .trim();
-    }
-
-    private static final class PhaseRule {
-        private final String text;
-        private final int progress;
-        private final boolean contains;
-
-        private PhaseRule(String text, int progress, boolean contains) {
-            this.text = text;
-            this.progress = progress;
-            this.contains = contains;
-        }
-
-        private static PhaseRule startsWith(String text, int progress) {
-            return new PhaseRule(text, progress, false);
-        }
-
-        private static PhaseRule contains(String text, int progress) {
-            return new PhaseRule(text, progress, true);
-        }
-
-        private boolean matches(String line) {
-            if (contains) {
-                return line.contains(text);
-            }
-            return line.startsWith(text);
+            reporter.phase(97, BootBridgeStartupMessage.key("main_menu_ready"));
         }
     }
 

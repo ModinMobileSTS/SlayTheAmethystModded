@@ -1,5 +1,8 @@
 package io.stamethyst.backend.mods
 
+import android.content.Context
+import io.stamethyst.R
+import io.stamethyst.backend.launch.progressText
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -10,10 +13,21 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlin.math.roundToInt
 
 internal object StsDesktopJarPatcher {
     @Throws(IOException::class)
-    fun ensurePatchedStsJar(stsJar: File?, patchJar: File?) {
+    fun ensurePatchedStsJar(
+        context: Context,
+        stsJar: File?,
+        patchJar: File?,
+        progressCallback: ModClasspathJarBuilder.BuildProgressCallback? = null
+    ) {
+        reportProgress(
+            progressCallback,
+            0,
+            context.progressText(R.string.startup_progress_patching_desktop_jar_for_mts)
+        )
         if (stsJar == null || !stsJar.isFile) {
             throw IOException("desktop-1.0.jar not found")
         }
@@ -21,20 +35,42 @@ internal object StsDesktopJarPatcher {
             throw IOException("gdx-patch.jar not found")
         }
 
+        reportProgress(
+            progressCallback,
+            6,
+            context.progressText(R.string.startup_progress_loading_desktop_patch_files)
+        )
         val patchEntries = loadPatchClassEntries(patchJar)
         if (!patchEntries.keys.containsAll(REQUIRED_STS_PATCH_CLASSES)) {
             throw IOException("gdx-patch.jar is missing required patched classes")
         }
+        reportProgress(
+            progressCallback,
+            12,
+            context.progressText(R.string.startup_progress_checking_desktop_patch_state)
+        )
         if (isStsPatched(stsJar, patchEntries)) {
+            reportProgress(
+                progressCallback,
+                100,
+                context.progressText(R.string.startup_progress_patched_desktop_jar_ready)
+            )
             return
         }
 
         val tempJar = File(stsJar.absolutePath + ".patching.tmp")
         val seenNames: MutableSet<String> = HashSet()
+        val sourceJarLength = stsJar.length().coerceAtLeast(1L)
+        var lastReportedPercent = -1
         FileInputStream(stsJar).use { fileInput ->
             ZipInputStream(fileInput).use { zipIn ->
                 FileOutputStream(tempJar, false).use { outputStream ->
                     ZipOutputStream(outputStream).use { zipOut ->
+                        reportProgress(
+                            progressCallback,
+                            16,
+                            context.progressText(R.string.startup_progress_rewriting_desktop_jar_for_mts)
+                        )
                         while (true) {
                             val entry = zipIn.nextEntry ?: break
                             val name = entry.name
@@ -55,6 +91,22 @@ internal object StsDesktopJarPatcher {
                             }
                             zipOut.closeEntry()
                             zipIn.closeEntry()
+                            val sourceProgress = ((fileInput.channel.position() * 100L) / sourceJarLength)
+                                .toInt()
+                                .coerceIn(1, 99)
+                            if (sourceProgress >= lastReportedPercent + 2) {
+                                lastReportedPercent = sourceProgress
+                                val mappedPercent = (18 + sourceProgress * 0.70f).roundToInt()
+                                    .coerceIn(18, 88)
+                                reportProgress(
+                                    progressCallback,
+                                    mappedPercent,
+                                    context.progressText(
+                                        R.string.startup_progress_rewriting_desktop_jar_for_mts_percent,
+                                        sourceProgress
+                                    )
+                                )
+                            }
                         }
 
                         for ((name, data) in patchEntries) {
@@ -71,6 +123,11 @@ internal object StsDesktopJarPatcher {
             }
         }
 
+        reportProgress(
+            progressCallback,
+            92,
+            context.progressText(R.string.startup_progress_verifying_patched_desktop_jar)
+        )
         if (!isStsPatched(tempJar, patchEntries)) {
             if (tempJar.exists()) {
                 tempJar.delete()
@@ -78,6 +135,11 @@ internal object StsDesktopJarPatcher {
             throw IOException("Failed to patch desktop-1.0.jar with gdx-patch classes")
         }
 
+        reportProgress(
+            progressCallback,
+            97,
+            context.progressText(R.string.startup_progress_finishing_desktop_jar_patch)
+        )
         if (stsJar.exists() && !stsJar.delete()) {
             throw IOException("Failed to replace ${stsJar.absolutePath}")
         }
@@ -85,6 +147,11 @@ internal object StsDesktopJarPatcher {
             throw IOException("Failed to move ${tempJar.absolutePath} -> ${stsJar.absolutePath}")
         }
         stsJar.setLastModified(System.currentTimeMillis())
+        reportProgress(
+            progressCallback,
+            100,
+            context.progressText(R.string.startup_progress_patched_desktop_jar_ready)
+        )
     }
 
     @Throws(IOException::class)
@@ -146,5 +213,13 @@ internal object StsDesktopJarPatcher {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun reportProgress(
+        progressCallback: ModClasspathJarBuilder.BuildProgressCallback?,
+        percent: Int,
+        message: String
+    ) {
+        progressCallback?.onProgress(percent.coerceIn(0, 100), message)
     }
 }

@@ -23,9 +23,7 @@ final class BootBridgeMtsProgressBridge {
                     int mtsPercent = readPercent(args[1]);
                     String stepMessage = readStepMessage(args[0]);
                     int mappedPercent = mapProgress(mtsPercent);
-                    String message = stepMessage.isEmpty()
-                            ? "MTS phase " + mtsPercent + "%"
-                            : "MTS: " + stepMessage;
+                    String message = BootBridgePhaseMapper.encodeStepMessage(stepMessage, mtsPercent);
                     reporter.phase(mappedPercent, message);
                 }
                 return null;
@@ -37,9 +35,9 @@ final class BootBridgeMtsProgressBridge {
                     handler
             );
             setListener.invoke(progressPublisher, listenerProxy);
-            reporter.phase(32, "Attached MTS progress bridge");
+            reporter.phase(32, BootBridgeStartupMessage.key("attaching_mts_progress_bridge"));
         } catch (Throwable error) {
-            reporter.phase(32, "MTS progress bridge unavailable: " + error.getClass().getSimpleName());
+            reporter.phase(32, BootBridgeStartupMessage.key("mts_progress_bridge_unavailable"));
         }
     }
 

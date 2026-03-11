@@ -14,7 +14,7 @@ public final class BootBridgeLauncher {
     public static void main(String[] args) throws Throwable {
         BootBridgeReporter reporter = new BootBridgeReporter(BootBridgeEventSink.fromSystemProperty());
         BootBridgeConsoleBridge.install(reporter);
-        reporter.phase(26, "Boot bridge started");
+        reporter.phase(26, BootBridgeStartupMessage.key("boot_bridge_started"));
         installUncaughtExceptionBridge(reporter);
         BootBridgeJvmMemoryWatcher.start(reporter);
         BootBridgeJvmHeapSnapshotWriter.startFromSystemProperty();
@@ -24,7 +24,7 @@ public final class BootBridgeLauncher {
         triggerForcedCrashIfRequested(reporter);
 
         String delegateClass = System.getProperty(PROP_DELEGATE, DEFAULT_DELEGATE);
-        reporter.phase(29, "Starting " + delegateClass);
+        reporter.phase(29, mapDelegateLaunchMessage(delegateClass));
         invokeDelegate(delegateClass, args, reporter);
     }
 
@@ -34,20 +34,32 @@ public final class BootBridgeLauncher {
             return;
         }
         RuntimeException crash = new RuntimeException("Forced JVM crash for diagnostics verification");
-        reporter.fail("Forced crash requested via " + PROP_FORCE_CRASH);
+        reporter.fail(BootBridgeStartupMessage.key("forced_crash_requested"));
         throw crash;
     }
 
     private static void installUncaughtExceptionBridge(BootBridgeReporter reporter) {
         final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            reporter.fail("Uncaught exception on " + thread.getName() + ": " + reporter.summarizeThrowable(throwable));
+            reporter.fail(
+                    BootBridgeStartupMessage.keyWithPayload(
+                            "uncaught_exception",
+                            reporter.summarizeThrowable(throwable)
+                    )
+            );
             if (previous != null) {
                 previous.uncaughtException(thread, throwable);
             } else if (throwable != null) {
                 throwable.printStackTrace(System.err);
             }
         });
+    }
+
+    private static String mapDelegateLaunchMessage(String delegateClass) {
+        if ("com.evacipated.cardcrawl.modthespire.Loader".equals(delegateClass)) {
+            return BootBridgeStartupMessage.key("launching_modthespire");
+        }
+        return BootBridgeStartupMessage.key("launching_game");
     }
 
     private static void invokeDelegate(String delegateClass, String[] args, BootBridgeReporter reporter) throws Throwable {
@@ -57,10 +69,20 @@ public final class BootBridgeLauncher {
             mainMethod.invoke(null, (Object) args);
         } catch (InvocationTargetException error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
-            reporter.fail("Delegate crashed: " + reporter.summarizeThrowable(cause));
+            reporter.fail(
+                    BootBridgeStartupMessage.keyWithPayload(
+                            "delegate_crashed",
+                            reporter.summarizeThrowable(cause)
+                    )
+            );
             throw cause;
         } catch (Throwable error) {
-            reporter.fail("Delegate start failed: " + reporter.summarizeThrowable(error));
+            reporter.fail(
+                    BootBridgeStartupMessage.keyWithPayload(
+                            "delegate_start_failed",
+                            reporter.summarizeThrowable(error)
+                    )
+            );
             throw error;
         }
     }

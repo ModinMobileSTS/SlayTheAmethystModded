@@ -5,6 +5,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.content.res.AssetManager
+import io.stamethyst.R
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.config.RuntimePaths
@@ -54,23 +55,43 @@ object ComponentInstaller {
 
         throwIfInterrupted()
         if (arePackagedComponentsCurrent(context, assets, packagedComponentsMarker)) {
-            reportProgress(progressCallback, 72, "Launcher components already up to date")
+            reportProgress(
+                progressCallback,
+                72,
+                context.progressText(R.string.startup_progress_launcher_components_already_up_to_date)
+            )
         } else {
             installPackagedComponents(context, assets, progressCallback)
             writeInstallMarker(componentInstallMarkerFile(context), packagedComponentsMarker)
         }
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 72, "Installing bundled mods...")
+        reportProgress(
+            progressCallback,
+            72,
+            context.progressText(R.string.startup_progress_installing_bundled_mods)
+        )
         installBundledMods(assets, context)
         throwIfInterrupted()
-        reportProgress(progressCallback, 87, "Preparing local java shim...")
+        reportProgress(
+            progressCallback,
+            87,
+            context.progressText(R.string.startup_progress_preparing_local_java_shim)
+        )
         ensureMtsLocalJreShim(context)
         throwIfInterrupted()
-        reportProgress(progressCallback, 96, "Checking default preferences...")
+        reportProgress(
+            progressCallback,
+            96,
+            context.progressText(R.string.startup_progress_checking_default_preferences)
+        )
         ensureDefaultPreferencesIfMissing(assets, context)
         throwIfInterrupted()
-        reportProgress(progressCallback, 100, "Components ready")
+        reportProgress(
+            progressCallback,
+            100,
+            context.progressText(R.string.startup_progress_components_ready)
+        )
     }
 
     @Throws(IOException::class)
@@ -80,36 +101,64 @@ object ComponentInstaller {
         progressCallback: StartupProgressCallback?
     ) {
         throwIfInterrupted()
-        reportProgress(progressCallback, 5, "Installing LWJGL bridge...")
+        reportProgress(
+            progressCallback,
+            5,
+            context.progressText(R.string.startup_progress_installing_lwjgl_bridge)
+        )
         replaceAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context))
         throwIfInterrupted()
-        reportProgress(progressCallback, 15, "Installing startup bridge...")
+        reportProgress(
+            progressCallback,
+            15,
+            context.progressText(R.string.startup_progress_installing_startup_bridge)
+        )
         replaceAssetTree(assets, "components/boot_bridge", RuntimePaths.bootBridgeDir(context))
         throwIfInterrupted()
-        reportProgress(progressCallback, 25, "Installing LWJGL2 injector...")
+        reportProgress(
+            progressCallback,
+            25,
+            context.progressText(R.string.startup_progress_installing_lwjgl2_injector)
+        )
         replaceAssetTree(
             assets,
             "components/lwjgl2_methods_injector",
             RuntimePaths.lwjgl2InjectorDir(context)
         )
         throwIfInterrupted()
-        reportProgress(progressCallback, 40, "Installing gdx patches...")
+        reportProgress(
+            progressCallback,
+            40,
+            context.progressText(R.string.startup_progress_installing_gdx_patches)
+        )
         replaceAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
         removeLegacyCompatArtifacts(RuntimePaths.gdxPatchDir(context))
         throwIfInterrupted()
-        reportProgress(progressCallback, 48, "Installing gdx video natives...")
+        reportProgress(
+            progressCallback,
+            48,
+            context.progressText(R.string.startup_progress_installing_gdx_video_natives)
+        )
         if (hasAssetChildren(assets, GDX_VIDEO_NATIVE_ASSET_DIR)) {
             copyAssetTree(assets, GDX_VIDEO_NATIVE_ASSET_DIR, RuntimePaths.gdxPatchNativesDir(context))
         }
         throwIfInterrupted()
-        reportProgress(progressCallback, 60, "Installing bundled Log4j runtime...")
+        reportProgress(
+            progressCallback,
+            60,
+            context.progressText(R.string.startup_progress_installing_bundled_log4j_runtime)
+        )
         replaceAssetTree(
             assets,
             "components/log4j_runtime",
             RuntimePaths.bundledLog4jRuntimeDir(context)
         )
         throwIfInterrupted()
-        reportProgress(progressCallback, 70, "Installing Caciocavallo runtime...")
+        reportProgress(
+            progressCallback,
+            70,
+            context.progressText(R.string.startup_progress_installing_caciocavallo_runtime)
+        )
         replaceAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
     }
 

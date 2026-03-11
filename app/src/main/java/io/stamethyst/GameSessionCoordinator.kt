@@ -3,6 +3,7 @@ package io.stamethyst
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.TextView
+import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.JvmLaunchController
@@ -287,7 +288,15 @@ internal class GameSessionCoordinator(
             activity.runOnUiThread { activity.finish() }
             return
         }
-        val message = "${throwable.javaClass.simpleName}: ${throwable.message}"
+        val detail = buildString {
+            append(throwable.javaClass.simpleName)
+            val throwableMessage = throwable.message?.trim().orEmpty()
+            if (throwableMessage.isNotEmpty()) {
+                append(": ")
+                append(throwableMessage)
+            }
+        }
+        val message = activity.progressText(R.string.startup_failure_launch_failed_with_detail, detail)
         activity.runOnUiThread { reportCrashAndReturn(-1, false, message) }
     }
 
@@ -338,7 +347,7 @@ internal class GameSessionCoordinator(
         updatePerformanceOverlayVisibility()
         BackExitNotice.markExpectedBackExit(activity)
 
-        bootOverlayController.updateProgress(100, "Stopping game...")
+        bootOverlayController.updateProgress(100, activity.progressText(R.string.startup_progress_stopping_game))
 
         jvmLaunchController.interrupt()
 

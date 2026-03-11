@@ -44,7 +44,7 @@ final class BootBridgeGameStateWatcher {
                 if (isReadyGameState(snapshot)) {
                     readyTicks += 1;
                     if (readyTicks >= READY_CONFIRM_TICKS) {
-                        reporter.ready("Game state ready: " + describeSnapshot(snapshot));
+                        reporter.ready(BootBridgeStartupMessage.key("game_ready"));
                         return;
                     }
                 } else {
@@ -53,7 +53,7 @@ final class BootBridgeGameStateWatcher {
 
                 if ("SPLASH".equals(snapshot.modeName)) {
                     if (!splashSignaled && isSplashLogoVisible(snapshot)) {
-                        reporter.splash(buildSplashMessage(snapshot));
+                        reporter.splash(BootBridgeStartupMessage.key("game_splash"));
                         splashSignaled = true;
                     }
                 } else {
@@ -61,9 +61,9 @@ final class BootBridgeGameStateWatcher {
                 }
 
                 if ("CHAR_SELECT".equals(snapshot.modeName) && snapshot.hasMainMenuScreen) {
-                    String screen = snapshot.menuScreenName.isEmpty() ? "unknown" : snapshot.menuScreenName;
+                    String screen = snapshot.menuScreenName == null ? "" : snapshot.menuScreenName;
                     if (!screen.equals(lastMainMenuScreen)) {
-                        reporter.phase(97, "Main menu scene: " + screen);
+                        reporter.phase(97, BootBridgeStartupMessage.key("main_menu_ready"));
                         lastMainMenuScreen = screen;
                     }
                 } else {
@@ -73,7 +73,7 @@ final class BootBridgeGameStateWatcher {
                 readyTicks = 0;
                 reflectionFailureTicks += 1;
                 if (reporter.hasConsoleReadyHint() && reflectionFailureTicks >= CONSOLE_FALLBACK_FAIL_TICKS) {
-                    reporter.ready("Startup reached interactive phase (console fallback)");
+                    reporter.ready(BootBridgeStartupMessage.key("game_ready"));
                     return;
                 }
             }
@@ -113,34 +113,6 @@ final class BootBridgeGameStateWatcher {
             return true;
         }
         return snapshot.splashLogoAlpha >= SPLASH_VISIBLE_ALPHA_THRESHOLD;
-    }
-
-    private static String buildSplashMessage(BootBridgeGameStateProbe.Snapshot snapshot) {
-        if (snapshot == null) {
-            return "Game splash";
-        }
-        String phase = snapshot.splashPhaseName == null ? "" : snapshot.splashPhaseName;
-        if (phase.isEmpty()) {
-            return "Game splash";
-        }
-        if (Float.isNaN(snapshot.splashLogoAlpha)) {
-            return "Game splash: phase=" + phase;
-        }
-        int alphaPercent = Math.round(snapshot.splashLogoAlpha * 100f);
-        return "Game splash: phase=" + phase + ", alpha=" + alphaPercent + "%";
-    }
-
-    private static String describeSnapshot(BootBridgeGameStateProbe.Snapshot snapshot) {
-        if (snapshot == null) {
-            return "unknown";
-        }
-        String mode = snapshot.modeName == null || snapshot.modeName.isEmpty()
-                ? "unknown"
-                : snapshot.modeName;
-        String menu = snapshot.menuScreenName == null || snapshot.menuScreenName.isEmpty()
-                ? "n/a"
-                : snapshot.menuScreenName;
-        return "mode=" + mode + ", mainMenu=" + snapshot.hasMainMenuScreen + ", screen=" + menu;
     }
 
     private static void sleepQuietly(long ms) {

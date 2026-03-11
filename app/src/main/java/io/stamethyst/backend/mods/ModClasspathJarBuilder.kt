@@ -1,5 +1,8 @@
 package io.stamethyst.backend.mods
 
+import android.content.Context
+import io.stamethyst.R
+import io.stamethyst.backend.launch.progressText
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -17,47 +20,58 @@ internal object ModClasspathJarBuilder {
         fun onProgress(percent: Int, message: String)
     }
 
+    private enum class ClasspathJarKind(val labelResId: Int) {
+        GDX_API(R.string.startup_progress_label_gdx_api_classpath),
+        STS_RESOURCES(R.string.startup_progress_label_sts_resources_classpath),
+        BASEMOD_RESOURCES(R.string.startup_progress_label_basemod_resources_classpath)
+    }
+
     @Throws(IOException::class)
     fun ensureStsResourceJar(
+        context: Context,
         stsJar: File?,
         targetJar: File?,
         progressCallback: BuildProgressCallback? = null
     ) {
         ensureResourceJar(
+            context = context,
             sourceJar = stsJar,
             targetJar = targetJar,
             requiredEntry = STS_RESOURCE_SENTINEL,
-            label = "STS",
+            kind = ClasspathJarKind.STS_RESOURCES,
             progressCallback = progressCallback
         )
     }
 
     @Throws(IOException::class)
     fun ensureBaseModResourceJar(
+        context: Context,
         baseModJar: File?,
         targetJar: File?,
         progressCallback: BuildProgressCallback? = null
     ) {
         ensureResourceJar(
+            context = context,
             sourceJar = baseModJar,
             targetJar = targetJar,
             requiredEntry = BASEMOD_RESOURCE_SENTINEL,
-            label = "BaseMod",
+            kind = ClasspathJarKind.BASEMOD_RESOURCES,
             progressCallback = progressCallback
         )
     }
 
     @Throws(IOException::class)
-    fun ensureResourceJar(
+    private fun ensureResourceJar(
+        context: Context,
         sourceJar: File?,
         targetJar: File?,
         requiredEntry: String,
-        label: String,
+        kind: ClasspathJarKind,
         progressCallback: BuildProgressCallback? = null
     ) {
-        reportProgress(progressCallback, 0, "Checking $label resources classpath jar...")
+        reportProgress(progressCallback, 0, checkingMessage(context, kind))
         if (sourceJar == null || !sourceJar.isFile) {
-            throw IOException("$label jar not found")
+            throw IOException("${classpathLabel(context, kind)} jar not found")
         }
         if (targetJar == null) {
             throw IOException("Target jar is null")
@@ -67,7 +81,7 @@ internal object ModClasspathJarBuilder {
             targetJar.lastModified() >= sourceJar.lastModified() &&
             hasRequiredResource(targetJar, requiredEntry)
         ) {
-            reportProgress(progressCallback, 100, "$label resources classpath jar ready")
+            reportProgress(progressCallback, 100, readyMessage(context, kind))
             return
         }
 
@@ -86,7 +100,7 @@ internal object ModClasspathJarBuilder {
                 FileOutputStream(tempJar, false).use { outputStream ->
                     ZipOutputStream(outputStream).use { zipOut ->
                         zipOut.setLevel(Deflater.BEST_SPEED)
-                        reportProgress(progressCallback, 1, "Building $label resources classpath jar...")
+                        reportProgress(progressCallback, 1, buildingMessage(context, kind))
                         while (true) {
                             val entry = zipIn.nextEntry ?: break
                             val name = entry.name
@@ -115,7 +129,7 @@ internal object ModClasspathJarBuilder {
                                 reportProgress(
                                     progressCallback,
                                     sourceProgress,
-                                    "Building $label resources classpath jar... $sourceProgress%"
+                                    buildingPercentMessage(context, kind, sourceProgress)
                                 )
                             }
                         }
@@ -128,7 +142,7 @@ internal object ModClasspathJarBuilder {
             if (tempJar.exists()) {
                 tempJar.delete()
             }
-            throw IOException("Failed to build $label resources classpath jar")
+            throw IOException("Failed to build ${classpathLabel(context, kind)} jar")
         }
 
         if (targetJar.exists() && !targetJar.delete()) {
@@ -138,7 +152,7 @@ internal object ModClasspathJarBuilder {
             throw IOException("Failed to move ${tempJar.absolutePath} -> ${targetJar.absolutePath}")
         }
         targetJar.setLastModified(sourceJar.lastModified())
-        reportProgress(progressCallback, 100, "$label resources classpath jar ready")
+        reportProgress(progressCallback, 100, readyMessage(context, kind))
     }
 
     fun hasRequiredResource(jarFile: File?, requiredEntry: String?): Boolean {
@@ -154,11 +168,12 @@ internal object ModClasspathJarBuilder {
 
     @Throws(IOException::class)
     fun ensureGdxApiJar(
+        context: Context,
         stsJar: File?,
         targetJar: File?,
         progressCallback: BuildProgressCallback? = null
     ) {
-        reportProgress(progressCallback, 0, "Checking gdx API classpath jar...")
+        reportProgress(progressCallback, 0, checkingMessage(context, ClasspathJarKind.GDX_API))
         if (stsJar == null || !stsJar.isFile) {
             throw IOException("desktop-1.0.jar not found")
         }
@@ -170,7 +185,7 @@ internal object ModClasspathJarBuilder {
             targetJar.lastModified() >= stsJar.lastModified() &&
             hasRequiredGdxApi(targetJar)
         ) {
-            reportProgress(progressCallback, 100, "gdx API classpath jar ready")
+            reportProgress(progressCallback, 100, readyMessage(context, ClasspathJarKind.GDX_API))
             return
         }
 
@@ -184,7 +199,7 @@ internal object ModClasspathJarBuilder {
         ZipFile(stsJar).use { zipFile ->
             FileOutputStream(tempJar, false).use { outputStream ->
                 ZipOutputStream(outputStream).use { zipOut ->
-                    reportProgress(progressCallback, 5, "Building gdx API classpath jar...")
+                    reportProgress(progressCallback, 5, buildingMessage(context, ClasspathJarKind.GDX_API))
                     REQUIRED_GDX_CLASSES.forEach { classEntry ->
                         val entry = zipFile.getEntry(classEntry) ?: return@forEach
                         if (entry.isDirectory) {
@@ -219,7 +234,7 @@ internal object ModClasspathJarBuilder {
             throw IOException("Failed to move ${tempJar.absolutePath} -> ${targetJar.absolutePath}")
         }
         targetJar.setLastModified(stsJar.lastModified())
-        reportProgress(progressCallback, 100, "gdx API classpath jar ready")
+        reportProgress(progressCallback, 100, readyMessage(context, ClasspathJarKind.GDX_API))
     }
 
     fun hasRequiredGdxApi(jarFile: File?): Boolean {
@@ -356,5 +371,38 @@ internal object ModClasspathJarBuilder {
         message: String
     ) {
         progressCallback?.onProgress(percent.coerceIn(0, 100), message)
+    }
+
+    private fun classpathLabel(context: Context, kind: ClasspathJarKind): String {
+        return context.progressText(kind.labelResId)
+    }
+
+    private fun checkingMessage(context: Context, kind: ClasspathJarKind): String {
+        return context.progressText(
+            R.string.startup_progress_checking_classpath_jar,
+            classpathLabel(context, kind)
+        )
+    }
+
+    private fun buildingMessage(context: Context, kind: ClasspathJarKind): String {
+        return context.progressText(
+            R.string.startup_progress_building_classpath_jar,
+            classpathLabel(context, kind)
+        )
+    }
+
+    private fun buildingPercentMessage(context: Context, kind: ClasspathJarKind, percent: Int): String {
+        return context.progressText(
+            R.string.startup_progress_building_classpath_jar_percent,
+            classpathLabel(context, kind),
+            percent.coerceIn(0, 100)
+        )
+    }
+
+    private fun readyMessage(context: Context, kind: ClasspathJarKind): String {
+        return context.progressText(
+            R.string.startup_progress_classpath_jar_ready,
+            classpathLabel(context, kind)
+        )
     }
 }

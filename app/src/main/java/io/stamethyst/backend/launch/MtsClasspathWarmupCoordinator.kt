@@ -1,6 +1,7 @@
 package io.stamethyst.backend.launch
 
 import android.content.Context
+import io.stamethyst.R
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModClasspathJarBuilder
 import io.stamethyst.backend.mods.ModManager
@@ -20,22 +21,42 @@ object MtsClasspathWarmupCoordinator {
             return false
         }
 
-        reportProgress(progressCallback, 0, "Preparing MTS startup cache...")
+        reportProgress(
+            progressCallback,
+            0,
+            context.progressText(R.string.startup_progress_preparing_mts_startup_cache)
+        )
         ComponentInstaller.ensureInstalled(
             context,
             mapProgressRange(progressCallback, 1, 40)
         )
-        reportProgress(progressCallback, 42, "Validating desktop-1.0.jar...")
+        reportProgress(
+            progressCallback,
+            42,
+            context.progressText(R.string.startup_progress_validating_desktop_jar)
+        )
         StsJarValidator.validate(RuntimePaths.importedStsJar(context))
-        reportProgress(progressCallback, 45, "Preparing MTS classpath cache...")
+        reportProgress(
+            progressCallback,
+            45,
+            context.progressText(R.string.startup_progress_preparing_mts_classpath_cache)
+        )
         ModJarSupport.prepareMtsClasspath(
             context,
             mapProgressRange(progressCallback, 45, 94)
         )
-        reportProgress(progressCallback, 96, "Resolving enabled mod launch list...")
+        reportProgress(
+            progressCallback,
+            96,
+            context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
+        )
         ModManager.resolveLaunchModIds(context)
         writeCacheMarker(context)
-        reportProgress(progressCallback, 100, "MTS startup cache ready")
+        reportProgress(
+            progressCallback,
+            100,
+            context.progressText(R.string.startup_progress_mts_startup_cache_ready)
+        )
         return true
     }
 

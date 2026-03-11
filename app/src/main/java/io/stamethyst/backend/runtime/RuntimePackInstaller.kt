@@ -3,8 +3,10 @@ package io.stamethyst.backend.runtime
 import android.content.Context
 import android.content.res.AssetManager
 import android.system.Os
+import io.stamethyst.R
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.launch.StartupProgressCallback
+import io.stamethyst.backend.launch.progressText
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.tukaani.xz.XZInputStream
@@ -42,7 +44,11 @@ object RuntimePackInstaller {
     @Throws(IOException::class)
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()
-        reportProgress(progressCallback, 2, "Checking runtime pack...")
+        reportProgress(
+            progressCallback,
+            2,
+            context.progressText(R.string.startup_progress_checking_runtime_pack)
+        )
         RuntimePaths.ensureBaseDirs(context)
         val assets = context.assets
         val archArchive = resolveArchArchive(assets)
@@ -65,40 +71,72 @@ object RuntimePackInstaller {
                     ARCHIVE_AARCH64 == archArchive)
             val javaHome = locateJavaHome(runtimeRoot)
             if (markerMatched && javaHome != null && isRuntimeReady(javaHome)) {
-                reportProgress(progressCallback, 100, "Runtime pack already up to date")
+                reportProgress(
+                    progressCallback,
+                    100,
+                    context.progressText(R.string.startup_progress_runtime_pack_already_up_to_date)
+                )
                 return
             }
         }
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 10, "Preparing runtime directory...")
+        reportProgress(
+            progressCallback,
+            10,
+            context.progressText(R.string.startup_progress_preparing_runtime_directory)
+        )
         prepareCleanDirectory(runtimeRoot, "runtime root")
 
         val stagingDir = File(context.cacheDir, "runtime-staging")
         throwIfInterrupted()
-        reportProgress(progressCallback, 18, "Preparing runtime staging...")
+        reportProgress(
+            progressCallback,
+            18,
+            context.progressText(R.string.startup_progress_preparing_runtime_staging)
+        )
         prepareCleanDirectory(stagingDir, "staging directory")
 
         val requiredFiles = arrayOf(ARCHIVE_UNIVERSAL, archArchive, ARCHIVE_VERSION)
         throwIfInterrupted()
-        reportProgress(progressCallback, 26, "Copying runtime archives...")
+        reportProgress(
+            progressCallback,
+            26,
+            context.progressText(R.string.startup_progress_copying_runtime_archives)
+        )
         for (i in requiredFiles.indices) {
             throwIfInterrupted()
             val required = requiredFiles[i]
             copyAssetToFile(assets, "components/jre/$required", File(stagingDir, required))
             val copiedPercent = 26 + ((i + 1) * 14f / requiredFiles.size).roundToInt()
-            reportProgress(progressCallback, copiedPercent, "Copied $required")
+            reportProgress(
+                progressCallback,
+                copiedPercent,
+                context.progressText(R.string.startup_progress_copied_runtime_archive, required)
+            )
         }
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 42, "Extracting universal runtime...")
+        reportProgress(
+            progressCallback,
+            42,
+            context.progressText(R.string.startup_progress_extracting_universal_runtime)
+        )
         extractTarXz(File(stagingDir, ARCHIVE_UNIVERSAL), runtimeRoot)
         throwIfInterrupted()
-        reportProgress(progressCallback, 62, "Extracting architecture runtime...")
+        reportProgress(
+            progressCallback,
+            62,
+            context.progressText(R.string.startup_progress_extracting_architecture_runtime)
+        )
         extractTarXz(File(stagingDir, archArchive), runtimeRoot)
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 78, "Unpacking runtime pack200 files...")
+        reportProgress(
+            progressCallback,
+            78,
+            context.progressText(R.string.startup_progress_unpacking_runtime_pack200_files)
+        )
         unpackPack200Files(context, runtimeRoot, progressCallback)
 
         throwIfInterrupted()
@@ -107,7 +145,11 @@ object RuntimePackInstaller {
                 "Runtime install failed: libjli.so not found under ${runtimeRoot.absolutePath}"
             )
         throwIfInterrupted()
-        reportProgress(progressCallback, 92, "Finalizing runtime setup...")
+        reportProgress(
+            progressCallback,
+            92,
+            context.progressText(R.string.startup_progress_finalizing_runtime_setup)
+        )
         postPrepareRuntime(context, javaHome)
         if (!isRuntimeReady(javaHome)) {
             throw IOException(
@@ -116,9 +158,17 @@ object RuntimePackInstaller {
         }
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 98, "Writing runtime install marker...")
+        reportProgress(
+            progressCallback,
+            98,
+            context.progressText(R.string.startup_progress_writing_runtime_install_marker)
+        )
         Files.write(markerFile.toPath(), bundledMarker.toByteArray(StandardCharsets.UTF_8))
-        reportProgress(progressCallback, 100, "Runtime pack ready")
+        reportProgress(
+            progressCallback,
+            100,
+            context.progressText(R.string.startup_progress_runtime_pack_ready)
+        )
     }
 
     @JvmStatic
@@ -238,7 +288,12 @@ object RuntimePackInstaller {
             reportProgress(
                 progressCallback,
                 startPercent,
-                "Unpacking ${packFile.name} (${i + 1}/${packFiles.size})..."
+                context.progressText(
+                    R.string.startup_progress_unpacking_runtime_pack_file,
+                    packFile.name,
+                    i + 1,
+                    packFiles.size
+                )
             )
             val name = packFile.name
             val unpackedJar = File(packFile.parentFile, name.substring(0, name.length - ".pack".length))
@@ -266,7 +321,12 @@ object RuntimePackInstaller {
             reportProgress(
                 progressCallback,
                 endPercent,
-                "Unpacked ${packFile.name} (${i + 1}/${packFiles.size})"
+                context.progressText(
+                    R.string.startup_progress_unpacked_runtime_pack_file,
+                    packFile.name,
+                    i + 1,
+                    packFiles.size
+                )
             )
         }
     }

@@ -1,6 +1,7 @@
 package io.stamethyst.backend.launch
 
 import android.content.Context
+import io.stamethyst.R
 import io.stamethyst.backend.launch.ComponentInstaller
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
@@ -28,33 +29,61 @@ object LaunchPreparationService {
     @Throws(IOException::class)
     fun prepare(context: Context, launchMode: String, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()
-        reportProgress(progressCallback, 3, "Installing launcher components...")
+        reportProgress(
+            progressCallback,
+            3,
+            context.progressText(R.string.startup_progress_installing_launcher_components)
+        )
         ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 5, 35))
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 36, "Preparing Java runtime...")
+        reportProgress(
+            progressCallback,
+            36,
+            context.progressText(R.string.startup_progress_preparing_java_runtime)
+        )
         RuntimePackInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 36, 76))
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 78, "Ensuring runtime directories...")
+        reportProgress(
+            progressCallback,
+            78,
+            context.progressText(R.string.startup_progress_ensuring_runtime_directories)
+        )
         RuntimePaths.ensureBaseDirs(context)
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 86, "Validating desktop-1.0.jar...")
+        reportProgress(
+            progressCallback,
+            86,
+            context.progressText(R.string.startup_progress_validating_desktop_jar)
+        )
         StsJarValidator.validate(RuntimePaths.importedStsJar(context))
 
         if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
             throwIfInterrupted()
-            reportProgress(progressCallback, 90, "Validating required mod jars...")
+            reportProgress(
+                progressCallback,
+                90,
+                context.progressText(R.string.startup_progress_validating_required_mod_jars)
+            )
             ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
             ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(context))
             ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(context))
 
             throwIfInterrupted()
             if (MtsClasspathWarmupCoordinator.isCacheCurrent(context)) {
-                reportProgress(progressCallback, 95, "Using prepared MTS classpath cache...")
+                reportProgress(
+                    progressCallback,
+                    95,
+                    context.progressText(R.string.startup_progress_using_prepared_mts_classpath_cache)
+                )
             } else {
-                reportProgress(progressCallback, 95, "Preparing MTS classpath...")
+                reportProgress(
+                    progressCallback,
+                    95,
+                    context.progressText(R.string.startup_progress_preparing_mts_classpath)
+                )
                 ModJarSupport.prepareMtsClasspath(
                     context,
                     mapProgressRange(progressCallback, 95, 99)
@@ -62,12 +91,20 @@ object LaunchPreparationService {
                 MtsClasspathWarmupCoordinator.markPrepared(context)
             }
             throwIfInterrupted()
-            reportProgress(progressCallback, 99, "Resolving enabled mod launch list...")
+            reportProgress(
+                progressCallback,
+                99,
+                context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
+            )
             ModManager.resolveLaunchModIds(context)
         }
 
         throwIfInterrupted()
-        reportProgress(progressCallback, 100, "Launch preparation complete")
+        reportProgress(
+            progressCallback,
+            100,
+            context.progressText(R.string.startup_progress_launch_preparation_complete)
+        )
     }
 
     private fun mapProgressRange(
