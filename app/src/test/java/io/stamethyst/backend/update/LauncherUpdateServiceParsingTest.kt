@@ -31,6 +31,10 @@ class LauncherUpdateServiceParsingTest {
     @Test
     fun buildUrl_prefixesMirrorDownloadUrl() {
         assertEquals(
+            "https://gh-proxy.com/https://github.com/example/release.apk",
+            UpdateSource.GH_PROXY_COM.buildUrl("https://github.com/example/release.apk")
+        )
+        assertEquals(
             "https://ghproxy.vip/https://github.com/example/release.apk",
             UpdateSource.GH_PROXY_VIP.buildUrl("https://github.com/example/release.apk")
         )

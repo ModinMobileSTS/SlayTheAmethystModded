@@ -14,6 +14,14 @@ enum class UpdateSource(
     val supportsDownloadProxy: Boolean,
     val userSelectable: Boolean,
 ) {
+    GH_PROXY_COM(
+        id = "gh_proxy_com",
+        displayName = "gh-proxy.com",
+        proxyPrefix = "https://gh-proxy.com/",
+        supportsMetadataCheck = false,
+        supportsDownloadProxy = true,
+        userSelectable = true
+    ),
     GH_PROXY_VIP(
         id = "ghproxy_vip",
         displayName = "ghproxy.vip",
@@ -52,7 +60,7 @@ enum class UpdateSource(
     }
 
     companion object {
-        val DEFAULT_PREFERRED_USER_SOURCE: UpdateSource = GH_PROXY_VIP
+        val DEFAULT_PREFERRED_USER_SOURCE: UpdateSource = GH_PROXY_COM
 
         fun fromPersistedValue(value: String?): UpdateSource? {
             return entries.firstOrNull { it.id == value }
@@ -90,13 +98,13 @@ enum class UpdateSource(
         ): List<UpdateSource> {
             val preferred = normalizePreferredUserSource(preferredUserSource.id)
             val ordered = LinkedHashSet<UpdateSource>()
-            if (metadataSource.supportsDownloadProxy) {
-                ordered += metadataSource
-            }
             for (source in userSelectableSources()) {
                 if (source.supportsDownloadProxy && source == preferred) {
                     ordered += source
                 }
+            }
+            if (metadataSource.supportsDownloadProxy) {
+                ordered += metadataSource
             }
             for (source in userSelectableSources()) {
                 if (source.supportsDownloadProxy && source != preferred) {

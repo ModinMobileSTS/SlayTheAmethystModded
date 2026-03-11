@@ -20,6 +20,20 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         private const val TAG = "FeedbackIssueBrowser"
     }
 
+    enum class IssueStateFilter(val label: String) {
+        ALL("全部议题"),
+        OPEN_ONLY("只看进行中"),
+        CLOSED_ONLY("只看已解决");
+
+        fun matches(issue: FeedbackIssueBrowseItem): Boolean {
+            return when (this) {
+                ALL -> true
+                OPEN_ONLY -> !issue.isClosed
+                CLOSED_ONLY -> issue.isClosed
+            }
+        }
+    }
+
     data class UiState(
         val busy: Boolean = false,
         val busyMessage: String? = null,
@@ -27,8 +41,18 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         val issues: List<FeedbackIssueBrowseItem> = emptyList(),
         val nextPage: Int = 1,
         val hasMore: Boolean = true,
-        val initialLoaded: Boolean = false
-    )
+        val initialLoaded: Boolean = false,
+        val issueStateFilter: IssueStateFilter = IssueStateFilter.OPEN_ONLY
+    ) {
+        val visibleIssues: List<FeedbackIssueBrowseItem>
+            get() = issues.asSequence()
+                .filter(issueStateFilter::matches)
+                .sortedWith(
+                    compareByDescending<FeedbackIssueBrowseItem> { it.updatedAtMs }
+                        .thenByDescending { it.issueNumber }
+                )
+                .toList()
+    }
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -54,6 +78,13 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
             return
         }
         loadPage(host, reset = false)
+    }
+
+    fun onIssueStateFilterSelected(filter: IssueStateFilter) {
+        if (uiState.issueStateFilter == filter) {
+            return
+        }
+        uiState = uiState.copy(issueStateFilter = filter)
     }
 
     fun onSubscribe(host: Activity, issueNumber: Long) {

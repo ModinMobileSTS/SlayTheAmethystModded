@@ -7,6 +7,18 @@ import org.junit.Test
 
 class UpdateSourceOrderingTest {
     @Test
+    fun metadataCandidates_skipDownloadOnlyPreferredSource() {
+        assertEquals(
+            listOf(
+                UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_LLKK,
+                UpdateSource.OFFICIAL
+            ),
+            UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_COM)
+        )
+    }
+
+    @Test
     fun metadataCandidates_prioritizePreferredVipFirst() {
         assertEquals(
             listOf(
@@ -41,7 +53,7 @@ class UpdateSourceOrderingTest {
     @Test
     fun downloadCandidates_includeGhproxyNetBeforeOfficial() {
         val candidates = UpdateSource.downloadCandidates(
-            preferredUserSource = UpdateSource.GH_PROXY_VIP,
+            preferredUserSource = UpdateSource.GH_PROXY_COM,
             metadataSource = UpdateSource.GH_LLKK
         )
 
@@ -49,6 +61,23 @@ class UpdateSourceOrderingTest {
         assertTrue(
             candidates.indexOf(UpdateSource.GH_PROXY_NET) <
                 candidates.indexOf(UpdateSource.OFFICIAL)
+        )
+    }
+
+    @Test
+    fun downloadCandidates_prioritizePreferredSourceBeforeMetadataSource() {
+        assertEquals(
+            listOf(
+                UpdateSource.GH_PROXY_COM,
+                UpdateSource.GH_LLKK,
+                UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_PROXY_NET,
+                UpdateSource.OFFICIAL
+            ),
+            UpdateSource.downloadCandidates(
+                preferredUserSource = UpdateSource.GH_PROXY_COM,
+                metadataSource = UpdateSource.GH_LLKK
+            )
         )
     }
 }

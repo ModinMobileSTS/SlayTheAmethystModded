@@ -39,7 +39,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.backend.feedback.FeedbackCategory
@@ -144,6 +148,7 @@ fun LauncherFeedbackIssueBrowserScreen(
         onGoBack = navigator::goBack,
         onRefreshIssues = { browserViewModel.onRefresh(activity) },
         onLoadMoreIssues = { browserViewModel.onLoadMore(activity) },
+        onIssueStateFilterSelected = browserViewModel::onIssueStateFilterSelected,
         onFollowIssue = { issueNumber -> browserViewModel.onSubscribe(activity, issueNumber) }
     )
 }
@@ -265,6 +270,7 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
     onGoBack: () -> Unit = {},
     onRefreshIssues: () -> Unit = {},
     onLoadMoreIssues: () -> Unit = {},
+    onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit = {},
     onFollowIssue: (Long) -> Unit = {}
 ) {
     Scaffold(
@@ -290,6 +296,7 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
             followedIssueNumbers = followedIssueNumbers,
             onRefreshIssues = onRefreshIssues,
             onLoadMoreIssues = onLoadMoreIssues,
+            onIssueStateFilterSelected = onIssueStateFilterSelected,
             onFollowIssue = onFollowIssue
         )
     }
@@ -649,8 +656,10 @@ private fun FeedbackIssueBrowserContent(
     followedIssueNumbers: Set<Long>,
     onRefreshIssues: () -> Unit = {},
     onLoadMoreIssues: () -> Unit = {},
+    onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit = {},
     onFollowIssue: (Long) -> Unit = {}
 ) {
+    val visibleIssues = uiState.visibleIssues
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
@@ -672,7 +681,7 @@ private fun FeedbackIssueBrowserContent(
         item {
             FeedbackSectionCard(title = "仓库议题列表") {
                 Text(
-                    text = "这里会按最近更新时间显示当前仓库里的所有反馈议题。找到你想继续跟进的议题后，直接点“关注”即可。",
+                    text = "这里会按最近更新时间从新到旧显示当前仓库里的所有反馈议题，也可以按状态筛选。找到你想继续跟进的议题后，直接点“关注”即可。",
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedButton(
@@ -686,6 +695,18 @@ private fun FeedbackIssueBrowserContent(
 
         item {
             FeedbackSectionCard(title = "可关注的议题") {
+                Text(
+                    text = "筛选状态",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                FeedbackIssueBrowserViewModel.IssueStateFilter.values().forEach { filter ->
+                    FeedbackRadioRow(
+                        selected = uiState.issueStateFilter == filter,
+                        enabled = !uiState.busy && !uiState.loadingMore,
+                        text = filter.label,
+                        onClick = { onIssueStateFilterSelected(filter) }
+                    )
+                }
                 if (!uiState.initialLoaded && !uiState.busy) {
                     Text(
                         text = "正在准备议题列表...",
@@ -696,9 +717,18 @@ private fun FeedbackIssueBrowserContent(
                         text = "当前没有可展示的议题。",
                         style = MaterialTheme.typography.bodySmall
                     )
+                } else if (visibleIssues.isEmpty()) {
+                    Text(
+                        text = if (uiState.hasMore) {
+                            "当前筛选条件下还没有匹配的议题，可以继续加载更多或切换筛选。"
+                        } else {
+                            "当前筛选条件下没有匹配的议题。"
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        uiState.issues.forEachIndexed { index, issue ->
+                        visibleIssues.forEachIndexed { index, issue ->
                             if (index > 0) {
                                 HorizontalDivider()
                             }
@@ -770,11 +800,10 @@ private fun FeedbackSubscriptionRow(
             }
         }
         Text(
-            text = buildString {
-                append("#").append(subscription.issueNumber)
-                append(" · ")
-                append(if (subscription.isClosed) "已关闭" else "进行中")
-            },
+            text = buildFeedbackIssueMetaText(
+                issueNumber = subscription.issueNumber,
+                isClosed = subscription.isClosed
+            ),
             style = MaterialTheme.typography.bodySmall
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -821,15 +850,12 @@ private fun FeedbackIssueBrowserRow(
             }
         }
         Text(
-            text = buildString {
-                append("#").append(issue.issueNumber)
-                append(" · ")
-                append(if (issue.isClosed) "已关闭" else "进行中")
-                append(" · ")
-                append(formatFeedbackIssueListTime(issue.updatedAtMs))
-                append(" · ")
-                append(issue.commentCount).append(" 条评论")
-            },
+            text = buildFeedbackIssueMetaText(
+                issueNumber = issue.issueNumber,
+                isClosed = issue.isClosed,
+                updatedAtMs = issue.updatedAtMs,
+                commentCount = issue.commentCount
+            ),
             style = MaterialTheme.typography.bodySmall
         )
         if (issue.bodyPreview.isNotBlank()) {
@@ -1040,4 +1066,38 @@ private fun formatFeedbackIssueListTime(timestampMs: Long): String {
         return "未知时间"
     }
     return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestampMs))
+}
+
+private val FeedbackIssueResolvedColor = Color(0xFF2E7D32)
+private val FeedbackIssueInProgressColor = Color(0xFFC62828)
+
+private fun buildFeedbackIssueMetaText(
+    issueNumber: Long,
+    isClosed: Boolean,
+    updatedAtMs: Long? = null,
+    commentCount: Int? = null
+) = buildAnnotatedString {
+    append("#")
+    append(issueNumber.toString())
+    append(" · ")
+    withStyle(
+        SpanStyle(
+            color = if (isClosed) {
+                FeedbackIssueResolvedColor
+            } else {
+                FeedbackIssueInProgressColor
+            }
+        )
+    ) {
+        append(if (isClosed) "已解决" else "进行中")
+    }
+    updatedAtMs?.let {
+        append(" · ")
+        append(formatFeedbackIssueListTime(it))
+    }
+    commentCount?.let {
+        append(" · ")
+        append(it.toString())
+        append(" 条评论")
+    }
 }

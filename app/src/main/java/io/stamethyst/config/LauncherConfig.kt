@@ -90,7 +90,7 @@ object LauncherConfig {
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
-    const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "ghproxy_vip"
+    const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "gh_proxy_com"
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
     const val MIN_JVM_HEAP_MAX_MB = 256
