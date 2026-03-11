@@ -23,7 +23,8 @@ internal data class GameSessionConfig(
     val autoSwitchLeftAfterRightClick: Boolean,
     val requestedRenderSurfaceBackend: RenderSurfaceBackend,
     val rendererDecision: RendererDecision,
-    val avoidDisplayCutout: Boolean
+    val avoidDisplayCutout: Boolean,
+    val cropScreenBottom: Boolean
 ) {
     val renderSurfaceBackend: RenderSurfaceBackend
         get() = rendererDecision.effectiveSurfaceBackend
@@ -69,7 +70,8 @@ internal data class GameSessionConfig(
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
                 requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,
                 rendererDecision = rendererDecision,
-                avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context)
+                avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context),
+                cropScreenBottom = LauncherConfig.isScreenBottomCropEnabled(context)
             )
         }
 

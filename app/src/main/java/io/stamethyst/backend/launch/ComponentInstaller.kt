@@ -5,6 +5,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.content.res.AssetManager
+import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.config.RuntimePaths
 import java.io.File
@@ -120,6 +121,8 @@ object ComponentInstaller {
             RuntimePaths.importedMtsJar(context),
             ModJarSupport::validateMtsJar
         )
+        MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
+        ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
         ensureBundledMod(
             assets,
             "components/mods/BaseMod.jar",

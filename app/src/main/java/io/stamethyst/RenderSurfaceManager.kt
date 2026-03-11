@@ -1,9 +1,11 @@
 package io.stamethyst
 
+import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
@@ -22,6 +24,7 @@ class RenderSurfaceManager(
     private val targetFps: Int,
     useTextureViewSurface: Boolean,
     private val avoidDisplayCutout: Boolean,
+    private val cropScreenBottom: Boolean,
     private val onSurfaceReady: () -> Unit,
     private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
@@ -38,6 +41,7 @@ class RenderSurfaceManager(
     private var lastResyncReasonSummary = "init"
     private var resyncApplyCount = 0
     private var resyncSkipCount = 0
+    private var renderRoot: FrameLayout? = null
 
     private val foregroundResyncRunnable = Runnable {
         applyQueuedResync()
@@ -72,6 +76,7 @@ class RenderSurfaceManager(
     }
 
     fun init(root: FrameLayout) {
+        renderRoot = root
         renderHost.attach(root, object : RenderSurfaceHost.Callbacks {
             override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
                 state.markSurfaceAvailable(surfaceGeneration, width, height)
@@ -107,6 +112,11 @@ class RenderSurfaceManager(
         renderView.isFocusable = true
         renderView.isFocusableInTouchMode = true
         state.rememberPhysicalSize(renderView.width, renderView.height)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            applyRightSideCropInsets(insets)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
         renderView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             val width = (right - left).coerceAtLeast(0)
             val height = (bottom - top).coerceAtLeast(0)
@@ -129,6 +139,8 @@ class RenderSurfaceManager(
         if (::renderView.isInitialized) {
             renderView.removeCallbacks(foregroundResyncRunnable)
         }
+        renderRoot?.let { ViewCompat.setOnApplyWindowInsetsListener(it, null) }
+        renderRoot = null
         disconnectBridgeSurfaceIfNeeded()
         renderHost.release()
     }
@@ -329,6 +341,133 @@ class RenderSurfaceManager(
         val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
         controller.hide(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        renderRoot?.let { ViewCompat.requestApplyInsets(it) }
+    }
+
+    private fun applyRightSideCropInsets(insets: WindowInsetsCompat) {
+        if (!::renderView.isInitialized) {
+            return
+        }
+        val targetRightCropPx = resolveRightSideCropPx(insets)
+        val params = (renderView.layoutParams as? FrameLayout.LayoutParams)
+            ?: FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        if (params.leftMargin == 0 &&
+            params.topMargin == 0 &&
+            params.rightMargin == targetRightCropPx &&
+            params.bottomMargin == 0
+        ) {
+            return
+        }
+        params.width = FrameLayout.LayoutParams.MATCH_PARENT
+        params.height = FrameLayout.LayoutParams.MATCH_PARENT
+        params.gravity = Gravity.TOP or Gravity.START
+        params.leftMargin = 0
+        params.topMargin = 0
+        params.rightMargin = targetRightCropPx
+        params.bottomMargin = 0
+        renderView.layoutParams = params
+        requestForegroundResync("right_crop")
+    }
+
+    private data class EdgeInsets(
+        val left: Int = 0,
+        val top: Int = 0,
+        val right: Int = 0,
+        val bottom: Int = 0
+    )
+
+    private fun resolveRightSideCropPx(insets: WindowInsetsCompat): Int {
+        if (!cropScreenBottom) {
+            return 0
+        }
+        val gestureInsets = resolveGestureInsets(insets)
+        val cameraInsets = resolveCameraAvoidanceInsets(insets)
+        val cameraInset = maxOf(
+            cameraInsets.left,
+            cameraInsets.top,
+            cameraInsets.right,
+            cameraInsets.bottom
+        )
+        return maxOf(gestureInsets.right, cameraInset)
+    }
+
+    private fun resolveGestureInsets(insets: WindowInsetsCompat): EdgeInsets {
+        val navigationInsets = insets.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.navigationBars()
+        )
+        val systemGestureInsets = insets.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.systemGestures()
+        )
+        val mandatoryGestureInsets = insets.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.mandatorySystemGestures()
+        )
+        val tappableInsets = insets.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.tappableElement()
+        )
+        return EdgeInsets(
+            left = maxOf(
+                navigationInsets.left,
+                systemGestureInsets.left,
+                mandatoryGestureInsets.left,
+                tappableInsets.left
+            ),
+            top = maxOf(
+                navigationInsets.top,
+                systemGestureInsets.top,
+                mandatoryGestureInsets.top,
+                tappableInsets.top
+            ),
+            right = maxOf(
+                navigationInsets.right,
+                systemGestureInsets.right,
+                mandatoryGestureInsets.right,
+                tappableInsets.right
+            ),
+            bottom = maxOf(
+                navigationInsets.bottom,
+                systemGestureInsets.bottom,
+                mandatoryGestureInsets.bottom,
+                tappableInsets.bottom
+            )
+        )
+    }
+
+    private fun resolveCameraAvoidanceInsets(insets: WindowInsetsCompat): EdgeInsets {
+        val statusAndCutoutInsets = insets.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+        )
+        var left = statusAndCutoutInsets.left
+        var top = statusAndCutoutInsets.top
+        var right = statusAndCutoutInsets.right
+        var bottom = statusAndCutoutInsets.bottom
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val cutout = activity.window.decorView.rootWindowInsets?.displayCutout
+            if (cutout != null) {
+                left = maxOf(left, cutout.safeInsetLeft)
+                top = maxOf(top, cutout.safeInsetTop)
+                right = maxOf(right, cutout.safeInsetRight)
+                bottom = maxOf(bottom, cutout.safeInsetBottom)
+            }
+        }
+
+        if (left == 0 && top == 0 && right == 0 && bottom == 0) {
+            val fallbackInset = resolveStatusBarHeightPx()
+            right = fallbackInset
+        }
+
+        return EdgeInsets(left = left, top = top, right = right, bottom = bottom)
+    }
+
+    private fun resolveStatusBarHeightPx(): Int {
+        val resourceId = activity.resources.getIdentifier("status_bar_height", "dimen", "android")
+        if (resourceId == 0) {
+            return 0
+        }
+        return activity.resources.getDimensionPixelSize(resourceId)
     }
 
     private fun applyDisplayCutoutMode() {

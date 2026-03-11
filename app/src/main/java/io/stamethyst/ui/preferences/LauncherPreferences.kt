@@ -39,6 +39,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
     val DEFAULT_AVOID_DISPLAY_CUTOUT: Boolean
         get() = LauncherConfig.DEFAULT_AVOID_DISPLAY_CUTOUT
+    val DEFAULT_CROP_SCREEN_BOTTOM: Boolean
+        get() = LauncherConfig.DEFAULT_CROP_SCREEN_BOTTOM
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_LWJGL_DEBUG: Boolean
@@ -171,6 +173,14 @@ object LauncherPreferences {
 
     fun setDisplayCutoutAvoidanceEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setDisplayCutoutAvoidanceEnabled(context, enabled)
+    }
+
+    fun isScreenBottomCropEnabled(context: Context): Boolean {
+        return LauncherConfig.isScreenBottomCropEnabled(context)
+    }
+
+    fun setScreenBottomCropEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setScreenBottomCropEnabled(context, enabled)
     }
 
     fun isGamePerformanceOverlayEnabled(context: Context): Boolean {

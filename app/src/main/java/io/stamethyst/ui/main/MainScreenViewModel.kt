@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.util.TypedValue
+import android.view.ViewGroup
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -1211,13 +1215,56 @@ class MainScreenViewModel : ViewModel() {
 
         AlertDialog.Builder(host)
             .setTitle(R.string.sts_crash_dialog_title)
-            .setMessage(message)
+            .setView(createScrollableDialogMessageView(host, message))
             .setNeutralButton(R.string.sts_share_crash_report) { _, _ ->
                 shareCrashLogs(host, code, isSignal, detail)
             }
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
+    }
+
+    private fun createScrollableDialogMessageView(host: Activity, message: String): ScrollView {
+        val density = host.resources.displayMetrics.density
+        val horizontalPaddingPx = (24f * density).toInt()
+        val verticalPaddingPx = (12f * density).toInt()
+        val minHeightPx = (120f * density).toInt()
+        val maxHeightPx = (320f * density).toInt()
+
+        val textView = TextView(host).apply {
+            text = message
+            setTextIsSelectable(true)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setLineSpacing(0f, 1.1f)
+        }
+
+        return ScrollView(host).apply {
+            isFillViewport = true
+            clipToPadding = false
+            setPadding(horizontalPaddingPx, verticalPaddingPx, horizontalPaddingPx, verticalPaddingPx)
+            addView(
+                textView,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            minimumHeight = minHeightPx
+            if (layoutParams is ViewGroup.MarginLayoutParams) {
+                (layoutParams as ViewGroup.MarginLayoutParams).bottomMargin = verticalPaddingPx
+            }
+            post {
+                if (height > maxHeightPx) {
+                    layoutParams = layoutParams.apply {
+                        height = maxHeightPx
+                    }
+                }
+            }
+        }
     }
 
     private fun shareCrashLogs(host: Activity, code: Int, isSignal: Boolean, detail: String?) {

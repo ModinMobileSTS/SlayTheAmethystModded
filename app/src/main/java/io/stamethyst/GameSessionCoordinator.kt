@@ -248,6 +248,7 @@ internal class GameSessionCoordinator(
             return
         }
 
+        val exitedBeforeInteractiveBoot = exitCode == 0 && !jvmLaunchController.bootInteractiveSignalSeen
         val latestCrash = if (exitCode == 0) {
             LatestLogCrashDetector.detect(activity)
         } else {
@@ -257,6 +258,15 @@ internal class GameSessionCoordinator(
         activity.runOnUiThread {
             if (latestCrash != null) {
                 reportCrashAndReturn(-1, false, latestCrash.detail)
+                return@runOnUiThread
+            }
+
+            if (exitedBeforeInteractiveBoot) {
+                reportCrashAndReturn(
+                    JvmLaunchController.CRASH_CODE_BOOT_FAILURE,
+                    false,
+                    jvmLaunchController.buildExitedBeforeInteractiveDetail()
+                )
                 return@runOnUiThread
             }
 
