@@ -31,7 +31,9 @@ internal fun ModActionsDialog(
     visible: Boolean,
     controlsEnabled: Boolean,
     showModFileName: Boolean,
+    priorityLoad: Boolean,
     onDismiss: () -> Unit,
+    onTogglePriorityLoad: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
     onRename: () -> Unit,
@@ -63,6 +65,19 @@ internal fun ModActionsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    ModActionDialogListItem(
+                        text = stringResource(
+                            if (priorityLoad) {
+                                R.string.main_mod_priority_remove
+                            } else {
+                                R.string.main_mod_priority_add
+                            }
+                        ),
+                        enabled = controlsEnabled
+                    ) {
+                        onDismiss()
+                        onTogglePriorityLoad()
+                    }
                     ModActionDialogListItem(
                         text = stringResource(R.string.main_mod_export),
                         enabled = controlsEnabled

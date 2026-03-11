@@ -146,7 +146,9 @@ private fun LauncherMainScreenPreview() {
                     dependencies = listOf("basemod"),
                     required = false,
                     installed = true,
-                    enabled = true
+                    enabled = true,
+                    priorityRoot = true,
+                    priorityLoad = true
                 )
             ),
             controlsEnabled = true,
@@ -464,6 +466,7 @@ private fun ColumnScope.MainContentSwitcher(
                     hostAvailable = actions.isHostAvailable,
                     callbacks = ModFolderSectionCallbacks(
                         onToggleMod = actions.onToggleMod,
+                        onTogglePriorityLoad = actions.onTogglePriorityLoad,
                         onDeleteMod = actions.onDeleteMod,
                         onExportMod = actions.onExportMod,
                         onShareMod = actions.onShareMod,

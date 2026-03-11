@@ -254,10 +254,14 @@ class MainScreenViewModel : ViewModel() {
         }
 
         val assignedFolderId = resolveAssignedFolderId(mod)
+        val shouldRestorePriorityRoot = mod.priorityRoot
         setBusy(true, "正在重命名模组文件...")
         executor.execute {
             try {
                 moveFileReplacing(sourceFile, targetFile)
+                if (shouldRestorePriorityRoot) {
+                    ModManager.setOptionalModPriorityRoot(host, targetFile.absolutePath, true)
+                }
                 host.runOnUiThread {
                     setBusy(false, null)
                     clearAssignmentForMod(mod)
@@ -280,6 +284,65 @@ class MainScreenViewModel : ViewModel() {
 
     fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
         onModChecked(host, mod, enabled)
+    }
+
+    fun onTogglePriorityLoad(host: Activity, mod: ModItemUi, enabled: Boolean) {
+        if (!canEditMainScreenState() || mod.required || !mod.installed) {
+            return
+        }
+        if (!enabled && mod.priorityLoad && !mod.priorityRoot) {
+            Toast.makeText(
+                host,
+                "无法取消「${resolveModDisplayName(mod)}」的优先加载，它是其他优先模组的前置依赖。",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val targetKey = resolveStoredOptionalModId(mod)
+        if (targetKey.isNullOrBlank()) {
+            Toast.makeText(host, "无法识别模组标识，优先加载设置失败。", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val beforePriorityState = resolveOptionalModsWithPendingSelection().associate { optionalMod ->
+            optionalMod.storagePath to optionalMod.priorityLoad
+        }
+        try {
+            ModManager.setOptionalModPriorityRoot(host, targetKey, enabled)
+            refresh(host)
+            val updated = findOptionalModByAnyId(mod.storagePath) ?: findOptionalModByAnyId(targetKey)
+            if (enabled) {
+                val autoMarkedNames = resolveOptionalModsWithPendingSelection()
+                    .filter { optionalMod ->
+                        optionalMod.priorityLoad &&
+                            !beforePriorityState.getOrDefault(optionalMod.storagePath, false) &&
+                            optionalMod.storagePath != mod.storagePath
+                    }
+                    .map { resolveModDisplayName(it) }
+                    .distinct()
+                val message = when {
+                    autoMarkedNames.isNotEmpty() ->
+                        "已标记「${resolveModDisplayName(mod)}」为优先加载，并同步标记前置：${autoMarkedNames.joinToString(", ")}"
+
+                    else -> "已标记「${resolveModDisplayName(mod)}」为优先加载"
+                }
+                Toast.makeText(host, message, Toast.LENGTH_LONG).show()
+            } else {
+                val message = if (updated?.priorityLoad == true) {
+                    "已取消「${resolveModDisplayName(mod)}」的显式优先加载，但它仍因其他优先模组的前置关系保持优先。"
+                } else {
+                    "已取消「${resolveModDisplayName(mod)}」的优先加载"
+                }
+                Toast.makeText(host, message, Toast.LENGTH_LONG).show()
+            }
+        } catch (error: Throwable) {
+            Toast.makeText(
+                host,
+                "Failed to update priority load state: ${error.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     fun onLaunch(host: Activity) {
@@ -1707,7 +1770,9 @@ class MainScreenViewModel : ViewModel() {
                 dependencies = mod.dependencies,
                 required = mod.required,
                 installed = mod.installed,
-                enabled = mod.enabled
+                enabled = mod.enabled,
+                priorityRoot = mod.priorityRoot,
+                priorityLoad = mod.priorityLoad
             )
         }
     }

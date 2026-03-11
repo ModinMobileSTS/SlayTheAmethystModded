@@ -12,6 +12,7 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
+import java.util.ArrayDeque
 import java.util.ArrayList
 import java.util.HashSet
 import java.util.LinkedHashSet
@@ -37,7 +38,9 @@ object ModManager {
         @JvmField val jarFile: File,
         @JvmField val required: Boolean,
         @JvmField val installed: Boolean,
-        @JvmField val enabled: Boolean
+        @JvmField val enabled: Boolean,
+        @JvmField val priorityRoot: Boolean,
+        @JvmField val priorityLoad: Boolean
     ) {
         @JvmField
         val dependencies: List<String> = dependencies ?: ArrayList()
@@ -49,6 +52,57 @@ object ModManager {
         val normalizedModId: String,
         val rawModId: String
     )
+
+    private data class OptionalInstalledModEntry(
+        val storageKey: String,
+        val modId: String,
+        val manifestModId: String,
+        val name: String,
+        val version: String,
+        val description: String,
+        val dependencies: List<String>,
+        val jarFile: File,
+        val enabled: Boolean
+    ) {
+        fun toPriorityEntry(): OptionalModPriorityEntry {
+            return OptionalModPriorityEntry(
+                storageKey = storageKey,
+                normalizedModId = normalizeModId(modId),
+                normalizedManifestModId = normalizeModId(manifestModId),
+                dependencies = dependencies
+            )
+        }
+    }
+
+    private data class OptionalModPriorityEntry(
+        val storageKey: String,
+        val normalizedModId: String,
+        val normalizedManifestModId: String,
+        val dependencies: List<String>
+    )
+
+    private data class PrioritySelectionState(
+        val explicitKeys: Set<String>,
+        val effectiveKeys: Set<String>
+    )
+
+    private data class OptionalModLaunchEntry(
+        val storageKey: String,
+        val normalizedModId: String,
+        val normalizedManifestModId: String,
+        val launchModId: String,
+        val dependencies: List<String>,
+        val originalIndex: Int
+    ) {
+        fun toPriorityEntry(): OptionalModPriorityEntry {
+            return OptionalModPriorityEntry(
+                storageKey = storageKey,
+                normalizedModId = normalizedModId,
+                normalizedManifestModId = normalizedManifestModId,
+                dependencies = dependencies
+            )
+        }
+    }
 
     class LaunchIdConflict(
         @JvmField val launchModId: String,
@@ -242,6 +296,27 @@ object ModManager {
 
     @JvmStatic
     @Throws(IOException::class)
+    fun setOptionalModPriorityRoot(context: Context, modKeyOrId: String, enabled: Boolean) {
+        val optionalModFiles = findOptionalModFiles(context)
+        if (optionalModFiles.isEmpty()) {
+            return
+        }
+        val targetKey = resolveSelectionKey(context, modKeyOrId, optionalModFiles) ?: return
+
+        val rawSelection = readPriorityRootOptionalModKeys(context)
+        val normalizedSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
+        val changed = if (enabled) {
+            normalizedSelection.add(targetKey)
+        } else {
+            normalizedSelection.remove(targetKey)
+        }
+        if (changed || rawSelection != normalizedSelection) {
+            writePriorityRootOptionalModKeys(context, normalizedSelection)
+        }
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
     fun deleteOptionalMod(context: Context, modKeyOrId: String): Boolean {
         val optionalModFiles = findOptionalModFiles(context)
         val targetKey = resolveSelectionKey(context, modKeyOrId, optionalModFiles) ?: return false
@@ -304,6 +379,10 @@ object ModManager {
         val rawSelection = readEnabledOptionalModKeysSafely(context)
         val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
+        val rawPrioritySelection = readPriorityRootOptionalModKeysSafely(context)
+        val explicitPrioritySelection = normalizeEnabledOptionalSelection(context, rawPrioritySelection, optionalModFiles)
+        maybePersistPriorityRootSelectionNormalization(context, rawPrioritySelection, explicitPrioritySelection)
+        val optionalEntries = ArrayList<OptionalInstalledModEntry>()
 
         for (entry in optionalModFiles) {
             val jarFile = entry.jarFile
@@ -323,18 +402,39 @@ object ModManager {
             } catch (_: Throwable) {
                 name = modId
             }
+            optionalEntries.add(
+                OptionalInstalledModEntry(
+                    storageKey = entry.storageKey,
+                    modId = modId,
+                    manifestModId = manifestModId,
+                    name = name,
+                    version = version,
+                    description = description,
+                    dependencies = ArrayList(dependencies),
+                    jarFile = jarFile,
+                    enabled = enabledSelection.contains(entry.storageKey)
+                )
+            )
+        }
+        val priorityState = resolvePrioritySelectionState(
+            entries = optionalEntries.map { it.toPriorityEntry() },
+            explicitSelection = explicitPrioritySelection
+        )
+        optionalEntries.forEach { entry ->
             result.add(
                 InstalledMod(
-                    modId,
-                    manifestModId,
-                    name,
-                    version,
-                    description,
-                    dependencies,
-                    jarFile,
+                    entry.modId,
+                    entry.manifestModId,
+                    entry.name,
+                    entry.version,
+                    entry.description,
+                    entry.dependencies,
+                    entry.jarFile,
                     false,
                     true,
-                    enabledSelection.contains(entry.storageKey)
+                    entry.enabled,
+                    priorityState.explicitKeys.contains(entry.storageKey),
+                    priorityState.effectiveKeys.contains(entry.storageKey)
                 )
             )
         }
@@ -359,18 +459,49 @@ object ModManager {
         val rawSelection = readEnabledOptionalModKeys(context)
         val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
         maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
+        val rawPrioritySelection = readPriorityRootOptionalModKeysSafely(context)
+        val explicitPrioritySelection = normalizeEnabledOptionalSelection(context, rawPrioritySelection, optionalModFiles)
+        maybePersistPriorityRootSelectionNormalization(context, rawPrioritySelection, explicitPrioritySelection)
 
         val launchModIds = ArrayList<String>()
         launchModIds.add(baseModId)
         launchModIds.add(stsLibId)
 
-        for (entry in optionalModFiles) {
+        val enabledOptionalEntries = ArrayList<OptionalModLaunchEntry>()
+        optionalModFiles.forEachIndexed { index, entry ->
             if (!enabledSelection.contains(entry.storageKey)) {
-                continue
+                return@forEachIndexed
             }
             val launchModId = MtsLaunchManifestValidator.resolveLaunchModId(entry.jarFile).trim()
             if (launchModId.isNotEmpty()) {
-                launchModIds.add(launchModId)
+                val manifest = ModJarSupport.readModManifest(entry.jarFile)
+                enabledOptionalEntries.add(
+                    OptionalModLaunchEntry(
+                        storageKey = entry.storageKey,
+                        normalizedModId = entry.normalizedModId,
+                        normalizedManifestModId = normalizeModId(manifest.modId),
+                        launchModId = launchModId,
+                        dependencies = ArrayList(manifest.dependencies),
+                        originalIndex = index
+                    )
+                )
+            }
+        }
+        val priorityState = resolvePrioritySelectionState(
+            entries = enabledOptionalEntries.map { it.toPriorityEntry() },
+            explicitSelection = explicitPrioritySelection
+        )
+        val priorityOrderedEntries = sortPriorityLaunchEntries(
+            entries = enabledOptionalEntries,
+            effectivePriorityKeys = priorityState.effectiveKeys
+        )
+        val priorityKeys = priorityOrderedEntries.mapTo(LinkedHashSet()) { it.storageKey }
+        priorityOrderedEntries.forEach { entry ->
+            launchModIds.add(entry.launchModId)
+        }
+        enabledOptionalEntries.forEach { entry ->
+            if (!priorityKeys.contains(entry.storageKey)) {
+                launchModIds.add(entry.launchModId)
             }
         }
         return launchModIds
@@ -415,7 +546,9 @@ object ModManager {
             jarFile,
             true,
             available,
-            available
+            available,
+            false,
+            false
         )
     }
 
@@ -503,6 +636,14 @@ object ModManager {
         }
     }
 
+    private fun readPriorityRootOptionalModKeysSafely(context: Context): MutableSet<String> {
+        return try {
+            readPriorityRootOptionalModKeys(context)
+        } catch (_: Throwable) {
+            LinkedHashSet()
+        }
+    }
+
     @Throws(IOException::class)
     private fun readEnabledOptionalModKeys(context: Context): MutableSet<String> {
         val keys: MutableSet<String> = LinkedHashSet()
@@ -552,6 +693,55 @@ object ModManager {
         }
     }
 
+    @Throws(IOException::class)
+    private fun readPriorityRootOptionalModKeys(context: Context): MutableSet<String> {
+        val keys: MutableSet<String> = LinkedHashSet()
+        val config = RuntimePaths.priorityModsConfig(context)
+        if (!config.isFile) {
+            return keys
+        }
+        FileInputStream(config).use { input ->
+            InputStreamReader(input, StandardCharsets.UTF_8).use { reader ->
+                BufferedReader(reader).use { buffered ->
+                    while (true) {
+                        val line = buffered.readLine() ?: break
+                        val token = normalizeSelectionToken(context, line)
+                        if (token.isNotEmpty()) {
+                            keys.add(token)
+                        }
+                    }
+                }
+            }
+        }
+        return keys
+    }
+
+    @Throws(IOException::class)
+    private fun writePriorityRootOptionalModKeys(context: Context, modKeys: Set<String>) {
+        val config = RuntimePaths.priorityModsConfig(context)
+        val parent = config.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        FileOutputStream(config, false).use { output ->
+            OutputStreamWriter(output, StandardCharsets.UTF_8).use { writer ->
+                BufferedWriter(writer).use { buffered ->
+                    for (modKey in modKeys) {
+                        val token = normalizeSelectionToken(context, modKey)
+                        if (token.isEmpty()) {
+                            continue
+                        }
+                        if (!looksLikePathToken(token) && isRequiredModId(token)) {
+                            continue
+                        }
+                        buffered.write(token)
+                        buffered.newLine()
+                    }
+                }
+            }
+        }
+    }
+
     private fun maybePersistSelectionNormalization(
         context: Context,
         rawSelection: Set<String>,
@@ -562,6 +752,20 @@ object ModManager {
         }
         try {
             writeEnabledOptionalModKeys(context, normalizedSelection)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun maybePersistPriorityRootSelectionNormalization(
+        context: Context,
+        rawSelection: Set<String>,
+        normalizedSelection: Set<String>
+    ) {
+        if (rawSelection == normalizedSelection) {
+            return
+        }
+        try {
+            writePriorityRootOptionalModKeys(context, normalizedSelection)
         } catch (_: Throwable) {
         }
     }
@@ -711,6 +915,157 @@ object ModManager {
         }
 
         return normalized
+    }
+
+    private fun resolvePrioritySelectionState(
+        entries: List<OptionalModPriorityEntry>,
+        explicitSelection: Set<String>
+    ): PrioritySelectionState {
+        if (entries.isEmpty()) {
+            return PrioritySelectionState(
+                explicitKeys = emptySet(),
+                effectiveKeys = emptySet()
+            )
+        }
+
+        val entryByStorageKey = LinkedHashMap<String, OptionalModPriorityEntry>()
+        val entryByModId = LinkedHashMap<String, OptionalModPriorityEntry>()
+        entries.forEach { entry ->
+            entryByStorageKey[entry.storageKey] = entry
+            if (entry.normalizedModId.isNotEmpty() && !entryByModId.containsKey(entry.normalizedModId)) {
+                entryByModId[entry.normalizedModId] = entry
+            }
+            if (
+                entry.normalizedManifestModId.isNotEmpty() &&
+                !entryByModId.containsKey(entry.normalizedManifestModId)
+            ) {
+                entryByModId[entry.normalizedManifestModId] = entry
+            }
+        }
+
+        val normalizedExplicit = LinkedHashSet<String>()
+        explicitSelection.forEach { key ->
+            if (entryByStorageKey.containsKey(key)) {
+                normalizedExplicit.add(key)
+            }
+        }
+        if (normalizedExplicit.isEmpty()) {
+            return PrioritySelectionState(
+                explicitKeys = emptySet(),
+                effectiveKeys = emptySet()
+            )
+        }
+
+        val effective = LinkedHashSet<String>()
+        val queue: ArrayDeque<OptionalModPriorityEntry> = ArrayDeque()
+        normalizedExplicit.forEach { key ->
+            entryByStorageKey[key]?.let(queue::add)
+        }
+        while (!queue.isEmpty()) {
+            val current = queue.removeFirst()
+            if (!effective.add(current.storageKey)) {
+                continue
+            }
+            current.dependencies.forEach { dependency ->
+                val normalizedDependency = normalizeModId(dependency)
+                if (normalizedDependency.isEmpty() || isRequiredModId(normalizedDependency)) {
+                    return@forEach
+                }
+                entryByModId[normalizedDependency]?.let(queue::add)
+            }
+        }
+        return PrioritySelectionState(
+            explicitKeys = normalizedExplicit,
+            effectiveKeys = effective
+        )
+    }
+
+    private fun sortPriorityLaunchEntries(
+        entries: List<OptionalModLaunchEntry>,
+        effectivePriorityKeys: Set<String>
+    ): List<OptionalModLaunchEntry> {
+        val priorityEntries = entries.filter { effectivePriorityKeys.contains(it.storageKey) }
+            .sortedBy { it.originalIndex }
+        if (priorityEntries.size <= 1) {
+            return priorityEntries
+        }
+
+        val entryByKey = priorityEntries.associateBy { it.storageKey }
+        val entryByModId = LinkedHashMap<String, OptionalModLaunchEntry>()
+        priorityEntries.forEach { entry ->
+            if (entry.normalizedModId.isNotEmpty() && !entryByModId.containsKey(entry.normalizedModId)) {
+                entryByModId[entry.normalizedModId] = entry
+            }
+            if (
+                entry.normalizedManifestModId.isNotEmpty() &&
+                !entryByModId.containsKey(entry.normalizedManifestModId)
+            ) {
+                entryByModId[entry.normalizedManifestModId] = entry
+            }
+        }
+
+        val outgoing = LinkedHashMap<String, MutableSet<String>>()
+        val indegree = LinkedHashMap<String, Int>()
+        priorityEntries.forEach { entry ->
+            outgoing[entry.storageKey] = LinkedHashSet()
+            indegree[entry.storageKey] = 0
+        }
+
+        priorityEntries.forEach { entry ->
+            val dependencies = entry.dependencies
+                .asSequence()
+                .map { normalizeModId(it) }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .toList()
+            dependencies.forEach { dependencyId ->
+                val dependencyEntry = entryByModId[dependencyId] ?: return@forEach
+                if (dependencyEntry.storageKey == entry.storageKey) {
+                    return@forEach
+                }
+                val edges = outgoing[dependencyEntry.storageKey] ?: return@forEach
+                if (edges.add(entry.storageKey)) {
+                    indegree[entry.storageKey] = (indegree[entry.storageKey] ?: 0) + 1
+                }
+            }
+        }
+
+        val available = ArrayList<OptionalModLaunchEntry>()
+        priorityEntries.forEach { entry ->
+            if ((indegree[entry.storageKey] ?: 0) == 0) {
+                available.add(entry)
+            }
+        }
+        available.sortBy { it.originalIndex }
+
+        val ordered = ArrayList<OptionalModLaunchEntry>(priorityEntries.size)
+        while (available.isNotEmpty()) {
+            val current = available.removeAt(0)
+            ordered.add(current)
+            val nextKeys = outgoing[current.storageKey].orEmpty().toList()
+            nextKeys.forEach { nextKey ->
+                val nextDegree = (indegree[nextKey] ?: 0) - 1
+                indegree[nextKey] = nextDegree
+                if (nextDegree == 0) {
+                    entryByKey[nextKey]?.let { nextEntry ->
+                        available.add(nextEntry)
+                        available.sortBy { it.originalIndex }
+                    }
+                }
+            }
+        }
+
+        if (ordered.size == priorityEntries.size) {
+            return ordered
+        }
+
+        val orderedKeys = ordered.mapTo(LinkedHashSet()) { it.storageKey }
+        priorityEntries.forEach { entry ->
+            if (!orderedKeys.contains(entry.storageKey)) {
+                ordered.add(entry)
+            }
+        }
+        return ordered
     }
 
     private fun normalizeSelectionToken(context: Context, raw: String?): String {

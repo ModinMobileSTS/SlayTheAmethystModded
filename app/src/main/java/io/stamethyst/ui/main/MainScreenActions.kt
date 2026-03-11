@@ -17,6 +17,7 @@ internal data class MainScreenActions(
     val onShareMod: (ModItemUi) -> Unit = {},
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
+    val onTogglePriorityLoad: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onSetFolderSelected: (String, Boolean) -> Unit = { _, _ -> },
     val onSetUnassignedSelected: (Boolean) -> Unit = {},
     val onToggleFolderCollapsed: (String) -> Unit = {},
@@ -59,6 +60,9 @@ internal fun rememberMainScreenActions(
                 onShareMod = { mod -> viewModel.onShareMod(activity, mod) },
                 onRenameModFile = { mod, newFileName -> viewModel.onRenameModFile(activity, mod, newFileName) },
                 onToggleMod = { mod, checked -> viewModel.onToggleMod(activity, mod, checked) },
+                onTogglePriorityLoad = { mod, enabled ->
+                    viewModel.onTogglePriorityLoad(activity, mod, enabled)
+                },
                 onSetFolderSelected = { folderId, selected -> viewModel.setFolderSelected(activity, folderId, selected) },
                 onSetUnassignedSelected = { selected -> viewModel.setUnassignedSelected(activity, selected) },
                 onToggleFolderCollapsed = { folderId -> viewModel.toggleFolderCollapsed(activity, folderId) },

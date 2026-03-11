@@ -68,6 +68,7 @@ internal data class ModCardDragOverlayState(
 
 internal data class ModCardCallbacks(
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
+    val onTogglePriorityLoad: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onDeleteMod: (ModItemUi) -> Unit = {},
     val onExportMod: (ModItemUi) -> Unit = {},
     val onShareMod: (ModItemUi) -> Unit = {},
@@ -235,7 +236,9 @@ internal fun ModCard(
         visible = showActionsDialog,
         controlsEnabled = fileActionsEnabled,
         showModFileName = showModFileName,
+        priorityLoad = mod.priorityLoad,
         onDismiss = { showActionsDialog = false },
+        onTogglePriorityLoad = { callbacks.onTogglePriorityLoad(mod, !mod.priorityLoad) },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
         onRename = {

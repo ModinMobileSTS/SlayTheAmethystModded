@@ -55,6 +55,9 @@ object RuntimePaths {
     fun enabledModsConfig(context: Context): File = File(stsRoot(context), "enabled_mods.txt")
 
     @JvmStatic
+    fun priorityModsConfig(context: Context): File = File(stsRoot(context), "priority_mod_roots.txt")
+
+    @JvmStatic
     fun preferencesDir(context: Context): File = File(stsRoot(context), "preferences")
 
     @JvmStatic

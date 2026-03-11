@@ -13,5 +13,7 @@ data class ModItemUi(
     val dependencies: List<String>,
     val required: Boolean,
     val installed: Boolean,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val priorityRoot: Boolean,
+    val priorityLoad: Boolean
 )

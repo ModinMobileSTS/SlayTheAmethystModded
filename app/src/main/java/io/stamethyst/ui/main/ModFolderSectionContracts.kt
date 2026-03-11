@@ -9,6 +9,7 @@ internal data class ModFolderSectionCallbacks(
     val onExportMod: (ModItemUi) -> Unit = {},
     val onShareMod: (ModItemUi) -> Unit = {},
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
+    val onTogglePriorityLoad: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onRenameFolder: (String, String) -> Unit = { _, _ -> },
     val onDeleteFolder: (String) -> Unit = {},
     val onSetFolderSelected: (String, Boolean) -> Unit = { _, _ -> },
