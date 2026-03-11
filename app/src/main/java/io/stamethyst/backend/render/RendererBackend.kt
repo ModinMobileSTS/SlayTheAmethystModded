@@ -33,6 +33,7 @@ enum class RendererBackend(
         displayName = "Kopper Zink",
         lwjglOpenGlLibNameValue = "libglxshim.so",
         requiredNativeLibraries = setOf(
+            "libc++_shared.so",
             "libglxshim.so",
             "libEGL_mesa.so",
             "libglapi.so",
@@ -45,7 +46,10 @@ enum class RendererBackend(
         rendererIdValue = "vulkan_zink",
         displayName = "Vulkan Zink",
         lwjglOpenGlLibNameValue = "libOSMesa.so",
-        requiredNativeLibraries = setOf("libOSMesa.so"),
+        requiredNativeLibraries = setOf(
+            "libc++_shared.so",
+            "libOSMesa.so"
+        ),
         requiresVulkan = true
     );
 

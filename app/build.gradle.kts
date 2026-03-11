@@ -227,9 +227,11 @@ require(launchMode in supportedLaunchModes) {
 }
 
 val rendererBackendImportLibraries = listOf(
+    "libc++_shared.so",
     "libEGL_mesa.so",
     "libglapi.so",
     "libglxshim.so",
+    "liblinkerhook.so",
     "libmobileglues.so",
     "libspirv-cross-c-shared.so",
     "libzink_dri.so",

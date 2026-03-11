@@ -166,7 +166,10 @@ object StsLaunchSpec {
         args.add("-Damethyst.renderer.effective_backend=${rendererDecision.effectiveBackend.rendererId()}")
         args.add("-Damethyst.renderer.requested_surface=${rendererDecision.requestedSurfaceBackend.persistedValue}")
         args.add("-Damethyst.renderer.effective_surface=${rendererDecision.effectiveSurfaceBackend.persistedValue}")
-        if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES2_GL4ES) {
+        if (
+            rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES2_GL4ES ||
+            rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES3_DESKTOPGL_ZINK_KOPPER
+        ) {
             args.add("-Damethyst.lwjgl.force_default_framebuffer=true")
         }
         rendererDecision.fallbackSummary()?.let {
