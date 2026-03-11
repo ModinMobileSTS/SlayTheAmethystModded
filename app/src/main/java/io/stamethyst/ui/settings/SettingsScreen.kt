@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -61,6 +64,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherThemeMode
@@ -103,6 +108,12 @@ fun LauncherSettingsScreen(
         onExportLogsToFile = viewModel::onExportLogsToFile,
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
+        onRendererSelectionModeChanged = { mode ->
+            viewModel.onRendererSelectionModeChanged(activity, mode)
+        },
+        onManualRendererBackendChanged = { backend ->
+            viewModel.onManualRendererBackendChanged(activity, backend)
+        },
         onRenderSurfaceBackendChanged = { backend ->
             viewModel.onRenderSurfaceBackendChanged(activity, backend)
         },
@@ -211,6 +222,8 @@ private fun LauncherSettingsScreenContent(
     onExportLogsToFile: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
+    onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
+    onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
     onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
@@ -310,6 +323,8 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
+                        onRendererSelectionModeChanged = onRendererSelectionModeChanged,
+                        onManualRendererBackendChanged = onManualRendererBackendChanged,
                         onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
                         onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
@@ -700,6 +715,8 @@ private fun SettingsRenderSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
+    onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit,
+    onManualRendererBackendChanged: (RendererBackend) -> Unit,
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
     onJvmCompressedPointersChanged: (Boolean) -> Unit,
@@ -762,27 +779,86 @@ private fun SettingsRenderSection(
         )
     }
 
+    Text(text = "图形后端", style = MaterialTheme.typography.bodyMedium)
+    SwitchSettingRow(
+        checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
+        enabled = !uiState.busy,
+        enabledText = "自动选择：启用",
+        disabledText = "自动选择：禁用",
+        description = buildString {
+            if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
+                append("\n当前自动选择：")
+                append(uiState.autoSelectedRendererBackend.displayName)
+                append("（")
+                append(uiState.autoSelectedRendererBackend.briefProsCons())
+                append("）")
+            } else {
+                append("\n关闭后使用手动后端：")
+                append(uiState.manualRendererBackend.displayName)
+                append("（")
+                append(uiState.manualRendererBackend.briefProsCons())
+                append("）")
+            }
+        },
+        onCheckedChange = { checked ->
+            onRendererSelectionModeChanged(
+                if (checked) RendererSelectionMode.AUTO else RendererSelectionMode.MANUAL
+            )
+        }
+    )
+    uiState.rendererFallbackText?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+    SettingsDropdownField(
+        label = "手动后端",
+        valueText = uiState.manualRendererBackend.displayName,
+        enabled = !uiState.busy && uiState.rendererSelectionMode == RendererSelectionMode.MANUAL,
+        supportingText = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
+            "切换到 Manual 后生效；当前自动选择为 ${uiState.autoSelectedRendererBackend.displayName}（${uiState.autoSelectedRendererBackend.briefProsCons()}）"
+        } else {
+            "当前手动选择：${uiState.manualRendererBackend.displayName}（${uiState.manualRendererBackend.briefProsCons()}）"
+        },
+        options = uiState.rendererBackendOptions,
+        optionEnabled = { option -> option.available },
+        optionLabel = { option -> option.backend.displayName },
+        optionDescription = { option ->
+            buildList {
+                add(option.backend.briefProsCons())
+                option.reasonText?.let(::add)
+            }.joinToString("  ")
+        },
+        onOptionSelected = { option -> onManualRendererBackendChanged(option.backend) }
+    )
+    Text(
+        text = "Auto 会按设备能力和已打包库自动选择后端；Manual 允许手动固定，但不可用项会在本次启动回退到自动选择。",
+        style = MaterialTheme.typography.bodySmall
+    )
+
     Text(
         text = stringResource(R.string.settings_render_surface_backend_title),
         style = MaterialTheme.typography.bodyMedium
     )
-    SurfaceBackendOptionRow(
-        backend = RenderSurfaceBackend.SURFACE_VIEW,
-        selected = uiState.renderSurfaceBackend == RenderSurfaceBackend.SURFACE_VIEW,
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_render_surface_backend_title),
+        valueText = uiState.renderSurfaceBackend.displayName(),
         enabled = !uiState.busy,
-        text = stringResource(R.string.settings_render_surface_backend_surface_view),
-        onSelect = onRenderSurfaceBackendChanged
-    )
-    SurfaceBackendOptionRow(
-        backend = RenderSurfaceBackend.TEXTURE_VIEW,
-        selected = uiState.renderSurfaceBackend == RenderSurfaceBackend.TEXTURE_VIEW,
-        enabled = !uiState.busy,
-        text = stringResource(R.string.settings_render_surface_backend_texture_view),
-        onSelect = onRenderSurfaceBackendChanged
-    )
-    Text(
-        text = stringResource(R.string.settings_render_surface_backend_desc),
-        style = MaterialTheme.typography.bodySmall
+        supportingText = if (uiState.surfaceBackendForcedByRenderer) {
+            "当前后端已强制覆盖为 ${uiState.effectiveRenderSurfaceBackend.displayName()}。"
+        } else {
+            stringResource(R.string.settings_render_surface_backend_desc)
+        },
+        supportingTextColor = if (uiState.surfaceBackendForcedByRenderer) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        options = RenderSurfaceBackend.entries,
+        optionLabel = { backend -> backend.displayName() },
+        onOptionSelected = onRenderSurfaceBackendChanged
     )
 
     Text(text = "JVM 堆上限", style = MaterialTheme.typography.bodyMedium)
@@ -1450,22 +1526,6 @@ private fun BackBehaviorOptionRow(
 }
 
 @Composable
-private fun SurfaceBackendOptionRow(
-    backend: RenderSurfaceBackend,
-    selected: Boolean,
-    enabled: Boolean,
-    text: String,
-    onSelect: (RenderSurfaceBackend) -> Unit,
-) {
-    SettingsRadioOptionRow(
-        selected = selected,
-        enabled = enabled,
-        text = text,
-        onSelect = { onSelect(backend) }
-    )
-}
-
-@Composable
 private fun SettingsRadioOptionRow(
     selected: Boolean,
     enabled: Boolean,
@@ -1490,6 +1550,108 @@ private fun SettingsRadioOptionRow(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = text)
+    }
+}
+
+@Composable
+private fun <T> SettingsDropdownField(
+    label: String,
+    valueText: String,
+    enabled: Boolean,
+    supportingText: String? = null,
+    supportingTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    options: List<T>,
+    optionEnabled: (T) -> Boolean = { true },
+    optionLabel: (T) -> String,
+    optionDescription: ((T) -> String?)? = null,
+    onOptionSelected: (T) -> Unit,
+) {
+    var expanded by remember(label, options, enabled) { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = {
+                Text(text = label)
+            },
+            supportingContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = valueText,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    supportingText?.let {
+                        Text(
+                            text = it,
+                            color = supportingTextColor,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            trailingContent = {
+                Text(
+                    text = if (expanded) "▲" else "▼",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .hapticClickable(enabled = enabled) { expanded = true }
+        )
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                val optionIsEnabled = optionEnabled(option)
+                DropdownMenuItem(
+                    enabled = optionIsEnabled,
+                    text = {
+                        Column {
+                            Text(text = optionLabel(option))
+                            optionDescription?.invoke(option)?.let { description ->
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onOptionSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+private fun RenderSurfaceBackend.displayName(): String {
+    return when (this) {
+        RenderSurfaceBackend.SURFACE_VIEW -> "SurfaceView"
+        RenderSurfaceBackend.TEXTURE_VIEW -> "TextureView"
+    }
+}
+
+private fun RendererBackend.briefProsCons(): String {
+    return when (this) {
+        RendererBackend.OPENGL_ES_MOBILEGLUES ->
+            "优：兼容性取向；缺：仍有部分机型适配问题"
+        RendererBackend.OPENGL_ES2_NATIVE ->
+            "优：最接近旧实现、稳定；缺：功能最保守"
+        RendererBackend.OPENGL_ES2_GL4ES ->
+            "优：桌面 GL 兼容更好；缺：有额外转译开销"
+        RendererBackend.OPENGL_ES3_DESKTOPGL_ZINK_KOPPER ->
+            "优：走 Vulkan，部分设备更稳；缺：依赖 Vulkan 且强制 TextureView"
+        RendererBackend.VULKAN_ZINK ->
+            "优：Mesa/Zink 兼容潜力高；缺：驱动和库要求最高"
     }
 }
 

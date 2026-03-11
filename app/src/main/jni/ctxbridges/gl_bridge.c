@@ -28,6 +28,14 @@ static bool g_swap_heartbeat_logging_enabled = false;
 #define EGL_CONTEXT_LOST 0x300E
 #endif
 
+#ifndef EGL_OPENGL_ES3_BIT_KHR
+#define EGL_OPENGL_ES3_BIT_KHR 0x0040
+#endif
+
+#ifndef EGL_OPENGL_BIT
+#define EGL_OPENGL_BIT 0x0008
+#endif
+
 static int gl_get_context_client_version() {
     const char* libglEsValue = getenv("LIBGL_ES");
     int libgl_es = (int)strtol(libglEsValue == NULL ? "2" : libglEsValue, NULL, 0);
@@ -144,13 +152,19 @@ static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const
     return queued;
 }
 
-static bool gl_create_context_for_bundle(gl_render_window_t* bundle, EGLContext sharedContext, const char* reason) {
+static bool gl_is_desktop_opengl_renderer(void) {
+    const char* renderer = getenv("AMETHYST_RENDERER");
+    return renderer != NULL && strncmp(renderer, "opengles3_desktopgl", 19) == 0;
+}
+
+static bool gl_create_context_for_bundle(
+        gl_render_window_t* bundle,
+        EGLContext sharedContext,
+        const EGLint* contextAttributes,
+        const char* reason
+) {
     if (bundle == NULL) return false;
-    const EGLint egl_context_attributes[] = {
-        EGL_CONTEXT_CLIENT_VERSION, gl_get_context_client_version(),
-        EGL_NONE
-    };
-    bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, sharedContext, egl_context_attributes);
+    bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, sharedContext, contextAttributes);
     if (bundle->context == EGL_NO_CONTEXT) {
         ;
         return false;
@@ -161,6 +175,16 @@ static bool gl_create_context_for_bundle(gl_render_window_t* bundle, EGLContext 
 
 static bool gl_recreate_context(gl_render_window_t* bundle, const char* reason) {
     if (bundle == NULL) return false;
+    const EGLint esContextAttributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, gl_get_context_client_version(),
+        EGL_NONE
+    };
+    const EGLint desktopContextAttributes[] = {
+        EGL_NONE
+    };
+    const EGLint* contextAttributes = gl_is_desktop_opengl_renderer()
+        ? desktopContextAttributes
+        : esContextAttributes;
 
     // Detach current context before replacing it.
     eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -171,7 +195,7 @@ static bool gl_recreate_context(gl_render_window_t* bundle, const char* reason) 
         }
     }
     bundle->context = EGL_NO_CONTEXT;
-    if (!gl_create_context_for_bundle(bundle, EGL_NO_CONTEXT, reason)) {
+    if (!gl_create_context_for_bundle(bundle, EGL_NO_CONTEXT, contextAttributes, reason)) {
         return false;
     }
     ;
@@ -244,18 +268,55 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     }
     gl_render_window_t* bundle = malloc(sizeof(gl_render_window_t));
     memset(bundle, 0, sizeof(gl_render_window_t));
-    EGLint egl_attributes[] = { EGL_BLUE_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_RED_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 24, EGL_SURFACE_TYPE, EGL_WINDOW_BIT|EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE };
+    const bool desktopOpenGL = gl_is_desktop_opengl_renderer();
+    int requestedContextVersion = gl_get_context_client_version();
+    EGLint renderableType = desktopOpenGL
+        ? EGL_OPENGL_BIT
+        : (requestedContextVersion >= 3 ? EGL_OPENGL_ES3_BIT_KHR : EGL_OPENGL_ES2_BIT);
+    EGLint egl_attributes[] = {
+        EGL_BLUE_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_RED_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_DEPTH_SIZE, 24,
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, renderableType,
+        EGL_NONE
+    };
     EGLint num_configs = 0;
 
     if (eglChooseConfig_p(g_EglDisplay, egl_attributes, NULL, 0, &num_configs) != EGL_TRUE) {
-        ;
-        free(bundle);
-        return NULL;
+        if (!desktopOpenGL && requestedContextVersion >= 3) {
+            renderableType = EGL_OPENGL_ES2_BIT;
+            requestedContextVersion = 2;
+            egl_attributes[13] = renderableType;
+            num_configs = 0;
+            if (eglChooseConfig_p(g_EglDisplay, egl_attributes, NULL, 0, &num_configs) != EGL_TRUE) {
+                ;
+                free(bundle);
+                return NULL;
+            }
+        } else {
+            ;
+            free(bundle);
+            return NULL;
+        }
     }
     if (num_configs == 0) {
-        ;
-        free(bundle);
-        return NULL;
+        if (!desktopOpenGL && requestedContextVersion >= 3) {
+            renderableType = EGL_OPENGL_ES2_BIT;
+            requestedContextVersion = 2;
+            egl_attributes[13] = renderableType;
+            if (eglChooseConfig_p(g_EglDisplay, egl_attributes, NULL, 0, &num_configs) != EGL_TRUE || num_configs == 0) {
+                ;
+                free(bundle);
+                return NULL;
+            }
+        } else {
+            ;
+            free(bundle);
+            return NULL;
+        }
     }
 
     // Get the first matching config
@@ -264,8 +325,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
 
     {
         EGLBoolean bindResult;
-        const char* renderer = getenv("AMETHYST_RENDERER");
-        if (renderer != NULL && strncmp(renderer, "opengles3_desktopgl", 19) == 0) {
+        if (desktopOpenGL) {
             printf("EGLBridge: Binding to desktop OpenGL\n");
             bindResult = eglBindAPI_p(EGL_OPENGL_API);
         } else {
@@ -275,7 +335,21 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
         if (!bindResult) printf("EGLBridge: bind failed: 0x%04x\n", eglGetError_p());
     }
 
-    if (!gl_create_context_for_bundle(bundle, share == NULL ? EGL_NO_CONTEXT : share->context, "initial create")) {
+    const EGLint esContextAttributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, requestedContextVersion,
+        EGL_NONE
+    };
+    const EGLint desktopContextAttributes[] = {
+        EGL_NONE
+    };
+    const EGLint* contextAttributes = desktopOpenGL ? desktopContextAttributes : esContextAttributes;
+
+    if (!gl_create_context_for_bundle(
+            bundle,
+            share == NULL ? EGL_NO_CONTEXT : share->context,
+            contextAttributes,
+            "initial create"
+    )) {
         free(bundle);
         return NULL;
     }

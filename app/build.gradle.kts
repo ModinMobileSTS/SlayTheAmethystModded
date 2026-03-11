@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 plugins {
@@ -193,7 +194,7 @@ val gdxVideoNativeAssetFiles = listOf(
     rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so"),
     rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so")
 )
-val supportedLaunchModes = setOf("mts_basemod", "vanilla")
+val supportedLaunchModes = setOf("mts", "vanilla")
 val stsJvmLogExportMaxSlots = 5
 
 enum class RemoteFileAccessMode {
@@ -211,14 +212,32 @@ data class AdbCommandResult(
     val stdout: String
 )
 
-val launchMode: String = readGradleProperty("launchMode", "mts_basemod")
+val rawLaunchMode: String = readGradleProperty("launchMode", "mts")
+val launchMode: String = when (rawLaunchMode) {
+    "mts_basemod" -> "mts"
+    else -> rawLaunchMode
+}
 val forceJvmCrash: String = readGradleProperty("forceJvmCrash", "false")
 val deviceSerial: String = readGradleProperty("deviceSerial")
 val logsDir: String = readGradleProperty("logsDir")
+val rendererLibsSource: String = readGradleProperty("rendererLibsSource")
 val feedbackApiKey: String = readGradleProperty("feedback.apiKey")
 require(launchMode in supportedLaunchModes) {
     "Unsupported launchMode: $launchMode. Supported: ${supportedLaunchModes.joinToString(", ")}"
 }
+
+val rendererBackendImportLibraries = listOf(
+    "libEGL_mesa.so",
+    "libglapi.so",
+    "libglxshim.so",
+    "libmobileglues.so",
+    "libspirv-cross-c-shared.so",
+    "libzink_dri.so",
+    "libcutils.so",
+    "libvulkan_freedreno.so",
+    "libVkLayer_khronos_timeline_semaphore.so",
+    "libOSMesa.so"
+)
 
 dependencies {
     add(log4jRuntimeComponents.name, libs.log4j.api)
@@ -310,6 +329,80 @@ tasks.preBuild.configure {
     dependsOn(installGdxVideoNatives)
     dependsOn(installLog4jRuntimeAssets)
     dependsOn(installRuntimePackAssets)
+}
+
+val importRendererBackendLibs by tasks.registering {
+    group = "dev"
+    description = "Import backend-native libraries from a renderer APK or an outer archive containing one."
+
+    fun extractApk(source: File, tempDir: File): File {
+        if (source.extension.equals("apk", ignoreCase = true)) {
+            return source
+        }
+        ZipFile(source).use { zip ->
+            val apkEntry = zip.entries().asSequence()
+                .firstOrNull { !it.isDirectory && it.name.endsWith(".apk", ignoreCase = true) }
+                ?: throw GradleException("No .apk found inside ${source.absolutePath}")
+            val extractedApk = File(tempDir, apkEntry.name.substringAfterLast('/'))
+            extractedApk.parentFile?.mkdirs()
+            zip.getInputStream(apkEntry).use { input ->
+                FileOutputStream(extractedApk, false).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return extractedApk
+        }
+    }
+
+    doLast {
+        if (rendererLibsSource.isBlank()) {
+            throw GradleException("Missing -PrendererLibsSource=<apk-or-zip-path>")
+        }
+        val source = file(rendererLibsSource)
+        if (!source.isFile) {
+            throw GradleException("Renderer backend source does not exist: ${source.absolutePath}")
+        }
+
+        val tempDir = layout.buildDirectory.dir("tmp/importRendererBackendLibs").get().asFile
+        tempDir.mkdirs()
+        val apkFile = extractApk(source, tempDir)
+        ZipFile(apkFile).use { apkZip ->
+            for (abi in listOf("arm64-v8a", "armeabi-v7a")) {
+                val targetDir = file("src/main/jniLibs/$abi")
+                targetDir.mkdirs()
+                for (libraryName in rendererBackendImportLibraries) {
+                    val entry = apkZip.getEntry("lib/$abi/$libraryName") ?: continue
+                    val targetFile = File(targetDir, libraryName)
+                    if (targetFile.exists()) {
+                        logger.lifecycle("Skip existing renderer lib: ${targetFile.absolutePath}")
+                        continue
+                    }
+                    apkZip.getInputStream(entry).use { input ->
+                        FileOutputStream(targetFile, false).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    logger.lifecycle("Imported renderer lib: ${targetFile.absolutePath}")
+                }
+            }
+
+            val angleLicenseEntry = apkZip.getEntry("assets/licenses/ANGLE_LICENSE")
+            if (angleLicenseEntry != null) {
+                val licenseFile = file("src/main/assets/licenses/ANGLE_LICENSE")
+                if (!licenseFile.exists()) {
+                    licenseFile.parentFile?.mkdirs()
+                    apkZip.getInputStream(angleLicenseEntry).use { input ->
+                        FileOutputStream(licenseFile, false).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    logger.lifecycle("Imported ANGLE license: ${licenseFile.absolutePath}")
+                } else {
+                    logger.lifecycle("Skip existing ANGLE license: ${licenseFile.absolutePath}")
+                }
+            }
+        }
+    }
 }
 
 private fun String?.toBuildConfigStringLiteral(): String {

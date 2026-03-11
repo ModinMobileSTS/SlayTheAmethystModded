@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Build
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererDecision
+import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.AWTCanvasView
@@ -16,16 +19,35 @@ import java.util.TimeZone
 object StsLaunchSpec {
     private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 50
     const val LAUNCH_MODE_VANILLA = "vanilla"
+    const val LAUNCH_MODE_MTS = "mts"
+    // Legacy alias kept only so old debug scripts still resolve to the single MTS mode.
     const val LAUNCH_MODE_MTS_BASEMOD = "mts_basemod"
 
     @JvmStatic
+    fun isMtsLaunchMode(launchMode: String?): Boolean {
+        return launchMode == LAUNCH_MODE_MTS || launchMode == LAUNCH_MODE_MTS_BASEMOD
+    }
+
+    @JvmStatic
     fun buildArgs(context: Context, javaHome: File): List<String> {
-        return buildArgs(context, javaHome, LAUNCH_MODE_VANILLA, false)
+        return buildArgs(
+            context = context,
+            javaHome = javaHome,
+            launchMode = LAUNCH_MODE_VANILLA,
+            rendererDecision = resolveRendererDecision(context),
+            forceJvmCrash = false
+        )
     }
 
     @JvmStatic
     fun buildArgs(context: Context, javaHome: File, launchMode: String): List<String> {
-        return buildArgs(context, javaHome, launchMode, false)
+        return buildArgs(
+            context = context,
+            javaHome = javaHome,
+            launchMode = launchMode,
+            rendererDecision = resolveRendererDecision(context),
+            forceJvmCrash = false
+        )
     }
 
     @JvmStatic
@@ -33,6 +55,7 @@ object StsLaunchSpec {
         context: Context,
         javaHome: File,
         launchMode: String,
+        rendererDecision: RendererDecision,
         forceJvmCrash: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
@@ -89,7 +112,7 @@ object StsLaunchSpec {
             args.add("-verbose:gc")
             args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
         }
-        if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+        if (isMtsLaunchMode(launchMode)) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
             args.add("-noverify")
         }
@@ -124,7 +147,7 @@ object StsLaunchSpec {
         args.add("-Dos.name=Linux")
         args.add("-Dos.version=Android-${Build.VERSION.RELEASE}")
         args.add("-Djdk.lang.Process.launchMechanism=FORK")
-        args.add("-Dorg.lwjgl.opengl.libname=libGLESv2.so")
+        args.add("-Dorg.lwjgl.opengl.libname=${rendererDecision.effectiveBackend.lwjglOpenGlLibName()}")
         // Clamp reported GL capability to a conservative baseline on GLES bridges.
         // This avoids exposing desktop GL3.3 paths with missing entry points.
         args.add("-Dorg.lwjgl.opengl.maxVersion=3.0")
@@ -138,6 +161,17 @@ object StsLaunchSpec {
         args.add("-Dorg.lwjgl.librarypath=${context.applicationInfo.nativeLibraryDir}")
         args.add("-Dorg.lwjgl.system.SharedLibraryExtractPath=${context.applicationInfo.nativeLibraryDir}")
         args.add("-Dorg.lwjgl.system.EmulateSystemLoadLibrary=true")
+        args.add("-Damethyst.renderer.selection_mode=${rendererDecision.selectionMode.persistedValue}")
+        args.add("-Damethyst.renderer.auto_backend=${rendererDecision.automaticBackend.rendererId()}")
+        args.add("-Damethyst.renderer.effective_backend=${rendererDecision.effectiveBackend.rendererId()}")
+        args.add("-Damethyst.renderer.requested_surface=${rendererDecision.requestedSurfaceBackend.persistedValue}")
+        args.add("-Damethyst.renderer.effective_surface=${rendererDecision.effectiveSurfaceBackend.persistedValue}")
+        if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES2_GL4ES) {
+            args.add("-Damethyst.lwjgl.force_default_framebuffer=true")
+        }
+        rendererDecision.fallbackSummary()?.let {
+            args.add("-Damethyst.renderer.fallback_reason=$it")
+        }
         args.add("-Damethyst.gdx.native_dir=${RuntimePaths.gdxPatchNativesDir(context).absolutePath}")
         args.add("-Dglfwstub.windowWidth=${Math.max(1, CallbackBridge.windowWidth)}")
         args.add("-Dglfwstub.windowHeight=${Math.max(1, CallbackBridge.windowHeight)}")
@@ -169,7 +203,7 @@ object StsLaunchSpec {
             "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
         )
-        val bridgeDelegateMainClass = if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+        val bridgeDelegateMainClass = if (isMtsLaunchMode(launchMode)) {
             "com.evacipated.cardcrawl.modthespire.Loader"
         } else {
             "com.megacrit.cardcrawl.desktop.DesktopLauncher"
@@ -187,7 +221,7 @@ object StsLaunchSpec {
 
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
         args.add("-cp")
-        if (LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+        if (isMtsLaunchMode(launchMode)) {
             val classpathEntries = arrayListOf(
                 RuntimePaths.bootBridgeJar(context).absolutePath,
                 RuntimePaths.lwjglJar(context).absolutePath,
@@ -225,6 +259,15 @@ object StsLaunchSpec {
             args.add("io.stamethyst.bridge.BootBridgeLauncher")
         }
         return args
+    }
+
+    private fun resolveRendererDecision(context: Context): RendererDecision {
+        return RendererBackendResolver.resolve(
+            context = context,
+            requestedSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(context),
+            selectionMode = LauncherConfig.readRendererSelectionMode(context),
+            manualBackend = LauncherConfig.readManualRendererBackend(context)
+        )
     }
 
     private fun joinModIds(modIds: List<String>): String {

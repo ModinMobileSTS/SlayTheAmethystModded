@@ -12,6 +12,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
@@ -51,7 +54,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 @Stable
 class SettingsScreenViewModel : ViewModel() {
-
     sealed interface Effect {
         data object OpenImportJarPicker : Effect
         data object OpenImportModsPicker : Effect
@@ -73,6 +75,12 @@ class SettingsScreenViewModel : ViewModel() {
         val downloadUrl: String,
     )
 
+    data class RendererBackendOptionState(
+        val backend: RendererBackend,
+        val available: Boolean,
+        val reasonText: String? = null
+    )
+
     data class UiState(
         val busy: Boolean = false,
         val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
@@ -81,6 +89,21 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
+        val rendererSelectionMode: RendererSelectionMode =
+            LauncherPreferences.DEFAULT_RENDERER_SELECTION_MODE,
+        val manualRendererBackend: RendererBackend =
+            LauncherPreferences.DEFAULT_MANUAL_RENDERER_BACKEND,
+        val autoSelectedRendererBackend: RendererBackend =
+            LauncherPreferences.DEFAULT_MANUAL_RENDERER_BACKEND,
+        val effectiveRendererBackend: RendererBackend =
+            LauncherPreferences.DEFAULT_MANUAL_RENDERER_BACKEND,
+        val effectiveRenderSurfaceBackend: RenderSurfaceBackend =
+            LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
+        val rendererBackendOptions: List<RendererBackendOptionState> = RendererBackend.entries.map {
+            RendererBackendOptionState(backend = it, available = true)
+        },
+        val rendererFallbackText: String? = null,
+        val surfaceBackendForcedByRenderer: Boolean = false,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
@@ -407,6 +430,21 @@ class SettingsScreenViewModel : ViewModel() {
                 val playerName = readPlayerNameSelection(host)
                 val targetFps = readTargetFpsSelection(host)
                 val renderSurfaceBackend = readRenderSurfaceBackendSelection(host)
+                val rendererSelectionMode = readRendererSelectionModeSelection(host)
+                val manualRendererBackend = readManualRendererBackendSelection(host)
+                val rendererDecision = RendererBackendResolver.resolve(
+                    context = host,
+                    requestedSurfaceBackend = renderSurfaceBackend,
+                    selectionMode = rendererSelectionMode,
+                    manualBackend = manualRendererBackend
+                )
+                val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
+                    RendererBackendOptionState(
+                        backend = availability.backend,
+                        available = availability.available,
+                        reasonText = availability.describeUnavailable()
+                    )
+                }
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
                 val compressedPointersEnabled = readJvmCompressedPointersSelection(host)
                 val stringDeduplicationEnabled = readJvmStringDeduplicationSelection(host)
@@ -482,8 +520,24 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nPlayer name: ").append(playerName)
                     append("\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)")
                     append("\nTarget FPS: $targetFps")
-                    append("\nRender surface: ")
+                    append("\nRenderer selection mode: ")
+                        .append(rendererSelectionMode.displayName())
+                    append("\nRenderer auto select: ")
+                        .append(rendererDecision.autoSelectionSummary())
+                    append("\nRenderer effective: ")
+                        .append(rendererDecision.effectiveRendererSummary())
+                    rendererDecision.fallbackSummary()?.let {
+                        append("\nRenderer fallback: ").append(it)
+                    }
+                    append("\nRender surface requested: ")
                         .append(renderSurfaceBackend.displayName(host))
+                    append("\nRender surface effective: ")
+                        .append(rendererDecision.effectiveSurfaceBackend.displayName(host))
+                    if (rendererDecision.surfaceBackendForced) {
+                        append(" (forced by ")
+                            .append(rendererDecision.effectiveBackend.displayName)
+                            .append(")")
+                    }
                     append("\nJVM heap max: ${jvmHeapMaxMb} MB")
                     append("\nCompressed Oops / Class Pointers: ")
                         .append(if (compressedPointersEnabled) "ON" else "OFF")
@@ -542,6 +596,14 @@ class SettingsScreenViewModel : ViewModel() {
                         selectedRenderScale = renderScale,
                         selectedTargetFps = targetFps,
                         renderSurfaceBackend = renderSurfaceBackend,
+                        rendererSelectionMode = rendererSelectionMode,
+                        manualRendererBackend = manualRendererBackend,
+                        autoSelectedRendererBackend = rendererDecision.automaticBackend,
+                        effectiveRendererBackend = rendererDecision.effectiveBackend,
+                        effectiveRenderSurfaceBackend = rendererDecision.effectiveSurfaceBackend,
+                        rendererBackendOptions = rendererBackendOptions,
+                        rendererFallbackText = rendererDecision.fallbackSummary(),
+                        surfaceBackendForcedByRenderer = rendererDecision.surfaceBackendForced,
                         selectedJvmHeapMaxMb = jvmHeapMaxMb,
                         compressedPointersEnabled = compressedPointersEnabled,
                         stringDeduplicationEnabled = stringDeduplicationEnabled,
@@ -728,6 +790,24 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(renderSurfaceBackend = backend)
         saveRenderSurfaceBackendSelection(host, backend)
+        refreshStatus(host)
+    }
+
+    fun onRendererSelectionModeChanged(host: Activity, mode: RendererSelectionMode) {
+        if (uiState.busy || uiState.rendererSelectionMode == mode) {
+            return
+        }
+        uiState = uiState.copy(rendererSelectionMode = mode)
+        saveRendererSelectionModeSelection(host, mode)
+        refreshStatus(host)
+    }
+
+    fun onManualRendererBackendChanged(host: Activity, backend: RendererBackend) {
+        if (uiState.busy || uiState.manualRendererBackend == backend) {
+            return
+        }
+        uiState = uiState.copy(manualRendererBackend = backend)
+        saveManualRendererBackendSelection(host, backend)
         refreshStatus(host)
     }
 
@@ -1098,6 +1178,7 @@ class SettingsScreenViewModel : ViewModel() {
             "MTS startup cache prewarm failed: ${error.message ?: error.javaClass.simpleName}"
         }
     }
+
     fun onSavesArchivePicked(host: Activity, uri: Uri?) {
         if (uri == null) {
             return
@@ -1588,6 +1669,25 @@ class SettingsScreenViewModel : ViewModel() {
         return LauncherPreferences.readRenderSurfaceBackend(host)
     }
 
+    private fun readRendererSelectionModeSelection(host: Activity): RendererSelectionMode {
+        return LauncherPreferences.readRendererSelectionMode(host)
+    }
+
+    private fun saveRendererSelectionModeSelection(
+        host: Activity,
+        mode: RendererSelectionMode
+    ) {
+        LauncherPreferences.saveRendererSelectionMode(host, mode)
+    }
+
+    private fun readManualRendererBackendSelection(host: Activity): RendererBackend {
+        return LauncherPreferences.readManualRendererBackend(host)
+    }
+
+    private fun saveManualRendererBackendSelection(host: Activity, backend: RendererBackend) {
+        LauncherPreferences.saveManualRendererBackend(host, backend)
+    }
+
     private fun readPlayerNameSelection(host: Activity): String {
         return LauncherPreferences.readPlayerName(host)
     }
@@ -1714,6 +1814,13 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.settings_render_surface_backend_surface_view_short)
             RenderSurfaceBackend.TEXTURE_VIEW ->
                 host.getString(R.string.settings_render_surface_backend_texture_view_short)
+        }
+    }
+
+    private fun RendererSelectionMode.displayName(): String {
+        return when (this) {
+            RendererSelectionMode.AUTO -> "Auto"
+            RendererSelectionMode.MANUAL -> "Manual"
         }
     }
 }
