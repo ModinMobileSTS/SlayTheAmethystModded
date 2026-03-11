@@ -124,7 +124,10 @@ android {
 
     packaging {
         jniLibs.useLegacyPackaging = true
-        jniLibs.pickFirsts += setOf("**/libbytehook.so")
+        jniLibs.pickFirsts += setOf(
+            "**/libbytehook.so",
+            "**/libc++_shared.so"
+        )
     }
 
     buildFeatures {
