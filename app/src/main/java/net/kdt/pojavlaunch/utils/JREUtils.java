@@ -145,6 +145,7 @@ public final class JREUtils {
                 break;
             case OPENGL_ES3_DESKTOPGL_ZINK_KOPPER:
                 env.put("POJAVEXEC_EGL", "libEGL_mesa.so");
+                env.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
                 env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
                 env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
                 env.put("LIBGL_ES", "3");
@@ -227,6 +228,7 @@ public final class JREUtils {
                 return new String[] {"libgl4es_114.so"};
             case OPENGL_ES3_DESKTOPGL_ZINK_KOPPER:
                 return new String[] {
+                        "libc++_shared.so",
                         "libcutils.so",
                         "libglapi.so",
                         "libzink_dri.so",
@@ -235,6 +237,7 @@ public final class JREUtils {
                 };
             case VULKAN_ZINK:
                 return new String[] {
+                        "libc++_shared.so",
                         "libglapi.so",
                         "libzink_dri.so",
                         "libOSMesa.so"

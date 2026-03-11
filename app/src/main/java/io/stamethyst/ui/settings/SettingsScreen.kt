@@ -813,30 +813,24 @@ private fun SettingsRenderSection(
             color = MaterialTheme.colorScheme.error
         )
     }
-    SettingsDropdownField(
-        label = "手动后端",
-        valueText = uiState.manualRendererBackend.displayName,
-        enabled = !uiState.busy && uiState.rendererSelectionMode == RendererSelectionMode.MANUAL,
-        supportingText = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
-            "切换到 Manual 后生效；当前自动选择为 ${uiState.autoSelectedRendererBackend.displayName}（${uiState.autoSelectedRendererBackend.briefProsCons()}）"
-        } else {
-            "当前手动选择：${uiState.manualRendererBackend.displayName}（${uiState.manualRendererBackend.briefProsCons()}）"
-        },
-        options = uiState.rendererBackendOptions,
-        optionEnabled = { option -> option.available },
-        optionLabel = { option -> option.backend.displayName },
-        optionDescription = { option ->
-            buildList {
-                add(option.backend.briefProsCons())
-                option.reasonText?.let(::add)
-            }.joinToString("  ")
-        },
-        onOptionSelected = { option -> onManualRendererBackendChanged(option.backend) }
-    )
-    Text(
-        text = "Auto 会按设备能力和已打包库自动选择后端；Manual 允许手动固定，但不可用项会在本次启动回退到自动选择。",
-        style = MaterialTheme.typography.bodySmall
-    )
+    if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
+        SettingsDropdownField(
+            label = "手动后端",
+            valueText = uiState.manualRendererBackend.displayName,
+            enabled = !uiState.busy,
+            supportingText = "当前手动选择：${uiState.manualRendererBackend.displayName}（${uiState.manualRendererBackend.briefProsCons()}）",
+            options = uiState.rendererBackendOptions,
+            optionEnabled = { option -> option.available },
+            optionLabel = { option -> option.backend.displayName },
+            optionDescription = { option ->
+                buildList {
+                    add(option.backend.briefProsCons())
+                    option.reasonText?.let(::add)
+                }.joinToString("  ")
+            },
+            onOptionSelected = { option -> onManualRendererBackendChanged(option.backend) }
+        )
+    }
 
     Text(
         text = stringResource(R.string.settings_render_surface_backend_title),
