@@ -2,9 +2,7 @@ package io.stamethyst.ui.settings
 
 import android.app.Activity
 import android.app.ActivityManager
-import android.content.DialogInterface
 import android.os.Build
-import android.graphics.Color
 import android.net.Uri
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -53,10 +51,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 @Stable
 class SettingsScreenViewModel : ViewModel() {
-    private companion object {
-        const val LEGACY_JIBAO_SAVE_WARNING_MESSAGE =
-            "存档为旧鸡煲版的数据格式，有丢失历史对局和当前对局的风险，请升级鸡煲版为 1.5.4-dev4 后重新导出存档再导入。"
-    }
 
     sealed interface Effect {
         data object OpenImportJarPicker : Effect
@@ -1104,30 +1098,11 @@ class SettingsScreenViewModel : ViewModel() {
             "MTS startup cache prewarm failed: ${error.message ?: error.javaClass.simpleName}"
         }
     }
-
     fun onSavesArchivePicked(host: Activity, uri: Uri?) {
         if (uri == null) {
             return
         }
-        setBusy(true, "Checking save archive...")
-        executor.execute {
-            try {
-                val isLegacyArchive = SettingsFileService.isLegacyJibaoSaveArchive(host, uri)
-                host.runOnUiThread {
-                    if (!isLegacyArchive) {
-                        importSavesArchive(host, uri)
-                    } else {
-                        setBusy(false, null)
-                        showLegacySaveImportWarningDialog(host, uri)
-                    }
-                }
-            } catch (error: Throwable) {
-                host.runOnUiThread {
-                    Toast.makeText(host, "Save import failed: ${error.message}", Toast.LENGTH_LONG).show()
-                    refreshStatus(host)
-                }
-            }
-        }
+        importSavesArchive(host, uri)
     }
 
     private fun importSavesArchive(host: Activity, uri: Uri) {
@@ -1151,19 +1126,6 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
-    }
-
-    private fun showLegacySaveImportWarningDialog(host: Activity, uri: Uri) {
-        val dialog = AlertDialog.Builder(host)
-            .setTitle("警告")
-            .setMessage(LEGACY_JIBAO_SAVE_WARNING_MESSAGE)
-            .setNegativeButton("取消导入", null)
-            .setPositiveButton("仍然导入") { _, _ ->
-                importSavesArchive(host, uri)
-            }
-            .create()
-        dialog.show()
-        dialog.getButton(DialogInterface.BUTTON_POSITIVE)?.setTextColor(Color.parseColor("#D32F2F"))
     }
 
     fun onSavesExportPicked(host: Activity, uri: Uri?) {

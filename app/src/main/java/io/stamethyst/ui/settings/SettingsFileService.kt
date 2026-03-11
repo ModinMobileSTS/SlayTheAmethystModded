@@ -134,27 +134,6 @@ internal object SettingsFileService {
         "application/x-zstd"
     )
 
-    private val SAVE_IMPORT_TOP_LEVEL_DIRS = arrayOf(
-        "perference",
-        "preferences",
-        "perferences",
-        "saves",
-        "runs",
-        "metrics",
-        "home",
-        "sendToDevs",
-        "sendtodevs",
-        "multiplayer",
-        "multiple"
-    )
-
-    private val SAVE_EXPORT_FOLDER_MAPPINGS = arrayOf(
-        "multiplayer" to "multiple",
-        "saves" to "saves",
-        "perference" to "perference",
-        "runs" to "runs"
-    )
-
     fun buildSaveExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-saves-export-${formatter.format(Date())}.zip"
@@ -184,22 +163,19 @@ internal object SettingsFileService {
     @Throws(IOException::class)
     fun exportSaveBundle(host: Activity, uri: Uri): Int {
         val stsRoot = RuntimePaths.stsRoot(host)
+        val sourceRoots = SaveArchiveLayout.existingSourceDirectories(stsRoot)
         host.contentResolver.openOutputStream(uri).use { output ->
             if (output == null) {
                 throw IOException("Unable to open destination file")
             }
             ZipOutputStream(output).use { zipOutput ->
-                var exportedCount = 0
-                for ((sourceFolder, archiveFolder) in SAVE_EXPORT_FOLDER_MAPPINGS) {
-                    val sourceRoot = resolveSaveExportSourceFolder(stsRoot, sourceFolder) ?: continue
-                    exportedCount += exportSaveFolderToZip(zipOutput, sourceRoot, archiveFolder)
-                }
+                val exportedCount = writeSaveDirectoriesToZip(zipOutput, sourceRoots)
                 if (exportedCount <= 0) {
                     val entry = ZipEntry("sts/README.txt")
                     zipOutput.putNextEntry(entry)
                     val message = "No save files found yet.\n" +
                         "Expected folders under: ${stsRoot.absolutePath}\n" +
-                        "Folders: multiplayer, saves, perference, runs\n"
+                        "Folders: ${SaveArchiveLayout.supportedDirectoryDisplayText()}\n"
                     zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
                     zipOutput.closeEntry()
                 }
@@ -653,48 +629,6 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun isLegacyJibaoSaveArchive(host: Activity, uri: Uri): Boolean {
-        var hasImportableFiles = false
-        var hasFlatPreferencesStyleRootEntries = false
-        var hasNonPreferencesTargets = false
-
-        host.contentResolver.openInputStream(uri).use { rawInput ->
-            if (rawInput == null) {
-                throw IOException("Unable to open selected archive")
-            }
-            java.util.zip.ZipInputStream(rawInput).use { zipInput ->
-                while (true) {
-                    val entry = zipInput.nextEntry ?: break
-                    val rawPath = normalizeRawArchiveEntryPath(entry.name) ?: continue
-
-                    if (!entry.isDirectory
-                        && rawPath.indexOf('/') < 0
-                        && shouldTreatFlatArchiveFileAsPreferences(rawPath)
-                    ) {
-                        hasFlatPreferencesStyleRootEntries = true
-                    }
-
-                    val mappedPath = resolveImportableArchivePath(rawPath) ?: continue
-                    val mappedTopLevel = extractTopLevelDirectory(mappedPath)?.lowercase(Locale.ROOT)
-                        ?: continue
-                    if (entry.isDirectory) {
-                        continue
-                    }
-
-                    hasImportableFiles = true
-                    if (mappedTopLevel != "preferences") {
-                        hasNonPreferencesTargets = true
-                    }
-                }
-            }
-        }
-
-        return hasImportableFiles
-            && hasFlatPreferencesStyleRootEntries
-            && !hasNonPreferencesTargets
-    }
-
-    @Throws(IOException::class)
     fun importSaveArchive(host: Activity, uri: Uri): SaveImportResult {
         val stsRoot = RuntimePaths.stsRoot(host)
         if (!stsRoot.exists() && !stsRoot.mkdirs()) {
@@ -759,11 +693,11 @@ internal object SettingsFileService {
             java.util.zip.ZipInputStream(rawInput).use { zipInput ->
                 while (true) {
                     val entry = zipInput.nextEntry ?: break
-                    val mappedPath = resolveImportableArchivePath(entry.name)
-                    if (mappedPath.isNullOrEmpty()) {
+                    val importablePath = SaveArchiveLayout.resolveImportablePath(entry.name)
+                    if (importablePath.isNullOrEmpty()) {
                         continue
                     }
-                    extractTopLevelDirectory(mappedPath)?.let { targetTopLevelDirs.add(it) }
+                    SaveArchiveLayout.topLevelDirectory(importablePath)?.let { targetTopLevelDirs.add(it) }
                     if (entry.isDirectory) {
                         continue
                     }
@@ -779,26 +713,18 @@ internal object SettingsFileService {
 
     @Throws(IOException::class)
     private fun backupExistingSavesToDownloads(host: Activity, stsRoot: File): String? {
-        val sourceFiles = collectSaveFilesForBackup(stsRoot)
-        if (sourceFiles.isEmpty()) {
+        val sourceRoots = SaveArchiveLayout.existingSourceDirectories(stsRoot)
+        if (sourceRoots.isEmpty() || sourceRoots.none(::containsRegularFiles)) {
             return null
         }
 
         val backupFileName = buildSaveBackupFileName()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            backupExistingSavesToScopedDownloads(host, stsRoot, sourceFiles, backupFileName)
+            backupExistingSavesToScopedDownloads(host, sourceRoots, backupFileName)
             "Download/$backupFileName"
         } else {
-            backupExistingSavesToLegacyDownloads(stsRoot, sourceFiles, backupFileName)
+            backupExistingSavesToLegacyDownloads(sourceRoots, backupFileName)
         }
-    }
-
-    private fun collectSaveFilesForBackup(stsRoot: File): List<File> {
-        val files = ArrayList<File>()
-        for (folderName in SAVE_IMPORT_TOP_LEVEL_DIRS) {
-            collectRegularFiles(File(stsRoot, folderName), files)
-        }
-        return files
     }
 
     private fun collectRegularFiles(root: File, sink: MutableList<File>) {
@@ -815,12 +741,27 @@ internal object SettingsFileService {
         }
     }
 
+    private fun containsRegularFiles(root: File): Boolean {
+        if (!root.exists()) {
+            return false
+        }
+        if (root.isFile) {
+            return true
+        }
+        val children = root.listFiles() ?: return false
+        for (child in children) {
+            if (containsRegularFiles(child)) {
+                return true
+            }
+        }
+        return false
+    }
+
     @Throws(IOException::class)
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun backupExistingSavesToScopedDownloads(
         host: Activity,
-        stsRoot: File,
-        sourceFiles: List<File>,
+        sourceRoots: List<File>,
         backupFileName: String
     ) {
         val values = ContentValues().apply {
@@ -839,7 +780,7 @@ internal object SettingsFileService {
                 if (output == null) {
                     throw IOException("Unable to open backup archive destination")
                 }
-                writeSaveFilesToZip(output, stsRoot, sourceFiles)
+                writeSaveDirectoriesToZip(output, sourceRoots)
             }
             success = true
         } finally {
@@ -857,8 +798,7 @@ internal object SettingsFileService {
     @Suppress("DEPRECATION")
     @Throws(IOException::class)
     private fun backupExistingSavesToLegacyDownloads(
-        stsRoot: File,
-        sourceFiles: List<File>,
+        sourceRoots: List<File>,
         backupFileName: String
     ): String {
         val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -869,18 +809,26 @@ internal object SettingsFileService {
 
         val backupFile = File(downloadsDir, backupFileName)
         FileOutputStream(backupFile, false).use { output ->
-            writeSaveFilesToZip(output, stsRoot, sourceFiles)
+            writeSaveDirectoriesToZip(output, sourceRoots)
         }
         return backupFile.absolutePath
     }
 
     @Throws(IOException::class)
-    private fun writeSaveFilesToZip(output: OutputStream, stsRoot: File, sourceFiles: List<File>) {
+    private fun writeSaveDirectoriesToZip(output: OutputStream, sourceRoots: List<File>) {
         ZipOutputStream(output).use { zipOutput ->
-            for (sourceFile in sourceFiles) {
-                writeFileToZip(zipOutput, stsRoot, sourceFile)
-            }
+            writeSaveDirectoriesToZip(zipOutput, sourceRoots)
         }
+    }
+
+    @Throws(IOException::class)
+    private fun writeSaveDirectoriesToZip(zipOutput: ZipOutputStream, sourceRoots: List<File>): Int {
+        val writtenEntries = LinkedHashSet<String>()
+        var exportedCount = 0
+        for (sourceRoot in sourceRoots) {
+            exportedCount += exportSaveFolderToZip(zipOutput, sourceRoot, writtenEntries)
+        }
+        return exportedCount
     }
 
     private fun buildSaveBackupFileName(): String {
@@ -890,8 +838,7 @@ internal object SettingsFileService {
 
     @Throws(IOException::class)
     private fun clearExistingSaveTargets(stsRoot: File, targetTopLevelDirs: Set<String>) {
-        val clearTargets = resolveClearTargets(targetTopLevelDirs)
-        for (folderName in clearTargets) {
+        for (folderName in targetTopLevelDirs) {
             val target = File(stsRoot, folderName)
             if (!target.exists()) {
                 continue
@@ -915,12 +862,12 @@ internal object SettingsFileService {
                 val buffer = ByteArray(8192)
                 while (true) {
                     val entry = zipInput.nextEntry ?: break
-                    val mappedPath = resolveImportableArchivePath(entry.name)
-                    if (mappedPath.isNullOrEmpty()) {
+                    val importablePath = SaveArchiveLayout.resolveImportablePath(entry.name)
+                    if (importablePath.isNullOrEmpty()) {
                         continue
                     }
 
-                    val output = File(stsRoot, mappedPath)
+                    val output = File(stsRoot, importablePath)
                     val outputCanonical = output.canonicalPath
                     if (outputCanonical != rootCanonical
                         && !outputCanonical.startsWith("$rootCanonical${File.separator}")
@@ -954,223 +901,6 @@ internal object SettingsFileService {
             }
         }
         return importedFiles
-    }
-
-    private fun resolveImportableArchivePath(rawEntryName: String?): String? {
-        val mappedPath = mapArchiveEntryPath(rawEntryName) ?: return null
-        val normalizedPath = normalizeImportTargetPath(mappedPath) ?: return null
-        if (normalizedPath.equals("desktop-1.0.jar", ignoreCase = true)) {
-            return null
-        }
-        if (normalizedPath.startsWith("__MACOSX/")) {
-            return null
-        }
-        return normalizedPath
-    }
-
-    private fun mapArchiveEntryPath(rawEntryName: String?): String? {
-        if (rawEntryName == null) {
-            return null
-        }
-
-        var path = rawEntryName.replace('\\', '/')
-        while (path.startsWith("/")) {
-            path = path.substring(1)
-        }
-        if (path.isEmpty() || path.contains("../")) {
-            return null
-        }
-
-        val filesSts = path.indexOf("files/sts/")
-        path = if (filesSts >= 0) {
-            path.substring(filesSts + "files/sts/".length)
-        } else if (path.startsWith("sts/")) {
-            path.substring("sts/".length)
-        } else {
-            val nestedSts = path.indexOf("/sts/")
-            if (nestedSts >= 0) {
-                path.substring(nestedSts + "/sts/".length)
-            } else {
-                stripWrapperFolder(path)
-            }
-        }
-
-        while (path.startsWith("/")) {
-            path = path.substring(1)
-        }
-        if (path.isEmpty() || path.contains("../")) {
-            return null
-        }
-        return path
-    }
-
-    private fun normalizeRawArchiveEntryPath(rawEntryName: String?): String? {
-        if (rawEntryName == null) {
-            return null
-        }
-        var path = rawEntryName.replace('\\', '/')
-        while (path.startsWith("/")) {
-            path = path.substring(1)
-        }
-        if (path.isEmpty() || path.contains("../")) {
-            return null
-        }
-        return path
-    }
-
-    private fun stripWrapperFolder(path: String): String {
-        val firstSlash = path.indexOf('/')
-        if (firstSlash <= 0 || firstSlash >= path.length - 1) {
-            return path
-        }
-        val first = path.substring(0, firstSlash).lowercase(Locale.ROOT)
-        val remainder = path.substring(firstSlash + 1)
-        var second = remainder
-        val secondSlash = remainder.indexOf('/')
-        if (secondSlash > 0) {
-            second = remainder.substring(0, secondSlash)
-        }
-        second = second.lowercase(Locale.ROOT)
-
-        return if (!isLikelySaveTopLevel(first) && isLikelySaveTopLevel(second)) {
-            remainder
-        } else {
-            path
-        }
-    }
-
-    private fun normalizeImportTargetPath(path: String): String? {
-        var normalizedPath = path.replace('\\', '/')
-        while (normalizedPath.startsWith("/")) {
-            normalizedPath = normalizedPath.substring(1)
-        }
-        if (normalizedPath.isEmpty() || normalizedPath.contains("../")) {
-            return null
-        }
-
-        val firstSlash = normalizedPath.indexOf('/')
-        val folder = if (firstSlash >= 0) {
-            normalizedPath.substring(0, firstSlash)
-        } else {
-            normalizedPath
-        }
-        val rest = if (firstSlash >= 0 && firstSlash < normalizedPath.length - 1) {
-            normalizedPath.substring(firstSlash + 1)
-        } else {
-            ""
-        }
-
-        if (firstSlash < 0 && shouldTreatFlatArchiveFileAsPreferences(folder)) {
-            return "preferences/$folder"
-        }
-
-        val mappedFolder = when (folder.lowercase(Locale.ROOT)) {
-            "preferences",
-            "perference",
-            "perferences" -> "preferences"
-            "multiplayer",
-            "multiple" -> "multiplayer"
-            else -> folder
-        }
-        return if (rest.isEmpty()) {
-            mappedFolder
-        } else {
-            "$mappedFolder/$rest"
-        }
-    }
-
-    private fun shouldTreatFlatArchiveFileAsPreferences(fileName: String): Boolean {
-        val normalized = fileName.trim()
-        if (normalized.isEmpty()) {
-            return false
-        }
-        val lower = normalized.lowercase(Locale.ROOT)
-        if (isLikelySaveTopLevel(lower)) {
-            return false
-        }
-        if (lower == "desktop-1.0.jar") {
-            return false
-        }
-        if (lower.startsWith("sts")) {
-            return true
-        }
-        if (lower == "mtssettings" || lower.startsWith("the_")) {
-            return true
-        }
-        if (!lower.endsWith(".backup")) {
-            return false
-        }
-        val baseName = lower.removeSuffix(".backup")
-        return baseName.startsWith("sts")
-            || baseName.startsWith("the_")
-            || baseName == "mtssettings"
-    }
-
-    private fun resolveClearTargets(targetTopLevelDirs: Set<String>): Set<String> {
-        if (targetTopLevelDirs.isEmpty()) {
-            return SAVE_IMPORT_TOP_LEVEL_DIRS.toSet()
-        }
-
-        val clearTargets = LinkedHashSet<String>()
-        for (rawTopLevel in targetTopLevelDirs) {
-            val topLevel = rawTopLevel.trim()
-            if (topLevel.isEmpty()) {
-                continue
-            }
-            when (topLevel.lowercase(Locale.ROOT)) {
-                "preferences",
-                "perference",
-                "perferences" -> {
-                    clearTargets.add("preferences")
-                    clearTargets.add("perference")
-                    clearTargets.add("perferences")
-                }
-
-                "multiplayer",
-                "multiple" -> {
-                    clearTargets.add("multiplayer")
-                    clearTargets.add("multiple")
-                }
-
-                "sendtodevs",
-                "sendtodev" -> {
-                    clearTargets.add("sendToDevs")
-                    clearTargets.add("sendtodevs")
-                }
-
-                else -> clearTargets.add(topLevel)
-            }
-        }
-        return clearTargets
-    }
-
-    private fun extractTopLevelDirectory(path: String): String? {
-        var normalizedPath = path.replace('\\', '/')
-        while (normalizedPath.startsWith("/")) {
-            normalizedPath = normalizedPath.substring(1)
-        }
-        if (normalizedPath.isEmpty()) {
-            return null
-        }
-        val firstSlash = normalizedPath.indexOf('/')
-        return if (firstSlash >= 0) {
-            normalizedPath.substring(0, firstSlash)
-        } else {
-            normalizedPath
-        }
-    }
-
-    private fun isLikelySaveTopLevel(folder: String): Boolean {
-        return folder == "perference"
-            || folder == "preferences"
-            || folder == "perferences"
-            || folder == "saves"
-            || folder == "sendtodevs"
-            || folder == "runs"
-            || folder == "metrics"
-            || folder == "home"
-            || folder == "multiplayer"
-            || folder == "multiple"
     }
 
     private fun resolveReservedComponent(modId: String): String? {
@@ -1291,61 +1021,28 @@ internal object SettingsFileService {
         }
     }
 
-    private fun resolveSaveExportSourceFolder(stsRoot: File, sourceFolder: String): File? {
-        val candidates = when (sourceFolder.lowercase(Locale.ROOT)) {
-            "multiplayer" -> arrayOf("multiplayer", "multiple")
-            "perference" -> arrayOf("perference", "preferences", "perferences")
-            else -> arrayOf(sourceFolder)
-        }
-        for (candidateName in candidates) {
-            val candidate = File(stsRoot, candidateName)
-            if (candidate.exists()) {
-                return candidate
-            }
-        }
-        return null
-    }
-
     @Throws(IOException::class)
-    private fun exportSaveFolderToZip(zipOutput: ZipOutputStream, sourceRoot: File, archiveRoot: String): Int {
+    private fun exportSaveFolderToZip(
+        zipOutput: ZipOutputStream,
+        sourceRoot: File,
+        writtenEntries: MutableSet<String>
+    ): Int {
         if (!sourceRoot.exists()) {
             return 0
         }
         val sourceFiles = ArrayList<File>()
         collectRegularFiles(sourceRoot, sourceFiles)
+        sourceFiles.sortWith(compareBy<File>({ it.path.lowercase(Locale.ROOT) }, { it.path }))
         var exportedCount = 0
         for (sourceFile in sourceFiles) {
-            val entryName = buildSaveExportEntryName(sourceRoot, archiveRoot, sourceFile)
+            val entryName = SaveArchiveLayout.buildArchiveEntryName(sourceRoot, sourceFile)
+            if (!writtenEntries.add(entryName)) {
+                continue
+            }
             writeFileToZip(zipOutput, sourceFile, entryName)
             exportedCount++
         }
         return exportedCount
-    }
-
-    @Throws(IOException::class)
-    private fun buildSaveExportEntryName(sourceRoot: File, archiveRoot: String, sourceFile: File): String {
-        val sourceRootPath = sourceRoot.canonicalPath
-        val sourceFilePath = sourceFile.canonicalPath
-        val relativePath = if (sourceFilePath.startsWith("$sourceRootPath${File.separator}")) {
-            sourceFilePath.substring(sourceRootPath.length + 1)
-        } else {
-            sourceFile.name
-        }
-        val normalizedRelativePath = relativePath.replace('\\', '/')
-        return "sts/$archiveRoot/$normalizedRelativePath"
-    }
-
-    @Throws(IOException::class)
-    private fun writeFileToZip(zipOutput: ZipOutputStream, stsRoot: File, sourceFile: File) {
-        val rootPath = stsRoot.canonicalPath
-        val filePath = sourceFile.canonicalPath
-        val relativePath = if (filePath.startsWith("$rootPath${File.separator}")) {
-            filePath.substring(rootPath.length + 1)
-        } else {
-            sourceFile.name
-        }
-        val entryName = "sts/${relativePath.replace('\\', '/')}"
-        writeFileToZip(zipOutput, sourceFile, entryName)
     }
 
     private fun buildJvmLogDeviceInfo(host: Activity): String = buildString {
