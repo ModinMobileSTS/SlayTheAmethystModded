@@ -71,6 +71,10 @@ class JvmLaunchController(
         private set
 
     @Volatile
+    var bootInteractiveSignalSeen = false
+        private set
+
+    @Volatile
     private var jvmLaunchThread: Thread? = null
 
     @Volatile
@@ -106,6 +110,15 @@ class JvmLaunchController(
     @Volatile
     private var cancelRequested = false
 
+    @Volatile
+    private var lastBootPhaseProgress = 0
+
+    @Volatile
+    private var lastBootPhaseMessage = ""
+
+    @Volatile
+    private var lastLatestLogLine = ""
+
     private var latestLogLogcatMirrorOffset = 0L
     private var latestLogLogcatMirrorRemainder = ""
     private var bootBridgeEventOffset = 0L
@@ -120,7 +133,11 @@ class JvmLaunchController(
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
         jvmLaunchStartedElapsedMs = SystemClock.elapsedRealtime()
+        bootInteractiveSignalSeen = false
         cancelRequested = false
+        lastBootPhaseProgress = 8
+        lastBootPhaseMessage = "Starting JVM..."
+        lastLatestLogLine = ""
 
         latestLogRuntimeCrashDetected = false
         onProgressUpdate(8, "Starting JVM...")
@@ -231,8 +248,10 @@ class JvmLaunchController(
                 )
 
                 if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
+                    recordBootContext(28, "Launching ModTheSpire...")
                     onProgressUpdate(28, "Launching ModTheSpire...")
                 } else {
+                    recordBootContext(85, "Launching game...")
                     onProgressUpdate(85, "Launching game...")
                 }
 
@@ -278,6 +297,7 @@ class JvmLaunchController(
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
         jvmLaunchStartedElapsedMs = 0L
+        bootInteractiveSignalSeen = false
     }
 
     @Throws(LaunchCancelledException::class)
@@ -494,10 +514,13 @@ class JvmLaunchController(
         val message = parts.getOrNull(2)?.trim().orEmpty()
         when (eventType) {
             "PHASE" -> {
-                if (progress != null && progress >= 0) {
+                val phaseProgress = progress?.takeIf { it >= 0 }
+                val phaseMessage = message.ifEmpty { "Loading..." }
+                recordBootContext(phaseProgress, phaseMessage)
+                if (phaseProgress != null) {
                     onProgressUpdate(
-                        progress.coerceIn(0, 100),
-                        message.ifEmpty { "Loading..." }
+                        phaseProgress.coerceIn(0, 100),
+                        phaseMessage
                     )
                 }
             }
@@ -506,21 +529,28 @@ class JvmLaunchController(
                 val splashProgress = (progress ?: BOOT_BRIDGE_SPLASH_PROGRESS)
                     .coerceAtLeast(BOOT_BRIDGE_SPLASH_PROGRESS)
                     .coerceAtMost(100)
-                onProgressUpdate(splashProgress, message.ifEmpty { "Game splash" })
-                signalDismissFromBootBridge(bootOverlayController, message)
+                val splashMessage = message.ifEmpty { "Game splash" }
+                recordBootContext(splashProgress, splashMessage)
+                bootInteractiveSignalSeen = true
+                onProgressUpdate(splashProgress, splashMessage)
+                signalDismissFromBootBridge(bootOverlayController, splashMessage)
             }
 
             "READY" -> {
-                onProgressUpdate(100, message.ifEmpty { "Game ready" })
+                val readyMessage = message.ifEmpty { "Game ready" }
+                recordBootContext(100, readyMessage)
+                bootInteractiveSignalSeen = true
+                onProgressUpdate(100, readyMessage)
                 signalDismissFromBootBridge(
                     bootOverlayController,
-                    message.ifEmpty { "Game ready" }
+                    readyMessage
                 )
                 return true
             }
 
             "FAIL" -> {
                 val detail = message.ifEmpty { "Boot bridge signaled failure" }
+                recordBootContext(progress, detail)
                 bootOverlayController?.signalLaunchFailure(detail)
                 return true
             }
@@ -586,6 +616,7 @@ class JvmLaunchController(
                 if (normalized.isEmpty()) {
                     continue
                 }
+                lastLatestLogLine = normalized
                 if (mirrorJvmLogsToLogcat) {
                     Log.i(LOGCAT_TAG, normalized)
                 }
@@ -628,6 +659,29 @@ class JvmLaunchController(
         )
     }
 
+    fun buildExitedBeforeInteractiveDetail(): String {
+        val context = ArrayList<String>(2)
+        val phaseMessage = lastBootPhaseMessage.trim()
+        if (phaseMessage.isNotEmpty()) {
+            val normalizedProgress = lastBootPhaseProgress.coerceAtLeast(0)
+            if (normalizedProgress > 0) {
+                context.add("last phase ${normalizedProgress}%: $phaseMessage")
+            } else {
+                context.add("last phase: $phaseMessage")
+            }
+        }
+        val lastLogLine = lastLatestLogLine.trim()
+        if (lastLogLine.isNotEmpty() &&
+            !lastLogLine.equals(phaseMessage, ignoreCase = true)
+        ) {
+            context.add("last log: $lastLogLine")
+        }
+        if (context.isEmpty()) {
+            return "JVM exited before the game became interactive"
+        }
+        return "JVM exited before the game became interactive (${context.joinToString("; ")})"
+    }
+
     private fun readRuntimeHeapSnapshot(snapshotFile: File): JvmRuntimeMemorySnapshot? {
         if (!snapshotFile.isFile) {
             return null
@@ -647,8 +701,20 @@ class JvmLaunchController(
         if (bootBridgeDismissSignaled) {
             return
         }
+        bootInteractiveSignalSeen = true
         bootBridgeDismissSignaled = true
         bootOverlayController?.signalSplashPhase(message.ifEmpty { "Game splash" })
+    }
+
+    private fun recordBootContext(progress: Int? = null, message: String? = null) {
+        val safeProgress = progress?.takeIf { it >= 0 }
+        if (safeProgress != null) {
+            lastBootPhaseProgress = safeProgress.coerceAtMost(100)
+        }
+        val safeMessage = message?.trim().orEmpty()
+        if (safeMessage.isNotEmpty()) {
+            lastBootPhaseMessage = safeMessage
+        }
     }
 
     private fun enforceLatestLogCap(logFile: File) {

@@ -142,6 +142,7 @@ class StsGameActivity : AppCompatActivity() {
             targetFps = sessionConfig.targetFps,
             useTextureViewSurface = sessionConfig.useTextureViewSurface,
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
+            cropScreenBottom = sessionConfig.cropScreenBottom,
             onSurfaceReady = { sessionCoordinator.onSurfaceReady() },
             onSurfaceDestroyed = { },
             onTextureFrameUpdate = { timestampNs ->

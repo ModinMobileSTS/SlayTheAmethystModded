@@ -138,6 +138,9 @@ fun LauncherSettingsScreen(
         onDisplayCutoutAvoidanceChanged = { enabled ->
             viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
         },
+        onScreenBottomCropChanged = { enabled ->
+            viewModel.onScreenBottomCropChanged(activity, enabled)
+        },
         onGamePerformanceOverlayChanged = { enabled ->
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
         },
@@ -189,6 +192,7 @@ private fun LauncherSettingsScreenPreview() {
             showModFileName = false,
             mobileHudEnabled = false,
             avoidDisplayCutout = false,
+            cropScreenBottom = false,
             showGamePerformanceOverlay = false,
             lwjglDebugEnabled = false,
             jvmLogcatMirrorEnabled = false,
@@ -238,6 +242,7 @@ private fun LauncherSettingsScreenContent(
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onMobileHudEnabledChanged: (Boolean) -> Unit = {},
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
+    onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
@@ -346,6 +351,7 @@ private fun LauncherSettingsScreenContent(
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onMobileHudEnabledChanged = onMobileHudEnabledChanged,
                         onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
+                        onScreenBottomCropChanged = onScreenBottomCropChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
@@ -926,6 +932,7 @@ private fun SettingsInputSection(
     onShowModFileNameChanged: (Boolean) -> Unit,
     onMobileHudEnabledChanged: (Boolean) -> Unit,
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
+    onScreenBottomCropChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
@@ -1034,6 +1041,15 @@ private fun SettingsInputSection(
         disabledText = "避让摄像头显示：禁用",
         description = "启用后，游戏会避开刘海或挖孔区域显示，减少前置摄像头遮挡内容的问题。",
         onCheckedChange = onDisplayCutoutAvoidanceChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.cropScreenBottom,
+        enabled = !uiState.busy,
+        enabledText = "裁剪屏幕底部：启用",
+        disabledText = "裁剪屏幕底部：禁用",
+        description = "启用后，在横屏右侧留出黑边，改善全面屏右侧边缘难点击的问题。",
+        onCheckedChange = onScreenBottomCropChanged
     )
 
     SwitchSettingRow(
