@@ -2,6 +2,8 @@ package io.stamethyst.config
 
 import android.content.Context
 import androidx.core.content.edit
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -30,6 +32,8 @@ object LauncherConfig {
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
+    private const val PREF_KEY_RENDERER_SELECTION_MODE = "renderer_selection_mode"
+    private const val PREF_KEY_MANUAL_RENDERER_BACKEND = "manual_renderer_backend"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
@@ -68,6 +72,9 @@ object LauncherConfig {
     const val DEFAULT_TARGET_FPS = 120
     val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW
+    val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode = RendererSelectionMode.AUTO
+    val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend =
+        RendererBackend.OPENGL_ES_MOBILEGLUES
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
@@ -222,6 +229,34 @@ object LauncherConfig {
     fun saveRenderSurfaceBackend(context: Context, backend: RenderSurfaceBackend) {
         prefs(context).edit {
             putString(PREF_KEY_RENDER_SURFACE_BACKEND, backend.persistedValue)
+        }
+    }
+
+    fun readRendererSelectionMode(context: Context): RendererSelectionMode {
+        val stored = prefs(context).getString(
+            PREF_KEY_RENDERER_SELECTION_MODE,
+            DEFAULT_RENDERER_SELECTION_MODE.persistedValue
+        )
+        return RendererSelectionMode.fromPersistedValue(stored) ?: DEFAULT_RENDERER_SELECTION_MODE
+    }
+
+    fun saveRendererSelectionMode(context: Context, mode: RendererSelectionMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_RENDERER_SELECTION_MODE, mode.persistedValue)
+        }
+    }
+
+    fun readManualRendererBackend(context: Context): RendererBackend {
+        val stored = prefs(context).getString(
+            PREF_KEY_MANUAL_RENDERER_BACKEND,
+            DEFAULT_MANUAL_RENDERER_BACKEND.rendererId()
+        )
+        return RendererBackend.fromRendererId(stored) ?: DEFAULT_MANUAL_RENDERER_BACKEND
+    }
+
+    fun saveManualRendererBackend(context: Context, backend: RendererBackend) {
+        prefs(context).edit {
+            putString(PREF_KEY_MANUAL_RENDERER_BACKEND, backend.rendererId())
         }
     }
 

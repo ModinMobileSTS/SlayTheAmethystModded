@@ -215,7 +215,11 @@ public class LwjglGraphics implements Graphics {
 					}
 				}
 				if (!icons.isEmpty()) {
-					Display.setIcon(icons.toArray(new ByteBuffer[0]));
+					try {
+						Display.setIcon(icons.toArray(new ByteBuffer[0]));
+					} catch (Throwable t) {
+						System.out.println("[gdx-patch] Skip Display.setIcon failure: " + t);
+					}
 				}
 			}
 		}
@@ -242,12 +246,36 @@ public class LwjglGraphics implements Graphics {
 		String versionString = org.lwjgl.opengl.GL11.glGetString(GL11.GL_VERSION);
 		String vendorString = org.lwjgl.opengl.GL11.glGetString(GL11.GL_VENDOR);
 		String rendererString = org.lwjgl.opengl.GL11.glGetString(GL11.GL_RENDERER);
-		isGLESContext = versionString != null && versionString.toLowerCase().contains("opengl es");
+		boolean rendererForcesGLES = isGlesBackedRenderer();
+		boolean versionLooksLikeGLES = versionString != null && versionString.toLowerCase().contains("opengl es");
+		isGLESContext = versionLooksLikeGLES || rendererForcesGLES;
 		Application.ApplicationType applicationType = isGLESContext ? Application.ApplicationType.Android
 			: Application.ApplicationType.Desktop;
-		glVersion = new GLVersion(applicationType, versionString, vendorString, rendererString);
+		String versionStringForParsing = normalizeVersionStringForParsing(versionString, rendererForcesGLES);
+		glVersion = new GLVersion(applicationType, versionStringForParsing, vendorString, rendererString);
 		System.out.println("[gdx-patch] GL context detected: type=" + applicationType + ", version=" + versionString
-			+ ", vendor=" + vendorString + ", renderer=" + rendererString);
+			+ ", vendor=" + vendorString + ", renderer=" + rendererString
+			+ ", glesBacked=" + isGLESContext + ", rendererBackend=" + effectiveRendererBackendId());
+	}
+
+	private static boolean isGlesBackedRenderer () {
+		String rendererBackend = effectiveRendererBackendId();
+		return "opengles_mobileglues".equals(rendererBackend);
+	}
+
+	private static String effectiveRendererBackendId () {
+		return System.getProperty("amethyst.renderer.effective_backend", "").trim();
+	}
+
+	private static String normalizeVersionStringForParsing (String rawVersionString, boolean rendererForcesGLES) {
+		if (!rendererForcesGLES || rawVersionString == null) return rawVersionString;
+		if (rawVersionString.toLowerCase().contains("opengl es")) return rawVersionString;
+
+		String requestedEsVersion = System.getenv("LIBGL_ES");
+		if ("3".equals(requestedEsVersion)) {
+			return "OpenGL ES 3.0 (" + rawVersionString + ")";
+		}
+		return "OpenGL ES 2.0 (" + rawVersionString + ")";
 	}
 
 	private static void extractExtensions () {
@@ -427,9 +455,10 @@ public class LwjglGraphics implements Graphics {
 
 		private static boolean canUseCorePath () {
 			try {
-				return Display.isCreated() && Display.isCurrent();
+				// Some Android bridge-backed contexts report isCurrent=false even though core FBO entry points work.
+				return Display.isCreated();
 			} catch (Throwable ignored) {
-				return false;
+				return true;
 			}
 		}
 

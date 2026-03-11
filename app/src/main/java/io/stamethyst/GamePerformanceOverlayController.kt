@@ -23,6 +23,7 @@ import java.util.Locale
 internal class GamePerformanceOverlayController(
     private val activity: AppCompatActivity,
     private val overlayView: TextView,
+    private val rendererSummary: String,
     private val readJvmRuntimeMemorySnapshot: () -> JvmRuntimeMemorySnapshot?,
     private val readJvmLaunchStartedElapsedMs: () -> Long
 ) {
@@ -254,6 +255,9 @@ internal class GamePerformanceOverlayController(
         }
 
         overlayView.text = buildString(320) {
+            append("Renderer ")
+            append(rendererSummary)
+            append('\n')
             append("FPS ")
             append(String.format(Locale.US, "%.1f", fps))
             append("  RSS ")

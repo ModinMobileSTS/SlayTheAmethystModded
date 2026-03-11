@@ -43,7 +43,7 @@ object LaunchPreparationService {
         reportProgress(progressCallback, 86, "Validating desktop-1.0.jar...")
         StsJarValidator.validate(RuntimePaths.importedStsJar(context))
 
-        if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+        if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
             throwIfInterrupted()
             reportProgress(progressCallback, 90, "Validating required mod jars...")
             ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))

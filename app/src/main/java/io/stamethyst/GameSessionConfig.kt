@@ -3,6 +3,8 @@ package io.stamethyst
 import android.content.Context
 import android.content.Intent
 import io.stamethyst.backend.launch.StsLaunchSpec
+import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RenderSurfaceBackend
@@ -19,20 +21,31 @@ internal data class GameSessionConfig(
     val mirrorJvmLogsToLogcat: Boolean,
     val longPressMouseShowsKeyboard: Boolean,
     val autoSwitchLeftAfterRightClick: Boolean,
-    val renderSurfaceBackend: RenderSurfaceBackend,
+    val requestedRenderSurfaceBackend: RenderSurfaceBackend,
+    val rendererDecision: RendererDecision,
     val avoidDisplayCutout: Boolean
 ) {
+    val renderSurfaceBackend: RenderSurfaceBackend
+        get() = rendererDecision.effectiveSurfaceBackend
+
     val useTextureViewSurface: Boolean
         get() = renderSurfaceBackend.usesTextureViewSurface
 
     companion object {
         fun fromActivityIntent(context: Context, intent: Intent): GameSessionConfig {
             val requestedMode = intent.getStringExtra(StsGameActivity.EXTRA_LAUNCH_MODE)
-            val launchMode = if (requestedMode == StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD) {
-                StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
+            val launchMode = if (StsLaunchSpec.isMtsLaunchMode(requestedMode)) {
+                StsLaunchSpec.LAUNCH_MODE_MTS
             } else {
                 StsLaunchSpec.LAUNCH_MODE_VANILLA
             }
+            val requestedRenderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(context)
+            val rendererDecision = RendererBackendResolver.resolve(
+                context = context,
+                requestedSurfaceBackend = requestedRenderSurfaceBackend,
+                selectionMode = LauncherConfig.readRendererSelectionMode(context),
+                manualBackend = LauncherConfig.readManualRendererBackend(context)
+            )
 
             return GameSessionConfig(
                 renderScale = LauncherConfig.readRenderScale(context),
@@ -54,7 +67,8 @@ internal data class GameSessionConfig(
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(context),
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
-                renderSurfaceBackend = LauncherConfig.readRenderSurfaceBackend(context),
+                requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,
+                rendererDecision = rendererDecision,
                 avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context)
             )
         }

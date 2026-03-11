@@ -67,6 +67,7 @@ internal class GameSessionCoordinator(
         activity = activity,
         launchMode = config.launchMode,
         targetFps = config.targetFps,
+        rendererDecision = config.rendererDecision,
         forceJvmCrash = config.forceJvmCrash,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
@@ -102,6 +103,7 @@ internal class GameSessionCoordinator(
             performanceOverlayController = GamePerformanceOverlayController(
                 activity = activity,
                 overlayView = overlayView,
+                rendererSummary = config.rendererDecision.overlaySummary(),
                 readJvmRuntimeMemorySnapshot = { jvmLaunchController.runtimeMemorySnapshot },
                 readJvmLaunchStartedElapsedMs = { jvmLaunchController.jvmLaunchStartedElapsedMs }
             )

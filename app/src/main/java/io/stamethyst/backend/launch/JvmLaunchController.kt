@@ -7,6 +7,7 @@ import io.stamethyst.BootOverlayController
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.utils.JREUtils
@@ -24,6 +25,7 @@ class JvmLaunchController(
     private val activity: StsGameActivity,
     private val launchMode: String,
     private val targetFps: Int,
+    private val rendererDecision: RendererDecision,
     private val forceJvmCrash: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
@@ -178,7 +180,7 @@ class JvmLaunchController(
                     bootOverlayController
                 )
 
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+                if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
                     ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
                 }
 
@@ -191,7 +193,8 @@ class JvmLaunchController(
                     activity,
                     resolvedJavaHome.absolutePath,
                     getWindowWidth().coerceAtLeast(1),
-                    getWindowHeight().coerceAtLeast(1)
+                    getWindowHeight().coerceAtLeast(1),
+                    rendererDecision
                 )
                 throwIfCancelled()
                 JREUtils.initJavaRuntime(resolvedJavaHome.absolutePath)
@@ -214,11 +217,20 @@ class JvmLaunchController(
                         activity,
                         resolvedJavaHome,
                         launchMode,
+                        rendererDecision,
                         forceJvmCrash
                     )
                 )
+                Log.i(
+                    LOGCAT_TAG,
+                    "Renderer selection mode=${rendererDecision.selectionMode.persistedValue}, " +
+                        "effective=${rendererDecision.effectiveBackend.rendererId()}, " +
+                        "auto=${rendererDecision.automaticBackend.rendererId()}, " +
+                        "surface=${rendererDecision.effectiveSurfaceBackend.persistedValue}, " +
+                        "fallback=${rendererDecision.fallbackSummary() ?: "none"}"
+                )
 
-                if (StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD == launchMode) {
+                if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
                     onProgressUpdate(28, "Launching ModTheSpire...")
                 } else {
                     onProgressUpdate(85, "Launching game...")

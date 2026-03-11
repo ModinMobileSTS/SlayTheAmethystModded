@@ -13,6 +13,7 @@ import android.content.pm.ConfigurationInfo;
 import android.system.ErrnoException;
 import android.system.Os;
 
+import io.stamethyst.backend.render.RendererDecision;
 import io.stamethyst.config.RuntimePaths;
 import io.stamethyst.backend.render.RendererBackend;
 
@@ -26,6 +27,7 @@ public final class JREUtils {
     public static String LD_LIBRARY_PATH;
     public static String jvmLibraryPath;
     private static String runtimeLibDir;
+    private static RendererBackend currentRendererBackend;
 
     private JREUtils() {
     }
@@ -84,7 +86,8 @@ public final class JREUtils {
             Context context,
             String javaHome,
             int windowWidth,
-            int windowHeight
+            int windowHeight,
+            RendererDecision rendererDecision
     ) {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("POJAV_NATIVEDIR", context.getApplicationInfo().nativeLibraryDir);
@@ -112,9 +115,50 @@ public final class JREUtils {
         clearEnv("POJAV_RENDERER");
         clearEnv("MG_PLUGIN_STATUS");
         clearEnv("MG_DIR_PATH");
+        clearEnv("FD_DEV_FEATURES");
+        clearEnv("POJAV_EMUI_ITERATOR_MITIGATE");
 
-        env.put("AMETHYST_RENDERER", RendererBackend.OPENGL_ES2.rendererId());
-        env.put("LIBGL_ES", supportsGles3(context) ? "3" : "2");
+        RendererBackend effectiveBackend = rendererDecision.getEffectiveBackend();
+        currentRendererBackend = effectiveBackend;
+        env.put("AMETHYST_RENDERER", effectiveBackend.rendererId());
+        if (rendererDecision.getEnableEmuiIteratorMitigation()) {
+            env.put("POJAV_EMUI_ITERATOR_MITIGATE", "1");
+        }
+
+        switch (effectiveBackend) {
+            case OPENGL_ES_MOBILEGLUES:
+                File mobileGluesDir = new File(context.getFilesDir(), "MobileGlues");
+                if (!mobileGluesDir.isDirectory()) {
+                    // Best effort only; MobileGlues can still initialize without preexisting cache dir.
+                    //noinspection ResultOfMethodCallIgnored
+                    mobileGluesDir.mkdirs();
+                }
+                env.put("MG_DIR_PATH", mobileGluesDir.getAbsolutePath());
+                env.put("POJAVEXEC_EGL", "libmobileglues.so");
+                env.put("LIBGL_ES", supportsGles3(context) ? "3" : "2");
+                break;
+            case OPENGL_ES2_NATIVE:
+                env.put("LIBGL_ES", supportsGles3(context) ? "3" : "2");
+                break;
+            case OPENGL_ES2_GL4ES:
+                env.put("LIBGL_ES", "2");
+                break;
+            case OPENGL_ES3_DESKTOPGL_ZINK_KOPPER:
+                env.put("POJAVEXEC_EGL", "libEGL_mesa.so");
+                env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
+                env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
+                env.put("LIBGL_ES", "3");
+                if (rendererDecision.getEnableUbwcHint()) {
+                    env.put("FD_DEV_FEATURES", "enable_tp_ubwc_flag_hint=1");
+                }
+                break;
+            case VULKAN_ZINK:
+                env.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+                env.put("MESA_GL_VERSION_OVERRIDE", "4.6COMPAT");
+                env.put("MESA_GLSL_VERSION_OVERRIDE", "460");
+                env.put("LIBGL_ES", "3");
+                break;
+        }
 
         for (Map.Entry<String, String> entry : env.entrySet()) {
             try {
@@ -151,7 +195,53 @@ public final class JREUtils {
         for (File file : locateLibs(new File(javaHome, runtimeLibDir))) {
             dlopen(file.getAbsolutePath());
         }
+        loadGraphicsLibrary();
         dlopen(findInLdLibPath("libopenal.so"));
+    }
+
+    private static void loadGraphicsLibrary() {
+        if (currentRendererBackend == null) {
+            return;
+        }
+        for (String libName : getRendererLibraryLoadOrder(currentRendererBackend)) {
+            if (libName == null || libName.isEmpty()) {
+                continue;
+            }
+            if (dlopen(libName)) {
+                continue;
+            }
+            String resolved = findInLdLibPath(libName);
+            if (!resolved.equals(libName)) {
+                dlopen(resolved);
+            }
+        }
+    }
+
+    private static String[] getRendererLibraryLoadOrder(RendererBackend backend) {
+        switch (backend) {
+            case OPENGL_ES_MOBILEGLUES:
+                return new String[] {"libmobileglues.so"};
+            case OPENGL_ES2_NATIVE:
+                return new String[] {"libGLESv2.so", "libEGL.so"};
+            case OPENGL_ES2_GL4ES:
+                return new String[] {"libgl4es_114.so"};
+            case OPENGL_ES3_DESKTOPGL_ZINK_KOPPER:
+                return new String[] {
+                        "libcutils.so",
+                        "libglapi.so",
+                        "libzink_dri.so",
+                        "libEGL_mesa.so",
+                        "libglxshim.so"
+                };
+            case VULKAN_ZINK:
+                return new String[] {
+                        "libglapi.so",
+                        "libzink_dri.so",
+                        "libOSMesa.so"
+                };
+            default:
+                return new String[0];
+        }
     }
 
     private static String findRuntimeLibDir(String javaHome) {

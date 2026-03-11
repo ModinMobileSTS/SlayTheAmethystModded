@@ -1,6 +1,8 @@
 package io.stamethyst.ui.preferences
 
 import android.content.Context
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeMode
@@ -19,6 +21,10 @@ object LauncherPreferences {
         get() = LauncherConfig.TARGET_FPS_OPTIONS.copyOf()
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend
         get() = LauncherConfig.DEFAULT_RENDER_SURFACE_BACKEND
+    val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode
+        get() = LauncherConfig.DEFAULT_RENDERER_SELECTION_MODE
+    val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend
+        get() = LauncherConfig.DEFAULT_MANUAL_RENDERER_BACKEND
     val DEFAULT_THEME_MODE: LauncherThemeMode
         get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
@@ -117,6 +123,22 @@ object LauncherPreferences {
 
     fun saveRenderSurfaceBackend(context: Context, backend: RenderSurfaceBackend) {
         LauncherConfig.saveRenderSurfaceBackend(context, backend)
+    }
+
+    fun readRendererSelectionMode(context: Context): RendererSelectionMode {
+        return LauncherConfig.readRendererSelectionMode(context)
+    }
+
+    fun saveRendererSelectionMode(context: Context, mode: RendererSelectionMode) {
+        LauncherConfig.saveRendererSelectionMode(context, mode)
+    }
+
+    fun readManualRendererBackend(context: Context): RendererBackend {
+        return LauncherConfig.readManualRendererBackend(context)
+    }
+
+    fun saveManualRendererBackend(context: Context, backend: RendererBackend) {
+        LauncherConfig.saveManualRendererBackend(context, backend)
     }
 
     fun readThemeMode(context: Context): LauncherThemeMode {

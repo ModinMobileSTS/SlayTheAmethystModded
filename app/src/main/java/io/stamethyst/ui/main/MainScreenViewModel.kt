@@ -282,7 +282,7 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD, forceJvmCrash = false)
+        prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS, forceJvmCrash = false)
     }
 
     fun suggestNextFolderName(): String {
@@ -1595,18 +1595,18 @@ class MainScreenViewModel : ViewModel() {
     private fun maybeLaunchFromDebugExtra(host: Activity, intent: Intent) {
         val debugLaunchMode = intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_LAUNCH_MODE)
         val forceJvmCrash = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_FORCE_JVM_CRASH, false)
-        if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA
-            && debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD
+        if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA &&
+            !StsLaunchSpec.isMtsLaunchMode(debugLaunchMode)
         ) {
             return
         }
 
-        prepareAndLaunch(host, debugLaunchMode, forceJvmCrash = forceJvmCrash)
+        prepareAndLaunch(host, debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA, forceJvmCrash = forceJvmCrash)
     }
 
     private fun prepareAndLaunch(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
         ensurePendingSelectionInitialized(host)
-        if (launchMode == StsLaunchSpec.LAUNCH_MODE_MTS_BASEMOD) {
+        if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
             val optionalMods = resolveOptionalModsWithPendingSelection()
             val duplicateGroups = findEnabledDuplicateModIdGroups(optionalMods)
             if (duplicateGroups.isNotEmpty()) {
