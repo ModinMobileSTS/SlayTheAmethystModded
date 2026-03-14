@@ -12,6 +12,7 @@ import io.stamethyst.LauncherActivity
 
 object LauncherReturnCoordinator {
     private const val REQUEST_CODE_LAUNCHER_RESTART = 0x71A7
+    private const val REQUEST_CODE_LAUNCHER_CRASH_RESTART = 0x71A8
     private const val RESTART_PENDING_INTENT_FLAGS =
         PendingIntent.FLAG_CANCEL_CURRENT or
             PendingIntent.FLAG_ONE_SHOT or
@@ -42,6 +43,25 @@ object LauncherReturnCoordinator {
     }
 
     @JvmStatic
+    internal fun createHeapPressureIntent(context: Context, notice: JvmHeapPressureNotice): Intent {
+        return Intent(context, LauncherActivity::class.java).apply {
+            putExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_WARNING, true)
+            putExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_PEAK_USED_BYTES, notice.peakHeapUsedBytes)
+            putExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_HEAP_MAX_BYTES, notice.peakHeapMaxBytes)
+            putExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_CURRENT_HEAP_MB, notice.currentHeapMaxMb)
+            putExtra(
+                LauncherActivity.EXTRA_HEAP_PRESSURE_SUGGESTED_HEAP_MB,
+                notice.suggestedHeapMaxMb
+            )
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        }
+    }
+
+    @JvmStatic
     fun showCrashAndFinish(activity: Activity, code: Int, isSignal: Boolean, detail: String?) {
         activity.startActivity(createCrashIntent(activity, code, isSignal, detail))
         activity.finish()
@@ -53,14 +73,47 @@ object LauncherReturnCoordinator {
         delayMs: Long,
         markExpectedBackExitRestart: Boolean
     ): Boolean {
+        return scheduleLauncherIntentRestart(
+            context = context,
+            delayMs = delayMs,
+            requestCode = REQUEST_CODE_LAUNCHER_RESTART,
+            intent = createRestartIntent(context),
+            markExpectedBackExitRestart = markExpectedBackExitRestart
+        )
+    }
+
+    @JvmStatic
+    fun scheduleCrashLauncherRestart(
+        context: Context,
+        delayMs: Long,
+        code: Int,
+        isSignal: Boolean,
+        detail: String?
+    ): Boolean {
+        return scheduleLauncherIntentRestart(
+            context = context,
+            delayMs = delayMs,
+            requestCode = REQUEST_CODE_LAUNCHER_CRASH_RESTART,
+            intent = createCrashIntent(context, code, isSignal, detail),
+            markExpectedBackExitRestart = false
+        )
+    }
+
+    private fun scheduleLauncherIntentRestart(
+        context: Context,
+        delayMs: Long,
+        requestCode: Int,
+        intent: Intent,
+        markExpectedBackExitRestart: Boolean
+    ): Boolean {
         if (markExpectedBackExitRestart) {
             BackExitNotice.markExpectedBackExitRestartScheduled(context)
         }
 
         val pendingIntent = PendingIntent.getActivity(
             context,
-            REQUEST_CODE_LAUNCHER_RESTART,
-            createRestartIntent(context),
+            requestCode,
+            intent,
             RESTART_PENDING_INTENT_FLAGS
         )
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager?

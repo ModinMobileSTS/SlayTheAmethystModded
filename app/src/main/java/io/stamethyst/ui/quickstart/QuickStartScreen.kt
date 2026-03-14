@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -97,10 +98,11 @@ fun QuickStartScreen(
         }
     }
 
-    Box(
+    Surface(
         modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground
     ) {
         Column(
             modifier = Modifier
@@ -124,6 +126,7 @@ fun QuickStartScreen(
                     Text(
                         text = if (isImported) "导入完成，欢迎使用" else "快速开始",
                         style = if (isImported) MaterialTheme.typography.displaySmall else MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -139,6 +142,7 @@ fun QuickStartScreen(
                             "首次启动需要先导入 desktop-1.0.jar 才能进入主界面。"
                         },
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -169,6 +173,7 @@ fun QuickStartScreen(
                         Text(
                             text = "导入 desktop-1.0.jar",
                             style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -193,6 +198,7 @@ fun QuickStartScreen(
                         Text(
                             text = busyMessage,
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -251,57 +257,68 @@ fun QuickStartScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Box(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth(0.88f)
-                        .widthIn(max = 360.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .clickable(
-                            interactionSource = noopInteraction,
-                            indication = null
-                        ) { }
-                        .padding(horizontal = 18.dp, vertical = 16.dp)
+                        .widthIn(max = 360.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    Box(
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = noopInteraction,
+                                indication = null
+                            ) { }
+                            .padding(horizontal = 18.dp, vertical = 16.dp)
                     ) {
-                        Text(
-                            text = "找不到 desktop-1.0.jar？",
-                            style = MaterialTheme.typography.titleMedium,
-                            textAlign = TextAlign.Center
-                        )
                         Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.Start,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "desktop-1.0.jar 来自电脑版 Slay the Spire 安装目录。",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "找不到 desktop-1.0.jar？",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center
                             )
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "desktop-1.0.jar 来自电脑版 Slay the Spire 安装目录。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "获取方法",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "1. 在电脑上从安装目录拷贝 desktop-1.0.jar",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "2. 常见目录：SteamLibrary/common/SlayTheSpire/desktop-1.0.jar",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Text(
-                                text = "获取方法",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            Text(
-                                text = "1. 在电脑上从安装目录拷贝 desktop-1.0.jar",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = "2. 常见目录：SteamLibrary/common/SlayTheSpire/desktop-1.0.jar",
-                                style = MaterialTheme.typography.bodySmall
+                                text = "我知道了",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                textDecoration = TextDecoration.Underline,
+                                modifier = Modifier.clickable(onClick = closeJarSourceDialog)
                             )
                         }
-                        Text(
-                            text = "我知道了",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            textDecoration = TextDecoration.Underline,
-                            modifier = Modifier.clickable(onClick = closeJarSourceDialog)
-                        )
                     }
                 }
             }

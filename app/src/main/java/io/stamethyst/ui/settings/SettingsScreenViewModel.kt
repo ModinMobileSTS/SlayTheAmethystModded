@@ -424,10 +424,14 @@ class SettingsScreenViewModel : ViewModel() {
             .format(Date(timestampMs))
     }
 
+    private fun hasValidImportedStsJar(host: Activity): Boolean {
+        return StsJarValidator.isValid(RuntimePaths.importedStsJar(host))
+    }
+
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {
         executor.execute {
             try {
-                val hasJar = RuntimePaths.importedStsJar(host).exists()
+                val hasJar = hasValidImportedStsJar(host)
 
                 val renderScale = RenderScaleService.readValue(host)
                 val playerName = readPlayerNameSelection(host)
@@ -1051,9 +1055,13 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, "Importing desktop-1.0.jar...")
         executor.execute {
             try {
+                SettingsFileService.importUriToFileAtomically(
+                    host = host,
+                    uri = uri,
+                    targetFile = RuntimePaths.importedStsJar(host),
+                    validator = StsJarValidator::validate
+                )
                 MtsClasspathWarmupCoordinator.invalidateCache(host)
-                SettingsFileService.copyUriToFile(host, uri, RuntimePaths.importedStsJar(host))
-                StsJarValidator.validate(RuntimePaths.importedStsJar(host))
                 val warmupWarning = prewarmMtsClasspathAfterImport(host)
                 host.runOnUiThread {
                     Toast.makeText(host, "Imported desktop-1.0.jar", Toast.LENGTH_SHORT).show()

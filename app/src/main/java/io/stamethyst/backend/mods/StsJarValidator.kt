@@ -39,6 +39,19 @@ object StsJarValidator {
         validateLenient(jarFile)
     }
 
+    @JvmStatic
+    fun isValid(jarFile: File?): Boolean {
+        if (jarFile == null) {
+            return false
+        }
+        return try {
+            validate(jarFile)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     @Throws(IOException::class)
     private fun validateStrict(jarFile: File) {
         JarFile(jarFile).use { jar ->

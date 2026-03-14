@@ -26,6 +26,7 @@ internal class GameSessionCoordinator(
     companion object {
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
         private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
+        private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
     }
 
     @Volatile
@@ -243,9 +244,21 @@ internal class GameSessionCoordinator(
         if (crashReturnTriggered) {
             return
         }
+        val heapPressureNotice = if (exitCode == 0) {
+            jvmLaunchController.buildHeapPressureNotice()
+        } else {
+            null
+        }
         if (backExitRequested) {
             cancelBackExitForceRestart()
-            activity.runOnUiThread { activity.finish() }
+            activity.runOnUiThread {
+                if (heapPressureNotice != null) {
+                    activity.startActivity(
+                        LauncherReturnCoordinator.createHeapPressureIntent(activity, heapPressureNotice)
+                    )
+                }
+                activity.finish()
+            }
             return
         }
 
@@ -258,7 +271,12 @@ internal class GameSessionCoordinator(
 
         activity.runOnUiThread {
             if (latestCrash != null) {
-                reportCrashAndReturn(-1, false, latestCrash.detail)
+                reportCrashAndReturn(
+                    -1,
+                    false,
+                    latestCrash.detail,
+                    terminateProcessAfterReturn = true
+                )
                 return@runOnUiThread
             }
 
@@ -266,15 +284,26 @@ internal class GameSessionCoordinator(
                 reportCrashAndReturn(
                     JvmLaunchController.CRASH_CODE_BOOT_FAILURE,
                     false,
-                    jvmLaunchController.buildExitedBeforeInteractiveDetail()
+                    jvmLaunchController.buildExitedBeforeInteractiveDetail(),
+                    terminateProcessAfterReturn = true
                 )
                 return@runOnUiThread
             }
 
             if (exitCode == 0) {
+                if (heapPressureNotice != null) {
+                    activity.startActivity(
+                        LauncherReturnCoordinator.createHeapPressureIntent(activity, heapPressureNotice)
+                    )
+                }
                 activity.finish()
             } else {
-                reportCrashAndReturn(exitCode, false, null)
+                reportCrashAndReturn(
+                    exitCode,
+                    false,
+                    null,
+                    terminateProcessAfterReturn = true
+                )
             }
         }
     }
@@ -448,14 +477,28 @@ internal class GameSessionCoordinator(
         detail: String?,
         terminateProcessAfterReturn: Boolean
     ) {
-        activity.startActivity(LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail))
         if (terminateProcessAfterReturn) {
-            activity.finishAffinity()
-            renderSurfaceManager.renderView.postDelayed({
-                android.os.Process.killProcess(android.os.Process.myPid())
-            }, 180L)
+            val restartScheduled = LauncherReturnCoordinator.scheduleCrashLauncherRestart(
+                context = activity,
+                delayMs = CRASH_LAUNCHER_RESTART_DELAY_MS,
+                code = code,
+                isSignal = isSignal,
+                detail = detail
+            )
+            if (restartScheduled) {
+                activity.finishAffinity()
+                renderSurfaceManager.renderView.postDelayed({
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }, 180L)
+            } else {
+                activity.startActivity(
+                    LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail)
+                )
+                activity.finish()
+            }
             return
         }
+        activity.startActivity(LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail))
         activity.finish()
     }
 

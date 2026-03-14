@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.main.MainScreenViewModel
@@ -31,6 +32,11 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_CRASH_CODE = "io.stamethyst.crash_code"
         const val EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.crash_is_signal"
         const val EXTRA_CRASH_DETAIL = "io.stamethyst.crash_detail"
+        const val EXTRA_HEAP_PRESSURE_WARNING = "io.stamethyst.heap_pressure_warning"
+        const val EXTRA_HEAP_PRESSURE_PEAK_USED_BYTES = "io.stamethyst.heap_pressure_peak_used_bytes"
+        const val EXTRA_HEAP_PRESSURE_HEAP_MAX_BYTES = "io.stamethyst.heap_pressure_heap_max_bytes"
+        const val EXTRA_HEAP_PRESSURE_CURRENT_HEAP_MB = "io.stamethyst.heap_pressure_current_heap_mb"
+        const val EXTRA_HEAP_PRESSURE_SUGGESTED_HEAP_MB = "io.stamethyst.heap_pressure_suggested_heap_mb"
 
         private val JAR_MIME_TYPES = setOf(
             "application/java-archive",
@@ -75,7 +81,7 @@ class LauncherActivity : AppCompatActivity() {
             LegacyStsStorageMigration.migrateIfNeeded(this)
         }.getOrNull()
 
-        val initialRoute = if (RuntimePaths.importedStsJar(this).isFile) {
+        val initialRoute = if (StsJarValidator.isValid(RuntimePaths.importedStsJar(this))) {
             Route.Main
         } else {
             Route.QuickStart

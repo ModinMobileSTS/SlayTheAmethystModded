@@ -5,6 +5,9 @@
     <string name="sts_normal_exit">Game process exited unexpectedly, exit code %1$d.</string>
     <string name="sts_signal_exit">Game process crashed and exited due to signal %1$d.</string>
     <string name="sts_oom_exit">OutOfMemoryError detected (JVM heap exhausted). The game automatically returned to the launcher. JVM heap size may be too large or too small; adjust the JVM heap max in Settings.</string>
+    <string name="heap_pressure_dialog_title">Consider increasing JVM heap</string>
+    <string name="heap_pressure_dialog_message_recommend">This run peaked at about %1$d / %2$d MB of JVM heap (%3$d%%).\n\nIf you often see stutter or exits when many mods are enabled, consider raising the JVM heap max in Settings. The current heap max is %4$d MB; a reasonable next step is %5$d MB.</string>
+    <string name="heap_pressure_dialog_message_at_limit">This run peaked at about %1$d / %2$d MB of JVM heap (%3$d%%).\n\nHeap pressure was high. The current heap max is already %4$d MB, so if stutter or exits continue, you may need to trim enabled mods or other memory-heavy content.</string>
     <string name="sts_share_crash_report">Share error logs</string>
     <string name="sts_share_crash_chooser_title">Share to QQ / WeChat, etc.</string>
     <string name="sts_share_crash_report_failed">No available app can share the crash report.</string>
@@ -39,10 +42,12 @@
     <string name="settings_touch_mouse_double_tap_lock_disabled">Double-tap floating window click lock: Disabled</string>
     <string name="settings_touch_mouse_double_tap_lock_desc">Double-tap the floating window to lock clicking so the cursor can hover without triggering clicks. This helps with hover-only text that would otherwise be clicked away, such as Loadout mod descriptions.</string>
     <string name="status_touch_mouse_double_tap_lock_format">Double-tap floating window click lock: %1$s</string>
-    <string name="settings_touch_mouse_long_press_keyboard_enabled">Long-press touch mouse to open keyboard: Enabled</string>
-    <string name="settings_touch_mouse_long_press_keyboard_disabled">Long-press touch mouse to open keyboard: Disabled</string>
-    <string name="settings_touch_mouse_long_press_keyboard_desc">Controls whether long-pressing the touch mouse button opens the soft keyboard.</string>
-    <string name="status_touch_mouse_long_press_keyboard_format">Long-press touch mouse to open keyboard: %1$s</string>
+    <string name="settings_touch_mouse_long_press_keyboard_enabled">Long-press touch mouse shortcut menu: Enabled</string>
+    <string name="settings_touch_mouse_long_press_keyboard_disabled">Long-press touch mouse shortcut menu: Disabled</string>
+    <string name="settings_touch_mouse_long_press_keyboard_desc">Controls whether long-pressing the touch mouse button opens the floating shortcut menu, which can send Ctrl/Shift/Tab/Alt or open the soft keyboard.</string>
+    <string name="status_touch_mouse_long_press_keyboard_format">Long-press touch mouse shortcut menu: %1$s</string>
+    <string name="touch_mouse_floating_menu_collapse">Hide</string>
+    <string name="touch_mouse_floating_menu_keyboard">Open keyboard</string>
     <string name="settings_render_surface_backend_title">Render surface backend</string>
     <string name="settings_render_surface_backend_surface_view">SurfaceView (default, faster but can stutter on some systems)</string>
     <string name="settings_render_surface_backend_texture_view">TextureView (compatibility fallback, usually steadier but heavier)</string>

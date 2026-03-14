@@ -23,6 +23,7 @@ import io.stamethyst.backend.file_interactive.SafExportActivity
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
+import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.R
@@ -130,8 +131,12 @@ class MainScreenViewModel : ViewModel() {
         return resolveControlsEnabled(uiState.busy, uiState.busyOperation)
     }
 
+    private fun hasValidImportedStsJar(host: Activity): Boolean {
+        return StsJarValidator.isValid(RuntimePaths.importedStsJar(host))
+    }
+
     fun refresh(host: Activity) {
-        val hasJar = RuntimePaths.importedStsJar(host).exists()
+        val hasJar = hasValidImportedStsJar(host)
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
         val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
         val hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
@@ -786,16 +791,22 @@ class MainScreenViewModel : ViewModel() {
         }
 
         val expectedBackExit = BackExitNotice.consumeExpectedBackExitIfRecent(host)
+        val showedCrashDialog = maybeShowCrashDialog(host, intent)
+        val showedHeapPressureDialog = if (!showedCrashDialog) {
+            maybeShowHeapPressureDialog(host, intent)
+        } else {
+            false
+        }
+        if (showedCrashDialog || showedHeapPressureDialog) {
+            return
+        }
+
         if (expectedBackExit) {
-            clearCrashExtras(intent)
             showExpectedBackExitDialog(host)
             return
         }
 
-        val showedCrashDialog = maybeShowCrashDialog(host, intent)
-        if (!showedCrashDialog) {
-            maybeLaunchFromDebugExtra(host, intent)
-        }
+        maybeLaunchFromDebugExtra(host, intent)
     }
 
     private fun buildMainStatusSummary(
@@ -870,7 +881,7 @@ class MainScreenViewModel : ViewModel() {
         }
         publishUiState(
             host = host,
-            hasJar = RuntimePaths.importedStsJar(host).exists(),
+            hasJar = hasValidImportedStsJar(host),
             hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
             hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
@@ -1287,6 +1298,76 @@ class MainScreenViewModel : ViewModel() {
         return true
     }
 
+    private fun maybeShowHeapPressureDialog(
+        host: Activity,
+        intent: Intent
+    ): Boolean {
+        if (!intent.getBooleanExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_WARNING, false)) {
+            return false
+        }
+
+        val peakHeapUsedBytes = intent.getLongExtra(
+            LauncherActivity.EXTRA_HEAP_PRESSURE_PEAK_USED_BYTES,
+            -1L
+        )
+        val peakHeapMaxBytes = intent.getLongExtra(
+            LauncherActivity.EXTRA_HEAP_PRESSURE_HEAP_MAX_BYTES,
+            -1L
+        )
+        val currentHeapMaxMb = intent.getIntExtra(
+            LauncherActivity.EXTRA_HEAP_PRESSURE_CURRENT_HEAP_MB,
+            -1
+        )
+        val suggestedHeapMaxMb = intent.getIntExtra(
+            LauncherActivity.EXTRA_HEAP_PRESSURE_SUGGESTED_HEAP_MB,
+            -1
+        )
+
+        clearHeapPressureExtras(intent)
+
+        if (peakHeapUsedBytes <= 0L || peakHeapMaxBytes <= 0L) {
+            return false
+        }
+
+        val peakHeapUsedMb = bytesToMegabytesRoundedUp(peakHeapUsedBytes)
+        val peakHeapMaxMb = bytesToMegabytesRoundedUp(peakHeapMaxBytes)
+        val usagePercent = ((peakHeapUsedBytes * 100L) / peakHeapMaxBytes)
+            .coerceIn(0L, 999L)
+            .toInt()
+        val safeCurrentHeapMaxMb = currentHeapMaxMb
+            .takeIf { it > 0 }
+            ?: peakHeapMaxMb.toInt()
+        val safeSuggestedHeapMaxMb = suggestedHeapMaxMb
+            .takeIf { it > 0 }
+            ?: safeCurrentHeapMaxMb
+
+        val message = if (safeSuggestedHeapMaxMb > safeCurrentHeapMaxMb) {
+            host.getString(
+                R.string.heap_pressure_dialog_message_recommend,
+                peakHeapUsedMb,
+                peakHeapMaxMb,
+                usagePercent,
+                safeCurrentHeapMaxMb,
+                safeSuggestedHeapMaxMb
+            )
+        } else {
+            host.getString(
+                R.string.heap_pressure_dialog_message_at_limit,
+                peakHeapUsedMb,
+                peakHeapMaxMb,
+                usagePercent,
+                safeCurrentHeapMaxMb
+            )
+        }
+
+        AlertDialog.Builder(host)
+            .setTitle(R.string.heap_pressure_dialog_title)
+            .setView(createScrollableDialogMessageView(host, message))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+        return true
+    }
+
     private fun createScrollableDialogMessageView(host: Activity, message: String): ScrollView {
         val density = host.resources.displayMetrics.density
         val horizontalPaddingPx = (24f * density).toInt()
@@ -1378,6 +1459,22 @@ class MainScreenViewModel : ViewModel() {
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_CODE)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
+    }
+
+    private fun clearHeapPressureExtras(intent: Intent) {
+        intent.removeExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_WARNING)
+        intent.removeExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_PEAK_USED_BYTES)
+        intent.removeExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_HEAP_MAX_BYTES)
+        intent.removeExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_CURRENT_HEAP_MB)
+        intent.removeExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_SUGGESTED_HEAP_MB)
+    }
+
+    private fun bytesToMegabytesRoundedUp(bytes: Long): Long {
+        if (bytes <= 0L) {
+            return 0L
+        }
+        val oneMegabyte = 1024L * 1024L
+        return (bytes + oneMegabyte - 1L) / oneMegabyte
     }
 
     private fun isOutOfMemoryCrash(code: Int, detail: String?): Boolean {
@@ -1695,7 +1792,7 @@ class MainScreenViewModel : ViewModel() {
     private fun republish(host: Activity) {
         publishUiState(
             host = host,
-            hasJar = RuntimePaths.importedStsJar(host).exists(),
+            hasJar = hasValidImportedStsJar(host),
             hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
             hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)

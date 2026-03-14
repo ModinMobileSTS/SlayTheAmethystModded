@@ -6,6 +6,8 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.system.ErrnoException
+import android.system.Os
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
@@ -239,6 +241,32 @@ internal object SettingsFileService {
                     }
                     output.write(buffer, 0, read)
                 }
+            }
+        }
+    }
+
+    @Throws(IOException::class)
+    fun importUriToFileAtomically(
+        host: Activity,
+        uri: Uri,
+        targetFile: File,
+        validator: ((File) -> Unit)? = null
+    ) {
+        val parent = targetFile.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        val tempFile = File(
+            parent ?: targetFile.absoluteFile.parentFile ?: throw IOException("Target has no parent"),
+            ".${targetFile.name}.${System.nanoTime()}.import.tmp"
+        )
+        try {
+            copyUriToFile(host, uri, tempFile)
+            validator?.invoke(tempFile)
+            replaceFileAtomically(tempFile, targetFile)
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
             }
         }
     }
@@ -654,31 +682,25 @@ internal object SettingsFileService {
 
     @Throws(IOException::class)
     private fun moveFileReplacing(source: File, target: File) {
+        replaceFileAtomically(source, target)
+    }
+
+    @Throws(IOException::class)
+    private fun replaceFileAtomically(source: File, target: File) {
         val parent = target.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-        if (target.exists() && !target.delete()) {
-            throw IOException("Failed to replace existing file: ${target.absolutePath}")
+        if (!source.exists()) {
+            throw IOException("Source file not found: ${source.absolutePath}")
         }
-        if (source.renameTo(target)) {
-            return
-        }
-
-        FileInputStream(source).use { input ->
-            FileOutputStream(target, false).use { output ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) {
-                        break
-                    }
-                    output.write(buffer, 0, read)
-                }
-            }
-        }
-        if (!source.delete()) {
-            throw IOException("Failed to clean temp file: ${source.absolutePath}")
+        try {
+            Os.rename(source.absolutePath, target.absolutePath)
+        } catch (error: ErrnoException) {
+            throw IOException(
+                "Failed to atomically replace ${target.absolutePath} with ${source.absolutePath}",
+                error
+            )
         }
     }
 

@@ -87,194 +87,199 @@ fun LauncherContent(
             FeedbackInboxCoordinator.bind(activity.applicationContext)
             FeedbackInboxCoordinator.startPolling(activity.applicationContext)
         }
-        Box(modifier = Modifier.fillMaxSize()) {
-            NavDisplay(
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-                onBack = {
-                    if (!isModImportInteractionLocked) {
-                        navigator.goBack()
-                    }
-                },
-                backStack = navigator.backStack,
-                transitionSpec = {
-                    slideInHorizontally(
-                        animationSpec = tween(durationMillis = 420),
-                        initialOffsetX = { fullWidth -> fullWidth }
-                    ).togetherWith(
-                        slideOutHorizontally(
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                NavDisplay(
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    ),
+                    onBack = {
+                        if (!isModImportInteractionLocked) {
+                            navigator.goBack()
+                        }
+                    },
+                    backStack = navigator.backStack,
+                    transitionSpec = {
+                        slideInHorizontally(
                             animationSpec = tween(durationMillis = 420),
-                            targetOffsetX = { fullWidth -> -fullWidth }
+                            initialOffsetX = { fullWidth -> fullWidth }
+                        ).togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = tween(durationMillis = 420),
+                                targetOffsetX = { fullWidth -> -fullWidth }
+                            )
                         )
-                    )
-                },
-                popTransitionSpec = {
-                    slideInHorizontally(
-                        animationSpec = tween(durationMillis = 420),
-                        initialOffsetX = { fullWidth -> -fullWidth }
-                    ).togetherWith(
-                        slideOutHorizontally(
+                    },
+                    popTransitionSpec = {
+                        slideInHorizontally(
                             animationSpec = tween(durationMillis = 420),
-                            targetOffsetX = { fullWidth -> fullWidth }
+                            initialOffsetX = { fullWidth -> -fullWidth }
+                        ).togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = tween(durationMillis = 420),
+                                targetOffsetX = { fullWidth -> fullWidth }
+                            )
                         )
-                    )
-                },
-                entryProvider = entryProvider {
-                    entry<Route.QuickStart> {
-                        QuickStartScreen(
-                            viewModel = settingsViewModel,
-                            modifier = Modifier.fillMaxSize(),
-                            onImportSuccess = { navigator.resetRoot(Route.Main) }
-                        )
-                    }
+                    },
+                    entryProvider = entryProvider {
+                        entry<Route.QuickStart> {
+                            QuickStartScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                                onImportSuccess = { navigator.resetRoot(Route.Main) }
+                            )
+                        }
 
-                    entry<Route.Main> {
-                        LauncherMainScreen(
-                            viewModel = mainViewModel,
-                            modifier = Modifier.fillMaxSize(),
-                            onOpenSettings = { navigator.push(Route.Settings) },
-                            feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
-                            onOpenFeedbackUpdates = {
-                                val unreadIssues = feedbackInboxState.subscriptions
-                                    .filter { it.unread }
-                                when {
-                                    unreadIssues.size == 1 -> {
-                                        navigator.push(
-                                            Route.FeedbackConversation(unreadIssues.first().issueNumber)
-                                        )
-                                    }
+                        entry<Route.Main> {
+                            LauncherMainScreen(
+                                viewModel = mainViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                                onOpenSettings = { navigator.push(Route.Settings) },
+                                feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
+                                onOpenFeedbackUpdates = {
+                                    val unreadIssues = feedbackInboxState.subscriptions
+                                        .filter { it.unread }
+                                    when {
+                                        unreadIssues.size == 1 -> {
+                                            navigator.push(
+                                                Route.FeedbackConversation(unreadIssues.first().issueNumber)
+                                            )
+                                        }
 
-                                    else -> {
-                                        navigator.push(Route.FeedbackSubscriptions)
+                                        else -> {
+                                            navigator.push(Route.FeedbackSubscriptions)
+                                        }
                                     }
                                 }
-                            }
-                        )
-                    }
+                            )
+                        }
 
-                    entry<Route.Settings> {
-                        LauncherSettingsScreen(
-                            viewModel = settingsViewModel,
-                            modifier = Modifier.fillMaxSize(),
-                            feedbackSubmissionNotice = pendingFeedbackNotice,
-                            onDismissFeedbackSubmissionNotice = {
-                                pendingFeedbackNotice = null
-                            }
-                        )
-                    }
+                        entry<Route.Settings> {
+                            LauncherSettingsScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                                feedbackSubmissionNotice = pendingFeedbackNotice,
+                                onDismissFeedbackSubmissionNotice = {
+                                    pendingFeedbackNotice = null
+                                }
+                            )
+                        }
 
-                    entry<Route.Compatibility> {
-                        LauncherCompatibilityScreen(
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+                        entry<Route.Compatibility> {
+                            LauncherCompatibilityScreen(
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
 
-                    entry<Route.Feedback> {
-                        LauncherFeedbackScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            onSubmissionCompleted = { notice ->
-                                pendingFeedbackNotice = notice
-                                navigator.goBack()
-                            },
-                        )
-                    }
+                        entry<Route.Feedback> {
+                            LauncherFeedbackScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                onSubmissionCompleted = { notice ->
+                                    pendingFeedbackNotice = notice
+                                    navigator.goBack()
+                                },
+                            )
+                        }
 
-                    entry<Route.FeedbackSubscriptions> {
-                        LauncherFeedbackSubscriptionsScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            onOpenConversation = { issueNumber ->
-                                navigator.push(Route.FeedbackConversation(issueNumber))
-                            }
-                        )
-                    }
+                        entry<Route.FeedbackSubscriptions> {
+                            LauncherFeedbackSubscriptionsScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                onOpenConversation = { issueNumber ->
+                                    navigator.push(Route.FeedbackConversation(issueNumber))
+                                }
+                            )
+                        }
 
-                    entry<Route.FeedbackIssueBrowser> {
-                        LauncherFeedbackIssueBrowserScreen(
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                        entry<Route.FeedbackIssueBrowser> {
+                            LauncherFeedbackIssueBrowserScreen(
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
 
-                    entry<Route.FeedbackConversation> { route ->
-                        LauncherFeedbackConversationScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            issueNumber = route.issueNumber
-                        )
+                        entry<Route.FeedbackConversation> { route ->
+                            LauncherFeedbackConversationScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                issueNumber = route.issueNumber
+                            )
+                        }
                     }
+                )
+                if (isModImportInteractionLocked) {
+                    ModImportInteractionBlocker(
+                        message = modImportBusyMessage ?: "Importing selected mod jars..."
+                    )
                 }
-            )
-            if (isModImportInteractionLocked) {
-                ModImportInteractionBlocker(
-                    message = modImportBusyMessage ?: "Importing selected mod jars..."
-                )
-            }
-            settingsUiState.updatePromptState?.let { promptState ->
-                AlertDialog(
-                    onDismissRequest = settingsViewModel::dismissUpdatePrompt,
-                    title = { Text(stringResource(R.string.update_dialog_title)) },
-                    text = {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.update_dialog_current_version,
-                                    promptState.currentVersion
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.update_dialog_latest_version,
-                                    promptState.latestVersion
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.update_dialog_published_at,
-                                    promptState.publishedAtText
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.update_dialog_download_source,
-                                    promptState.downloadSourceDisplayName
-                                ),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = stringResource(R.string.update_dialog_notes_title),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = promptState.notesText,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                settingsViewModel.dismissUpdatePrompt()
-                                uriHandler.openUri(promptState.downloadUrl)
+                settingsUiState.updatePromptState?.let { promptState ->
+                    AlertDialog(
+                        onDismissRequest = settingsViewModel::dismissUpdatePrompt,
+                        title = { Text(stringResource(R.string.update_dialog_title)) },
+                        text = {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 360.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.update_dialog_current_version,
+                                        promptState.currentVersion
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.update_dialog_latest_version,
+                                        promptState.latestVersion
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.update_dialog_published_at,
+                                        promptState.publishedAtText
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.update_dialog_download_source,
+                                        promptState.downloadSourceDisplayName
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = stringResource(R.string.update_dialog_notes_title),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = promptState.notesText,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
-                        ) {
-                            Text(stringResource(R.string.update_dialog_action_download))
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    settingsViewModel.dismissUpdatePrompt()
+                                    uriHandler.openUri(promptState.downloadUrl)
+                                }
+                            ) {
+                                Text(stringResource(R.string.update_dialog_action_download))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = settingsViewModel::dismissUpdatePrompt) {
+                                Text(stringResource(R.string.update_dialog_action_later))
+                            }
                         }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = settingsViewModel::dismissUpdatePrompt) {
-                            Text(stringResource(R.string.update_dialog_action_later))
-                        }
-                    }
-                )
+                    )
             }
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(
@@ -319,6 +324,7 @@ fun LauncherContent(
             }
         }
     }
+}
 }
 
 @Composable

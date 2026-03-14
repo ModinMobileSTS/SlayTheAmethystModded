@@ -53,7 +53,7 @@ uint32_t gl_get_swap_count(void) {
 
 static void gl_advance_context_generation(const char* reason) {
     if (pojav_environ == NULL) return;
-    int generation = atomic_fetch_add_explicit(&pojav_environ->glContextGeneration, 1, memory_order_relaxed) + 1;
+    atomic_fetch_add_explicit(&pojav_environ->glContextGeneration, 1, memory_order_relaxed);
     ;
 }
 
@@ -85,11 +85,9 @@ static void gl_queue_bridge_window_surface(gl_render_window_t* bundle, const cha
     if (bundle == NULL) {
         return;
     }
-    bool hasWindow = false;
     pthread_mutex_lock(&g_surface_mutex);
     ANativeWindow* window = (pojav_environ == NULL) ? NULL : pojav_environ->pojavWindow;
     gl_replace_queued_surface_locked(bundle, window);
-    hasWindow = window != NULL;
     pthread_mutex_unlock(&g_surface_mutex);
     ;
 }
@@ -457,12 +455,10 @@ static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char
 
         EGLint makeCurrentErr = eglGetError_p();
         if (makeCurrentErr == EGL_BAD_SURFACE) {
-            ;
             gl_swap_surface(bundle);
             continue;
         }
         if (makeCurrentErr == EGL_CONTEXT_LOST || makeCurrentErr == EGL_BAD_CONTEXT) {
-            ;
             if (!gl_recreate_context(bundle, reason)) {
                 return false;
             }
@@ -553,7 +549,6 @@ void gl_swap_buffers() {
                 return;
             }
             if (swapErr == EGL_CONTEXT_LOST || swapErr == EGL_BAD_CONTEXT) {
-                ;
                 if (gl_recreate_context(currentBundle, "swap context loss")) {
                     gl_swap_surface(currentBundle);
                     gl_make_current_with_recovery(currentBundle, "swap context loss");

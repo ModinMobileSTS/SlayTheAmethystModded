@@ -5,6 +5,9 @@
     <string name="sts_normal_exit">游戏进程异常退出，退出码 %1$d。</string>
     <string name="sts_signal_exit">游戏进程因信号 %1$d 崩溃退出。</string>
     <string name="sts_oom_exit">检测到 OutOfMemoryError（JVM 堆内存耗尽）。游戏已自动返回启动器。JVM堆大小可能过大或过小，请在设置中适当调整 JVM 堆上限。</string>
+    <string name="heap_pressure_dialog_title">建议提高 JVM 内存分配</string>
+    <string name="heap_pressure_dialog_message_recommend">本次运行的 JVM 堆峰值约为 %1$d / %2$d MB（%3$d%%）。\n\n如果模组较多时经常出现卡顿或退出，建议在设置中适当提高 JVM 堆上限。当前为 %4$d MB，可以先尝试调到 %5$d MB。</string>
+    <string name="heap_pressure_dialog_message_at_limit">本次运行的 JVM 堆峰值约为 %1$d / %2$d MB（%3$d%%）。\n\n当前堆压力已经偏高。现有 JVM 堆上限已是 %4$d MB；如果之后仍持续卡顿或退出，可能还需要适当减少启用模组或其他高占用内容。</string>
     <string name="sts_share_crash_report">分享错误日志</string>
     <string name="sts_share_crash_chooser_title">分享到 QQ / 微信等</string>
     <string name="sts_share_crash_report_failed">没有可用应用可分享错误报告。</string>
@@ -39,10 +42,12 @@
     <string name="settings_touch_mouse_double_tap_lock_disabled">双击悬浮窗锁定点击：禁用</string>
     <string name="settings_touch_mouse_double_tap_lock_desc">双击悬浮窗后锁定点击功能，可以解决需要鼠标悬浮才能查看的一些文本因为被点击而无法查看的问题，例如 loadout 模组无法查看功能描述。</string>
     <string name="status_touch_mouse_double_tap_lock_format">双击悬浮窗锁定点击：%1$s</string>
-    <string name="settings_touch_mouse_long_press_keyboard_enabled">长按触摸鼠标唤起键盘：启用</string>
-    <string name="settings_touch_mouse_long_press_keyboard_disabled">长按触摸鼠标唤起键盘：禁用</string>
-    <string name="settings_touch_mouse_long_press_keyboard_desc">控制长按触摸鼠标按钮时是否弹出软键盘。</string>
-    <string name="status_touch_mouse_long_press_keyboard_format">长按触摸鼠标唤起键盘：%1$s</string>
+    <string name="settings_touch_mouse_long_press_keyboard_enabled">长按触摸鼠标快捷菜单：启用</string>
+    <string name="settings_touch_mouse_long_press_keyboard_disabled">长按触摸鼠标快捷菜单：禁用</string>
+    <string name="settings_touch_mouse_long_press_keyboard_desc">控制长按触摸鼠标按钮时是否展开悬浮快捷菜单，可发送 Ctrl、Shift、Tab、Alt 或打开软键盘。</string>
+    <string name="status_touch_mouse_long_press_keyboard_format">长按触摸鼠标快捷菜单：%1$s</string>
+    <string name="touch_mouse_floating_menu_collapse">收起</string>
+    <string name="touch_mouse_floating_menu_keyboard">打开键盘</string>
     <string name="settings_render_surface_backend_title">渲染 Surface 后端</string>
     <string name="settings_render_surface_backend_surface_view">SurfaceView（默认，性能更高但部分系统可能掉帧）</string>
     <string name="settings_render_surface_backend_texture_view">TextureView（兼容回退，通常更稳但开销更高）</string>

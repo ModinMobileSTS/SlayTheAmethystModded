@@ -10,6 +10,7 @@ import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
@@ -52,6 +53,7 @@ class JvmLaunchController(
         private const val BOOT_BRIDGE_EVENT_SCAN_MAX_BYTES = 32 * 1024
         private const val BOOT_BRIDGE_SPLASH_PROGRESS = 94
         private const val RUNTIME_HEAP_SNAPSHOT_POLL_INTERVAL_MS = 1_000L
+        private const val HEAP_PRESSURE_WARNING_RATIO = 0.90
         private const val LOGCAT_TAG = "STS-JVM"
     }
 
@@ -66,6 +68,9 @@ class JvmLaunchController(
     @Volatile
     internal var runtimeMemorySnapshot: JvmRuntimeMemorySnapshot? = null
         private set
+
+    @Volatile
+    private var peakRuntimeMemorySnapshot: JvmRuntimeMemorySnapshot? = null
 
     @Volatile
     var jvmLaunchStartedElapsedMs = 0L
@@ -133,6 +138,7 @@ class JvmLaunchController(
         vmStarted = true
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
+        peakRuntimeMemorySnapshot = null
         jvmLaunchStartedElapsedMs = SystemClock.elapsedRealtime()
         bootInteractiveSignalSeen = false
         cancelRequested = false
@@ -268,6 +274,7 @@ class JvmLaunchController(
             } finally {
                 runtimeLifecycleReady = false
                 runtimeMemorySnapshot = null
+                peakRuntimeMemorySnapshot = null
                 jvmLaunchStartedElapsedMs = 0L
                 stopLatestLogLogcatMirror()
                 stopLatestLogCapMonitor()
@@ -299,6 +306,7 @@ class JvmLaunchController(
         stopBootBridgeEventMonitor()
         runtimeLifecycleReady = false
         runtimeMemorySnapshot = null
+        peakRuntimeMemorySnapshot = null
         jvmLaunchStartedElapsedMs = 0L
         bootInteractiveSignalSeen = false
     }
@@ -378,7 +386,7 @@ class JvmLaunchController(
         val monitorThread = Thread({
             while (runtimeHeapSnapshotMonitorRunning && !Thread.currentThread().isInterrupted) {
                 try {
-                    runtimeMemorySnapshot = readRuntimeHeapSnapshot(snapshotFile)
+                    recordRuntimeMemorySnapshot(readRuntimeHeapSnapshot(snapshotFile))
                 } catch (_: Throwable) {
                 }
                 try {
@@ -575,7 +583,7 @@ class JvmLaunchController(
             }
 
             "MEM" -> {
-                runtimeMemorySnapshot = parseRuntimeMemorySnapshot(message)
+                recordRuntimeMemorySnapshot(parseRuntimeMemorySnapshot(message))
             }
         }
         return false
@@ -678,6 +686,31 @@ class JvmLaunchController(
         )
     }
 
+    internal fun buildHeapPressureNotice(): JvmHeapPressureNotice? {
+        val peakSnapshot = peakRuntimeMemorySnapshot ?: return null
+        if (peakSnapshot.heapUsedBytes <= 0L || peakSnapshot.heapMaxBytes <= 0L) {
+            return null
+        }
+        val peakUsageRatio = peakSnapshot.heapUsedBytes.toDouble() / peakSnapshot.heapMaxBytes.toDouble()
+        if (peakUsageRatio < HEAP_PRESSURE_WARNING_RATIO) {
+            return null
+        }
+
+        val currentHeapMaxMb = LauncherConfig.readJvmHeapMaxMb(activity)
+        val suggestedHeapMaxMb = LauncherConfig.normalizeJvmHeapMaxMb(
+            (currentHeapMaxMb + LauncherConfig.JVM_HEAP_STEP_MB)
+                .coerceAtMost(LauncherConfig.MAX_JVM_HEAP_MAX_MB)
+        )
+
+        return JvmHeapPressureNotice(
+            peakHeapUsedBytes = peakSnapshot.heapUsedBytes,
+            peakHeapMaxBytes = peakSnapshot.heapMaxBytes,
+            peakUsageRatio = peakUsageRatio,
+            currentHeapMaxMb = currentHeapMaxMb,
+            suggestedHeapMaxMb = suggestedHeapMaxMb
+        )
+    }
+
     fun buildExitedBeforeInteractiveDetail(): String {
         val context = ArrayList<String>(2)
         val phaseMessage = lastBootPhaseMessage.trim()
@@ -730,6 +763,35 @@ class JvmLaunchController(
             return null
         }
         return parseRuntimeMemorySnapshot(snapshot)
+    }
+
+    private fun recordRuntimeMemorySnapshot(snapshot: JvmRuntimeMemorySnapshot?) {
+        runtimeMemorySnapshot = snapshot
+        if (snapshot == null || snapshot.heapUsedBytes <= 0L || snapshot.heapMaxBytes <= 0L) {
+            return
+        }
+
+        val previousPeak = peakRuntimeMemorySnapshot
+        if (previousPeak == null || shouldReplacePeakSnapshot(previousPeak, snapshot)) {
+            peakRuntimeMemorySnapshot = snapshot
+        }
+    }
+
+    private fun shouldReplacePeakSnapshot(
+        currentPeak: JvmRuntimeMemorySnapshot,
+        candidate: JvmRuntimeMemorySnapshot
+    ): Boolean {
+        if (candidate.heapUsedBytes <= 0L || candidate.heapMaxBytes <= 0L) {
+            return false
+        }
+        if (currentPeak.heapUsedBytes <= 0L || currentPeak.heapMaxBytes <= 0L) {
+            return true
+        }
+
+        val currentRatio = currentPeak.heapUsedBytes.toDouble() / currentPeak.heapMaxBytes.toDouble()
+        val candidateRatio = candidate.heapUsedBytes.toDouble() / candidate.heapMaxBytes.toDouble()
+        return candidateRatio > currentRatio ||
+            (candidateRatio == currentRatio && candidate.heapUsedBytes > currentPeak.heapUsedBytes)
     }
 
     private fun signalDismissFromBootBridge(
