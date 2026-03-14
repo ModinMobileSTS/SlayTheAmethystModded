@@ -166,6 +166,12 @@
     <string name="main_app_title">杀戮尖塔模组启动器</string>
     <string name="main_open_settings">打开设置</string>
     <string name="main_action_add_folder">新建文件夹</string>
+    <string name="main_get_new_mods">获取新模组</string>
+    <string name="main_get_new_mods_dialog_title">获取新模组</string>
+    <string name="main_get_new_mods_dialog_message">欢迎关注我的另一个项目：创意工坊模组下载器，提供模组的浏览与下载。使用时需自备科学上网环境或使用加速器加速 steam。\n\n项目地址：%1$s</string>
+    <string name="main_get_new_mods_dialog_url">https://github.com/Apricityx/WorkshopAndroidDownloader</string>
+    <string name="main_get_new_mods_dialog_open">打开项目地址</string>
+    <string name="main_get_new_mods_dialog_close">关闭</string>
     <string name="main_import_mods">导入模组</string>
     <string name="main_launch_game">启动游戏</string>
     <string name="main_select_mods">选择模组</string>
@@ -273,7 +279,7 @@
     <string name="settings_author_follow_notice">请关注官方发布渠道，以获取最新版本与公告。</string>
     <string name="settings_unplayable_mods_entry_title">有模组玩不了？</string>
     <string name="settings_unplayable_mods_dialog_title">上报无法游玩模组</string>
-    <string name="settings_unplayable_mods_dialog_message">该收集表记录当前无法游玩的模组及修复状态。你可以直接编辑这个收集表，补充无法游玩的模组信息，帮助我们更快完成兼容修复。</string>
+    <string name="settings_unplayable_mods_dialog_message">可以在页面最上方点击反馈新问题，附上无法游玩的模组信息，帮助我们更快完成兼容修复。</string>
     <string name="settings_unplayable_mods_dialog_open">前往收集表</string>
     <string name="settings_unplayable_mods_sheet_url">https://docs.qq.com/sheet/DS0xtV2FsVUVUSXhr?u=3f6b432cd4f7498b8388829a3a5e1555</string>
 </resources>

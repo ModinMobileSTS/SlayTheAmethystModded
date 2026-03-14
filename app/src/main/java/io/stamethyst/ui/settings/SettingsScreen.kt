@@ -1,6 +1,9 @@
 package io.stamethyst.ui.settings
 
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -56,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -78,6 +82,8 @@ import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+
+private const val WORKSHOP_DOWNLOADER_PACKAGE_NAME = "top.apricityx.workshop"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -686,7 +692,30 @@ private fun SettingsImportSection(
     onExportLogs: () -> Unit,
     onExportLogsToFile: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val getNewModsProjectUrl = stringResource(R.string.main_get_new_mods_dialog_url)
+    var showGetNewModsDialog by rememberSaveable { mutableStateOf(false) }
+
+    GetNewModsDialog(
+        visible = showGetNewModsDialog,
+        onDismiss = { showGetNewModsDialog = false },
+        onOpenProject = {
+            showGetNewModsDialog = false
+            uriHandler.openUri(getNewModsProjectUrl)
+        }
+    )
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingsActionListItem(
+            title = stringResource(R.string.main_get_new_mods),
+            enabled = !busy,
+            onClick = {
+                if (!openWorkshopDownloader(context)) {
+                    showGetNewModsDialog = true
+                }
+            }
+        )
         SettingsActionListItem(
             title = "导入模组",
             enabled = !busy,
@@ -718,6 +747,69 @@ private fun SettingsImportSection(
             onClick = onExportLogsToFile
         )
     }
+}
+
+private fun openWorkshopDownloader(context: Context): Boolean {
+    if (!isPackageInstalled(context, WORKSHOP_DOWNLOADER_PACKAGE_NAME)) {
+        return false
+    }
+    val launchIntent =
+        context.packageManager.getLaunchIntentForPackage(WORKSHOP_DOWNLOADER_PACKAGE_NAME)
+            ?: return false
+    context.startActivity(launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    return true
+}
+
+private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(packageName, 0)
+        }
+        true
+    } catch (_: PackageManager.NameNotFoundException) {
+        false
+    }
+}
+
+@Composable
+private fun GetNewModsDialog(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onOpenProject: () -> Unit,
+) {
+    if (!visible) {
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.main_get_new_mods_dialog_title)) },
+        text = {
+            SelectionContainer {
+                Text(
+                    text = stringResource(
+                        R.string.main_get_new_mods_dialog_message,
+                        stringResource(R.string.main_get_new_mods_dialog_url)
+                    ),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenProject) {
+                Text(text = stringResource(R.string.main_get_new_mods_dialog_open))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_get_new_mods_dialog_close))
+            }
+        }
+    )
 }
 
 @Composable
@@ -1334,16 +1426,6 @@ private fun SettingsStatusSection(
                 )
             },
             confirmButton = {
-                HapticTextButton(
-                    onClick = {
-                        showUnplayableModsDialog = false
-                        uriHandler.openUri(unplayableModsSheetUrl)
-                    }
-                ) {
-                    Text(stringResource(R.string.settings_unplayable_mods_dialog_open))
-                }
-            },
-            dismissButton = {
                 HapticTextButton(onClick = { showUnplayableModsDialog = false }) {
                     Text(stringResource(android.R.string.cancel))
                 }

@@ -166,6 +166,12 @@
     <string name="main_app_title">Slay the Spire Mod Launcher</string>
     <string name="main_open_settings">Open settings</string>
     <string name="main_action_add_folder">New folder</string>
+    <string name="main_get_new_mods">Get new mods</string>
+    <string name="main_get_new_mods_dialog_title">Get new mods</string>
+    <string name="main_get_new_mods_dialog_message">Check out my other project, Workshop Mod Downloader, which lets you browse and download mods. You will need your own proxy setup or a Steam accelerator when using it.\n\nProject URL: %1$s</string>
+    <string name="main_get_new_mods_dialog_url">https://github.com/Apricityx/WorkshopAndroidDownloader</string>
+    <string name="main_get_new_mods_dialog_open">Open project</string>
+    <string name="main_get_new_mods_dialog_close">Close</string>
     <string name="main_import_mods">Import mods</string>
     <string name="main_launch_game">Launch game</string>
     <string name="main_select_mods">Select mods</string>
