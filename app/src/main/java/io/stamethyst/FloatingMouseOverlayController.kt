@@ -48,6 +48,12 @@ internal class FloatingMouseOverlayController(
         AWT
     }
 
+    private data class SpecialKeySpec(
+        val label: String,
+        val keyCode: Int,
+        val toggleable: Boolean = false,
+    )
+
     companion object {
         private const val IME_LOG_TAG = "STS-IME"
         private const val FLOATING_MOUSE_IDLE_ALPHA = 0.2f
@@ -103,7 +109,12 @@ internal class FloatingMouseOverlayController(
     private val pendingSoftKeyReleaseRunnables = mutableMapOf<Int, Runnable>()
     private val floatingMouseDoubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
 
+    private val toggleSpecialKeyButtons = mutableMapOf<Int, TextView>()
+    private val activeToggleSoftKeys = mutableMapOf<Int, SoftKeyboardTarget>()
+
     fun attachToHost(host: FrameLayout) {
+        flushPendingSoftKeyReleases()
+        releaseActiveToggleSoftKeys()
         detachViews()
         hostView = host
         val viewConfiguration = ViewConfiguration.get(activity)
@@ -251,6 +262,7 @@ internal class FloatingMouseOverlayController(
 
     fun hideSoftKeyboard() {
         flushPendingSoftKeyReleases()
+        releaseActiveToggleSoftKeys()
         specialKeysBar?.visibility = View.GONE
         val inputView = imeProxyView ?: return
         val imm = activity.getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
@@ -273,6 +285,7 @@ internal class FloatingMouseOverlayController(
         floatingMouseMainIcon = null
         imeProxyView = null
         specialKeysBar = null
+        toggleSpecialKeyButtons.clear()
     }
 
     private fun handleFloatingMouseTouch(event: MotionEvent): Boolean {
@@ -532,17 +545,18 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun populateSpecialKeysBar(bar: LinearLayout) {
+        toggleSpecialKeyButtons.clear()
         val keys = listOf(
-            "Esc" to KeyEvent.KEYCODE_ESCAPE,
-            "Tab" to KeyEvent.KEYCODE_TAB,
-            "↑" to KeyEvent.KEYCODE_DPAD_UP,
-            "↓" to KeyEvent.KEYCODE_DPAD_DOWN,
-            "←" to KeyEvent.KEYCODE_DPAD_LEFT,
-            "→" to KeyEvent.KEYCODE_DPAD_RIGHT
+            SpecialKeySpec("Esc", KeyEvent.KEYCODE_ESCAPE),
+            SpecialKeySpec("Tab", KeyEvent.KEYCODE_TAB),
+            SpecialKeySpec("↑", KeyEvent.KEYCODE_DPAD_UP),
+            SpecialKeySpec("↓", KeyEvent.KEYCODE_DPAD_DOWN),
+            SpecialKeySpec("Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, toggleable = true),
+            SpecialKeySpec("Shift", KeyEvent.KEYCODE_SHIFT_LEFT, toggleable = true)
         )
         val spacing = dpToPx(SPECIAL_KEYS_BUTTON_SPACING_DP)
-        keys.forEachIndexed { index, (label, keyCode) ->
-            val button = createSpecialKeyButton(label, keyCode)
+        keys.forEachIndexed { index, spec ->
+            val button = createSpecialKeyButton(spec)
             bar.addView(
                 button,
                 LinearLayout.LayoutParams(
@@ -558,9 +572,9 @@ internal class FloatingMouseOverlayController(
         }
     }
 
-    private fun createSpecialKeyButton(label: String, keyCode: Int): TextView {
+    private fun createSpecialKeyButton(spec: SpecialKeySpec): TextView {
         return TextView(activity).apply {
-            text = label
+            text = spec.label
             gravity = Gravity.CENTER
             setTextColor(0xFFFFFFFF.toInt())
             textSize = SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP
@@ -568,14 +582,18 @@ internal class FloatingMouseOverlayController(
             isAllCaps = false
             isFocusable = false
             isFocusableInTouchMode = false
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(10).toFloat()
-                setColor(0xFF2B2B2B.toInt())
-            }
+            updateSpecialKeyButtonAppearance(this, false)
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                sendSyntheticSoftKey(keyCode)
+                if (spec.toggleable) {
+                    toggleSpecialKey(spec.keyCode)
+                } else {
+                    sendSyntheticSoftKey(spec.keyCode)
+                }
+            }
+            if (spec.toggleable) {
+                toggleSpecialKeyButtons[spec.keyCode] = this
+                updateSpecialKeyButtonAppearance(this, activeToggleSoftKeys.containsKey(spec.keyCode))
             }
         }
     }
@@ -590,7 +608,90 @@ internal class FloatingMouseOverlayController(
         val params = bar.layoutParams as? FrameLayout.LayoutParams ?: return
         params.bottomMargin = keyboardBottomInset + dpToPx(SPECIAL_KEYS_BAR_BOTTOM_MARGIN_DP)
         bar.layoutParams = params
+        if (!imeVisible) {
+            releaseActiveToggleSoftKeys()
+        }
         bar.visibility = if (imeVisible) View.VISIBLE else View.GONE
+    }
+
+    private fun updateSpecialKeyButtonAppearance(button: TextView, active: Boolean) {
+        button.isSelected = active
+        button.alpha = if (active) 1.0f else 0.96f
+        button.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(10).toFloat()
+            setColor(if (active) 0xFF355B2E.toInt() else 0xFF2B2B2B.toInt())
+            setStroke(dpToPx(1), if (active) 0xFF98D96A.toInt() else 0xFF454545.toInt())
+        }
+    }
+
+    private fun updateToggleSpecialKeyUi(androidKeyCode: Int, active: Boolean) {
+        toggleSpecialKeyButtons[androidKeyCode]?.let { button ->
+            updateSpecialKeyButtonAppearance(button, active)
+        }
+    }
+
+    private fun toggleSpecialKey(androidKeyCode: Int) {
+        val activeTarget = activeToggleSoftKeys[androidKeyCode]
+        if (activeTarget != null) {
+            logIme(
+                "toggleSpecialKey release " +
+                    "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$activeTarget"
+            )
+            dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), activeTarget)
+            activeToggleSoftKeys.remove(androidKeyCode)
+            updateToggleSpecialKeyUi(androidKeyCode, false)
+            return
+        }
+
+        val target = resolveSoftKeyboardTarget()
+        logIme(
+            "toggleSpecialKey press " +
+                "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target"
+        )
+        if (dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)) {
+            activeToggleSoftKeys[androidKeyCode] = target
+            updateToggleSpecialKeyUi(androidKeyCode, true)
+        }
+    }
+
+    private fun releaseActiveToggleSoftKeys() {
+        val activeKeys = activeToggleSoftKeys.toMap()
+        if (activeKeys.isEmpty()) {
+            return
+        }
+        activeKeys.forEach { (androidKeyCode, target) ->
+            logIme(
+                "releaseActiveToggleSoftKey " +
+                    "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target"
+            )
+            dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+            activeToggleSoftKeys.remove(androidKeyCode)
+            updateToggleSpecialKeyUi(androidKeyCode, false)
+        }
+    }
+
+    private fun syncActiveToggleSoftKeys(target: SoftKeyboardTarget) {
+        val activeKeys = activeToggleSoftKeys.toMap()
+        if (activeKeys.isEmpty()) {
+            return
+        }
+        activeKeys.forEach { (androidKeyCode, previousTarget) ->
+            if (previousTarget == target) {
+                return@forEach
+            }
+            logIme(
+                "syncActiveToggleSoftKey " +
+                    "android=${KeyEvent.keyCodeToString(androidKeyCode)} from=$previousTarget to=$target"
+            )
+            dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), previousTarget)
+            if (dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)) {
+                activeToggleSoftKeys[androidKeyCode] = target
+            } else {
+                activeToggleSoftKeys.remove(androidKeyCode)
+                updateToggleSpecialKeyUi(androidKeyCode, false)
+            }
+        }
     }
 
     private fun sendSoftKeyboardText(text: CharSequence?): Boolean {
@@ -862,6 +963,7 @@ internal class FloatingMouseOverlayController(
         } else {
             SoftKeyboardTarget.GLFW
         }
+        syncActiveToggleSoftKeys(target)
         logIme("resolveSoftKeyboardTarget awtTextFocused=$awtTextFocused target=$target")
         return target
     }

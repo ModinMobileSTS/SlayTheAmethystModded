@@ -182,6 +182,7 @@ class BootOverlayController(
     fun init() {
         bootOverlay = activity.findViewById(R.id.bootOverlay)
         if (bootOverlay == null) {
+            activity.setBootOverlayKeepScreenOn(false)
             return
         }
         bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
@@ -203,6 +204,7 @@ class BootOverlayController(
         }
 
         bootOverlay?.visibility = View.VISIBLE
+        activity.setBootOverlayKeepScreenOn(true)
 
         if (!manualDismissBootOverlay) {
             bootOverlay?.setOnTouchListener { _, _ -> true }
@@ -244,6 +246,7 @@ class BootOverlayController(
         bootOverlay?.disposeComposition()
         bootOverlay = null
         earlyOverlayDismissOnNextFrame = false
+        activity.setBootOverlayKeepScreenOn(false)
     }
 
     fun updateProgress(percent: Int, message: String?) {
@@ -341,6 +344,7 @@ class BootOverlayController(
         earlyOverlayDismissRequestFrameTimestampNs = 0L
 
         bootOverlay?.visibility = View.GONE
+        activity.setBootOverlayKeepScreenOn(false)
 
         onDismissed()
     }

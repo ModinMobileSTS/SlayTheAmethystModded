@@ -120,7 +120,8 @@ Verified against implementation on 2026-03-08:
 2. Java/native bridge
 - `app/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java`
 - `app/src/main/java/com/oracle/dalvik/VMLauncher.java`
-- `app/src/main/java/org/lwjgl/glfw/CallbackBridge.java`
+- `gradle/callback-bridge/templates/android/CallbackBridge.java.tmpl`
+- `gradle/callback-bridge/templates/jvm/CallbackBridge.java.tmpl`
 - `app/src/main/java/net/kdt/pojavlaunch/ExitActivity.java`
 
 3. Native layer

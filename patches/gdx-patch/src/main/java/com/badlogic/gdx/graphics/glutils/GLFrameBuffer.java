@@ -169,8 +169,15 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return defaultValue;
 	}
 
+	private static int getCurrentFramebufferBinding (GL20 gl) {
+		IntBuffer intbuf = ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
+		gl.glGetIntegerv(GL20.GL_FRAMEBUFFER_BINDING, intbuf);
+		return intbuf.get(0);
+	}
+
 	private void build () {
 		GL20 gl = Gdx.gl20;
+		int previousFramebufferHandle = getCurrentFramebufferBinding(gl);
 
 		// iOS uses a different framebuffer handle! (not necessarily 0)
 		if (!defaultFramebufferHandleInitialized) {
@@ -184,131 +191,135 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			}
 		}
 
-		colorTexture = createColorTexture();
+		try {
+			colorTexture = createColorTexture();
 
-		framebufferHandle = gl.glGenFramebuffer();
+			framebufferHandle = gl.glGenFramebuffer();
 
-		if (hasDepth) {
-			depthbufferHandle = gl.glGenRenderbuffer();
-		}
-
-		if (hasStencil) {
-			stencilbufferHandle = gl.glGenRenderbuffer();
-		}
-
-		gl.glBindTexture(colorTexture.glTarget, colorTexture.getTextureObjectHandle());
-
-		if (hasDepth) {
-			gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, depthbufferHandle);
-			gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_DEPTH_COMPONENT16, colorTexture.getWidth(),
-				colorTexture.getHeight());
-		}
-
-		if (hasStencil) {
-			gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, stencilbufferHandle);
-			gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_STENCIL_INDEX8, colorTexture.getWidth(), colorTexture.getHeight());
-		}
-
-		gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, framebufferHandle);
-
-		attachFrameBufferColorTexture();
-
-		if (hasDepth) {
-			gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_DEPTH_ATTACHMENT, GL20.GL_RENDERBUFFER, depthbufferHandle);
-		}
-
-		if (hasStencil) {
-			gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_STENCIL_ATTACHMENT, GL20.GL_RENDERBUFFER, stencilbufferHandle);
-		}
-
-		gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, 0);
-		gl.glBindTexture(colorTexture.glTarget, 0);
-
-		int result = gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
-
-		if (result == GL20.GL_FRAMEBUFFER_UNSUPPORTED && hasDepth && hasStencil
-			&& (Gdx.graphics.supportsExtension("GL_OES_packed_depth_stencil") ||
-				Gdx.graphics.supportsExtension("GL_EXT_packed_depth_stencil"))) {
 			if (hasDepth) {
-				gl.glDeleteRenderbuffer(depthbufferHandle);
-				depthbufferHandle = 0;
+				depthbufferHandle = gl.glGenRenderbuffer();
 			}
+
 			if (hasStencil) {
-				gl.glDeleteRenderbuffer(stencilbufferHandle);
-				stencilbufferHandle = 0;
+				stencilbufferHandle = gl.glGenRenderbuffer();
 			}
 
-			depthStencilPackedBufferHandle = gl.glGenRenderbuffer();
-			hasDepthStencilPackedBuffer = true;
-			gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
-			gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_OES, colorTexture.getWidth(), colorTexture.getHeight());
+			gl.glBindTexture(colorTexture.glTarget, colorTexture.getTextureObjectHandle());
+
+			if (hasDepth) {
+				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, depthbufferHandle);
+				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_DEPTH_COMPONENT16, colorTexture.getWidth(),
+					colorTexture.getHeight());
+			}
+
+			if (hasStencil) {
+				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, stencilbufferHandle);
+				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_STENCIL_INDEX8, colorTexture.getWidth(), colorTexture.getHeight());
+			}
+
+			gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, framebufferHandle);
+
+			attachFrameBufferColorTexture();
+
+			if (hasDepth) {
+				gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_DEPTH_ATTACHMENT, GL20.GL_RENDERBUFFER, depthbufferHandle);
+			}
+
+			if (hasStencil) {
+				gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_STENCIL_ATTACHMENT, GL20.GL_RENDERBUFFER, stencilbufferHandle);
+			}
+
 			gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, 0);
+			gl.glBindTexture(colorTexture.glTarget, 0);
 
-			gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_DEPTH_ATTACHMENT, GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
-			gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_STENCIL_ATTACHMENT, GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
-			result = gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
-		}
+			int result = gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
 
-		if (result != GL20.GL_FRAMEBUFFER_COMPLETE) {
-			if (isUnknownFramebufferStatus(result) && isFboFallbackEnabled()) {
-				int originalStatus = result;
-				int originalError = gl.glGetError();
-				result = tryRecoverUnknownFramebufferStatus(gl);
-				int recoveredError = gl.glGetError();
-				if (result == GL20.GL_FRAMEBUFFER_COMPLETE) {
-					if (!fboFallbackLogged) {
-						fboFallbackLogged = true;
-						System.out.println("[gdx-patch] GLFrameBuffer fallback recovered unknown status="
-							+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), glError=0x"
-							+ Integer.toHexString(originalError) + " -> complete"
-							+ " (recovery glError=0x" + Integer.toHexString(recoveredError) + ")");
-					}
-					gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, defaultFramebufferHandle);
-					return;
+			if (result == GL20.GL_FRAMEBUFFER_UNSUPPORTED && hasDepth && hasStencil
+				&& (Gdx.graphics.supportsExtension("GL_OES_packed_depth_stencil") ||
+					Gdx.graphics.supportsExtension("GL_EXT_packed_depth_stencil"))) {
+				if (hasDepth) {
+					gl.glDeleteRenderbuffer(depthbufferHandle);
+					depthbufferHandle = 0;
 				}
-				if (shouldBypassUnknownFramebufferStatus()) {
+				if (hasStencil) {
+					gl.glDeleteRenderbuffer(stencilbufferHandle);
+					stencilbufferHandle = 0;
+				}
+
+				depthStencilPackedBufferHandle = gl.glGenRenderbuffer();
+				hasDepthStencilPackedBuffer = true;
+				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
+				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_OES, colorTexture.getWidth(), colorTexture.getHeight());
+				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, 0);
+
+				gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_DEPTH_ATTACHMENT, GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
+				gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_STENCIL_ATTACHMENT, GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
+				result = gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
+			}
+
+			if (result != GL20.GL_FRAMEBUFFER_COMPLETE) {
+				if (isUnknownFramebufferStatus(result) && isFboFallbackEnabled()) {
+					int originalStatus = result;
+					int originalError = gl.glGetError();
+					result = tryRecoverUnknownFramebufferStatus(gl);
+					int recoveredError = gl.glGetError();
+					if (result == GL20.GL_FRAMEBUFFER_COMPLETE) {
+						if (!fboFallbackLogged) {
+							fboFallbackLogged = true;
+							System.out.println("[gdx-patch] GLFrameBuffer fallback recovered unknown status="
+								+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), glError=0x"
+								+ Integer.toHexString(originalError) + " -> complete"
+								+ " (recovery glError=0x" + Integer.toHexString(recoveredError) + ")");
+						}
+						gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
+						return;
+					}
+					if (shouldBypassUnknownFramebufferStatus()) {
+						if (!fboFallbackLogged) {
+							fboFallbackLogged = true;
+							System.out.println("[gdx-patch] GLFrameBuffer fallback active: ignore unknown status="
+								+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), glError=0x"
+								+ Integer.toHexString(originalError) + ", recoveredStatus=" + result + " (0x"
+								+ Integer.toHexString(result) + "), recovery glError=0x"
+								+ Integer.toHexString(recoveredError));
+						}
+						gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
+						return;
+					}
 					if (!fboFallbackLogged) {
 						fboFallbackLogged = true;
-						System.out.println("[gdx-patch] GLFrameBuffer fallback active: ignore unknown status="
-							+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), glError=0x"
+						System.out.println("[gdx-patch] GLFrameBuffer fallback recovery failed: originalStatus="
+							+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), original glError=0x"
 							+ Integer.toHexString(originalError) + ", recoveredStatus=" + result + " (0x"
 							+ Integer.toHexString(result) + "), recovery glError=0x"
 							+ Integer.toHexString(recoveredError));
 					}
-					gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, defaultFramebufferHandle);
-					return;
 				}
-				if (!fboFallbackLogged) {
-					fboFallbackLogged = true;
-					System.out.println("[gdx-patch] GLFrameBuffer fallback recovery failed: originalStatus="
-						+ originalStatus + " (0x" + Integer.toHexString(originalStatus) + "), original glError=0x"
-						+ Integer.toHexString(originalError) + ", recoveredStatus=" + result + " (0x"
-						+ Integer.toHexString(result) + "), recovery glError=0x"
-						+ Integer.toHexString(recoveredError));
+
+				gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
+				disposeColorTexture(colorTexture);
+
+				if (hasDepthStencilPackedBuffer) {
+					gl.glDeleteRenderbuffer(depthStencilPackedBufferHandle);
+				} else {
+					if (hasDepth) gl.glDeleteRenderbuffer(depthbufferHandle);
+					if (hasStencil) gl.glDeleteRenderbuffer(stencilbufferHandle);
 				}
+
+				gl.glDeleteFramebuffer(framebufferHandle);
+
+				if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT)
+					throw new IllegalStateException("frame buffer couldn't be constructed: incomplete attachment");
+				if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS)
+					throw new IllegalStateException("frame buffer couldn't be constructed: incomplete dimensions");
+				if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT)
+					throw new IllegalStateException("frame buffer couldn't be constructed: missing attachment");
+				if (result == GL20.GL_FRAMEBUFFER_UNSUPPORTED)
+					throw new IllegalStateException("frame buffer couldn't be constructed: unsupported combination of formats");
+				throw new IllegalStateException("frame buffer couldn't be constructed: unknown error " + result);
 			}
-
-			gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, defaultFramebufferHandle);
-			disposeColorTexture(colorTexture);
-
-			if (hasDepthStencilPackedBuffer) {
-				gl.glDeleteRenderbuffer(depthStencilPackedBufferHandle);
-			} else {
-				if (hasDepth) gl.glDeleteRenderbuffer(depthbufferHandle);
-				if (hasStencil) gl.glDeleteRenderbuffer(stencilbufferHandle);
-			}
-
-			gl.glDeleteFramebuffer(framebufferHandle);
-
-			if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT)
-				throw new IllegalStateException("frame buffer couldn't be constructed: incomplete attachment");
-			if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS)
-				throw new IllegalStateException("frame buffer couldn't be constructed: incomplete dimensions");
-			if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT)
-				throw new IllegalStateException("frame buffer couldn't be constructed: missing attachment");
-			if (result == GL20.GL_FRAMEBUFFER_UNSUPPORTED)
-				throw new IllegalStateException("frame buffer couldn't be constructed: unsupported combination of formats");
-			throw new IllegalStateException("frame buffer couldn't be constructed: unknown error " + result);
+		} finally {
+			gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 		}
 	}
 

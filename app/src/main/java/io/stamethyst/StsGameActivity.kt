@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.WindowManager
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import android.widget.FrameLayout
@@ -56,6 +57,7 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var inputHandler: GameInputHandler
     private lateinit var sessionCoordinator: GameSessionCoordinator
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
+    private var bootOverlayKeepScreenOn = false
 
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
@@ -179,6 +181,18 @@ class StsGameActivity : AppCompatActivity() {
             inputHandler.handleTouchEvent(event)
         }
         renderSurfaceManager.renderView.requestFocus()
+    }
+
+    fun setBootOverlayKeepScreenOn(enabled: Boolean) {
+        if (bootOverlayKeepScreenOn == enabled) {
+            return
+        }
+        bootOverlayKeepScreenOn = enabled
+        if (enabled) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
