@@ -29,10 +29,16 @@
     <string name="touch_mouse_mode_left_short">L</string>
     <string name="touch_mouse_mode_right_short">R</string>
     <string name="touch_mouse_mode_toast">Touch mouse mode: %1$s</string>
+    <string name="touch_mouse_lock_enabled_toast">Mouse lock: On</string>
+    <string name="touch_mouse_lock_disabled_toast">Mouse lock: Off</string>
     <string name="settings_touch_mouse_floating_window_visible">Touch mouse floating window: Visible</string>
     <string name="settings_touch_mouse_floating_window_hidden">Touch mouse floating window: Hidden</string>
     <string name="settings_touch_mouse_floating_window_desc">Controls whether the touch mouse floating window is shown in game.</string>
     <string name="status_floating_touch_mouse_window_format">Floating touch mouse window: %1$s</string>
+    <string name="settings_touch_mouse_double_tap_lock_enabled">Double-tap floating window click lock: Enabled</string>
+    <string name="settings_touch_mouse_double_tap_lock_disabled">Double-tap floating window click lock: Disabled</string>
+    <string name="settings_touch_mouse_double_tap_lock_desc">Double-tap the floating window to lock clicking so the cursor can hover without triggering clicks. This helps with hover-only text that would otherwise be clicked away, such as Loadout mod descriptions.</string>
+    <string name="status_touch_mouse_double_tap_lock_format">Double-tap floating window click lock: %1$s</string>
     <string name="settings_touch_mouse_long_press_keyboard_enabled">Long-press touch mouse to open keyboard: Enabled</string>
     <string name="settings_touch_mouse_long_press_keyboard_disabled">Long-press touch mouse to open keyboard: Disabled</string>
     <string name="settings_touch_mouse_long_press_keyboard_desc">Controls whether long-pressing the touch mouse button opens the soft keyboard.</string>

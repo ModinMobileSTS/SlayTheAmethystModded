@@ -115,6 +115,8 @@ class SettingsScreenViewModel : ViewModel() {
         val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
+        val touchMouseDoubleTapLockEnabled: Boolean =
+            LauncherPreferences.DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
@@ -452,6 +454,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val backBehavior = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
+                val touchMouseDoubleTapLockEnabled = readTouchMouseDoubleTapLockSelection(host)
                 val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
                 val showModFileName = readShowModFileNameSelection(host)
@@ -566,6 +569,13 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\n")
                         .append(
                             host.getString(
+                                R.string.status_touch_mouse_double_tap_lock_format,
+                                if (touchMouseDoubleTapLockEnabled) "ON" else "OFF"
+                            )
+                        )
+                    append("\n")
+                        .append(
+                            host.getString(
                                 R.string.status_touch_mouse_long_press_keyboard_format,
                                 if (longPressMouseShowsKeyboard) "ON" else "OFF"
                             )
@@ -614,6 +624,7 @@ class SettingsScreenViewModel : ViewModel() {
                         backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
+                        touchMouseDoubleTapLockEnabled = touchMouseDoubleTapLockEnabled,
                         longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
                         showModFileName = showModFileName,
@@ -893,6 +904,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(showFloatingMouseWindow = enabled)
         saveShowFloatingMouseWindowSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onTouchMouseDoubleTapLockChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(touchMouseDoubleTapLockEnabled = enabled)
+        saveTouchMouseDoubleTapLockSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -1601,6 +1621,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
+    }
+
+    private fun readTouchMouseDoubleTapLockSelection(host: Activity): Boolean {
+        return LauncherPreferences.readTouchMouseDoubleTapLockEnabled(host)
+    }
+
+    private fun saveTouchMouseDoubleTapLockSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveTouchMouseDoubleTapLockEnabled(host, enabled)
     }
 
     private fun readLongPressMouseShowsKeyboardSelection(host: Activity): Boolean {

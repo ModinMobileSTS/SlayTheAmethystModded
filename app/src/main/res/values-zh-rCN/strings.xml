@@ -29,10 +29,16 @@
     <string name="touch_mouse_mode_left_short">左</string>
     <string name="touch_mouse_mode_right_short">右</string>
     <string name="touch_mouse_mode_toast">触摸鼠标模式：%1$s</string>
+    <string name="touch_mouse_lock_enabled_toast">鼠标锁定：开启</string>
+    <string name="touch_mouse_lock_disabled_toast">鼠标锁定：关闭</string>
     <string name="settings_touch_mouse_floating_window_visible">触摸鼠标悬浮窗：显示</string>
     <string name="settings_touch_mouse_floating_window_hidden">触摸鼠标悬浮窗：隐藏</string>
     <string name="settings_touch_mouse_floating_window_desc">控制游戏内触摸鼠标悬浮窗是否显示。</string>
     <string name="status_floating_touch_mouse_window_format">触摸鼠标悬浮窗：%1$s</string>
+    <string name="settings_touch_mouse_double_tap_lock_enabled">双击悬浮窗锁定点击：启用</string>
+    <string name="settings_touch_mouse_double_tap_lock_disabled">双击悬浮窗锁定点击：禁用</string>
+    <string name="settings_touch_mouse_double_tap_lock_desc">双击悬浮窗后锁定点击功能，可以解决需要鼠标悬浮才能查看的一些文本因为被点击而无法查看的问题，例如 loadout 模组无法查看功能描述。</string>
+    <string name="status_touch_mouse_double_tap_lock_format">双击悬浮窗锁定点击：%1$s</string>
     <string name="settings_touch_mouse_long_press_keyboard_enabled">长按触摸鼠标唤起键盘：启用</string>
     <string name="settings_touch_mouse_long_press_keyboard_disabled">长按触摸鼠标唤起键盘：禁用</string>
     <string name="settings_touch_mouse_long_press_keyboard_desc">控制长按触摸鼠标按钮时是否弹出软键盘。</string>

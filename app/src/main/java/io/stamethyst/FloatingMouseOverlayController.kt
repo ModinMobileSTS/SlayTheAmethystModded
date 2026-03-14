@@ -19,6 +19,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -35,6 +36,7 @@ internal class FloatingMouseOverlayController(
     private val requestRenderViewFocus: () -> Unit,
     private val autoSwitchBackToLeftAfterRightClick: Boolean,
     private val longPressMouseShowsKeyboard: Boolean,
+    private val doubleTapLocksClicksEnabled: Boolean,
 ) {
     private enum class TouchMouseMode {
         LEFT,
@@ -84,20 +86,29 @@ internal class FloatingMouseOverlayController(
     private var imeProxyView: View? = null
     private var specialKeysBar: LinearLayout? = null
     private var floatingMouseTouchSlop = 0
+    private var floatingMouseDoubleTapSlop = 0
     private var floatingMouseDragging = false
     private var floatingMouseLongPressTriggered = false
     private var floatingMousePressRunnable: Runnable? = null
+    private var floatingMouseSingleTapRunnable: Runnable? = null
     private var floatingMouseIdleRunnable: Runnable? = null
     private var floatingMouseDownRawX = 0f
     private var floatingMouseDownRawY = 0f
     private var floatingMouseDownLeft = 0
     private var floatingMouseDownTop = 0
+    private var floatingMouseLastTapUpAtMs = 0L
+    private var floatingMouseLastTapUpRawX = 0f
+    private var floatingMouseLastTapUpRawY = 0f
+    private var touchMouseLockEnabled = false
     private val pendingSoftKeyReleaseRunnables = mutableMapOf<Int, Runnable>()
+    private val floatingMouseDoubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
 
     fun attachToHost(host: FrameLayout) {
         detachViews()
         hostView = host
-        floatingMouseTouchSlop = ViewConfiguration.get(activity).scaledTouchSlop
+        val viewConfiguration = ViewConfiguration.get(activity)
+        floatingMouseTouchSlop = viewConfiguration.scaledTouchSlop
+        floatingMouseDoubleTapSlop = viewConfiguration.scaledDoubleTapSlop
 
         val imeView = GameImeProxyView(activity).apply {
             alpha = 0f
@@ -185,6 +196,7 @@ internal class FloatingMouseOverlayController(
         flushPendingSoftKeyReleases()
         hideSoftKeyboard()
         cancelFloatingMouseLongPress()
+        clearFloatingMouseSingleTap()
         clearIdleRunnable()
         floatingMouseButton?.animate()?.cancel()
         releaseTouchButtonIfNeeded()
@@ -199,9 +211,14 @@ internal class FloatingMouseOverlayController(
             button.animate().cancel()
             button.alpha = FLOATING_MOUSE_IDLE_ALPHA
         } else {
+            clearFloatingMouseSingleTap()
             clearIdleRunnable()
             button.animate().cancel()
         }
+    }
+
+    fun isTouchMouseLockEnabled(): Boolean {
+        return touchMouseLockEnabled
     }
 
     fun pressTouchButtonIfNeeded() {
@@ -270,11 +287,17 @@ internal class FloatingMouseOverlayController(
                 floatingMouseDownRawY = event.rawY
                 floatingMouseDownLeft = params.leftMargin
                 floatingMouseDownTop = params.topMargin
+                if (hasPendingFloatingMouseSingleTap() &&
+                    !canCurrentTapBecomeDoubleTap(event.rawX, event.rawY)
+                ) {
+                    flushPendingFloatingMouseSingleTap()
+                }
 
                 if (longPressMouseShowsKeyboard) {
                     val longPressRunnable = Runnable {
                         if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
                             floatingMouseLongPressTriggered = true
+                            flushPendingFloatingMouseSingleTap()
                             button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             showSoftKeyboard()
                         }
@@ -295,6 +318,7 @@ internal class FloatingMouseOverlayController(
                 ) {
                     floatingMouseDragging = true
                     cancelFloatingMouseLongPress()
+                    flushPendingFloatingMouseSingleTap()
                 }
                 if (floatingMouseDragging) {
                     val parentView = button.parent as? View
@@ -310,8 +334,7 @@ internal class FloatingMouseOverlayController(
             MotionEvent.ACTION_UP -> {
                 cancelFloatingMouseLongPress()
                 if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
-                    button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    toggleTouchMouseMode()
+                    handleFloatingMouseTap(button, event.rawX, event.rawY)
                 }
                 floatingMouseDragging = false
                 floatingMouseLongPressTriggered = false
@@ -321,6 +344,7 @@ internal class FloatingMouseOverlayController(
 
             MotionEvent.ACTION_CANCEL -> {
                 cancelFloatingMouseLongPress()
+                flushPendingFloatingMouseSingleTap()
                 floatingMouseDragging = false
                 floatingMouseLongPressTriggered = false
                 scheduleFloatingMouseIdle()
@@ -335,6 +359,79 @@ internal class FloatingMouseOverlayController(
         val button = floatingMouseButton ?: return
         floatingMousePressRunnable?.let { button.removeCallbacks(it) }
         floatingMousePressRunnable = null
+    }
+
+    private fun handleFloatingMouseTap(button: View, rawX: Float, rawY: Float) {
+        if (!doubleTapLocksClicksEnabled) {
+            clearFloatingMouseSingleTap()
+            floatingMouseLastTapUpAtMs = 0L
+            button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            toggleTouchMouseMode()
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        if (canCurrentTapBecomeDoubleTap(rawX, rawY, now)) {
+            clearFloatingMouseSingleTap()
+            floatingMouseLastTapUpAtMs = 0L
+            button.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            toggleTouchMouseLock()
+            return
+        }
+        if (hasPendingFloatingMouseSingleTap()) {
+            flushPendingFloatingMouseSingleTap()
+        }
+        scheduleFloatingMouseSingleTap(button, rawX, rawY, now)
+    }
+
+    private fun hasPendingFloatingMouseSingleTap(): Boolean {
+        return floatingMouseSingleTapRunnable != null
+    }
+
+    private fun canCurrentTapBecomeDoubleTap(
+        rawX: Float,
+        rawY: Float,
+        now: Long = SystemClock.uptimeMillis()
+    ): Boolean {
+        if (!hasPendingFloatingMouseSingleTap()) {
+            return false
+        }
+        if (now - floatingMouseLastTapUpAtMs > floatingMouseDoubleTapTimeoutMs) {
+            return false
+        }
+        return abs(rawX - floatingMouseLastTapUpRawX) <= floatingMouseDoubleTapSlop &&
+            abs(rawY - floatingMouseLastTapUpRawY) <= floatingMouseDoubleTapSlop
+    }
+
+    private fun scheduleFloatingMouseSingleTap(
+        button: View,
+        rawX: Float,
+        rawY: Float,
+        timestampMs: Long
+    ) {
+        clearFloatingMouseSingleTap()
+        floatingMouseLastTapUpAtMs = timestampMs
+        floatingMouseLastTapUpRawX = rawX
+        floatingMouseLastTapUpRawY = rawY
+        val singleTapRunnable = Runnable {
+            floatingMouseSingleTapRunnable = null
+            floatingMouseLastTapUpAtMs = 0L
+            button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            toggleTouchMouseMode()
+        }
+        floatingMouseSingleTapRunnable = singleTapRunnable
+        button.postDelayed(singleTapRunnable, floatingMouseDoubleTapTimeoutMs)
+    }
+
+    private fun clearFloatingMouseSingleTap() {
+        val singleTapRunnable = floatingMouseSingleTapRunnable ?: return
+        floatingMouseButton?.removeCallbacks(singleTapRunnable)
+        floatingMouseSingleTapRunnable = null
+    }
+
+    private fun flushPendingFloatingMouseSingleTap() {
+        val singleTapRunnable = floatingMouseSingleTapRunnable ?: return
+        floatingMouseButton?.removeCallbacks(singleTapRunnable)
+        singleTapRunnable.run()
     }
 
     private fun highlightFloatingMouse() {
@@ -380,6 +477,21 @@ internal class FloatingMouseOverlayController(
         updateTouchMouseModeUi()
     }
 
+    private fun toggleTouchMouseLock() {
+        if (!doubleTapLocksClicksEnabled) {
+            return
+        }
+        releaseTouchButtonIfNeeded()
+        touchMouseLockEnabled = !touchMouseLockEnabled
+        updateTouchMouseModeUi()
+        val messageRes = if (touchMouseLockEnabled) {
+            R.string.touch_mouse_lock_enabled_toast
+        } else {
+            R.string.touch_mouse_lock_disabled_toast
+        }
+        Toast.makeText(activity, messageRes, Toast.LENGTH_SHORT).show()
+    }
+
     private fun updateTouchMouseModeUi() {
         val leftMode = touchMouseMode == TouchMouseMode.LEFT
         val modeIconRes = if (leftMode) {
@@ -388,6 +500,16 @@ internal class FloatingMouseOverlayController(
             R.drawable.ic_touch_mouse_mode_right
         }
         floatingMouseMainIcon?.setImageResource(modeIconRes)
+        floatingMouseMainIcon?.setColorFilter(
+            if (touchMouseLockEnabled) 0xFF98D96A.toInt() else 0xFFFFFFFF.toInt()
+        )
+        floatingMouseButton?.setBackgroundResource(
+            if (touchMouseLockEnabled) {
+                R.drawable.bg_touch_mouse_floating_locked
+            } else {
+                R.drawable.bg_touch_mouse_floating
+            }
+        )
     }
 
     private fun resolveTouchButton(): Int {

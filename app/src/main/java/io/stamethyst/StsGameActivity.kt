@@ -170,7 +170,8 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.initFloatingMouseControls(
             host = host,
             autoSwitchLeftAfterRightClick = sessionConfig.autoSwitchLeftAfterRightClick,
-            longPressMouseShowsKeyboard = sessionConfig.longPressMouseShowsKeyboard
+            longPressMouseShowsKeyboard = sessionConfig.longPressMouseShowsKeyboard,
+            doubleTapLocksClicksEnabled = sessionConfig.touchMouseDoubleTapLockEnabled
         )
         sessionCoordinator.refreshSessionUiVisibility()
 

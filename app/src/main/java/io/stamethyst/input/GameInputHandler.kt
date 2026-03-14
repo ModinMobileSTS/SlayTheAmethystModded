@@ -34,14 +34,16 @@ class GameInputHandler(
     fun initFloatingMouseControls(
         host: FrameLayout,
         autoSwitchLeftAfterRightClick: Boolean,
-        longPressMouseShowsKeyboard: Boolean
+        longPressMouseShowsKeyboard: Boolean,
+        doubleTapLocksClicksEnabled: Boolean
     ) {
         floatingMouseController = FloatingMouseOverlayController(
             activity = activity,
             isNativeInputDispatchReady = isInputDispatchReady,
             requestRenderViewFocus = requestRenderViewFocus,
             autoSwitchBackToLeftAfterRightClick = autoSwitchLeftAfterRightClick,
-            longPressMouseShowsKeyboard = longPressMouseShowsKeyboard
+            longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
+            doubleTapLocksClicksEnabled = doubleTapLocksClicksEnabled
         ).also { controller ->
             controller.attachToHost(host)
         }
@@ -78,7 +80,11 @@ class GameInputHandler(
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = event.getPointerId(0)
                 moveCursor(event.getX(0), event.getY(0))
-                pressTouchButtonIfNeeded()
+                if (shouldDispatchTouchButtons()) {
+                    pressTouchButtonIfNeeded()
+                } else {
+                    releaseTouchButtonIfNeeded()
+                }
                 return true
             }
 
@@ -86,7 +92,11 @@ class GameInputHandler(
                 val downIndex = event.actionIndex
                 activePointerId = event.getPointerId(downIndex)
                 moveCursor(event.getX(downIndex), event.getY(downIndex))
-                pressTouchButtonIfNeeded()
+                if (shouldDispatchTouchButtons()) {
+                    pressTouchButtonIfNeeded()
+                } else {
+                    releaseTouchButtonIfNeeded()
+                }
                 return true
             }
 
@@ -163,6 +173,10 @@ class GameInputHandler(
 
     private fun releaseTouchButtonIfNeeded() {
         floatingMouseController?.releaseTouchButtonIfNeeded()
+    }
+
+    private fun shouldDispatchTouchButtons(): Boolean {
+        return floatingMouseController?.isTouchMouseLockEnabled() != true
     }
 
     private fun resetTouchState() {
