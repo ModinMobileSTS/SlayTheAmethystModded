@@ -59,7 +59,6 @@ public class LwjglApplication implements Application {
 	protected final ApplicationListener listener;
 	protected Thread mainLoopThread;
 	protected boolean running = true;
-	private static final int CONTEXT_GENERATION_QUERY_ACTION = 2999;
 	private static final String NO_CONTEXT_LOG_MARKER =
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
@@ -319,9 +318,7 @@ public class LwjglApplication implements Application {
 
 	private int queryNativeContextGeneration () {
 		try {
-			String value = CallbackBridge.nativeClipboard(CONTEXT_GENERATION_QUERY_ACTION, null);
-			if (value == null) return Integer.MIN_VALUE;
-			return Integer.parseInt(value.trim());
+			return CallbackBridge.nativeGetGlContextGeneration();
 		} catch (Throwable t) {
 			if (!contextGenerationUnavailableLogged) {
 				System.out.println("[gdx-patch] Native context generation query unavailable: " + t);

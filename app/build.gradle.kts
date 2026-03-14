@@ -2,6 +2,8 @@ import com.android.build.api.artifact.SingleArtifact
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.tasks.compile.JavaCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
 import java.io.FileOutputStream
@@ -24,6 +26,20 @@ val packageName = readGradleProperty("application.id")
 val appVersionName = readGradleProperty("application.version.name")
 val appVersionCode = readGradleProperty("application.version.code").toInt()
 val generatedRuntimeAssetsDir: Provider<Directory> = layout.buildDirectory.dir("generated/runtime-assets")
+val callbackBridgeTemplatesDir = rootProject.layout.projectDirectory.dir("gradle/callback-bridge/templates")
+val callbackBridgeBaseJar = rootProject.layout.projectDirectory.file("gradle/callback-bridge/lwjgl-glfw-classes-base.jar")
+val generatedAndroidCallbackBridgeDir: Provider<Directory> =
+    layout.buildDirectory.dir("generated/source/callbackBridge/android")
+val generatedJvmCallbackBridgeSourceDir: Provider<Directory> =
+    layout.buildDirectory.dir("generated/source/callbackBridge/jvm")
+val generatedJvmCallbackBridgeClassesDir: Provider<Directory> =
+    layout.buildDirectory.dir("generated/classes/callbackBridge/jvm")
+val generatedJvmCallbackBridgeJarContentsDir: Provider<Directory> =
+    layout.buildDirectory.dir("generated/tmp/callbackBridge/jar-contents")
+val packagedLwjglBridgeJarDir: Provider<Directory> =
+    layout.buildDirectory.dir("generated/callbackBridgeRuntimeJar")
+val generatedLwjglBridgeAssetDir: Provider<Directory> =
+    generatedRuntimeAssetsDir.map { it.dir("components/lwjgl3") }
 val releaseStoreFilePath = providers.environmentVariable("RELEASE_STORE_FILE").orNull?.trim().orEmpty()
 val releaseStorePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").orNull?.trim().orEmpty()
 val releaseKeyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").orNull?.trim().orEmpty()
@@ -43,6 +59,17 @@ if (isReleaseTaskRequested && !hasReleaseSigning) {
     throw GradleException(
         "Missing release signing env vars. Required: " +
             "RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD"
+    )
+}
+
+fun renderCallbackBridge(target: CallbackBridgeTarget): String {
+    val templateFile = when (target) {
+        CallbackBridgeTarget.ANDROID -> callbackBridgeTemplatesDir.file("android/CallbackBridge.java.tmpl").asFile
+        CallbackBridgeTarget.JVM -> callbackBridgeTemplatesDir.file("jvm/CallbackBridge.java.tmpl").asFile
+    }
+    return CallbackBridgeCodegen.renderTemplate(
+        templateFile.readText(StandardCharsets.UTF_8),
+        target
     )
 }
 
@@ -112,6 +139,7 @@ android {
     sourceSets {
         getByName("main") {
             assets.srcDir(generatedRuntimeAssetsDir)
+            java.srcDir(generatedAndroidCallbackBridgeDir)
         }
     }
 
@@ -267,6 +295,106 @@ val installBootBridgeJar by tasks.registering(Copy::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
 }
 
+val generateAndroidCallbackBridgeSource by tasks.registering {
+    val templateFile = callbackBridgeTemplatesDir.file("android/CallbackBridge.java.tmpl")
+    inputs.file(templateFile)
+    inputs.property("callbackBridgeContractHash", CallbackBridgeCodegen.contractHash)
+    outputs.dir(generatedAndroidCallbackBridgeDir)
+    doLast {
+        val outputDir = generatedAndroidCallbackBridgeDir.get().asFile.resolve("org/lwjgl/glfw")
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+        File(outputDir, "CallbackBridge.java").writeText(
+            renderCallbackBridge(CallbackBridgeTarget.ANDROID),
+            StandardCharsets.UTF_8
+        )
+    }
+}
+
+val generateJvmCallbackBridgeSource by tasks.registering {
+    val templateFile = callbackBridgeTemplatesDir.file("jvm/CallbackBridge.java.tmpl")
+    inputs.file(templateFile)
+    inputs.property("callbackBridgeContractHash", CallbackBridgeCodegen.contractHash)
+    outputs.dir(generatedJvmCallbackBridgeSourceDir)
+    doLast {
+        val outputDir = generatedJvmCallbackBridgeSourceDir.get().asFile.resolve("org/lwjgl/glfw")
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+        File(outputDir, "CallbackBridge.java").writeText(
+            renderCallbackBridge(CallbackBridgeTarget.JVM),
+            StandardCharsets.UTF_8
+        )
+    }
+}
+
+val compileJvmCallbackBridge by tasks.registering(JavaCompile::class) {
+    dependsOn(generateJvmCallbackBridgeSource)
+    source(generatedJvmCallbackBridgeSourceDir)
+    destinationDirectory.set(generatedJvmCallbackBridgeClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8.toString()
+    targetCompatibility = JavaVersion.VERSION_1_8.toString()
+    options.release.set(8)
+    classpath = files()
+}
+
+val prepareJvmCallbackBridgeJarContents by tasks.registering(Sync::class) {
+    dependsOn(compileJvmCallbackBridge)
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    from(zipTree(callbackBridgeBaseJar))
+    from(generatedJvmCallbackBridgeClassesDir)
+    into(generatedJvmCallbackBridgeJarContentsDir)
+}
+
+val packageLwjglCallbackBridgeJar by tasks.registering(Zip::class) {
+    dependsOn(prepareJvmCallbackBridgeJarContents)
+    from(generatedJvmCallbackBridgeJarContentsDir)
+    destinationDirectory.set(packagedLwjglBridgeJarDir)
+    archiveFileName.set("lwjgl-glfw-classes.jar")
+    archiveExtension.set("jar")
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
+val generateLwjglBridgeVersion by tasks.registering {
+    val androidTemplate = callbackBridgeTemplatesDir.file("android/CallbackBridge.java.tmpl")
+    val jvmTemplate = callbackBridgeTemplatesDir.file("jvm/CallbackBridge.java.tmpl")
+    val outputFile = generatedLwjglBridgeAssetDir.map { it.file("version") }
+    inputs.file(callbackBridgeBaseJar)
+    inputs.file(androidTemplate)
+    inputs.file(jvmTemplate)
+    inputs.property("callbackBridgeContractHash", CallbackBridgeCodegen.contractHash)
+    outputs.file(outputFile)
+    doLast {
+        val targetFile = outputFile.get().asFile
+        val parent = targetFile.parentFile
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs()
+        }
+        targetFile.writeText(
+            CallbackBridgeCodegen.fingerprint(
+                CallbackBridgeCodegen.contractHash,
+                androidTemplate.asFile.readText(StandardCharsets.UTF_8),
+                jvmTemplate.asFile.readText(StandardCharsets.UTF_8),
+                callbackBridgeBaseJar.asFile.length().toString(),
+                callbackBridgeBaseJar.asFile.lastModified().toString()
+            ),
+            StandardCharsets.UTF_8
+        )
+    }
+}
+
+val installLwjglBridgeAssets by tasks.registering(Sync::class) {
+    dependsOn(packageLwjglCallbackBridgeJar)
+    dependsOn(generateLwjglBridgeVersion)
+    from(packagedLwjglBridgeJarDir) {
+        include("lwjgl-glfw-classes.jar")
+    }
+    from(generateLwjglBridgeVersion)
+    into(generatedLwjglBridgeAssetDir)
+}
+
 val installPatchJars by tasks.registering(Sync::class) {
     val patchJarTaskPaths = patchProjectPaths.map { projectPath -> "$projectPath:jar" }
     dependsOn(patchJarTaskPaths)
@@ -331,7 +459,9 @@ val installRuntimePackAssets by tasks.registering(Sync::class) {
 }
 
 tasks.preBuild.configure {
+    dependsOn(generateAndroidCallbackBridgeSource)
     dependsOn(installBootBridgeJar)
+    dependsOn(installLwjglBridgeAssets)
     dependsOn(installPatchJars)
     dependsOn(installGdxVideoNatives)
     dependsOn(installLog4jRuntimeAssets)

@@ -32,7 +32,6 @@
 #define EVENT_TYPE_KEY 1005
 #define EVENT_TYPE_MOUSE_BUTTON 1006
 #define EVENT_TYPE_SCROLL 1007
-#define CLIPBOARD_CONTEXT_GENERATION_QUERY 2999
 
 #define TRY_ATTACH_ENV(env_name, vm, error_message, then) JNIEnv* env_name;\
 do {                                                                       \
@@ -319,20 +318,11 @@ void noncritical_set_stackqueue(__attribute__((unused)) JNIEnv *env, __attribute
     critical_set_stackqueue(use_input_stack_queue);
 }
 
-JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNIEnv* env, __attribute__((unused)) jclass clazz, jint action, jbyteArray copySrc) {
+JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNIEnv* env, __attribute__((unused)) jclass clazz, __attribute__((unused)) jint action, jbyteArray copySrc) {
 #ifdef DEBUG
     ;
 #endif
 
-    if (action == CLIPBOARD_CONTEXT_GENERATION_QUERY) {
-        int generation = 0;
-        if (pojav_environ != NULL) {
-            generation = atomic_load_explicit(&pojav_environ->glContextGeneration, memory_order_relaxed);
-        }
-        char generationString[32];
-        snprintf(generationString, sizeof(generationString), "%d", generation);
-        return (*env)->NewStringUTF(env, generationString);
-    }
 
     JNIEnv *dalvikEnv;
     (*pojav_environ->dalvikJavaVMPtr)->AttachCurrentThread(pojav_environ->dalvikJavaVMPtr, &dalvikEnv, NULL);
@@ -358,6 +348,15 @@ JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNI
     return pasteDst;
 }
 
+JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlContextGeneration(
+    __attribute__((unused)) JNIEnv* env,
+    __attribute__((unused)) jclass clazz
+) {
+    if (pojav_environ == NULL) {
+        return 0;
+    }
+    return atomic_load_explicit(&pojav_environ->glContextGeneration, memory_order_relaxed);
+}
 JNIEXPORT jboolean JNICALL JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(jboolean inputReady) {
 #ifdef DEBUG
     ;

@@ -11,9 +11,15 @@ java {
     }
 }
 
+val appProjectRef = rootProject.project(":app")
+
 dependencies {
     compileOnly(files(desktopJar()))
-    compileOnly(files("../../app/src/main/assets/components/lwjgl3/lwjgl-glfw-classes.jar"))
+    compileOnly(files(appProjectRef.layout.buildDirectory.file("generated/callbackBridgeRuntimeJar/lwjgl-glfw-classes.jar")))
+}
+
+tasks.compileJava {
+    dependsOn(":app:packageLwjglCallbackBridgeJar")
 }
 
 tasks.jar {

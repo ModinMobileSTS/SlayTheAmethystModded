@@ -1,0 +1,23 @@
+package org.lwjgl.glfw;
+
+import java.nio.ByteBuffer;
+
+// Generated from the shared CallbackBridge contract. Contract hash: __CALLBACK_BRIDGE_CONTRACT_HASH__
+public class CallbackBridge {
+__CALLBACK_BRIDGE_CONSTANTS__
+
+    public static boolean sGamepadDirectEnabled;
+
+    public static void enableGamepadDirectInput() {
+        if (sGamepadDirectEnabled) {
+            return;
+        }
+        sGamepadDirectEnabled = nativeEnableGamepadDirectInput();
+    }
+
+    public static void sendData(int type, String payload) {
+        nativeSendData(false, type, payload);
+    }
+
+__CALLBACK_BRIDGE_NATIVE_METHODS__
+}
