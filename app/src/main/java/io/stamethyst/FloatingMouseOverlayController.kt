@@ -70,6 +70,8 @@ internal class FloatingMouseOverlayController(
         private const val SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP = 46
         private const val SPECIAL_KEYS_BUTTON_SPACING_DP = 6
         private const val SOFT_KEY_MIN_PRESS_MS = 70L
+        private const val SOFT_TEXT_DUPLICATE_CROSS_SOURCE_WINDOW_MS = 150L
+        private const val SOFT_TEXT_DUPLICATE_SAME_SOURCE_WINDOW_MS = 16L
         private const val AWT_VK_ENTER = 10
         private const val AWT_VK_BACK_SPACE = 8
         private const val AWT_VK_TAB = 9
@@ -112,6 +114,9 @@ internal class FloatingMouseOverlayController(
 
     private val toggleSpecialKeyButtons = mutableMapOf<Int, View>()
     private val activeToggleSoftKeys = mutableMapOf<Int, SoftKeyboardTarget>()
+    private var lastSoftTextPayload = ""
+    private var lastSoftTextSource = ""
+    private var lastSoftTextAtMs = 0L
 
     fun attachToHost(host: FrameLayout) {
         flushPendingSoftKeyReleases()
@@ -822,18 +827,54 @@ internal class FloatingMouseOverlayController(
         }
     }
 
-    private fun sendSoftKeyboardText(text: CharSequence?): Boolean {
+    private fun sendSoftKeyboardText(text: CharSequence?, source: String): Boolean {
         val ready = isNativeInputDispatchReady.invoke()
         if (text.isNullOrEmpty() || !ready) {
-            logIme("commitText payload=${describeText(text)} ready=$ready")
+            logIme("sendSoftKeyboardText source=$source payload=${describeText(text)} ready=$ready")
             return false
         }
+        if (shouldSuppressDuplicateSoftKeyboardText(text, source)) {
+            return true
+        }
         val target = resolveSoftKeyboardTarget()
-        logIme("commitText payload=${describeText(text)} ready=$ready target=$target")
+        logIme("sendSoftKeyboardText source=$source payload=${describeText(text)} ready=$ready target=$target")
         return when (target) {
             SoftKeyboardTarget.GLFW -> sendSoftKeyboardTextToGame(text)
             SoftKeyboardTarget.AWT -> sendSoftKeyboardTextToAwt(text)
         }
+    }
+
+    private fun shouldSuppressDuplicateSoftKeyboardText(text: CharSequence, source: String): Boolean {
+        val payload = text.toString()
+        val shouldTrackForDedup = payload.length > 1 || payload.any { it.code > 0x7F }
+        if (!shouldTrackForDedup) {
+            return false
+        }
+
+        val now = SystemClock.uptimeMillis()
+        val deltaMs = now - lastSoftTextAtMs
+        val samePayload = payload == lastSoftTextPayload
+        val sameSource = source == lastSoftTextSource
+        val withinWindow = if (sameSource) {
+            deltaMs in 0..SOFT_TEXT_DUPLICATE_SAME_SOURCE_WINDOW_MS
+        } else {
+            deltaMs in 0..SOFT_TEXT_DUPLICATE_CROSS_SOURCE_WINDOW_MS
+        }
+        if (samePayload && withinWindow) {
+            logIme(
+                "sendSoftKeyboardText suppressed duplicate " +
+                    "source=$source previousSource=$lastSoftTextSource " +
+                    "deltaMs=$deltaMs payload=${describeText(text)}"
+            )
+            lastSoftTextSource = source
+            lastSoftTextAtMs = now
+            return true
+        }
+
+        lastSoftTextPayload = payload
+        lastSoftTextSource = source
+        lastSoftTextAtMs = now
+        return false
     }
 
     private fun sendSoftKeyboardTextToGame(text: CharSequence): Boolean {
@@ -1031,7 +1072,7 @@ internal class FloatingMouseOverlayController(
             val chars = event.characters
             logIme("dispatchKeyboardEventToAwt ACTION_MULTIPLE chars=${describeText(chars)}")
             return if (!chars.isNullOrEmpty()) {
-                sendSoftKeyboardTextToAwt(chars)
+                sendSoftKeyboardText(chars, "action_multiple_awt")
             } else {
                 true
             }
@@ -1106,7 +1147,7 @@ internal class FloatingMouseOverlayController(
             val chars = event.characters
             logIme("dispatchKeyboardEventToGame ACTION_MULTIPLE chars=${describeText(chars)}")
             return if (!chars.isNullOrEmpty()) {
-                sendSoftKeyboardText(chars)
+                sendSoftKeyboardText(chars, "action_multiple_glfw")
             } else {
                 true
             }
@@ -1252,7 +1293,7 @@ internal class FloatingMouseOverlayController(
                         "InputConnection.commitText text=${describeText(text)} " +
                             "cursor=$newCursorPosition result=$result state=${describeEditableState(editable)}"
                     )
-                    sendSoftKeyboardText(text)
+                    sendSoftKeyboardText(text, "commit_text")
                     return true
                 }
 
