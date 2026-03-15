@@ -17,6 +17,7 @@ object RuntimePaths {
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
+    private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
     private const val ANDROID_EMULATED_SEGMENT = "emulated"
     private const val ANDROID_SDCARD_SEGMENT = "sdcard"
@@ -54,6 +55,9 @@ object RuntimePaths {
     fun modsDir(context: Context): File = File(stsRoot(context), "mods")
 
     @JvmStatic
+    fun optionalModsLibraryDir(context: Context): File = File(stsRoot(context), "mods_library")
+
+    @JvmStatic
     fun importedBaseModJar(context: Context): File = File(modsDir(context), "BaseMod.jar")
 
     @JvmStatic
@@ -64,6 +68,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun priorityModsConfig(context: Context): File = File(stsRoot(context), "priority_mod_roots.txt")
+
+    @JvmStatic
+    fun optionalModsLibraryMigrationMarker(context: Context): File =
+        File(stsRoot(context), OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME)
 
     @JvmStatic
     fun preferencesDir(context: Context): File = File(stsRoot(context), "preferences")
@@ -354,6 +362,7 @@ object RuntimePaths {
         stsRoot(context).mkdirs()
         stsHome(context).mkdirs()
         modsDir(context).mkdirs()
+        optionalModsLibraryDir(context).mkdirs()
         jvmLogsDir(context).mkdirs()
         jvmHistogramsDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()

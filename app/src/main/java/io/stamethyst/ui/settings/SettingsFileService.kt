@@ -19,6 +19,7 @@ import io.stamethyst.backend.mods.FrierenModCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
+import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -78,6 +79,19 @@ internal data class ModBatchImportResult(
     val firstError: String?
         get() = errors.firstOrNull()
 }
+
+internal data class ModImportIdentityPreview(
+    val normalizedModId: String,
+    val displayModId: String,
+    val displayName: String
+)
+
+internal data class DuplicateModImportConflict(
+    val normalizedModId: String,
+    val displayModId: String,
+    val importingDisplayNames: List<String>,
+    val existingDisplayNames: List<String>
+)
 
 private data class SaveArchiveScanResult(
     val importableFiles: Int,
@@ -200,7 +214,7 @@ internal object SettingsFileService {
                     val message = "No mod jars found yet.\n" +
                         "Expected files:\n" +
                         "- ${RuntimePaths.importedMtsJar(host).absolutePath}\n" +
-                        "- ${RuntimePaths.modsDir(host).absolutePath}\n"
+                        "- ${RuntimePaths.optionalModsLibraryDir(host).absolutePath}\n"
                     zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
                     zipOutput.closeEntry()
                     return 0
@@ -272,8 +286,13 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun importModJar(host: Activity, uri: Uri): ModImportResult {
-        val modsDir = RuntimePaths.modsDir(host)
+    fun importModJar(
+        host: Activity,
+        uri: Uri,
+        replaceExistingDuplicates: Boolean = false
+    ): ModImportResult {
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(host)
+        val modsDir = RuntimePaths.optionalModsLibraryDir(host)
         if (!modsDir.exists() && !modsDir.mkdirs()) {
             throw IOException("Failed to create mods directory")
         }
@@ -327,12 +346,14 @@ internal object SettingsFileService {
                 patchedFrierenAntiPirateMethod =
                     FrierenModCompatPatcher.patchAntiPirateInPlace(tempFile).patchedAntiPirateMethod
             }
-            ModManager.removeExistingOptionalModsForImport(
-                context = host,
-                normalizedModId = modId,
-                launchModId = launchModId,
-                excludedPath = tempFile.absolutePath
-            )
+            if (replaceExistingDuplicates) {
+                ModManager.removeExistingOptionalModsForImport(
+                    context = host,
+                    normalizedModId = modId,
+                    launchModId = launchModId,
+                    excludedPath = tempFile.absolutePath
+                )
+            }
             val requestedFileName = if (displayName.isNotBlank()) displayName else "$modId.jar"
             val targetFile = ModManager.resolveStorageFileForImportedMod(host, requestedFileName)
             moveFileReplacing(tempFile, targetFile)
@@ -377,7 +398,11 @@ internal object SettingsFileService {
         }
     }
 
-    fun importModJars(host: Activity, uris: Collection<Uri>): ModBatchImportResult {
+    fun importModJars(
+        host: Activity,
+        uris: Collection<Uri>,
+        replaceExistingDuplicates: Boolean = false
+    ): ModBatchImportResult {
         var imported = 0
         val errors = ArrayList<String>()
         val blockedComponents = LinkedHashSet<String>()
@@ -391,7 +416,11 @@ internal object SettingsFileService {
                 continue
             }
             try {
-                val result = importModJar(host, uri)
+                val result = importModJar(
+                    host = host,
+                    uri = uri,
+                    replaceExistingDuplicates = replaceExistingDuplicates
+                )
                 imported++
                 if (result.hasCompatibilityPatches) {
                     val existing = patchedMods[result.modId]
@@ -428,6 +457,79 @@ internal object SettingsFileService {
             blockedComponents = blockedComponents.toList(),
             compressedArchives = compressedArchives.toList(),
             patchedResults = patchedMods.values.toList()
+        )
+    }
+
+    fun findDuplicateModImportConflicts(
+        host: Activity,
+        uris: Collection<Uri>
+    ): List<DuplicateModImportConflict> {
+        if (uris.isEmpty()) {
+            return emptyList()
+        }
+        val incomingMods = ArrayList<ModImportIdentityPreview>()
+        uris.forEach { uri ->
+            inspectImportableModJarIdentity(host, uri)?.let { incomingMods.add(it) }
+        }
+        if (incomingMods.isEmpty()) {
+            return emptyList()
+        }
+        return collectDuplicateModImportConflicts(
+            existingByModId = buildExistingModImportLookup(host),
+            incomingMods = incomingMods
+        )
+    }
+
+    internal fun collectDuplicateModImportConflicts(
+        existingByModId: Map<String, List<String>>,
+        incomingMods: Collection<ModImportIdentityPreview>
+    ): List<DuplicateModImportConflict> {
+        if (incomingMods.isEmpty()) {
+            return emptyList()
+        }
+        val incomingByModId = LinkedHashMap<String, MutableList<ModImportIdentityPreview>>()
+        incomingMods.forEach { preview ->
+            val normalizedModId = ModManager.normalizeModId(preview.normalizedModId)
+            if (normalizedModId.isEmpty()) {
+                return@forEach
+            }
+            incomingByModId.getOrPut(normalizedModId) { ArrayList() }.add(preview)
+        }
+        if (incomingByModId.isEmpty()) {
+            return emptyList()
+        }
+
+        val conflicts = ArrayList<DuplicateModImportConflict>()
+        incomingByModId.forEach { (normalizedModId, previews) ->
+            val existingNames = existingByModId[normalizedModId]
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+            if (existingNames.isEmpty() && previews.size <= 1) {
+                return@forEach
+            }
+            val displayModId = previews.firstOrNull { it.displayModId.isNotBlank() }
+                ?.displayModId
+                ?.trim()
+                .orEmpty()
+                .ifBlank { normalizedModId }
+            val importingNames = previews
+                .map { it.displayName.trim() }
+                .filter { it.isNotEmpty() }
+            conflicts.add(
+                DuplicateModImportConflict(
+                    normalizedModId = normalizedModId,
+                    displayModId = displayModId,
+                    importingDisplayNames = importingNames,
+                    existingDisplayNames = existingNames
+                )
+            )
+        }
+        return conflicts.sortedWith(
+            compareBy<DuplicateModImportConflict>(
+                { it.normalizedModId },
+                { it.displayModId.lowercase(Locale.ROOT) }
+            )
         )
     }
 
@@ -491,6 +593,30 @@ internal object SettingsFileService {
                 }
             }
             append("\n请先解压压缩包，选择其中的 .jar 模组文件再导入。")
+        }.trimEnd()
+    }
+
+    fun buildDuplicateModImportMessage(conflicts: Collection<DuplicateModImportConflict>): String {
+        if (conflicts.isEmpty()) {
+            return "检测到重复 modid。"
+        }
+        return buildString {
+            append("检测到以下模组的 modid 与已导入模组或本次选择的其他模组重复：\n")
+            conflicts.forEach { conflict ->
+                append("\nmodid: ")
+                append(conflict.displayModId.ifBlank { conflict.normalizedModId })
+                append('\n')
+                append("- 本次导入: ")
+                append(conflict.importingDisplayNames.distinct().joinToString("、"))
+                append('\n')
+                val existingNames = conflict.existingDisplayNames.distinct()
+                if (existingNames.isNotEmpty()) {
+                    append("- 已导入: ")
+                    append(existingNames.joinToString("、"))
+                    append('\n')
+                }
+            }
+            append("\n选择“取消导入”会放弃本次导入；选择“保留两者”会继续导入并同时保留现有文件。")
         }.trimEnd()
     }
 
@@ -654,6 +780,67 @@ internal object SettingsFileService {
             normalized = normalized.dropLast(1)
         }
         return normalized
+    }
+
+    private fun buildExistingModImportLookup(host: Activity): Map<String, List<String>> {
+        val existingByModId = LinkedHashMap<String, MutableList<String>>()
+        ModManager.listInstalledMods(host).forEach { mod ->
+            if (mod.required || !mod.jarFile.isFile) {
+                return@forEach
+            }
+            val normalizedModId = ModManager.normalizeModId(mod.modId).ifBlank {
+                ModManager.normalizeModId(mod.manifestModId)
+            }
+            if (normalizedModId.isEmpty()) {
+                return@forEach
+            }
+            existingByModId.getOrPut(normalizedModId) { ArrayList() }.add(mod.jarFile.name)
+        }
+        return existingByModId
+    }
+
+    private fun inspectImportableModJarIdentity(
+        host: Activity,
+        uri: Uri
+    ): ModImportIdentityPreview? {
+        val displayName = resolveDisplayName(host, uri)
+        if (isLikelyCompressedArchive(host, uri, displayName)) {
+            return null
+        }
+        val scratchDir = File(host.cacheDir, "mod-import-preview")
+        if (!scratchDir.exists() && !scratchDir.mkdirs()) {
+            throw IOException("Failed to create preview directory: ${scratchDir.absolutePath}")
+        }
+        val tempFile = File(scratchDir, ".preview-${System.nanoTime()}.jar")
+        return try {
+            copyUriToFile(host, uri, tempFile)
+            if (CompatibilitySettings.isModManifestRootCompatEnabled(host)) {
+                ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempFile)
+            }
+            val manifest = try {
+                ModJarSupport.readModManifest(tempFile)
+            } catch (_: Throwable) {
+                return null
+            }
+            val normalizedModId = ModManager.normalizeModId(manifest.modId)
+            if (normalizedModId.isEmpty()) {
+                return null
+            }
+            if (resolveReservedComponent(normalizedModId) != null) {
+                return null
+            }
+            ModImportIdentityPreview(
+                normalizedModId = normalizedModId,
+                displayModId = manifest.modId.trim().ifBlank { normalizedModId },
+                displayName = displayName.ifBlank { "$normalizedModId.jar" }
+            )
+        } catch (_: Throwable) {
+            null
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+        }
     }
 
     @Throws(IOException::class)
@@ -1017,16 +1204,13 @@ internal object SettingsFileService {
         }
 
         addFile(RuntimePaths.importedMtsJar(host))
-
-        val modFiles = RuntimePaths.modsDir(host)
-            .listFiles()
-            ?.asSequence()
-            ?.filter { it.isFile }
-            ?.filter { it.name.endsWith(".jar", ignoreCase = true) }
-            ?.sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }))
-            ?.toList()
-            .orEmpty()
-        modFiles.forEach(::addFile)
+        ModManager.listInstalledMods(host)
+            .asSequence()
+            .filter { it.installed }
+            .map { it.jarFile }
+            .filter { it.isFile }
+            .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
+            .forEach(::addFile)
 
         addAssetIfMissing("ModTheSpire.jar", "components/mods/ModTheSpire.jar")
         addAssetIfMissing("BaseMod.jar", "components/mods/BaseMod.jar")

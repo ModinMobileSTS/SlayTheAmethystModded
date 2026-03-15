@@ -93,7 +93,6 @@ internal object ModCompatibilityPatchCoordinator {
             )
             return
         }
-
         val launchScopedModsById = filterToLaunchScopedMods(context, installedModsById)
         if (launchScopedModsById.isEmpty()) {
             ModCompatibilityDiagnostics.appendCompatLog(

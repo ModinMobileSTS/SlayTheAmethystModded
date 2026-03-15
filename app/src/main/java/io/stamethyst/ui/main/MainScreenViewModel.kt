@@ -20,7 +20,6 @@ import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.file_interactive.SafExportActivity
-import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.StsJarValidator
@@ -32,6 +31,7 @@ import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.DuplicateModImportConflict
 import io.stamethyst.ui.settings.JvmLogShareService
 import io.stamethyst.ui.settings.ModImportResult
 import io.stamethyst.ui.settings.SettingsFileService
@@ -91,11 +91,6 @@ class MainScreenViewModel : ViewModel() {
     private data class MtsLaunchValidationIssue(
         val mod: ModItemUi,
         val reason: String
-    )
-
-    private data class MtsModsDirConflictIssue(
-        val launchModId: String,
-        val jarFiles: List<File>
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -698,6 +693,14 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy || uris.isNullOrEmpty()) {
             return
         }
+        startModJarImport(host, uris)
+    }
+
+    private fun startModJarImport(
+        host: Activity,
+        uris: List<Uri>,
+        skipDuplicateCheck: Boolean = false
+    ) {
         setBusy(
             busy = true,
             message = "Importing selected mod jars...",
@@ -705,7 +708,21 @@ class MainScreenViewModel : ViewModel() {
         )
         executor.execute {
             try {
-                val batchResult = SettingsFileService.importModJars(host, uris)
+                if (!skipDuplicateCheck) {
+                    val duplicateConflicts = SettingsFileService.findDuplicateModImportConflicts(host, uris)
+                    if (duplicateConflicts.isNotEmpty()) {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            showDuplicateModImportDialog(host, uris, duplicateConflicts)
+                        }
+                        return@execute
+                    }
+                }
+                val batchResult = SettingsFileService.importModJars(
+                    host = host,
+                    uris = uris,
+                    replaceExistingDuplicates = false
+                )
                 val importedCount = batchResult.importedCount
                 val failedCount = batchResult.failedCount
                 val blockedCount = batchResult.blockedCount
@@ -765,6 +782,26 @@ class MainScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private fun showDuplicateModImportDialog(
+        host: Activity,
+        uris: List<Uri>,
+        duplicateConflicts: List<DuplicateModImportConflict>
+    ) {
+        AlertDialog.Builder(host)
+            .setTitle("检测到重复 modid")
+            .setMessage(SettingsFileService.buildDuplicateModImportMessage(duplicateConflicts))
+            .setNegativeButton("取消导入") { _, _ ->
+                Toast.makeText(host, "已取消导入", Toast.LENGTH_SHORT).show()
+            }
+            .setPositiveButton("保留两者") { _, _ ->
+                startModJarImport(host, uris, skipDuplicateCheck = true)
+            }
+            .setOnCancelListener {
+                Toast.makeText(host, "已取消导入", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
@@ -1204,75 +1241,6 @@ class MainScreenViewModel : ViewModel() {
         }.trimEnd()
         AlertDialog.Builder(host)
             .setTitle("检测到需要重新导入的模组")
-            .setMessage(message)
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun findModsDirLaunchConflicts(
-        host: Activity,
-        optionalMods: List<ModItemUi>
-    ): List<MtsModsDirConflictIssue> {
-        val launchModIds = LinkedHashSet<String>()
-        val baseModId = try {
-            ModJarSupport.resolveModId(RuntimePaths.importedBaseModJar(host)).trim()
-        } catch (_: Throwable) {
-            ModManager.MOD_ID_BASEMOD
-        }
-        if (baseModId.isNotEmpty()) {
-            launchModIds.add(baseModId)
-        }
-        val stsLibId = try {
-            ModJarSupport.resolveModId(RuntimePaths.importedStsLibJar(host)).trim()
-        } catch (_: Throwable) {
-            ModManager.MOD_ID_STSLIB
-        }
-        if (stsLibId.isNotEmpty()) {
-            launchModIds.add(stsLibId)
-        }
-
-        optionalMods.forEach { mod ->
-            if (!mod.enabled || !mod.installed) {
-                return@forEach
-            }
-            val launchModId = try {
-                MtsLaunchManifestValidator.resolveLaunchModId(File(mod.storagePath)).trim()
-            } catch (_: Throwable) {
-                ""
-            }
-            if (launchModId.isNotEmpty()) {
-                launchModIds.add(launchModId)
-            }
-        }
-        if (launchModIds.isEmpty()) {
-            return emptyList()
-        }
-
-        return ModManager.findModsDirLaunchIdConflicts(host, launchModIds)
-            .map { conflict ->
-                MtsModsDirConflictIssue(
-                    launchModId = conflict.launchModId,
-                    jarFiles = conflict.jarFiles
-                )
-            }
-    }
-
-    private fun showModsDirLaunchConflictDialog(host: Activity, conflicts: List<MtsModsDirConflictIssue>) {
-        if (conflicts.isEmpty()) {
-            return
-        }
-        val message = buildString {
-            append("检测到 mods 目录中存在会影响本次启动的重复模组文件：\n")
-            conflicts.forEach { conflict ->
-                append("\nmodid: ").append(conflict.launchModId).append('\n')
-                conflict.jarFiles.forEach { file ->
-                    append("- ").append(file.name).append('\n')
-                }
-            }
-            append("\n请删除这些重复文件，只保留每个 modid 的一个 jar 后再启动。")
-        }.trimEnd()
-        AlertDialog.Builder(host)
-            .setTitle("检测到 mods 目录残留重复模组")
             .setMessage(message)
             .setPositiveButton(android.R.string.ok, null)
             .show()
@@ -1837,11 +1805,6 @@ class MainScreenViewModel : ViewModel() {
             val invalidMods = findEnabledMtsLaunchValidationIssues(optionalMods)
             if (invalidMods.isNotEmpty()) {
                 showMtsLaunchValidationDialog(host, invalidMods)
-                return
-            }
-            val modsDirConflicts = findModsDirLaunchConflicts(host, optionalMods)
-            if (modsDirConflicts.isNotEmpty()) {
-                showModsDirLaunchConflictDialog(host, modsDirConflicts)
                 return
             }
         }

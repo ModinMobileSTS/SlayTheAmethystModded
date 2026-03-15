@@ -1103,6 +1103,15 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy || uris.isNullOrEmpty()) {
             return
         }
+        startModJarImport(host, uris, onCompleted)
+    }
+
+    private fun startModJarImport(
+        host: Activity,
+        uris: List<Uri>,
+        onCompleted: (() -> Unit)? = null,
+        skipDuplicateCheck: Boolean = false
+    ) {
         setBusy(
             busy = true,
             message = "Importing selected mod jars...",
@@ -1110,7 +1119,21 @@ class SettingsScreenViewModel : ViewModel() {
         )
         executor.execute {
             try {
-                val batchResult = SettingsFileService.importModJars(host, uris)
+                if (!skipDuplicateCheck) {
+                    val duplicateConflicts = SettingsFileService.findDuplicateModImportConflicts(host, uris)
+                    if (duplicateConflicts.isNotEmpty()) {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            showDuplicateModImportDialog(host, uris, duplicateConflicts, onCompleted)
+                        }
+                        return@execute
+                    }
+                }
+                val batchResult = SettingsFileService.importModJars(
+                    host = host,
+                    uris = uris,
+                    replaceExistingDuplicates = false
+                )
                 val importedCount = batchResult.importedCount
                 val failedCount = batchResult.failedCount
                 val blockedCount = batchResult.blockedCount
@@ -1174,6 +1197,29 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private fun showDuplicateModImportDialog(
+        host: Activity,
+        uris: List<Uri>,
+        duplicateConflicts: List<DuplicateModImportConflict>,
+        onCompleted: (() -> Unit)? = null
+    ) {
+        AlertDialog.Builder(host)
+            .setTitle("检测到重复 modid")
+            .setMessage(SettingsFileService.buildDuplicateModImportMessage(duplicateConflicts))
+            .setNegativeButton("取消导入") { _, _ ->
+                Toast.makeText(host, "已取消导入", Toast.LENGTH_SHORT).show()
+                onCompleted?.invoke()
+            }
+            .setPositiveButton("保留两者") { _, _ ->
+                startModJarImport(host, uris, onCompleted, skipDuplicateCheck = true)
+            }
+            .setOnCancelListener {
+                Toast.makeText(host, "已取消导入", Toast.LENGTH_SHORT).show()
+                onCompleted?.invoke()
+            }
+            .show()
     }
 
     private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {

@@ -147,12 +147,14 @@ object ModManager {
         if (MOD_ID_STSLIB == normalized) {
             return RuntimePaths.importedStsLibJar(context)
         }
-        return File(RuntimePaths.modsDir(context), "${sanitizeFileName(normalized)}.jar")
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
+        return File(RuntimePaths.optionalModsLibraryDir(context), "${sanitizeFileName(normalized)}.jar")
     }
 
     @JvmStatic
     fun resolveStorageFileForImportedMod(context: Context, requestedFileName: String?): File {
-        val modsDir = RuntimePaths.modsDir(context)
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
+        val modsDir = RuntimePaths.optionalModsLibraryDir(context)
         val preferredName = sanitizeImportedJarFileName(requestedFileName)
         return buildUniqueImportTarget(modsDir, preferredName)
     }
@@ -165,6 +167,7 @@ object ModManager {
         launchModId: String?,
         excludedPath: String? = null
     ) {
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
         val targetNormalizedModId = normalizeModId(normalizedModId)
         val targetLaunchModId = launchModId?.trim().orEmpty()
         val excludedAbsolutePath = excludedPath?.trim().orEmpty()
@@ -178,7 +181,7 @@ object ModManager {
         var selectionChanged = rawSelection != normalizedSelection
         var deletedAny = false
 
-        listJarFilesInModsDir(context).forEach { file ->
+        listJarFilesInOptionalModLibrary(context).forEach { file ->
             if (excludedAbsolutePath.isNotEmpty() && file.absolutePath == excludedAbsolutePath) {
                 return@forEach
             }
@@ -217,7 +220,7 @@ object ModManager {
         }
 
         val filesByLaunchId: MutableMap<String, MutableList<File>> = LinkedHashMap()
-        listJarFilesInModsDir(context).forEach { file ->
+        listJarFilesInRuntimeModsDir(context).forEach { file ->
             val launchModId = try {
                 MtsLaunchManifestValidator.resolveLaunchModId(file).trim()
             } catch (_: Throwable) {
@@ -326,6 +329,7 @@ object ModManager {
     @JvmStatic
     @Throws(IOException::class)
     fun deleteOptionalModByStoragePath(context: Context, storagePath: String): Boolean {
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
         val normalizedPath = normalizeSelectionToken(context, storagePath)
         if (!looksLikePathToken(normalizedPath)) {
             return false
@@ -334,7 +338,7 @@ object ModManager {
         if (!target.isFile || isReservedJarName(target.name)) {
             return false
         }
-        val expectedDirPath = RuntimePaths.modsDir(context).absolutePath
+        val expectedDirPath = RuntimePaths.optionalModsLibraryDir(context).absolutePath
         if (target.parentFile?.absolutePath != expectedDirPath) {
             return false
         }
@@ -439,6 +443,23 @@ object ModManager {
             )
         }
         return result
+    }
+
+    @JvmStatic
+    fun listEnabledOptionalModFiles(context: Context): List<File> {
+        val optionalModFiles = findOptionalModFiles(context)
+        if (optionalModFiles.isEmpty()) {
+            return emptyList()
+        }
+
+        val rawSelection = readEnabledOptionalModKeysSafely(context)
+        val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
+        maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
+        return optionalModFiles
+            .asSequence()
+            .filter { enabledSelection.contains(it.storageKey) }
+            .map { it.jarFile }
+            .toList()
     }
 
     @JvmStatic
@@ -579,8 +600,9 @@ object ModManager {
     }
 
     private fun findOptionalModFiles(context: Context): List<OptionalModFileEntry> {
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
         val result = ArrayList<OptionalModFileEntry>()
-        val modsDir = RuntimePaths.modsDir(context)
+        val modsDir = RuntimePaths.optionalModsLibraryDir(context)
         val files = modsDir.listFiles() ?: return result
         val sortedFiles = files
             .asSequence()
@@ -617,7 +639,19 @@ object ModManager {
         return "basemod.jar" == normalized || "stslib.jar" == normalized
     }
 
-    private fun listJarFilesInModsDir(context: Context): List<File> {
+    private fun listJarFilesInOptionalModLibrary(context: Context): List<File> {
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
+        val modsDir = RuntimePaths.optionalModsLibraryDir(context)
+        val files = modsDir.listFiles() ?: return emptyList()
+        return files
+            .asSequence()
+            .filter { it.isFile }
+            .filter { it.name.lowercase(Locale.ROOT).endsWith(".jar") }
+            .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
+            .toList()
+    }
+
+    private fun listJarFilesInRuntimeModsDir(context: Context): List<File> {
         val modsDir = RuntimePaths.modsDir(context)
         val files = modsDir.listFiles() ?: return emptyList()
         return files

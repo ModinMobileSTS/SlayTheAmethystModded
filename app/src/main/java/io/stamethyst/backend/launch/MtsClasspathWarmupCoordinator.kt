@@ -5,6 +5,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModClasspathJarBuilder
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.mods.BASEMOD_RESOURCE_SENTINEL
 import io.stamethyst.backend.mods.STS_RESOURCE_SENTINEL
@@ -41,6 +42,7 @@ object MtsClasspathWarmupCoordinator {
             45,
             context.progressText(R.string.startup_progress_preparing_mts_classpath_cache)
         )
+        OptionalModStorageCoordinator.syncEnabledOptionalModsToRuntime(context)
         ModJarSupport.prepareMtsClasspath(
             context,
             mapProgressRange(progressCallback, 45, 94)

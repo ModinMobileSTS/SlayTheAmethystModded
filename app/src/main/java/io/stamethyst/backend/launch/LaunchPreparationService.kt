@@ -6,6 +6,7 @@ import io.stamethyst.backend.launch.ComponentInstaller
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import java.io.IOException
@@ -70,6 +71,7 @@ object LaunchPreparationService {
             ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
             ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(context))
             ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(context))
+            OptionalModStorageCoordinator.syncEnabledOptionalModsToRuntime(context)
 
             throwIfInterrupted()
             if (MtsClasspathWarmupCoordinator.isCacheCurrent(context)) {
