@@ -34,6 +34,7 @@ import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -737,7 +738,11 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(host, "Log share failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        StsExternalStorageAccess.buildFailureMessage(host, "Log share failed", error),
+                        Toast.LENGTH_LONG
+                    ).show()
                     refreshStatus(host)
                 }
             }
@@ -762,7 +767,11 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(host, "Log export failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        StsExternalStorageAccess.buildFailureMessage(host, "Log export failed", error),
+                        Toast.LENGTH_LONG
+                    ).show()
                     refreshStatus(host)
                 }
             }
@@ -787,7 +796,11 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(host, "Mod export failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        StsExternalStorageAccess.buildFailureMessage(host, "Mod export failed", error),
+                        Toast.LENGTH_LONG
+                    ).show()
                     refreshStatus(host)
                 }
             }
@@ -1265,7 +1278,11 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(host, "Save export failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        StsExternalStorageAccess.buildFailureMessage(host, "Save export failed", error),
+                        Toast.LENGTH_LONG
+                    ).show()
                     refreshStatus(host)
                 }
             }

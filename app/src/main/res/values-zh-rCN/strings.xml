@@ -178,6 +178,11 @@
     <string name="main_loading_mods">正在加载模组和依赖状态…</string>
     <string name="main_status_card_title">依赖状态</string>
     <string name="main_no_mods_hint">暂无模组，请在创意工坊下载后使用左下角按钮导入。</string>
+    <string name="main_storage_issue_title">外部模组目录暂不可访问</string>
+    <string name="main_storage_issue_message">启动器暂时无法访问 %1$s。模组列表可能显示为空，启动和导出功能也会暂时禁用。</string>
+    <string name="main_storage_issue_retry">重新检测</string>
+    <string name="storage_issue_recovery_short">请先完全退出启动器后重新打开；若仍未恢复，请重启手机，并关闭这个应用的电池优化或后台清理。</string>
+    <string name="storage_issue_recovery_steps">可按以下顺序自救：\n1. 完全退出启动器后重新打开，不要从最近任务直接恢复。\n2. 如果仍未恢复，重启手机。\n3. 将启动器加入后台保护或自启动白名单，并关闭省电或清理类限制。</string>
     <string name="main_folder_dialog_create_title">新建文件夹</string>
     <string name="main_folder_dialog_rename_title">重命名文件夹</string>
     <string name="main_folder_dialog_name_hint">文件夹名称</string>
@@ -209,6 +214,7 @@
     <string name="main_mod_rename">重命名文件</string>
     <string name="main_mod_rename_dialog_title">重命名模组文件</string>
     <string name="main_mod_rename_hint">文件名</string>
+    <string name="main_mod_rename_requires_file_name_display">重命名模组需要在设置里更改为按文件名显示</string>
     <string name="main_mod_delete">删除</string>
     <string name="main_mod_drag">拖拽模组</string>
     <string name="main_mod_version_format">版本: %1$s</string>

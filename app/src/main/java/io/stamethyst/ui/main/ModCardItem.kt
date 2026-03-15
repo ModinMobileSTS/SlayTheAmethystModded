@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -235,15 +236,22 @@ internal fun ModCard(
     ModActionsDialog(
         visible = showActionsDialog,
         controlsEnabled = fileActionsEnabled,
-        showModFileName = showModFileName,
         priorityLoad = mod.priorityLoad,
         onDismiss = { showActionsDialog = false },
         onTogglePriorityLoad = { callbacks.onTogglePriorityLoad(mod, !mod.priorityLoad) },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
         onRename = {
-            renameInput = resolveModFileNameWithoutJar(mod.storagePath).orEmpty()
-            showRenameDialog = true
+            if (showModFileName) {
+                renameInput = resolveModFileNameWithoutJar(mod.storagePath).orEmpty()
+                showRenameDialog = true
+            } else {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.main_mod_rename_requires_file_name_display),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         },
         onDelete = { callbacks.onDeleteMod(mod) }
     )

@@ -17,12 +17,20 @@ object RuntimePaths {
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
+    private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
+    private const val ANDROID_EMULATED_SEGMENT = "emulated"
+    private const val ANDROID_SDCARD_SEGMENT = "sdcard"
 
     @JvmStatic
     fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
 
     @JvmStatic
-    fun usesExternalStsStorage(context: Context): Boolean = appExternalFilesRoot(context) != null
+    fun externalAppStsRoot(context: Context): File? = appExternalFilesRoot(context)?.let {
+        File(it, STS_DIR_NAME)
+    }
+
+    @JvmStatic
+    fun usesExternalStsStorage(context: Context): Boolean = externalAppStsRoot(context) != null
 
     @JvmStatic
     fun legacyInternalStsRoot(context: Context): File = File(context.filesDir, STS_DIR_NAME)
@@ -158,8 +166,11 @@ object RuntimePaths {
     internal fun legacyInternalStsRootCandidates(packageName: String): List<String> =
         legacyInternalStsRootCandidates(packageName, null)
 
+    internal fun legacyExternalStsRootCandidates(packageName: String): List<String> =
+        legacyExternalStsRootCandidates(packageName, null)
+
     @JvmStatic
-    fun normalizeLegacyInternalStsPath(context: Context, rawPath: String?): String? {
+    fun normalizeLegacyStsPath(context: Context, rawPath: String?): String? {
         val raw = rawPath?.trim() ?: return null
         if (raw.isEmpty()) {
             return null
@@ -167,9 +178,15 @@ object RuntimePaths {
 
         val absolutePath = File(raw).absolutePath
         val currentRootPath = stsRoot(context).absolutePath
-        legacyInternalStsRootCandidates(context).forEach { legacyRootPath ->
+        if (absolutePath == currentRootPath ||
+            absolutePath.startsWith("$currentRootPath${File.separator}")
+        ) {
+            return absolutePath
+        }
+
+        knownLegacyStsRootCandidates(context).forEach { legacyRootPath ->
             if (legacyRootPath == currentRootPath) {
-                return absolutePath
+                return@forEach
             }
             when {
                 absolutePath == legacyRootPath -> return currentRootPath
@@ -178,6 +195,11 @@ object RuntimePaths {
             }
         }
         return absolutePath
+    }
+
+    @JvmStatic
+    fun normalizeLegacyInternalStsPath(context: Context, rawPath: String?): String? {
+        return normalizeLegacyStsPath(context, rawPath)
     }
 
     @JvmStatic
@@ -205,6 +227,13 @@ object RuntimePaths {
     private fun legacyInternalStsRootCandidates(context: Context): List<String> =
         legacyInternalStsRootCandidates(context.packageName, context.filesDir)
 
+    private fun knownLegacyStsRootCandidates(context: Context): List<String> {
+        val roots = LinkedHashSet<String>()
+        legacyInternalStsRootCandidates(context).forEach(roots::add)
+        legacyExternalStsRootCandidates(context.packageName, appExternalFilesRoot(context)).forEach(roots::add)
+        return roots.toList()
+    }
+
     private fun legacyInternalStsRootCandidates(
         packageName: String,
         filesDir: File?
@@ -229,6 +258,21 @@ object RuntimePaths {
         return roots.toList()
     }
 
+    private fun legacyExternalStsRootCandidates(
+        packageName: String,
+        externalFilesDir: File?
+    ): List<String> {
+        val roots = LinkedHashSet<String>()
+        externalFilesDir?.let { actualExternalFilesDir ->
+            roots.add(File(actualExternalFilesDir, STS_DIR_NAME).absolutePath)
+            runCatching {
+                File(actualExternalFilesDir.canonicalFile, STS_DIR_NAME).absolutePath
+            }.getOrNull()?.let(roots::add)
+        }
+        buildFallbackExternalStsRoots(packageName).forEach(roots::add)
+        return roots.toList()
+    }
+
     private fun buildFallbackLegacyStsRoots(packageName: String): List<String> {
         val filesPathSegments = listOf(packageName, ANDROID_FILES_SEGMENT, STS_DIR_NAME)
         return listOf(
@@ -245,6 +289,26 @@ object RuntimePaths {
                     ANDROID_DATA_SEGMENT
                 ) + filesPathSegments
             )
+        )
+    }
+
+    private fun buildFallbackExternalStsRoots(packageName: String): List<String> {
+        val filesPathSegments = listOf(
+            "Android",
+            ANDROID_DATA_SEGMENT,
+            packageName,
+            ANDROID_FILES_SEGMENT,
+            STS_DIR_NAME
+        )
+        return listOf(
+            buildAndroidAbsolutePath(
+                listOf(
+                    ANDROID_EXTERNAL_STORAGE_ROOT,
+                    ANDROID_EMULATED_SEGMENT,
+                    ANDROID_USER_ZERO_SEGMENT
+                ) + filesPathSegments
+            ),
+            buildAndroidAbsolutePath(listOf(ANDROID_SDCARD_SEGMENT) + filesPathSegments)
         )
     }
 

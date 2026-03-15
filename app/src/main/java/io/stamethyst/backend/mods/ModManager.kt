@@ -1074,7 +1074,7 @@ object ModManager {
             return ""
         }
         return if (looksLikePathToken(trimmed)) {
-            RuntimePaths.normalizeLegacyInternalStsPath(context = context, rawPath = trimmed)
+            RuntimePaths.normalizeLegacyStsPath(context = context, rawPath = trimmed)
                 ?: ""
         } else {
             normalizeModId(trimmed)

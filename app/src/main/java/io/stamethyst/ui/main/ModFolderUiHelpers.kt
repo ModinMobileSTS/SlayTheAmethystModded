@@ -91,33 +91,54 @@ private fun resolveLegacyInternalStorageCandidates(storagePath: String): List<St
         return emptyList()
     }
 
-    val packageMarker = "/Android/data/"
-    val packageStart = normalizedPath.indexOf(packageMarker)
-    if (packageStart < 0) {
-        return emptyList()
-    }
-    val packageNameStart = packageStart + packageMarker.length
-    val packageNameEnd = normalizedPath.indexOf("/files/", packageNameStart)
-    if (packageNameEnd <= packageNameStart) {
-        return emptyList()
-    }
-
-    val relativeMarker = "/files/sts/"
-    val relativeStart = normalizedPath.indexOf(relativeMarker, packageNameEnd)
-    if (relativeStart < 0) {
-        return emptyList()
-    }
-
-    val packageName = normalizedPath.substring(packageNameStart, packageNameEnd).trim()
-    if (packageName.isEmpty()) {
-        return emptyList()
-    }
-    val relativePath = normalizedPath.substring(relativeStart + relativeMarker.length)
-    if (relativePath.isEmpty()) {
-        return emptyList()
-    }
-
-    return RuntimePaths.legacyInternalStsRootCandidates(packageName)
+    val packageAndRelative = resolvePackageAndRelativePath(normalizedPath) ?: return emptyList()
+    val (packageName, relativePath) = packageAndRelative
+    return (
+        RuntimePaths.legacyInternalStsRootCandidates(packageName) +
+            RuntimePaths.legacyExternalStsRootCandidates(packageName)
+        )
         .map { candidateRoot -> "$candidateRoot/$relativePath" }
+        .filter { it.replace('\\', '/') != normalizedPath }
         .distinct()
+}
+
+private fun resolvePackageAndRelativePath(normalizedPath: String): Pair<String, String>? {
+    val externalPackageMarker = "/Android/data/"
+    val externalPackageStart = normalizedPath.indexOf(externalPackageMarker)
+    if (externalPackageStart >= 0) {
+        val packageNameStart = externalPackageStart + externalPackageMarker.length
+        val packageNameEnd = normalizedPath.indexOf("/files/", packageNameStart)
+        if (packageNameEnd > packageNameStart) {
+            val relativePath = extractRelativePath(normalizedPath, packageNameEnd)
+            if (!relativePath.isNullOrEmpty()) {
+                return normalizedPath.substring(packageNameStart, packageNameEnd).trim() to relativePath
+            }
+        }
+    }
+
+    val internalUserMarker = "/data/user/0/"
+    val internalDataMarker = "/data/data/"
+    val internalPackageStart = when {
+        normalizedPath.startsWith(internalUserMarker) -> internalUserMarker.length
+        normalizedPath.startsWith(internalDataMarker) -> internalDataMarker.length
+        else -> -1
+    }
+    if (internalPackageStart < 0) {
+        return null
+    }
+    val packageNameEnd = normalizedPath.indexOf("/files/", internalPackageStart)
+    if (packageNameEnd <= internalPackageStart) {
+        return null
+    }
+    val relativePath = extractRelativePath(normalizedPath, packageNameEnd) ?: return null
+    return normalizedPath.substring(internalPackageStart, packageNameEnd).trim() to relativePath
+}
+
+private fun extractRelativePath(path: String, packageNameEnd: Int): String? {
+    val relativeMarker = "/files/sts/"
+    val relativeStart = path.indexOf(relativeMarker, packageNameEnd)
+    if (relativeStart < 0) {
+        return null
+    }
+    return path.substring(relativeStart + relativeMarker.length).takeIf { it.isNotEmpty() }
 }

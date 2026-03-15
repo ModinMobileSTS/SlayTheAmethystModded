@@ -30,7 +30,6 @@ import io.stamethyst.R
 internal fun ModActionsDialog(
     visible: Boolean,
     controlsEnabled: Boolean,
-    showModFileName: Boolean,
     priorityLoad: Boolean,
     onDismiss: () -> Unit,
     onTogglePriorityLoad: () -> Unit,
@@ -92,14 +91,12 @@ internal fun ModActionsDialog(
                         onDismiss()
                         onShare()
                     }
-                    if (showModFileName) {
-                        ModActionDialogListItem(
-                            text = stringResource(R.string.main_mod_rename),
-                            enabled = controlsEnabled
-                        ) {
-                            onDismiss()
-                            onRename()
-                        }
+                    ModActionDialogListItem(
+                        text = stringResource(R.string.main_mod_rename),
+                        enabled = controlsEnabled
+                    ) {
+                        onDismiss()
+                        onRename()
                     }
                     ModActionDialogListItem(
                         text = stringResource(R.string.main_mod_delete),

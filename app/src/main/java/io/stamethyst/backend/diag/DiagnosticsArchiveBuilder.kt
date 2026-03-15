@@ -81,6 +81,7 @@ internal object DiagnosticsArchiveBuilder {
         output: OutputStream,
         crashContext: CrashArchiveContext?
     ): Int {
+        val stsRoot = RuntimePaths.stsRoot(context)
         var exportedCount = 0
         ZipOutputStream(output).use { zipOutput ->
             writeTextEntry(
@@ -141,7 +142,7 @@ internal object DiagnosticsArchiveBuilder {
                 val message = buildString {
                     append("No diagnostic logs found.\n")
                     append("Expected files under:\n")
-                    append("- ").append(RuntimePaths.stsRoot(context).absolutePath).append('\n')
+                    append("- ").append(stsRoot.absolutePath).append('\n')
                 }
                 writeTextEntry(zipOutput, "sts/README.txt", message)
             }

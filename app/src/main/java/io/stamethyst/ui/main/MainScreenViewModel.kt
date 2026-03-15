@@ -26,6 +26,7 @@ import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
@@ -57,6 +58,12 @@ class MainScreenViewModel : ViewModel() {
         val unassignedCollapsed: Boolean
     )
 
+    data class StorageIssueUi(
+        val title: String,
+        val message: String,
+        val recovery: String
+    )
+
     data class UiState(
         val initializing: Boolean = true,
         val busy: Boolean = false,
@@ -64,6 +71,7 @@ class MainScreenViewModel : ViewModel() {
         val busyMessage: String? = null,
         val statusSummary: String = "",
         val optionalMods: List<ModItemUi> = emptyList(),
+        val storageIssue: StorageIssueUi? = null,
         val controlsEnabled: Boolean = true,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val modFolders: List<ModFolder> = emptyList(),
@@ -128,7 +136,7 @@ class MainScreenViewModel : ViewModel() {
         private set
 
     private fun canEditMainScreenState(): Boolean {
-        return resolveControlsEnabled(uiState.busy, uiState.busyOperation)
+        return resolveControlsEnabled(uiState.busy, uiState.busyOperation, uiState.storageIssue != null)
     }
 
     private fun hasValidImportedStsJar(host: Activity): Boolean {
@@ -136,31 +144,35 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun refresh(host: Activity) {
+        val storageIssue = detectStorageIssue(host)
         val hasJar = hasValidImportedStsJar(host)
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
         val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
         val hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
 
-        val mods = loadModItems(host)
-        val optionalMods = mods.filter { !it.required }
-
         ensureFolderStateLoaded(host)
-        if (!pendingSelectionInitialized) {
-            initializePendingSelection(optionalMods)
-            pendingSelectionInitialized = true
+        if (storageIssue == null) {
+            val mods = loadModItems(host)
+            val optionalMods = mods.filter { !it.required }
+            if (!pendingSelectionInitialized) {
+                initializePendingSelection(optionalMods)
+                pendingSelectionInitialized = true
+            }
+            // Preserve the last successful mod snapshot when external storage is temporarily unavailable.
+            optionalModsSnapshot.clear()
+            optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
+            markOptionalModsWithPendingSelectionDirty()
+            prunePendingSelectionToInstalled()
+            sanitizeFolderAssignments(optionalMods)
+            persistFolderState(host)
         }
-        optionalModsSnapshot.clear()
-        optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
-        markOptionalModsWithPendingSelectionDirty()
-        prunePendingSelectionToInstalled()
-        sanitizeFolderAssignments(optionalMods)
-        persistFolderState(host)
         publishUiState(
             host = host,
             hasJar = hasJar,
             hasMts = hasMts,
             hasBaseMod = hasBaseMod,
-            hasStsLib = hasStsLib
+            hasStsLib = hasStsLib,
+            storageIssue = storageIssue
         )
     }
 
@@ -884,7 +896,8 @@ class MainScreenViewModel : ViewModel() {
             hasJar = hasValidImportedStsJar(host),
             hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
-            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
+            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB),
+            storageIssue = detectStorageIssue(host)
         )
     }
 
@@ -1795,7 +1808,8 @@ class MainScreenViewModel : ViewModel() {
             hasJar = hasValidImportedStsJar(host),
             hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
-            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
+            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB),
+            storageIssue = detectStorageIssue(host)
         )
     }
 
@@ -1836,7 +1850,7 @@ class MainScreenViewModel : ViewModel() {
         } catch (error: Throwable) {
             Toast.makeText(
                 host,
-                "Failed to apply mod selection: ${error.message}",
+                StsExternalStorageAccess.buildFailureMessage(host, "Failed to apply mod selection", error),
                 Toast.LENGTH_LONG
             ).show()
             return
@@ -2030,7 +2044,8 @@ class MainScreenViewModel : ViewModel() {
         hasJar: Boolean,
         hasMts: Boolean,
         hasBaseMod: Boolean,
-        hasStsLib: Boolean
+        hasStsLib: Boolean,
+        storageIssue: StorageIssueUi?
     ) {
         val currentBusy = uiState.busy
         val currentBusyOperation = uiState.busyOperation
@@ -2038,21 +2053,27 @@ class MainScreenViewModel : ViewModel() {
         val optionalMods = resolveOptionalModsWithPendingSelection()
         val optionalTotal = optionalMods.size
         val optionalEnabled = optionalMods.count { it.enabled }
-        uiState = uiState.copy(
-            initializing = false,
-            busy = currentBusy,
-            busyOperation = if (currentBusy) currentBusyOperation else UiBusyOperation.NONE,
-            busyMessage = if (currentBusy) currentBusyMessage else null,
-            statusSummary = buildMainStatusSummary(
+        val statusSummary = if (storageIssue != null && uiState.statusSummary.isNotBlank()) {
+            uiState.statusSummary
+        } else {
+            buildMainStatusSummary(
                 hasJar = hasJar,
                 hasMts = hasMts,
                 hasBaseMod = hasBaseMod,
                 hasStsLib = hasStsLib,
                 optionalEnabledCount = optionalEnabled,
                 optionalTotalCount = optionalTotal
-            ),
+            )
+        }
+        uiState = uiState.copy(
+            initializing = false,
+            busy = currentBusy,
+            busyOperation = if (currentBusy) currentBusyOperation else UiBusyOperation.NONE,
+            busyMessage = if (currentBusy) currentBusyMessage else null,
+            statusSummary = statusSummary,
             optionalMods = optionalMods,
-            controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation),
+            storageIssue = storageIssue,
+            controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation, storageIssue != null),
             showModFileName = LauncherPreferences.readShowModFileName(host),
             modFolders = ArrayList(modFolders),
             folderAssignments = LinkedHashMap(folderAssignments),
@@ -2069,25 +2090,39 @@ class MainScreenViewModel : ViewModel() {
         message: String?,
         operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
     ) {
+        val hasStorageIssue = uiState.storageIssue != null
         uiState = if (busy) {
             uiState.copy(
                 busy = true,
                 busyOperation = operation,
                 busyMessage = message,
-                controlsEnabled = resolveControlsEnabled(true, operation)
+                controlsEnabled = resolveControlsEnabled(true, operation, hasStorageIssue)
             )
         } else {
             uiState.copy(
                 busy = false,
                 busyOperation = UiBusyOperation.NONE,
                 busyMessage = null,
-                controlsEnabled = true
+                controlsEnabled = resolveControlsEnabled(false, UiBusyOperation.NONE, hasStorageIssue)
             )
         }
     }
 
-    private fun resolveControlsEnabled(busy: Boolean, operation: UiBusyOperation): Boolean {
-        return !busy || operation == UiBusyOperation.MOD_IMPORT
+    private fun detectStorageIssue(host: Activity): StorageIssueUi? {
+        val issue = StsExternalStorageAccess.buildUiModel(host) ?: return null
+        return StorageIssueUi(
+            title = issue.title,
+            message = issue.message,
+            recovery = issue.recovery
+        )
+    }
+
+    private fun resolveControlsEnabled(
+        busy: Boolean,
+        operation: UiBusyOperation,
+        hasStorageIssue: Boolean
+    ): Boolean {
+        return !hasStorageIssue && (!busy || operation == UiBusyOperation.MOD_IMPORT)
     }
 
     companion object {

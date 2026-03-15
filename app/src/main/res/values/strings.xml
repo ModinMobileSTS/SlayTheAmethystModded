@@ -178,6 +178,11 @@
     <string name="main_loading_mods">Loading mod and dependency status...</string>
     <string name="main_status_card_title">Dependency status</string>
     <string name="main_no_mods_hint">No mods yet. Download from Workshop, then import with the bottom-left button.</string>
+    <string name="main_storage_issue_title">External mod directory unavailable</string>
+    <string name="main_storage_issue_message">The launcher can\'t access %1$s right now. Mods may appear empty, and launch/export actions are temporarily disabled.</string>
+    <string name="main_storage_issue_retry">Retry check</string>
+    <string name="storage_issue_recovery_short">Fully close the launcher and reopen it. If it still fails, restart the phone and disable battery optimization/background cleaning for this app.</string>
+    <string name="storage_issue_recovery_steps">Try this:\n1. Fully close the launcher and reopen it. Do not restore it from recent apps.\n2. If it still fails, restart the phone.\n3. Add the launcher to your battery/background whitelist and disable cleaner apps.</string>
     <string name="main_folder_dialog_create_title">New folder</string>
     <string name="main_folder_dialog_rename_title">Rename folder</string>
     <string name="main_folder_dialog_name_hint">Folder title</string>
@@ -209,6 +214,7 @@
     <string name="main_mod_rename">Rename file</string>
     <string name="main_mod_rename_dialog_title">Rename mod file</string>
     <string name="main_mod_rename_hint">File name</string>
+    <string name="main_mod_rename_requires_file_name_display">Renaming mods requires changing the setting to display names by file name.</string>
     <string name="main_mod_delete">Delete</string>
     <string name="main_mod_drag">Drag mod</string>
     <string name="main_mod_version_format">Version: %1$s</string>

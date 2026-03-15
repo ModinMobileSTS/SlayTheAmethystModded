@@ -34,6 +34,7 @@ internal data class MainScreenActions(
     val onExpandOnlySourceFolderAfterModDrag: (String) -> Unit = {},
     val onCollapseAllFoldersForDragWithSnapshot: () -> MainScreenViewModel.FolderCollapseSnapshot? = { null },
     val onRestoreFolderCollapseSnapshot: (MainScreenViewModel.FolderCollapseSnapshot?) -> Unit = {},
+    val onRetryStorageCheck: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onLaunch: () -> Unit = {}
 )
@@ -83,6 +84,7 @@ internal fun rememberMainScreenActions(
                 onRestoreFolderCollapseSnapshot = { snapshot ->
                     viewModel.restoreFolderCollapseSnapshot(activity, snapshot)
                 },
+                onRetryStorageCheck = { viewModel.refresh(activity) },
                 onImportMods = {
                     importModsLauncher.launch(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")

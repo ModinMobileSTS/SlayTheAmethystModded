@@ -211,8 +211,8 @@ private fun LauncherMainScreenContent(
         floatingActionButtonPosition = FabPosition.Center,
         floatingActionButton = {
             MainBottomFixedActions(
-                importEnabled = !uiState.busy,
-                launchEnabled = !uiState.busy,
+                importEnabled = !uiState.busy && uiState.storageIssue == null,
+                launchEnabled = !uiState.busy && uiState.storageIssue == null,
                 onImportMods = actions.onImportMods,
                 onLaunch = actions.onLaunch,
                 onMeasured = { actionBarHeightPx = it }
@@ -448,7 +448,15 @@ private fun ColumnScope.MainContentSwitcher(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (uiState.optionalMods.isEmpty()) {
+                uiState.storageIssue?.let { issue ->
+                    StorageIssueCard(
+                        issue = issue,
+                        retryEnabled = actions.isHostAvailable && !uiState.busy,
+                        onRetry = actions.onRetryStorageCheck
+                    )
+                }
+
+                if (uiState.optionalMods.isEmpty() && uiState.storageIssue == null) {
                     Text(
                         text = stringResource(R.string.main_no_mods_hint),
                         style = MaterialTheme.typography.bodyMedium,
@@ -491,6 +499,55 @@ private fun ColumnScope.MainContentSwitcher(
                         onRestoreFolderCollapseSnapshot = actions.onRestoreFolderCollapseSnapshot
                     )
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageIssueCard(
+    issue: MainScreenViewModel.StorageIssueUi,
+    retryEnabled: Boolean,
+    onRetry: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = issue.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = issue.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = issue.recovery,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Button(
+                onClick = onRetry,
+                enabled = retryEnabled,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onErrorContainer,
+                    contentColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(text = stringResource(R.string.main_storage_issue_retry))
             }
         }
     }
