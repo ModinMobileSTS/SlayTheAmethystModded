@@ -220,6 +220,72 @@
     <string name="main_mod_version_format">版本: %1$s</string>
     <string name="main_mod_dependencies_format">前置: %1$s</string>
     <string name="main_mod_share_chooser_title">分享模组到</string>
+    <string name="mod_import_busy_message">正在导入所选模组 jar…</string>
+    <string name="mod_import_dialog_reserved_title">禁止导入内置核心组件</string>
+    <string name="mod_import_dialog_duplicate_title">检测到重复 modid</string>
+    <string name="mod_import_dialog_duplicate_cancel">取消导入</string>
+    <string name="mod_import_dialog_duplicate_keep_both">保留两者</string>
+    <string name="mod_import_cancelled">已取消导入</string>
+    <string name="mod_import_dialog_atlas_patched_title">Atlas 已离线修补</string>
+    <string name="mod_import_dialog_manifest_root_patched_title">ModID 结构已自动修复</string>
+    <string name="mod_import_dialog_frieren_patched_title">FrierenMod 已自动修补</string>
+    <string name="mod_import_dialog_archive_title">检测到压缩包</string>
+    <string name="mod_import_result_success">已导入 %1$d 个模组 jar</string>
+    <string name="mod_import_result_partial">已导入 %1$d 个，失败 %2$d 个（%3$s）</string>
+    <string name="mod_import_result_failed">模组导入失败：%1$s</string>
+    <string name="mod_import_result_blocked_builtin">已拦截 %1$d 个内置组件导入</string>
+    <string name="mod_import_result_archive_detected">检测到压缩包，请先解压后导入其中的 .jar。</string>
+    <string name="mod_import_error_unknown">未知错误</string>
+    <string name="mod_import_archive_message_intro">检测到以下文件是压缩包，不能直接作为模组导入：
+</string>
+    <string name="mod_import_archive_message_unknown_file">- 未知文件
+</string>
+    <string name="mod_import_archive_message_outro">
+请先解压压缩包，选择其中的 .jar 模组文件再导入。</string>
+    <string name="mod_import_duplicate_message_empty">检测到重复 modid。</string>
+    <string name="mod_import_duplicate_message_intro">检测到以下模组的 modid 与已导入模组或本次选择的其他模组重复：
+</string>
+    <string name="mod_import_list_separator">、</string>
+    <string name="mod_import_duplicate_message_modid_prefix">modid: </string>
+    <string name="mod_import_duplicate_message_importing_prefix">- 本次导入: </string>
+    <string name="mod_import_duplicate_message_existing_prefix">- 已导入: </string>
+    <string name="mod_import_duplicate_message_outro">
+选择“%1$s”会放弃本次导入；选择“%2$s”会继续导入并同时保留现有文件。</string>
+    <string name="mod_import_reserved_message_intro">已拒绝导入以下内置核心组件：
+</string>
+    <string name="mod_import_reserved_message_outro">
+BaseMod、StSLib、ModTheSpire 已内置并由启动器管理，请不要手动导入。</string>
+    <string name="mod_import_summary_item_title">%1$s（modid: %2$s）</string>
+    <string name="mod_import_atlas_message_none">本次导入没有发现需要离线修补的 atlas。</string>
+    <string name="mod_import_atlas_message_intro">以下模组在导入时已离线修补 atlas 过滤设置：
+</string>
+    <string name="mod_import_atlas_message_item_detail">  已修补 atlas: %1$d，替换 filter 行: %2$d</string>
+    <string name="mod_import_atlas_message_rule">
+修补规则：将包含 mipmap 的 filter 行改为 Linear,Linear。</string>
+    <string name="mod_import_manifest_message_none">本次导入没有发现需要修补的 ModTheSpire.json 根路径问题。</string>
+    <string name="mod_import_manifest_message_intro">以下模组在导入时已自动修补 ModTheSpire.json 根路径：
+</string>
+    <string name="mod_import_manifest_message_item_detail">  已迁移文件: %1$d</string>
+    <string name="mod_import_manifest_message_item_prefix">，原外层目录: %1$s</string>
+    <string name="mod_import_manifest_message_rule">
+修补规则：将“外层目录/ModTheSpire.json”结构扁平化到 jar 根目录。</string>
+    <string name="mod_import_frieren_message_none">本次导入没有发现需要修补的 FrierenMod 启动阻塞逻辑。</string>
+    <string name="mod_import_frieren_message_intro">以下模组在导入时已自动修补 FrierenMod 启动阻塞逻辑：
+</string>
+    <string name="mod_import_frieren_message_item_detail">  已移除 FrierenMod/utils/AntiPirateHelper.antiPirate() 的桌面弹窗阻塞逻辑</string>
+    <string name="mod_import_frieren_message_rule">
+修补规则：将 antiPirate() 方法改为空实现，避免 Android 启动卡在 97%。</string>
+    <string name="mod_import_confirm_dialog_action_import">导入</string>
+    <string name="mod_import_preview_file_label">文件: %1$s</string>
+    <string name="mod_import_preview_name_label">名称: %1$s</string>
+    <string name="mod_import_preview_description_label">简介: %1$s</string>
+    <string name="mod_import_preview_manifest_read_failed">无法读取 ModTheSpire.json：%1$s</string>
+    <string name="sts_jar_import_busy">正在导入 desktop-1.0.jar…</string>
+    <string name="sts_jar_import_success">已导入 desktop-1.0.jar</string>
+    <string name="sts_jar_import_failed">导入失败：%1$s</string>
+    <string name="sts_jar_import_prewarm_failed">MTS 启动缓存预热失败：%1$s</string>
+    <string name="settings_reimport_sts_jar_title">重新导入 desktop-1.0.jar</string>
+    <string name="settings_reimport_sts_jar_desc">游戏没出问题时，不需要动这一项</string>
     <string name="settings_player_name_title">玩家名字</string>
     <string name="settings_player_name_desc">修改 Slay the Spire 档案名，重新进入游戏后生效。</string>
     <string name="settings_player_name_dialog_title">设置玩家名字</string>

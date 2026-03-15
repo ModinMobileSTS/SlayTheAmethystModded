@@ -220,6 +220,72 @@
     <string name="main_mod_version_format">Version: %1$s</string>
     <string name="main_mod_dependencies_format">Prerequisites: %1$s</string>
     <string name="main_mod_share_chooser_title">Share mod to</string>
+    <string name="mod_import_busy_message">Importing selected mod jars...</string>
+    <string name="mod_import_dialog_reserved_title">Built-in core components can\'t be imported</string>
+    <string name="mod_import_dialog_duplicate_title">Duplicate modid detected</string>
+    <string name="mod_import_dialog_duplicate_cancel">Cancel import</string>
+    <string name="mod_import_dialog_duplicate_keep_both">Keep both</string>
+    <string name="mod_import_cancelled">Import cancelled</string>
+    <string name="mod_import_dialog_atlas_patched_title">Atlas patched offline</string>
+    <string name="mod_import_dialog_manifest_root_patched_title">ModID structure auto-fixed</string>
+    <string name="mod_import_dialog_frieren_patched_title">FrierenMod auto-patched</string>
+    <string name="mod_import_dialog_archive_title">Compressed archive detected</string>
+    <string name="mod_import_result_success">Imported %1$d mod jar(s)</string>
+    <string name="mod_import_result_partial">Imported %1$d, failed %2$d (%3$s)</string>
+    <string name="mod_import_result_failed">Mod import failed: %1$s</string>
+    <string name="mod_import_result_blocked_builtin">Blocked %1$d built-in component import(s)</string>
+    <string name="mod_import_result_archive_detected">Compressed archive detected. Extract it and import the .jar inside.</string>
+    <string name="mod_import_error_unknown">unknown error</string>
+    <string name="mod_import_archive_message_intro">The following files are compressed archives and can\'t be imported directly as mods:
+</string>
+    <string name="mod_import_archive_message_unknown_file">- Unknown file
+</string>
+    <string name="mod_import_archive_message_outro">
+Extract the archive first, then import the .jar mod files inside.</string>
+    <string name="mod_import_duplicate_message_empty">Duplicate modid detected.</string>
+    <string name="mod_import_duplicate_message_intro">The following mods have modids that duplicate already imported mods or other mods in this selection:
+</string>
+    <string name="mod_import_list_separator">, </string>
+    <string name="mod_import_duplicate_message_modid_prefix">modid: </string>
+    <string name="mod_import_duplicate_message_importing_prefix">- This import: </string>
+    <string name="mod_import_duplicate_message_existing_prefix">- Already imported: </string>
+    <string name="mod_import_duplicate_message_outro">
+Choosing &quot;%1$s&quot; cancels this import; choosing &quot;%2$s&quot; continues and keeps both files.</string>
+    <string name="mod_import_reserved_message_intro">The following built-in core components were blocked from import:
+</string>
+    <string name="mod_import_reserved_message_outro">
+BaseMod, StSLib, and ModTheSpire are bundled and managed by the launcher. Do not import them manually.</string>
+    <string name="mod_import_summary_item_title">%1$s (modid: %2$s)</string>
+    <string name="mod_import_atlas_message_none">No atlas files needed offline patching in this import.</string>
+    <string name="mod_import_atlas_message_intro">The following mods had atlas filter settings patched during import:
+</string>
+    <string name="mod_import_atlas_message_item_detail">  Patched atlas files: %1$d, replaced filter lines: %2$d</string>
+    <string name="mod_import_atlas_message_rule">
+Patch rule: rewrite filter lines containing mipmap to Linear,Linear.</string>
+    <string name="mod_import_manifest_message_none">No ModTheSpire.json root-path issues were found in this import.</string>
+    <string name="mod_import_manifest_message_intro">The following mods had ModTheSpire.json root paths auto-fixed during import:
+</string>
+    <string name="mod_import_manifest_message_item_detail">  Moved files: %1$d</string>
+    <string name="mod_import_manifest_message_item_prefix">, original outer directory: %1$s</string>
+    <string name="mod_import_manifest_message_rule">
+Patch rule: flatten &quot;outer-folder/ModTheSpire.json&quot; into the jar root.</string>
+    <string name="mod_import_frieren_message_none">No FrierenMod startup-blocking logic needed patching in this import.</string>
+    <string name="mod_import_frieren_message_intro">The following mods had FrierenMod startup-blocking logic auto-patched during import:
+</string>
+    <string name="mod_import_frieren_message_item_detail">  Removed the desktop popup block in FrierenMod/utils/AntiPirateHelper.antiPirate()</string>
+    <string name="mod_import_frieren_message_rule">
+Patch rule: replace antiPirate() with a no-op so Android startup doesn\'t stall at 97%.</string>
+    <string name="mod_import_confirm_dialog_action_import">Import</string>
+    <string name="mod_import_preview_file_label">File: %1$s</string>
+    <string name="mod_import_preview_name_label">Name: %1$s</string>
+    <string name="mod_import_preview_description_label">Description: %1$s</string>
+    <string name="mod_import_preview_manifest_read_failed">Could not read ModTheSpire.json: %1$s</string>
+    <string name="sts_jar_import_busy">Importing desktop-1.0.jar...</string>
+    <string name="sts_jar_import_success">Imported desktop-1.0.jar</string>
+    <string name="sts_jar_import_failed">Import failed: %1$s</string>
+    <string name="sts_jar_import_prewarm_failed">MTS startup cache prewarm failed: %1$s</string>
+    <string name="settings_reimport_sts_jar_title">Re-import desktop-1.0.jar</string>
+    <string name="settings_reimport_sts_jar_desc">You usually don\'t need this unless the imported game jar is broken</string>
     <string name="settings_player_name_title">Player name</string>
     <string name="settings_player_name_desc">Changes the Slay the Spire profile name. Takes effect after you enter the game again.</string>
     <string name="settings_player_name_dialog_title">Set player name</string>

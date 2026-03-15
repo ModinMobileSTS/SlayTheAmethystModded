@@ -703,7 +703,7 @@ class MainScreenViewModel : ViewModel() {
     ) {
         setBusy(
             busy = true,
-            message = "Importing selected mod jars...",
+            message = host.getString(R.string.mod_import_busy_message),
             operation = UiBusyOperation.MOD_IMPORT
         )
         executor.execute {
@@ -735,8 +735,13 @@ class MainScreenViewModel : ViewModel() {
                     setBusy(false, null)
                     if (blockedList.isNotEmpty()) {
                         AlertDialog.Builder(host)
-                            .setTitle("禁止导入内置核心组件")
-                            .setMessage(SettingsFileService.buildReservedModImportMessage(blockedList))
+                            .setTitle(R.string.mod_import_dialog_reserved_title)
+                            .setMessage(
+                                SettingsFileService.buildReservedModImportMessage(
+                                    context = host,
+                                    blockedComponents = blockedList
+                                )
+                            )
                             .setPositiveButton(android.R.string.ok, null)
                             .show()
                     }
@@ -749,27 +754,54 @@ class MainScreenViewModel : ViewModel() {
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
-                            Toast.makeText(host, "Imported $importedCount mod jar(s)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                host,
+                                host.getString(R.string.mod_import_result_success, importedCount),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
 
                         importedCount > 0 -> {
                             Toast.makeText(
                                 host,
-                                "Imported $importedCount, failed $failedCount ($firstError)",
+                                host.getString(
+                                    R.string.mod_import_result_partial,
+                                    importedCount,
+                                    failedCount,
+                                    resolveModImportErrorMessage(host, firstError)
+                                ),
                                 Toast.LENGTH_LONG
                             ).show()
                         }
 
                         failedCount > 0 -> {
-                            Toast.makeText(host, "Mod import failed: $firstError", Toast.LENGTH_LONG).show()
+                            Toast.makeText(
+                                host,
+                                host.getString(
+                                    R.string.mod_import_result_failed,
+                                    resolveModImportErrorMessage(host, firstError)
+                                ),
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
 
                         blockedCount > 0 -> {
-                            Toast.makeText(host, "Blocked $blockedCount built-in component import(s)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                host,
+                                host.getString(
+                                    R.string.mod_import_result_blocked_builtin,
+                                    blockedCount
+                                ),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
 
                         compressedArchiveCount > 0 -> {
-                            Toast.makeText(host, "检测到压缩包，请先解压后导入 .jar", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                host,
+                                host.getString(R.string.mod_import_result_archive_detected),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                     refresh(host)
@@ -777,7 +809,14 @@ class MainScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "Mod import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.mod_import_result_failed,
+                            resolveModImportErrorMessage(host, error.message ?: error.javaClass.simpleName)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                     refresh(host)
                 }
             }
@@ -790,16 +829,21 @@ class MainScreenViewModel : ViewModel() {
         duplicateConflicts: List<DuplicateModImportConflict>
     ) {
         AlertDialog.Builder(host)
-            .setTitle("检测到重复 modid")
-            .setMessage(SettingsFileService.buildDuplicateModImportMessage(duplicateConflicts))
-            .setNegativeButton("取消导入") { _, _ ->
-                Toast.makeText(host, "已取消导入", Toast.LENGTH_SHORT).show()
+            .setTitle(R.string.mod_import_dialog_duplicate_title)
+            .setMessage(
+                SettingsFileService.buildDuplicateModImportMessage(
+                    context = host,
+                    conflicts = duplicateConflicts
+                )
+            )
+            .setNegativeButton(R.string.mod_import_dialog_duplicate_cancel) { _, _ ->
+                Toast.makeText(host, host.getString(R.string.mod_import_cancelled), Toast.LENGTH_SHORT).show()
             }
-            .setPositiveButton("保留两者") { _, _ ->
+            .setPositiveButton(R.string.mod_import_dialog_duplicate_keep_both) { _, _ ->
                 startModJarImport(host, uris, skipDuplicateCheck = true)
             }
             .setOnCancelListener {
-                Toast.makeText(host, "已取消导入", Toast.LENGTH_SHORT).show()
+                Toast.makeText(host, host.getString(R.string.mod_import_cancelled), Toast.LENGTH_SHORT).show()
             }
             .show()
     }
@@ -809,8 +853,13 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         AlertDialog.Builder(host)
-            .setTitle("Atlas 已离线修补")
-            .setMessage(SettingsFileService.buildAtlasPatchImportSummaryMessage(patchedResults))
+            .setTitle(R.string.mod_import_dialog_atlas_patched_title)
+            .setMessage(
+                SettingsFileService.buildAtlasPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
@@ -820,18 +869,35 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         AlertDialog.Builder(host)
-            .setTitle("ModID 结构已自动修复")
-            .setMessage(SettingsFileService.buildManifestRootPatchImportSummaryMessage(patchedResults))
+            .setTitle(R.string.mod_import_dialog_manifest_root_patched_title)
+            .setMessage(
+                SettingsFileService.buildManifestRootPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
 
     private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {
         AlertDialog.Builder(host)
-            .setTitle("检测到压缩包")
-            .setMessage(SettingsFileService.buildCompressedArchiveImportMessage(archiveDisplayNames))
+            .setTitle(R.string.mod_import_dialog_archive_title)
+            .setMessage(
+                SettingsFileService.buildCompressedArchiveImportMessage(
+                    context = host,
+                    archiveDisplayNames = archiveDisplayNames
+                )
+            )
             .setPositiveButton(android.R.string.ok, null)
             .show()
+    }
+
+    private fun resolveModImportErrorMessage(host: Activity, message: String?): String {
+        return message
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: host.getString(R.string.mod_import_error_unknown)
     }
 
     fun handleIncomingIntent(host: Activity, intent: Intent?) {

@@ -71,10 +71,10 @@ fun LauncherContent(
     val feedbackInboxState by FeedbackInboxCoordinator.uiState.collectAsState()
     val mainUiState = mainViewModel.uiState
     val settingsUiState = settingsViewModel.uiState
-    val isModImportInteractionLocked =
+    val isBlockingImportInteractionLocked =
         mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT ||
             settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT
-    val modImportBusyMessage = when {
+    val blockingImportBusyMessage = when {
         mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> mainUiState.busyMessage
         settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> settingsUiState.busyMessage
         else -> null
@@ -99,7 +99,7 @@ fun LauncherContent(
                         rememberViewModelStoreNavEntryDecorator(),
                     ),
                     onBack = {
-                        if (!isModImportInteractionLocked) {
+                        if (!isBlockingImportInteractionLocked) {
                             navigator.goBack()
                         }
                     },
@@ -209,9 +209,10 @@ fun LauncherContent(
                         }
                     }
                 )
-                if (isModImportInteractionLocked) {
-                    ModImportInteractionBlocker(
-                        message = modImportBusyMessage ?: "Importing selected mod jars..."
+                if (isBlockingImportInteractionLocked) {
+                    BlockingImportInteractionBlocker(
+                        message = blockingImportBusyMessage
+                            ?: stringResource(R.string.mod_import_busy_message)
                     )
                 }
                 settingsUiState.updatePromptState?.let { promptState ->
@@ -328,7 +329,7 @@ fun LauncherContent(
 }
 
 @Composable
-private fun ModImportInteractionBlocker(message: String) {
+private fun BlockingImportInteractionBlocker(message: String) {
     Box(
         modifier = Modifier
             .fillMaxSize()

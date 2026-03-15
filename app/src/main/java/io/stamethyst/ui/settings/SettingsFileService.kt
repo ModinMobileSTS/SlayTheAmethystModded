@@ -1,6 +1,7 @@
 package io.stamethyst.ui.settings
 
 import android.app.Activity
+import android.content.Context
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
@@ -12,6 +13,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import io.stamethyst.R
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
@@ -575,7 +577,10 @@ internal object SettingsFileService {
         return normalizedMime in MOD_IMPORT_ARCHIVE_MIME_TYPES
     }
 
-    fun buildCompressedArchiveImportMessage(archiveDisplayNames: Collection<String>): String {
+    fun buildCompressedArchiveImportMessage(
+        context: Context,
+        archiveDisplayNames: Collection<String>
+    ): String {
         val uniqueNames = LinkedHashSet<String>()
         archiveDisplayNames.forEach { rawName ->
             val normalized = rawName.trim()
@@ -584,43 +589,59 @@ internal object SettingsFileService {
             }
         }
         return buildString {
-            append("检测到以下文件是压缩包，不能直接作为模组导入：\n")
+            append(context.getString(R.string.mod_import_archive_message_intro))
             if (uniqueNames.isEmpty()) {
-                append("- 未知文件\n")
+                append(context.getString(R.string.mod_import_archive_message_unknown_file))
             } else {
                 uniqueNames.forEach { name ->
                     append("- ").append(name).append('\n')
                 }
             }
-            append("\n请先解压压缩包，选择其中的 .jar 模组文件再导入。")
+            append(context.getString(R.string.mod_import_archive_message_outro))
         }.trimEnd()
     }
 
-    fun buildDuplicateModImportMessage(conflicts: Collection<DuplicateModImportConflict>): String {
+    fun buildDuplicateModImportMessage(
+        context: Context,
+        conflicts: Collection<DuplicateModImportConflict>
+    ): String {
         if (conflicts.isEmpty()) {
-            return "检测到重复 modid。"
+            return context.getString(R.string.mod_import_duplicate_message_empty)
         }
+        val cancelLabel = context.getString(R.string.mod_import_dialog_duplicate_cancel)
+        val keepBothLabel = context.getString(R.string.mod_import_dialog_duplicate_keep_both)
+        val listSeparator = context.getString(R.string.mod_import_list_separator)
         return buildString {
-            append("检测到以下模组的 modid 与已导入模组或本次选择的其他模组重复：\n")
+            append(context.getString(R.string.mod_import_duplicate_message_intro))
             conflicts.forEach { conflict ->
-                append("\nmodid: ")
+                append('\n')
+                append(context.getString(R.string.mod_import_duplicate_message_modid_prefix))
                 append(conflict.displayModId.ifBlank { conflict.normalizedModId })
                 append('\n')
-                append("- 本次导入: ")
-                append(conflict.importingDisplayNames.distinct().joinToString("、"))
+                append(context.getString(R.string.mod_import_duplicate_message_importing_prefix))
+                append(conflict.importingDisplayNames.distinct().joinToString(listSeparator))
                 append('\n')
                 val existingNames = conflict.existingDisplayNames.distinct()
                 if (existingNames.isNotEmpty()) {
-                    append("- 已导入: ")
-                    append(existingNames.joinToString("、"))
+                    append(context.getString(R.string.mod_import_duplicate_message_existing_prefix))
+                    append(existingNames.joinToString(listSeparator))
                     append('\n')
                 }
             }
-            append("\n选择“取消导入”会放弃本次导入；选择“保留两者”会继续导入并同时保留现有文件。")
+            append(
+                context.getString(
+                    R.string.mod_import_duplicate_message_outro,
+                    cancelLabel,
+                    keepBothLabel
+                )
+            )
         }.trimEnd()
     }
 
-    fun buildReservedModImportMessage(blockedComponents: Collection<String>): String {
+    fun buildReservedModImportMessage(
+        context: Context,
+        blockedComponents: Collection<String>
+    ): String {
         val uniqueComponents = LinkedHashSet<String>()
         blockedComponents.forEach { component ->
             normalizeReservedComponentName(component)?.let { uniqueComponents.add(it) }
@@ -632,16 +653,18 @@ internal object SettingsFileService {
         }
 
         return buildString {
-            append("已拒绝导入以下内置核心组件：\n")
+            append(context.getString(R.string.mod_import_reserved_message_intro))
             uniqueComponents.forEach { component ->
                 append("- ").append(component).append('\n')
             }
-            append("\n")
-            append("BaseMod、StSLib、ModTheSpire 已内置并由启动器管理，请不要手动导入。")
+            append(context.getString(R.string.mod_import_reserved_message_outro))
         }
     }
 
-    fun buildAtlasPatchImportSummaryMessage(patchedResults: Collection<ModImportResult>): String {
+    fun buildAtlasPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
         val mergedByModId = LinkedHashMap<String, ModImportResult>()
         for (result in patchedResults) {
             if (!result.wasAtlasPatched) {
@@ -660,30 +683,38 @@ internal object SettingsFileService {
         }
 
         if (mergedByModId.isEmpty()) {
-            return "本次导入没有发现需要离线修补的 atlas。"
+            return context.getString(R.string.mod_import_atlas_message_none)
         }
 
         return buildString {
-            append("以下模组在导入时已离线修补 atlas 过滤设置：\n")
+            append(context.getString(R.string.mod_import_atlas_message_intro))
             for (result in mergedByModId.values) {
                 append("- ")
-                append(result.modName.ifBlank { result.modId })
-                append("（modid: ")
-                append(result.modId)
-                append("）")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
                 append('\n')
-                append("  已修补 atlas: ")
-                append(result.patchedAtlasEntries)
-                append("，替换 filter 行: ")
-                append(result.patchedFilterLines)
+                append(
+                    context.getString(
+                        R.string.mod_import_atlas_message_item_detail,
+                        result.patchedAtlasEntries,
+                        result.patchedFilterLines
+                    )
+                )
                 append('\n')
             }
-            append('\n')
-            append("修补规则：将包含 mipmap 的 filter 行改为 Linear,Linear。")
+            append(context.getString(R.string.mod_import_atlas_message_rule))
         }.trimEnd()
     }
 
-    fun buildManifestRootPatchImportSummaryMessage(patchedResults: Collection<ModImportResult>): String {
+    fun buildManifestRootPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
         val mergedByModId = LinkedHashMap<String, ModImportResult>()
         for (result in patchedResults) {
             if (!result.wasManifestRootPatched) {
@@ -706,33 +737,46 @@ internal object SettingsFileService {
         }
 
         if (mergedByModId.isEmpty()) {
-            return "本次导入没有发现需要修补的 ModTheSpire.json 根路径问题。"
+            return context.getString(R.string.mod_import_manifest_message_none)
         }
 
         return buildString {
-            append("以下模组在导入时已自动修补 ModTheSpire.json 根路径：\n")
+            append(context.getString(R.string.mod_import_manifest_message_intro))
             for (result in mergedByModId.values) {
                 append("- ")
-                append(result.modName.ifBlank { result.modId })
-                append("（modid: ")
-                append(result.modId)
-                append("）")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
                 append('\n')
-                append("  已迁移文件: ")
-                append(result.patchedManifestRootEntries)
+                append(
+                    context.getString(
+                        R.string.mod_import_manifest_message_item_detail,
+                        result.patchedManifestRootEntries
+                    )
+                )
                 val normalizedPrefix = normalizeManifestRootPrefixForDisplay(result.patchedManifestRootPrefix)
                 if (normalizedPrefix.isNotEmpty()) {
-                    append("，原外层目录: ")
-                    append(normalizedPrefix)
+                    append(
+                        context.getString(
+                            R.string.mod_import_manifest_message_item_prefix,
+                            normalizedPrefix
+                        )
+                    )
                 }
                 append('\n')
             }
-            append('\n')
-            append("修补规则：将“外层目录/ModTheSpire.json”结构扁平化到 jar 根目录。")
+            append(context.getString(R.string.mod_import_manifest_message_rule))
         }.trimEnd()
     }
 
-    fun buildFrierenPatchImportSummaryMessage(patchedResults: Collection<ModImportResult>): String {
+    fun buildFrierenPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
         val mergedByModId = LinkedHashMap<String, ModImportResult>()
         for (result in patchedResults) {
             if (!result.wasFrierenAntiPiratePatched) {
@@ -751,23 +795,25 @@ internal object SettingsFileService {
         }
 
         if (mergedByModId.isEmpty()) {
-            return "本次导入没有发现需要修补的 FrierenMod 启动阻塞逻辑。"
+            return context.getString(R.string.mod_import_frieren_message_none)
         }
 
         return buildString {
-            append("以下模组在导入时已自动修补 FrierenMod 启动阻塞逻辑：\n")
+            append(context.getString(R.string.mod_import_frieren_message_intro))
             for (result in mergedByModId.values) {
                 append("- ")
-                append(result.modName.ifBlank { result.modId })
-                append("（modid: ")
-                append(result.modId)
-                append("）")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
                 append('\n')
-                append("  已移除 FrierenMod/utils/AntiPirateHelper.antiPirate() 的桌面弹窗阻塞逻辑")
+                append(context.getString(R.string.mod_import_frieren_message_item_detail))
                 append('\n')
             }
-            append('\n')
-            append("修补规则：将 antiPirate() 方法改为空实现，避免 Android 启动卡在 97%。")
+            append(context.getString(R.string.mod_import_frieren_message_rule))
         }.trimEnd()
     }
 

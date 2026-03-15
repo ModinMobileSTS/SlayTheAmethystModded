@@ -204,10 +204,10 @@ class LauncherActivity : AppCompatActivity() {
         previousDialog?.dismiss()
         val message = buildModImportDialogMessage(preview)
         val dialog = AlertDialog.Builder(this)
-            .setTitle("导入模组")
+            .setTitle(R.string.main_import_mods)
             .setMessage(message)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("导入") { _, _ ->
+            .setNegativeButton(R.string.main_folder_dialog_cancel, null)
+            .setPositiveButton(R.string.mod_import_confirm_dialog_action_import) { _, _ ->
                 settingsViewModel.onModJarsPicked(this, listOf(preview.uri)) {
                     mainViewModel.refresh(this)
                 }
@@ -311,12 +311,12 @@ class LauncherActivity : AppCompatActivity() {
     private fun buildModImportDialogMessage(preview: ModImportPreview): String {
         val manifest = preview.manifest
         val builder = StringBuilder()
-        builder.append("文件: ").append(preview.displayName)
+        builder.append(getString(R.string.mod_import_preview_file_label, preview.displayName))
         if (manifest != null) {
             val name = manifest.name.ifBlank { manifest.modId.ifBlank { preview.displayName } }
-            val modId = manifest.modId.ifBlank { "未知" }
-            val version = manifest.version.ifBlank { "未知" }
-            val description = manifest.description.ifBlank { "暂无简介" }
+            val modId = manifest.modId.ifBlank { getString(R.string.main_mod_unknown_version) }
+            val version = manifest.version.ifBlank { getString(R.string.main_mod_unknown_version) }
+            val description = manifest.description.ifBlank { getString(R.string.main_mod_no_description) }
             val dependencies = manifest.dependencies
                 .asSequence()
                 .map { it.trim() }
@@ -324,16 +324,24 @@ class LauncherActivity : AppCompatActivity() {
                 .distinct()
                 .toList()
 
-            builder.append("\n\n名称: ").append(name)
-            builder.append("\nmodid: ").append(modId)
-            builder.append("\n版本: ").append(version)
-            builder.append("\n简介: ").append(description)
+            builder.append("\n\n").append(getString(R.string.mod_import_preview_name_label, name))
+            builder.append("\n").append(getString(R.string.main_mod_modid_format, modId))
+            builder.append("\n").append(getString(R.string.main_mod_version_format, version))
+            builder.append("\n").append(getString(R.string.mod_import_preview_description_label, description))
             if (dependencies.isNotEmpty()) {
-                builder.append("\n前置: ").append(dependencies.joinToString(", "))
+                builder.append(
+                    "\n" + getString(
+                        R.string.main_mod_dependencies_format,
+                        dependencies.joinToString(", ")
+                    )
+                )
             }
         } else {
-            val error = preview.parseError?.ifBlank { "未知错误" } ?: "未知错误"
-            builder.append("\n\n无法读取 ModTheSpire.json：").append(error)
+            val error = preview.parseError
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: getString(R.string.mod_import_error_unknown)
+            builder.append("\n\n").append(getString(R.string.mod_import_preview_manifest_read_failed, error))
         }
         return builder.toString()
     }

@@ -186,6 +186,9 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_STEAM_UTILS_CLASS == entryName ||
             STS_PATCH_STEAM_UTILS_ENUM_CLASS == entryName ||
             STS_PATCH_STEAM_INPUT_HELPER_CLASS == entryName ||
+            STS_PATCH_TYPE_HELPER_CLASS == entryName ||
+            STS_PATCH_RENAME_POPUP_CLASS == entryName ||
+            STS_PATCH_SEED_PANEL_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX) ||

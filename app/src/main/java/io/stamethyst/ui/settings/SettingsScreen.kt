@@ -270,7 +270,7 @@ private fun LauncherSettingsScreenContent(
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
-    val modImportInteractionLocked = uiState.busyOperation == UiBusyOperation.MOD_IMPORT
+    val blockingImportInteractionLocked = uiState.busyOperation == UiBusyOperation.MOD_IMPORT
     val uriHandler = LocalUriHandler.current
     Scaffold(
         topBar = {
@@ -279,7 +279,7 @@ private fun LauncherSettingsScreenContent(
                 navigationIcon = {
                     HapticIconButton(
                         onClick = onGoBack,
-                        enabled = !modImportInteractionLocked
+                        enabled = !blockingImportInteractionLocked
                     ) {
                         Icon(
                             imageVector = Icons.ArrowBack,
@@ -712,12 +712,6 @@ private fun SettingsImportSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
-            title = "重新导入 desktop-1.0.jar",
-            supportingText = "覆盖当前已导入的游戏本体 jar，并复用首次导入流程",
-            enabled = !busy,
-            onClick = onImportJar
-        )
-        SettingsActionListItem(
             title = stringResource(R.string.main_get_new_mods),
             enabled = !busy,
             onClick = {
@@ -755,6 +749,12 @@ private fun SettingsImportSection(
             title = "导出错误日志",
             enabled = !busy,
             onClick = onExportLogsToFile
+        )
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_reimport_sts_jar_title),
+            supportingText = stringResource(R.string.settings_reimport_sts_jar_desc),
+            enabled = !busy,
+            onClick = onImportJar
         )
     }
 }
