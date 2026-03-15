@@ -106,6 +106,7 @@ fun LauncherSettingsScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
+        onImportJar = viewModel::onImportJar,
         onImportMods = viewModel::onImportMods,
         onExportMods = viewModel::onExportMods,
         onImportSaves = viewModel::onImportSaves,
@@ -226,6 +227,7 @@ private fun LauncherSettingsScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
+    onImportJar: () -> Unit = {},
     onImportMods: () -> Unit = {},
     onExportMods: () -> Unit = {},
     onImportSaves: () -> Unit = {},
@@ -321,6 +323,7 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = "资源与文件") {
                     SettingsImportSection(
                         busy = uiState.busy,
+                        onImportJar = onImportJar,
                         onImportMods = onImportMods,
                         onExportMods = onExportMods,
                         onImportSaves = onImportSaves,
@@ -685,6 +688,7 @@ private fun SettingsSectionCard(
 @Composable
 private fun SettingsImportSection(
     busy: Boolean,
+    onImportJar: () -> Unit,
     onImportMods: () -> Unit,
     onExportMods: () -> Unit,
     onImportSaves: () -> Unit,
@@ -707,6 +711,12 @@ private fun SettingsImportSection(
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingsActionListItem(
+            title = "重新导入 desktop-1.0.jar",
+            supportingText = "覆盖当前已导入的游戏本体 jar，并复用首次导入流程",
+            enabled = !busy,
+            onClick = onImportJar
+        )
         SettingsActionListItem(
             title = stringResource(R.string.main_get_new_mods),
             enabled = !busy,
