@@ -54,6 +54,7 @@ fun LauncherCompatibilityScreen(
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
         onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
+        onDownfallImportCompatToggled = { enabled -> viewModel.onDownfallImportCompatToggled(context, enabled) },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
@@ -73,6 +74,7 @@ private fun LauncherCompatibilityScreenPreview() {
             globalAtlasFilterCompatEnabled = true,
             modManifestRootCompatEnabled = true,
             frierenModCompatEnabled = true,
+            downfallImportCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true
@@ -90,6 +92,7 @@ private fun LauncherCompatibilityScreenContent(
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
     onModManifestRootCompatToggled: (Boolean) -> Unit = {},
     onFrierenModCompatToggled: (Boolean) -> Unit = {},
+    onDownfallImportCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -154,6 +157,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.frierenModCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onFrierenModCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_downfall_import_compat_title),
+                description = stringResource(R.string.compat_downfall_import_compat_desc),
+                checked = uiState.downfallImportCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onDownfallImportCompatToggled
             )
 
             CompatibilitySwitchRow(

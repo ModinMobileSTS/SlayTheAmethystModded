@@ -122,6 +122,8 @@ class SettingsScreenViewModel : ViewModel() {
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
+        val compendiumUpgradeTouchFixEnabled: Boolean =
+            LauncherPreferences.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED,
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
@@ -464,6 +466,8 @@ class SettingsScreenViewModel : ViewModel() {
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
                 val showModFileName = readShowModFileNameSelection(host)
                 val mobileHudEnabled = readMobileHudEnabledSelection(host)
+                val compendiumUpgradeTouchFixEnabled =
+                    readCompendiumUpgradeTouchFixSelection(host)
                 val avoidDisplayCutout = readDisplayCutoutAvoidanceSelection(host)
                 val cropScreenBottom = readScreenBottomCropSelection(host)
                 val showGamePerformanceOverlay = readGamePerformanceOverlaySelection(host)
@@ -556,6 +560,8 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nBack behavior: ${backBehavior.displayName()}")
                     append("\nTouchscreen Enabled: ").append(if (touchscreenEnabled) "ON" else "OFF")
                     append("\nMobile HUD Enabled: ").append(if (mobileHudEnabled) "ON" else "OFF")
+                    append("\nCompendium upgrade touch fix: ")
+                        .append(if (compendiumUpgradeTouchFixEnabled) "ON" else "OFF")
                     append("\nAvoid display cutout: ")
                         .append(if (avoidDisplayCutout) "ON" else "OFF")
                     append("\nCrop screen bottom: ")
@@ -634,6 +640,7 @@ class SettingsScreenViewModel : ViewModel() {
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
                         showModFileName = showModFileName,
                         mobileHudEnabled = mobileHudEnabled,
+                        compendiumUpgradeTouchFixEnabled = compendiumUpgradeTouchFixEnabled,
                         avoidDisplayCutout = avoidDisplayCutout,
                         cropScreenBottom = cropScreenBottom,
                         showGamePerformanceOverlay = showGamePerformanceOverlay,
@@ -1002,6 +1009,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(mobileHudEnabled = enabled)
         saveMobileHudEnabledSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onCompendiumUpgradeTouchFixEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(compendiumUpgradeTouchFixEnabled = enabled)
+        saveCompendiumUpgradeTouchFixSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -1831,6 +1847,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveMobileHudEnabledSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveMobileHudEnabled(host, enabled)
+    }
+
+    private fun readCompendiumUpgradeTouchFixSelection(host: Activity): Boolean {
+        return LauncherPreferences.readCompendiumUpgradeTouchFixEnabled(host)
+    }
+
+    private fun saveCompendiumUpgradeTouchFixSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveCompendiumUpgradeTouchFixEnabled(host, enabled)
     }
 
     private fun readDisplayCutoutAvoidanceSelection(host: Activity): Boolean {

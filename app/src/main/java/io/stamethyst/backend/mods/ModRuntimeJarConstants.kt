@@ -105,10 +105,18 @@ internal const val STS_PATCH_RENAME_POPUP_CLASS =
     "com/megacrit/cardcrawl/ui/panels/RenamePopup.class"
 internal const val STS_PATCH_SEED_PANEL_CLASS =
     "com/megacrit/cardcrawl/ui/panels/SeedPanel.class"
+internal const val STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS =
+    "com/megacrit/cardcrawl/screens/SingleCardViewPopup.class"
+internal const val STS_PATCH_SINGLE_CARD_VIEW_POPUP_PREFIX =
+    "com/megacrit/cardcrawl/screens/SingleCardViewPopup"
 internal const val STS_PATCH_GL_TEXTURE_CLASS =
     "com/badlogic/gdx/graphics/GLTexture.class"
 internal const val STS_PATCH_GL_FRAMEBUFFER_CLASS =
     "com/badlogic/gdx/graphics/glutils/GLFrameBuffer.class"
+internal const val STS_PATCH_COLOR_TAB_BAR_CLASS =
+    "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar.class"
+internal const val STS_PATCH_COLOR_TAB_BAR_PREFIX =
+    "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS =
     "com/badlogic/gdx/controllers/desktop/DesktopControllerManager.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_DIRECT_CLASS =
@@ -139,8 +147,10 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_TYPE_HELPER_CLASS,
         STS_PATCH_RENAME_POPUP_CLASS,
         STS_PATCH_SEED_PANEL_CLASS,
+        STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS,
         STS_PATCH_GL_TEXTURE_CLASS,
         STS_PATCH_GL_FRAMEBUFFER_CLASS,
+        STS_PATCH_COLOR_TAB_BAR_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_DIRECT_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_POLL_CLASS,

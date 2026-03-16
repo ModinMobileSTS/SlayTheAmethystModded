@@ -46,6 +46,9 @@
     <string name="settings_touch_mouse_long_press_keyboard_disabled">长按触摸鼠标快捷菜单：禁用</string>
     <string name="settings_touch_mouse_long_press_keyboard_desc">控制长按触摸鼠标按钮时是否展开悬浮快捷菜单，可发送 Ctrl、Shift、Tab、Alt 或打开软键盘。</string>
     <string name="status_touch_mouse_long_press_keyboard_format">长按触摸鼠标快捷菜单：%1$s</string>
+    <string name="settings_compendium_upgrade_touch_fix_enabled">百科大全看升级版触控修复：启用</string>
+    <string name="settings_compendium_upgrade_touch_fix_disabled">百科大全看升级版触控修复：禁用</string>
+    <string name="settings_compendium_upgrade_touch_fix_desc">启用后，在触屏模式下会放大百科大全卡片放大界面里“看升级版”的点击区域，并在按下时直接切换，减少滑动或手指轻微漂移导致的点不到问题。重新启动游戏后生效。</string>
     <string name="touch_mouse_floating_menu_collapse">收起</string>
     <string name="touch_mouse_floating_menu_keyboard">打开键盘</string>
     <string name="settings_render_surface_backend_title">渲染 Surface 后端</string>

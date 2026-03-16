@@ -142,6 +142,14 @@ object StsLaunchSpec {
             "-Damethyst.mobile_hud_enabled=" +
                 if (LauncherConfig.readMobileHudEnabled(context)) "true" else "false"
         )
+        args.add(
+            "-Damethyst.compendium_upgrade_touch_fix_enabled=" +
+                if (LauncherConfig.readCompendiumUpgradeTouchFixEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
         args.add("-Duser.language=${Locale.getDefault().language}")
         args.add("-Duser.timezone=${TimeZone.getDefault().id}")
         args.add("-Dos.name=Linux")

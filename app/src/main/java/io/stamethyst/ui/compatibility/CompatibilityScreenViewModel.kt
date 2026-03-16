@@ -17,6 +17,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val globalAtlasFilterCompatEnabled: Boolean = true,
         val modManifestRootCompatEnabled: Boolean = true,
         val frierenModCompatEnabled: Boolean = true,
+        val downfallImportCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true
@@ -33,6 +34,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
             modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host),
             frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
+            downfallImportCompatEnabled = CompatibilitySettings.isDownfallImportCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host)
@@ -69,6 +71,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setFrierenModCompatEnabled(host, enabled)
         uiState = uiState.copy(frierenModCompatEnabled = enabled)
+    }
+
+    fun onDownfallImportCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setDownfallImportCompatEnabled(host, enabled)
+        uiState = uiState.copy(downfallImportCompatEnabled = enabled)
     }
 
     fun onRuntimeTextureCompatToggled(host: Context, enabled: Boolean) {

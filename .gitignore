@@ -1,3 +1,6 @@
+./.gradle-user-home/
+./scripts/package-cloud-function.ps1
+./signing/upload_certificate.pem
 note.md
 $dir/
 artifacts/

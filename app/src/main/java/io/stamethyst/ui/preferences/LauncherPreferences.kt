@@ -39,6 +39,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SHOW_MOD_FILE_NAME
     val DEFAULT_MOBILE_HUD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
+    val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED
     val DEFAULT_AVOID_DISPLAY_CUTOUT: Boolean
         get() = LauncherConfig.DEFAULT_AVOID_DISPLAY_CUTOUT
     val DEFAULT_CROP_SCREEN_BOTTOM: Boolean
@@ -175,6 +177,14 @@ object LauncherPreferences {
 
     fun saveMobileHudEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.saveMobileHudEnabled(context, enabled)
+    }
+
+    fun readCompendiumUpgradeTouchFixEnabled(context: Context): Boolean {
+        return LauncherConfig.readCompendiumUpgradeTouchFixEnabled(context)
+    }
+
+    fun saveCompendiumUpgradeTouchFixEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.saveCompendiumUpgradeTouchFixEnabled(context, enabled)
     }
 
     fun isDisplayCutoutAvoidanceEnabled(context: Context): Boolean {

@@ -42,6 +42,8 @@ object LauncherConfig {
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
+    private const val PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED =
+        "compendium_upgrade_touch_fix_enabled"
     private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
@@ -53,6 +55,7 @@ object LauncherConfig {
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
     private const val PREF_KEY_FRIEREN_MOD_COMPAT = "compat_frieren_mod_compat"
+    private const val PREF_KEY_DOWNFALL_IMPORT_COMPAT = "compat_downfall_import_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
@@ -88,6 +91,7 @@ object LauncherConfig {
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
+    const val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED = true
     const val DEFAULT_AVOID_DISPLAY_CUTOUT = false
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
@@ -321,6 +325,19 @@ object LauncherConfig {
         }
     }
 
+    fun readCompendiumUpgradeTouchFixEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED,
+            DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED
+        )
+    }
+
+    fun saveCompendiumUpgradeTouchFixEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED, enabled)
+        }
+    }
+
     fun isDisplayCutoutAvoidanceEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
             PREF_KEY_AVOID_DISPLAY_CUTOUT,
@@ -461,6 +478,16 @@ object LauncherConfig {
     fun setFrierenModCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_FRIEREN_MOD_COMPAT, enabled)
+        }
+    }
+
+    fun isDownfallImportCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_DOWNFALL_IMPORT_COMPAT, true)
+    }
+
+    fun setDownfallImportCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_DOWNFALL_IMPORT_COMPAT, enabled)
         }
     }
 

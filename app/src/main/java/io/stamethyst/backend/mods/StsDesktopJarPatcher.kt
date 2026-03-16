@@ -189,8 +189,10 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_TYPE_HELPER_CLASS == entryName ||
             STS_PATCH_RENAME_POPUP_CLASS == entryName ||
             STS_PATCH_SEED_PANEL_CLASS == entryName ||
+            entryName.startsWith(STS_PATCH_SINGLE_CARD_VIEW_POPUP_PREFIX) ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
+            entryName.startsWith(STS_PATCH_COLOR_TAB_BAR_PREFIX) ||
             entryName.startsWith(STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX) ||
             entryName.startsWith(STS_PATCH_LWJGL_APPLICATION_PREFIX) ||
             entryName.startsWith(STS_PATCH_LWJGL_GRAPHICS_PREFIX) ||

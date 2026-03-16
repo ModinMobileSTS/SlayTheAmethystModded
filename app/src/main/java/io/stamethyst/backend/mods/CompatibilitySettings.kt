@@ -45,6 +45,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isDownfallImportCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isDownfallImportCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setDownfallImportCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setDownfallImportCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isRuntimeTextureCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isRuntimeTextureCompatEnabled(context)
     }

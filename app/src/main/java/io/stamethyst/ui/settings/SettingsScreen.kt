@@ -143,6 +143,9 @@ fun LauncherSettingsScreen(
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
         onMobileHudEnabledChanged = { enabled -> viewModel.onMobileHudEnabledChanged(activity, enabled) },
+        onCompendiumUpgradeTouchFixEnabledChanged = { enabled ->
+            viewModel.onCompendiumUpgradeTouchFixEnabledChanged(activity, enabled)
+        },
         onDisplayCutoutAvoidanceChanged = { enabled ->
             viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
         },
@@ -252,6 +255,7 @@ private fun LauncherSettingsScreenContent(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onMobileHudEnabledChanged: (Boolean) -> Unit = {},
+    onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
     onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
@@ -363,6 +367,8 @@ private fun LauncherSettingsScreenContent(
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onMobileHudEnabledChanged = onMobileHudEnabledChanged,
+                        onCompendiumUpgradeTouchFixEnabledChanged =
+                            onCompendiumUpgradeTouchFixEnabledChanged,
                         onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
                         onScreenBottomCropChanged = onScreenBottomCropChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
@@ -1038,6 +1044,7 @@ private fun SettingsInputSection(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onMobileHudEnabledChanged: (Boolean) -> Unit,
+    onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     onScreenBottomCropChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -1148,6 +1155,15 @@ private fun SettingsInputSection(
         disabledText = "移动端 UI：禁用",
         description = "控制是否启用原生移动端 UI，启用后 UI 会部分变大，但是可能会出现一些模组渲染不兼容的问题，例如 loadout 控制台不会出现。",
         onCheckedChange = onMobileHudEnabledChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.compendiumUpgradeTouchFixEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
+        disabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_disabled),
+        description = stringResource(R.string.settings_compendium_upgrade_touch_fix_desc),
+        onCheckedChange = onCompendiumUpgradeTouchFixEnabledChanged
     )
 
     SwitchSettingRow(
