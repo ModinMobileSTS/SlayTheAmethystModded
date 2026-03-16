@@ -17,6 +17,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.backend.mods.DownfallImportCompatPatcher
 import io.stamethyst.backend.mods.FrierenModCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
@@ -53,7 +54,10 @@ internal data class ModImportResult(
     val patchedFilterLines: Int,
     val patchedManifestRootEntries: Int = 0,
     val patchedManifestRootPrefix: String = "",
-    val patchedFrierenAntiPirateMethod: Boolean = false
+    val patchedFrierenAntiPirateMethod: Boolean = false,
+    val patchedDownfallClassEntries: Int = 0,
+    val patchedDownfallMerchantClassEntries: Int = 0,
+    val patchedDownfallHexaghostBodyClassEntries: Int = 0
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
@@ -61,8 +65,10 @@ internal data class ModImportResult(
         get() = patchedManifestRootEntries > 0
     val wasFrierenAntiPiratePatched: Boolean
         get() = patchedFrierenAntiPirateMethod
+    val wasDownfallPatched: Boolean
+        get() = patchedDownfallClassEntries > 0
     val hasCompatibilityPatches: Boolean
-        get() = wasAtlasPatched || wasManifestRootPatched || wasFrierenAntiPiratePatched
+        get() = wasAtlasPatched || wasManifestRootPatched || wasFrierenAntiPiratePatched || wasDownfallPatched
 }
 
 internal data class ModBatchImportResult(
@@ -114,6 +120,7 @@ internal object SettingsFileService {
     private const val RESERVED_COMPONENT_BASEMOD = "BaseMod"
     private const val RESERVED_COMPONENT_STSLIB = "StSLib"
     private const val RESERVED_COMPONENT_MTS = "ModTheSpire"
+    private const val DOWNFALL_MOD_ID = "downfall"
     private const val FRIEREN_MOD_ID = "frierenmod"
     private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
@@ -348,6 +355,17 @@ internal object SettingsFileService {
                 patchedFrierenAntiPirateMethod =
                     FrierenModCompatPatcher.patchAntiPirateInPlace(tempFile).patchedAntiPirateMethod
             }
+            var patchedDownfallClassEntries = 0
+            var patchedDownfallMerchantClassEntries = 0
+            var patchedDownfallHexaghostBodyClassEntries = 0
+            if (CompatibilitySettings.isDownfallImportCompatEnabled(host)
+                && modId == DOWNFALL_MOD_ID
+            ) {
+                val patchResult = DownfallImportCompatPatcher.patchInPlace(tempFile)
+                patchedDownfallClassEntries = patchResult.patchedClassEntries
+                patchedDownfallMerchantClassEntries = patchResult.patchedMerchantClassEntries
+                patchedDownfallHexaghostBodyClassEntries = patchResult.patchedHexaghostBodyClassEntries
+            }
             if (replaceExistingDuplicates) {
                 ModManager.removeExistingOptionalModsForImport(
                     context = host,
@@ -367,7 +385,10 @@ internal object SettingsFileService {
                 patchedFilterLines = patchedFilterLines,
                 patchedManifestRootEntries = patchedManifestRootEntries,
                 patchedManifestRootPrefix = patchedManifestRootPrefix,
-                patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod
+                patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
+                patchedDownfallClassEntries = patchedDownfallClassEntries,
+                patchedDownfallMerchantClassEntries = patchedDownfallMerchantClassEntries,
+                patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries
             )
         } finally {
             if (tempFile.exists()) {
@@ -440,7 +461,15 @@ internal object SettingsFileService {
                                 result.patchedManifestRootPrefix
                             },
                             patchedFrierenAntiPirateMethod = existing.patchedFrierenAntiPirateMethod ||
-                                result.patchedFrierenAntiPirateMethod
+                                result.patchedFrierenAntiPirateMethod,
+                            patchedDownfallClassEntries = existing.patchedDownfallClassEntries +
+                                result.patchedDownfallClassEntries,
+                            patchedDownfallMerchantClassEntries =
+                                existing.patchedDownfallMerchantClassEntries +
+                                    result.patchedDownfallMerchantClassEntries,
+                            patchedDownfallHexaghostBodyClassEntries =
+                                existing.patchedDownfallHexaghostBodyClassEntries +
+                                    result.patchedDownfallHexaghostBodyClassEntries
                         )
                     }
                 }
@@ -609,6 +638,7 @@ internal object SettingsFileService {
             return context.getString(R.string.mod_import_duplicate_message_empty)
         }
         val cancelLabel = context.getString(R.string.mod_import_dialog_duplicate_cancel)
+        val replaceExistingLabel = context.getString(R.string.mod_import_dialog_duplicate_replace_existing)
         val keepBothLabel = context.getString(R.string.mod_import_dialog_duplicate_keep_both)
         val listSeparator = context.getString(R.string.mod_import_list_separator)
         return buildString {
@@ -632,6 +662,7 @@ internal object SettingsFileService {
                 context.getString(
                     R.string.mod_import_duplicate_message_outro,
                     cancelLabel,
+                    replaceExistingLabel,
                     keepBothLabel
                 )
             )
@@ -814,6 +845,63 @@ internal object SettingsFileService {
                 append('\n')
             }
             append(context.getString(R.string.mod_import_frieren_message_rule))
+        }.trimEnd()
+    }
+
+    fun buildDownfallPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasDownfallPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedDownfallClassEntries = existing.patchedDownfallClassEntries +
+                        result.patchedDownfallClassEntries,
+                    patchedDownfallMerchantClassEntries =
+                        existing.patchedDownfallMerchantClassEntries +
+                            result.patchedDownfallMerchantClassEntries,
+                    patchedDownfallHexaghostBodyClassEntries =
+                        existing.patchedDownfallHexaghostBodyClassEntries +
+                            result.patchedDownfallHexaghostBodyClassEntries
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return context.getString(R.string.mod_import_downfall_message_none)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_downfall_message_intro))
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
+                append('\n')
+                append(
+                    context.getString(
+                        R.string.mod_import_downfall_message_item_detail,
+                        result.patchedDownfallClassEntries,
+                        result.patchedDownfallMerchantClassEntries,
+                        result.patchedDownfallHexaghostBodyClassEntries
+                    )
+                )
+                append('\n')
+            }
+            append(context.getString(R.string.mod_import_downfall_message_rule))
         }.trimEnd()
     }
 

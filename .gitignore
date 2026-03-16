@@ -1,6 +1,5 @@
-./.gradle-user-home/
-./scripts/package-cloud-function.ps1
-./signing/upload_certificate.pem
+/.gradle-user-home/
+/scripts/package-cloud-function.ps1
 note.md
 $dir/
 artifacts/
@@ -96,3 +95,4 @@ patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class
 /debug-artifacts/
 /tmp-feedback-smoke/
 /cloud-function*.zip
+/signing/upload_certificate.pem

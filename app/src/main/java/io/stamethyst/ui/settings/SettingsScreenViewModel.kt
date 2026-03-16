@@ -1143,6 +1143,7 @@ class SettingsScreenViewModel : ViewModel() {
         host: Activity,
         uris: List<Uri>,
         onCompleted: (() -> Unit)? = null,
+        replaceExistingDuplicates: Boolean = false,
         skipDuplicateCheck: Boolean = false
     ) {
         setBusy(
@@ -1165,7 +1166,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val batchResult = SettingsFileService.importModJars(
                     host = host,
                     uris = uris,
-                    replaceExistingDuplicates = false
+                    replaceExistingDuplicates = replaceExistingDuplicates
                 )
                 val importedCount = batchResult.importedCount
                 val failedCount = batchResult.failedCount
@@ -1196,6 +1197,7 @@ class SettingsScreenViewModel : ViewModel() {
                         showAtlasPatchSummaryDialog(host, patchedResults)
                         showManifestRootPatchSummaryDialog(host, patchedResults)
                         showFrierenPatchSummaryDialog(host, patchedResults)
+                        showDownfallPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -1289,6 +1291,15 @@ class SettingsScreenViewModel : ViewModel() {
                 Toast.makeText(host, host.getString(R.string.mod_import_cancelled), Toast.LENGTH_SHORT).show()
                 onCompleted?.invoke()
             }
+            .setNeutralButton(R.string.mod_import_dialog_duplicate_replace_existing) { _, _ ->
+                startModJarImport(
+                    host = host,
+                    uris = uris,
+                    onCompleted = onCompleted,
+                    replaceExistingDuplicates = true,
+                    skipDuplicateCheck = true
+                )
+            }
             .setPositiveButton(R.string.mod_import_dialog_duplicate_keep_both) { _, _ ->
                 startModJarImport(host, uris, onCompleted, skipDuplicateCheck = true)
             }
@@ -1339,6 +1350,22 @@ class SettingsScreenViewModel : ViewModel() {
             .setTitle(R.string.mod_import_dialog_frieren_patched_title)
             .setMessage(
                 SettingsFileService.buildFrierenPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showDownfallPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasDownfallPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_downfall_patched_title)
+            .setMessage(
+                SettingsFileService.buildDownfallPatchImportSummaryMessage(
                     context = host,
                     patchedResults = patchedResults
                 )

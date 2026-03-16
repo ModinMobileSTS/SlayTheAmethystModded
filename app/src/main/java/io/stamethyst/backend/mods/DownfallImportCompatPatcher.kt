@@ -35,17 +35,27 @@ internal object DownfallImportCompatPatcher {
     private const val FLEEING_MERCHANT_ENTRY = "downfall/monsters/FleeingMerchant.class"
     private const val HEXAGHOST_MY_BODY_ENTRY = "theHexaghost/vfx/MyBody.class"
 
+    private const val ABSTRACT_PLAYER_INTERNAL_NAME = "com/megacrit/cardcrawl/characters/AbstractPlayer"
     private const val SETTINGS_INTERNAL_NAME = "com/megacrit/cardcrawl/core/Settings"
+    private const val SETTINGS_SCALE_FIELD_NAME = "scale"
+    private const val SETTINGS_RENDER_SCALE_FIELD_NAME = "renderScale"
     private const val DRAW_X_FIELD_NAME = "drawX"
     private const val DRAW_X_FIELD_DESC = "F"
     private const val MY_BODY_RENDER_METHOD_NAME = "render"
     private const val MY_BODY_RENDER_METHOD_DESC =
         "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V"
+    private const val MY_BODY_BODY_OFFSET_Y_FIELD_NAME = "BODY_OFFSET_Y"
+    private const val MY_BODY_FINE_X_OFFSET_SMALL = 6.0f
+    private const val MY_BODY_FINE_X_OFFSET_LARGE = 12.0f
     private const val ORIGINAL_MERCHANT_DRAW_X = 1260.0f
-    private const val MERCHANT_DRAW_X_WIDTH_RATIO = 0.75f
-    private const val MERCHANT_DRAW_X_OFFSET_XSCALE = 180.0f
+    private const val MERCHANT_RUG_WIDTH_RATIO = 0.5f
+    private const val MERCHANT_RUG_LEFT_OFFSET = 34.0f
+    private const val MERCHANT_RUG_CENTER_OFFSET = 256.0f
     private const val MY_BODY_X_OFFSET = 270.0f
+    private const val LEGACY_MY_BODY_X_OFFSET = 256.0f
     private const val MY_BODY_Y_OFFSET = 256.0f
+    private const val LEGACY_MY_BODY_Y_OFFSET_TOO_HIGH = 244.0f
+    private const val LEGACY_MY_BODY_Y_OFFSET_TOO_LOW = 268.0f
     private const val FLOAT_TOLERANCE = 0.0001f
 
     @Throws(IOException::class)
@@ -163,12 +173,16 @@ internal object DownfallImportCompatPatcher {
             add(VarInsnNode(Opcodes.ALOAD, 0))
             add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, "WIDTH", "I"))
             add(InsnNode(Opcodes.I2F))
-            add(LdcInsnNode(MERCHANT_DRAW_X_WIDTH_RATIO))
+            add(LdcInsnNode(MERCHANT_RUG_WIDTH_RATIO))
             add(InsnNode(Opcodes.FMUL))
-            add(LdcInsnNode(MERCHANT_DRAW_X_OFFSET_XSCALE))
-            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, "xScale", "F"))
+            add(LdcInsnNode(MERCHANT_RUG_LEFT_OFFSET))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, "scale", "F"))
             add(InsnNode(Opcodes.FMUL))
-            add(InsnNode(Opcodes.FSUB))
+            add(InsnNode(Opcodes.FADD))
+            add(LdcInsnNode(MERCHANT_RUG_CENTER_OFFSET))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, "scale", "F"))
+            add(InsnNode(Opcodes.FMUL))
+            add(InsnNode(Opcodes.FADD))
             add(FieldInsnNode(Opcodes.PUTFIELD, ownerInternalName, DRAW_X_FIELD_NAME, DRAW_X_FIELD_DESC))
         }
     }
@@ -181,38 +195,203 @@ internal object DownfallImportCompatPatcher {
                 method.desc == MY_BODY_RENDER_METHOD_DESC
         } ?: return null
 
-        if (!patchMyBodyRenderOffsets(renderMethod)) {
+        var patched = false
+        if (patchMyBodyScaleReads(classNode)) {
+            patched = true
+        }
+        if (patchMyBodyRenderOffsets(classNode.name, renderMethod)) {
+            patched = true
+        }
+        if (!patched) {
             return null
         }
         return writeClass(classNode)
     }
 
-    private fun patchMyBodyRenderOffsets(method: MethodNode): Boolean {
+    private fun patchMyBodyScaleReads(classNode: ClassNode): Boolean {
         var patched = false
-        var current: AbstractInsnNode? = method.instructions.first
-        while (current != null) {
-            val next = current.next
-            if (current is LdcInsnNode &&
-                shouldScaleMyBodyOffset(current) &&
-                nextMeaningful(current)?.opcode == Opcodes.FSUB
-            ) {
-                method.instructions.insert(
-                    current,
-                    InsnList().apply {
-                        add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, "scale", "F"))
-                        add(InsnNode(Opcodes.FMUL))
-                    }
-                )
-                patched = true
+        classNode.methods.forEach { method ->
+            var current: AbstractInsnNode? = method.instructions.first
+            while (current != null) {
+                val next = current.next
+                if (current is FieldInsnNode &&
+                    current.opcode == Opcodes.GETSTATIC &&
+                    current.owner == SETTINGS_INTERNAL_NAME &&
+                    current.name == SETTINGS_SCALE_FIELD_NAME &&
+                    current.desc == "F"
+                ) {
+                    current.name = SETTINGS_RENDER_SCALE_FIELD_NAME
+                    patched = true
+                }
+                current = next
             }
-            current = next
         }
         return patched
     }
 
-    private fun shouldScaleMyBodyOffset(node: LdcInsnNode): Boolean {
-        return isFloatConstant(node.cst, MY_BODY_X_OFFSET) ||
-            isFloatConstant(node.cst, MY_BODY_Y_OFFSET)
+    private fun patchMyBodyRenderOffsets(ownerInternalName: String, method: MethodNode): Boolean {
+        var patched = false
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            if (current is LdcInsnNode) {
+                if (normalizeMyBodyXAnchor(current, method.instructions)) {
+                    patched = true
+                }
+                if (normalizeMyBodyXFineOffsetSign(current, method.instructions)) {
+                    patched = true
+                }
+                if (normalizeMyBodyYOffset(ownerInternalName, current, method.instructions)) {
+                    patched = true
+                }
+            }
+            current = nextMeaningful(current)
+        }
+        return patched
+    }
+
+    private fun normalizeMyBodyXAnchor(node: LdcInsnNode, instructions: InsnList): Boolean {
+        if (!isFloatConstant(node.cst, MY_BODY_X_OFFSET) &&
+            !isFloatConstant(node.cst, LEGACY_MY_BODY_X_OFFSET)
+        ) {
+            return false
+        }
+        val (fSubNode, scaleNode, scaleMulNode) = findScaledOrPlainFSub(node) ?: return false
+        if (findFieldAccessAfter(
+                start = fSubNode,
+                owner = ABSTRACT_PLAYER_INTERNAL_NAME,
+                name = "animX",
+                desc = "F",
+                maxHops = 2
+            ) == null
+        ) {
+            return false
+        }
+        var patched = false
+        if (!isFloatConstant(node.cst, MY_BODY_X_OFFSET)) {
+            node.cst = MY_BODY_X_OFFSET
+            patched = true
+        }
+        if (scaleNode != null && scaleMulNode != null) {
+            instructions.remove(scaleNode)
+            instructions.remove(scaleMulNode)
+            patched = true
+        }
+        return patched
+    }
+
+    private fun normalizeMyBodyXFineOffsetSign(node: LdcInsnNode, instructions: InsnList): Boolean {
+        if (!isFloatConstant(node.cst, MY_BODY_FINE_X_OFFSET_SMALL) &&
+            !isFloatConstant(node.cst, MY_BODY_FINE_X_OFFSET_LARGE)
+        ) {
+            return false
+        }
+        val scaleNode = nextMeaningful(node)
+        val scaleMulNode = nextMeaningful(scaleNode)
+        val arithmeticNode = nextMeaningful(scaleMulNode)
+        val prevNode = previousMeaningful(node)
+        val prevPrevNode = previousMeaningful(prevNode)
+        if (scaleNode !is FieldInsnNode ||
+            scaleNode.opcode != Opcodes.GETSTATIC ||
+            scaleNode.owner != SETTINGS_INTERNAL_NAME ||
+            !isScaleFieldName(scaleNode.name) ||
+            scaleNode.desc != "F" ||
+            scaleMulNode?.opcode != Opcodes.FMUL ||
+            arithmeticNode?.opcode !in setOf(Opcodes.FADD, Opcodes.FSUB) ||
+            prevNode?.opcode != Opcodes.FADD ||
+            prevPrevNode !is FieldInsnNode ||
+            prevPrevNode.owner != ABSTRACT_PLAYER_INTERNAL_NAME ||
+            prevPrevNode.name != "animX" ||
+            prevPrevNode.desc != "F"
+        ) {
+            return false
+        }
+        val resolvedArithmeticNode = arithmeticNode ?: return false
+        if (resolvedArithmeticNode.opcode == Opcodes.FSUB) {
+            return false
+        }
+        instructions.set(resolvedArithmeticNode, InsnNode(Opcodes.FSUB))
+        return true
+    }
+
+    private fun normalizeMyBodyYOffset(
+        ownerInternalName: String,
+        node: LdcInsnNode,
+        instructions: InsnList
+    ): Boolean {
+        if (!isFloatConstant(node.cst, MY_BODY_Y_OFFSET) &&
+            !isFloatConstant(node.cst, LEGACY_MY_BODY_Y_OFFSET_TOO_HIGH) &&
+            !isFloatConstant(node.cst, LEGACY_MY_BODY_Y_OFFSET_TOO_LOW)
+        ) {
+            return false
+        }
+        val (fSubNode, scaleNode, scaleMulNode) = findScaledOrPlainFSub(node) ?: return false
+        val nextAfterFSub = nextMeaningful(fSubNode)
+        if (nextAfterFSub !is FieldInsnNode ||
+            nextAfterFSub.owner != ownerInternalName ||
+            nextAfterFSub.name != MY_BODY_BODY_OFFSET_Y_FIELD_NAME ||
+            nextAfterFSub.desc != "F"
+        ) {
+            return false
+        }
+        var patched = false
+        if (!isFloatConstant(node.cst, MY_BODY_Y_OFFSET)) {
+            node.cst = MY_BODY_Y_OFFSET
+            patched = true
+        }
+        if (scaleNode != null && scaleMulNode != null) {
+            instructions.remove(scaleNode)
+            instructions.remove(scaleMulNode)
+            patched = true
+        }
+        return patched
+    }
+
+    private data class ArithmeticPattern(
+        val arithmeticNode: AbstractInsnNode,
+        val scaleNode: FieldInsnNode?,
+        val scaleMulNode: AbstractInsnNode?
+    )
+
+    private fun findFieldAccessAfter(
+        start: AbstractInsnNode?,
+        owner: String,
+        name: String,
+        desc: String,
+        maxHops: Int
+    ): FieldInsnNode? {
+        var current = start
+        repeat(maxHops) {
+            current = nextMeaningful(current)
+            val fieldNode = current as? FieldInsnNode ?: return@repeat
+            if (fieldNode.owner == owner && fieldNode.name == name && fieldNode.desc == desc) {
+                return fieldNode
+            }
+        }
+        return null
+    }
+
+    private fun findScaledOrPlainFSub(node: LdcInsnNode): ArithmeticPattern? {
+        val next = nextMeaningful(node)
+        if (next?.opcode == Opcodes.FSUB) {
+            return ArithmeticPattern(next, null, null)
+        }
+        if (next is FieldInsnNode &&
+            next.opcode == Opcodes.GETSTATIC &&
+            next.owner == SETTINGS_INTERNAL_NAME &&
+            isScaleFieldName(next.name) &&
+            next.desc == "F"
+        ) {
+            val multiplyNode = nextMeaningful(next)
+            val fSubNode = nextMeaningful(multiplyNode)
+            if (multiplyNode?.opcode == Opcodes.FMUL && fSubNode?.opcode == Opcodes.FSUB) {
+                return ArithmeticPattern(fSubNode, next, multiplyNode)
+            }
+        }
+        return null
+    }
+
+    private fun isScaleFieldName(name: String): Boolean {
+        return name == SETTINGS_SCALE_FIELD_NAME || name == SETTINGS_RENDER_SCALE_FIELD_NAME
     }
 
     private fun isFloatConstant(value: Any?, expected: Float): Boolean {

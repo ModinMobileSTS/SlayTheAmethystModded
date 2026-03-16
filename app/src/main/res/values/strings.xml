@@ -21,6 +21,8 @@
     <string name="compat_mod_manifest_root_compat_desc">During mod import, jars are automatically patched when ModTheSpire.json is incorrectly packaged under an outer folder (for example, Fabricate/ModTheSpire.json): it is rewritten to the jar root. Keeping this enabled gives higher compatibility; if disabled, newly imported mods are not patched. A dialog is shown when auto-fix happens.</string>
     <string name="compat_frieren_mod_compat_title">FrierenMod startup compatibility patch</string>
     <string name="compat_frieren_mod_compat_desc">When enabled, importing frierenmod automatically patches FrierenMod/utils/AntiPirateHelper.antiPirate() to remove the desktop anti-piracy dialog path that blocks Android startup at 97%. If disabled, newly imported FrierenMod jars are left untouched.</string>
+    <string name="compat_downfall_import_compat_title">Downfall import compatibility patch</string>
+    <string name="compat_downfall_import_compat_desc">When enabled, importing downfall automatically patches merchant drawX to use a Settings.WIDTH/xScale-aware position and scales Hexaghost MyBody render offsets with Settings.scale. This targets wide-screen position drift on mobile. If disabled, newly imported Downfall jars are left untouched.</string>
     <string name="compat_runtime_texture_compat_title">Runtime texture compatibility patch</string>
     <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you see missing materials/textures, consider enabling it. Pros: continues fixing black blocks not covered during import-time patching. Cons: increases startup CPU/GPU overhead from managed texture scanning, and runtime Linear/Clamp fallback may make some textures blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
@@ -228,11 +230,13 @@
     <string name="mod_import_dialog_reserved_title">Built-in core components can\'t be imported</string>
     <string name="mod_import_dialog_duplicate_title">Duplicate modid detected</string>
     <string name="mod_import_dialog_duplicate_cancel">Cancel import</string>
+    <string name="mod_import_dialog_duplicate_replace_existing">Replace existing</string>
     <string name="mod_import_dialog_duplicate_keep_both">Keep both</string>
     <string name="mod_import_cancelled">Import cancelled</string>
     <string name="mod_import_dialog_atlas_patched_title">Atlas patched offline</string>
     <string name="mod_import_dialog_manifest_root_patched_title">ModID structure auto-fixed</string>
     <string name="mod_import_dialog_frieren_patched_title">FrierenMod auto-patched</string>
+    <string name="mod_import_dialog_downfall_patched_title">Downfall auto-patched</string>
     <string name="mod_import_dialog_archive_title">Compressed archive detected</string>
     <string name="mod_import_result_success">Imported %1$d mod jar(s)</string>
     <string name="mod_import_result_partial">Imported %1$d, failed %2$d (%3$s)</string>
@@ -254,7 +258,7 @@ Extract the archive first, then import the .jar mod files inside.</string>
     <string name="mod_import_duplicate_message_importing_prefix">- This import: </string>
     <string name="mod_import_duplicate_message_existing_prefix">- Already imported: </string>
     <string name="mod_import_duplicate_message_outro">
-Choosing &quot;%1$s&quot; cancels this import; choosing &quot;%2$s&quot; continues and keeps both files.</string>
+Choosing &quot;%1$s&quot; cancels this import; choosing &quot;%2$s&quot; continues and lets later imported files replace earlier files with the same modid; choosing &quot;%3$s&quot; continues and keeps both files.</string>
     <string name="mod_import_reserved_message_intro">The following built-in core components were blocked from import:
 </string>
     <string name="mod_import_reserved_message_outro">
@@ -279,6 +283,12 @@ Patch rule: flatten &quot;outer-folder/ModTheSpire.json&quot; into the jar root.
     <string name="mod_import_frieren_message_item_detail">  Removed the desktop popup block in FrierenMod/utils/AntiPirateHelper.antiPirate()</string>
     <string name="mod_import_frieren_message_rule">
 Patch rule: replace antiPirate() with a no-op so Android startup doesn\'t stall at 97%.</string>
+    <string name="mod_import_downfall_message_none">No Downfall wide-screen fixes needed patching in this import.</string>
+    <string name="mod_import_downfall_message_intro">The following mods had Downfall wide-screen fixes auto-patched during import:
+</string>
+    <string name="mod_import_downfall_message_item_detail">  Patched classes: %1$d, merchant position classes: %2$d, Hexaghost body classes: %3$d</string>
+    <string name="mod_import_downfall_message_rule">
+Patch rule: merchant drawX now uses Settings.WIDTH/xScale-aware positioning, and Hexaghost MyBody offset constants scale with Settings.scale.</string>
     <string name="mod_import_confirm_dialog_action_import">Import</string>
     <string name="mod_import_preview_file_label">File: %1$s</string>
     <string name="mod_import_preview_name_label">Name: %1$s</string>

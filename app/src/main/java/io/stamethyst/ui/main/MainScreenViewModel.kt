@@ -699,6 +699,7 @@ class MainScreenViewModel : ViewModel() {
     private fun startModJarImport(
         host: Activity,
         uris: List<Uri>,
+        replaceExistingDuplicates: Boolean = false,
         skipDuplicateCheck: Boolean = false
     ) {
         setBusy(
@@ -721,7 +722,7 @@ class MainScreenViewModel : ViewModel() {
                 val batchResult = SettingsFileService.importModJars(
                     host = host,
                     uris = uris,
-                    replaceExistingDuplicates = false
+                    replaceExistingDuplicates = replaceExistingDuplicates
                 )
                 val importedCount = batchResult.importedCount
                 val failedCount = batchResult.failedCount
@@ -751,6 +752,7 @@ class MainScreenViewModel : ViewModel() {
                     if (patchedResults.isNotEmpty()) {
                         showAtlasPatchSummaryDialog(host, patchedResults)
                         showManifestRootPatchSummaryDialog(host, patchedResults)
+                        showDownfallPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -839,6 +841,14 @@ class MainScreenViewModel : ViewModel() {
             .setNegativeButton(R.string.mod_import_dialog_duplicate_cancel) { _, _ ->
                 Toast.makeText(host, host.getString(R.string.mod_import_cancelled), Toast.LENGTH_SHORT).show()
             }
+            .setNeutralButton(R.string.mod_import_dialog_duplicate_replace_existing) { _, _ ->
+                startModJarImport(
+                    host = host,
+                    uris = uris,
+                    replaceExistingDuplicates = true,
+                    skipDuplicateCheck = true
+                )
+            }
             .setPositiveButton(R.string.mod_import_dialog_duplicate_keep_both) { _, _ ->
                 startModJarImport(host, uris, skipDuplicateCheck = true)
             }
@@ -872,6 +882,22 @@ class MainScreenViewModel : ViewModel() {
             .setTitle(R.string.mod_import_dialog_manifest_root_patched_title)
             .setMessage(
                 SettingsFileService.buildManifestRootPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showDownfallPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasDownfallPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_downfall_patched_title)
+            .setMessage(
+                SettingsFileService.buildDownfallPatchImportSummaryMessage(
                     context = host,
                     patchedResults = patchedResults
                 )
