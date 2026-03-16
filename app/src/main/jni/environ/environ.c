@@ -15,6 +15,7 @@ __attribute__((constructor)) void env_init() {
         pojav_environ = malloc(sizeof(struct pojav_environ_s));
         assert(pojav_environ);
         memset(pojav_environ, 0 , sizeof(struct pojav_environ_s));
+        atomic_init(&pojav_environ->runtimeForeground, true);
         if(asprintf(&strptr_env, "%p", pojav_environ) == -1) abort();
         setenv("POJAV_ENVIRON", strptr_env, 1);
         free(strptr_env);

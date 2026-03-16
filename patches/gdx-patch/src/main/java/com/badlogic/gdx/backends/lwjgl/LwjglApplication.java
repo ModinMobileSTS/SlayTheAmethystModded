@@ -328,6 +328,14 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	private boolean isRuntimeForeground () {
+		try {
+			return CallbackBridge.nativeIsRuntimeForeground();
+		} catch (Throwable ignored) {
+			return true;
+		}
+	}
+
 	private void syncNativeContextGeneration (String phase) {
 		int generation = queryNativeContextGeneration();
 		if (generation == Integer.MIN_VALUE) return;
@@ -1191,7 +1199,8 @@ public class LwjglApplication implements Application {
 			Display.processMessages();
 			if (Display.isCloseRequested()) exit();
 
-			boolean isActive = Display.isActive();
+			boolean runtimeForeground = isRuntimeForeground();
+			boolean isActive = runtimeForeground && Display.isActive();
 			if (lastActiveState == null || lastActiveState.booleanValue() != isActive) {
 				boolean isVisible = false;
 				boolean isCurrent = false;
@@ -1273,6 +1282,9 @@ public class LwjglApplication implements Application {
 			input.processEvents();
 			if (audio != null) audio.update();
 
+			if (!runtimeForeground) {
+				shouldRender = false;
+			}
 			if (!isActive && graphics.config.backgroundFPS == -1) {
 				if (!inactiveRenderSuppressedLogged) {
 					// Reduced log mode: inactive-render diagnostic log disabled.
@@ -1282,6 +1294,7 @@ public class LwjglApplication implements Application {
 				shouldRender = false;
 			}
 			int frameRate = isActive ? graphics.config.foregroundFPS : graphics.config.backgroundFPS;
+			if (!runtimeForeground) frameRate = -1;
 			boolean renderedFrame = false;
 			if (shouldRender) {
 				if (!firstRenderFrameLogged) {

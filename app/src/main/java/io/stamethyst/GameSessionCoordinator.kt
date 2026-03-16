@@ -120,6 +120,7 @@ internal class GameSessionCoordinator(
 
     fun onDestroy() {
         cancelBackExitForceRestart()
+        syncRuntimeForegroundState(false)
         bootOverlayController.onDestroy()
         performanceOverlayController?.onDestroy()
         jvmLaunchController.cleanup()
@@ -127,6 +128,7 @@ internal class GameSessionCoordinator(
 
     fun onResume() {
         performanceOverlayController?.onResume()
+        syncRuntimeForegroundState(true)
         applyForegroundWindowState()
         updateFloatingMouseVisibility()
         updatePerformanceOverlayVisibility()
@@ -135,6 +137,7 @@ internal class GameSessionCoordinator(
 
     fun onPause() {
         performanceOverlayController?.onPause()
+        syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
     }
 
@@ -223,6 +226,7 @@ internal class GameSessionCoordinator(
         val runtimeRoot = RuntimePaths.runtimeRoot(activity)
         val javaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot) ?: File(runtimeRoot, "jre")
 
+        syncRuntimeForegroundState(true)
         jvmLaunchController.start(
             javaHome = javaHome,
             bootOverlayController = bootOverlayController
@@ -521,6 +525,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun applyForegroundWindowState() {
+        syncRuntimeForegroundState(true)
         if (!jvmLaunchController.runtimeLifecycleReady) {
             return
         }
@@ -536,6 +541,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun applyBackgroundWindowState() {
+        syncRuntimeForegroundState(false)
         if (!jvmLaunchController.runtimeLifecycleReady) {
             return
         }
@@ -546,6 +552,13 @@ internal class GameSessionCoordinator(
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun syncRuntimeForegroundState(foreground: Boolean) {
+        try {
+            CallbackBridge.nativeSetRuntimeForeground(foreground)
         } catch (_: Throwable) {
         }
     }

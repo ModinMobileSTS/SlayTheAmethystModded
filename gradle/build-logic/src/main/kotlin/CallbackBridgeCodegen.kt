@@ -152,6 +152,19 @@ object CallbackBridgeCodegen {
             jvmVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeSetRuntimeForeground",
+            returnType = "void",
+            parameters = listOf(CallbackBridgeParameter("boolean", "foreground")),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeIsRuntimeForeground",
+            returnType = "boolean",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeSetGrabbing",
             returnType = "void",
             parameters = listOf(CallbackBridgeParameter("boolean", "grabbing")),

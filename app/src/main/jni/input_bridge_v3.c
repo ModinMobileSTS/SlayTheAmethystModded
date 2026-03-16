@@ -370,6 +370,27 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetInputRead
     return JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(inputReady);
 }
 
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetRuntimeForeground(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz,
+        jboolean foreground
+) {
+    if (pojav_environ == NULL) {
+        return;
+    }
+    atomic_store_explicit(&pojav_environ->runtimeForeground, foreground == JNI_TRUE, memory_order_relaxed);
+}
+
+JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeIsRuntimeForeground(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    if (pojav_environ == NULL) {
+        return JNI_TRUE;
+    }
+    return atomic_load_explicit(&pojav_environ->runtimeForeground, memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetGrabbing(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jboolean grabbing) {
     TRY_ATTACH_ENV(dvm_env, pojav_environ->dalvikJavaVMPtr, "nativeSetGrabbing failed!\n", return;);
     (*dvm_env)->CallStaticVoidMethod(dvm_env, pojav_environ->bridgeClazz, pojav_environ->method_onGrabStateChanged, grabbing);

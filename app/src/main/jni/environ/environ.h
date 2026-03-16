@@ -64,6 +64,7 @@ struct pojav_environ_s {
     long showingWindow;
     bool isInputReady, isCursorEntered, isUseStackQueueCall, shouldUpdateMouse;
     bool shouldUpdateMonitorSize, monitorSizeConsumed;
+    atomic_bool runtimeForeground;
     int savedWidth, savedHeight;
     bool hasAppliedWindowGeometry;
     struct ANativeWindow* lastGeometryWindow;

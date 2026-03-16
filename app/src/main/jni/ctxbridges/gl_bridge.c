@@ -28,6 +28,10 @@ static bool g_swap_heartbeat_logging_enabled = false;
 #define EGL_CONTEXT_LOST 0x300E
 #endif
 
+#ifndef EGL_BAD_NATIVE_WINDOW
+#define EGL_BAD_NATIVE_WINDOW 0x300B
+#endif
+
 #ifndef EGL_OPENGL_ES3_BIT_KHR
 #define EGL_OPENGL_ES3_BIT_KHR 0x0040
 #endif
@@ -454,7 +458,7 @@ static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char
         }
 
         EGLint makeCurrentErr = eglGetError_p();
-        if (makeCurrentErr == EGL_BAD_SURFACE) {
+        if (makeCurrentErr == EGL_BAD_SURFACE || makeCurrentErr == EGL_BAD_NATIVE_WINDOW) {
             gl_swap_surface(bundle);
             continue;
         }
@@ -539,7 +543,7 @@ void gl_swap_buffers() {
     if(currentBundle->surface != NULL && currentBundle->surface != EGL_NO_SURFACE) {
         if(!eglSwapBuffers_p(g_EglDisplay, currentBundle->surface)) {
             EGLint swapErr = eglGetError_p();
-            if (swapErr == EGL_BAD_SURFACE) {
+            if (swapErr == EGL_BAD_SURFACE || swapErr == EGL_BAD_NATIVE_WINDOW) {
                 eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
                 gl_queue_bridge_window_surface(currentBundle, "swap bad surface");
                 gl_swap_surface(currentBundle);

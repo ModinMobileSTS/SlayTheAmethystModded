@@ -102,6 +102,8 @@ internal fun ModCard(
         mutableStateOf(resolveModFileNameWithoutJar(mod.storagePath).orEmpty())
     }
     val cardShape = RoundedCornerShape(10.dp)
+    val renameRequiresFileNameMessage =
+        stringResource(R.string.main_mod_rename_requires_file_name_display)
 
     val dragHandleGestureModifier = Modifier
         .onGloballyPositioned { handleCoordinates = it }
@@ -248,7 +250,7 @@ internal fun ModCard(
             } else {
                 Toast.makeText(
                     context,
-                    context.getString(R.string.main_mod_rename_requires_file_name_display),
+                    renameRequiresFileNameMessage,
                     Toast.LENGTH_SHORT
                 ).show()
             }
