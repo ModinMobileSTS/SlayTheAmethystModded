@@ -61,12 +61,6 @@ public class RenamePopup {
         float noCenterX = centerX + 106.0f * Settings.scale;
         this.yesHb.move(yesCenterX, centerY);
         this.noHb.move(noCenterX, centerY);
-        logger.info(
-            "[test] RenamePopup.hitboxes width=" + Settings.WIDTH +
-                " scale=" + Settings.scale +
-                " yesCenter=(" + yesCenterX + "," + centerY + ")" +
-                " noCenter=(" + noCenterX + "," + centerY + ")"
-        );
     }
 
     public void update() {
@@ -82,10 +76,8 @@ public class RenamePopup {
             this.uiColor.a = MathHelper.fadeLerpSnap(this.uiColor.a, 1.0f);
             this.updateButtons();
             if (Gdx.input.isKeyJustPressed(66)) {
-                logger.info("[test] RenamePopup.update enter confirm text=" + textField);
                 this.confirm();
             } else if (InputHelper.pressedEscape) {
-                logger.info("[test] RenamePopup.update escape cancel");
                 InputHelper.pressedEscape = false;
                 this.cancel();
             }
@@ -99,26 +91,14 @@ public class RenamePopup {
         this.yesHb.update();
         if (this.yesHb.justHovered) {
             CardCrawlGame.sound.play("UI_HOVER");
-            logger.info("[test] RenamePopup.yes justHovered mX=" + InputHelper.mX + " mY=" + InputHelper.mY);
         }
         if (this.yesHb.hovered && InputHelper.justClickedLeft) {
             CardCrawlGame.sound.play("UI_CLICK_1");
             this.yesHb.clicked = true;
-            logger.info(
-                "[test] RenamePopup.yes press hovered=" + this.yesHb.hovered +
-                    " clicked=" + this.yesHb.clicked +
-                    " clickStarted=" + this.yesHb.clickStarted +
-                    " justClickedLeft=" + InputHelper.justClickedLeft +
-                    " justReleasedLeft=" + InputHelper.justReleasedClickLeft +
-                    " touchDown=" + InputHelper.touchDown +
-                    " touchUp=" + InputHelper.touchUp +
-                    " text=" + textField
-            );
         } else if (!this.yesHb.clicked && this.yesHb.hovered) {
             this.yesHb.clickStarted = false;
         }
         if (this.yesHb.clicked) {
-            logger.info("[test] RenamePopup.yes clicked -> confirm text=" + textField);
             this.yesHb.clicked = false;
             this.confirm();
         }
@@ -126,48 +106,29 @@ public class RenamePopup {
         this.noHb.update();
         if (this.noHb.justHovered) {
             CardCrawlGame.sound.play("UI_HOVER");
-            logger.info("[test] RenamePopup.no justHovered mX=" + InputHelper.mX + " mY=" + InputHelper.mY);
         }
         if (this.noHb.hovered && InputHelper.justClickedLeft) {
             CardCrawlGame.sound.play("UI_CLICK_1");
             this.noHb.clicked = true;
-            logger.info(
-                "[test] RenamePopup.no press hovered=" + this.noHb.hovered +
-                    " clicked=" + this.noHb.clicked +
-                    " clickStarted=" + this.noHb.clickStarted +
-                    " justClickedLeft=" + InputHelper.justClickedLeft +
-                    " justReleasedLeft=" + InputHelper.justReleasedClickLeft +
-                    " touchDown=" + InputHelper.touchDown +
-                    " touchUp=" + InputHelper.touchUp
-            );
         } else if (!this.noHb.clicked && this.noHb.hovered) {
             this.noHb.clickStarted = false;
         }
         if (this.noHb.clicked) {
-            logger.info("[test] RenamePopup.no clicked -> cancel");
             this.noHb.clicked = false;
             this.cancel();
         }
 
         if (CInputActionSet.proceed.isJustPressed()) {
             CInputActionSet.proceed.unpress();
-            logger.info("[test] RenamePopup.controller proceed -> confirm text=" + textField);
             this.confirm();
         } else if (CInputActionSet.cancel.isJustPressed() || InputActionSet.cancel.isJustPressed()) {
             CInputActionSet.cancel.unpress();
-            logger.info("[test] RenamePopup.controller cancel");
             this.cancel();
         }
     }
 
     public void confirm() {
-        logger.info(
-            "[test] RenamePopup.confirm start slot=" + this.slot +
-                " newSave=" + this.newSave +
-                " rawText=" + textField
-        );
         if ((textField = textField.trim()).equals("")) {
-            logger.info("[test] RenamePopup.confirm abort empty text");
             return;
         }
         CardCrawlGame.mainMenuScreen.saveSlotScreen.curPop = SaveSlotScreen.CurrentPopup.NONE;
@@ -194,21 +155,16 @@ public class RenamePopup {
             CardCrawlGame.playerPref.putString("name", textField);
             CardCrawlGame.playerPref.flush();
             CardCrawlGame.playerName = textField;
-            logger.info("[test] RenamePopup.confirm newSave completed playerName=" + CardCrawlGame.playerName);
         } else if (!CardCrawlGame.saveSlotPref.getString(SaveHelper.slotName("PROFILE_NAME", this.slot), "").equals(textField)) {
             logger.info("RENAMING " + this.slot + ": " + textField);
             CardCrawlGame.saveSlotPref.putString(SaveHelper.slotName("PROFILE_NAME", this.slot), textField);
             CardCrawlGame.saveSlotPref.flush();
             CardCrawlGame.mainMenuScreen.saveSlotScreen.rename(this.slot, textField);
             CardCrawlGame.playerName = textField;
-            logger.info("[test] RenamePopup.confirm rename completed playerName=" + CardCrawlGame.playerName);
-        } else {
-            logger.info("[test] RenamePopup.confirm skipped because name unchanged text=" + textField);
         }
     }
 
     public void cancel() {
-        logger.info("[test] RenamePopup.cancel slot=" + this.slot + " text=" + textField);
         CardCrawlGame.mainMenuScreen.saveSlotScreen.curPop = SaveSlotScreen.CurrentPopup.NONE;
         this.shown = false;
         Gdx.input.setInputProcessor(new ScrollInputProcessor());
@@ -293,6 +249,5 @@ public class RenamePopup {
         this.newSave = isNewSave;
         this.shown = true;
         textField = "";
-        logger.info("[test] RenamePopup.open slot=" + slot + " newSave=" + isNewSave);
     }
 }

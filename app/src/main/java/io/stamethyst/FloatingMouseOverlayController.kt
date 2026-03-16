@@ -56,7 +56,6 @@ internal class FloatingMouseOverlayController(
 
     companion object {
         private const val IME_LOG_TAG = "STS-IME"
-        private const val TEST_LOG_TAG = "STS-TEST"
         private const val FLOATING_MOUSE_IDLE_ALPHA = 0.2f
         private const val FLOATING_MOUSE_ACTIVE_ALPHA = 1.0f
         private const val FLOATING_MOUSE_ACTIVE_KEEP_MS = 1500L
@@ -235,38 +234,28 @@ internal class FloatingMouseOverlayController(
 
     fun pressTouchButtonIfNeeded() {
         if (!isNativeInputDispatchReady.invoke()) {
-            logTest("FloatingMouse.press ignored native input not ready")
             return
         }
         if (touchPressedButton >= 0) {
-            logTest("FloatingMouse.press ignored alreadyPressed button=$touchPressedButton")
             return
         }
         val button = resolveTouchButton()
-        logTest(
-            "FloatingMouse.press button=$button mode=$touchMouseMode " +
-                "lockEnabled=$touchMouseLockEnabled autoLeftAfterRight=$autoSwitchBackToLeftAfterRightClick"
-        )
         CallbackBridge.sendMouseButton(button, true)
         touchPressedButton = button
         if (autoSwitchBackToLeftAfterRightClick && button == LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt()) {
             touchMouseMode = TouchMouseMode.LEFT
             updateTouchMouseModeUi()
-            logTest("FloatingMouse.autoSwitchedToLeftAfterRightClick")
         }
     }
 
     fun releaseTouchButtonIfNeeded() {
         if (!isNativeInputDispatchReady.invoke()) {
-            logTest("FloatingMouse.release reset because native input not ready")
             touchPressedButton = -1
             return
         }
         if (touchPressedButton < 0) {
-            logTest("FloatingMouse.release ignored because no pressed button")
             return
         }
-        logTest("FloatingMouse.release button=$touchPressedButton")
         CallbackBridge.sendMouseButton(touchPressedButton, false)
         touchPressedButton = -1
     }
@@ -498,7 +487,6 @@ internal class FloatingMouseOverlayController(
         } else {
             TouchMouseMode.LEFT
         }
-        logTest("FloatingMouse.toggleMode newMode=$touchMouseMode")
         updateTouchMouseModeUi()
     }
 
@@ -508,7 +496,6 @@ internal class FloatingMouseOverlayController(
         }
         releaseTouchButtonIfNeeded()
         touchMouseLockEnabled = !touchMouseLockEnabled
-        logTest("FloatingMouse.toggleLock enabled=$touchMouseLockEnabled")
         updateTouchMouseModeUi()
         val messageRes = if (touchMouseLockEnabled) {
             R.string.touch_mouse_lock_enabled_toast
@@ -1189,10 +1176,6 @@ internal class FloatingMouseOverlayController(
 
     private fun logIme(message: String) {
         Log.d(IME_LOG_TAG, message)
-    }
-
-    private fun logTest(message: String) {
-        Log.d(TEST_LOG_TAG, "[test] $message")
     }
 
     private fun describeAction(action: Int): String {

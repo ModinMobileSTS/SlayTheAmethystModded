@@ -3,7 +3,6 @@ package io.stamethyst.input
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioManager
-import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -27,10 +26,6 @@ class GameInputHandler(
     private val getRenderViewWidth: () -> Int,
     private val getRenderViewHeight: () -> Int
 ) {
-    companion object {
-        private const val TEST_LOG_TAG = "STS-TEST"
-    }
-
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var gamepadDirectInputEnableAttempted = false
 
@@ -84,10 +79,6 @@ class GameInputHandler(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = event.getPointerId(0)
-                logTest(
-                    "GameInputHandler.ACTION_DOWN pointerId=$activePointerId " +
-                        "x=${event.getX(0)} y=${event.getY(0)} dispatchButtons=${shouldDispatchTouchButtons()}"
-                )
                 moveCursor(event.getX(0), event.getY(0))
                 if (shouldDispatchTouchButtons()) {
                     pressTouchButtonIfNeeded()
@@ -100,11 +91,6 @@ class GameInputHandler(
             MotionEvent.ACTION_POINTER_DOWN -> {
                 val downIndex = event.actionIndex
                 activePointerId = event.getPointerId(downIndex)
-                logTest(
-                    "GameInputHandler.ACTION_POINTER_DOWN pointerId=$activePointerId " +
-                        "index=$downIndex x=${event.getX(downIndex)} y=${event.getY(downIndex)} " +
-                        "dispatchButtons=${shouldDispatchTouchButtons()}"
-                )
                 moveCursor(event.getX(downIndex), event.getY(downIndex))
                 if (shouldDispatchTouchButtons()) {
                     pressTouchButtonIfNeeded()
@@ -128,19 +114,11 @@ class GameInputHandler(
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
-                logTest(
-                    "GameInputHandler.ACTION_POINTER_UP pointerId=${event.getPointerId(event.actionIndex)} " +
-                        "remaining=${event.pointerCount - 1}"
-                )
                 handlePointerUp(event)
                 return true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                logTest(
-                    "GameInputHandler.${describeTouchAction(event.actionMasked)} " +
-                        "activePointerId=$activePointerId"
-                )
                 releaseTouchButtonIfNeeded()
                 resetTouchState()
                 return true
@@ -154,20 +132,12 @@ class GameInputHandler(
         val actionIndex = event.actionIndex
         val pointerId = event.getPointerId(actionIndex)
         val remaining = event.pointerCount - 1
-        logTest(
-            "GameInputHandler.handlePointerUp pointerId=$pointerId " +
-                "activePointerId=$activePointerId remaining=$remaining"
-        )
 
         if (pointerId == activePointerId) {
             activePointerId = MotionEvent.INVALID_POINTER_ID
             for (i in 0 until event.pointerCount) {
                 if (i == actionIndex) continue
                 activePointerId = event.getPointerId(i)
-                logTest(
-                    "GameInputHandler.handlePointerUp switchedActivePointer=" +
-                        "$activePointerId x=${event.getX(i)} y=${event.getY(i)}"
-                )
                 moveCursor(event.getX(i), event.getY(i))
                 break
             }
@@ -181,7 +151,6 @@ class GameInputHandler(
     private fun moveCursor(x: Float, y: Float) {
         if (!isInputDispatchReady()) return
         val mapped = mapToWindowCoords(x, y)
-        logTest("GameInputHandler.moveCursor view=($x,$y) mapped=(${mapped[0]},${mapped[1]})")
         CallbackBridge.sendCursorPos(mapped[0], mapped[1])
     }
 
@@ -199,12 +168,10 @@ class GameInputHandler(
     }
 
     private fun pressTouchButtonIfNeeded() {
-        logTest("GameInputHandler.pressTouchButtonIfNeeded")
         floatingMouseController?.pressTouchButtonIfNeeded()
     }
 
     private fun releaseTouchButtonIfNeeded() {
-        logTest("GameInputHandler.releaseTouchButtonIfNeeded")
         floatingMouseController?.releaseTouchButtonIfNeeded()
     }
 
@@ -213,7 +180,6 @@ class GameInputHandler(
     }
 
     private fun resetTouchState() {
-        logTest("GameInputHandler.resetTouchState")
         activePointerId = MotionEvent.INVALID_POINTER_ID
     }
 
@@ -256,21 +222,8 @@ class GameInputHandler(
             MotionEvent.BUTTON_TERTIARY -> LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_MIDDLE.toInt()
             else -> return false
         }
-        logTest("GameInputHandler.sendMouseButton androidButton=$androidButton glfwButton=$glfwButton down=$down")
         CallbackBridge.sendMouseButton(glfwButton, down)
         return true
-    }
-
-    private fun logTest(message: String) {
-        Log.d(TEST_LOG_TAG, "[test] $message")
-    }
-
-    private fun describeTouchAction(action: Int): String {
-        return when (action) {
-            MotionEvent.ACTION_UP -> "ACTION_UP"
-            MotionEvent.ACTION_CANCEL -> "ACTION_CANCEL"
-            else -> action.toString()
-        }
     }
 
     // ==================== Gamepad Input ====================

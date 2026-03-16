@@ -60,12 +60,6 @@ public class SeedPanel {
         float noCenterX = centerX + 102.0f * Settings.scale;
         this.yesHb.move(yesCenterX, centerY);
         this.noHb.move(noCenterX, centerY);
-        logger.info(
-            "[test] SeedPanel.hitboxes width=" + Settings.WIDTH +
-                " scale=" + Settings.scale +
-                " yesCenter=(" + yesCenterX + "," + centerY + ")" +
-                " noCenter=(" + noCenterX + "," + centerY + ")"
-        );
     }
 
     public void update() {
@@ -91,16 +85,13 @@ public class SeedPanel {
                 this.updateYes();
                 this.updateNo();
                 if (InputActionSet.confirm.isJustPressed()) {
-                    logger.info("[test] SeedPanel.update confirm action text=" + textField);
                     this.confirm();
                 } else if (InputHelper.pressedEscape) {
-                    logger.info("[test] SeedPanel.update escape cancel");
                     InputHelper.pressedEscape = false;
                     this.cancel();
                 } else if (InputHelper.isPasteJustPressed()
                     && !(seedText = SeedHelper.sterilizeString(pasteText = (clipBoard = Gdx.app.getClipboard()).getContents())).isEmpty()) {
                     textField = seedText;
-                    logger.info("[test] SeedPanel.update pasted text=" + textField);
                 }
             }
         } else if (this.animTimer != 0.0f) {
@@ -117,30 +108,18 @@ public class SeedPanel {
         this.yesHb.update();
         if (this.yesHb.justHovered) {
             CardCrawlGame.sound.play("UI_HOVER");
-            logger.info("[test] SeedPanel.yes justHovered mX=" + InputHelper.mX + " mY=" + InputHelper.mY);
         }
         if (InputHelper.justClickedLeft && this.yesHb.hovered) {
             CardCrawlGame.sound.play("UI_CLICK_1");
             this.yesHb.clicked = true;
-            logger.info(
-                "[test] SeedPanel.yes press hovered=" + this.yesHb.hovered +
-                    " clicked=" + this.yesHb.clicked +
-                    " justClickedLeft=" + InputHelper.justClickedLeft +
-                    " justReleasedLeft=" + InputHelper.justReleasedClickLeft +
-                    " touchDown=" + InputHelper.touchDown +
-                    " touchUp=" + InputHelper.touchUp +
-                    " text=" + textField
-            );
         } else if (!this.yesHb.clicked && this.yesHb.hovered) {
             this.yesHb.clickStarted = false;
         }
         if (CInputActionSet.proceed.isJustPressed()) {
             CInputActionSet.proceed.unpress();
             this.yesHb.clicked = true;
-            logger.info("[test] SeedPanel.controller proceed -> confirm text=" + textField);
         }
         if (this.yesHb.clicked) {
-            logger.info("[test] SeedPanel.yes clicked -> confirm text=" + textField);
             this.yesHb.clicked = false;
             this.confirm();
         }
@@ -150,28 +129,17 @@ public class SeedPanel {
         this.noHb.update();
         if (this.noHb.justHovered) {
             CardCrawlGame.sound.play("UI_HOVER");
-            logger.info("[test] SeedPanel.no justHovered mX=" + InputHelper.mX + " mY=" + InputHelper.mY);
         }
         if (InputHelper.justClickedLeft && this.noHb.hovered) {
             CardCrawlGame.sound.play("UI_CLICK_1");
             this.noHb.clicked = true;
-            logger.info(
-                "[test] SeedPanel.no press hovered=" + this.noHb.hovered +
-                    " clicked=" + this.noHb.clicked +
-                    " justClickedLeft=" + InputHelper.justClickedLeft +
-                    " justReleasedLeft=" + InputHelper.justReleasedClickLeft +
-                    " touchDown=" + InputHelper.touchDown +
-                    " touchUp=" + InputHelper.touchUp
-            );
         } else if (!this.noHb.clicked && this.noHb.hovered) {
             this.noHb.clickStarted = false;
         }
         if (CInputActionSet.cancel.isJustPressed()) {
             this.noHb.clicked = true;
-            logger.info("[test] SeedPanel.controller cancel");
         }
         if (this.noHb.clicked) {
-            logger.info("[test] SeedPanel.no clicked -> cancel");
             this.noHb.clicked = false;
             this.cancel();
         }
@@ -186,7 +154,6 @@ public class SeedPanel {
         this.shown = true;
         this.animTimer = 0.25f;
         textField = SeedHelper.getUserFacingSeedString();
-        logger.info("[test] SeedPanel.show text=" + textField);
     }
 
     public void show(MainMenuScreen.CurScreen sourceScreen) {
@@ -195,25 +162,20 @@ public class SeedPanel {
     }
 
     public void confirm() {
-        logger.info("[test] SeedPanel.confirm start rawText=" + textField);
         textField = textField.trim();
         try {
             SeedHelper.setSeed(textField);
         } catch (NumberFormatException e) {
             Settings.seed = Long.MAX_VALUE;
-            logger.info("[test] SeedPanel.confirm NumberFormatException rawText=" + textField);
         }
-        logger.info("[test] SeedPanel.confirm close text=" + textField + " seed=" + Settings.seed);
         this.close();
     }
 
     public void cancel() {
-        logger.info("[test] SeedPanel.cancel text=" + textField);
         this.close();
     }
 
     public void close() {
-        logger.info("[test] SeedPanel.close sourceScreen=" + this.sourceScreen);
         this.yesHb.move(-1000.0f, -1000.0f);
         this.noHb.move(-1000.0f, -1000.0f);
         this.shown = false;
