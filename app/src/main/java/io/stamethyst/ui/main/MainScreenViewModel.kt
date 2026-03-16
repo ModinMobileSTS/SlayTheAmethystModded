@@ -1887,6 +1887,19 @@ class MainScreenViewModel : ViewModel() {
         val targetFps = LauncherPreferences.readTargetFps(host)
         val backBehavior = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
+        val launcherSettingsSynced = try {
+            LauncherPreferences.syncLauncherPrefsToDisk(host)
+        } catch (_: Throwable) {
+            false
+        }
+        if (!launcherSettingsSynced) {
+            Toast.makeText(
+                host,
+                host.getString(R.string.main_launch_settings_sync_failed),
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
 
         StsGameActivity.launch(
             host,

@@ -174,6 +174,7 @@
     <string name="main_get_new_mods_dialog_close">Close</string>
     <string name="main_import_mods">Import mods</string>
     <string name="main_launch_game">Launch game</string>
+    <string name="main_launch_settings_sync_failed">Failed to save launcher settings before launch. Please try again.</string>
     <string name="main_select_mods">Select mods</string>
     <string name="main_loading_mods">Loading mod and dependency status...</string>
     <string name="main_status_card_title">Dependency status</string>

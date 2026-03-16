@@ -1,6 +1,7 @@
 package io.stamethyst.config
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
@@ -10,6 +11,8 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.util.LinkedHashMap
+import java.util.LinkedHashSet
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.json.JSONObject
@@ -723,6 +726,7 @@ object LauncherConfig {
         val normalized = formatRenderScale(value.coerceIn(MIN_RENDER_SCALE, MAX_RENDER_SCALE))
         FileOutputStream(config, false).use { out ->
             out.write(normalized.toByteArray(StandardCharsets.UTF_8))
+            out.fd.sync()
         }
         return normalized
     }
@@ -831,6 +835,7 @@ object LauncherConfig {
         FileOutputStream(file, false).use { out ->
             out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
             out.write('\n'.code)
+            out.fd.sync()
         }
     }
 
@@ -865,7 +870,19 @@ object LauncherConfig {
         FileOutputStream(file, false).use { out ->
             out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
             out.write('\n'.code)
+            out.fd.sync()
         }
+    }
+
+    @JvmStatic
+    fun syncLauncherPrefsToDisk(context: Context): Boolean {
+        val preferences = prefs(context)
+        val snapshot = LinkedHashMap(preferences.all)
+        val editor = preferences.edit().clear()
+        snapshot.forEach { (key, value) ->
+            writePreferenceValue(editor, key, value)
+        }
+        return editor.commit()
     }
 
     private fun readPlayerSettingsString(file: File, key: String): String? {
@@ -954,6 +971,22 @@ object LauncherConfig {
             .replace('\r', ' ')
             .replace('\n', ' ')
             .trim()
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun writePreferenceValue(editor: SharedPreferences.Editor, key: String, value: Any?) {
+        when (value) {
+            null -> editor.remove(key)
+            is String -> editor.putString(key, value)
+            is Int -> editor.putInt(key, value)
+            is Long -> editor.putLong(key, value)
+            is Float -> editor.putFloat(key, value)
+            is Boolean -> editor.putBoolean(key, value)
+            is Set<*> -> editor.putStringSet(key, LinkedHashSet(value.filterIsInstance<String>()))
+            else -> throw IllegalStateException(
+                "Unsupported launcher preference type for '$key': ${value.javaClass.name}"
+            )
+        }
     }
 
     private fun renderScaleFile(context: Context): File {

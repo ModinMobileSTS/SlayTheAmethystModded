@@ -329,6 +329,10 @@ object LauncherPreferences {
         LauncherConfig.setJvmStringDeduplicationEnabled(context, enabled)
     }
 
+    fun syncLauncherPrefsToDisk(context: Context): Boolean {
+        return LauncherConfig.syncLauncherPrefsToDisk(context)
+    }
+
     fun normalizePlayerName(name: String): String {
         return LauncherConfig.normalizePlayerName(name)
     }
