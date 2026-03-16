@@ -45,6 +45,26 @@ class ModFolderUiHelpersTest {
         )
     }
 
+    @Test
+    fun resolveAssignmentKeyCandidates_includesLegacyModsPathForLibraryStoragePath() {
+        val mod = createMod(
+            storagePath = "/storage/emulated/0/Android/data/io.stamethyst/files/sts/mods_library/TestMod.jar"
+        )
+
+        val candidates = resolveAssignmentKeyCandidates(mod)
+
+        assertTrue(
+            candidates.contains(
+                "/storage/emulated/0/Android/data/io.stamethyst/files/sts/mods/TestMod.jar"
+            )
+        )
+        assertTrue(
+            candidates.contains(
+                "/data/user/0/io.stamethyst/files/sts/mods/TestMod.jar"
+            )
+        )
+    }
+
     private fun createMod(storagePath: String): ModItemUi {
         return ModItemUi(
             modId = "testmod",

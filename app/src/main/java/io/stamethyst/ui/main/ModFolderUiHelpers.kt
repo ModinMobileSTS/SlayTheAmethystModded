@@ -22,8 +22,7 @@ internal fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
     val keys = LinkedHashSet<String>()
     val storage = mod.storagePath.trim()
     if (storage.isNotEmpty()) {
-        keys.add(storage)
-        resolveLegacyInternalStorageCandidates(storage).forEach { keys.add(it) }
+        addAssignmentPathCandidates(keys, storage)
     }
     val storedId = resolveStoredOptionalModId(mod)
     if (!storedId.isNullOrBlank()) {
@@ -34,6 +33,22 @@ internal fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
         keys.add(normalizedManifest)
     }
     return keys.toList()
+}
+
+private fun addAssignmentPathCandidates(
+    keys: MutableSet<String>,
+    storagePath: String
+) {
+    val normalizedStorage = storagePath.trim()
+    if (normalizedStorage.isEmpty()) {
+        return
+    }
+    keys.add(normalizedStorage)
+    resolveSiblingOptionalModStorageCandidates(normalizedStorage).forEach { keys.add(it) }
+    resolveLegacyInternalStorageCandidates(normalizedStorage).forEach { legacyPath ->
+        keys.add(legacyPath)
+        resolveSiblingOptionalModStorageCandidates(legacyPath).forEach { keys.add(it) }
+    }
 }
 
 internal fun resolveStoredOptionalModId(mod: ModItemUi): String? {
@@ -102,6 +117,23 @@ private fun resolveLegacyInternalStorageCandidates(storagePath: String): List<St
         .distinct()
 }
 
+private fun resolveSiblingOptionalModStorageCandidates(storagePath: String): List<String> {
+    val normalizedPath = storagePath.trim().replace('\\', '/')
+    if (normalizedPath.isEmpty()) {
+        return emptyList()
+    }
+
+    val candidates = LinkedHashSet<String>()
+    if (normalizedPath.contains(MODS_LIBRARY_MARKER)) {
+        candidates.add(normalizedPath.replace(MODS_LIBRARY_MARKER, MODS_MARKER))
+    }
+    if (normalizedPath.contains(MODS_MARKER)) {
+        candidates.add(normalizedPath.replace(MODS_MARKER, MODS_LIBRARY_MARKER))
+    }
+    candidates.remove(normalizedPath)
+    return candidates.toList()
+}
+
 private fun resolvePackageAndRelativePath(normalizedPath: String): Pair<String, String>? {
     val externalPackageMarker = "/Android/data/"
     val externalPackageStart = normalizedPath.indexOf(externalPackageMarker)
@@ -142,3 +174,6 @@ private fun extractRelativePath(path: String, packageNameEnd: Int): String? {
     }
     return path.substring(relativeStart + relativeMarker.length).takeIf { it.isNotEmpty() }
 }
+
+private const val MODS_MARKER = "/files/sts/mods/"
+private const val MODS_LIBRARY_MARKER = "/files/sts/mods_library/"
