@@ -84,7 +84,17 @@ internal object StsDesktopJarPatcher {
                             }
                             zipOut.putNextEntry(outEntry)
                             val patchBytes = patchEntries[name]
-                            if (patchBytes != null) {
+                            if (patchBytes != null &&
+                                StsUiTouchCompatPatcher.isMethodMergeClassEntry(name)
+                            ) {
+                                val originalBytes = JarFileIoUtils.readAll(zipIn)
+                                val mergedBytes = StsUiTouchCompatPatcher.mergePatchedClass(
+                                    entryName = name,
+                                    targetClassBytes = originalBytes,
+                                    donorClassBytes = patchBytes
+                                )
+                                zipOut.write(mergedBytes)
+                            } else if (patchBytes != null) {
                                 zipOut.write(patchBytes)
                             } else {
                                 JarFileIoUtils.copyStream(zipIn, zipOut)
@@ -112,6 +122,9 @@ internal object StsDesktopJarPatcher {
                         for ((name, data) in patchEntries) {
                             if (seenNames.contains(name)) {
                                 continue
+                            }
+                            if (StsUiTouchCompatPatcher.isMethodMergeClassEntry(name)) {
+                                throw IOException("desktop-1.0.jar is missing required class: $name")
                             }
                             val outEntry = ZipEntry(name)
                             zipOut.putNextEntry(outEntry)
@@ -189,10 +202,10 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_TYPE_HELPER_CLASS == entryName ||
             STS_PATCH_RENAME_POPUP_CLASS == entryName ||
             STS_PATCH_SEED_PANEL_CLASS == entryName ||
-            entryName.startsWith(STS_PATCH_SINGLE_CARD_VIEW_POPUP_PREFIX) ||
+            STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
-            entryName.startsWith(STS_PATCH_COLOR_TAB_BAR_PREFIX) ||
+            STS_PATCH_COLOR_TAB_BAR_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX) ||
             entryName.startsWith(STS_PATCH_LWJGL_APPLICATION_PREFIX) ||
             entryName.startsWith(STS_PATCH_LWJGL_GRAPHICS_PREFIX) ||
@@ -209,7 +222,16 @@ internal object StsDesktopJarPatcher {
                         return false
                     }
                     val actual = JarFileIoUtils.readEntryBytes(zipFile, entry)
-                    if (!actual.contentEquals(expected)) {
+                    if (StsUiTouchCompatPatcher.isMethodMergeClassEntry(className)) {
+                        val merged = StsUiTouchCompatPatcher.mergePatchedClass(
+                            entryName = className,
+                            targetClassBytes = actual,
+                            donorClassBytes = expected
+                        )
+                        if (!actual.contentEquals(merged)) {
+                            return false
+                        }
+                    } else if (!actual.contentEquals(expected)) {
                         return false
                     }
                 }

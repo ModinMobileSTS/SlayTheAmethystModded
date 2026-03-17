@@ -55,6 +55,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isVupShionModCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isVupShionModCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setVupShionModCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setVupShionModCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isRuntimeTextureCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isRuntimeTextureCompatEnabled(context)
     }

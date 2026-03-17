@@ -55,6 +55,7 @@ fun LauncherCompatibilityScreen(
         onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
         onDownfallImportCompatToggled = { enabled -> viewModel.onDownfallImportCompatToggled(context, enabled) },
+        onVupShionModCompatToggled = { enabled -> viewModel.onVupShionModCompatToggled(context, enabled) },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
@@ -75,6 +76,7 @@ private fun LauncherCompatibilityScreenPreview() {
             modManifestRootCompatEnabled = true,
             frierenModCompatEnabled = true,
             downfallImportCompatEnabled = true,
+            vupShionModCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true
@@ -93,6 +95,7 @@ private fun LauncherCompatibilityScreenContent(
     onModManifestRootCompatToggled: (Boolean) -> Unit = {},
     onFrierenModCompatToggled: (Boolean) -> Unit = {},
     onDownfallImportCompatToggled: (Boolean) -> Unit = {},
+    onVupShionModCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -165,6 +168,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.downfallImportCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onDownfallImportCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_vupshion_mod_compat_title),
+                description = stringResource(R.string.compat_vupshion_mod_compat_desc),
+                checked = uiState.vupShionModCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onVupShionModCompatToggled
             )
 
             CompatibilitySwitchRow(

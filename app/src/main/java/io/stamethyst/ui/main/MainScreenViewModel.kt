@@ -30,6 +30,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.UiBusyOperation
+import io.stamethyst.ui.VupShionPatchedDialog
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.DuplicateModImportConflict
 import io.stamethyst.ui.settings.JvmLogShareService
@@ -753,6 +754,7 @@ class MainScreenViewModel : ViewModel() {
                         showAtlasPatchSummaryDialog(host, patchedResults)
                         showManifestRootPatchSummaryDialog(host, patchedResults)
                         showDownfallPatchSummaryDialog(host, patchedResults)
+                        showVupShionPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -904,6 +906,13 @@ class MainScreenViewModel : ViewModel() {
             )
             .setPositiveButton(android.R.string.ok, null)
             .show()
+    }
+
+    private fun showVupShionPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasVupShionPatched }) {
+            return
+        }
+        VupShionPatchedDialog.show(host)
     }
 
     private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {

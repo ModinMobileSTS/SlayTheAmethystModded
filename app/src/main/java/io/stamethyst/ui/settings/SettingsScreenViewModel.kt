@@ -37,6 +37,7 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.UiBusyOperation
+import io.stamethyst.ui.VupShionPatchedDialog
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -1198,6 +1199,7 @@ class SettingsScreenViewModel : ViewModel() {
                         showManifestRootPatchSummaryDialog(host, patchedResults)
                         showFrierenPatchSummaryDialog(host, patchedResults)
                         showDownfallPatchSummaryDialog(host, patchedResults)
+                        showVupShionPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -1372,6 +1374,13 @@ class SettingsScreenViewModel : ViewModel() {
             )
             .setPositiveButton(android.R.string.ok, null)
             .show()
+    }
+
+    private fun showVupShionPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasVupShionPatched }) {
+            return
+        }
+        VupShionPatchedDialog.show(host)
     }
 
     private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {

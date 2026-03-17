@@ -23,6 +23,7 @@ import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
+import io.stamethyst.backend.mods.VupShionModCompatPatcher
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -57,7 +58,8 @@ internal data class ModImportResult(
     val patchedFrierenAntiPirateMethod: Boolean = false,
     val patchedDownfallClassEntries: Int = 0,
     val patchedDownfallMerchantClassEntries: Int = 0,
-    val patchedDownfallHexaghostBodyClassEntries: Int = 0
+    val patchedDownfallHexaghostBodyClassEntries: Int = 0,
+    val patchedVupShionWebButtonConstructor: Boolean = false
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
@@ -67,8 +69,14 @@ internal data class ModImportResult(
         get() = patchedFrierenAntiPirateMethod
     val wasDownfallPatched: Boolean
         get() = patchedDownfallClassEntries > 0
+    val wasVupShionPatched: Boolean
+        get() = patchedVupShionWebButtonConstructor
     val hasCompatibilityPatches: Boolean
-        get() = wasAtlasPatched || wasManifestRootPatched || wasFrierenAntiPiratePatched || wasDownfallPatched
+        get() = wasAtlasPatched ||
+            wasManifestRootPatched ||
+            wasFrierenAntiPiratePatched ||
+            wasDownfallPatched ||
+            wasVupShionPatched
 }
 
 internal data class ModBatchImportResult(
@@ -122,6 +130,7 @@ internal object SettingsFileService {
     private const val RESERVED_COMPONENT_MTS = "ModTheSpire"
     private const val DOWNFALL_MOD_ID = "downfall"
     private const val FRIEREN_MOD_ID = "frierenmod"
+    private const val VUPSHION_MOD_ID = "vupshionmod"
     private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
         ".zip",
@@ -366,6 +375,13 @@ internal object SettingsFileService {
                 patchedDownfallMerchantClassEntries = patchResult.patchedMerchantClassEntries
                 patchedDownfallHexaghostBodyClassEntries = patchResult.patchedHexaghostBodyClassEntries
             }
+            var patchedVupShionWebButtonConstructor = false
+            if (CompatibilitySettings.isVupShionModCompatEnabled(host)
+                && modId == VUPSHION_MOD_ID
+            ) {
+                patchedVupShionWebButtonConstructor =
+                    VupShionModCompatPatcher.patchInPlace(tempFile).patchedWebButtonConstructor
+            }
             if (replaceExistingDuplicates) {
                 ModManager.removeExistingOptionalModsForImport(
                     context = host,
@@ -388,7 +404,8 @@ internal object SettingsFileService {
                 patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
                 patchedDownfallClassEntries = patchedDownfallClassEntries,
                 patchedDownfallMerchantClassEntries = patchedDownfallMerchantClassEntries,
-                patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries
+                patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
+                patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor
             )
         } finally {
             if (tempFile.exists()) {
@@ -469,7 +486,10 @@ internal object SettingsFileService {
                                     result.patchedDownfallMerchantClassEntries,
                             patchedDownfallHexaghostBodyClassEntries =
                                 existing.patchedDownfallHexaghostBodyClassEntries +
-                                    result.patchedDownfallHexaghostBodyClassEntries
+                                    result.patchedDownfallHexaghostBodyClassEntries,
+                            patchedVupShionWebButtonConstructor =
+                                existing.patchedVupShionWebButtonConstructor ||
+                                    result.patchedVupShionWebButtonConstructor
                         )
                     }
                 }
@@ -902,6 +922,51 @@ internal object SettingsFileService {
                 append('\n')
             }
             append(context.getString(R.string.mod_import_downfall_message_rule))
+        }.trimEnd()
+    }
+
+    fun buildVupShionPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasVupShionPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedVupShionWebButtonConstructor =
+                        existing.patchedVupShionWebButtonConstructor ||
+                            result.patchedVupShionWebButtonConstructor
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return context.getString(R.string.mod_import_vupshion_message_none)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_vupshion_message_intro))
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
+                append('\n')
+                append(context.getString(R.string.mod_import_vupshion_message_item_detail))
+                append('\n')
+            }
+            append(context.getString(R.string.mod_import_vupshion_message_rule))
         }.trimEnd()
     }
 
