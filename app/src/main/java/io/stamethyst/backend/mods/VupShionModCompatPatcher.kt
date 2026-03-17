@@ -23,16 +23,43 @@ import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.TypeInsnNode
 
 internal data class VupShionModCompatPatchResult(
-    val patchedWebButtonConstructor: Boolean
-)
+    val patchedWebButtonConstructor: Boolean,
+    val patchedSaveTenkoDataMethod: Boolean,
+    val patchedSaveSleyntaPanelMethod: Boolean
+) {
+    val hasAnyPatch: Boolean
+        get() = patchedWebButtonConstructor ||
+            patchedSaveTenkoDataMethod ||
+            patchedSaveSleyntaPanelMethod
+}
 
 internal object VupShionModCompatPatcher {
     private const val TARGET_CLASS_ENTRY = "VUPShionMod/ui/WebButton.class"
+    private const val SAVE_HELPER_CLASS_ENTRY = "VUPShionMod/util/SaveHelper.class"
     private const val TARGET_CONSTRUCTOR_DESC =
         "(Ljava/lang/String;FFFFFLcom/badlogic/gdx/graphics/Color;" +
             "Lcom/badlogic/gdx/graphics/Texture;)V"
+    private const val VOID_METHOD_DESC = "()V"
     private const val STEAM_APPS_INTERNAL_NAME = "com/codedisaster/steamworks/SteamApps"
     private const val NULL_API_EXCEPTION_INTERNAL_NAME = "VUPShionMod/msic/NullApiException"
+    private const val SAVE_TENKO_DATA_METHOD_NAME = "saveTenkoData"
+    private const val SAVE_SLEYNTA_PANEL_METHOD_NAME = "saveSleyntaPanel"
+    private const val TENKO_PANEL_INTERNAL_NAME = "VUPShionMod/ui/TenkoPanel/TenkoPanel"
+    private const val TENKO_GET_PANEL_METHOD_NAME = "getPanel"
+    private const val TENKO_GET_PANEL_METHOD_DESC = "()LVUPShionMod/ui/TenkoPanel/TenkoPanel;"
+    private const val CRITICAL_SHOT_PANEL_INTERNAL_NAME = "VUPShionMod/ui/SleyntaUI/CriticalShotPanel"
+    private const val CRITICAL_SHOT_GET_PANEL_METHOD_DESC =
+        "()LVUPShionMod/ui/SleyntaUI/CriticalShotPanel;"
+    private const val STAR_DUST_PANEL_INTERNAL_NAME = "VUPShionMod/ui/SleyntaUI/StarDustPanel"
+    private const val STAR_DUST_GET_PANEL_METHOD_DESC =
+        "()LVUPShionMod/ui/SleyntaUI/StarDustPanel;"
+    private const val ABSTRACT_DUNGEON_INTERNAL_NAME =
+        "com/megacrit/cardcrawl/dungeons/AbstractDungeon"
+    private const val OVERLAY_MENU_INTERNAL_NAME = "com/megacrit/cardcrawl/core/OverlayMenu"
+    private const val OVERLAY_MENU_FIELD_NAME = "overlayMenu"
+    private const val OVERLAY_MENU_FIELD_DESC = "Lcom/megacrit/cardcrawl/core/OverlayMenu;"
+    private const val ENERGY_PANEL_FIELD_NAME = "energyPanel"
+    private const val ENERGY_PANEL_FIELD_DESC = "Lcom/megacrit/cardcrawl/ui/panels/EnergyPanel;"
 
     @Throws(IOException::class)
     fun patchInPlace(modJar: File): VupShionModCompatPatchResult {
@@ -41,11 +68,23 @@ internal object VupShionModCompatPatcher {
         }
 
         val replacements = LinkedHashMap<String, ByteArray>()
+        var patchedWebButtonConstructor = false
+        var patchedSaveTenkoDataMethod = false
+        var patchedSaveSleyntaPanelMethod = false
         ZipFile(modJar).use { zipFile ->
             patchClassEntry(zipFile, TARGET_CLASS_ENTRY) { classBytes ->
                 patchWebButtonClassBytes(classBytes)
             }?.let { (entryName, patchedBytes) ->
                 replacements[entryName] = patchedBytes
+                patchedWebButtonConstructor = true
+            }
+            patchClassEntry(zipFile, SAVE_HELPER_CLASS_ENTRY) { classBytes ->
+                patchSaveHelperClassBytes(classBytes)
+            }?.let { (entryName, patchedBytes) ->
+                replacements[entryName] = patchedBytes
+                val patchResult = inspectSaveHelperPatchResult(patchedBytes)
+                patchedSaveTenkoDataMethod = patchResult.first
+                patchedSaveSleyntaPanelMethod = patchResult.second
             }
         }
 
@@ -54,7 +93,9 @@ internal object VupShionModCompatPatcher {
         }
 
         return VupShionModCompatPatchResult(
-            patchedWebButtonConstructor = replacements.isNotEmpty()
+            patchedWebButtonConstructor = patchedWebButtonConstructor,
+            patchedSaveTenkoDataMethod = patchedSaveTenkoDataMethod,
+            patchedSaveSleyntaPanelMethod = patchedSaveSleyntaPanelMethod
         )
     }
 
@@ -86,6 +127,49 @@ internal object VupShionModCompatPatcher {
         return writeClass(classNode)
     }
 
+    @Throws(IOException::class)
+    private fun patchSaveHelperClassBytes(classBytes: ByteArray): ByteArray? {
+        val classNode = readClassNode(classBytes)
+        val saveTenkoDataMethod = classNode.methods.firstOrNull { method ->
+            method.name == SAVE_TENKO_DATA_METHOD_NAME && method.desc == VOID_METHOD_DESC
+        }
+        val saveSleyntaPanelMethod = classNode.methods.firstOrNull { method ->
+            method.name == SAVE_SLEYNTA_PANEL_METHOD_NAME && method.desc == VOID_METHOD_DESC
+        }
+
+        var modified = false
+        if (saveTenkoDataMethod != null) {
+            modified = addPanelAvailabilityGuards(
+                method = saveTenkoDataMethod,
+                getterOwner = TENKO_PANEL_INTERNAL_NAME,
+                getterName = TENKO_GET_PANEL_METHOD_NAME,
+                getterDesc = TENKO_GET_PANEL_METHOD_DESC,
+                guardedLocalIndexes = intArrayOf(1)
+            ) || modified
+        }
+        if (saveSleyntaPanelMethod != null) {
+            modified = addPanelAvailabilityGuards(
+                method = saveSleyntaPanelMethod,
+                getterOwner = CRITICAL_SHOT_PANEL_INTERNAL_NAME,
+                getterName = TENKO_GET_PANEL_METHOD_NAME,
+                getterDesc = CRITICAL_SHOT_GET_PANEL_METHOD_DESC,
+                guardedLocalIndexes = intArrayOf(1)
+            ) || modified
+            modified = addPanelAvailabilityGuards(
+                method = saveSleyntaPanelMethod,
+                getterOwner = STAR_DUST_PANEL_INTERNAL_NAME,
+                getterName = TENKO_GET_PANEL_METHOD_NAME,
+                getterDesc = STAR_DUST_GET_PANEL_METHOD_DESC,
+                guardedLocalIndexes = intArrayOf(2)
+            ) || modified
+        }
+
+        if (!modified) {
+            return null
+        }
+        return writeClass(classNode)
+    }
+
     private fun removeWorkshopSubscriptionGate(method: MethodNode): Boolean {
         var current: AbstractInsnNode? = method.instructions.first
         while (current != null) {
@@ -107,6 +191,40 @@ internal object VupShionModCompatPatcher {
             current = next
         }
         return false
+    }
+
+    private fun addPanelAvailabilityGuards(
+        method: MethodNode,
+        getterOwner: String,
+        getterName: String,
+        getterDesc: String,
+        guardedLocalIndexes: IntArray
+    ): Boolean {
+        var modified = false
+        if (!hasOverlayEnergyPanelGuard(method)) {
+            method.instructions.insert(buildOverlayEnergyPanelGuard())
+            modified = true
+        }
+
+        if (guardedLocalIndexes.isNotEmpty()) {
+            val calls = findPanelGetterStores(method, getterOwner, getterName, getterDesc)
+            if (calls.size != guardedLocalIndexes.size) {
+                return modified
+            }
+            for (index in calls.indices) {
+                val storeNode = calls[index]
+                val localIndex = guardedLocalIndexes[index]
+                if (storeNode.`var` != localIndex) {
+                    continue
+                }
+                if (hasNullGuardAfterStore(storeNode, localIndex)) {
+                    continue
+                }
+                method.instructions.insert(storeNode, buildLocalNullGuard(localIndex))
+                modified = true
+            }
+        }
+        return modified
     }
 
     private fun findGuardStart(call: MethodInsnNode): AbstractInsnNode? {
@@ -146,12 +264,135 @@ internal object VupShionModCompatPatcher {
         return athrow
     }
 
+    private fun findPanelGetterStores(
+        method: MethodNode,
+        getterOwner: String,
+        getterName: String,
+        getterDesc: String
+    ): List<org.objectweb.asm.tree.VarInsnNode> {
+        val result = ArrayList<org.objectweb.asm.tree.VarInsnNode>()
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            val call = current as? MethodInsnNode
+            if (call != null &&
+                call.opcode == Opcodes.INVOKESTATIC &&
+                call.owner == getterOwner &&
+                call.name == getterName &&
+                call.desc == getterDesc
+            ) {
+                val next = nextMeaningful(call) as? org.objectweb.asm.tree.VarInsnNode
+                if (next != null && next.opcode == Opcodes.ASTORE) {
+                    result += next
+                }
+            }
+            current = current.next
+        }
+        return result
+    }
+
+    private fun hasOverlayEnergyPanelGuard(method: MethodNode): Boolean {
+        val meaningful = meaningfulInstructions(method).take(8)
+        if (meaningful.size < 6) {
+            return false
+        }
+        val firstGetStatic = meaningful.getOrNull(0) as? org.objectweb.asm.tree.FieldInsnNode
+        val firstJump = meaningful.getOrNull(1) as? JumpInsnNode
+        val secondGetStatic = meaningful.getOrNull(3) as? org.objectweb.asm.tree.FieldInsnNode
+        val getField = meaningful.getOrNull(4) as? org.objectweb.asm.tree.FieldInsnNode
+        val secondJump = meaningful.getOrNull(5) as? JumpInsnNode
+        return firstGetStatic?.opcode == Opcodes.GETSTATIC &&
+            firstGetStatic.owner == ABSTRACT_DUNGEON_INTERNAL_NAME &&
+            firstGetStatic.name == OVERLAY_MENU_FIELD_NAME &&
+            firstGetStatic.desc == OVERLAY_MENU_FIELD_DESC &&
+            firstJump?.opcode == Opcodes.IFNONNULL &&
+            secondGetStatic?.opcode == Opcodes.GETSTATIC &&
+            secondGetStatic.owner == ABSTRACT_DUNGEON_INTERNAL_NAME &&
+            secondGetStatic.name == OVERLAY_MENU_FIELD_NAME &&
+            secondGetStatic.desc == OVERLAY_MENU_FIELD_DESC &&
+            getField?.opcode == Opcodes.GETFIELD &&
+            getField.owner == OVERLAY_MENU_INTERNAL_NAME &&
+            getField.name == ENERGY_PANEL_FIELD_NAME &&
+            getField.desc == ENERGY_PANEL_FIELD_DESC &&
+            secondJump?.opcode == Opcodes.IFNONNULL
+    }
+
+    private fun buildOverlayEnergyPanelGuard(): InsnList {
+        val overlayReady = LabelNode()
+        val continueLabel = LabelNode()
+        return InsnList().apply {
+            add(
+                org.objectweb.asm.tree.FieldInsnNode(
+                    Opcodes.GETSTATIC,
+                    ABSTRACT_DUNGEON_INTERNAL_NAME,
+                    OVERLAY_MENU_FIELD_NAME,
+                    OVERLAY_MENU_FIELD_DESC
+                )
+            )
+            add(JumpInsnNode(Opcodes.IFNONNULL, overlayReady))
+            add(org.objectweb.asm.tree.InsnNode(Opcodes.RETURN))
+            add(overlayReady)
+            add(
+                org.objectweb.asm.tree.FieldInsnNode(
+                    Opcodes.GETSTATIC,
+                    ABSTRACT_DUNGEON_INTERNAL_NAME,
+                    OVERLAY_MENU_FIELD_NAME,
+                    OVERLAY_MENU_FIELD_DESC
+                )
+            )
+            add(
+                org.objectweb.asm.tree.FieldInsnNode(
+                    Opcodes.GETFIELD,
+                    OVERLAY_MENU_INTERNAL_NAME,
+                    ENERGY_PANEL_FIELD_NAME,
+                    ENERGY_PANEL_FIELD_DESC
+                )
+            )
+            add(JumpInsnNode(Opcodes.IFNONNULL, continueLabel))
+            add(org.objectweb.asm.tree.InsnNode(Opcodes.RETURN))
+            add(continueLabel)
+        }
+    }
+
+    private fun hasNullGuardAfterStore(
+        storeNode: org.objectweb.asm.tree.VarInsnNode,
+        localIndex: Int
+    ): Boolean {
+        val loadNode = nextMeaningful(storeNode) as? org.objectweb.asm.tree.VarInsnNode ?: return false
+        if (loadNode.opcode != Opcodes.ALOAD || loadNode.`var` != localIndex) {
+            return false
+        }
+        val jumpNode = nextMeaningful(loadNode) as? JumpInsnNode ?: return false
+        return jumpNode.opcode == Opcodes.IFNONNULL
+    }
+
+    private fun buildLocalNullGuard(localIndex: Int): InsnList {
+        val continueLabel = LabelNode()
+        return InsnList().apply {
+            add(org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, localIndex))
+            add(JumpInsnNode(Opcodes.IFNONNULL, continueLabel))
+            add(org.objectweb.asm.tree.InsnNode(Opcodes.RETURN))
+            add(continueLabel)
+        }
+    }
+
     private fun previousMeaningful(node: AbstractInsnNode?): AbstractInsnNode? {
         var current = node?.previous
         while (current is LabelNode || current is LineNumberNode || current is FrameNode) {
             current = current.previous
         }
         return current
+    }
+
+    private fun meaningfulInstructions(method: MethodNode): List<AbstractInsnNode> {
+        val result = ArrayList<AbstractInsnNode>()
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            if (current !is LabelNode && current !is LineNumberNode && current !is FrameNode) {
+                result += current
+            }
+            current = current.next
+        }
+        return result
     }
 
     private fun nextMeaningful(node: AbstractInsnNode?): AbstractInsnNode? {
@@ -182,6 +423,38 @@ internal object VupShionModCompatPatcher {
         val classNode = ClassNode()
         ClassReader(classBytes).accept(classNode, 0)
         return classNode
+    }
+
+    private fun inspectSaveHelperPatchResult(classBytes: ByteArray): Pair<Boolean, Boolean> {
+        val classNode = readClassNode(classBytes)
+        val saveTenkoDataMethod = classNode.methods.firstOrNull { method ->
+            method.name == SAVE_TENKO_DATA_METHOD_NAME && method.desc == VOID_METHOD_DESC
+        }
+        val saveSleyntaPanelMethod = classNode.methods.firstOrNull { method ->
+            method.name == SAVE_SLEYNTA_PANEL_METHOD_NAME && method.desc == VOID_METHOD_DESC
+        }
+        return Pair(
+            saveTenkoDataMethod?.let { hasOverlayEnergyPanelGuard(it) && hasStoreNullGuard(it, 1) } == true,
+            saveSleyntaPanelMethod?.let {
+                hasOverlayEnergyPanelGuard(it) && hasStoreNullGuard(it, 1) && hasStoreNullGuard(it, 2)
+            } == true
+        )
+    }
+
+    private fun hasStoreNullGuard(method: MethodNode, localIndex: Int): Boolean {
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            val store = current as? org.objectweb.asm.tree.VarInsnNode
+            if (store != null &&
+                store.opcode == Opcodes.ASTORE &&
+                store.`var` == localIndex &&
+                hasNullGuardAfterStore(store, localIndex)
+            ) {
+                return true
+            }
+            current = current.next
+        }
+        return false
     }
 
     private fun writeClass(classNode: ClassNode): ByteArray {

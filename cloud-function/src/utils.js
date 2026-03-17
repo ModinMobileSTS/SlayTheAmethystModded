@@ -200,6 +200,51 @@ function summarizeInlineErrorMessage(error) {
     .slice(0, 180);
 }
 
+function summarizeErrorWithCause(error) {
+  const details = [];
+  const message = normalizeErrorMessage(error)
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (message) {
+    details.push(message);
+  }
+
+  let cause = error && error.cause;
+  let depth = 0;
+  while (cause && depth < 3) {
+    const parts = [];
+    if (cause.code) {
+      parts.push(`code=${String(cause.code).trim()}`);
+    }
+    if (cause.errno && String(cause.errno).trim() !== String(cause.code || '').trim()) {
+      parts.push(`errno=${String(cause.errno).trim()}`);
+    }
+    if (cause.hostname) {
+      parts.push(`host=${String(cause.hostname).trim()}`);
+    }
+    if (cause.address) {
+      parts.push(`address=${String(cause.address).trim()}`);
+    }
+    if (cause.port) {
+      parts.push(`port=${String(cause.port).trim()}`);
+    }
+    if (cause.message) {
+      const causeMessage = String(cause.message).replace(/\s+/g, ' ').trim();
+      if (causeMessage && !parts.includes(causeMessage)) {
+        parts.push(causeMessage);
+      }
+    }
+    if (parts.length) {
+      details.push(parts.join(', '));
+    }
+    cause = cause.cause;
+    depth += 1;
+  }
+
+  return details.join(' | ').trim();
+}
+
 function buildFeedbackProxyMarker(payload) {
   return `<!-- sts-feedback-proxy:${JSON.stringify(payload)} -->`;
 }
@@ -249,6 +294,7 @@ module.exports = {
   normalizeErrorCode,
   normalizeErrorMessage,
   summarizeInlineErrorMessage,
+  summarizeErrorWithCause,
   buildFeedbackProxyMarker,
   parseFeedbackProxyMarker,
   stripFeedbackProxyMarker

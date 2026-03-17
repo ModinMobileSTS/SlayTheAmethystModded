@@ -380,7 +380,7 @@ internal object SettingsFileService {
                 && modId == VUPSHION_MOD_ID
             ) {
                 patchedVupShionWebButtonConstructor =
-                    VupShionModCompatPatcher.patchInPlace(tempFile).patchedWebButtonConstructor
+                    VupShionModCompatPatcher.patchInPlace(tempFile).hasAnyPatch
             }
             if (replaceExistingDuplicates) {
                 ModManager.removeExistingOptionalModsForImport(

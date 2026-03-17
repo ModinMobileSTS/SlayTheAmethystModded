@@ -8,10 +8,12 @@
 #include <bytehook.h>
 #include <dlfcn.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "stdio_is.h"
 
 #define TAG __FILE_NAME__
 static _Atomic bool exit_tripped = false;
+static const char* const SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt";
 
 static int exit_code = 0;
 // bytehook returns 3 when it is already initialized in current process.
@@ -31,6 +33,7 @@ static void custom_atexit() {
         return;
     }
     exit_tripped = true;
+    unlink(SIGNAL_DUMP_FILE_NAME);
     nominal_exit(exit_code, false, NULL);
 }
 

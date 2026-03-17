@@ -10,7 +10,8 @@ const {
   base64UrlEncodeBuffer,
   normalizeSlug,
   encodePathSegment,
-  httpError
+  httpError,
+  summarizeErrorWithCause
 } = require('./utils');
 
 async function ensureDiagnosticsRelease(target, currentConfig) {
@@ -75,9 +76,10 @@ async function uploadReleaseAsset(target, currentConfig) {
   }
 
   const authorization = await getGithubInstallationAuthorization(currentConfig);
+  const requestUrl = `${uploadBaseUrl}?name=${encodeURIComponent(target.assetName)}`;
 
-  const response = await fetch(
-    `${uploadBaseUrl}?name=${encodeURIComponent(target.assetName)}`,
+  const response = await fetchWithGithubContext(
+    requestUrl,
     {
       method: 'POST',
       headers: {
@@ -89,7 +91,8 @@ async function uploadReleaseAsset(target, currentConfig) {
         'X-GitHub-Api-Version': '2022-11-28'
       },
       body: target.content
-    }
+    },
+    `GitHub asset upload request failed for ${target.owner}/${target.repo}`
   );
 
   const rawText = await response.text();
@@ -109,8 +112,11 @@ async function uploadReleaseAsset(target, currentConfig) {
 
 async function deleteReleaseAsset(target, currentConfig) {
   const authorization = await getGithubInstallationAuthorization(currentConfig);
-  const response = await fetch(
-    `https://api.github.com/repos/${encodePathSegment(target.owner)}/${encodePathSegment(target.repo)}/releases/assets/${encodePathSegment(target.assetId)}`,
+  const requestUrl =
+    `https://api.github.com/repos/${encodePathSegment(target.owner)}/${encodePathSegment(target.repo)}` +
+    `/releases/assets/${encodePathSegment(target.assetId)}`;
+  const response = await fetchWithGithubContext(
+    requestUrl,
     {
       method: 'DELETE',
       headers: {
@@ -119,7 +125,8 @@ async function deleteReleaseAsset(target, currentConfig) {
         'User-Agent': APP_NAME,
         'X-GitHub-Api-Version': '2022-11-28'
       }
-    }
+    },
+    `GitHub asset delete request failed for ${target.owner}/${target.repo}`
   );
 
   if (response.status === 404) {
@@ -133,15 +140,19 @@ async function deleteReleaseAsset(target, currentConfig) {
 
 async function downloadReleaseAssetContent(asset, currentConfig) {
   const authorization = await getGithubInstallationAuthorization(currentConfig);
-  const response = await fetch(asset.url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/octet-stream',
-      Authorization: authorization,
-      'User-Agent': APP_NAME,
-      'X-GitHub-Api-Version': '2022-11-28'
-    }
-  });
+  const response = await fetchWithGithubContext(
+    asset.url,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/octet-stream',
+        Authorization: authorization,
+        'User-Agent': APP_NAME,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    },
+    'GitHub asset download request failed'
+  );
 
   const content = Buffer.from(await response.arrayBuffer());
   if (!response.ok) {
@@ -197,17 +208,22 @@ async function githubFetchJsonAllowNotFound(path, init, currentConfig) {
 
 async function githubFetchJsonInternal(path, init, currentConfig, allowNotFound) {
   const authorization = await getGithubInstallationAuthorization(currentConfig);
-  const response = await fetch(`https://api.github.com${path}`, {
-    method: init.method,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: authorization,
-      'Content-Type': 'application/json',
-      'User-Agent': APP_NAME,
-      'X-GitHub-Api-Version': '2022-11-28'
+  const requestUrl = `https://api.github.com${path}`;
+  const response = await fetchWithGithubContext(
+    requestUrl,
+    {
+      method: init.method,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: authorization,
+        'Content-Type': 'application/json',
+        'User-Agent': APP_NAME,
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: init.body
     },
-    body: init.body
-  });
+    `GitHub API request failed for ${path}`
+  );
 
   const rawText = await response.text();
   const data = rawText ? safeJsonParse(rawText) : null;
@@ -266,17 +282,22 @@ async function getGithubInstallationToken(currentConfig) {
 }
 
 async function githubFetchJsonWithAuthorization(path, init, authorization) {
-  const response = await fetch(`https://api.github.com${path}`, {
-    method: init.method,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: authorization,
-      'Content-Type': 'application/json',
-      'User-Agent': APP_NAME,
-      'X-GitHub-Api-Version': '2022-11-28'
+  const requestUrl = `https://api.github.com${path}`;
+  const response = await fetchWithGithubContext(
+    requestUrl,
+    {
+      method: init.method,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: authorization,
+        'Content-Type': 'application/json',
+        'User-Agent': APP_NAME,
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: init.body
     },
-    body: init.body
-  });
+    `GitHub API request failed for ${path}`
+  );
 
   const rawText = await response.text();
   const data = rawText ? safeJsonParse(rawText) : null;
@@ -304,6 +325,15 @@ function createGithubAppJwt(appId, privateKey) {
   signer.end();
   const signature = signer.sign(privateKey);
   return `${signingInput}.${base64UrlEncodeBuffer(signature)}`;
+}
+
+async function fetchWithGithubContext(url, init, failureLabel) {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const detail = summarizeErrorWithCause(error);
+    throw httpError(502, `${failureLabel}: ${detail || 'fetch failed'}`);
+  }
 }
 
 function buildGithubReleaseAssetUrl(owner, repo, assetName) {

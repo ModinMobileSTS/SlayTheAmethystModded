@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
@@ -26,6 +27,8 @@ import java.util.Locale
 
 class LauncherActivity : AppCompatActivity() {
     companion object {
+        private const val GAME_RETURN_ANALYSIS_DELAY_MS = 250L
+        private const val GAME_RETURN_ANALYSIS_ATTEMPTS = 12
         const val EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode"
         const val EXTRA_DEBUG_FORCE_JVM_CRASH = "io.stamethyst.debug_force_jvm_crash"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
@@ -60,6 +63,7 @@ class LauncherActivity : AppCompatActivity() {
     private var pendingStorageMigrationDialog: AlertDialog? = null
     private var queuedImportUri: Uri? = null
     private var pendingModImportFlow = false
+    private var pendingGameReturnAnalysis: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,7 +102,7 @@ class LauncherActivity : AppCompatActivity() {
             }
         }
 
-        mainViewModel.handleIncomingIntent(this, intent)
+        handleIncomingLauncherIntent(intent)
         if (storageMigrationResult != null) {
             showStorageMigrationDialog(storageMigrationResult)
         }
@@ -109,17 +113,95 @@ class LauncherActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        mainViewModel.handleIncomingIntent(this, intent)
+        handleIncomingLauncherIntent(intent)
         maybeImportModJarFromIntent(intent)
+        maybeScheduleGameReturnAnalysis()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        maybeScheduleGameReturnAnalysis()
+    }
+
+    override fun onPause() {
+        cancelPendingGameReturnAnalysis()
+        super.onPause()
     }
 
     override fun onDestroy() {
+        cancelPendingGameReturnAnalysis()
         queuedImportUri = null
         pendingImportDialog?.dismiss()
         pendingImportDialog = null
         pendingStorageMigrationDialog?.dismiss()
         pendingStorageMigrationDialog = null
         super.onDestroy()
+    }
+
+    private fun handleIncomingLauncherIntent(incomingIntent: Intent?) {
+        mainViewModel.handleIncomingIntent(this, incomingIntent)
+    }
+
+    private fun maybeScheduleGameReturnAnalysis() {
+        if (isFinishing || isDestroyed) {
+            return
+        }
+        if (GameLaunchReturnTracker.readPendingGameLaunchStartedAt(this) == null) {
+            return
+        }
+        if (pendingGameReturnAnalysis != null) {
+            return
+        }
+        val decorView = window.decorView
+        val analysisRunnable = object : Runnable {
+            private var remainingAttempts = GAME_RETURN_ANALYSIS_ATTEMPTS
+
+            override fun run() {
+                if (pendingGameReturnAnalysis !== this) {
+                    return
+                }
+                if (isFinishing || isDestroyed) {
+                    cancelPendingGameReturnAnalysis()
+                    return
+                }
+                val currentLaunchStartedAt =
+                    GameLaunchReturnTracker.readPendingGameLaunchStartedAt(this@LauncherActivity)
+                        ?: run {
+                            cancelPendingGameReturnAnalysis()
+                            return
+                        }
+                if (GameLaunchReturnTracker.isGameProcessRunning(this@LauncherActivity)) {
+                    remainingAttempts--
+                    if (remainingAttempts <= 0) {
+                        GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                        cancelPendingGameReturnAnalysis()
+                        return
+                    }
+                    decorView.postDelayed(this, GAME_RETURN_ANALYSIS_DELAY_MS)
+                    return
+                }
+                if (mainViewModel.handleGameProcessExitAnalysis(this@LauncherActivity, intent, currentLaunchStartedAt)) {
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    cancelPendingGameReturnAnalysis()
+                    return
+                }
+                remainingAttempts--
+                if (remainingAttempts <= 0) {
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    cancelPendingGameReturnAnalysis()
+                    return
+                }
+                decorView.postDelayed(this, GAME_RETURN_ANALYSIS_DELAY_MS)
+            }
+        }
+        pendingGameReturnAnalysis = analysisRunnable
+        decorView.postDelayed(analysisRunnable, if (GameLaunchReturnTracker.isGameProcessRunning(this)) GAME_RETURN_ANALYSIS_DELAY_MS else 0L)
+    }
+
+    private fun cancelPendingGameReturnAnalysis() {
+        val pending = pendingGameReturnAnalysis ?: return
+        window.decorView.removeCallbacks(pending)
+        pendingGameReturnAnalysis = null
     }
 
     private fun maybeImportModJarFromIntent(incomingIntent: Intent?) {

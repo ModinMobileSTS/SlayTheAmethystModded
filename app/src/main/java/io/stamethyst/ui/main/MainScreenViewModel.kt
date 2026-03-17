@@ -17,9 +17,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.launch.BackExitNotice
+import io.stamethyst.backend.launch.CrashReturnPayload
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
+import io.stamethyst.backend.crash.LatestLogCrashDetector
+import io.stamethyst.backend.crash.ProcessExitInfoCapture
+import io.stamethyst.backend.crash.ProcessExitSummary
+import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.file_interactive.SafExportActivity
+import io.stamethyst.backend.launch.LauncherReturnAction
+import io.stamethyst.backend.launch.LauncherReturnActionResolver
+import io.stamethyst.backend.launch.LauncherReturnSnapshot
+import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.StsJarValidator
@@ -75,6 +84,7 @@ class MainScreenViewModel : ViewModel() {
         val optionalMods: List<ModItemUi> = emptyList(),
         val storageIssue: StorageIssueUi? = null,
         val controlsEnabled: Boolean = true,
+        val gameProcessRunning: Boolean = false,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val modFolders: List<ModFolder> = emptyList(),
         val folderAssignments: Map<String, String> = emptyMap(),
@@ -936,28 +946,89 @@ class MainScreenViewModel : ViewModel() {
             ?: host.getString(R.string.mod_import_error_unknown)
     }
 
-    fun handleIncomingIntent(host: Activity, intent: Intent?) {
-        if (intent == null) {
-            return
-        }
+    fun handleIncomingIntent(host: Activity, intent: Intent?): Boolean {
+        val safeIntent = intent ?: return false
+        maybeLaunchFromDebugExtra(host, safeIntent)
+        return false
+    }
 
-        val expectedBackExit = BackExitNotice.consumeExpectedBackExitIfRecent(host)
-        val showedCrashDialog = maybeShowCrashDialog(host, intent)
-        val showedHeapPressureDialog = if (!showedCrashDialog) {
-            maybeShowHeapPressureDialog(host, intent)
+    fun handleGameProcessExitAnalysis(
+        host: Activity,
+        intent: Intent?,
+        launchStartedAtMs: Long
+    ): Boolean {
+        val action = LauncherReturnActionResolver.resolve(
+            buildLauncherReturnSnapshot(
+                host = host,
+                intent = intent,
+                launchStartedAtMs = launchStartedAtMs
+            )
+        )
+        return when (action) {
+            LauncherReturnAction.None -> false
+            LauncherReturnAction.ExpectedBackExit -> {
+                BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                showExpectedBackExitDialog(host)
+                true
+            }
+            LauncherReturnAction.HeapPressureWarning -> {
+                BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                maybeShowHeapPressureDialog(host, intent ?: return false)
+            }
+            is LauncherReturnAction.ExplicitCrash -> {
+                BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                clearCrashExtras(intent ?: return false)
+                suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                showCrashDialog(
+                    host = host,
+                    code = action.payload.code,
+                    isSignal = action.payload.isSignal,
+                    detail = action.payload.detail,
+                    message = buildCrashDialogMessage(host, action.payload)
+                )
+                true
+            }
+            is LauncherReturnAction.ProcessExitCrash -> {
+                BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                ProcessExitInfoCapture.markLatestInterestingProcessExitInfoHandled(host, launchStartedAtMs)
+                val detail = buildProcessExitCrashDetail(host, action.summary)
+                val code = action.summary.status.takeIf { it != 0 } ?: -1
+                showCrashDialog(host, code, action.summary.isSignal, detail, host.getString(R.string.sts_crash_detail_format, detail))
+                true
+            }
+        }
+    }
+
+    private fun buildLauncherReturnSnapshot(
+        host: Activity,
+        intent: Intent?,
+        launchStartedAtMs: Long
+    ): LauncherReturnSnapshot {
+        val explicitCrash = buildExplicitCrashPayload(intent)
+        val processExitCrash = if (explicitCrash == null) {
+            ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(host, launchStartedAtMs)
         } else {
-            false
+            null
         }
-        if (showedCrashDialog || showedHeapPressureDialog) {
-            return
-        }
+        val heapPressureWarning = intent?.getBooleanExtra(LauncherActivity.EXTRA_HEAP_PRESSURE_WARNING, false) == true
+        return LauncherReturnSnapshot(
+            explicitCrash = explicitCrash,
+            processExitCrash = processExitCrash,
+            heapPressureWarning = heapPressureWarning,
+            expectedBackExitRecent = BackExitNotice.isExpectedBackExitRecent(host)
+        )
+    }
 
-        if (expectedBackExit) {
-            showExpectedBackExitDialog(host)
-            return
+    private fun buildExplicitCrashPayload(intent: Intent?): CrashReturnPayload? {
+        if (intent == null || !intent.getBooleanExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, false)) {
+            return null
         }
-
-        maybeLaunchFromDebugExtra(host, intent)
+        return CrashReturnPayload(
+            code = intent.getIntExtra(LauncherActivity.EXTRA_CRASH_CODE, -1),
+            isSignal = intent.getBooleanExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL, false),
+            detail = intent.getStringExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
+        )
     }
 
     private fun buildMainStatusSummary(
@@ -1348,28 +1419,60 @@ class MainScreenViewModel : ViewModel() {
             .show()
     }
 
-    private fun maybeShowCrashDialog(
-        host: Activity,
-        intent: Intent
-    ): Boolean {
-        if (!intent.getBooleanExtra(LauncherActivity.EXTRA_CRASH_OCCURRED, false)) {
-            return false
-        }
-
-        val code = intent.getIntExtra(LauncherActivity.EXTRA_CRASH_CODE, -1)
-        val isSignal = intent.getBooleanExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL, false)
-        val detail = intent.getStringExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
-        val message = if (isOutOfMemoryCrash(code, detail)) {
+    private fun buildCrashDialogMessage(host: Activity, payload: CrashReturnPayload): String {
+        val detail = payload.detail
+        return if (isOutOfMemoryCrash(payload.code, detail)) {
             host.getString(R.string.sts_oom_exit)
         } else if (!detail.isNullOrBlank()) {
             host.getString(R.string.sts_crash_detail_format, detail.trim())
         } else {
-            val messageId = if (isSignal) R.string.sts_signal_exit else R.string.sts_normal_exit
-            host.getString(messageId, code)
+            val messageId = if (payload.isSignal) R.string.sts_signal_exit else R.string.sts_normal_exit
+            host.getString(messageId, payload.code)
         }
+    }
 
-        clearCrashExtras(intent)
+    private fun buildProcessExitCrashDetail(host: Activity, exitSummary: ProcessExitSummary): String {
+        val latestCrash = LatestLogCrashDetector.detect(host)
+        val lastLogLine = LatestLogCrashDetector.readLastNonBlankLine(host)
+        val signalDumpSummary = SignalCrashDumpReader.readSummary(host)
+        return buildString {
+            if (latestCrash != null) {
+                append(latestCrash.detail.trim())
+                append("\n\n")
+            } else {
+                append(host.getString(R.string.sts_process_exit_detected))
+                append('\n')
+            }
+            append(host.getString(R.string.sts_process_exit_reason, exitSummary.reasonName))
+            val statusLabel = if (exitSummary.isSignal) {
+                host.getString(R.string.sts_process_exit_signal, exitSummary.status)
+            } else {
+                host.getString(R.string.sts_process_exit_status, exitSummary.status)
+            }
+            append('\n')
+            append(statusLabel)
+            if (exitSummary.description.isNotBlank()) {
+                append('\n')
+                append(host.getString(R.string.sts_process_exit_description, exitSummary.description))
+            }
+            if (!lastLogLine.isNullOrBlank()) {
+                append('\n')
+                append(host.getString(R.string.sts_process_exit_last_log, lastLogLine))
+            }
+            if (!signalDumpSummary.isNullOrBlank()) {
+                append("\n\n")
+                append(host.getString(R.string.sts_process_exit_signal_dump, signalDumpSummary))
+            }
+        }.trim()
+    }
 
+    private fun showCrashDialog(
+        host: Activity,
+        code: Int,
+        isSignal: Boolean,
+        detail: String?,
+        message: String
+    ) {
         AlertDialog.Builder(host)
             .setTitle(R.string.sts_crash_dialog_title)
             .setView(createScrollableDialogMessageView(host, message))
@@ -1378,7 +1481,6 @@ class MainScreenViewModel : ViewModel() {
             }
             .setPositiveButton(android.R.string.ok, null)
             .show()
-        return true
     }
 
     private fun maybeShowHeapPressureDialog(
@@ -1542,6 +1644,18 @@ class MainScreenViewModel : ViewModel() {
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_CODE)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
+    }
+
+    private fun suppressFutureProcessExitCrashFallback(host: Activity, launchStartedAtMs: Long) {
+        ProcessExitInfoCapture.markLatestInterestingProcessExitInfoHandled(host, launchStartedAtMs)
+        host.window.decorView.postDelayed({
+            if (!host.isFinishing && !host.isDestroyed) {
+                ProcessExitInfoCapture.markLatestInterestingProcessExitInfoHandled(
+                    host,
+                    launchStartedAtMs
+                )
+            }
+        }, 1200L)
     }
 
     private fun clearHeapPressureExtras(intent: Intent) {
@@ -1896,6 +2010,10 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun prepareAndLaunch(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
+        if (showGameAlreadyRunningToastIfNeeded(host)) {
+            refresh(host)
+            return
+        }
         ensurePendingSelectionInitialized(host)
         if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
             if (showLegacyDesktopJarReimportDialogIfNeeded(host)) {
@@ -1940,14 +2058,36 @@ class MainScreenViewModel : ViewModel() {
             return
         }
 
-        StsGameActivity.launch(
+        GameLaunchReturnTracker.markGameLaunchStarted(host)
+        try {
+            StsGameActivity.launch(
+                host,
+                launchMode,
+                targetFps,
+                backBehavior,
+                manualDismissBootOverlay,
+                forceJvmCrash
+            )
+        } catch (error: Throwable) {
+            GameLaunchReturnTracker.clearPendingGameLaunch(host)
+            Toast.makeText(
+                host,
+                "启动游戏失败：${error.message ?: error.javaClass.simpleName}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun showGameAlreadyRunningToastIfNeeded(host: Activity): Boolean {
+        if (!GameLaunchReturnTracker.isGameProcessRunning(host)) {
+            return false
+        }
+        Toast.makeText(
             host,
-            launchMode,
-            targetFps,
-            backBehavior,
-            manualDismissBootOverlay,
-            forceJvmCrash
-        )
+            host.getString(R.string.main_launch_game_already_running),
+            Toast.LENGTH_LONG
+        ).show()
+        return true
     }
 
     private fun showLegacyDesktopJarReimportDialogIfNeeded(host: Activity): Boolean {
@@ -2149,6 +2289,7 @@ class MainScreenViewModel : ViewModel() {
         val optionalMods = resolveOptionalModsWithPendingSelection()
         val optionalTotal = optionalMods.size
         val optionalEnabled = optionalMods.count { it.enabled }
+        val gameProcessRunning = GameLaunchReturnTracker.isGameProcessRunning(host)
         val statusSummary = if (storageIssue != null && uiState.statusSummary.isNotBlank()) {
             uiState.statusSummary
         } else {
@@ -2170,6 +2311,7 @@ class MainScreenViewModel : ViewModel() {
             optionalMods = optionalMods,
             storageIssue = storageIssue,
             controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation, storageIssue != null),
+            gameProcessRunning = gameProcessRunning,
             showModFileName = LauncherPreferences.readShowModFileName(host),
             modFolders = ArrayList(modFolders),
             folderAssignments = LinkedHashMap(folderAssignments),

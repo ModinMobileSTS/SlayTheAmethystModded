@@ -9,25 +9,62 @@ import io.stamethyst.config.RuntimePaths
 import java.nio.charset.StandardCharsets
 
 object ProcessExitInfoCapture {
+    private const val GAME_PROCESS_SUFFIX = ":game"
+
     @JvmStatic
     fun captureLatestProcessExitInfo(context: Context): ProcessExitSummary? {
+        return captureLatestProcessExitInfo(context, launchedAfterTimestampMs = 0L)
+    }
+
+    @JvmStatic
+    fun captureLatestProcessExitInfo(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ProcessExitSummary? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return null
         }
-        return captureLatestProcessExitInfoApi30(context)
+        return captureLatestProcessExitInfoApi30(context, launchedAfterTimestampMs)
     }
 
     @JvmStatic
     fun peekLatestInterestingProcessExitInfo(context: Context): ProcessExitSummary? {
+        return peekLatestInterestingProcessExitInfo(context, launchedAfterTimestampMs = 0L)
+    }
+
+    @JvmStatic
+    fun peekLatestInterestingProcessExitInfo(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ProcessExitSummary? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return null
         }
-        return peekLatestInterestingProcessExitInfoApi30(context)
+        return peekLatestInterestingProcessExitInfoApi30(context, launchedAfterTimestampMs)
+    }
+
+    @JvmStatic
+    fun markLatestInterestingProcessExitInfoHandled(context: Context) {
+        markLatestInterestingProcessExitInfoHandled(context, launchedAfterTimestampMs = 0L)
+    }
+
+    @JvmStatic
+    fun markLatestInterestingProcessExitInfoHandled(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return
+        }
+        markLatestInterestingProcessExitInfoHandledApi30(context, launchedAfterTimestampMs)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun captureLatestProcessExitInfoApi30(context: Context): ProcessExitSummary? {
-        val latest = resolveLatestInterestingExitInfo(context) ?: return null
+    private fun captureLatestProcessExitInfoApi30(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ProcessExitSummary? {
+        val latest = resolveLatestInterestingExitInfo(context, launchedAfterTimestampMs) ?: return null
 
         val markerValue = buildExitMarker(latest)
         if (!isNewExitMarker(context, markerValue)) {
@@ -35,24 +72,33 @@ object ProcessExitInfoCapture {
         }
         persistExitMarker(context, markerValue)
 
-        val reasonName = reasonName(latest.reason)
-        val description = latest.description?.trim().orEmpty()
-        return ProcessExitSummary(
-            pid = latest.pid,
-            reason = latest.reason,
-            reasonName = reasonName,
-            status = latest.status,
-            timestamp = latest.timestamp,
-            description = description,
-            isSignal = latest.reason == ApplicationExitInfo.REASON_SIGNALED
-        )
+        return buildSummary(latest)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun peekLatestInterestingProcessExitInfoApi30(context: Context): ProcessExitSummary? {
-        val latest = resolveLatestInterestingExitInfo(context) ?: return null
+    private fun peekLatestInterestingProcessExitInfoApi30(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ProcessExitSummary? {
+        val latest = resolveLatestInterestingExitInfo(context, launchedAfterTimestampMs) ?: return null
+        return buildSummary(latest)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun markLatestInterestingProcessExitInfoHandledApi30(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ) {
+        val latest = resolveLatestInterestingExitInfo(context, launchedAfterTimestampMs) ?: return
+        persistExitMarker(context, buildExitMarker(latest))
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun buildSummary(latest: ApplicationExitInfo): ProcessExitSummary {
+        val processName = latest.processName.trim()
         return ProcessExitSummary(
             pid = latest.pid,
+            processName = processName,
             reason = latest.reason,
             reasonName = reasonName(latest.reason),
             status = latest.status,
@@ -63,7 +109,10 @@ object ProcessExitInfoCapture {
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun resolveLatestInterestingExitInfo(context: Context): ApplicationExitInfo? {
+    private fun resolveLatestInterestingExitInfo(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ApplicationExitInfo? {
         val manager = context.getSystemService(ActivityManager::class.java) ?: return null
         val reasons = try {
             manager.getHistoricalProcessExitReasons(context.packageName, 0, 24)
@@ -73,10 +122,15 @@ object ProcessExitInfoCapture {
         if (reasons.isNullOrEmpty()) {
             return null
         }
+        val gameProcessName = context.packageName + GAME_PROCESS_SUFFIX
         return reasons
             .asSequence()
             .sortedByDescending { it.timestamp }
-            .firstOrNull { isInterestingExitReason(it) }
+            .firstOrNull { exitInfo ->
+                isInterestingExitReason(exitInfo) &&
+                    exitInfo.timestamp >= launchedAfterTimestampMs &&
+                    exitInfo.processName == gameProcessName
+            }
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

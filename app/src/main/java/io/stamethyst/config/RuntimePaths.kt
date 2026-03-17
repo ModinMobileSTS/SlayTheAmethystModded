@@ -15,6 +15,7 @@ object RuntimePaths {
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
+    private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
@@ -123,6 +124,9 @@ object RuntimePaths {
 
     @JvmStatic
     fun jvmHeapSnapshot(context: Context): File = File(stsRoot(context), JVM_HEAP_SNAPSHOT_FILE_NAME)
+
+    @JvmStatic
+    fun jvmSignalDump(context: Context): File = File(stsRoot(context), JVM_SIGNAL_DUMP_FILE_NAME)
 
     @JvmStatic
     fun jvmHistogramsDir(context: Context): File = File(stsRoot(context), JVM_HISTOGRAM_DIR_NAME)

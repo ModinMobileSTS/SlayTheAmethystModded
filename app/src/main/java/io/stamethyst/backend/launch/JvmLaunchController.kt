@@ -191,6 +191,13 @@ class JvmLaunchController(
                     }
                 } catch (_: Throwable) {
                 }
+                try {
+                    val signalDumpFile = RuntimePaths.jvmSignalDump(activity)
+                    if (signalDumpFile.exists()) {
+                        signalDumpFile.delete()
+                    }
+                } catch (_: Throwable) {
+                }
                 val latestLogFile = RuntimePaths.latestLog(activity)
                 try {
                     JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
+import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.config.RuntimePaths
 import java.io.File
@@ -113,6 +114,11 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 RuntimePaths.jvmHeapSnapshot(context),
                 "sts/jvm_logs/${RuntimePaths.jvmHeapSnapshot(context).name}"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                RuntimePaths.jvmSignalDump(context),
+                "sts/jvm_logs/${RuntimePaths.jvmSignalDump(context).name}"
             )
 
             val histogramFiles = collectHistogramFiles(context)
@@ -228,6 +234,7 @@ internal object DiagnosticsArchiveBuilder {
         crashContext: CrashArchiveContext
     ): String {
         val exitSummary = ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(context)
+        val signalDumpSummary = SignalCrashDumpReader.readSummary(context)
         return buildString {
             append("crash.code=").append(crashContext.code).append('\n')
             append("crash.isSignal=").append(crashContext.isSignal).append('\n')
@@ -245,6 +252,11 @@ internal object DiagnosticsArchiveBuilder {
                 append(exitSummary.description.ifBlank { "none" })
                 append('\n')
             }
+            append('\n')
+            append("signalDump.present=").append(!signalDumpSummary.isNullOrBlank()).append('\n')
+            append("signalDump.summary=")
+            append(signalDumpSummary ?: "none")
+            append('\n')
         }
     }
 
@@ -271,7 +283,7 @@ internal object DiagnosticsArchiveBuilder {
         file: File,
         entryName: String
     ): Int {
-        if (!file.isFile) {
+        if (!file.isFile || file.length() <= 0L) {
             return 0
         }
         writeFileToZip(zipOutput, file, entryName)

@@ -5,6 +5,13 @@
     <string name="sts_normal_exit">游戏进程异常退出，退出码 %1$d。</string>
     <string name="sts_signal_exit">游戏进程因信号 %1$d 崩溃退出。</string>
     <string name="sts_oom_exit">检测到 OutOfMemoryError（JVM 堆内存耗尽）。游戏已自动返回启动器。JVM堆大小可能过大或过小，请在设置中适当调整 JVM 堆上限。</string>
+    <string name="sts_process_exit_detected">上一次游戏会话异常结束，并且在启动器重新打开前没有成功回传崩溃报告。</string>
+    <string name="sts_process_exit_reason">Android 进程退出原因：%1$s</string>
+    <string name="sts_process_exit_status">Android 进程退出状态：%1$d</string>
+    <string name="sts_process_exit_signal">Android 退出信号：%1$d</string>
+    <string name="sts_process_exit_description">系统细节：%1$s</string>
+    <string name="sts_process_exit_last_log">最后日志：%1$s</string>
+    <string name="sts_process_exit_signal_dump">信号崩溃现场：\n%1$s</string>
     <string name="heap_pressure_dialog_title">建议提高 JVM 内存分配</string>
     <string name="heap_pressure_dialog_message_recommend">本次运行的 JVM 堆峰值约为 %1$d / %2$d MB（%3$d%%）。\n\n如果模组较多时经常出现卡顿或退出，建议在设置中适当提高 JVM 堆上限。当前为 %4$d MB，可以先尝试调到 %5$d MB。</string>
     <string name="heap_pressure_dialog_message_at_limit">本次运行的 JVM 堆峰值约为 %1$d / %2$d MB（%3$d%%）。\n\n当前堆压力已经偏高。现有 JVM 堆上限已是 %4$d MB；如果之后仍持续卡顿或退出，可能还需要适当减少启用模组或其他高占用内容。</string>
@@ -182,6 +189,7 @@
     <string name="main_get_new_mods_dialog_close">关闭</string>
     <string name="main_import_mods">导入模组</string>
     <string name="main_launch_game">启动游戏</string>
+    <string name="main_launch_game_already_running">检测到游戏进程仍在运行，请先返回当前游戏会话或等待其退出后再重新启动。</string>
     <string name="main_launch_settings_sync_failed">启动前保存启动器设置失败，请重试。</string>
     <string name="main_select_mods">选择模组</string>
     <string name="main_loading_mods">正在加载模组和依赖状态…</string>

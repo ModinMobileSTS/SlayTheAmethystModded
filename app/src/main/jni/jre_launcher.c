@@ -55,6 +55,7 @@ static const char** const_appclasspath = NULL;
 static const jboolean const_javaw = JNI_FALSE;
 static const jboolean const_cpwildcard = JNI_TRUE;
 static const jint const_ergo_class = 0; // DEFAULT_POLICY
+static const char* const SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt";
 
 typedef jint JLI_Launch_func(int argc, char ** argv, /* main argc, argc */
         int jargc, const char** jargv,          /* java args */
@@ -186,6 +187,14 @@ static void setup_signal_stack_report_file() {
     if(signal_stack_fd != -1) {
         close(signal_stack_fd);
         signal_stack_fd = -1;
+    }
+    signal_stack_fd = open(
+        SIGNAL_DUMP_FILE_NAME,
+        O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+        0600
+    );
+    if(signal_stack_fd == -1) {
+        return;
     }
 }
 

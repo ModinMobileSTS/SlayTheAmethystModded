@@ -212,7 +212,9 @@ private fun LauncherMainScreenContent(
         floatingActionButton = {
             MainBottomFixedActions(
                 importEnabled = !uiState.busy && uiState.storageIssue == null,
-                launchEnabled = !uiState.busy && uiState.storageIssue == null,
+                launchEnabled = !uiState.busy &&
+                    uiState.storageIssue == null &&
+                    !uiState.gameProcessRunning,
                 onImportMods = actions.onImportMods,
                 onLaunch = actions.onLaunch,
                 onMeasured = { actionBarHeightPx = it }

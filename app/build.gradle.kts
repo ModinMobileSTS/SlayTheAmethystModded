@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.Properties
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -40,10 +41,16 @@ val packagedLwjglBridgeJarDir: Provider<Directory> =
     layout.buildDirectory.dir("generated/callbackBridgeRuntimeJar")
 val generatedLwjglBridgeAssetDir: Provider<Directory> =
     generatedRuntimeAssetsDir.map { it.dir("components/lwjgl3") }
-val releaseStoreFilePath = providers.environmentVariable("RELEASE_STORE_FILE").orNull?.trim().orEmpty()
-val releaseStorePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").orNull?.trim().orEmpty()
-val releaseKeyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").orNull?.trim().orEmpty()
-val releaseKeyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").orNull?.trim().orEmpty()
+val localPropertiesFile = rootProject.layout.projectDirectory.file("local.properties").asFile
+val localProperties = Properties().apply {
+    if (localPropertiesFile.isFile) {
+        localPropertiesFile.reader(StandardCharsets.UTF_8).use(::load)
+    }
+}
+val releaseStoreFilePath = readReleaseSigningProperty("RELEASE_STORE_FILE", "release.storeFile")
+val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", "release.storePassword")
+val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
+val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
 val hasReleaseSigning = releaseStoreFilePath.isNotEmpty() &&
     releaseStorePassword.isNotEmpty() &&
     releaseKeyAlias.isNotEmpty() &&
@@ -57,10 +64,20 @@ if (hasReleaseSigning && !File(releaseStoreFilePath).isFile) {
 }
 if (isReleaseTaskRequested && !hasReleaseSigning) {
     throw GradleException(
-        "Missing release signing env vars. Required: " +
-            "RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD"
+        "Missing release signing configuration. Required env vars or local properties: " +
+            "RELEASE_STORE_FILE/release.storeFile, " +
+            "RELEASE_STORE_PASSWORD/release.storePassword, " +
+            "RELEASE_KEY_ALIAS/release.keyAlias, " +
+            "RELEASE_KEY_PASSWORD/release.keyPassword"
     )
 }
+
+fun readLocalProperty(name: String): String =
+    localProperties.getProperty(name)?.trim().orEmpty()
+
+fun readReleaseSigningProperty(envName: String, gradlePropertyName: String): String =
+    providers.environmentVariable(envName).orNull?.trim().orEmpty()
+        .ifEmpty { readGradleProperty(gradlePropertyName, readLocalProperty(gradlePropertyName)) }
 
 fun renderCallbackBridge(target: CallbackBridgeTarget): String {
     val templateFile = when (target) {

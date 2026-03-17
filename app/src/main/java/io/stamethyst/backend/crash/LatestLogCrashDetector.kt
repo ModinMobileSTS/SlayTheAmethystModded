@@ -58,6 +58,29 @@ object LatestLogCrashDetector {
         )
     }
 
+    @JvmStatic
+    fun readLastNonBlankLine(context: Context): String? = readLastNonBlankLine(RuntimePaths.latestLog(context))
+
+    @JvmStatic
+    fun readLastNonBlankLine(logFile: File): String? {
+        if (!logFile.isFile) {
+            return null
+        }
+        val rawText = try {
+            readTailText(logFile)
+        } catch (_: Throwable) {
+            ""
+        }
+        if (rawText.isBlank()) {
+            return null
+        }
+        return rawText.lineSequence()
+            .map { it.trimEnd() }
+            .lastOrNull { it.isNotBlank() }
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     private fun extractDetail(lines: List<String>, markerIndex: Int): String {
         val causeIndex = findCauseSection(lines, markerIndex)
         val primarySearchStart = causeIndex?.plus(1) ?: markerIndex + 1

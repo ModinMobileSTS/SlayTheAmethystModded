@@ -487,28 +487,30 @@ internal class GameSessionCoordinator(
         detail: String?,
         terminateProcessAfterReturn: Boolean
     ) {
+        val crashIntent = LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail)
         if (terminateProcessAfterReturn) {
-            val restartScheduled = LauncherReturnCoordinator.scheduleCrashLauncherRestart(
-                context = activity,
-                delayMs = CRASH_LAUNCHER_RESTART_DELAY_MS,
-                code = code,
-                isSignal = isSignal,
-                detail = detail
-            )
-            if (restartScheduled) {
-                activity.finishAffinity()
-                renderSurfaceManager.renderView.postDelayed({
-                    android.os.Process.killProcess(android.os.Process.myPid())
-                }, 180L)
-            } else {
-                activity.startActivity(
-                    LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail)
-                )
-                activity.finish()
+            val launchedImmediately = try {
+                activity.startActivity(crashIntent)
+                true
+            } catch (_: Throwable) {
+                false
             }
+            if (!launchedImmediately) {
+                LauncherReturnCoordinator.scheduleCrashLauncherRestart(
+                    context = activity,
+                    delayMs = CRASH_LAUNCHER_RESTART_DELAY_MS,
+                    code = code,
+                    isSignal = isSignal,
+                    detail = detail
+                )
+            }
+            activity.finishAffinity()
+            renderSurfaceManager.renderView.postDelayed({
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }, 220L)
             return
         }
-        activity.startActivity(LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail))
+        activity.startActivity(crashIntent)
         activity.finish()
     }
 

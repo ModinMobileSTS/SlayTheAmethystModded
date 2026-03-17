@@ -71,9 +71,12 @@ fun LauncherContent(
     val feedbackInboxState by FeedbackInboxCoordinator.uiState.collectAsState()
     val mainUiState = mainViewModel.uiState
     val settingsUiState = settingsViewModel.uiState
+    val currentRoute = navigator.backStack.lastOrNull() as? Route
     val isBlockingImportInteractionLocked =
         mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT ||
             settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT
+    val shouldShowBlockingImportWindow =
+        isBlockingImportInteractionLocked && currentRoute != Route.QuickStart
     val blockingImportBusyMessage = when {
         mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> mainUiState.busyMessage
         settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> settingsUiState.busyMessage
@@ -209,7 +212,7 @@ fun LauncherContent(
                         }
                     }
                 )
-                if (isBlockingImportInteractionLocked) {
+                if (shouldShowBlockingImportWindow) {
                     BlockingImportInteractionBlocker(
                         message = blockingImportBusyMessage
                             ?: stringResource(R.string.mod_import_busy_message)
