@@ -7,6 +7,7 @@ import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.JvmLaunchController
+import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
@@ -321,15 +322,20 @@ internal class GameSessionCoordinator(
             activity.runOnUiThread { activity.finish() }
             return
         }
-        val detail = buildString {
-            append(throwable.javaClass.simpleName)
-            val throwableMessage = throwable.message?.trim().orEmpty()
-            if (throwableMessage.isNotEmpty()) {
-                append(": ")
-                append(throwableMessage)
+        val resolvedMessage = LaunchPreparationFailureMessageResolver.resolve(activity, throwable)
+        val message = if (resolvedMessage != null) {
+            resolvedMessage
+        } else {
+            val detail = buildString {
+                append(throwable.javaClass.simpleName)
+                val throwableMessage = throwable.message?.trim().orEmpty()
+                if (throwableMessage.isNotEmpty()) {
+                    append(": ")
+                    append(throwableMessage)
+                }
             }
+            activity.progressText(R.string.startup_failure_launch_failed_with_detail, detail)
         }
-        val message = activity.progressText(R.string.startup_failure_launch_failed_with_detail, detail)
         activity.runOnUiThread { reportCrashAndReturn(-1, false, message) }
     }
 

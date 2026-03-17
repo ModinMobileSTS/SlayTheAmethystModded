@@ -16,6 +16,9 @@ import java.util.zip.ZipOutputStream
 import kotlin.math.roundToInt
 
 internal object StsDesktopJarPatcher {
+    internal const val LEGACY_FULL_CLASS_UI_PATCH_MARKER =
+        "STS_LEGACY_FULL_CLASS_UI_PATCH_REIMPORT_REQUIRED"
+
     @Throws(IOException::class)
     fun ensurePatchedStsJar(
         context: Context,
@@ -49,6 +52,12 @@ internal object StsDesktopJarPatcher {
             12,
             context.progressText(R.string.startup_progress_checking_desktop_patch_state)
         )
+        val legacyPatchedClass = findLegacyWholeClassUiPatch(stsJar, patchEntries)
+        if (legacyPatchedClass != null) {
+            throw IOException(
+                "$LEGACY_FULL_CLASS_UI_PATCH_MARKER:$legacyPatchedClass"
+            )
+        }
         if (isStsPatched(stsJar, patchEntries)) {
             reportProgress(
                 progressCallback,
@@ -223,6 +232,9 @@ internal object StsDesktopJarPatcher {
                     }
                     val actual = JarFileIoUtils.readEntryBytes(zipFile, entry)
                     if (StsUiTouchCompatPatcher.isMethodMergeClassEntry(className)) {
+                        if (actual.contentEquals(expected)) {
+                            return false
+                        }
                         val merged = StsUiTouchCompatPatcher.mergePatchedClass(
                             entryName = className,
                             targetClassBytes = actual,
@@ -240,6 +252,43 @@ internal object StsDesktopJarPatcher {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun findLegacyWholeClassUiPatch(
+        stsJar: File,
+        patchEntries: Map<String, ByteArray>
+    ): String? {
+        return try {
+            ZipFile(stsJar).use { zipFile ->
+                REQUIRED_STS_PATCH_CLASSES.firstOrNull { className ->
+                    if (!StsUiTouchCompatPatcher.isMethodMergeClassEntry(className)) {
+                        return@firstOrNull false
+                    }
+                    val entry = zipFile.getEntry(className) ?: return@firstOrNull false
+                    val expected = patchEntries[className] ?: return@firstOrNull false
+                    val actual = JarFileIoUtils.readEntryBytes(zipFile, entry)
+                    actual.contentEquals(expected)
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    internal fun extractLegacyWholeClassUiPatchClass(message: String?): String? {
+        val text = message?.trim().orEmpty()
+        if (text.isEmpty()) {
+            return null
+        }
+        val suffix = text.substringAfter(LEGACY_FULL_CLASS_UI_PATCH_MARKER, "")
+        if (suffix.isEmpty()) {
+            return null
+        }
+        return suffix
+            .substringBefore('\n')
+            .trim()
+            .removePrefix(":")
+            .ifEmpty { null }
     }
 
     private fun reportProgress(

@@ -4,8 +4,6 @@ import java.io.IOException
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.tree.ClassNode
-import org.objectweb.asm.tree.FieldNode
-import org.objectweb.asm.tree.MethodNode
 
 internal object StsUiTouchCompatPatcher {
     private data class MemberRef(
@@ -103,11 +101,10 @@ internal object StsUiTouchCompatPatcher {
             val targetIndex = targetClass.fields.indexOfFirst { field ->
                 field.name == member.name && field.desc == member.desc
             }
-            val clonedField = cloneField(donorField)
             if (targetIndex >= 0) {
-                targetClass.fields[targetIndex] = clonedField
+                targetClass.fields[targetIndex] = donorField
             } else {
-                targetClass.fields.add(clonedField)
+                targetClass.fields.add(donorField)
             }
         }
 
@@ -118,11 +115,10 @@ internal object StsUiTouchCompatPatcher {
             val targetIndex = targetClass.methods.indexOfFirst { method ->
                 method.name == member.name && method.desc == member.desc
             }
-            val clonedMethod = cloneMethod(donorMethod)
             if (targetIndex >= 0) {
-                targetClass.methods[targetIndex] = clonedMethod
+                targetClass.methods[targetIndex] = donorMethod
             } else {
-                targetClass.methods.add(clonedMethod)
+                targetClass.methods.add(donorMethod)
             }
         }
 
@@ -139,29 +135,5 @@ internal object StsUiTouchCompatPatcher {
         val classWriter = ClassWriter(0)
         classNode.accept(classWriter)
         return classWriter.toByteArray()
-    }
-
-    private fun cloneField(fieldNode: FieldNode): FieldNode {
-        val clone = FieldNode(
-            fieldNode.access,
-            fieldNode.name,
-            fieldNode.desc,
-            fieldNode.signature,
-            fieldNode.value
-        )
-        fieldNode.accept(clone)
-        return clone
-    }
-
-    private fun cloneMethod(methodNode: MethodNode): MethodNode {
-        val clone = MethodNode(
-            methodNode.access,
-            methodNode.name,
-            methodNode.desc,
-            methodNode.signature,
-            methodNode.exceptions?.toTypedArray()
-        )
-        methodNode.accept(clone)
-        return clone
     }
 }
