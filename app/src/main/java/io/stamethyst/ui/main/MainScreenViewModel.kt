@@ -29,6 +29,7 @@ import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.VupShionPatchedDialog
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -1897,6 +1898,9 @@ class MainScreenViewModel : ViewModel() {
     private fun prepareAndLaunch(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
         ensurePendingSelectionInitialized(host)
         if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
+            if (showLegacyDesktopJarReimportDialogIfNeeded(host)) {
+                return
+            }
             val optionalMods = resolveOptionalModsWithPendingSelection()
             val duplicateGroups = findEnabledDuplicateModIdGroups(optionalMods)
             if (duplicateGroups.isNotEmpty()) {
@@ -1944,6 +1948,21 @@ class MainScreenViewModel : ViewModel() {
             manualDismissBootOverlay,
             forceJvmCrash
         )
+    }
+
+    private fun showLegacyDesktopJarReimportDialogIfNeeded(host: Activity): Boolean {
+        StsDesktopJarPatcher.detectLegacyWholeClassUiPatch(
+            stsJar = RuntimePaths.importedStsJar(host),
+            patchJar = RuntimePaths.gdxPatchJar(host)
+        ) ?: return false
+        AlertDialog.Builder(host)
+            .setTitle(R.string.settings_reimport_sts_jar_title)
+            .setMessage(
+                host.getString(R.string.startup_failure_legacy_patched_desktop_jar_requires_reimport)
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+        return true
     }
 
     private fun loadModItems(host: Activity): List<ModItemUi> {

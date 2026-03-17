@@ -19,6 +19,24 @@ internal object StsDesktopJarPatcher {
     internal const val LEGACY_FULL_CLASS_UI_PATCH_MARKER =
         "STS_LEGACY_FULL_CLASS_UI_PATCH_REIMPORT_REQUIRED"
 
+    internal fun detectLegacyWholeClassUiPatch(
+        stsJar: File?,
+        patchJar: File?
+    ): String? {
+        if (stsJar == null || !stsJar.isFile || patchJar == null || !patchJar.isFile) {
+            return null
+        }
+        return try {
+            val patchEntries = loadPatchClassEntries(patchJar)
+            if (!patchEntries.keys.containsAll(REQUIRED_STS_PATCH_CLASSES)) {
+                return null
+            }
+            findLegacyWholeClassUiPatch(stsJar, patchEntries)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     @Throws(IOException::class)
     fun ensurePatchedStsJar(
         context: Context,
