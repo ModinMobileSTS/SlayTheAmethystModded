@@ -19,6 +19,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val frierenModCompatEnabled: Boolean = true,
         val downfallImportCompatEnabled: Boolean = true,
         val vupShionModCompatEnabled: Boolean = true,
+        val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true
@@ -37,6 +38,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
             downfallImportCompatEnabled = CompatibilitySettings.isDownfallImportCompatEnabled(host),
             vupShionModCompatEnabled = CompatibilitySettings.isVupShionModCompatEnabled(host),
+            fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host)
@@ -89,6 +91,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setVupShionModCompatEnabled(host, enabled)
         uiState = uiState.copy(vupShionModCompatEnabled = enabled)
+    }
+
+    fun onFragmentShaderPrecisionCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setFragmentShaderPrecisionCompatEnabled(host, enabled)
+        uiState = uiState.copy(fragmentShaderPrecisionCompatEnabled = enabled)
     }
 
     fun onRuntimeTextureCompatToggled(host: Context, enabled: Boolean) {

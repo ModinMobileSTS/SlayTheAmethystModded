@@ -101,6 +101,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         ),
                         "showGamePerformanceOverlay" to formatBoolean(
                             LauncherConfig.isGamePerformanceOverlayEnabled(context)
+                        ),
+                        "sustainedPerformanceModeEnabled" to formatBoolean(
+                            LauncherConfig.isSustainedPerformanceModeEnabled(context)
                         )
                     )
                 ),
@@ -193,6 +196,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         ),
                         "vupShionModCompat" to formatBoolean(
                             CompatibilitySettings.isVupShionModCompatEnabled(context)
+                        ),
+                        "fragmentShaderPrecisionCompat" to formatBoolean(
+                            CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(context)
                         ),
                         "runtimeTextureCompat" to formatBoolean(
                             CompatibilitySettings.isRuntimeTextureCompatEnabled(context)

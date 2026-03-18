@@ -32,6 +32,8 @@
     <string name="compat_downfall_import_compat_desc">开启后，导入 downfall 时会自动修补商人的 drawX 站位，使其改为基于 Settings.WIDTH/xScale 计算，并把 Hexaghost MyBody 渲染里的 270/256 偏移改为随 Settings.scale 缩放，用于修复手机宽屏下的站位和材质偏移。关闭后不会修补新导入的 Downfall。</string>
     <string name="compat_vupshion_mod_compat_title">紫音模组兼容</string>
     <string name="compat_vupshion_mod_compat_desc">开启后，导入 vupshionmod 时会自动修补 VUPShionMod/ui/WebButton，移除其中会拦住主菜单背景初始化的 Steam 创意工坊订阅校验。关闭后不会修补新导入的 VUPShionMod。</string>
+    <string name="compat_fragment_shader_precision_compat_title">Fragment Shader 默认 Precision 兼容补丁</string>
+    <string name="compat_fragment_shader_precision_compat_desc">开启后，在 GLES/ANGLE 路径下运行的 fragment shader 会自动补上缺失的默认 precision 声明，用于减少 “no default precision defined for variable” 这类编译错误。这是运行时兼容开关，下次启动游戏后生效。</string>
     <string name="compat_runtime_texture_compat_title">运行时纹理兼容补丁</string>
     <string name="compat_runtime_texture_compat_desc">用于修复运行时动态创建纹理导致的黑块问题，如果出现材质丢失的问题，可以考虑打开。优点：可继续修复导入期未覆盖的黑块问题。缺点：会增加启动阶段 managed texture 扫描带来的 CPU/GPU 开销，且运行时 Linear/Clamp 兜底可能让部分纹理变糊。默认关闭以优先性能。</string>
     <string name="compat_force_linear_mipmap_filter_title">强制线性 mipmap 过滤</string>

@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
+import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -21,6 +22,7 @@ import io.stamethyst.backend.render.MobileGluesFsr1QualityPreset
 import io.stamethyst.backend.render.MobileGluesGlslCacheSizePreset
 import io.stamethyst.backend.render.MobileGluesMultidrawMode
 import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
+import io.stamethyst.backend.render.MobileGluesPreset
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererBackendResolver
@@ -159,6 +161,10 @@ class SettingsScreenViewModel : ViewModel() {
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
+        val sustainedPerformanceModeEnabled: Boolean =
+            LauncherPreferences.DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED,
+        val systemGameModeDisplayName: String = "不可用",
+        val systemGameModeDescription: String = "当前还没有读取系统 Game Mode 状态。",
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
         val logcatCaptureEnabled: Boolean = LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
@@ -506,6 +512,9 @@ class SettingsScreenViewModel : ViewModel() {
                 val avoidDisplayCutout = readDisplayCutoutAvoidanceSelection(host)
                 val cropScreenBottom = readScreenBottomCropSelection(host)
                 val showGamePerformanceOverlay = readGamePerformanceOverlaySelection(host)
+                val sustainedPerformanceModeEnabled =
+                    readSustainedPerformanceModeSelection(host)
+                val systemGameMode = AndroidGameModeSupport.readCurrentMode(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
                 val logcatCaptureEnabled = readLogcatCaptureSelection(host)
                 val jvmLogcatMirrorEnabled = readJvmLogcatMirrorSelection(host)
@@ -614,6 +623,12 @@ class SettingsScreenViewModel : ViewModel() {
                         .append(if (cropScreenBottom) "ON" else "OFF")
                     append("\nPerformance overlay: ")
                         .append(if (showGamePerformanceOverlay) "ON" else "OFF")
+                    append("\nSustained performance mode: ")
+                        .append(if (sustainedPerformanceModeEnabled) "ON" else "OFF")
+                    append("\nSystem Game Mode: ")
+                        .append(systemGameMode.displayName)
+                    append("\nSystem Game Mode detail: ")
+                        .append(systemGameMode.description)
                     append("\nManual dismiss boot overlay: ")
                         .append(if (manualDismissBootOverlay) "ON" else "OFF")
                     append("\n")
@@ -704,6 +719,9 @@ class SettingsScreenViewModel : ViewModel() {
                         avoidDisplayCutout = avoidDisplayCutout,
                         cropScreenBottom = cropScreenBottom,
                         showGamePerformanceOverlay = showGamePerformanceOverlay,
+                        sustainedPerformanceModeEnabled = sustainedPerformanceModeEnabled,
+                        systemGameModeDisplayName = systemGameMode.displayName,
+                        systemGameModeDescription = systemGameMode.description,
                         lwjglDebugEnabled = lwjglDebugEnabled,
                         logcatCaptureEnabled = logcatCaptureEnabled,
                         jvmLogcatMirrorEnabled = jvmLogcatMirrorEnabled,
@@ -1044,6 +1062,41 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onApplyMobileGluesPreset(host: Activity, preset: MobileGluesPreset) {
+        if (uiState.busy) {
+            return
+        }
+        applyResolvedMobileGluesSettings(
+            host = host,
+            settings = preset.settings,
+            failureMessage = "Failed to apply MobileGlues preset"
+        )
+        refreshStatus(host)
+    }
+
+    fun onResetMobileGluesSettings(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        applyResolvedMobileGluesSettings(
+            host = host,
+            settings = MobileGluesSettings(
+                anglePolicy = LauncherPreferences.DEFAULT_MOBILEGLUES_ANGLE_POLICY,
+                noErrorPolicy = LauncherPreferences.DEFAULT_MOBILEGLUES_NO_ERROR_POLICY,
+                multidrawMode = LauncherPreferences.DEFAULT_MOBILEGLUES_MULTIDRAW_MODE,
+                extComputeShaderEnabled = LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED,
+                extTimerQueryEnabled = LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED,
+                extDirectStateAccessEnabled = LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED,
+                glslCacheSizePreset = LauncherPreferences.DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET,
+                angleDepthClearFixMode = LauncherPreferences.DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE,
+                customGlVersion = LauncherPreferences.DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION,
+                fsr1QualityPreset = LauncherPreferences.DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET
+            ),
+            failureMessage = "Failed to reset MobileGlues settings"
+        )
+        refreshStatus(host)
+    }
+
     fun onJvmHeapMaxSelected(host: Activity, heapMaxMb: Int) {
         if (uiState.busy) {
             return
@@ -1250,6 +1303,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(showGamePerformanceOverlay = enabled)
         saveGamePerformanceOverlaySelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onSustainedPerformanceModeChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(sustainedPerformanceModeEnabled = enabled)
+        saveSustainedPerformanceModeSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -2209,6 +2271,35 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun applyResolvedMobileGluesSettings(
+        host: Activity,
+        settings: MobileGluesSettings,
+        failureMessage: String
+    ) {
+        uiState = uiState.copy(
+            mobileGluesAnglePolicy = settings.anglePolicy,
+            mobileGluesNoErrorPolicy = settings.noErrorPolicy,
+            mobileGluesMultidrawMode = settings.multidrawMode,
+            mobileGluesExtComputeShaderEnabled = settings.extComputeShaderEnabled,
+            mobileGluesExtTimerQueryEnabled = settings.extTimerQueryEnabled,
+            mobileGluesExtDirectStateAccessEnabled = settings.extDirectStateAccessEnabled,
+            mobileGluesGlslCacheSizePreset = settings.glslCacheSizePreset,
+            mobileGluesAngleDepthClearFixMode = settings.angleDepthClearFixMode,
+            mobileGluesCustomGlVersion = settings.customGlVersion,
+            mobileGluesFsr1QualityPreset = settings.fsr1QualityPreset
+        )
+        try {
+            LauncherPreferences.saveMobileGluesSettings(host, settings)
+            MobileGluesConfigFile.syncFromLauncherPreferences(host)
+        } catch (error: IOException) {
+            Toast.makeText(
+                host,
+                "$failureMessage: ${error.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private fun readPlayerNameSelection(host: Activity): String {
         return LauncherPreferences.readPlayerName(host)
     }
@@ -2277,6 +2368,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveGamePerformanceOverlaySelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setGamePerformanceOverlayEnabled(host, enabled)
+    }
+
+    private fun readSustainedPerformanceModeSelection(host: Activity): Boolean {
+        return LauncherPreferences.isSustainedPerformanceModeEnabled(host)
+    }
+
+    private fun saveSustainedPerformanceModeSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setSustainedPerformanceModeEnabled(host, enabled)
     }
 
     private fun readTouchscreenEnabledSelection(host: Activity): Boolean {

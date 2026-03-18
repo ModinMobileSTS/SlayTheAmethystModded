@@ -88,7 +88,10 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        DisplayPerformanceController.applySustainedPerformanceMode(this, true)
+        DisplayPerformanceController.applySustainedPerformanceMode(
+            this,
+            sessionConfig.sustainedPerformanceModeEnabled
+        )
         renderSurfaceManager.applyImmersiveMode()
         inputHandler.resetGamepadState()
         renderSurfaceManager.onForegroundChanged(true)

@@ -3,6 +3,7 @@ package io.stamethyst.gdx;
 import java.util.regex.Pattern;
 
 public final class FragmentShaderCompat {
+    private static final String ENABLED_PROP = "amethyst.gdx.fragment_shader_precision_compat";
     private static final Pattern FLOAT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;");
     private static final Pattern INT_PRECISION_PATTERN =
@@ -13,6 +14,9 @@ public final class FragmentShaderCompat {
 
     public static String ensureDefaultPrecision(String source) {
         if (source == null || source.isEmpty()) {
+            return source;
+        }
+        if (!isCompatEnabled()) {
             return source;
         }
 
@@ -147,5 +151,20 @@ public final class FragmentShaderCompat {
             return "\r\n";
         }
         return "\n";
+    }
+
+    private static boolean isCompatEnabled() {
+        String configured = System.getProperty(ENABLED_PROP);
+        if (configured == null) {
+            return true;
+        }
+        String normalized = configured.trim();
+        if (normalized.isEmpty()) {
+            return true;
+        }
+        if ("0".equals(normalized) || "false".equalsIgnoreCase(normalized)) {
+            return false;
+        }
+        return true;
     }
 }

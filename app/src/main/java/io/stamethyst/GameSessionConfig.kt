@@ -3,6 +3,8 @@ package io.stamethyst
 import android.content.Context
 import android.content.Intent
 import io.stamethyst.backend.launch.StsLaunchSpec
+import io.stamethyst.backend.render.AndroidGameModeSnapshot
+import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.config.BackBehavior
@@ -11,6 +13,7 @@ import io.stamethyst.config.RenderSurfaceBackend
 
 internal data class GameSessionConfig(
     val renderScale: Float,
+    val configuredTargetFps: Int,
     val targetFps: Int,
     val launchMode: String,
     val backBehavior: BackBehavior,
@@ -25,7 +28,9 @@ internal data class GameSessionConfig(
     val requestedRenderSurfaceBackend: RenderSurfaceBackend,
     val rendererDecision: RendererDecision,
     val avoidDisplayCutout: Boolean,
-    val cropScreenBottom: Boolean
+    val cropScreenBottom: Boolean,
+    val sustainedPerformanceModeEnabled: Boolean,
+    val systemGameMode: AndroidGameModeSnapshot
 ) {
     val renderSurfaceBackend: RenderSurfaceBackend
         get() = rendererDecision.effectiveSurfaceBackend
@@ -48,14 +53,20 @@ internal data class GameSessionConfig(
                 selectionMode = LauncherConfig.readRendererSelectionMode(context),
                 manualBackend = LauncherConfig.readManualRendererBackend(context)
             )
+            val configuredTargetFps = LauncherConfig.normalizeTargetFps(
+                intent.getIntExtra(
+                    StsGameActivity.EXTRA_TARGET_FPS,
+                    LauncherConfig.DEFAULT_TARGET_FPS
+                )
+            )
+            val systemGameMode = AndroidGameModeSupport.readCurrentMode(context)
 
             return GameSessionConfig(
                 renderScale = LauncherConfig.readRenderScale(context),
-                targetFps = LauncherConfig.normalizeTargetFps(
-                    intent.getIntExtra(
-                        StsGameActivity.EXTRA_TARGET_FPS,
-                        LauncherConfig.DEFAULT_TARGET_FPS
-                    )
+                configuredTargetFps = configuredTargetFps,
+                targetFps = AndroidGameModeSupport.resolveTargetFps(
+                    requestedTargetFps = configuredTargetFps,
+                    snapshot = systemGameMode
                 ),
                 launchMode = launchMode,
                 backBehavior = parseBackBehavior(intent),
@@ -73,7 +84,10 @@ internal data class GameSessionConfig(
                 requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,
                 rendererDecision = rendererDecision,
                 avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context),
-                cropScreenBottom = LauncherConfig.isScreenBottomCropEnabled(context)
+                cropScreenBottom = LauncherConfig.isScreenBottomCropEnabled(context),
+                sustainedPerformanceModeEnabled =
+                    LauncherConfig.isSustainedPerformanceModeEnabled(context),
+                systemGameMode = systemGameMode
             )
         }
 

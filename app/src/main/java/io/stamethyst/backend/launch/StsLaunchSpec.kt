@@ -217,6 +217,14 @@ object StsLaunchSpec {
             "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
         )
+        args.add(
+            "-Damethyst.gdx.fragment_shader_precision_compat=" +
+                if (CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
         val bridgeDelegateMainClass = if (isMtsLaunchMode(launchMode)) {
             "com.evacipated.cardcrawl.modthespire.Loader"
         } else {

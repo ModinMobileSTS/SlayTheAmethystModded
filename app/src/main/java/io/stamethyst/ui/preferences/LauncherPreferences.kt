@@ -75,6 +75,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_CROP_SCREEN_BOTTOM
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
+    val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED
     val DEFAULT_LWJGL_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_LWJGL_DEBUG
     val DEFAULT_LOGCAT_CAPTURE_ENABLED: Boolean
@@ -255,6 +257,14 @@ object LauncherPreferences {
 
     fun setGamePerformanceOverlayEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setGamePerformanceOverlayEnabled(context, enabled)
+    }
+
+    fun isSustainedPerformanceModeEnabled(context: Context): Boolean {
+        return LauncherConfig.isSustainedPerformanceModeEnabled(context)
+    }
+
+    fun setSustainedPerformanceModeEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSustainedPerformanceModeEnabled(context, enabled)
     }
 
     fun isLwjglDebugEnabled(context: Context): Boolean {

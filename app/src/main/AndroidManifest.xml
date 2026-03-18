@@ -23,6 +23,16 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="30">
 
+        <meta-data
+            android:name="android.game_mode_config"
+            android:resource="@xml/game_mode_config" />
+        <meta-data
+            android:name="com.android.app.gamemode.performance.enabled"
+            android:value="true" />
+        <meta-data
+            android:name="com.android.app.gamemode.battery.enabled"
+            android:value="true" />
+
         <activity
             android:name="io.stamethyst.StsGameActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"

@@ -56,6 +56,9 @@ fun LauncherCompatibilityScreen(
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
         onDownfallImportCompatToggled = { enabled -> viewModel.onDownfallImportCompatToggled(context, enabled) },
         onVupShionModCompatToggled = { enabled -> viewModel.onVupShionModCompatToggled(context, enabled) },
+        onFragmentShaderPrecisionCompatToggled = { enabled ->
+            viewModel.onFragmentShaderPrecisionCompatToggled(context, enabled)
+        },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
@@ -77,6 +80,7 @@ private fun LauncherCompatibilityScreenPreview() {
             frierenModCompatEnabled = true,
             downfallImportCompatEnabled = true,
             vupShionModCompatEnabled = true,
+            fragmentShaderPrecisionCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true
@@ -96,6 +100,7 @@ private fun LauncherCompatibilityScreenContent(
     onFrierenModCompatToggled: (Boolean) -> Unit = {},
     onDownfallImportCompatToggled: (Boolean) -> Unit = {},
     onVupShionModCompatToggled: (Boolean) -> Unit = {},
+    onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -176,6 +181,14 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.vupShionModCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onVupShionModCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_fragment_shader_precision_compat_title),
+                description = stringResource(R.string.compat_fragment_shader_precision_compat_desc),
+                checked = uiState.fragmentShaderPrecisionCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onFragmentShaderPrecisionCompatToggled
             )
 
             CompatibilitySwitchRow(

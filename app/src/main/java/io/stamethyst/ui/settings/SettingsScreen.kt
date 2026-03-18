@@ -155,6 +155,9 @@ fun LauncherSettingsScreen(
         onGamePerformanceOverlayChanged = { enabled ->
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
         },
+        onSustainedPerformanceModeChanged = { enabled ->
+            viewModel.onSustainedPerformanceModeChanged(activity, enabled)
+        },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
         onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
         onJvmLogcatMirrorChanged = { enabled -> viewModel.onJvmLogcatMirrorChanged(activity, enabled) },
@@ -208,6 +211,7 @@ private fun LauncherSettingsScreenPreview() {
             avoidDisplayCutout = false,
             cropScreenBottom = false,
             showGamePerformanceOverlay = false,
+            sustainedPerformanceModeEnabled = false,
             lwjglDebugEnabled = false,
             logcatCaptureEnabled = true,
             jvmLogcatMirrorEnabled = false,
@@ -216,7 +220,7 @@ private fun LauncherSettingsScreenPreview() {
             touchscreenEnabled = true,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
-            targetFpsOptions = listOf(60, 90, 120, 240),
+            targetFpsOptions = listOf(60, 120, 240),
             updateStatusSummary = "最近检查：2026-03-09 11:20\n远端版本：1.0.6-hotfix1\n结果：发现新版本\n下载源：gh-proxy.com",
         ),
         feedbackSubmissionNotice = FeedbackSubmissionNotice(
@@ -262,6 +266,7 @@ private fun LauncherSettingsScreenContent(
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
     onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
+    onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
@@ -356,6 +361,7 @@ private fun LauncherSettingsScreenContent(
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
                         onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
                         onJvmStringDeduplicationChanged = onJvmStringDeduplicationChanged,
+                        onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                     )
                 }
             }
@@ -847,8 +853,10 @@ private fun SettingsRenderSection(
     onJvmHeapMaxSelected: (Int) -> Unit,
     onJvmCompressedPointersChanged: (Boolean) -> Unit,
     onJvmStringDeduplicationChanged: (Boolean) -> Unit,
+    onSustainedPerformanceModeChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
+    var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
@@ -905,6 +913,30 @@ private fun SettingsRenderSection(
         )
     }
 
+    SwitchSettingRow(
+        checked = uiState.sustainedPerformanceModeEnabled,
+        enabled = !uiState.busy,
+        enabledText = "持续性能模式：启用",
+        disabledText = "持续性能模式：禁用",
+        description = "仅在设备支持时生效。启用后会在游戏前台请求 Sustained Performance Mode，通常更偏向长时间稳定，而不是更高瞬时峰值；默认关闭。修改后下次进入游戏生效。",
+        onCheckedChange = onSustainedPerformanceModeChanged
+    )
+
+    SettingsActionListItem(
+        title = "系统 Game Mode",
+        supportingText = buildString {
+            append("当前：")
+            append(uiState.systemGameModeDisplayName)
+            append("  |  已声明支持：Performance / Battery")
+        },
+        enabled = !uiState.busy,
+        onClick = { showGameModeDialog = true }
+    )
+    Text(
+        text = uiState.systemGameModeDescription,
+        style = MaterialTheme.typography.bodySmall
+    )
+
     Text(text = "图形后端", style = MaterialTheme.typography.bodyMedium)
     SwitchSettingRow(
         checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
@@ -958,19 +990,21 @@ private fun SettingsRenderSection(
         )
     }
 
-    SettingsActionListItem(
-        title = "MobileGlues 专项设置",
-        supportingText = buildString {
-            append("ANGLE: ")
-            append(uiState.mobileGluesAnglePolicy.displayName)
-            append("  |  Multidraw: ")
-            append(uiState.mobileGluesMultidrawMode.displayName)
-            append("  |  Custom GL: ")
-            append(uiState.mobileGluesCustomGlVersion.displayName)
-        },
-        enabled = !uiState.busy,
-        onClick = onOpenMobileGluesSettings
-    )
+    if (uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+        SettingsActionListItem(
+            title = "MobileGlues 专项设置",
+            supportingText = buildString {
+                append("ANGLE: ")
+                append(uiState.mobileGluesAnglePolicy.displayName)
+                append("  |  Multidraw: ")
+                append(uiState.mobileGluesMultidrawMode.displayName)
+                append("  |  Custom GL: ")
+                append(uiState.mobileGluesCustomGlVersion.displayName)
+            },
+            enabled = !uiState.busy,
+            onClick = onOpenMobileGluesSettings
+        )
+    }
 
     Text(
         text = stringResource(R.string.settings_render_surface_backend_title),
@@ -1043,6 +1077,34 @@ private fun SettingsRenderSection(
         description = "控制 64 位 G1GC 是否启用字符串去重。启用后可能降低堆占用，但会带来额外的 GC CPU 开销。",
         onCheckedChange = onJvmStringDeduplicationChanged
     )
+
+    if (showGameModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showGameModeDialog = false },
+            title = { Text("系统 Game Mode") },
+            text = {
+                Text(
+                    text = buildString {
+                        append("当前模式：")
+                        append(uiState.systemGameModeDisplayName)
+                        append("\n\n")
+                        append(uiState.systemGameModeDescription)
+                        append("\n\n")
+                        append("这个模式由系统 Game Dashboard 或厂商游戏助手控制，启动器不能直接改系统模式。")
+                        append("\n\n")
+                        append("如果你的设备支持游戏面板，请在游戏运行时从系统面板中切换；不同厂商也可能叫“游戏助手”“游戏空间”等。")
+                        append("\n\n")
+                        append("当前启动器已向系统声明支持 Performance / Battery 两种模式。其中 Battery 模式下，启动器会把实际目标 FPS 上限收敛到 60。")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showGameModeDialog = false }) {
+                    Text("我知道了")
+                }
+            }
+        )
+    }
 }
 
 private fun renderScaleToStep(value: Float): Int {

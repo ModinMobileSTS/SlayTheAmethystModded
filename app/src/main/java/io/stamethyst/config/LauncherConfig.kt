@@ -72,6 +72,8 @@ object LauncherConfig {
     private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
+    private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
+        "sustained_performance_mode_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
     private const val PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED =
@@ -82,6 +84,8 @@ object LauncherConfig {
     private const val PREF_KEY_FRIEREN_MOD_COMPAT = "compat_frieren_mod_compat"
     private const val PREF_KEY_DOWNFALL_IMPORT_COMPAT = "compat_downfall_import_compat"
     private const val PREF_KEY_VUPSHION_MOD_COMPAT = "compat_vupshion_mod_compat"
+    private const val PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT =
+        "compat_fragment_shader_precision_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
@@ -106,7 +110,7 @@ object LauncherConfig {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_TARGET_FPS = 120
-    val TARGET_FPS_OPTIONS = intArrayOf(60, 90, 120, 240)
+    val TARGET_FPS_OPTIONS = intArrayOf(60, 120, 240)
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW
     val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode = RendererSelectionMode.AUTO
     val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend =
@@ -139,6 +143,7 @@ object LauncherConfig {
     const val DEFAULT_AVOID_DISPLAY_CUTOUT = false
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
+    const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = false
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_LOGCAT_CAPTURE_ENABLED = true
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
@@ -153,6 +158,7 @@ object LauncherConfig {
     const val JVM_HEAP_STEP_MB = 128
     const val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED = false
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
+    const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
 
     const val DEFAULT_RENDER_SCALE = 1.0f
     const val MIN_RENDER_SCALE = 0.50f
@@ -576,6 +582,19 @@ object LauncherConfig {
         }
     }
 
+    fun isSustainedPerformanceModeEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED,
+            DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED
+        )
+    }
+
+    fun setSustainedPerformanceModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED, enabled)
+        }
+    }
+
     fun isJvmCompressedPointersEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
             PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED,
@@ -659,6 +678,19 @@ object LauncherConfig {
     fun setVupShionModCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_VUPSHION_MOD_COMPAT, enabled)
+        }
+    }
+
+    fun isFragmentShaderPrecisionCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT,
+            DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED
+        )
+    }
+
+    fun setFragmentShaderPrecisionCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT, enabled)
         }
     }
 

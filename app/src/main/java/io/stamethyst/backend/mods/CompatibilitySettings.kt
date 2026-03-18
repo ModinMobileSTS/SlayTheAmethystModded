@@ -65,6 +65,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isFragmentShaderPrecisionCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isFragmentShaderPrecisionCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setFragmentShaderPrecisionCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setFragmentShaderPrecisionCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isRuntimeTextureCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isRuntimeTextureCompatEnabled(context)
     }

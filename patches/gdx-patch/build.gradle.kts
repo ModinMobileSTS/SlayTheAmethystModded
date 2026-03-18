@@ -16,6 +16,7 @@ val appProjectRef = rootProject.project(":app")
 dependencies {
     compileOnly(files(desktopJar()))
     compileOnly(files(appProjectRef.layout.buildDirectory.file("generated/callbackBridgeRuntimeJar/lwjgl-glfw-classes.jar")))
+    testImplementation(libs.junit4)
 }
 
 tasks.compileJava {
