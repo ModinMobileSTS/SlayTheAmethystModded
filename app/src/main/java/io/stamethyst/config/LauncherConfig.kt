@@ -3,6 +3,14 @@ package io.stamethyst.config
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import io.stamethyst.backend.render.MobileGluesAnglePolicy
+import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
+import io.stamethyst.backend.render.MobileGluesCustomGlVersion
+import io.stamethyst.backend.render.MobileGluesFsr1QualityPreset
+import io.stamethyst.backend.render.MobileGluesGlslCacheSizePreset
+import io.stamethyst.backend.render.MobileGluesMultidrawMode
+import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
+import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.RuntimePaths
@@ -39,6 +47,23 @@ object LauncherConfig {
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_RENDERER_SELECTION_MODE = "renderer_selection_mode"
     private const val PREF_KEY_MANUAL_RENDERER_BACKEND = "manual_renderer_backend"
+    private const val PREF_KEY_MOBILEGLUES_ANGLE_POLICY = "mobileglues_angle_policy"
+    private const val PREF_KEY_MOBILEGLUES_NO_ERROR_POLICY = "mobileglues_no_error_policy"
+    private const val PREF_KEY_MOBILEGLUES_MULTIDRAW_MODE = "mobileglues_multidraw_mode"
+    private const val PREF_KEY_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED =
+        "mobileglues_ext_compute_shader_enabled"
+    private const val LEGACY_PREF_KEY_MOBILEGLUES_EXT_GL43_ENABLED =
+        "mobileglues_ext_gl43_enabled"
+    private const val PREF_KEY_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED =
+        "mobileglues_ext_timer_query_enabled"
+    private const val PREF_KEY_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED =
+        "mobileglues_ext_direct_state_access_enabled"
+    private const val PREF_KEY_MOBILEGLUES_GLSL_CACHE_SIZE_MB = "mobileglues_glsl_cache_size_mb"
+    private const val PREF_KEY_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE =
+        "mobileglues_angle_depth_clear_fix_mode"
+    private const val PREF_KEY_MOBILEGLUES_CUSTOM_GL_VERSION = "mobileglues_custom_gl_version"
+    private const val PREF_KEY_MOBILEGLUES_FSR1_QUALITY_PRESET =
+        "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
@@ -85,6 +110,23 @@ object LauncherConfig {
     val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode = RendererSelectionMode.AUTO
     val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend =
         RendererBackend.OPENGL_ES_MOBILEGLUES
+    val DEFAULT_MOBILEGLUES_ANGLE_POLICY: MobileGluesAnglePolicy =
+        MobileGluesAnglePolicy.PREFER_ENABLED
+    val DEFAULT_MOBILEGLUES_NO_ERROR_POLICY: MobileGluesNoErrorPolicy =
+        MobileGluesNoErrorPolicy.AUTO
+    val DEFAULT_MOBILEGLUES_MULTIDRAW_MODE: MobileGluesMultidrawMode =
+        MobileGluesMultidrawMode.AUTO
+    const val DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED = false
+    const val DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED = false
+    const val DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED = false
+    val DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET: MobileGluesGlslCacheSizePreset =
+        MobileGluesGlslCacheSizePreset.DISABLED
+    val DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE: MobileGluesAngleDepthClearFixMode =
+        MobileGluesAngleDepthClearFixMode.DISABLED
+    val DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION: MobileGluesCustomGlVersion =
+        MobileGluesCustomGlVersion.DEFAULT
+    val DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET: MobileGluesFsr1QualityPreset =
+        MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED = true
@@ -286,6 +328,113 @@ object LauncherConfig {
         }
     }
 
+    fun readMobileGluesAnglePolicy(context: Context): MobileGluesAnglePolicy {
+        val stored = prefs(context).getInt(
+            PREF_KEY_MOBILEGLUES_ANGLE_POLICY,
+            DEFAULT_MOBILEGLUES_ANGLE_POLICY.persistedValue
+        )
+        return MobileGluesAnglePolicy.fromPersistedValue(stored)
+            ?: DEFAULT_MOBILEGLUES_ANGLE_POLICY
+    }
+
+    fun saveMobileGluesAnglePolicy(context: Context, policy: MobileGluesAnglePolicy) {
+        prefs(context).edit {
+            putInt(PREF_KEY_MOBILEGLUES_ANGLE_POLICY, policy.persistedValue)
+        }
+    }
+
+    fun readMobileGluesSettings(context: Context): MobileGluesSettings {
+        val preferences = prefs(context)
+        return MobileGluesSettings(
+            anglePolicy = readMobileGluesAnglePolicy(context),
+            noErrorPolicy = MobileGluesNoErrorPolicy.fromPersistedValue(
+                preferences.getInt(
+                    PREF_KEY_MOBILEGLUES_NO_ERROR_POLICY,
+                    DEFAULT_MOBILEGLUES_NO_ERROR_POLICY.persistedValue
+                )
+            ) ?: DEFAULT_MOBILEGLUES_NO_ERROR_POLICY,
+            multidrawMode = MobileGluesMultidrawMode.fromPersistedValue(
+                preferences.getInt(
+                    PREF_KEY_MOBILEGLUES_MULTIDRAW_MODE,
+                    DEFAULT_MOBILEGLUES_MULTIDRAW_MODE.persistedValue
+                )
+            ) ?: DEFAULT_MOBILEGLUES_MULTIDRAW_MODE,
+            extComputeShaderEnabled = preferences.getBoolean(
+                PREF_KEY_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED,
+                DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED
+            ),
+            extTimerQueryEnabled = preferences.getBoolean(
+                PREF_KEY_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED,
+                DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED
+            ),
+            extDirectStateAccessEnabled = preferences.getBoolean(
+                PREF_KEY_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED,
+                DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED
+            ),
+            glslCacheSizePreset = MobileGluesGlslCacheSizePreset.fromPersistedValue(
+                preferences.getInt(
+                    PREF_KEY_MOBILEGLUES_GLSL_CACHE_SIZE_MB,
+                    DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET.persistedValue
+                )
+            ) ?: DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET,
+            angleDepthClearFixMode = MobileGluesAngleDepthClearFixMode.fromPersistedValue(
+                preferences.getInt(
+                    PREF_KEY_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE,
+                    DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE.persistedValue
+                )
+            ) ?: DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE,
+            customGlVersion = MobileGluesCustomGlVersion.fromPersistedValue(
+                preferences.getInt(
+                    PREF_KEY_MOBILEGLUES_CUSTOM_GL_VERSION,
+                    DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION.persistedValue
+                )
+            ) ?: DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION,
+            fsr1QualityPreset = MobileGluesFsr1QualityPreset.fromPersistedValue(
+                preferences.getInt(
+                    PREF_KEY_MOBILEGLUES_FSR1_QUALITY_PRESET,
+                    DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET.persistedValue
+                )
+            ) ?: DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET,
+        )
+    }
+
+    fun saveMobileGluesSettings(context: Context, settings: MobileGluesSettings) {
+        prefs(context).edit {
+            putInt(PREF_KEY_MOBILEGLUES_ANGLE_POLICY, settings.anglePolicy.persistedValue)
+            putInt(PREF_KEY_MOBILEGLUES_NO_ERROR_POLICY, settings.noErrorPolicy.persistedValue)
+            putInt(PREF_KEY_MOBILEGLUES_MULTIDRAW_MODE, settings.multidrawMode.persistedValue)
+            putBoolean(
+                PREF_KEY_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED,
+                settings.extComputeShaderEnabled
+            )
+            remove(LEGACY_PREF_KEY_MOBILEGLUES_EXT_GL43_ENABLED)
+            putBoolean(
+                PREF_KEY_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED,
+                settings.extTimerQueryEnabled
+            )
+            putBoolean(
+                PREF_KEY_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED,
+                settings.extDirectStateAccessEnabled
+            )
+            putInt(
+                PREF_KEY_MOBILEGLUES_GLSL_CACHE_SIZE_MB,
+                settings.glslCacheSizePreset.persistedValue
+            )
+            putInt(
+                PREF_KEY_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE,
+                settings.angleDepthClearFixMode.persistedValue
+            )
+            putInt(
+                PREF_KEY_MOBILEGLUES_CUSTOM_GL_VERSION,
+                settings.customGlVersion.persistedValue
+            )
+            putInt(
+                PREF_KEY_MOBILEGLUES_FSR1_QUALITY_PRESET,
+                settings.fsr1QualityPreset.persistedValue
+            )
+        }
+    }
+
     fun readThemeMode(context: Context): LauncherThemeMode {
         val stored = prefs(context).getString(
             PREF_KEY_THEME_MODE,
@@ -392,9 +541,18 @@ object LauncherConfig {
         return snapped.coerceIn(MIN_JVM_HEAP_MAX_MB, MAX_JVM_HEAP_MAX_MB)
     }
 
+    fun resolveJvmHeapStartMb(heapMaxMb: Int): Int {
+        val normalizedMax = normalizeJvmHeapMaxMb(heapMaxMb)
+        return normalizedMax.coerceAtMost(DEFAULT_JVM_HEAP_MAX_MB)
+    }
+
     fun readJvmHeapMaxMb(context: Context): Int {
         val stored = prefs(context).getInt(PREF_KEY_JVM_HEAP_MAX_MB, DEFAULT_JVM_HEAP_MAX_MB)
         return normalizeJvmHeapMaxMb(stored)
+    }
+
+    fun readJvmHeapStartMb(context: Context): Int {
+        return resolveJvmHeapStartMb(readJvmHeapMaxMb(context))
     }
 
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {

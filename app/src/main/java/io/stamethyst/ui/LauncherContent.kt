@@ -53,6 +53,7 @@ import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
+import io.stamethyst.ui.settings.LauncherMobileGluesSettingsScreen
 import io.stamethyst.ui.settings.LauncherSettingsScreen
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 
@@ -175,6 +176,13 @@ fun LauncherContent(
 
                         entry<Route.Compatibility> {
                             LauncherCompatibilityScreen(
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.MobileGluesSettings> {
+                            LauncherMobileGluesSettingsScreen(
+                                viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }

@@ -1,6 +1,14 @@
 package io.stamethyst.ui.preferences
 
 import android.content.Context
+import io.stamethyst.backend.render.MobileGluesAnglePolicy
+import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
+import io.stamethyst.backend.render.MobileGluesCustomGlVersion
+import io.stamethyst.backend.render.MobileGluesFsr1QualityPreset
+import io.stamethyst.backend.render.MobileGluesGlslCacheSizePreset
+import io.stamethyst.backend.render.MobileGluesMultidrawMode
+import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
+import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.BackBehavior
@@ -25,6 +33,26 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_RENDERER_SELECTION_MODE
     val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend
         get() = LauncherConfig.DEFAULT_MANUAL_RENDERER_BACKEND
+    val DEFAULT_MOBILEGLUES_ANGLE_POLICY: MobileGluesAnglePolicy
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_ANGLE_POLICY
+    val DEFAULT_MOBILEGLUES_NO_ERROR_POLICY: MobileGluesNoErrorPolicy
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_NO_ERROR_POLICY
+    val DEFAULT_MOBILEGLUES_MULTIDRAW_MODE: MobileGluesMultidrawMode
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_MULTIDRAW_MODE
+    val DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET: MobileGluesGlslCacheSizePreset
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET
+    val DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE: MobileGluesAngleDepthClearFixMode
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE
+    val DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION: MobileGluesCustomGlVersion
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION
+    val DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET: MobileGluesFsr1QualityPreset
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET
+    val DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED
+    val DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED
+    val DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode
         get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
@@ -153,6 +181,22 @@ object LauncherPreferences {
 
     fun saveManualRendererBackend(context: Context, backend: RendererBackend) {
         LauncherConfig.saveManualRendererBackend(context, backend)
+    }
+
+    fun readMobileGluesAnglePolicy(context: Context): MobileGluesAnglePolicy {
+        return LauncherConfig.readMobileGluesAnglePolicy(context)
+    }
+
+    fun saveMobileGluesAnglePolicy(context: Context, policy: MobileGluesAnglePolicy) {
+        LauncherConfig.saveMobileGluesAnglePolicy(context, policy)
+    }
+
+    fun readMobileGluesSettings(context: Context): MobileGluesSettings {
+        return LauncherConfig.readMobileGluesSettings(context)
+    }
+
+    fun saveMobileGluesSettings(context: Context, settings: MobileGluesSettings) {
+        LauncherConfig.saveMobileGluesSettings(context, settings)
     }
 
     fun readThemeMode(context: Context): LauncherThemeMode {
@@ -317,6 +361,14 @@ object LauncherPreferences {
 
     fun readJvmHeapMaxMb(context: Context): Int {
         return LauncherConfig.readJvmHeapMaxMb(context)
+    }
+
+    fun resolveJvmHeapStartMb(heapMaxMb: Int): Int {
+        return LauncherConfig.resolveJvmHeapStartMb(heapMaxMb)
+    }
+
+    fun readJvmHeapStartMb(context: Context): Int {
+        return LauncherConfig.readJvmHeapStartMb(context)
     }
 
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {

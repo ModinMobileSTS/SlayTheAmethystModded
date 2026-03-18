@@ -3,6 +3,9 @@ package io.stamethyst.backend.mods
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.ArrayDeque
+import java.util.HashMap
+import java.util.HashSet
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.zip.ZipEntry
@@ -72,14 +75,15 @@ internal object VupShionModCompatPatcher {
         var patchedSaveTenkoDataMethod = false
         var patchedSaveSleyntaPanelMethod = false
         ZipFile(modJar).use { zipFile ->
+            val hierarchyResolver = ClassHierarchyResolver(zipFile)
             patchClassEntry(zipFile, TARGET_CLASS_ENTRY) { classBytes ->
-                patchWebButtonClassBytes(classBytes)
+                patchWebButtonClassBytes(classBytes, hierarchyResolver)
             }?.let { (entryName, patchedBytes) ->
                 replacements[entryName] = patchedBytes
                 patchedWebButtonConstructor = true
             }
             patchClassEntry(zipFile, SAVE_HELPER_CLASS_ENTRY) { classBytes ->
-                patchSaveHelperClassBytes(classBytes)
+                patchSaveHelperClassBytes(classBytes, hierarchyResolver)
             }?.let { (entryName, patchedBytes) ->
                 replacements[entryName] = patchedBytes
                 val patchResult = inspectSaveHelperPatchResult(patchedBytes)
@@ -115,7 +119,10 @@ internal object VupShionModCompatPatcher {
     }
 
     @Throws(IOException::class)
-    private fun patchWebButtonClassBytes(classBytes: ByteArray): ByteArray? {
+    private fun patchWebButtonClassBytes(
+        classBytes: ByteArray,
+        hierarchyResolver: ClassHierarchyResolver
+    ): ByteArray? {
         val classNode = readClassNode(classBytes)
         val constructor = classNode.methods.firstOrNull { method ->
             method.name == "<init>" && method.desc == TARGET_CONSTRUCTOR_DESC
@@ -124,11 +131,14 @@ internal object VupShionModCompatPatcher {
         if (!removeWorkshopSubscriptionGate(constructor)) {
             return null
         }
-        return writeClass(classNode)
+        return writeClass(classNode, hierarchyResolver)
     }
 
     @Throws(IOException::class)
-    private fun patchSaveHelperClassBytes(classBytes: ByteArray): ByteArray? {
+    private fun patchSaveHelperClassBytes(
+        classBytes: ByteArray,
+        hierarchyResolver: ClassHierarchyResolver
+    ): ByteArray? {
         val classNode = readClassNode(classBytes)
         val saveTenkoDataMethod = classNode.methods.firstOrNull { method ->
             method.name == SAVE_TENKO_DATA_METHOD_NAME && method.desc == VOID_METHOD_DESC
@@ -167,7 +177,7 @@ internal object VupShionModCompatPatcher {
         if (!modified) {
             return null
         }
-        return writeClass(classNode)
+        return writeClass(classNode, hierarchyResolver)
     }
 
     private fun removeWorkshopSubscriptionGate(method: MethodNode): Boolean {
@@ -457,10 +467,142 @@ internal object VupShionModCompatPatcher {
         return false
     }
 
-    private fun writeClass(classNode: ClassNode): ByteArray {
-        val classWriter = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
+    private fun writeClass(
+        classNode: ClassNode,
+        hierarchyResolver: ClassHierarchyResolver
+    ): ByteArray {
+        val classWriter = object : ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES) {
+            override fun getCommonSuperClass(type1: String, type2: String): String {
+                return hierarchyResolver.getCommonSuperClass(type1, type2)
+            }
+        }
         classNode.accept(classWriter)
         return classWriter.toByteArray()
+    }
+
+    private data class ResolvedClassInfo(
+        val internalName: String,
+        val superInternalName: String?,
+        val interfaceInternalNames: List<String>,
+        val isInterface: Boolean
+    )
+
+    private class ClassHierarchyResolver(
+        private val zipFile: ZipFile
+    ) {
+        private val cache = HashMap<String, ResolvedClassInfo?>()
+
+        fun getCommonSuperClass(type1: String, type2: String): String {
+            if (type1 == type2) {
+                return type1
+            }
+            if (isAssignableFrom(type1, type2)) {
+                return type1
+            }
+            if (isAssignableFrom(type2, type1)) {
+                return type2
+            }
+
+            val firstInfo = resolve(type1)
+            val secondInfo = resolve(type2)
+            if (firstInfo?.isInterface == true || secondInfo?.isInterface == true) {
+                return "java/lang/Object"
+            }
+
+            var current = firstInfo
+            while (current != null) {
+                if (isAssignableFrom(current.internalName, type2)) {
+                    return current.internalName
+                }
+                current = current.superInternalName?.let(::resolve)
+            }
+            return "java/lang/Object"
+        }
+
+        private fun isAssignableFrom(targetInternalName: String, sourceInternalName: String): Boolean {
+            if (targetInternalName == sourceInternalName) {
+                return true
+            }
+            if (targetInternalName == "java/lang/Object") {
+                return true
+            }
+
+            val targetInfo = resolve(targetInternalName)
+            val sourceInfo = resolve(sourceInternalName) ?: return false
+            if (targetInfo?.isInterface == true) {
+                return implementsInterface(sourceInfo, targetInternalName)
+            }
+
+            var current: ResolvedClassInfo? = sourceInfo
+            while (current != null) {
+                if (current.internalName == targetInternalName) {
+                    return true
+                }
+                current = current.superInternalName?.let(::resolve)
+            }
+            return false
+        }
+
+        private fun implementsInterface(
+            sourceInfo: ResolvedClassInfo,
+            targetInternalName: String
+        ): Boolean {
+            val visited = HashSet<String>()
+            val queue = ArrayDeque<String>()
+            queue.addAll(sourceInfo.interfaceInternalNames)
+            sourceInfo.superInternalName?.let(queue::addLast)
+            while (queue.isNotEmpty()) {
+                val currentName = queue.removeFirst()
+                if (!visited.add(currentName)) {
+                    continue
+                }
+                if (currentName == targetInternalName) {
+                    return true
+                }
+                val currentInfo = resolve(currentName) ?: continue
+                queue.addAll(currentInfo.interfaceInternalNames)
+                currentInfo.superInternalName?.let(queue::addLast)
+            }
+            return false
+        }
+
+        private fun resolve(internalName: String): ResolvedClassInfo? {
+            return cache.getOrPut(internalName) {
+                readFromJar(internalName) ?: readFromRuntime(internalName)
+            }
+        }
+
+        private fun readFromJar(internalName: String): ResolvedClassInfo? {
+            val entryName = "$internalName.class"
+            val entry = JarFileIoUtils.findEntryIgnoreCase(zipFile, entryName) ?: return null
+            if (entry.isDirectory) {
+                return null
+            }
+            val classBytes = JarFileIoUtils.readEntryBytes(zipFile, entry)
+            val reader = ClassReader(classBytes)
+            return ResolvedClassInfo(
+                internalName = reader.className,
+                superInternalName = reader.superName,
+                interfaceInternalNames = reader.interfaces.toList(),
+                isInterface = (reader.access and Opcodes.ACC_INTERFACE) != 0
+            )
+        }
+
+        private fun readFromRuntime(internalName: String): ResolvedClassInfo? {
+            val className = internalName.replace('/', '.')
+            val runtimeClass = try {
+                Class.forName(className, false, javaClass.classLoader)
+            } catch (_: Throwable) {
+                return null
+            }
+            return ResolvedClassInfo(
+                internalName = runtimeClass.name.replace('.', '/'),
+                superInternalName = runtimeClass.superclass?.name?.replace('.', '/'),
+                interfaceInternalNames = runtimeClass.interfaces
+                    .map { iface -> iface.name.replace('.', '/') },
+                isInterface = runtimeClass.isInterface
+            )
+        }
     }
 
     @Throws(IOException::class)

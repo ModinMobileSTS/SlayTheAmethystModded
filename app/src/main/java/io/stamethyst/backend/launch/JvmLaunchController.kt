@@ -8,6 +8,8 @@ import io.stamethyst.R
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.render.MobileGluesConfigFile
+import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.LauncherConfig
@@ -220,6 +222,13 @@ class JvmLaunchController(
 
                 throwIfCancelled()
                 JREUtils.relocateLibPath(activity.applicationInfo.nativeLibraryDir, resolvedJavaHome.absolutePath)
+                if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                    try {
+                        MobileGluesConfigFile.syncFromLauncherPreferences(activity)
+                    } catch (error: IOException) {
+                        Log.w(LOGCAT_TAG, "Failed to sync MobileGlues config", error)
+                    }
+                }
                 JREUtils.setJavaEnvironment(
                     activity,
                     resolvedJavaHome.absolutePath,

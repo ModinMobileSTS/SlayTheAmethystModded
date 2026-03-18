@@ -13,6 +13,8 @@
 
 ## MobileGlues
 - Source lineage: packaged via Amethyst-Android renderer stack.
+- Bundled version: `V1.3.4`
+- Upstream release: `https://github.com/MobileGL-Dev/MobileGlues-release/releases/tag/V1.3.4`
 - Local usage: `libmobileglues.so`
 - License: LGPL-2.1.
 

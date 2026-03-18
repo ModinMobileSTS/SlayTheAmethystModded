@@ -70,6 +70,9 @@ class VupShionModCompatPatcherTest {
             zipOut.putNextEntry(ZipEntry("VUPShionMod/ui/WebButton.class"))
             zipOut.write(buildWebButtonClassBytes())
             zipOut.closeEntry()
+            zipOut.putNextEntry(ZipEntry("VUPShionMod/util/ShionConfig.class"))
+            zipOut.write(buildShionConfigClassBytes())
+            zipOut.closeEntry()
             zipOut.putNextEntry(ZipEntry("VUPShionMod/util/SaveHelper.class"))
             zipOut.write(buildSaveHelperClassBytes())
             zipOut.closeEntry()
@@ -147,6 +150,28 @@ class VupShionModCompatPatcherTest {
         return classWriter.toByteArray()
     }
 
+    private fun buildShionConfigClassBytes(): ByteArray {
+        val classWriter = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
+        classWriter.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC,
+            "VUPShionMod/util/ShionConfig",
+            null,
+            "java/lang/Object",
+            null
+        )
+        classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null).apply {
+            visitCode()
+            visitVarInsn(Opcodes.ALOAD, 0)
+            visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
+            visitInsn(Opcodes.RETURN)
+            visitMaxs(0, 0)
+            visitEnd()
+        }
+        classWriter.visitEnd()
+        return classWriter.toByteArray()
+    }
+
     private fun buildSaveHelperClassBytes(): ByteArray {
         val classWriter = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
         classWriter.visit(
@@ -169,6 +194,16 @@ class VupShionModCompatPatcherTest {
 
         classWriter.visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "saveTenkoData", "()V", null, null).apply {
             visitCode()
+            visitTypeInsn(Opcodes.NEW, "VUPShionMod/util/ShionConfig")
+            visitInsn(Opcodes.DUP)
+            visitMethodInsn(
+                Opcodes.INVOKESPECIAL,
+                "VUPShionMod/util/ShionConfig",
+                "<init>",
+                "()V",
+                false
+            )
+            visitVarInsn(Opcodes.ASTORE, 0)
             visitMethodInsn(
                 Opcodes.INVOKESTATIC,
                 "VUPShionMod/ui/TenkoPanel/TenkoPanel",
@@ -198,6 +233,16 @@ class VupShionModCompatPatcherTest {
             null
         ).apply {
             visitCode()
+            visitTypeInsn(Opcodes.NEW, "VUPShionMod/util/ShionConfig")
+            visitInsn(Opcodes.DUP)
+            visitMethodInsn(
+                Opcodes.INVOKESPECIAL,
+                "VUPShionMod/util/ShionConfig",
+                "<init>",
+                "()V",
+                false
+            )
+            visitVarInsn(Opcodes.ASTORE, 0)
             visitMethodInsn(
                 Opcodes.INVOKESTATIC,
                 "VUPShionMod/ui/SleyntaUI/CriticalShotPanel",

@@ -14,6 +14,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object Compatibility : Route
     @Serializable
+    data object MobileGluesSettings : Route
+    @Serializable
     data object Feedback : Route
     @Serializable
     data object FeedbackSubscriptions : Route

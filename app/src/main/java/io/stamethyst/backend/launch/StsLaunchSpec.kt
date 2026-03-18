@@ -88,7 +88,10 @@ object StsLaunchSpec {
             }
         }
         val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
-        val heapStartMb = heapMaxMb
+        // Keep startup heap conservative. Using Xms=Xmx makes a 2G selection
+        // immediately commit the full heap during VM init, which is unstable on
+        // some Android devices even when the phone has plenty of total RAM.
+        val heapStartMb = LauncherConfig.resolveJvmHeapStartMb(heapMaxMb)
         args.add("-Xms${heapStartMb}M")
         args.add("-Xmx${heapMaxMb}M")
         args.add(

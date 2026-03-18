@@ -191,7 +191,7 @@ static void setup_signal_stack_report_file() {
     signal_stack_fd = open(
         SIGNAL_DUMP_FILE_NAME,
         O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-        0600
+        0644
     );
     if(signal_stack_fd == -1) {
         return;

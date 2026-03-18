@@ -12,6 +12,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.render.MobileGluesAnglePolicy
+import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
+import io.stamethyst.backend.render.MobileGluesConfigFile
+import io.stamethyst.backend.render.MobileGluesCustomGlVersion
+import io.stamethyst.backend.render.MobileGluesFsr1QualityPreset
+import io.stamethyst.backend.render.MobileGluesGlslCacheSizePreset
+import io.stamethyst.backend.render.MobileGluesMultidrawMode
+import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
+import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererSelectionMode
@@ -65,6 +74,7 @@ class SettingsScreenViewModel : ViewModel() {
         data class OpenExportLogsPicker(val fileName: String) : Effect
         data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
         data object OpenCompatibility : Effect
+        data object OpenMobileGluesSettings : Effect
         data object OpenFeedback : Effect
     }
 
@@ -95,6 +105,26 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_RENDERER_SELECTION_MODE,
         val manualRendererBackend: RendererBackend =
             LauncherPreferences.DEFAULT_MANUAL_RENDERER_BACKEND,
+        val mobileGluesAnglePolicy: MobileGluesAnglePolicy =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_ANGLE_POLICY,
+        val mobileGluesNoErrorPolicy: MobileGluesNoErrorPolicy =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_NO_ERROR_POLICY,
+        val mobileGluesMultidrawMode: MobileGluesMultidrawMode =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_MULTIDRAW_MODE,
+        val mobileGluesExtComputeShaderEnabled: Boolean =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED,
+        val mobileGluesExtTimerQueryEnabled: Boolean =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED,
+        val mobileGluesExtDirectStateAccessEnabled: Boolean =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED,
+        val mobileGluesGlslCacheSizePreset: MobileGluesGlslCacheSizePreset =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET,
+        val mobileGluesAngleDepthClearFixMode: MobileGluesAngleDepthClearFixMode =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE,
+        val mobileGluesCustomGlVersion: MobileGluesCustomGlVersion =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION,
+        val mobileGluesFsr1QualityPreset: MobileGluesFsr1QualityPreset =
+            LauncherPreferences.DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET,
         val autoSelectedRendererBackend: RendererBackend =
             LauncherPreferences.DEFAULT_MANUAL_RENDERER_BACKEND,
         val effectiveRendererBackend: RendererBackend =
@@ -443,6 +473,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val renderSurfaceBackend = readRenderSurfaceBackendSelection(host)
                 val rendererSelectionMode = readRendererSelectionModeSelection(host)
                 val manualRendererBackend = readManualRendererBackendSelection(host)
+                val mobileGluesSettings = readMobileGluesSettingsSelection(host)
                 val rendererDecision = RendererBackendResolver.resolve(
                     context = host,
                     requestedSurfaceBackend = renderSurfaceBackend,
@@ -457,6 +488,7 @@ class SettingsScreenViewModel : ViewModel() {
                     )
                 }
                 val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
+                val jvmHeapStartMb = LauncherPreferences.resolveJvmHeapStartMb(jvmHeapMaxMb)
                 val compressedPointersEnabled = readJvmCompressedPointersSelection(host)
                 val stringDeduplicationEnabled = readJvmStringDeduplicationSelection(host)
                 val backBehavior = readBackBehaviorSelection(host)
@@ -544,6 +576,16 @@ class SettingsScreenViewModel : ViewModel() {
                     rendererDecision.fallbackSummary()?.let {
                         append("\nRenderer fallback: ").append(it)
                     }
+                    append("\nMobileGlues ANGLE policy: ")
+                        .append(mobileGluesSettings.anglePolicy.displayName)
+                    append("\nMobileGlues multidraw: ")
+                        .append(mobileGluesSettings.multidrawMode.displayName)
+                    append("\nMobileGlues no-error: ")
+                        .append(mobileGluesSettings.noErrorPolicy.displayName)
+                    append("\nMobileGlues custom GL version: ")
+                        .append(mobileGluesSettings.customGlVersion.displayName)
+                    append("\nMobileGlues FSR1: ")
+                        .append(mobileGluesSettings.fsr1QualityPreset.displayName)
                     append("\nRender surface requested: ")
                         .append(renderSurfaceBackend.displayName(host))
                     append("\nRender surface effective: ")
@@ -553,7 +595,7 @@ class SettingsScreenViewModel : ViewModel() {
                             .append(rendererDecision.effectiveBackend.displayName)
                             .append(")")
                     }
-                    append("\nJVM heap max: ${jvmHeapMaxMb} MB")
+                    append("\nJVM heap start/max: ${jvmHeapStartMb}/${jvmHeapMaxMb} MB")
                     append("\nCompressed Oops / Class Pointers: ")
                         .append(if (compressedPointersEnabled) "ON" else "OFF")
                     append("\nString Deduplication: ")
@@ -624,6 +666,18 @@ class SettingsScreenViewModel : ViewModel() {
                         renderSurfaceBackend = renderSurfaceBackend,
                         rendererSelectionMode = rendererSelectionMode,
                         manualRendererBackend = manualRendererBackend,
+                        mobileGluesAnglePolicy = mobileGluesSettings.anglePolicy,
+                        mobileGluesNoErrorPolicy = mobileGluesSettings.noErrorPolicy,
+                        mobileGluesMultidrawMode = mobileGluesSettings.multidrawMode,
+                        mobileGluesExtComputeShaderEnabled = mobileGluesSettings.extComputeShaderEnabled,
+                        mobileGluesExtTimerQueryEnabled = mobileGluesSettings.extTimerQueryEnabled,
+                        mobileGluesExtDirectStateAccessEnabled =
+                            mobileGluesSettings.extDirectStateAccessEnabled,
+                        mobileGluesGlslCacheSizePreset = mobileGluesSettings.glslCacheSizePreset,
+                        mobileGluesAngleDepthClearFixMode =
+                            mobileGluesSettings.angleDepthClearFixMode,
+                        mobileGluesCustomGlVersion = mobileGluesSettings.customGlVersion,
+                        mobileGluesFsr1QualityPreset = mobileGluesSettings.fsr1QualityPreset,
                         autoSelectedRendererBackend = rendererDecision.automaticBackend,
                         effectiveRendererBackend = rendererDecision.effectiveBackend,
                         effectiveRenderSurfaceBackend = rendererDecision.effectiveSurfaceBackend,
@@ -852,6 +906,138 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onMobileGluesAnglePolicyChanged(host: Activity, policy: MobileGluesAnglePolicy) {
+        if (uiState.busy || uiState.mobileGluesAnglePolicy == policy) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesAnglePolicy = policy)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues ANGLE policy"
+        ) { it.copy(anglePolicy = policy) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesNoErrorPolicyChanged(host: Activity, policy: MobileGluesNoErrorPolicy) {
+        if (uiState.busy || uiState.mobileGluesNoErrorPolicy == policy) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesNoErrorPolicy = policy)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues no-error policy"
+        ) { it.copy(noErrorPolicy = policy) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesMultidrawModeChanged(host: Activity, mode: MobileGluesMultidrawMode) {
+        if (uiState.busy || uiState.mobileGluesMultidrawMode == mode) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesMultidrawMode = mode)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues multidraw mode"
+        ) { it.copy(multidrawMode = mode) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesExtComputeShaderChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy || uiState.mobileGluesExtComputeShaderEnabled == enabled) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesExtComputeShaderEnabled = enabled)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues compute shader setting"
+        ) { it.copy(extComputeShaderEnabled = enabled) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesExtTimerQueryChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy || uiState.mobileGluesExtTimerQueryEnabled == enabled) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesExtTimerQueryEnabled = enabled)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues timer query setting"
+        ) { it.copy(extTimerQueryEnabled = enabled) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesExtDirectStateAccessChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy || uiState.mobileGluesExtDirectStateAccessEnabled == enabled) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesExtDirectStateAccessEnabled = enabled)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues direct state access setting"
+        ) { it.copy(extDirectStateAccessEnabled = enabled) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesGlslCacheSizePresetChanged(
+        host: Activity,
+        preset: MobileGluesGlslCacheSizePreset
+    ) {
+        if (uiState.busy || uiState.mobileGluesGlslCacheSizePreset == preset) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesGlslCacheSizePreset = preset)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues GLSL cache size"
+        ) { it.copy(glslCacheSizePreset = preset) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesAngleDepthClearFixModeChanged(
+        host: Activity,
+        mode: MobileGluesAngleDepthClearFixMode
+    ) {
+        if (uiState.busy || uiState.mobileGluesAngleDepthClearFixMode == mode) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesAngleDepthClearFixMode = mode)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues ANGLE depth clear fix mode"
+        ) { it.copy(angleDepthClearFixMode = mode) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesCustomGlVersionChanged(
+        host: Activity,
+        version: MobileGluesCustomGlVersion
+    ) {
+        if (uiState.busy || uiState.mobileGluesCustomGlVersion == version) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesCustomGlVersion = version)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues custom GL version"
+        ) { it.copy(customGlVersion = version) }
+        refreshStatus(host)
+    }
+
+    fun onMobileGluesFsr1QualityPresetChanged(
+        host: Activity,
+        preset: MobileGluesFsr1QualityPreset
+    ) {
+        if (uiState.busy || uiState.mobileGluesFsr1QualityPreset == preset) {
+            return
+        }
+        uiState = uiState.copy(mobileGluesFsr1QualityPreset = preset)
+        persistMobileGluesSettings(
+            host = host,
+            failureMessage = "Failed to save MobileGlues FSR1 setting"
+        ) { it.copy(fsr1QualityPreset = preset) }
+        refreshStatus(host)
+    }
+
     fun onJvmHeapMaxSelected(host: Activity, heapMaxMb: Int) {
         if (uiState.busy) {
             return
@@ -1065,6 +1251,13 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         _effects.tryEmit(Effect.OpenCompatibility)
+    }
+
+    fun onOpenMobileGluesSettings() {
+        if (uiState.busy) {
+            return
+        }
+        _effects.tryEmit(Effect.OpenMobileGluesSettings)
     }
 
     fun onOpenFeedback() {
@@ -1966,6 +2159,28 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveManualRendererBackendSelection(host: Activity, backend: RendererBackend) {
         LauncherPreferences.saveManualRendererBackend(host, backend)
+    }
+
+    private fun readMobileGluesSettingsSelection(host: Activity): MobileGluesSettings {
+        return LauncherPreferences.readMobileGluesSettings(host)
+    }
+
+    private fun persistMobileGluesSettings(
+        host: Activity,
+        failureMessage: String,
+        transform: (MobileGluesSettings) -> MobileGluesSettings
+    ) {
+        try {
+            val updated = transform(readMobileGluesSettingsSelection(host))
+            LauncherPreferences.saveMobileGluesSettings(host, updated)
+            MobileGluesConfigFile.syncFromLauncherPreferences(host)
+        } catch (error: IOException) {
+            Toast.makeText(
+                host,
+                "$failureMessage: ${error.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private fun readPlayerNameSelection(host: Activity): String {

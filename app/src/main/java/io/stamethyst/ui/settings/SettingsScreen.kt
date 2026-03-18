@@ -168,6 +168,7 @@ fun LauncherSettingsScreen(
         },
         onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
+        onOpenMobileGluesSettings = viewModel::onOpenMobileGluesSettings,
         onOpenFeedback = viewModel::onOpenFeedback,
         onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
         onOpenFeedbackIssueBrowser = { navigator.push(Route.FeedbackIssueBrowser) },
@@ -268,6 +269,7 @@ private fun LauncherSettingsScreenContent(
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
     onManualCheckUpdates: () -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
+    onOpenMobileGluesSettings: () -> Unit = {},
     onOpenFeedback: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onOpenFeedbackIssueBrowser: () -> Unit = {},
@@ -346,6 +348,7 @@ private fun LauncherSettingsScreenContent(
                         onTargetFpsSelected = onTargetFpsSelected,
                         onRendererSelectionModeChanged = onRendererSelectionModeChanged,
                         onManualRendererBackendChanged = onManualRendererBackendChanged,
+                        onOpenMobileGluesSettings = onOpenMobileGluesSettings,
                         onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
                         onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
@@ -654,7 +657,7 @@ private fun SettingsFeedbackEntryCard(
 }
 
 @Composable
-private fun SettingsBusyIndicator(
+internal fun SettingsBusyIndicator(
     uiState: SettingsScreenViewModel.UiState
 ) {
     if (!uiState.busy) {
@@ -667,7 +670,7 @@ private fun SettingsBusyIndicator(
 }
 
 @Composable
-private fun SettingsSectionCard(
+internal fun SettingsSectionCard(
     title: String,
     content: @Composable () -> Unit,
 ) {
@@ -835,6 +838,7 @@ private fun SettingsRenderSection(
     onTargetFpsSelected: (Int) -> Unit,
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit,
     onManualRendererBackendChanged: (RendererBackend) -> Unit,
+    onOpenMobileGluesSettings: () -> Unit,
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
     onJvmHeapMaxSelected: (Int) -> Unit,
     onJvmCompressedPointersChanged: (Boolean) -> Unit,
@@ -950,6 +954,20 @@ private fun SettingsRenderSection(
         )
     }
 
+    SettingsActionListItem(
+        title = "MobileGlues 专项设置",
+        supportingText = buildString {
+            append("ANGLE: ")
+            append(uiState.mobileGluesAnglePolicy.displayName)
+            append("  |  Multidraw: ")
+            append(uiState.mobileGluesMultidrawMode.displayName)
+            append("  |  Custom GL: ")
+            append(uiState.mobileGluesCustomGlVersion.displayName)
+        },
+        enabled = !uiState.busy,
+        onClick = onOpenMobileGluesSettings
+    )
+
     Text(
         text = stringResource(R.string.settings_render_surface_backend_title),
         style = MaterialTheme.typography.bodyMedium
@@ -1000,7 +1018,7 @@ private fun SettingsRenderSection(
         modifier = Modifier.fillMaxWidth()
     )
     Text(
-        text = "如果你不知道你在做什么，请勿修改此项。如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题",
+        text = "如果你不知道你在做什么，请勿修改此项。如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题。为降低大堆启动失败风险，启动时会先使用较小初始堆，再按需扩容到上限。",
         style = MaterialTheme.typography.bodySmall
     )
 
@@ -1242,7 +1260,7 @@ private fun SettingsInputSection(
 }
 
 @Composable
-private fun SwitchSettingRow(
+internal fun SwitchSettingRow(
     checked: Boolean,
     enabled: Boolean,
     enabledText: String,
@@ -1285,7 +1303,7 @@ private fun SettingsCompatibilitySection(
 }
 
 @Composable
-private fun SettingsActionListItem(
+internal fun SettingsActionListItem(
     title: String,
     supportingText: String? = null,
     enabled: Boolean,
@@ -1617,6 +1635,10 @@ fun SettingsEffectsHandler(
                     navigator.push(Route.Compatibility)
                 }
 
+                SettingsScreenViewModel.Effect.OpenMobileGluesSettings -> {
+                    navigator.push(Route.MobileGluesSettings)
+                }
+
                 SettingsScreenViewModel.Effect.OpenFeedback -> {
                     navigator.push(Route.Feedback)
                 }
@@ -1686,7 +1708,7 @@ private fun SettingsRadioOptionRow(
 }
 
 @Composable
-private fun <T> SettingsDropdownField(
+internal fun <T> SettingsDropdownField(
     label: String,
     valueText: String,
     enabled: Boolean,
