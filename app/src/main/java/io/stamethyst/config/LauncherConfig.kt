@@ -116,20 +116,20 @@ object LauncherConfig {
     val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend =
         RendererBackend.OPENGL_ES_MOBILEGLUES
     val DEFAULT_MOBILEGLUES_ANGLE_POLICY: MobileGluesAnglePolicy =
-        MobileGluesAnglePolicy.PREFER_ENABLED
+        MobileGluesAnglePolicy.PREFER_DISABLED
     val DEFAULT_MOBILEGLUES_NO_ERROR_POLICY: MobileGluesNoErrorPolicy =
         MobileGluesNoErrorPolicy.AUTO
     val DEFAULT_MOBILEGLUES_MULTIDRAW_MODE: MobileGluesMultidrawMode =
-        MobileGluesMultidrawMode.AUTO
+        MobileGluesMultidrawMode.PREFER_MULTI_DRAW_INDIRECT
     const val DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED = false
     const val DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED = false
-    const val DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED = false
+    const val DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED = true
     val DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET: MobileGluesGlslCacheSizePreset =
-        MobileGluesGlslCacheSizePreset.DISABLED
+        MobileGluesGlslCacheSizePreset.MB_64
     val DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE: MobileGluesAngleDepthClearFixMode =
         MobileGluesAngleDepthClearFixMode.DISABLED
     val DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION: MobileGluesCustomGlVersion =
-        MobileGluesCustomGlVersion.DEFAULT
+        MobileGluesCustomGlVersion.OPENGL_4_6
     val DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET: MobileGluesFsr1QualityPreset =
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM

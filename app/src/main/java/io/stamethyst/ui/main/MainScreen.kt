@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
@@ -262,7 +263,16 @@ private fun MainTopBar(
     onOpenFeedbackUpdates: () -> Unit
 ) {
     TopAppBar(
-        title = { Text(stringResource(R.string.main_app_title)) },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.main_app_title))
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
         actions = {
             if (feedbackUnreadCount > 0) {
                 IconButton(
