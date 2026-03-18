@@ -111,7 +111,14 @@ internal object StsDesktopJarPatcher {
                             }
                             zipOut.putNextEntry(outEntry)
                             val patchBytes = patchEntries[name]
-                            if (patchBytes != null &&
+                            if (name == STS_PATCH_SHADER_PROGRAM_CLASS) {
+                                val originalBytes = JarFileIoUtils.readAll(zipIn)
+                                zipOut.write(
+                                    StsShaderPrecisionCompatPatcher.patchShaderProgramClass(
+                                        originalBytes
+                                    )
+                                )
+                            } else if (patchBytes != null &&
                                 StsUiTouchCompatPatcher.isMethodMergeClassEntry(name)
                             ) {
                                 val originalBytes = JarFileIoUtils.readAll(zipIn)
@@ -232,6 +239,7 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
+            STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
             STS_PATCH_COLOR_TAB_BAR_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX) ||
             entryName.startsWith(STS_PATCH_LWJGL_APPLICATION_PREFIX) ||
@@ -264,6 +272,12 @@ internal object StsDesktopJarPatcher {
                     } else if (!actual.contentEquals(expected)) {
                         return false
                     }
+                }
+                val shaderProgramEntry = zipFile.getEntry(STS_PATCH_SHADER_PROGRAM_CLASS)
+                    ?: return false
+                val shaderProgramBytes = JarFileIoUtils.readEntryBytes(zipFile, shaderProgramEntry)
+                if (!StsShaderPrecisionCompatPatcher.isPatchedShaderProgramClass(shaderProgramBytes)) {
+                    return false
                 }
                 true
             }

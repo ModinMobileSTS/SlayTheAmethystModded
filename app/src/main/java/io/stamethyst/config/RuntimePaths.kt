@@ -17,6 +17,8 @@ object RuntimePaths {
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
+    private const val LOGCAT_DIR_NAME = "logcat"
+    private const val LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
@@ -130,6 +132,31 @@ object RuntimePaths {
 
     @JvmStatic
     fun jvmHistogramsDir(context: Context): File = File(stsRoot(context), JVM_HISTOGRAM_DIR_NAME)
+
+    @JvmStatic
+    fun logcatDir(context: Context): File = File(stsRoot(context), LOGCAT_DIR_NAME)
+
+    @JvmStatic
+    fun logcatCaptureLog(context: Context): File = File(logcatDir(context), LOGCAT_CAPTURE_FILE_NAME)
+
+    @JvmStatic
+    fun listLogcatCaptureFiles(context: Context): List<File> {
+        val directory = logcatDir(context)
+        if (!directory.isDirectory) {
+            return listOf(logcatCaptureLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file ->
+                file.isFile &&
+                    (file.name == LOGCAT_CAPTURE_FILE_NAME ||
+                        file.name.startsWith("$LOGCAT_CAPTURE_FILE_NAME."))
+            }
+            ?.sortedWith(compareBy<File> { rotationIndexForLogcatFile(it.name) }.thenBy { it.name })
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(logcatCaptureLog(context)) }
+    }
 
     @JvmStatic
     fun mtsClasspathCacheMarker(context: Context): File =
@@ -369,6 +396,7 @@ object RuntimePaths {
         optionalModsLibraryDir(context).mkdirs()
         jvmLogsDir(context).mkdirs()
         jvmHistogramsDir(context).mkdirs()
+        logcatDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()
@@ -378,5 +406,14 @@ object RuntimePaths {
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         runtimeRoot(context).mkdirs()
+    }
+
+    private fun rotationIndexForLogcatFile(name: String): Int {
+        if (name == LOGCAT_CAPTURE_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfterLast('.', "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
     }
 }

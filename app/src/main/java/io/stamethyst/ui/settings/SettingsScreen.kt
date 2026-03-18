@@ -156,6 +156,7 @@ fun LauncherSettingsScreen(
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
         },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
+        onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
         onJvmLogcatMirrorChanged = { enabled -> viewModel.onJvmLogcatMirrorChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
@@ -208,6 +209,7 @@ private fun LauncherSettingsScreenPreview() {
             cropScreenBottom = false,
             showGamePerformanceOverlay = false,
             lwjglDebugEnabled = false,
+            logcatCaptureEnabled = true,
             jvmLogcatMirrorEnabled = false,
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
@@ -261,6 +263,7 @@ private fun LauncherSettingsScreenContent(
     onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
+    onLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
@@ -405,6 +408,7 @@ private fun LauncherSettingsScreenContent(
                     SettingsStatusSection(
                         uiState = uiState,
                         onLwjglDebugChanged = onLwjglDebugChanged,
+                        onLogcatCaptureChanged = onLogcatCaptureChanged,
                         onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged
@@ -1345,6 +1349,7 @@ internal fun SettingsActionListItem(
 private fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState,
     onLwjglDebugChanged: (Boolean) -> Unit,
+    onLogcatCaptureChanged: (Boolean) -> Unit,
     onJvmLogcatMirrorChanged: (Boolean) -> Unit,
     onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
@@ -1375,6 +1380,14 @@ private fun SettingsStatusSection(
         disabledText = "LWJGL Debug：禁用",
         description = "控制 JVM 启动参数中的 org.lwjgl.util.Debug / DebugLoader / DebugFunctions。",
         onCheckedChange = onLwjglDebugChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.logcatCaptureEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_logcat_capture_enabled),
+        disabledText = stringResource(R.string.settings_logcat_capture_disabled),
+        description = stringResource(R.string.settings_logcat_capture_desc),
+        onCheckedChange = onLogcatCaptureChanged
     )
     SwitchSettingRow(
         checked = uiState.jvmLogcatMirrorEnabled,

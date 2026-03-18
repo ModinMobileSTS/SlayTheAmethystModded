@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -159,6 +160,7 @@ class SettingsScreenViewModel : ViewModel() {
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
+        val logcatCaptureEnabled: Boolean = LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
@@ -505,6 +507,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val cropScreenBottom = readScreenBottomCropSelection(host)
                 val showGamePerformanceOverlay = readGamePerformanceOverlaySelection(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
+                val logcatCaptureEnabled = readLogcatCaptureSelection(host)
                 val jvmLogcatMirrorEnabled = readJvmLogcatMirrorSelection(host)
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
                 val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
@@ -638,6 +641,8 @@ class SettingsScreenViewModel : ViewModel() {
                         .append(if (autoSwitchLeftAfterRightClick) "ON" else "OFF")
                     append("\nMod card name from file: ").append(if (showModFileName) "ON" else "OFF")
                     append("\nLWJGL Debug: ").append(if (lwjglDebugEnabled) "ON" else "OFF")
+                    append("\nLogcat diagnostics capture: ")
+                        .append(if (logcatCaptureEnabled) "ON" else "OFF")
                     append("\nJVM logcat mirror: ").append(if (jvmLogcatMirrorEnabled) "ON" else "OFF")
                     append("\nGDX pad cursor debug log: ")
                         .append(if (gdxPadCursorDebugEnabled) "ON" else "OFF")
@@ -700,6 +705,7 @@ class SettingsScreenViewModel : ViewModel() {
                         cropScreenBottom = cropScreenBottom,
                         showGamePerformanceOverlay = showGamePerformanceOverlay,
                         lwjglDebugEnabled = lwjglDebugEnabled,
+                        logcatCaptureEnabled = logcatCaptureEnabled,
                         jvmLogcatMirrorEnabled = jvmLogcatMirrorEnabled,
                         gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
                         glBridgeSwapHeartbeatDebugEnabled = glBridgeSwapHeartbeatDebugEnabled,
@@ -1160,6 +1166,18 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(lwjglDebugEnabled = enabled)
         saveLwjglDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onLogcatCaptureChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(logcatCaptureEnabled = enabled)
+        saveLogcatCaptureSelection(host, enabled)
+        if (!enabled) {
+            LogcatCaptureProcessClient.stopAndClearCapture(host)
+        }
         refreshStatus(host)
     }
 
@@ -2110,6 +2128,14 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
     }
 
+    private fun readLogcatCaptureSelection(host: Activity): Boolean {
+        return LauncherPreferences.isLogcatCaptureEnabled(host)
+    }
+
+    private fun saveLogcatCaptureSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setLogcatCaptureEnabled(host, enabled)
+    }
+
     private fun readJvmLogcatMirrorSelection(host: Activity): Boolean {
         return LauncherPreferences.isJvmLogcatMirrorEnabled(host)
     }
@@ -2274,11 +2300,13 @@ class SettingsScreenViewModel : ViewModel() {
     private fun buildLogPathText(host: Activity): String {
         val latestLog = RuntimePaths.latestLog(host)
         val archivedDir = RuntimePaths.jvmLogsDir(host)
+        val logcatDir = RuntimePaths.logcatDir(host)
         val logs = JvmLogRotationManager.listLogFiles(host)
         return buildString {
             append("Log slots: ").append(logs.size).append('/').append(JvmLogRotationManager.MAX_LOG_SLOTS)
             append("\nlatest.log: ").append(latestLog.absolutePath)
             append("\narchive dir: ").append(archivedDir.absolutePath)
+            append("\nlogcat dir: ").append(logcatDir.absolutePath)
             if (logs.isEmpty()) {
                 append("\n(no logs yet)")
             } else {

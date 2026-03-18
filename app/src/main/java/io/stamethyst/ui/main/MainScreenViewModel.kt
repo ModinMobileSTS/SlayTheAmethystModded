@@ -24,6 +24,7 @@ import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.crash.SignalCrashDumpReader
+import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.file_interactive.SafExportActivity
 import io.stamethyst.backend.launch.LauncherReturnAction
 import io.stamethyst.backend.launch.LauncherReturnActionResolver
@@ -957,6 +958,7 @@ class MainScreenViewModel : ViewModel() {
         intent: Intent?,
         launchStartedAtMs: Long
     ): Boolean {
+        LogcatCaptureProcessClient.stopCapture(host)
         val action = LauncherReturnActionResolver.resolve(
             buildLauncherReturnSnapshot(
                 host = host,
@@ -2058,7 +2060,12 @@ class MainScreenViewModel : ViewModel() {
             return
         }
 
-        GameLaunchReturnTracker.markGameLaunchStarted(host)
+        val launchStartedAtMs = GameLaunchReturnTracker.markGameLaunchStarted(host)
+        if (LauncherPreferences.isLogcatCaptureEnabled(host)) {
+            LogcatCaptureProcessClient.startCapture(host, launchStartedAtMs)
+        } else {
+            LogcatCaptureProcessClient.stopAndClearCapture(host)
+        }
         try {
             StsGameActivity.launch(
                 host,
@@ -2069,6 +2076,7 @@ class MainScreenViewModel : ViewModel() {
                 forceJvmCrash
             )
         } catch (error: Throwable) {
+            LogcatCaptureProcessClient.stopCapture(host)
             GameLaunchReturnTracker.clearPendingGameLaunch(host)
             Toast.makeText(
                 host,

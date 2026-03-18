@@ -393,4 +393,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_unplayable_mods_dialog_message">This sheet tracks mods that are currently unplayable and their fix status. You can directly edit the sheet to add unplayable mod details and help us finish compatibility fixes faster.</string>
     <string name="settings_unplayable_mods_dialog_open">Go to sheet</string>
     <string name="settings_unplayable_mods_sheet_url">https://docs.qq.com/sheet/DS0xtV2FsVUVUSXhr?u=3f6b432cd4f7498b8388829a3a5e1555</string>
+    <string name="settings_logcat_capture_enabled">Logcat diagnostics capture: Enabled</string>
+    <string name="settings_logcat_capture_disabled">Logcat diagnostics capture: Disabled</string>
+    <string name="settings_logcat_capture_desc">Capture system logcat during game sessions and include it in exported diagnostics archives. Enabled by default.</string>
 </resources>

@@ -3,6 +3,7 @@ package io.stamethyst.backend.diag
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
@@ -90,6 +91,31 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/jvm_logs/device_info.txt",
                 buildJvmLogDeviceInfo(context)
             )
+            val latestCrashSummary = LatestLogCrashDetector.detect(context)
+            val lastNonBlankLogLine = LatestLogCrashDetector.readLastNonBlankLine(context)
+            val exitSummary = ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(context)
+            val signalDumpSummary = SignalCrashDumpReader.readSummary(context)
+            writeTextEntry(
+                zipOutput,
+                "sts/jvm_logs/latest_log_summary.txt",
+                DiagnosticsSummaryFormatter.buildLatestLogSummary(
+                    latestCrash = latestCrashSummary,
+                    lastNonBlankLine = lastNonBlankLogLine
+                )
+            )
+            writeTextEntry(
+                zipOutput,
+                "sts/jvm_logs/process_exit_info.txt",
+                DiagnosticsSummaryFormatter.buildProcessExitInfoSummary(
+                    exitSummary = exitSummary,
+                    signalDumpSummary = signalDumpSummary
+                )
+            )
+            writeTextEntry(
+                zipOutput,
+                "sts/jvm_logs/launcher_settings.txt",
+                LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
+            )
 
             val writtenJvmEntries = LinkedHashSet<String>()
             JvmLogRotationManager.listLogFiles(context).forEach { logFile ->
@@ -120,6 +146,13 @@ internal object DiagnosticsArchiveBuilder {
                 RuntimePaths.jvmSignalDump(context),
                 "sts/jvm_logs/${RuntimePaths.jvmSignalDump(context).name}"
             )
+            RuntimePaths.listLogcatCaptureFiles(context).forEach { logcatFile ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    logcatFile,
+                    "sts/logcat/${logcatFile.name}"
+                )
+            }
 
             val histogramFiles = collectHistogramFiles(context)
             writeTextEntry(
@@ -241,22 +274,12 @@ internal object DiagnosticsArchiveBuilder {
             append("crash.detail=")
             append(crashContext.detail?.trim().takeUnless { it.isNullOrEmpty() } ?: "none")
             append('\n').append('\n')
-            if (exitSummary == null) {
-                append("processExit=none\n")
-            } else {
-                append("processExit.pid=").append(exitSummary.pid).append('\n')
-                append("processExit.reason=").append(exitSummary.reasonName).append('\n')
-                append("processExit.status=").append(exitSummary.status).append('\n')
-                append("processExit.timestamp=").append(exitSummary.timestamp).append('\n')
-                append("processExit.description=")
-                append(exitSummary.description.ifBlank { "none" })
-                append('\n')
-            }
-            append('\n')
-            append("signalDump.present=").append(!signalDumpSummary.isNullOrBlank()).append('\n')
-            append("signalDump.summary=")
-            append(signalDumpSummary ?: "none")
-            append('\n')
+            append(
+                DiagnosticsSummaryFormatter.buildProcessExitInfoSummary(
+                    exitSummary = exitSummary,
+                    signalDumpSummary = signalDumpSummary
+                )
+            )
         }
     }
 

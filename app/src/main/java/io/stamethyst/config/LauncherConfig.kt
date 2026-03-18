@@ -87,6 +87,7 @@ object LauncherConfig {
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
     private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
+    private const val PREF_KEY_LOGCAT_CAPTURE_ENABLED = "logcat_capture_enabled"
     private const val PREF_KEY_JVM_LOGCAT_MIRROR_ENABLED = "jvm_logcat_mirror_enabled"
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
@@ -139,6 +140,7 @@ object LauncherConfig {
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_LWJGL_DEBUG = false
+    const val DEFAULT_LOGCAT_CAPTURE_ENABLED = true
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
@@ -697,6 +699,19 @@ object LauncherConfig {
     fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_LWJGL_DEBUG, enabled)
+        }
+    }
+
+    fun isLogcatCaptureEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_LOGCAT_CAPTURE_ENABLED,
+            DEFAULT_LOGCAT_CAPTURE_ENABLED
+        )
+    }
+
+    fun setLogcatCaptureEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LOGCAT_CAPTURE_ENABLED, enabled)
         }
     }
 
