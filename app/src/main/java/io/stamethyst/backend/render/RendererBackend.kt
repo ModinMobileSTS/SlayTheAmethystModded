@@ -58,12 +58,20 @@ enum class RendererBackend(
     fun lwjglOpenGlLibName(): String = lwjglOpenGlLibNameValue
 
     companion object {
+        private const val LEGACY_RENDERER_ID_OPENGL_ES3_LTW = "opengles3_ltw"
+
         @JvmStatic
         fun fromRendererId(value: String?): RendererBackend? {
             if (value.isNullOrBlank()) {
                 return null
             }
-            return entries.firstOrNull { it.rendererIdValue == value.trim() }
+            val normalizedValue = value.trim()
+            return when (normalizedValue) {
+                // LTW was removed. GL4ES is the closest surviving backend and
+                // avoids silently dropping old installs onto MobileGlues.
+                LEGACY_RENDERER_ID_OPENGL_ES3_LTW -> OPENGL_ES2_GL4ES
+                else -> entries.firstOrNull { it.rendererIdValue == normalizedValue }
+            }
         }
     }
 }

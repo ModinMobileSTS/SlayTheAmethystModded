@@ -37,11 +37,24 @@ internal object GameLaunchReturnTracker {
         val targetProcessName = context.packageName + GAME_PROCESS_SUFFIX
         return try {
             activityManager.runningAppProcesses
-                ?.any { process -> process.processName == targetProcessName }
+                ?.any { process ->
+                    process.processName == targetProcessName &&
+                        isTrackedGameProcessAlive(process.pid, process.importance)
+                }
                 ?: false
         } catch (_: Throwable) {
             false
         }
+    }
+
+    internal fun isTrackedGameProcessAlive(pid: Int, importance: Int): Boolean {
+        if (pid <= 0) {
+            return false
+        }
+        // Ignore cached/empty processes that Android keeps around after the game
+        // activity has already finished, otherwise the launcher stays stuck in
+        // "game is still running" state.
+        return importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
     }
 
     private fun pendingGameLaunchMarker(context: Context): File {
