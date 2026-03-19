@@ -94,6 +94,8 @@ internal object DiagnosticsArchiveBuilder {
             val latestCrashSummary = LatestLogCrashDetector.detect(context)
             val lastNonBlankLogLine = LatestLogCrashDetector.readLastNonBlankLine(context)
             val exitSummary = ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(context)
+            val processExitTrace = ProcessExitInfoCapture.readLatestInterestingProcessExitTrace(context)
+            val processExitTraceSummary = ProcessExitInfoCapture.summarizeProcessExitTrace(processExitTrace)
             val signalDumpSummary = SignalCrashDumpReader.readSummary(context)
             writeTextEntry(
                 zipOutput,
@@ -108,9 +110,17 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/jvm_logs/process_exit_info.txt",
                 DiagnosticsSummaryFormatter.buildProcessExitInfoSummary(
                     exitSummary = exitSummary,
-                    signalDumpSummary = signalDumpSummary
+                    signalDumpSummary = signalDumpSummary,
+                    processExitTraceSummary = processExitTraceSummary
                 )
             )
+            processExitTrace?.let { traceText ->
+                writeTextEntry(
+                    zipOutput,
+                    "sts/jvm_logs/process_exit_trace.txt",
+                    traceText
+                )
+            }
             writeTextEntry(
                 zipOutput,
                 "sts/jvm_logs/launcher_settings.txt",
@@ -267,6 +277,9 @@ internal object DiagnosticsArchiveBuilder {
         crashContext: CrashArchiveContext
     ): String {
         val exitSummary = ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(context)
+        val processExitTraceSummary = ProcessExitInfoCapture.summarizeProcessExitTrace(
+            ProcessExitInfoCapture.readLatestInterestingProcessExitTrace(context)
+        )
         val signalDumpSummary = SignalCrashDumpReader.readSummary(context)
         return buildString {
             append("crash.code=").append(crashContext.code).append('\n')
@@ -277,7 +290,8 @@ internal object DiagnosticsArchiveBuilder {
             append(
                 DiagnosticsSummaryFormatter.buildProcessExitInfoSummary(
                     exitSummary = exitSummary,
-                    signalDumpSummary = signalDumpSummary
+                    signalDumpSummary = signalDumpSummary,
+                    processExitTraceSummary = processExitTraceSummary
                 )
             )
         }

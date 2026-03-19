@@ -6,10 +6,14 @@ import android.content.Context
 import android.os.Build
 import androidx.annotation.RequiresApi
 import io.stamethyst.config.RuntimePaths
+import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
 object ProcessExitInfoCapture {
     private const val GAME_PROCESS_SUFFIX = ":game"
+    private const val MAX_TRACE_BYTES = 512 * 1024
+    private const val MAX_TRACE_SUMMARY_LINES = 12
+    private const val MAX_TRACE_SUMMARY_CHARS = 1600
 
     @JvmStatic
     fun captureLatestProcessExitInfo(context: Context): ProcessExitSummary? {
@@ -59,6 +63,42 @@ object ProcessExitInfoCapture {
         markLatestInterestingProcessExitInfoHandledApi30(context, launchedAfterTimestampMs)
     }
 
+    @JvmStatic
+    fun readLatestInterestingProcessExitTrace(context: Context): String? {
+        return readLatestInterestingProcessExitTrace(context, launchedAfterTimestampMs = 0L)
+    }
+
+    @JvmStatic
+    fun readLatestInterestingProcessExitTrace(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return null
+        }
+        return readLatestInterestingProcessExitTraceApi30(context, launchedAfterTimestampMs)
+    }
+
+    @JvmStatic
+    fun summarizeProcessExitTrace(traceText: String?): String? {
+        val normalized = traceText
+            ?.lineSequence()
+            ?.map { it.trimEnd() }
+            ?.filter { it.isNotBlank() }
+            ?.take(MAX_TRACE_SUMMARY_LINES)
+            ?.joinToString("\n")
+            ?.trim()
+            ?: return null
+        if (normalized.isEmpty()) {
+            return null
+        }
+        return if (normalized.length <= MAX_TRACE_SUMMARY_CHARS) {
+            normalized
+        } else {
+            normalized.take(MAX_TRACE_SUMMARY_CHARS).trimEnd() + "..."
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.R)
     private fun captureLatestProcessExitInfoApi30(
         context: Context,
@@ -91,6 +131,15 @@ object ProcessExitInfoCapture {
     ) {
         val latest = resolveLatestInterestingExitInfo(context, launchedAfterTimestampMs) ?: return
         persistExitMarker(context, buildExitMarker(latest))
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun readLatestInterestingProcessExitTraceApi30(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): String? {
+        val latest = resolveLatestInterestingExitInfo(context, launchedAfterTimestampMs) ?: return null
+        return readTraceText(latest)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -131,6 +180,41 @@ object ProcessExitInfoCapture {
                     exitInfo.timestamp >= launchedAfterTimestampMs &&
                     exitInfo.processName == gameProcessName
             }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun readTraceText(exitInfo: ApplicationExitInfo): String? {
+        val traceInput = try {
+            exitInfo.traceInputStream
+        } catch (_: Throwable) {
+            null
+        } ?: return null
+
+        return try {
+            traceInput.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var remaining = MAX_TRACE_BYTES
+                while (remaining > 0) {
+                    val read = input.read(buffer, 0, minOf(buffer.size, remaining))
+                    if (read <= 0) {
+                        break
+                    }
+                    output.write(buffer, 0, read)
+                    remaining -= read
+                }
+                var text = output.toString(StandardCharsets.UTF_8.name()).trim()
+                if (text.isEmpty()) {
+                    return null
+                }
+                if (remaining == 0) {
+                    text += "\n\n[truncated to ${MAX_TRACE_BYTES} bytes]"
+                }
+                text
+            }
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

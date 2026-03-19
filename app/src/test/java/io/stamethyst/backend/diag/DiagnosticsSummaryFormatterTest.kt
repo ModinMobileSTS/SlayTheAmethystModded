@@ -19,7 +19,8 @@ class DiagnosticsSummaryFormatterTest {
                 description = "",
                 isSignal = true
             ),
-            signalDumpSummary = "signal 11 at libmobileglues.so"
+            signalDumpSummary = "signal 11 at libmobileglues.so",
+            processExitTraceSummary = "backtrace:\n  #00 pc 00000000  libmobileglues.so"
         )
 
         assertTrue(text.contains("processExit.pid=321"))
@@ -27,6 +28,8 @@ class DiagnosticsSummaryFormatterTest {
         assertTrue(text.contains("processExit.reason=REASON_SIGNALED"))
         assertTrue(text.contains("processExit.status=11"))
         assertTrue(text.contains("processExit.description=none"))
+        assertTrue(text.contains("processExit.trace.present=true"))
+        assertTrue(text.contains("processExit.trace.summary=backtrace:"))
         assertTrue(text.contains("signalDump.present=true"))
         assertTrue(text.contains("signalDump.summary=signal 11 at libmobileglues.so"))
     }

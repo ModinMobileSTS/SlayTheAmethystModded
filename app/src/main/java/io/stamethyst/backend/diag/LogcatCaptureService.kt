@@ -3,6 +3,7 @@ package io.stamethyst.backend.diag
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.os.SystemClock
 import io.stamethyst.config.RuntimePaths
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -20,6 +21,7 @@ class LogcatCaptureService : Service() {
 
         private const val LOGCAT_ROTATE_KB = 768L * 1024L
         private const val LOGCAT_ROTATE_FILES = 4
+        private const val TRACKED_PID_REFRESH_INTERVAL_MS = 250L
 
         internal fun buildLogcatCommandForCapture(): List<String> {
             return listOf(
@@ -31,6 +33,21 @@ class LogcatCaptureService : Service() {
                 "-b", "events",
                 "*:I"
             )
+        }
+
+        internal fun extractPidFromThreadtimeLine(line: String): Int? {
+            if (line.length < 20) {
+                return null
+            }
+            val tokens = line.trimStart().split(Regex("\\s+"), limit = 6)
+            if (tokens.size < 5) {
+                return null
+            }
+            return tokens[2].toIntOrNull()
+        }
+
+        internal fun isTrackedProcessName(processName: String, packageName: String): Boolean {
+            return processName == packageName || processName.startsWith("$packageName:")
         }
     }
 
@@ -114,6 +131,9 @@ class LogcatCaptureService : Service() {
             maxBytesPerFile = LOGCAT_ROTATE_KB,
             maxFiles = LOGCAT_ROTATE_FILES
         )
+        val appLogFilter = TrackedAppLogFilter(
+            trackedPidSupplier = { resolveTrackedAppPids() }
+        )
         try {
             writer.appendLine(
                 buildString {
@@ -134,7 +154,9 @@ class LogcatCaptureService : Service() {
             ).use { reader ->
                 while (captureThread === Thread.currentThread()) {
                     val line = reader.readLine() ?: break
-                    writer.appendLine(line)
+                    if (appLogFilter.shouldCapture(line)) {
+                        writer.appendLine(line)
+                    }
                 }
             }
             val exitCode = try {
@@ -176,6 +198,52 @@ class LogcatCaptureService : Service() {
             if (file.exists()) {
                 runCatching { file.delete() }
             }
+        }
+    }
+
+    private fun resolveTrackedAppPids(): Set<Int> {
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as? android.app.ActivityManager
+            ?: return emptySet()
+        val appPackageName = packageName
+        return try {
+            activityManager.runningAppProcesses
+                ?.asSequence()
+                ?.filter { process ->
+                    process.pid > 0 &&
+                        isTrackedProcessName(process.processName.orEmpty(), appPackageName)
+                }
+                ?.map { it.pid }
+                ?.toSet()
+                .orEmpty()
+        } catch (_: Throwable) {
+            emptySet()
+        }
+    }
+
+    internal class TrackedAppLogFilter(
+        private val trackedPidSupplier: () -> Set<Int>,
+        private val nowProviderMs: () -> Long = { SystemClock.elapsedRealtime() },
+        private val refreshIntervalMs: Long = TRACKED_PID_REFRESH_INTERVAL_MS
+    ) {
+        private var lastRefreshAtMs: Long = Long.MIN_VALUE
+        private val retainedTrackedPids = linkedSetOf<Int>()
+
+        fun shouldCapture(line: String): Boolean {
+            if (line.startsWith("===")) {
+                return true
+            }
+            refreshTrackedPidsIfNeeded()
+            val pid = extractPidFromThreadtimeLine(line) ?: return false
+            return retainedTrackedPids.contains(pid)
+        }
+
+        private fun refreshTrackedPidsIfNeeded() {
+            val nowMs = nowProviderMs()
+            if (lastRefreshAtMs != Long.MIN_VALUE && nowMs - lastRefreshAtMs < refreshIntervalMs) {
+                return
+            }
+            retainedTrackedPids.addAll(trackedPidSupplier())
+            lastRefreshAtMs = nowMs
         }
     }
 }

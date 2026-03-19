@@ -6,7 +6,8 @@ import io.stamethyst.backend.crash.ProcessExitSummary
 internal object DiagnosticsSummaryFormatter {
     fun buildProcessExitInfoSummary(
         exitSummary: ProcessExitSummary?,
-        signalDumpSummary: String?
+        signalDumpSummary: String?,
+        processExitTraceSummary: String? = null
     ): String {
         return buildString {
             if (exitSummary == null) {
@@ -21,6 +22,10 @@ internal object DiagnosticsSummaryFormatter {
                 append(exitSummary.description.ifBlank { "none" })
                 append('\n')
             }
+            append("processExit.trace.present=").append(!processExitTraceSummary.isNullOrBlank()).append('\n')
+            append("processExit.trace.summary=")
+            append(processExitTraceSummary ?: "none")
+            append('\n')
             append("signalDump.present=").append(!signalDumpSummary.isNullOrBlank()).append('\n')
             append("signalDump.summary=")
             append(signalDumpSummary ?: "none")
