@@ -2,7 +2,6 @@ package io.stamethyst.backend.render
 
 import android.content.Context
 import io.stamethyst.config.RuntimePaths
-import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -10,21 +9,40 @@ import java.nio.file.Files
 import java.util.Locale
 
 object DisplayConfigSync {
-    private const val DEFAULT_FPS_LIMIT = LauncherConfig.DEFAULT_TARGET_FPS
+    private const val DEFAULT_WIDTH = 1280
+    private const val DEFAULT_HEIGHT = 720
+    private const val DEFAULT_FPS_LIMIT = 60
     private const val DEFAULT_FULLSCREEN = false
     private const val DEFAULT_WINDOWED_FULLSCREEN = false
-    private const val DEFAULT_VSYNC = false
-    private const val MIN_WIDTH = 800
-    private const val MIN_HEIGHT = 450
+    private const val DEFAULT_VSYNC = true
+    private const val MIN_WIDTH = 1
+    private const val MIN_HEIGHT = 1
+    private val SUPPORTED_FPS_LIMITS = intArrayOf(24, 30, 60, 120, 240)
 
     @JvmStatic
     @Throws(IOException::class)
-    fun syncToCurrentResolution(context: Context, width: Int, height: Int, targetFpsLimit: Int) {
+    fun syncToCurrentResolution(context: Context, width: Int, height: Int) {
         val configFile = RuntimePaths.displayConfigFile(context)
         val lines = buildConfigLines(
             existingLines = readExistingLines(configFile),
             width = width,
-            height = height,
+            height = height
+        )
+        writeConfig(configFile, lines)
+    }
+
+    @JvmStatic
+    fun readTargetFpsLimit(context: Context): Int {
+        val configFile = RuntimePaths.displayConfigFile(context)
+        return normalizeTargetFpsLimit(readExisting(readExistingLines(configFile)).fpsLimit)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun saveTargetFpsLimit(context: Context, targetFpsLimit: Int) {
+        val configFile = RuntimePaths.displayConfigFile(context)
+        val lines = buildTargetFpsConfigLines(
+            existingLines = readExistingLines(configFile),
             targetFpsLimit = targetFpsLimit
         )
         writeConfig(configFile, lines)
@@ -33,19 +51,47 @@ object DisplayConfigSync {
     internal fun buildConfigLines(
         existingLines: List<String>?,
         width: Int,
-        height: Int,
-        targetFpsLimit: Int
+        height: Int
     ): List<String> {
+        // Keep the display config aligned with the actual scaled render surface.
+        // If this file clamps to a larger minimum than the active surface/window size,
+        // the game can render into only a corner of the visible output.
         val safeWidth = width.coerceAtLeast(MIN_WIDTH)
         val safeHeight = height.coerceAtLeast(MIN_HEIGHT)
-        val normalizedTargetFpsLimit = normalizeTargetFpsLimit(targetFpsLimit)
         val state = readExisting(existingLines)
-            .withFpsLimit(normalizedTargetFpsLimit)
-            .withVsync(false)
 
         return ArrayList<String>(6).apply {
             add(safeWidth.toString())
             add(safeHeight.toString())
+            add(state.fpsLimit.toString())
+            add(java.lang.Boolean.toString(state.fullscreen))
+            add(java.lang.Boolean.toString(state.windowedFullscreen))
+            add(java.lang.Boolean.toString(state.vsync))
+        }
+    }
+
+    internal fun buildTargetFpsConfigLines(
+        existingLines: List<String>?,
+        targetFpsLimit: Int
+    ): List<String> {
+        val normalizedTargetFpsLimit = normalizeTargetFpsLimit(targetFpsLimit)
+        val state = readExisting(existingLines).withFpsLimit(normalizedTargetFpsLimit)
+        val width =
+            if (existingLines != null && existingLines.isNotEmpty()) {
+                parsePositiveInt(existingLines[0], DEFAULT_WIDTH)
+            } else {
+                DEFAULT_WIDTH
+            }
+        val height =
+            if (existingLines != null && existingLines.size > 1) {
+                parsePositiveInt(existingLines[1], DEFAULT_HEIGHT)
+            } else {
+                DEFAULT_HEIGHT
+            }
+
+        return ArrayList<String>(6).apply {
+            add(width.toString())
+            add(height.toString())
             add(state.fpsLimit.toString())
             add(java.lang.Boolean.toString(state.fullscreen))
             add(java.lang.Boolean.toString(state.windowedFullscreen))
@@ -115,7 +161,11 @@ object DisplayConfigSync {
     }
 
     private fun normalizeTargetFpsLimit(targetFpsLimit: Int): Int {
-        return LauncherConfig.normalizeTargetFps(targetFpsLimit)
+        return if (SUPPORTED_FPS_LIMITS.contains(targetFpsLimit)) {
+            targetFpsLimit
+        } else {
+            DEFAULT_FPS_LIMIT
+        }
     }
 
     private data class DisplayConfigState(

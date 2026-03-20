@@ -3,6 +3,7 @@ package io.stamethyst.config
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesCustomGlVersion
@@ -36,7 +37,6 @@ object LauncherConfig {
     private const val PREF_NAME_LAUNCHER = "sts_launcher_prefs"
     private const val PREF_KEY_BACK_BEHAVIOR = "back_behavior"
     private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
-    private const val PREF_KEY_TARGET_FPS = "target_fps"
     private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
     private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
     private const val PREF_KEY_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED =
@@ -110,8 +110,8 @@ object LauncherConfig {
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
-    const val DEFAULT_TARGET_FPS = 120
-    val TARGET_FPS_OPTIONS = intArrayOf(60, 120, 240)
+    const val DEFAULT_TARGET_FPS = 60
+    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 120, 240)
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW
     val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode = RendererSelectionMode.AUTO
     val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend =
@@ -163,7 +163,7 @@ object LauncherConfig {
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
 
     const val DEFAULT_RENDER_SCALE = 1.0f
-    const val MIN_RENDER_SCALE = 0.50f
+    const val MIN_RENDER_SCALE = 0.10f
     const val MAX_RENDER_SCALE = 1.00f
 
     const val DEFAULT_TOUCHSCREEN_ENABLED = true
@@ -533,14 +533,11 @@ object LauncherConfig {
     }
 
     fun readTargetFps(context: Context): Int {
-        val stored = prefs(context).getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS)
-        return normalizeTargetFps(stored)
+        return DisplayConfigSync.readTargetFpsLimit(context)
     }
 
     fun saveTargetFps(context: Context, targetFps: Int) {
-        prefs(context).edit {
-            putInt(PREF_KEY_TARGET_FPS, normalizeTargetFps(targetFps))
-        }
+        DisplayConfigSync.saveTargetFpsLimit(context, normalizeTargetFps(targetFps))
     }
 
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {

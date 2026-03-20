@@ -189,7 +189,16 @@ object StsLaunchSpec {
         rendererDecision.fallbackSummary()?.let {
             args.add("-Damethyst.renderer.fallback_reason=$it")
         }
+        args.add("-Damethyst.gdx.render_scale=${LauncherConfig.readRenderScale(context)}")
         args.add("-Damethyst.gdx.native_dir=${RuntimePaths.gdxPatchNativesDir(context).absolutePath}")
+        println(
+            "StsLaunchSpec: " +
+                "renderScale=${LauncherConfig.readRenderScale(context)}, " +
+                "glfwstub=${Math.max(1, CallbackBridge.windowWidth)}x" +
+                "${Math.max(1, CallbackBridge.windowHeight)}, " +
+                "physical=${Math.max(1, CallbackBridge.physicalWidth)}x" +
+                "${Math.max(1, CallbackBridge.physicalHeight)}"
+        )
         args.add("-Dglfwstub.windowWidth=${Math.max(1, CallbackBridge.windowWidth)}")
         args.add("-Dglfwstub.windowHeight=${Math.max(1, CallbackBridge.windowHeight)}")
         args.add("-Dglfwstub.initEgl=false")

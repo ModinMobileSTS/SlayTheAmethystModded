@@ -1,10 +1,6 @@
 package io.stamethyst.backend.render
 
-import kotlin.math.roundToInt
-
-internal class RenderSurfaceState(
-    private val renderScale: Float
-) {
+internal class RenderSurfaceState {
     internal data class ApplyPlan(
         val physicalWidth: Int,
         val physicalHeight: Int,
@@ -118,8 +114,10 @@ internal class RenderSurfaceState(
     fun buildApplyPlan(viewWidth: Int = 0, viewHeight: Int = 0): ApplyPlan {
         val physicalWidth = resolvePhysicalWidth(viewWidth)
         val physicalHeight = resolvePhysicalHeight(viewHeight)
-        val bufferWidth = (physicalWidth * renderScale).roundToInt().coerceAtLeast(1)
-        val bufferHeight = (physicalHeight * renderScale).roundToInt().coerceAtLeast(1)
+        // Keep the Android surface at physical size. Internal resolution scaling is now
+        // handled inside the libGDX patch with an offscreen FBO before swap.
+        val bufferWidth = physicalWidth
+        val bufferHeight = physicalHeight
         surfaceBufferWidth = bufferWidth
         surfaceBufferHeight = bufferHeight
         val shouldApplyBufferSize = hasActiveSurface &&
@@ -133,8 +131,8 @@ internal class RenderSurfaceState(
             physicalHeight = physicalHeight,
             bufferWidth = bufferWidth,
             bufferHeight = bufferHeight,
-            windowWidth = bufferWidth,
-            windowHeight = bufferHeight,
+            windowWidth = physicalWidth,
+            windowHeight = physicalHeight,
             shouldApplyBufferSize = shouldApplyBufferSize,
             shouldDispatchWindowSize = shouldDispatchWindowSize
         )

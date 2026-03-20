@@ -10,18 +10,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.ForegroundResyncScheduler
-import io.stamethyst.backend.render.RenderPacingController
 import io.stamethyst.backend.render.RenderSurfaceState
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 
 /**
- * Coordinates render surface hosting, size synchronization, and frame pacing.
+ * Coordinates render surface hosting and size synchronization.
  */
 class RenderSurfaceManager(
     private val activity: StsGameActivity,
     renderScale: Float,
-    private val targetFps: Int,
     useTextureViewSurface: Boolean,
     private val avoidDisplayCutout: Boolean,
     private val cropScreenBottom: Boolean,
@@ -29,9 +27,8 @@ class RenderSurfaceManager(
     private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
 ) {
-    private val state = RenderSurfaceState(renderScale)
+    private val state = RenderSurfaceState()
     private val resyncScheduler = ForegroundResyncScheduler()
-    private val pacingController = RenderPacingController(activity, targetFps)
     private val renderHost: RenderSurfaceHost = if (useTextureViewSurface) {
         TextureViewHost(activity)
     } else {
@@ -98,7 +95,6 @@ class RenderSurfaceManager(
             override fun onSurfaceDestroyed(surfaceGeneration: Int) {
                 pendingSurfaceReadyCallback = false
                 disconnectBridgeSurfaceIfNeeded()
-                pacingController.resetSurfaceTracking()
                 state.markSurfaceDestroyed()
                 onSurfaceDestroyed()
             }
@@ -183,7 +179,7 @@ class RenderSurfaceManager(
         val windowWidth = CallbackBridge.windowWidth.coerceAtLeast(1)
         val windowHeight = CallbackBridge.windowHeight.coerceAtLeast(1)
         try {
-            DisplayConfigSync.syncToCurrentResolution(activity, windowWidth, windowHeight, targetFps)
+            DisplayConfigSync.syncToCurrentResolution(activity, windowWidth, windowHeight)
         } catch (_: Throwable) {
         }
     }
@@ -210,8 +206,7 @@ class RenderSurfaceManager(
         val plan = state.buildApplyPlan(renderView.width, renderView.height)
         var anyApplied = false
 
-        val surface = renderHost.currentSurface
-        if (plan.shouldApplyBufferSize && surface != null) {
+        if (plan.shouldApplyBufferSize && renderHost.currentSurface != null) {
             val applied = renderHost.applyBufferSize(
                 width = plan.bufferWidth,
                 height = plan.bufferHeight,
@@ -225,13 +220,6 @@ class RenderSurfaceManager(
             anyApplied = anyApplied || applied
         } else {
             state.recordBufferApply(plan = plan, applied = false, incrementsHolderResize = false)
-        }
-
-        if (pacingController.applyWindowPreference(renderView)) {
-            anyApplied = true
-        }
-        if (surface != null && pacingController.applySurfacePreference(surface, renderHost.surfaceGeneration)) {
-            anyApplied = true
         }
 
         connectBridgeSurfaceIfNeeded()
@@ -277,6 +265,14 @@ class RenderSurfaceManager(
             state.recordWindowSizeDispatch(plan, dispatched = false)
             return false
         }
+        println(
+            "RenderSurfaceDispatch: " +
+                "view=${if (::renderView.isInitialized) renderView.width else 0}x" +
+                "${if (::renderView.isInitialized) renderView.height else 0}, " +
+                "physical=${plan.physicalWidth}x${plan.physicalHeight}, " +
+                "buffer=${plan.bufferWidth}x${plan.bufferHeight}, " +
+                "window=${plan.windowWidth}x${plan.windowHeight}"
+        )
         CallbackBridge.physicalWidth = plan.physicalWidth
         CallbackBridge.physicalHeight = plan.physicalHeight
         CallbackBridge.windowWidth = plan.windowWidth
@@ -324,14 +320,6 @@ class RenderSurfaceManager(
             append(state.windowSizeDispatchCount)
             append("/")
             append(state.windowSizeSkipCount)
-            append(", windowHint=")
-            append(pacingController.windowApplyCount)
-            append("/")
-            append(pacingController.windowSkipCount)
-            append(", surfaceHint=")
-            append(pacingController.surfaceApplyCount)
-            append("/")
-            append(pacingController.surfaceSkipCount)
         }
     }
 

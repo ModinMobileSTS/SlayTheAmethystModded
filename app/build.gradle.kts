@@ -186,7 +186,7 @@ android {
         outputs.all {
             @Suppress("DEPRECATION")
             if (this is com.android.build.gradle.api.ApkVariantOutput) {
-                outputFileName = "SlayTheAmethyst-dev-$appVersionName.APK"
+                outputFileName = "SlayTheAmethyst-dev-$appVersionName.apk"
             }
         }
     }

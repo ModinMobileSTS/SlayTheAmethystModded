@@ -2043,7 +2043,6 @@ class MainScreenViewModel : ViewModel() {
             ).show()
             return
         }
-        val targetFps = LauncherPreferences.readTargetFps(host)
         val backBehavior = readBackBehaviorSelection(host)
         val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
         val launcherSettingsSynced = try {
@@ -2070,7 +2069,6 @@ class MainScreenViewModel : ViewModel() {
             StsGameActivity.launch(
                 host,
                 launchMode,
-                targetFps,
                 backBehavior,
                 manualDismissBootOverlay,
                 forceJvmCrash

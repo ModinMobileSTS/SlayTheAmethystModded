@@ -580,7 +580,7 @@ class SettingsScreenViewModel : ViewModel() {
 
                     append("\n\n启动与兼容设置")
                     append("\nPlayer name: ").append(playerName)
-                    append("\nRender scale: ${RenderScaleService.format(renderScale)} (0.50-1.00)")
+                    append("\n画面清晰度: ${RenderScaleService.format(renderScale)} (0.10-1.00)")
                     append("\nTarget FPS: $targetFps")
                     append("\nRenderer selection mode: ")
                         .append(rendererSelectionMode.displayName())
@@ -2101,11 +2101,11 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         val lines = status.lines().toMutableList()
-        val lineIndex = lines.indexOfFirst { it.startsWith("Render scale: ") }
+        val lineIndex = lines.indexOfFirst { it.startsWith("画面清晰度: ") }
         if (lineIndex < 0) {
             return
         }
-        lines[lineIndex] = "Render scale: $normalizedRenderScale (0.50-1.00)"
+        lines[lineIndex] = "画面清晰度: $normalizedRenderScale (0.10-1.00)"
         uiState = uiState.copy(statusText = lines.joinToString("\n"))
     }
 

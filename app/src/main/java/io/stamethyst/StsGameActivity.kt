@@ -27,20 +27,17 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
-        const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
 
         @JvmStatic
         fun launch(
             context: Context,
             launchMode: String,
-            targetFps: Int,
             backBehavior: BackBehavior,
             manualDismissBootOverlay: Boolean,
             forceJvmCrash: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
-            intent.putExtra(EXTRA_TARGET_FPS, targetFps)
             intent.putExtra(EXTRA_BACK_BEHAVIOR, backBehavior.persistedValue)
             intent.putExtra(
                 EXTRA_BACK_IMMEDIATE_EXIT,
@@ -144,7 +141,6 @@ class StsGameActivity : AppCompatActivity() {
         renderSurfaceManager = RenderSurfaceManager(
             activity = this,
             renderScale = sessionConfig.renderScale,
-            targetFps = sessionConfig.targetFps,
             useTextureViewSurface = sessionConfig.useTextureViewSurface,
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             cropScreenBottom = sessionConfig.cropScreenBottom,

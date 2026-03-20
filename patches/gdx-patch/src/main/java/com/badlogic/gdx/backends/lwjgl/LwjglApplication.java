@@ -41,7 +41,12 @@ import com.badlogic.gdx.Net;
 import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.backends.lwjgl.audio.OpenALAudio;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.glutils.FrameBuffer;
+import com.badlogic.gdx.graphics.glutils.GLFrameBuffer;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Clipboard;
 import com.badlogic.gdx.utils.GdxRuntimeException;
@@ -63,6 +68,7 @@ public class LwjglApplication implements Application {
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
+	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
@@ -90,6 +96,7 @@ public class LwjglApplication implements Application {
 	};
 	private static final String[] FUNCTION_ALIAS_SUFFIXES = {"EXT", "OES", "ARB"};
 	private static volatile boolean noContextDiagnosticsInstalled;
+	private static boolean scaledRenderPresentLogged;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
 	private boolean missingFunctionPointerPatchLogged;
@@ -115,9 +122,13 @@ public class LwjglApplication implements Application {
 	private int globalTextureCompatFailedTotal;
 	private int globalTextureCompatScanTotal;
 	private int globalTextureCompatKnownManagedCount = -1;
+	private final float configuredRenderScale = readConfiguredRenderScale();
 	private final ObjectSet<Texture> globalTextureCompatSeen = new ObjectSet<Texture>();
 	private final ObjectMap<Texture, Integer> globalTextureCompatFailureCounts = new ObjectMap<Texture, Integer>();
 	private final ObjectMap<Texture, String> globalTextureCompatSourceCache = new ObjectMap<Texture, String>();
+	private ScaledRenderPipeline scaledRenderPipeline;
+	private boolean scaledRenderPipelineDisabled;
+	private boolean scaledRenderPipelineLogged;
 	protected final Array<Runnable> runnables = new Array<Runnable>();
 	protected final Array<Runnable> executedRunnables = new Array<Runnable>();
 	protected final SnapshotArray<LifecycleListener> lifecycleListeners = new SnapshotArray<LifecycleListener>(LifecycleListener.class);
@@ -283,6 +294,173 @@ public class LwjglApplication implements Application {
 			}
 		};
 		mainLoopThread.start();
+	}
+
+	private static float readConfiguredRenderScale () {
+		String configured = System.getProperty(RENDER_SCALE_PROP);
+		if (configured == null) return 1f;
+		try {
+			float parsed = Float.parseFloat(configured.trim());
+			if (Float.isNaN(parsed) || Float.isInfinite(parsed)) return 1f;
+			if (parsed < 0.1f) return 0.1f;
+			if (parsed > 1f) return 1f;
+			return parsed;
+		} catch (Throwable ignored) {
+			return 1f;
+		}
+	}
+
+	private boolean shouldUseScaledRenderPipeline () {
+		return graphics.canvas == null && configuredRenderScale < 0.999f && !scaledRenderPipelineDisabled;
+	}
+
+	private ScaledRenderPipeline beginScaledRenderFrame (int screenWidth, int screenHeight) {
+		if (!shouldUseScaledRenderPipeline()) return null;
+		try {
+			if (scaledRenderPipeline == null) {
+				scaledRenderPipeline = new ScaledRenderPipeline(configuredRenderScale);
+			}
+			scaledRenderPipeline.ensureReady(screenWidth, screenHeight, nativeContextGeneration);
+			scaledRenderPipeline.beginFrame();
+			if (!scaledRenderPipelineLogged) {
+				scaledRenderPipelineLogged = true;
+				System.out.println("[gdx-patch] Internal render scale active: factor=" + configuredRenderScale);
+			}
+			return scaledRenderPipeline;
+		} catch (Throwable t) {
+			scaledRenderPipelineDisabled = true;
+			disposeScaledRenderPipeline();
+			System.out.println("[gdx-patch] Disabling scaled render pipeline after initialization failure: " + t);
+			return null;
+		}
+	}
+
+	private void finishScaledRenderFrame (ScaledRenderPipeline pipeline, int screenWidth, int screenHeight) {
+		if (pipeline == null) return;
+		try {
+			bindDefaultFramebufferForSwap();
+			pipeline.finishFrame(screenWidth, screenHeight);
+		} catch (Throwable t) {
+			scaledRenderPipelineDisabled = true;
+			try {
+				pipeline.abortFrame();
+			} catch (Throwable ignored) {
+			}
+			disposeScaledRenderPipeline();
+			System.out.println("[gdx-patch] Disabling scaled render pipeline after present failure: " + t);
+		}
+	}
+
+	private void disposeScaledRenderPipeline () {
+		if (scaledRenderPipeline == null) return;
+		try {
+			scaledRenderPipeline.dispose();
+		} catch (Throwable ignored) {
+		}
+		scaledRenderPipeline = null;
+	}
+
+	private static int getManagedDefaultFramebufferHandle () {
+		try {
+			return ((Integer)findField(GLFrameBuffer.class, "defaultFramebufferHandle").get(null)).intValue();
+		} catch (Throwable ignored) {
+			return 0;
+		}
+	}
+
+	private static void setManagedDefaultFramebufferHandle (int handle) {
+		try {
+			findField(GLFrameBuffer.class, "defaultFramebufferHandle").set(null, Integer.valueOf(handle));
+		} catch (Throwable ignored) {
+		}
+	}
+
+	private static final class ScaledRenderPipeline {
+		private final float scale;
+		private final Matrix4 projection = new Matrix4();
+		private FrameBuffer frameBuffer;
+		private SpriteBatch batch;
+		private int frameBufferWidth;
+		private int frameBufferHeight;
+		private int contextGeneration = Integer.MIN_VALUE;
+		private int previousDefaultFramebufferHandle;
+		private boolean frameActive;
+
+		ScaledRenderPipeline (float scale) {
+			this.scale = scale;
+		}
+
+		void ensureReady (int screenWidth, int screenHeight, int currentContextGeneration) {
+			int targetWidth = Math.max(1, Math.round(screenWidth * scale));
+			int targetHeight = Math.max(1, Math.round(screenHeight * scale));
+			boolean sizeChanged = frameBufferWidth != targetWidth || frameBufferHeight != targetHeight;
+			boolean contextChanged = contextGeneration != currentContextGeneration;
+			if (frameBuffer != null && !sizeChanged && !contextChanged) return;
+			dispose();
+			frameBuffer = new FrameBuffer(Pixmap.Format.RGBA8888, targetWidth, targetHeight, true);
+			frameBuffer.getColorBufferTexture().setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+			batch = new SpriteBatch();
+			frameBufferWidth = targetWidth;
+			frameBufferHeight = targetHeight;
+			contextGeneration = currentContextGeneration;
+		}
+
+		void beginFrame () {
+			if (frameBuffer == null) {
+				throw new IllegalStateException("Scaled framebuffer is not initialized");
+			}
+			previousDefaultFramebufferHandle = getManagedDefaultFramebufferHandle();
+			setManagedDefaultFramebufferHandle(frameBuffer.getFramebufferHandle());
+			frameBuffer.begin();
+			frameActive = true;
+		}
+
+		void finishFrame (int screenWidth, int screenHeight) {
+			if (!frameActive) return;
+			frameActive = false;
+			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
+			FrameBuffer.unbind();
+			Gdx.gl20.glColorMask(true, true, true, true);
+			Gdx.gl20.glDisable(GL20.GL_DEPTH_TEST);
+			Gdx.gl20.glDisable(GL20.GL_CULL_FACE);
+			Gdx.gl20.glDisable(GL20.GL_SCISSOR_TEST);
+			Gdx.gl20.glDisable(GL20.GL_STENCIL_TEST);
+			projection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+			batch.setProjectionMatrix(projection);
+			batch.disableBlending();
+			batch.begin();
+			if (!scaledRenderPresentLogged) {
+				scaledRenderPresentLogged = true;
+				System.out.println(
+					"[gdx-patch] Scaled present config: uv=0.0,0.0,1.0,1.0");
+			}
+			// Present the offscreen texture as-is. On this MobileGlues path the prior X flip
+			// correction was overcompensating and left the final fullscreen image mirrored.
+			batch.draw(frameBuffer.getColorBufferTexture(), 0, 0, screenWidth, screenHeight, 0f, 0f, 1f, 1f);
+			batch.end();
+		}
+
+		void abortFrame () {
+			if (!frameActive) return;
+			frameActive = false;
+			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
+			FrameBuffer.unbind();
+		}
+
+		void dispose () {
+			abortFrame();
+			if (batch != null) {
+				batch.dispose();
+				batch = null;
+			}
+			if (frameBuffer != null) {
+				frameBuffer.dispose();
+				frameBuffer = null;
+			}
+			frameBufferWidth = 0;
+			frameBufferHeight = 0;
+			contextGeneration = Integer.MIN_VALUE;
+		}
 	}
 
 	private boolean shouldUseSoftwareSync (boolean renderedFrame, boolean isActive, int frameRate) {
@@ -1324,10 +1502,15 @@ public class LwjglApplication implements Application {
 				runGlobalTextureCompatOnManagedGrowth("pre-render");
 				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
 				ensureColorMaskWritable();
-				listener.render();
-				// Catch textures created during listener.render in the same frame.
-				runGlobalTextureCompatOnManagedGrowth("post-render");
-				boolean forceDefaultFbo = shouldForceDefaultFramebuffer();
+				ScaledRenderPipeline scaledRender = beginScaledRenderFrame(Display.getWidth(), Display.getHeight());
+				try {
+					listener.render();
+					// Catch textures created during listener.render in the same frame.
+					runGlobalTextureCompatOnManagedGrowth("post-render");
+				} finally {
+					finishScaledRenderFrame(scaledRender, Display.getWidth(), Display.getHeight());
+				}
+				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;
 				if (forceDefaultFbo || Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {
 					if (forceDefaultFbo && !defaultFramebufferRebindLogged) {
 						// Reduced log mode: default-fbo one-time info log disabled.
@@ -1361,6 +1544,7 @@ public class LwjglApplication implements Application {
 		}
 		listener.pause();
 		listener.dispose();
+		disposeScaledRenderPipeline();
 		Display.destroy();
 		if (audio != null) audio.dispose();
 		if (graphics.config.forceExit) System.exit(-1);

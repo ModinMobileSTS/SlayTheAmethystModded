@@ -224,7 +224,7 @@ private fun LauncherSettingsScreenPreview() {
             touchscreenEnabled = true,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
             logPathText = "/example/path/to/logs",
-            targetFpsOptions = listOf(60, 120, 240),
+            targetFpsOptions = listOf(24, 30, 60, 120, 240),
             updateStatusSummary = "最近检查：2026-03-09 11:20\n远端版本：1.0.6-hotfix1\n结果：发现新版本\n下载源：gh-proxy.com",
         ),
         feedbackSubmissionNotice = FeedbackSubmissionNotice(
@@ -886,9 +886,13 @@ private fun SettingsRenderSection(
         )
     }
 
-    Text(text = "内部渲染比例", style = MaterialTheme.typography.bodyMedium)
+    Text(text = "画面清晰度", style = MaterialTheme.typography.bodyMedium)
     Text(
         text = RenderScaleService.format(renderScaleSliderValue),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Text(
+        text = "越高越清楚，越低越省性能",
         style = MaterialTheme.typography.bodySmall
     )
     Slider(

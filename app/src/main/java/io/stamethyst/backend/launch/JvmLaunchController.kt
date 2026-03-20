@@ -28,7 +28,6 @@ import java.util.ArrayList
 class JvmLaunchController(
     private val activity: StsGameActivity,
     private val launchMode: String,
-    private val targetFps: Int,
     private val rendererDecision: RendererDecision,
     private val forceJvmCrash: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
@@ -219,6 +218,15 @@ class JvmLaunchController(
 
                 throwIfCancelled()
                 onSurfaceSizeSync()
+                Log.i(
+                    LOGCAT_TAG,
+                    "Launch surface sync resolved " +
+                        "window=${getWindowWidth().coerceAtLeast(1)}x${getWindowHeight().coerceAtLeast(1)}, " +
+                        "bridgeWindow=${CallbackBridge.windowWidth.coerceAtLeast(1)}x" +
+                        "${CallbackBridge.windowHeight.coerceAtLeast(1)}, " +
+                        "bridgePhysical=${CallbackBridge.physicalWidth.coerceAtLeast(1)}x" +
+                        "${CallbackBridge.physicalHeight.coerceAtLeast(1)}"
+                )
 
                 throwIfCancelled()
                 JREUtils.relocateLibPath(activity.applicationInfo.nativeLibraryDir, resolvedJavaHome.absolutePath)
