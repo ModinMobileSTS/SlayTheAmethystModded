@@ -13,32 +13,61 @@ object DisplayConfigSync {
     private const val DEFAULT_FPS_LIMIT = LauncherConfig.DEFAULT_TARGET_FPS
     private const val DEFAULT_FULLSCREEN = false
     private const val DEFAULT_WINDOWED_FULLSCREEN = false
-    private const val DEFAULT_VSYNC = true
+    private const val DEFAULT_VSYNC = false
     private const val MIN_WIDTH = 800
     private const val MIN_HEIGHT = 450
 
     @JvmStatic
     @Throws(IOException::class)
     fun syncToCurrentResolution(context: Context, width: Int, height: Int, targetFpsLimit: Int) {
+        val configFile = RuntimePaths.displayConfigFile(context)
+        val lines = buildConfigLines(
+            existingLines = readExistingLines(configFile),
+            width = width,
+            height = height,
+            targetFpsLimit = targetFpsLimit
+        )
+        writeConfig(configFile, lines)
+    }
+
+    internal fun buildConfigLines(
+        existingLines: List<String>?,
+        width: Int,
+        height: Int,
+        targetFpsLimit: Int
+    ): List<String> {
         val safeWidth = width.coerceAtLeast(MIN_WIDTH)
         val safeHeight = height.coerceAtLeast(MIN_HEIGHT)
         val normalizedTargetFpsLimit = normalizeTargetFpsLimit(targetFpsLimit)
+        val state = readExisting(existingLines)
+            .withFpsLimit(normalizedTargetFpsLimit)
+            .withVsync(false)
 
-        val configFile = RuntimePaths.displayConfigFile(context)
-        val state = readExisting(configFile).withFpsLimit(normalizedTargetFpsLimit)
-        writeConfig(configFile, safeWidth, safeHeight, state)
+        return ArrayList<String>(6).apply {
+            add(safeWidth.toString())
+            add(safeHeight.toString())
+            add(state.fpsLimit.toString())
+            add(java.lang.Boolean.toString(state.fullscreen))
+            add(java.lang.Boolean.toString(state.windowedFullscreen))
+            add(java.lang.Boolean.toString(state.vsync))
+        }
     }
 
-    private fun readExisting(configFile: File): DisplayConfigState {
+    private fun readExistingLines(configFile: File): List<String>? {
         if (!configFile.isFile) {
-            return DisplayConfigState.defaults()
+            return null
         }
-        val lines: List<String> = try {
+        return try {
             Files.readAllLines(configFile.toPath(), StandardCharsets.UTF_8)
         } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun readExisting(lines: List<String>?): DisplayConfigState {
+        if (lines == null) {
             return DisplayConfigState.defaults()
         }
-
         val fps =
             if (lines.size > 2) parsePositiveInt(lines[2], DEFAULT_FPS_LIMIT) else DEFAULT_FPS_LIMIT
         val fullscreen =
@@ -51,19 +80,11 @@ object DisplayConfigSync {
     }
 
     @Throws(IOException::class)
-    private fun writeConfig(configFile: File, width: Int, height: Int, state: DisplayConfigState) {
+    private fun writeConfig(configFile: File, lines: List<String>) {
         val parent = configFile.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-
-        val lines = ArrayList<String>(6)
-        lines.add(width.toString())
-        lines.add(height.toString())
-        lines.add(state.fpsLimit.toString())
-        lines.add(java.lang.Boolean.toString(state.fullscreen))
-        lines.add(java.lang.Boolean.toString(state.windowedFullscreen))
-        lines.add(java.lang.Boolean.toString(state.vsync))
         Files.write(configFile.toPath(), lines, StandardCharsets.UTF_8)
     }
 
@@ -105,6 +126,10 @@ object DisplayConfigSync {
     ) {
         fun withFpsLimit(nextFpsLimit: Int): DisplayConfigState {
             return DisplayConfigState(nextFpsLimit, fullscreen, windowedFullscreen, vsync)
+        }
+
+        fun withVsync(nextVsync: Boolean): DisplayConfigState {
+            return DisplayConfigState(fpsLimit, fullscreen, windowedFullscreen, nextVsync)
         }
 
         companion object {

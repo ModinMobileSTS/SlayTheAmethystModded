@@ -1100,7 +1100,7 @@ private fun SettingsRenderSection(
                         append("\n\n")
                         append("如果你的设备支持游戏面板，请在游戏运行时从系统面板中切换；不同厂商也可能叫“游戏助手”“游戏空间”等。")
                         append("\n\n")
-                        append("当前启动器已向系统声明支持 Performance / Battery 两种模式。其中 Battery 模式下，启动器会把实际目标 FPS 上限收敛到 60。")
+                        append("当前启动器已向系统声明支持 Performance / Battery 两种模式。Battery 模式的系统策略仍可能影响功耗与调度，但启动器不会再额外把目标 FPS 压到 60。")
                     }
                 )
             },

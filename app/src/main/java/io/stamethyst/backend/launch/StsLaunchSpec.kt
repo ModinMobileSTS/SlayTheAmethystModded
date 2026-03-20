@@ -17,7 +17,9 @@ import java.util.Locale
 import java.util.TimeZone
 
 object StsLaunchSpec {
-    private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 50
+    private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 80
+    private const val DEFAULT_ACTIVE_PROCESSOR_COUNT = 3
+    private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS = "mts"
     // Legacy alias kept only so old debug scripts still resolve to the single MTS mode.
@@ -74,6 +76,7 @@ object StsLaunchSpec {
             args.add("-Xint")
         } else {
             args.add("-XX:+TieredCompilation")
+            args.add("-XX:TieredStopAtLevel=$DEFAULT_TIERED_STOP_AT_LEVEL")
         }
         if (is64BitRuntime) {
             val useCompressedPointers = LauncherConfig.isJvmCompressedPointersEnabled(context)
@@ -95,7 +98,7 @@ object StsLaunchSpec {
         args.add("-Xms${heapStartMb}M")
         args.add("-Xmx${heapMaxMb}M")
         args.add(
-            "-XX:ActiveProcessorCount=${Runtime.getRuntime().availableProcessors().coerceAtLeast(1)}"
+            "-XX:ActiveProcessorCount=$DEFAULT_ACTIVE_PROCESSOR_COUNT"
         )
         args.add("-XX:+DisableExplicitGC")
         if (is64BitRuntime) {

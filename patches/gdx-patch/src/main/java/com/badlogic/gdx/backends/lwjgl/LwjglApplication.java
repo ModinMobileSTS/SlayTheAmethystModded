@@ -226,7 +226,7 @@ public class LwjglApplication implements Application {
 		config.title = title;
 		config.width = width;
 		config.height = height;
-		config.vSyncEnabled = true;
+		config.vSyncEnabled = false;
 		return config;
 	}
 
@@ -268,7 +268,8 @@ public class LwjglApplication implements Application {
 		mainLoopThread = new Thread("LWJGL Application") {
 			@Override
 			public void run () {
-				graphics.setVSync(graphics.config.vSyncEnabled);
+				graphics.config.vSyncEnabled = false;
+				graphics.setVSync(false);
 				try {
 					LwjglApplication.this.mainLoop();
 				} catch (Throwable t) {

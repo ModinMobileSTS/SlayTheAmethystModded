@@ -214,8 +214,7 @@ private fun LauncherMainScreenContent(
             MainBottomFixedActions(
                 importEnabled = !uiState.busy && uiState.storageIssue == null,
                 launchEnabled = !uiState.busy &&
-                    uiState.storageIssue == null &&
-                    !uiState.gameProcessRunning,
+                    uiState.storageIssue == null,
                 onImportMods = actions.onImportMods,
                 onLaunch = actions.onLaunch,
                 onMeasured = { actionBarHeightPx = it }

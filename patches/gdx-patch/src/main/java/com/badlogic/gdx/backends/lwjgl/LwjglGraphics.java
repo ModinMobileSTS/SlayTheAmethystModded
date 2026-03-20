@@ -872,8 +872,9 @@ public class LwjglGraphics implements Graphics {
 
 	@Override
 	public void setVSync (boolean vsync) {
-		this.vsync = vsync;
-		Display.setVSyncEnabled(vsync);
+		// The Android bridge build keeps swap-interval pacing disabled and relies on explicit FPS pacing instead.
+		this.vsync = false;
+		Display.setVSyncEnabled(false);
 	}
 
 	@Override

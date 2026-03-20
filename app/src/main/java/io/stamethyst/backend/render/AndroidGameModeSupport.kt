@@ -3,7 +3,6 @@ package io.stamethyst.backend.render
 import android.app.GameManager
 import android.content.Context
 import android.os.Build
-import kotlin.math.min
 
 internal data class AndroidGameModeSnapshot(
     val rawMode: Int,
@@ -13,8 +12,6 @@ internal data class AndroidGameModeSnapshot(
 )
 
 internal object AndroidGameModeSupport {
-    const val BATTERY_MODE_FPS_CAP = 60
-
     fun readCurrentMode(context: Context): AndroidGameModeSnapshot {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return AndroidGameModeSnapshot(
@@ -54,7 +51,7 @@ internal object AndroidGameModeSupport {
             GameManager.GAME_MODE_BATTERY -> AndroidGameModeSnapshot(
                 rawMode = mode,
                 displayName = "BATTERY",
-                description = "系统偏向续航模式，启动器会把实际目标 FPS 上限收敛到 60。",
+                description = "系统偏向续航模式，但启动器不会再额外压低你设置的目标 FPS。",
                 supported = true
             )
 
@@ -75,9 +72,6 @@ internal object AndroidGameModeSupport {
     }
 
     fun resolveTargetFps(requestedTargetFps: Int, snapshot: AndroidGameModeSnapshot): Int {
-        return when (snapshot.rawMode) {
-            GameManager.GAME_MODE_BATTERY -> min(requestedTargetFps, BATTERY_MODE_FPS_CAP)
-            else -> requestedTargetFps
-        }
+        return requestedTargetFps
     }
 }

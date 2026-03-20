@@ -6,7 +6,7 @@ import org.junit.Test
 
 class AndroidGameModeSupportTest {
     @Test
-    fun resolveTargetFps_capsBatteryModeAt60() {
+    fun resolveTargetFps_keepsRequestedValueInBatteryMode() {
         val snapshot = AndroidGameModeSnapshot(
             rawMode = GameManager.GAME_MODE_BATTERY,
             displayName = "BATTERY",
@@ -14,7 +14,7 @@ class AndroidGameModeSupportTest {
             supported = true
         )
 
-        assertEquals(60, AndroidGameModeSupport.resolveTargetFps(120, snapshot))
+        assertEquals(120, AndroidGameModeSupport.resolveTargetFps(120, snapshot))
         assertEquals(60, AndroidGameModeSupport.resolveTargetFps(60, snapshot))
     }
 
