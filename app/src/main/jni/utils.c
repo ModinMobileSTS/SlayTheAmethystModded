@@ -106,7 +106,8 @@ JNIEXPORT jboolean JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_dlopen(JNIEnv
 	const char *nameUtf = (*env)->GetStringUTFChars(env, name, 0);
 	void* handle = dlopen(nameUtf, RTLD_GLOBAL | RTLD_LAZY);
 	if (!handle) {
-		;
+		const char* error = dlerror();
+		fprintf(stderr, "dlopen failed for %s: %s\n", nameUtf, error != NULL ? error : "(unknown)");
 	} else {
 		;
 	}

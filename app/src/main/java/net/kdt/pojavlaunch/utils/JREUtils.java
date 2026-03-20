@@ -12,9 +12,11 @@ import android.content.Context;
 import android.content.pm.ConfigurationInfo;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.util.Log;
 
 import io.stamethyst.backend.render.RendererDecision;
 import io.stamethyst.config.RuntimePaths;
+import io.stamethyst.ui.preferences.LauncherPreferences;
 import io.stamethyst.backend.render.RendererBackend;
 
 import java.io.File;
@@ -23,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class JREUtils {
+    private static final String TAG = "STS-JRE";
 
     public static String LD_LIBRARY_PATH;
     public static String jvmLibraryPath;
@@ -169,7 +172,12 @@ public final class JREUtils {
 
         File serverFile = new File(javaHome + "/" + runtimeLibDir + "/server/libjvm.so");
         jvmLibraryPath = javaHome + "/" + runtimeLibDir + "/" + (serverFile.exists() ? "server" : "client");
-        setLdLibraryPath(jvmLibraryPath + ":" + LD_LIBRARY_PATH);
+        String completeLdLibraryPath = jvmLibraryPath + ":" + LD_LIBRARY_PATH;
+        try {
+            Os.setenv("LD_LIBRARY_PATH", completeLdLibraryPath, true);
+        } catch (Throwable ignored) {
+        }
+        setLdLibraryPath(completeLdLibraryPath);
     }
 
     private static void clearEnv(String key) {
@@ -180,24 +188,35 @@ public final class JREUtils {
     }
 
     public static void initJavaRuntime(String javaHome) {
-        dlopen(findInLdLibPath("libjli.so"));
-        if (!dlopen("libjvm.so")) {
-            dlopen(jvmLibraryPath + "/libjvm.so");
-        }
-        dlopen(findInLdLibPath("libverify.so"));
-        dlopen(findInLdLibPath("libjava.so"));
-        dlopen(findInLdLibPath("libnet.so"));
-        dlopen(findInLdLibPath("libnio.so"));
-        dlopen(findInLdLibPath("libawt.so"));
-        dlopen(findInLdLibPath("libawt_headless.so"));
-        dlopen(findInLdLibPath("libfontmanager.so"));
-        dlopen(findInLdLibPath("libfreetype.so"));
-
-        for (File file : locateLibs(new File(javaHome, runtimeLibDir))) {
-            dlopen(file.getAbsolutePath());
-        }
+        dlopenResolved(javaHome, "libjli.so");
+        dlopenResolved(javaHome, "libjsig.so");
+        dlopenResolved(javaHome, "libjvm.so");
+        dlopenResolved(javaHome, "libverify.so");
+        dlopenResolved(javaHome, "libjava.so");
+        dlopenResolved(javaHome, "libtinyiconv.so");
+        dlopenResolved(javaHome, "libinstrument.so");
+        dlopenResolved(javaHome, "libnet.so");
+        dlopenResolved(javaHome, "libnio.so");
+        dlopenResolved(javaHome, "libawt.so");
+        dlopenResolved(javaHome, "libawt_headless.so");
+        dlopenResolved(javaHome, "libfontmanager.so");
+        dlopenResolved(javaHome, "libfreetype.so");
         loadGraphicsLibrary();
         dlopen(findInLdLibPath("libopenal.so"));
+    }
+
+    public static void initJavaRuntime(Context context, String javaHome) {
+        initJavaRuntime(javaHome);
+        if (context != null && LauncherPreferences.isPreloadAllJreLibrariesEnabled(context)) {
+            preloadAllRuntimeLibraries(javaHome);
+        }
+    }
+
+    private static void preloadAllRuntimeLibraries(String javaHome) {
+        File runtimeRoot = new File(javaHome, runtimeLibDir);
+        for (File file : locateLibs(runtimeRoot)) {
+            dlopen(file.getAbsolutePath());
+        }
     }
 
     private static void loadGraphicsLibrary() {
@@ -216,6 +235,43 @@ public final class JREUtils {
                 dlopen(resolved);
             }
         }
+    }
+
+    private static boolean dlopenResolved(String javaHome, String libName) {
+        String resolved = resolveRuntimeLibraryPath(javaHome, libName);
+        if (resolved != null && dlopen(resolved)) {
+            return true;
+        }
+        if (jvmLibraryPath != null) {
+            File candidate = new File(jvmLibraryPath, libName);
+            if (candidate.isFile() && dlopen(candidate.getAbsolutePath())) {
+                return true;
+            }
+        }
+        if (dlopen(libName)) {
+            return true;
+        }
+        Log.w(TAG, "Failed to preload JRE library: " + libName + " resolved=" + resolved);
+        return false;
+    }
+
+    private static String resolveRuntimeLibraryPath(String javaHome, String libName) {
+        if (javaHome != null && runtimeLibDir != null) {
+            String[] relativeCandidates = {
+                    runtimeLibDir + "/jli/" + libName,
+                    runtimeLibDir + "/server/" + libName,
+                    runtimeLibDir + "/client/" + libName,
+                    runtimeLibDir + "/" + libName
+            };
+            for (String relativeCandidate : relativeCandidates) {
+                File candidate = new File(javaHome, relativeCandidate);
+                if (candidate.isFile()) {
+                    return candidate.getAbsolutePath();
+                }
+            }
+        }
+        String resolved = findInLdLibPath(libName);
+        return resolved.equals(libName) ? null : resolved;
     }
 
     private static String[] getRendererLibraryLoadOrder(RendererBackend backend) {

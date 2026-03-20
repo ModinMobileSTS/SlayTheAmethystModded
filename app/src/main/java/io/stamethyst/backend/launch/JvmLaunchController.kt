@@ -237,7 +237,7 @@ class JvmLaunchController(
                     rendererDecision
                 )
                 throwIfCancelled()
-                JREUtils.initJavaRuntime(resolvedJavaHome.absolutePath)
+                JREUtils.initJavaRuntime(activity.applicationContext, resolvedJavaHome.absolutePath)
                 throwIfCancelled()
                 JREUtils.setupExitMethod(activity.applicationContext)
                 JREUtils.initializeHooks()

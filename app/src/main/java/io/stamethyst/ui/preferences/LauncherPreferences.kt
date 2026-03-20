@@ -79,6 +79,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED
     val DEFAULT_LWJGL_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_LWJGL_DEBUG
+    val DEFAULT_PRELOAD_ALL_JRE_LIBRARIES: Boolean
+        get() = LauncherConfig.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES
     val DEFAULT_LOGCAT_CAPTURE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_LOGCAT_CAPTURE_ENABLED
     val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED: Boolean
@@ -273,6 +275,16 @@ object LauncherPreferences {
 
     fun setLwjglDebugEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setLwjglDebugEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isPreloadAllJreLibrariesEnabled(context: Context): Boolean {
+        return LauncherConfig.isPreloadAllJreLibrariesEnabled(context)
+    }
+
+    @JvmStatic
+    fun setPreloadAllJreLibrariesEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setPreloadAllJreLibrariesEnabled(context, enabled)
     }
 
     fun isLogcatCaptureEnabled(context: Context): Boolean {

@@ -166,6 +166,8 @@ class SettingsScreenViewModel : ViewModel() {
         val systemGameModeDisplayName: String = "不可用",
         val systemGameModeDescription: String = "当前还没有读取系统 Game Mode 状态。",
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
+        val preloadAllJreLibrariesEnabled: Boolean =
+            LauncherPreferences.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES,
         val logcatCaptureEnabled: Boolean = LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
@@ -516,6 +518,7 @@ class SettingsScreenViewModel : ViewModel() {
                     readSustainedPerformanceModeSelection(host)
                 val systemGameMode = AndroidGameModeSupport.readCurrentMode(host)
                 val lwjglDebugEnabled = readLwjglDebugSelection(host)
+                val preloadAllJreLibrariesEnabled = readPreloadAllJreLibrariesSelection(host)
                 val logcatCaptureEnabled = readLogcatCaptureSelection(host)
                 val jvmLogcatMirrorEnabled = readJvmLogcatMirrorSelection(host)
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
@@ -656,6 +659,8 @@ class SettingsScreenViewModel : ViewModel() {
                         .append(if (autoSwitchLeftAfterRightClick) "ON" else "OFF")
                     append("\nMod card name from file: ").append(if (showModFileName) "ON" else "OFF")
                     append("\nLWJGL Debug: ").append(if (lwjglDebugEnabled) "ON" else "OFF")
+                    append("\nPreload all JRE libraries: ")
+                        .append(if (preloadAllJreLibrariesEnabled) "ON" else "OFF")
                     append("\nLogcat diagnostics capture: ")
                         .append(if (logcatCaptureEnabled) "ON" else "OFF")
                     append("\nJVM logcat mirror: ").append(if (jvmLogcatMirrorEnabled) "ON" else "OFF")
@@ -723,6 +728,7 @@ class SettingsScreenViewModel : ViewModel() {
                         systemGameModeDisplayName = systemGameMode.displayName,
                         systemGameModeDescription = systemGameMode.description,
                         lwjglDebugEnabled = lwjglDebugEnabled,
+                        preloadAllJreLibrariesEnabled = preloadAllJreLibrariesEnabled,
                         logcatCaptureEnabled = logcatCaptureEnabled,
                         jvmLogcatMirrorEnabled = jvmLogcatMirrorEnabled,
                         gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
@@ -1219,6 +1225,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(lwjglDebugEnabled = enabled)
         saveLwjglDebugSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onPreloadAllJreLibrariesChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(preloadAllJreLibrariesEnabled = enabled)
+        savePreloadAllJreLibrariesSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -2188,6 +2203,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
+    }
+
+    private fun readPreloadAllJreLibrariesSelection(host: Activity): Boolean {
+        return LauncherPreferences.isPreloadAllJreLibrariesEnabled(host)
+    }
+
+    private fun savePreloadAllJreLibrariesSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setPreloadAllJreLibrariesEnabled(host, enabled)
     }
 
     private fun readLogcatCaptureSelection(host: Activity): Boolean {

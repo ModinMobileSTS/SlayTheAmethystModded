@@ -159,6 +159,9 @@ fun LauncherSettingsScreen(
             viewModel.onSustainedPerformanceModeChanged(activity, enabled)
         },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
+        onPreloadAllJreLibrariesChanged = {
+            enabled -> viewModel.onPreloadAllJreLibrariesChanged(activity, enabled)
+        },
         onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
         onJvmLogcatMirrorChanged = { enabled -> viewModel.onJvmLogcatMirrorChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
@@ -213,6 +216,7 @@ private fun LauncherSettingsScreenPreview() {
             showGamePerformanceOverlay = false,
             sustainedPerformanceModeEnabled = false,
             lwjglDebugEnabled = false,
+            preloadAllJreLibrariesEnabled = false,
             logcatCaptureEnabled = true,
             jvmLogcatMirrorEnabled = false,
             gdxPadCursorDebugEnabled = false,
@@ -268,6 +272,7 @@ private fun LauncherSettingsScreenContent(
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
     onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
+    onPreloadAllJreLibrariesChanged: (Boolean) -> Unit = {},
     onLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
@@ -414,6 +419,7 @@ private fun LauncherSettingsScreenContent(
                     SettingsStatusSection(
                         uiState = uiState,
                         onLwjglDebugChanged = onLwjglDebugChanged,
+                        onPreloadAllJreLibrariesChanged = onPreloadAllJreLibrariesChanged,
                         onLogcatCaptureChanged = onLogcatCaptureChanged,
                         onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
@@ -1411,6 +1417,7 @@ internal fun SettingsActionListItem(
 private fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState,
     onLwjglDebugChanged: (Boolean) -> Unit,
+    onPreloadAllJreLibrariesChanged: (Boolean) -> Unit,
     onLogcatCaptureChanged: (Boolean) -> Unit,
     onJvmLogcatMirrorChanged: (Boolean) -> Unit,
     onGdxPadCursorDebugChanged: (Boolean) -> Unit,
@@ -1442,6 +1449,14 @@ private fun SettingsStatusSection(
         disabledText = "LWJGL Debug：禁用",
         description = "控制 JVM 启动参数中的 org.lwjgl.util.Debug / DebugLoader / DebugFunctions。",
         onCheckedChange = onLwjglDebugChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.preloadAllJreLibrariesEnabled,
+        enabled = !uiState.busy,
+        enabledText = "预加载全部 JRE 库：启用",
+        disabledText = "预加载全部 JRE 库：禁用",
+        description = "兼容性兜底开关。启用后恢复旧行为，启动时递归预加载运行时目录下全部 .so；禁用时只加载核心 JVM 和当前渲染器所需库，以降低常驻原生内存。",
+        onCheckedChange = onPreloadAllJreLibrariesChanged
     )
     SwitchSettingRow(
         checked = uiState.logcatCaptureEnabled,
