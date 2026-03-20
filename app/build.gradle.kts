@@ -731,10 +731,11 @@ val stsPullLogs by tasks.registering {
 
     fun listRemoteFileNames(paths: DeviceStsPaths, relativePath: String): List<String> {
         val remotePath = resolveRemotePath(paths, relativePath)
-        val result = runDeviceScript(
-            accessMode = paths.accessMode,
-            script = "ls ${shellQuote(remotePath)}"
-        )
+        val result = when (paths.accessMode) {
+            RemoteFileAccessMode.SHELL -> runAdbCommand(listOf("shell", "ls", remotePath))
+            RemoteFileAccessMode.RUN_AS ->
+                runAdbCommand(listOf("shell", "run-as", packageName, "ls", remotePath))
+        }
         if (result.exitCode != 0) {
             return emptyList()
         }
@@ -756,6 +757,15 @@ val stsPullLogs by tasks.registering {
             .filter { it.endsWith(".txt", ignoreCase = true) }
             .sortedDescending()
             .take(6)
+    }
+
+    fun listLogcatCaptureNames(paths: DeviceStsPaths): List<String> {
+        return listRemoteFileNames(paths, "logcat")
+            .filter { name ->
+                name.endsWith(".log", ignoreCase = true) ||
+                    name.contains(".log.", ignoreCase = true)
+            }
+            .sorted()
     }
 
     fun normalizeInfoValue(value: String?): String {
@@ -929,6 +939,23 @@ val stsPullLogs by tasks.registering {
                 pulledEntries.add(
                     PulledEntry(
                         entryName = "sts/jvm_logs/${relativePath.substringAfterLast('/')}",
+                        content = content
+                    )
+                )
+                exportedCount++
+            }
+        }
+
+        val logcatNames = listLogcatCaptureNames(deviceStsPaths)
+        if (logcatNames.isEmpty()) {
+            logger.lifecycle("No logcat capture files found on device.")
+        }
+        logcatNames.forEach { name ->
+            logger.lifecycle("Pulling logcat capture: $name")
+            readRemoteFile(deviceStsPaths, "logcat/$name")?.let { content ->
+                pulledEntries.add(
+                    PulledEntry(
+                        entryName = "sts/logcat/$name",
                         content = content
                     )
                 )

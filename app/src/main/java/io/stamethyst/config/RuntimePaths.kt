@@ -18,7 +18,9 @@ object RuntimePaths {
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
-    private const val LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
+    private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
+    private const val LOGCAT_APP_CAPTURE_FILE_NAME = "logcat_app_capture.log"
+    private const val LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "logcat_system_capture.log"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
@@ -137,25 +139,41 @@ object RuntimePaths {
     fun logcatDir(context: Context): File = File(stsRoot(context), LOGCAT_DIR_NAME)
 
     @JvmStatic
-    fun logcatCaptureLog(context: Context): File = File(logcatDir(context), LOGCAT_CAPTURE_FILE_NAME)
+    fun logcatCaptureLog(context: Context): File = logcatAppCaptureLog(context)
+
+    @JvmStatic
+    fun logcatAppCaptureLog(context: Context): File = File(logcatDir(context), LOGCAT_APP_CAPTURE_FILE_NAME)
+
+    @JvmStatic
+    fun logcatSystemCaptureLog(context: Context): File = File(logcatDir(context), LOGCAT_SYSTEM_CAPTURE_FILE_NAME)
 
     @JvmStatic
     fun listLogcatCaptureFiles(context: Context): List<File> {
         val directory = logcatDir(context)
         if (!directory.isDirectory) {
-            return listOf(logcatCaptureLog(context))
+            return listOf(
+                logcatAppCaptureLog(context),
+                logcatSystemCaptureLog(context),
+                legacyLogcatCaptureLog(context)
+            )
         }
         return directory.listFiles()
             ?.asSequence()
             ?.filter { file ->
-                file.isFile &&
-                    (file.name == LOGCAT_CAPTURE_FILE_NAME ||
-                        file.name.startsWith("$LOGCAT_CAPTURE_FILE_NAME."))
+                file.isFile && isLogcatCaptureFileName(file.name)
             }
-            ?.sortedWith(compareBy<File> { rotationIndexForLogcatFile(it.name) }.thenBy { it.name })
+            ?.sortedWith { left, right ->
+                compareLogcatCaptureFileNames(left.name, right.name)
+            }
             ?.toList()
             .orEmpty()
-            .ifEmpty { listOf(logcatCaptureLog(context)) }
+            .ifEmpty {
+                listOf(
+                    logcatAppCaptureLog(context),
+                    logcatSystemCaptureLog(context),
+                    legacyLogcatCaptureLog(context)
+                )
+            }
     }
 
     @JvmStatic
@@ -408,11 +426,59 @@ object RuntimePaths {
         runtimeRoot(context).mkdirs()
     }
 
-    private fun rotationIndexForLogcatFile(name: String): Int {
-        if (name == LOGCAT_CAPTURE_FILE_NAME) {
+    internal fun isLogcatCaptureFileName(name: String): Boolean {
+        return logcatCaptureBaseName(name) != null
+    }
+
+    internal fun compareLogcatCaptureFileNames(left: String, right: String): Int {
+        val leftBaseName = logcatCaptureBaseName(left)
+        val rightBaseName = logcatCaptureBaseName(right)
+        val byBaseName = logcatCaptureFileOrder(leftBaseName)
+            .compareTo(logcatCaptureFileOrder(rightBaseName))
+        if (byBaseName != 0) {
+            return byBaseName
+        }
+
+        val byRotationIndex = rotationIndexForLogcatFile(left, leftBaseName)
+            .compareTo(rotationIndexForLogcatFile(right, rightBaseName))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+
+        return left.compareTo(right)
+    }
+
+    private fun legacyLogcatCaptureLog(context: Context): File {
+        return File(logcatDir(context), LEGACY_LOGCAT_CAPTURE_FILE_NAME)
+    }
+
+    private fun logcatCaptureBaseName(name: String): String? {
+        return listOf(
+            LOGCAT_APP_CAPTURE_FILE_NAME,
+            LOGCAT_SYSTEM_CAPTURE_FILE_NAME,
+            LEGACY_LOGCAT_CAPTURE_FILE_NAME
+        ).firstOrNull { baseName ->
+            name == baseName || name.startsWith("$baseName.")
+        }
+    }
+
+    private fun logcatCaptureFileOrder(baseName: String?): Int {
+        return when (baseName) {
+            LOGCAT_APP_CAPTURE_FILE_NAME -> 0
+            LOGCAT_SYSTEM_CAPTURE_FILE_NAME -> 1
+            LEGACY_LOGCAT_CAPTURE_FILE_NAME -> 2
+            else -> Int.MAX_VALUE
+        }
+    }
+
+    private fun rotationIndexForLogcatFile(name: String, baseName: String? = logcatCaptureBaseName(name)): Int {
+        if (baseName == null) {
+            return Int.MAX_VALUE
+        }
+        if (name == baseName) {
             return 0
         }
-        return name.substringAfterLast('.', "")
+        return name.substringAfter("$baseName.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

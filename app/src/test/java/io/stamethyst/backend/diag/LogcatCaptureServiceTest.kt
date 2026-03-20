@@ -7,7 +7,7 @@ import org.junit.Test
 
 class LogcatCaptureServiceTest {
     @Test
-    fun buildLogcatCommandForCapture_includesEventsBuffer() {
+    fun buildSystemLogcatCommandForCapture_scopesToDiagnosticTags() {
         assertEquals(
             listOf(
                 "logcat",
@@ -16,29 +16,39 @@ class LogcatCaptureServiceTest {
                 "-b", "system",
                 "-b", "crash",
                 "-b", "events",
+                "ActivityManager:I",
+                "ActivityTaskManager:I",
+                "ProcessList:I",
+                "lmkd:I",
+                "libprocessgroup:I",
+                "SurfaceFlinger:I",
+                "BLASTBufferQueue:I",
+                "BufferQueueProducer:I",
+                "WindowManager:I",
+                "DEBUG:I",
+                "libc:I",
+                "AndroidRuntime:I",
+                "*:S"
+            ),
+            LogcatCaptureService.buildSystemLogcatCommandForCapture()
+        )
+    }
+
+    @Test
+    fun buildPidLogcatCommandForCapture_targetsSingleTrackedPid() {
+        assertEquals(
+            listOf(
+                "logcat",
+                "-v", "threadtime",
+                "-b", "main",
+                "-b", "system",
+                "-b", "crash",
+                "-b", "events",
+                "--pid",
+                "23456",
                 "*:I"
             ),
-            LogcatCaptureService.buildLogcatCommandForCapture()
-        )
-    }
-
-    @Test
-    fun extractPidFromThreadtimeLine_parsesThreadtimePid() {
-        assertEquals(
-            23456,
-            LogcatCaptureService.extractPidFromThreadtimeLine(
-                "03-19 15:30:12.345 23456 23457 I TestTag: hello"
-            )
-        )
-    }
-
-    @Test
-    fun extractPidFromThreadtimeLine_rejectsUnexpectedFormat() {
-        assertEquals(
-            null,
-            LogcatCaptureService.extractPidFromThreadtimeLine(
-                "--------- beginning of main"
-            )
+            LogcatCaptureService.buildPidLogcatCommandForCapture(23456)
         )
     }
 
@@ -49,36 +59,5 @@ class LogcatCaptureServiceTest {
         assertTrue(LogcatCaptureService.isTrackedProcessName("io.stamethyst:prep", "io.stamethyst"))
         assertFalse(LogcatCaptureService.isTrackedProcessName("other.process", "io.stamethyst"))
         assertFalse(LogcatCaptureService.isTrackedProcessName("io.stamethystx", "io.stamethyst"))
-    }
-
-    @Test
-    fun trackedAppLogFilter_onlyCapturesTrackedPidsAndRetainsSeenProcesses() {
-        var nowMs = 0L
-        var trackedPids = setOf(111, 222)
-        val filter = LogcatCaptureService.TrackedAppLogFilter(
-            trackedPidSupplier = { trackedPids },
-            nowProviderMs = { nowMs },
-            refreshIntervalMs = 250L
-        )
-
-        assertTrue(filter.shouldCapture("=== logcat capture started ==="))
-        assertTrue(
-            filter.shouldCapture(
-                "03-19 15:30:12.345 111 111 I LauncherTag: base process"
-            )
-        )
-        assertFalse(
-            filter.shouldCapture(
-                "03-19 15:30:12.346 999 999 I OtherTag: foreign process"
-            )
-        )
-
-        trackedPids = emptySet()
-        nowMs = 300L
-        assertTrue(
-            filter.shouldCapture(
-                "03-19 15:30:12.347 222 222 I GameTag: tail after process exit"
-            )
-        )
     }
 }
