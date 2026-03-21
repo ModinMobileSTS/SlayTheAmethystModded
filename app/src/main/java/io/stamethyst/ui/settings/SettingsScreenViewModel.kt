@@ -1464,6 +1464,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val firstError = batchResult.firstError
                 val blockedList = batchResult.blockedComponents
                 val compressedArchiveList = batchResult.compressedArchives
+                val invalidModJars = batchResult.invalidModJars
                 val patchedResults = batchResult.patchedResults
                 host.runOnUiThread {
                     setBusy(false, null)
@@ -1478,6 +1479,9 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                             .setPositiveButton(android.R.string.ok, null)
                             .show()
+                    }
+                    if (invalidModJars.isNotEmpty()) {
+                        showInvalidModImportDialog(host, invalidModJars)
                     }
                     if (compressedArchiveList.isNotEmpty()) {
                         showCompressedArchiveWarningDialog(host, compressedArchiveList)
@@ -1511,7 +1515,7 @@ class SettingsScreenViewModel : ViewModel() {
                             ).show()
                         }
 
-                        failedCount > 0 -> {
+                        failedCount > 0 && invalidModJars.isEmpty() -> {
                             Toast.makeText(
                                 host,
                                 host.getString(
@@ -1561,6 +1565,22 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private fun showInvalidModImportDialog(
+        host: Activity,
+        invalidModJars: List<InvalidModImportFailure>
+    ) {
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_invalid_title)
+            .setMessage(
+                SettingsFileService.buildInvalidModImportMessage(
+                    context = host,
+                    failures = invalidModJars
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun showDuplicateModImportDialog(

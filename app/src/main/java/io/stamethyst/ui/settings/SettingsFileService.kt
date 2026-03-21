@@ -84,17 +84,30 @@ internal data class ModBatchImportResult(
     val errors: List<String>,
     val blockedComponents: List<String>,
     val compressedArchives: List<String>,
+    val invalidModJars: List<InvalidModImportFailure>,
     val patchedResults: List<ModImportResult>
 ) {
     val failedCount: Int
-        get() = errors.size
+        get() = errors.size + invalidModJars.size
     val blockedCount: Int
         get() = blockedComponents.size
     val compressedArchiveCount: Int
         get() = compressedArchives.size
     val firstError: String?
-        get() = errors.firstOrNull()
+        get() = errors.firstOrNull() ?: invalidModJars.firstOrNull()?.let { failure ->
+            val reason = failure.reason.trim()
+            if (reason.isNotEmpty()) {
+                "${failure.displayName}: $reason"
+            } else {
+                failure.displayName
+            }
+        }
 }
+
+internal data class InvalidModImportFailure(
+    val displayName: String,
+    val reason: String
+)
 
 internal data class ModImportIdentityPreview(
     val normalizedModId: String,
@@ -124,6 +137,11 @@ internal object SettingsFileService {
     class ReservedModImportException(
         @JvmField val blockedComponent: String
     ) : IOException("Import blocked for built-in component: $blockedComponent")
+
+    class InvalidModImportException(
+        @JvmField val displayName: String,
+        @JvmField val reason: String
+    ) : IOException(reason)
 
     private const val RESERVED_COMPONENT_BASEMOD = "BaseMod"
     private const val RESERVED_COMPONENT_STSLIB = "StSLib"
@@ -321,19 +339,21 @@ internal object SettingsFileService {
         try {
             var patchedManifestRootEntries = 0
             var patchedManifestRootPrefix = ""
-            if (CompatibilitySettings.isModManifestRootCompatEnabled(host)) {
-                val patchResult = ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempFile)
-                patchedManifestRootEntries = patchResult.patchedFileEntries
-                patchedManifestRootPrefix = patchResult.sourceRootPrefix
-            }
-
             val manifest = try {
+                if (CompatibilitySettings.isModManifestRootCompatEnabled(host)) {
+                    val patchResult = ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempFile)
+                    patchedManifestRootEntries = patchResult.patchedFileEntries
+                    patchedManifestRootPrefix = patchResult.sourceRootPrefix
+                }
                 ModJarSupport.readModManifest(tempFile)
             } catch (error: Throwable) {
                 if (isLikelyModTheSpireJar(tempFile, displayName)) {
                     throw ReservedModImportException(RESERVED_COMPONENT_MTS)
                 }
-                throw error
+                throw InvalidModImportException(
+                    displayName = displayName,
+                    reason = error.message.orEmpty()
+                )
             }
 
             val modId = ModManager.normalizeModId(manifest.modId)
@@ -447,6 +467,7 @@ internal object SettingsFileService {
         val errors = ArrayList<String>()
         val blockedComponents = LinkedHashSet<String>()
         val compressedArchives = LinkedHashSet<String>()
+        val invalidModJars = ArrayList<InvalidModImportFailure>()
         val patchedMods = LinkedHashMap<String, ModImportResult>()
 
         for (uri in uris) {
@@ -496,6 +517,13 @@ internal object SettingsFileService {
             } catch (error: Throwable) {
                 if (error is ReservedModImportException) {
                     blockedComponents.add(error.blockedComponent)
+                } else if (error is InvalidModImportException) {
+                    invalidModJars.add(
+                        InvalidModImportFailure(
+                            displayName = error.displayName,
+                            reason = error.reason
+                        )
+                    )
                 } else {
                     errors.add("$displayName: ${error.message}")
                 }
@@ -507,6 +535,7 @@ internal object SettingsFileService {
             errors = errors,
             blockedComponents = blockedComponents.toList(),
             compressedArchives = compressedArchives.toList(),
+            invalidModJars = invalidModJars,
             patchedResults = patchedMods.values.toList()
         )
     }
@@ -710,6 +739,39 @@ internal object SettingsFileService {
             }
             append(context.getString(R.string.mod_import_reserved_message_outro))
         }
+    }
+
+    fun buildInvalidModImportMessage(
+        context: Context,
+        failures: Collection<InvalidModImportFailure>
+    ): String {
+        val normalizedFailures = LinkedHashMap<String, String>()
+        failures.forEach { failure ->
+            val displayName = failure.displayName.trim()
+                .ifBlank { context.getString(R.string.mod_import_invalid_message_unknown_file) }
+            val reason = failure.reason.trim()
+                .ifBlank { context.getString(R.string.mod_import_error_unknown) }
+            normalizedFailures.putIfAbsent(displayName, reason)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_invalid_message_intro))
+            if (normalizedFailures.isEmpty()) {
+                append("\n- ")
+                append(context.getString(R.string.mod_import_invalid_message_unknown_file))
+                append('\n')
+                append(context.getString(R.string.mod_import_preview_manifest_read_failed, context.getString(R.string.mod_import_error_unknown)))
+            } else {
+                normalizedFailures.forEach { (displayName, reason) ->
+                    append('\n')
+                    append("- ").append(displayName)
+                    append('\n')
+                    append(context.getString(R.string.mod_import_preview_manifest_read_failed, reason))
+                }
+            }
+            append('\n')
+            append(context.getString(R.string.mod_import_invalid_message_outro))
+        }.trimEnd()
     }
 
     fun buildAtlasPatchImportSummaryMessage(

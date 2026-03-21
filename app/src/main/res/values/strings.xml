@@ -242,6 +242,7 @@
     <string name="mod_import_busy_message">Importing selected mod jars...</string>
     <string name="mod_import_dialog_reserved_title">Built-in core components can\'t be imported</string>
     <string name="mod_import_dialog_duplicate_title">Duplicate modid detected</string>
+    <string name="mod_import_dialog_invalid_title">Unrecognized mod jar</string>
     <string name="mod_import_dialog_duplicate_cancel">Cancel import</string>
     <string name="mod_import_dialog_duplicate_replace_existing">Replace existing</string>
     <string name="mod_import_dialog_duplicate_keep_both">Keep both</string>
@@ -265,6 +266,9 @@
     <string name="mod_import_result_blocked_builtin">Blocked %1$d built-in component import(s)</string>
     <string name="mod_import_result_archive_detected">Compressed archive detected. Extract it and import the .jar inside.</string>
     <string name="mod_import_error_unknown">unknown error</string>
+    <string name="mod_import_invalid_message_intro">The following files couldn\'t be parsed as importable mods:</string>
+    <string name="mod_import_invalid_message_unknown_file">Unknown file</string>
+    <string name="mod_import_invalid_message_outro">Make sure you selected an actual mod jar and that it still contains a readable ModTheSpire.json inside the jar. Non-mod jars, damaged jars, or jars repacked incorrectly from archives can\'t be imported.</string>
     <string name="mod_import_archive_message_intro">The following files are compressed archives and can\'t be imported directly as mods:
 </string>
     <string name="mod_import_archive_message_unknown_file">- Unknown file

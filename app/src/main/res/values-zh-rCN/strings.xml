@@ -242,6 +242,7 @@
     <string name="mod_import_busy_message">正在导入所选模组 jar…</string>
     <string name="mod_import_dialog_reserved_title">禁止导入内置核心组件</string>
     <string name="mod_import_dialog_duplicate_title">检测到重复 modid</string>
+    <string name="mod_import_dialog_invalid_title">无法识别为模组 jar</string>
     <string name="mod_import_dialog_duplicate_cancel">取消导入</string>
     <string name="mod_import_dialog_duplicate_replace_existing">覆盖原文件</string>
     <string name="mod_import_dialog_duplicate_keep_both">保留两者</string>
@@ -265,6 +266,9 @@
     <string name="mod_import_result_blocked_builtin">已拦截 %1$d 个内置组件导入</string>
     <string name="mod_import_result_archive_detected">检测到压缩包，请先解压后导入其中的 .jar。</string>
     <string name="mod_import_error_unknown">未知错误</string>
+    <string name="mod_import_invalid_message_intro">以下文件无法解析为可导入的模组：</string>
+    <string name="mod_import_invalid_message_unknown_file">未知文件</string>
+    <string name="mod_import_invalid_message_outro">请确认你选择的是模组 jar，并且 jar 内仍包含可读取的 ModTheSpire.json。普通程序 jar、损坏的 jar，或从压缩包错误重打包后的 jar 都不能导入。</string>
     <string name="mod_import_archive_message_intro">检测到以下文件是压缩包，不能直接作为模组导入：
 </string>
     <string name="mod_import_archive_message_unknown_file">- 未知文件

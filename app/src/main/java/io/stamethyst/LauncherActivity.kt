@@ -12,13 +12,16 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
+import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.main.MainScreenViewModel
+import io.stamethyst.ui.settings.InvalidModImportFailure
 import io.stamethyst.ui.settings.SettingsFileService
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 import io.stamethyst.ui.theme.LauncherTheme
@@ -264,6 +267,9 @@ class LauncherActivity : AppCompatActivity() {
         var parseError: String? = null
         try {
             SettingsFileService.copyUriToFile(this, uri, tempJar)
+            if (CompatibilitySettings.isModManifestRootCompatEnabled(this)) {
+                ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempJar)
+            }
             manifest = ModJarSupport.readModManifest(tempJar)
         } catch (error: Throwable) {
             parseError = error.message ?: error.javaClass.simpleName
@@ -284,17 +290,28 @@ class LauncherActivity : AppCompatActivity() {
         val previousDialog = pendingImportDialog
         pendingImportDialog = null
         previousDialog?.dismiss()
-        val message = buildModImportDialogMessage(preview)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.main_import_mods)
-            .setMessage(message)
-            .setNegativeButton(R.string.main_folder_dialog_cancel, null)
-            .setPositiveButton(R.string.mod_import_confirm_dialog_action_import) { _, _ ->
-                settingsViewModel.onModJarsPicked(this, listOf(preview.uri)) {
-                    mainViewModel.refresh(this)
+        val dialog = if (preview.manifest != null) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.main_import_mods)
+                .setMessage(buildModImportDialogMessage(preview))
+                .setNegativeButton(R.string.main_folder_dialog_cancel, null)
+                .setPositiveButton(R.string.mod_import_confirm_dialog_action_import) { _, _ ->
+                    settingsViewModel.onModJarsPicked(this, listOf(preview.uri)) {
+                        mainViewModel.refresh(this)
+                    }
                 }
-            }
-            .create()
+                .create()
+        } else {
+            val failure = InvalidModImportFailure(
+                displayName = preview.displayName,
+                reason = preview.parseError.orEmpty()
+            )
+            AlertDialog.Builder(this)
+                .setTitle(R.string.mod_import_dialog_invalid_title)
+                .setMessage(SettingsFileService.buildInvalidModImportMessage(this, listOf(failure)))
+                .setPositiveButton(android.R.string.ok, null)
+                .create()
+        }
         dialog.setOnDismissListener {
             if (pendingImportDialog === dialog) {
                 pendingImportDialog = null

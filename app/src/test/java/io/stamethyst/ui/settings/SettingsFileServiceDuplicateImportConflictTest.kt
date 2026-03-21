@@ -2,6 +2,7 @@ package io.stamethyst.ui.settings
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SettingsFileServiceDuplicateImportConflictTest {
@@ -65,5 +66,59 @@ class SettingsFileServiceDuplicateImportConflictTest {
             conflictsById.getValue("sameid").existingDisplayNames
         )
         assertFalse(conflictsById.containsKey("unique"))
+    }
+
+    @Test
+    fun modBatchImportResult_countsInvalidModJarsAsFailures() {
+        val result = ModBatchImportResult(
+            importedCount = 0,
+            errors = emptyList(),
+            blockedComponents = emptyList(),
+            compressedArchives = emptyList(),
+            invalidModJars = listOf(
+                InvalidModImportFailure(
+                    displayName = "not-a-mod.jar",
+                    reason = "ModTheSpire.json not found"
+                )
+            ),
+            patchedResults = emptyList()
+        )
+
+        assertEquals(1, result.failedCount)
+        assertEquals("not-a-mod.jar: ModTheSpire.json not found", result.firstError)
+    }
+
+    @Test
+    fun modBatchImportResult_prefersGenericErrorAsFirstError() {
+        val result = ModBatchImportResult(
+            importedCount = 0,
+            errors = listOf("copy failed"),
+            blockedComponents = emptyList(),
+            compressedArchives = emptyList(),
+            invalidModJars = listOf(
+                InvalidModImportFailure(
+                    displayName = "not-a-mod.jar",
+                    reason = "ModTheSpire.json not found"
+                )
+            ),
+            patchedResults = emptyList()
+        )
+
+        assertEquals("copy failed", result.firstError)
+    }
+
+    @Test
+    fun modBatchImportResult_handlesEmptyErrors() {
+        val result = ModBatchImportResult(
+            importedCount = 1,
+            errors = emptyList(),
+            blockedComponents = emptyList(),
+            compressedArchives = emptyList(),
+            invalidModJars = emptyList(),
+            patchedResults = emptyList()
+        )
+
+        assertEquals(0, result.failedCount)
+        assertNull(result.firstError)
     }
 }
