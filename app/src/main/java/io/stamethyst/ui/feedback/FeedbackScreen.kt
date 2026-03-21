@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -89,7 +91,9 @@ fun LauncherFeedbackScreen(
         onEmailNotificationsEnabledChanged = formViewModel::onEmailNotificationsEnabledChanged,
         onAddScreenshots = formViewModel::onAddScreenshots,
         onRemoveScreenshot = formViewModel::onRemoveScreenshot,
-        onSubmit = { formViewModel.onSubmit(activity) }
+        onSubmit = { formViewModel.onSubmit(activity) },
+        onDismissBriefFeedbackConfirmation = formViewModel::onDismissBriefFeedbackConfirmation,
+        onSubmitDespiteBriefFeedback = { formViewModel.onSubmitDespiteBriefFeedback(activity) }
     )
     FeedbackEffectsHandler(
         viewModel = formViewModel,
@@ -171,7 +175,9 @@ private fun LauncherFeedbackScreenContent(
     onEmailNotificationsEnabledChanged: (Boolean) -> Unit = {},
     onAddScreenshots: () -> Unit = {},
     onRemoveScreenshot: (String) -> Unit = {},
-    onSubmit: () -> Unit = {}
+    onSubmit: () -> Unit = {},
+    onDismissBriefFeedbackConfirmation: () -> Unit = {},
+    onSubmitDespiteBriefFeedback: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -211,6 +217,33 @@ private fun LauncherFeedbackScreenContent(
                 onSubmit = onSubmit
             )
         }
+    }
+
+    if (formUiState.showBriefFeedbackConfirmation) {
+        AlertDialog(
+            onDismissRequest = onDismissBriefFeedbackConfirmation,
+            title = { Text("反馈信息较少") },
+            text = {
+                Text(
+                    "当前“详细描述 + 复现步骤”合计 ${formUiState.detailedFeedbackLength} 字。建议尽量补充问题现象、触发条件和复现方式，方便更快定位问题。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissBriefFeedbackConfirmation) {
+                    Text("继续更改")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onSubmitDespiteBriefFeedback,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text("仍然提交")
+                }
+            }
+        )
     }
 }
 

@@ -30,6 +30,16 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
+internal const val BRIEF_FEEDBACK_WARNING_THRESHOLD = 100
+
+internal fun calculateDetailedFeedbackLength(
+    detail: String,
+    reproductionSteps: String
+): Int {
+    return detail.trim().count { !it.isWhitespace() } +
+        reproductionSteps.trim().count { !it.isWhitespace() }
+}
+
 @Stable
 class FeedbackScreenViewModel : ViewModel() {
     companion object {
@@ -74,8 +84,15 @@ class FeedbackScreenViewModel : ViewModel() {
         val reproductionSteps: String = "",
         val email: String = "",
         val emailNotificationsEnabled: Boolean = true,
-        val screenshots: List<ScreenshotItem> = emptyList()
-    )
+        val screenshots: List<ScreenshotItem> = emptyList(),
+        val showBriefFeedbackConfirmation: Boolean = false
+    ) {
+        val detailedFeedbackLength: Int
+            get() = calculateDetailedFeedbackLength(detail, reproductionSteps)
+
+        val shouldWarnAboutBriefFeedback: Boolean
+            get() = detailedFeedbackLength <= BRIEF_FEEDBACK_WARNING_THRESHOLD
+    }
 
     private data class ScreenshotAttachment(
         val id: String,
@@ -230,8 +247,26 @@ class FeedbackScreenViewModel : ViewModel() {
     }
 
     fun onSubmit(host: Activity) {
+        submitInternal(host, ignoreBriefFeedbackWarning = false)
+    }
+
+    fun onDismissBriefFeedbackConfirmation() {
+        if (!uiState.showBriefFeedbackConfirmation) {
+            return
+        }
+        uiState = uiState.copy(showBriefFeedbackConfirmation = false)
+    }
+
+    fun onSubmitDespiteBriefFeedback(host: Activity) {
+        submitInternal(host, ignoreBriefFeedbackWarning = true)
+    }
+
+    private fun submitInternal(host: Activity, ignoreBriefFeedbackWarning: Boolean) {
         if (uiState.busy) {
             return
+        }
+        if (ignoreBriefFeedbackWarning && uiState.showBriefFeedbackConfirmation) {
+            uiState = uiState.copy(showBriefFeedbackConfirmation = false)
         }
         val validationError = validateDraft()
         if (validationError != null) {
@@ -246,7 +281,12 @@ class FeedbackScreenViewModel : ViewModel() {
             ).show()
             return
         }
+        if (!ignoreBriefFeedbackWarning && uiState.shouldWarnAboutBriefFeedback) {
+            uiState = uiState.copy(showBriefFeedbackConfirmation = true)
+            return
+        }
 
+        uiState = uiState.copy(showBriefFeedbackConfirmation = false)
         val draft = buildDraft()
         setBusy(true, "正在整理反馈并上传...")
         executor.execute {
