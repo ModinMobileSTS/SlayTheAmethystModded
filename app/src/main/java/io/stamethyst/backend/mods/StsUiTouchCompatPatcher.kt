@@ -17,6 +17,12 @@ internal object StsUiTouchCompatPatcher {
     )
 
     private val mergeSpecs: Map<String, MergeSpec> = linkedMapOf(
+        STS_PATCH_TIP_HELPER_CLASS to MergeSpec(
+            fields = emptyList(),
+            methods = listOf(
+                MemberRef("render", "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V")
+            )
+        ),
         STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS to MergeSpec(
             fields = listOf(
                 MemberRef("COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP", "Ljava/lang/String;"),
