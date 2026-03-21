@@ -25,6 +25,7 @@ import java.util.Map;
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.Application.ApplicationType;
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.backends.lwjgl.LwjglApplication;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.GLTexture;
 import com.badlogic.gdx.graphics.Pixmap;
@@ -413,7 +414,13 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** Unbinds the framebuffer, all drawing will be performed to the normal framebuffer from here on. */
 	public void end () {
-		end(0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
+		int width = LwjglApplication.getScaledRenderBackBufferWidthOverride();
+		int height = LwjglApplication.getScaledRenderBackBufferHeightOverride();
+		if (width <= 0 || height <= 0) {
+			width = Gdx.graphics.getBackBufferWidth();
+			height = Gdx.graphics.getBackBufferHeight();
+		}
+		end(0, 0, width, height);
 	}
 
 	/** Unbinds the framebuffer and sets viewport sizes, all drawing will be performed to the normal framebuffer from here on.

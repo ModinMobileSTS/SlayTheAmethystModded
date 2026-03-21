@@ -97,6 +97,9 @@ public class LwjglApplication implements Application {
 	private static final String[] FUNCTION_ALIAS_SUFFIXES = {"EXT", "OES", "ARB"};
 	private static volatile boolean noContextDiagnosticsInstalled;
 	private static boolean scaledRenderPresentLogged;
+	private static volatile int scaledRenderBackBufferHandle;
+	private static volatile int scaledRenderBackBufferWidth;
+	private static volatile int scaledRenderBackBufferHeight;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
 	private boolean missingFunctionPointerPatchLogged;
@@ -375,6 +378,32 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	public static int getScaledRenderBackBufferWidthOverride () {
+		return scaledRenderBackBufferWidth;
+	}
+
+	public static int getScaledRenderBackBufferHeightOverride () {
+		return scaledRenderBackBufferHeight;
+	}
+
+	static int remapRequestedFramebufferHandle (int framebuffer) {
+		if (framebuffer != 0) return framebuffer;
+		int overrideHandle = scaledRenderBackBufferHandle;
+		return overrideHandle != 0 ? overrideHandle : framebuffer;
+	}
+
+	private static void setScaledRenderBackBufferOverride (int handle, int width, int height) {
+		scaledRenderBackBufferHandle = handle;
+		scaledRenderBackBufferWidth = width;
+		scaledRenderBackBufferHeight = height;
+	}
+
+	private static void clearScaledRenderBackBufferOverride () {
+		scaledRenderBackBufferHandle = 0;
+		scaledRenderBackBufferWidth = 0;
+		scaledRenderBackBufferHeight = 0;
+	}
+
 	private static final class ScaledRenderPipeline {
 		private final float scale;
 		private final Matrix4 projection = new Matrix4();
@@ -412,12 +441,18 @@ public class LwjglApplication implements Application {
 			previousDefaultFramebufferHandle = getManagedDefaultFramebufferHandle();
 			setManagedDefaultFramebufferHandle(frameBuffer.getFramebufferHandle());
 			frameBuffer.begin();
+			setScaledRenderBackBufferOverride(
+				frameBuffer.getFramebufferHandle(),
+				frameBufferWidth,
+				frameBufferHeight
+			);
 			frameActive = true;
 		}
 
 		void finishFrame (int screenWidth, int screenHeight) {
 			if (!frameActive) return;
 			frameActive = false;
+			clearScaledRenderBackBufferOverride();
 			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
 			FrameBuffer.unbind();
 			Gdx.gl20.glColorMask(true, true, true, true);
@@ -443,6 +478,7 @@ public class LwjglApplication implements Application {
 		void abortFrame () {
 			if (!frameActive) return;
 			frameActive = false;
+			clearScaledRenderBackBufferOverride();
 			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
 			FrameBuffer.unbind();
 		}

@@ -421,7 +421,7 @@ public class LwjglGraphics implements Graphics {
 
 	public void initiateGLInstances () {
 		if (usingGL30) {
-			gl30 = new LwjglGL30();
+			gl30 = new LwjglGL30FboBindCompat();
 			gl20 = gl30;
 		} else {
 			gl20 = isGLESContext ? new LwjglGL20FboStatusCompat() : new LwjglGL20();
@@ -464,14 +464,15 @@ public class LwjglGraphics implements Graphics {
 
 		@Override
 		public void glBindFramebuffer (int target, int framebuffer) {
+			int remappedFramebuffer = LwjglApplication.remapRequestedFramebufferHandle(framebuffer);
 			try {
 				if (canUseCorePath()) {
-					org.lwjgl.opengl.GL30.glBindFramebuffer(target, framebuffer);
+					org.lwjgl.opengl.GL30.glBindFramebuffer(target, remappedFramebuffer);
 					return;
 				}
 			} catch (Throwable ignored) {
 			}
-			super.glBindFramebuffer(target, framebuffer);
+			super.glBindFramebuffer(target, remappedFramebuffer);
 		}
 
 		@Override
@@ -671,6 +672,16 @@ public class LwjglGraphics implements Graphics {
 			} catch (Throwable ignored) {
 			}
 			super.glRenderbufferStorage(target, internalformat, width, height);
+		}
+	}
+
+	private static class LwjglGL30FboBindCompat extends LwjglGL30 {
+		@Override
+		public void glBindFramebuffer (int target, int framebuffer) {
+			super.glBindFramebuffer(
+				target,
+				LwjglApplication.remapRequestedFramebufferHandle(framebuffer)
+			);
 		}
 	}
 
