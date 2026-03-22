@@ -21,6 +21,7 @@ import io.stamethyst.backend.launch.CrashReturnPayload
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
+import io.stamethyst.backend.crash.LatestLogCleanShutdownDetector
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
 import io.stamethyst.backend.crash.SignalCrashDumpReader
@@ -995,6 +996,14 @@ class MainScreenViewModel : ViewModel() {
                 showExpectedBackExitDialog(host)
                 true
             }
+            LauncherReturnAction.ExpectedCleanShutdown -> {
+                BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                if (intent != null) {
+                    clearCrashExtras(intent)
+                }
+                suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                true
+            }
             LauncherReturnAction.HeapPressureWarning -> {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
                 maybeShowHeapPressureDialog(host, intent ?: return false)
@@ -1028,8 +1037,13 @@ class MainScreenViewModel : ViewModel() {
         intent: Intent?,
         launchStartedAtMs: Long
     ): LauncherReturnSnapshot {
-        val explicitCrash = buildExplicitCrashPayload(intent)
-        val processExitCrash = if (explicitCrash == null) {
+        val expectedCleanShutdown = LatestLogCleanShutdownDetector.detect(host) != null
+        val explicitCrash = if (expectedCleanShutdown) {
+            null
+        } else {
+            buildExplicitCrashPayload(intent)
+        }
+        val processExitCrash = if (!expectedCleanShutdown && explicitCrash == null) {
             ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(host, launchStartedAtMs)
         } else {
             null
@@ -1039,7 +1053,8 @@ class MainScreenViewModel : ViewModel() {
             explicitCrash = explicitCrash,
             processExitCrash = processExitCrash,
             heapPressureWarning = heapPressureWarning,
-            expectedBackExitRecent = BackExitNotice.isExpectedBackExitRecent(host)
+            expectedBackExitRecent = BackExitNotice.isExpectedBackExitRecent(host),
+            expectedCleanShutdown = expectedCleanShutdown
         )
     }
 

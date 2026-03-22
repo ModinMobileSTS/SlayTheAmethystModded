@@ -222,10 +222,10 @@ private fun LauncherFeedbackScreenContent(
     if (formUiState.showBriefFeedbackConfirmation) {
         AlertDialog(
             onDismissRequest = onDismissBriefFeedbackConfirmation,
-            title = { Text("反馈信息较少") },
+            title = { Text("警告") },
             text = {
                 Text(
-                    "当前“详细描述 + 复现步骤”合计 ${formUiState.detailedFeedbackLength} 字。建议尽量补充问题现象、触发条件和复现方式，方便更快定位问题。"
+                    "目前反馈信息较少，开发者可能不能准确定位问题。建议尽量补充问题现象、触发条件和复现方式，可以带有一些自己的猜想，方便开发者更好地锁定问题。"
                 )
             },
             confirmButton = {

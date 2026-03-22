@@ -40,6 +40,21 @@ class LauncherReturnActionResolverTest {
     }
 
     @Test
+    fun resolve_prefersExpectedCleanShutdown_overProcessExitCrashAndHeap() {
+        val summary = sampleProcessExitSummary()
+
+        val action = LauncherReturnActionResolver.resolve(
+            LauncherReturnSnapshot(
+                processExitCrash = summary,
+                heapPressureWarning = true,
+                expectedCleanShutdown = true
+            )
+        )
+
+        assertEquals(LauncherReturnAction.ExpectedCleanShutdown, action)
+    }
+
+    @Test
     fun resolve_prefersProcessExitCrash_overHeapPressure() {
         val summary = sampleProcessExitSummary()
 

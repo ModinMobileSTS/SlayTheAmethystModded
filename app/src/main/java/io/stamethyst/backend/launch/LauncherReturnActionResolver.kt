@@ -12,12 +12,14 @@ internal data class LauncherReturnSnapshot(
     val explicitCrash: CrashReturnPayload? = null,
     val processExitCrash: ProcessExitSummary? = null,
     val heapPressureWarning: Boolean = false,
-    val expectedBackExitRecent: Boolean = false
+    val expectedBackExitRecent: Boolean = false,
+    val expectedCleanShutdown: Boolean = false
 )
 
 internal sealed interface LauncherReturnAction {
     data object None : LauncherReturnAction
     data object ExpectedBackExit : LauncherReturnAction
+    data object ExpectedCleanShutdown : LauncherReturnAction
     data object HeapPressureWarning : LauncherReturnAction
     data class ExplicitCrash(val payload: CrashReturnPayload) : LauncherReturnAction
     data class ProcessExitCrash(val summary: ProcessExitSummary) : LauncherReturnAction
@@ -31,6 +33,9 @@ internal object LauncherReturnActionResolver {
         }
         if (snapshot.expectedBackExitRecent) {
             return LauncherReturnAction.ExpectedBackExit
+        }
+        if (snapshot.expectedCleanShutdown) {
+            return LauncherReturnAction.ExpectedCleanShutdown
         }
         val processExitCrash = snapshot.processExitCrash
         if (processExitCrash != null) {

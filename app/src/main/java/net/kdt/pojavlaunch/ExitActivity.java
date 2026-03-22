@@ -15,6 +15,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import io.stamethyst.backend.crash.LatestLogCrashDetector;
+import io.stamethyst.backend.crash.LatestLogCleanShutdownDetector;
 import io.stamethyst.backend.crash.LatestLogCrashSummary;
 import io.stamethyst.backend.launch.BackExitNotice;
 import io.stamethyst.backend.launch.LauncherReturnCoordinator;
@@ -48,6 +49,14 @@ public class ExitActivity extends AppCompatActivity {
                     context,
                     LAUNCHER_RESTART_DELAY_MS,
                     true
+            );
+            return;
+        }
+        if (LatestLogCleanShutdownDetector.detect(context) != null) {
+            LauncherReturnCoordinator.scheduleLauncherRestart(
+                    context,
+                    LAUNCHER_RESTART_DELAY_MS,
+                    false
             );
             return;
         }

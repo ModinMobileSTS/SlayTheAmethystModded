@@ -107,11 +107,15 @@ public class LwjglGraphics implements Graphics {
 
 	@Override
 	public int getBackBufferWidth () {
+		int overrideWidth = LwjglApplication.getScaledRenderBackBufferWidthOverride();
+		if (overrideWidth > 0) return overrideWidth;
 		return getWidth();
 	}
 
 	@Override
 	public int getBackBufferHeight () {
+		int overrideHeight = LwjglApplication.getScaledRenderBackBufferHeightOverride();
+		if (overrideHeight > 0) return overrideHeight;
 		return getHeight();
 	}
 
