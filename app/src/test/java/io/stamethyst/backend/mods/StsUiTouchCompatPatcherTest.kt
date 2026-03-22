@@ -6,9 +6,11 @@ import java.util.zip.ZipFile
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.FieldInsnNode
@@ -28,6 +30,60 @@ import org.objectweb.asm.tree.TypeInsnNode
 import org.objectweb.asm.tree.VarInsnNode
 
 class StsUiTouchCompatPatcherTest {
+    @Test
+    fun mergePatchedClass_tipHelper_keepsOriginalLineNumbersAndAddsMouseDownGuard() {
+        val originalJar = resolveFixtureFile(
+            "tools/desktop-1.0.jar",
+            "../tools/desktop-1.0.jar"
+        )
+        val patchJar = resolveFixtureFile(
+            "patches/gdx-patch/build/libs/gdx-patch.jar",
+            "../patches/gdx-patch/build/libs/gdx-patch.jar"
+        )
+        assumeTrue(originalJar.isFile)
+        assumeTrue(patchJar.isFile)
+
+        val originalBytes = readJarEntry(originalJar, STS_PATCH_TIP_HELPER_CLASS)
+        val donorBytes = readJarEntry(patchJar, STS_PATCH_TIP_HELPER_CLASS)
+
+        val patchedBytes = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_TIP_HELPER_CLASS,
+            targetClassBytes = originalBytes,
+            donorClassBytes = donorBytes
+        )
+
+        assertFalse("new patch should not be a whole-class donor copy", patchedBytes.contentEquals(donorBytes))
+        val originalRender = findMethod(originalBytes, "render", "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V")
+        val patchedRender = findMethod(patchedBytes, "render", "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V")
+
+        assertEquals(lineNumbers(originalRender), lineNumbers(patchedRender))
+        assertFalse(
+            containsFieldAccess(
+                originalRender,
+                Opcodes.GETSTATIC,
+                "com/megacrit/cardcrawl/helpers/input/InputHelper",
+                "isMouseDown",
+                "Z"
+            )
+        )
+        assertTrue(
+            containsFieldAccess(
+                patchedRender,
+                Opcodes.GETSTATIC,
+                "com/megacrit/cardcrawl/helpers/input/InputHelper",
+                "isMouseDown",
+                "Z"
+            )
+        )
+
+        val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_TIP_HELPER_CLASS,
+            targetClassBytes = patchedBytes,
+            donorClassBytes = donorBytes
+        )
+        assertArrayEquals(patchedBytes, patchedAgain)
+    }
+
     @Test
     fun mergePatchedClass_singleCardViewPopup_keepsDescriptionMethodOriginal() {
         val originalJar = resolveFixtureFile(
@@ -132,6 +188,41 @@ class StsUiTouchCompatPatcherTest {
         ) {
             "Missing method $name$desc"
         }
+    }
+
+    private fun lineNumbers(method: MethodNode): List<Int> {
+        val lineNumbers = ArrayList<Int>()
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            if (current is LineNumberNode) {
+                lineNumbers.add(current.line)
+            }
+            current = current.next
+        }
+        return lineNumbers
+    }
+
+    private fun containsFieldAccess(
+        method: MethodNode,
+        opcode: Int,
+        owner: String,
+        name: String,
+        desc: String
+    ): Boolean {
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            val fieldInsn = current as? FieldInsnNode
+            if (fieldInsn != null &&
+                fieldInsn.opcode == opcode &&
+                fieldInsn.owner == owner &&
+                fieldInsn.name == name &&
+                fieldInsn.desc == desc
+            ) {
+                return true
+            }
+            current = current.next
+        }
+        return false
     }
 
     private fun methodFingerprint(method: MethodNode): String {

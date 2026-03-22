@@ -3,9 +3,26 @@ package io.stamethyst.backend.mods
 import java.io.IOException
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.FieldInsnNode
+import org.objectweb.asm.tree.InsnList
+import org.objectweb.asm.tree.JumpInsnNode
+import org.objectweb.asm.tree.MethodNode
 
 internal object StsUiTouchCompatPatcher {
+    private const val TIP_HELPER_INTERNAL_NAME = "com/megacrit/cardcrawl/helpers/TipHelper"
+    private const val TIP_HELPER_RENDER_METHOD_NAME = "render"
+    private const val TIP_HELPER_RENDER_METHOD_DESC =
+        "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V"
+    private const val ABSTRACT_PLAYER_INTERNAL_NAME =
+        "com/megacrit/cardcrawl/characters/AbstractPlayer"
+    private const val INPUT_HELPER_INTERNAL_NAME =
+        "com/megacrit/cardcrawl/helpers/input/InputHelper"
+    private const val DROP_ZONE_HOVER_FIELD_NAME = "isHoveringDropZone"
+    private const val TOUCH_MOUSE_DOWN_FIELD_NAME = "isMouseDown"
+    private const val BOOLEAN_FIELD_DESC = "Z"
+
     private data class MemberRef(
         val name: String,
         val desc: String
@@ -88,6 +105,10 @@ internal object StsUiTouchCompatPatcher {
         targetClassBytes: ByteArray,
         donorClassBytes: ByteArray
     ): ByteArray {
+        if (entryName == STS_PATCH_TIP_HELPER_CLASS) {
+            return patchTipHelperClass(targetClassBytes)
+        }
+
         val mergeSpec = mergeSpecs[entryName]
             ?: return targetClassBytes
 
@@ -135,6 +156,96 @@ internal object StsUiTouchCompatPatcher {
         val classNode = ClassNode()
         ClassReader(classBytes).accept(classNode, 0)
         return classNode
+    }
+
+    @Throws(IOException::class)
+    private fun patchTipHelperClass(targetClassBytes: ByteArray): ByteArray {
+        val targetClass = readClassNode(targetClassBytes)
+        if (targetClass.name != TIP_HELPER_INTERNAL_NAME) {
+            throw IOException("Unexpected target class for $STS_PATCH_TIP_HELPER_CLASS: ${targetClass.name}")
+        }
+
+        val renderMethod = targetClass.methods.firstOrNull { method ->
+            method.name == TIP_HELPER_RENDER_METHOD_NAME &&
+                method.desc == TIP_HELPER_RENDER_METHOD_DESC
+        } ?: throw IOException("Missing render method for $STS_PATCH_TIP_HELPER_CLASS")
+
+        if (isTipHelperTouchGuardPatched(renderMethod)) {
+            return targetClassBytes
+        }
+
+        val hoverGuardJump = findTipHelperDropZoneHoverGuard(renderMethod)
+            ?: throw IOException("Unsupported TipHelper.render bytecode: drop-zone hover guard not found")
+        renderMethod.instructions.insert(
+            hoverGuardJump,
+            InsnList().apply {
+                add(
+                    FieldInsnNode(
+                        Opcodes.GETSTATIC,
+                        INPUT_HELPER_INTERNAL_NAME,
+                        TOUCH_MOUSE_DOWN_FIELD_NAME,
+                        BOOLEAN_FIELD_DESC
+                    )
+                )
+                add(JumpInsnNode(Opcodes.IFEQ, hoverGuardJump.label))
+            }
+        )
+
+        return writeClass(targetClass)
+    }
+
+    private fun isTipHelperTouchGuardPatched(renderMethod: MethodNode): Boolean {
+        val hoverGuardJump = findTipHelperDropZoneHoverGuard(renderMethod) ?: return false
+        val mouseDownField = nextMeaningful(hoverGuardJump.next) as? FieldInsnNode ?: return false
+        if (mouseDownField.opcode != Opcodes.GETSTATIC ||
+            mouseDownField.owner != INPUT_HELPER_INTERNAL_NAME ||
+            mouseDownField.name != TOUCH_MOUSE_DOWN_FIELD_NAME ||
+            mouseDownField.desc != BOOLEAN_FIELD_DESC
+        ) {
+            return false
+        }
+
+        val mouseDownJump = nextMeaningful(mouseDownField.next) as? JumpInsnNode ?: return false
+        return mouseDownJump.opcode == Opcodes.IFEQ && mouseDownJump.label === hoverGuardJump.label
+    }
+
+    private fun findTipHelperDropZoneHoverGuard(renderMethod: MethodNode): JumpInsnNode? {
+        var current = renderMethod.instructions.first
+        while (current != null) {
+            val jump = current as? JumpInsnNode
+            if (jump != null && jump.opcode == Opcodes.IFEQ) {
+                val hoverField = previousMeaningful(jump.previous) as? FieldInsnNode
+                if (hoverField != null &&
+                    hoverField.owner == ABSTRACT_PLAYER_INTERNAL_NAME &&
+                    hoverField.name == DROP_ZONE_HOVER_FIELD_NAME &&
+                    hoverField.desc == BOOLEAN_FIELD_DESC
+                ) {
+                    return jump
+                }
+            }
+            current = current.next
+        }
+        return null
+    }
+
+    private fun previousMeaningful(node: org.objectweb.asm.tree.AbstractInsnNode?) =
+        walkMeaningful(node, forward = false)
+
+    private fun nextMeaningful(node: org.objectweb.asm.tree.AbstractInsnNode?) =
+        walkMeaningful(node, forward = true)
+
+    private fun walkMeaningful(
+        start: org.objectweb.asm.tree.AbstractInsnNode?,
+        forward: Boolean
+    ): org.objectweb.asm.tree.AbstractInsnNode? {
+        var current = start
+        while (current != null) {
+            if (current.opcode >= 0) {
+                return current
+            }
+            current = if (forward) current.next else current.previous
+        }
+        return null
     }
 
     private fun writeClass(classNode: ClassNode): ByteArray {
