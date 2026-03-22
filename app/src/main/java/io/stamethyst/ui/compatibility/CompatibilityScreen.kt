@@ -60,9 +60,18 @@ fun LauncherCompatibilityScreen(
             viewModel.onFragmentShaderPrecisionCompatToggled(context, enabled)
         },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
+        onLargeTextureDownscaleCompatToggled = { enabled ->
+            viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
+        },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
             viewModel.onNonRenderableFboFormatCompatToggled(context, enabled)
+        },
+        onFboIdleReclaimCompatToggled = { enabled ->
+            viewModel.onFboIdleReclaimCompatToggled(context, enabled)
+        },
+        onFboPressureDownscaleCompatToggled = { enabled ->
+            viewModel.onFboPressureDownscaleCompatToggled(context, enabled)
         },
     )
 }
@@ -82,8 +91,11 @@ private fun LauncherCompatibilityScreenPreview() {
             vupShionModCompatEnabled = true,
             fragmentShaderPrecisionCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
+            largeTextureDownscaleCompatEnabled = true,
             forceLinearMipmapFilterEnabled = true,
-            nonRenderableFboFormatCompatEnabled = true
+            nonRenderableFboFormatCompatEnabled = true,
+            fboIdleReclaimCompatEnabled = true,
+            fboPressureDownscaleCompatEnabled = true
         )
     )
 }
@@ -102,8 +114,11 @@ private fun LauncherCompatibilityScreenContent(
     onVupShionModCompatToggled: (Boolean) -> Unit = {},
     onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
+    onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
+    onFboIdleReclaimCompatToggled: (Boolean) -> Unit = {},
+    onFboPressureDownscaleCompatToggled: (Boolean) -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -200,6 +215,14 @@ private fun LauncherCompatibilityScreenContent(
             )
 
             CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_large_texture_downscale_title),
+                description = stringResource(R.string.compat_large_texture_downscale_desc),
+                checked = uiState.largeTextureDownscaleCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onLargeTextureDownscaleCompatToggled
+            )
+
+            CompatibilitySwitchRow(
                 title = stringResource(R.string.compat_force_linear_mipmap_filter_title),
                 description = stringResource(R.string.compat_force_linear_mipmap_filter_desc),
                 checked = uiState.forceLinearMipmapFilterEnabled,
@@ -213,6 +236,22 @@ private fun LauncherCompatibilityScreenContent(
                 checked = uiState.nonRenderableFboFormatCompatEnabled,
                 enabled = !uiState.busy,
                 onCheckedChange = onNonRenderableFboFormatCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_fbo_idle_reclaim_title),
+                description = stringResource(R.string.compat_fbo_idle_reclaim_desc),
+                checked = uiState.fboIdleReclaimCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onFboIdleReclaimCompatToggled
+            )
+
+            CompatibilitySwitchRow(
+                title = stringResource(R.string.compat_fbo_pressure_downscale_title),
+                description = stringResource(R.string.compat_fbo_pressure_downscale_desc),
+                checked = uiState.fboPressureDownscaleCompatEnabled,
+                enabled = !uiState.busy,
+                onCheckedChange = onFboPressureDownscaleCompatToggled
             )
         }
     }

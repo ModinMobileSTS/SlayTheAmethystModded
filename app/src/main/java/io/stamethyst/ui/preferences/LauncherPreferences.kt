@@ -85,6 +85,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_LOGCAT_CAPTURE_ENABLED
     val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED
+    val DEFAULT_GPU_RESOURCE_DIAG_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_GPU_RESOURCE_DIAG_ENABLED
     val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
@@ -301,6 +303,14 @@ object LauncherPreferences {
 
     fun setJvmLogcatMirrorEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setJvmLogcatMirrorEnabled(context, enabled)
+    }
+
+    fun isGpuResourceDiagEnabled(context: Context): Boolean {
+        return LauncherConfig.isGpuResourceDiagEnabled(context)
+    }
+
+    fun setGpuResourceDiagEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setGpuResourceDiagEnabled(context, enabled)
     }
 
     fun isGdxPadCursorDebugEnabled(context: Context): Boolean {

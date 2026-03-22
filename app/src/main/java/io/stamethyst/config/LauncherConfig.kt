@@ -87,13 +87,19 @@ object LauncherConfig {
     private const val PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT =
         "compat_fragment_shader_precision_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
+    private const val PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT =
+        "compat_large_texture_downscale"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
+    private const val PREF_KEY_FBO_IDLE_RECLAIM_COMPAT = "compat_fbo_idle_reclaim"
+    private const val PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT =
+        "compat_fbo_pressure_downscale"
     private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
     private const val PREF_KEY_PRELOAD_ALL_JRE_LIBRARIES = "preload_all_jre_libraries"
     private const val PREF_KEY_LOGCAT_CAPTURE_ENABLED = "logcat_capture_enabled"
     private const val PREF_KEY_JVM_LOGCAT_MIRROR_ENABLED = "jvm_logcat_mirror_enabled"
+    private const val PREF_KEY_GPU_RESOURCE_DIAG_ENABLED = "gpu_resource_diag_enabled"
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
     private const val PREF_KEY_AUTO_CHECK_UPDATES_ENABLED = "auto_check_updates_enabled"
@@ -149,6 +155,7 @@ object LauncherConfig {
     const val DEFAULT_PRELOAD_ALL_JRE_LIBRARIES = false
     const val DEFAULT_LOGCAT_CAPTURE_ENABLED = true
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
+    const val DEFAULT_GPU_RESOURCE_DIAG_ENABLED = true
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
@@ -161,6 +168,9 @@ object LauncherConfig {
     const val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED = false
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
+    const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = true
+    const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = true
+    const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = true
 
     const val DEFAULT_RENDER_SCALE = 1.0f
     const val MIN_RENDER_SCALE = 0.10f
@@ -703,6 +713,19 @@ object LauncherConfig {
         }
     }
 
+    fun isLargeTextureDownscaleCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT,
+            DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED
+        )
+    }
+
+    fun setLargeTextureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT, enabled)
+        }
+    }
+
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER, true)
     }
@@ -720,6 +743,32 @@ object LauncherConfig {
     fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT, enabled)
+        }
+    }
+
+    fun isFboIdleReclaimCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_FBO_IDLE_RECLAIM_COMPAT,
+            DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED
+        )
+    }
+
+    fun setFboIdleReclaimCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_FBO_IDLE_RECLAIM_COMPAT, enabled)
+        }
+    }
+
+    fun isFboPressureDownscaleCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT,
+            DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED
+        )
+    }
+
+    fun setFboPressureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT, enabled)
         }
     }
 
@@ -769,6 +818,19 @@ object LauncherConfig {
     fun setJvmLogcatMirrorEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_JVM_LOGCAT_MIRROR_ENABLED, enabled)
+        }
+    }
+
+    fun isGpuResourceDiagEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_GPU_RESOURCE_DIAG_ENABLED,
+            DEFAULT_GPU_RESOURCE_DIAG_ENABLED
+        )
+    }
+
+    fun setGpuResourceDiagEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_GPU_RESOURCE_DIAG_ENABLED, enabled)
         }
     }
 

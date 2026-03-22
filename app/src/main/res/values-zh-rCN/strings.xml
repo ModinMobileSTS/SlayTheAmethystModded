@@ -36,10 +36,16 @@
     <string name="compat_fragment_shader_precision_compat_desc">开启后，在 GLES/ANGLE 路径下运行的 fragment shader 会自动补上缺失的默认 precision 声明，用于减少 “no default precision defined for variable” 这类编译错误。这是运行时兼容开关，下次启动游戏后生效。</string>
     <string name="compat_runtime_texture_compat_title">运行时纹理兼容补丁</string>
     <string name="compat_runtime_texture_compat_desc">用于修复运行时动态创建纹理导致的黑块问题，如果出现材质丢失的问题，可以考虑打开。优点：可继续修复导入期未覆盖的黑块问题。缺点：会增加启动阶段 managed texture 扫描带来的 CPU/GPU 开销，且运行时 Linear/Clamp 兜底可能让部分纹理变糊。默认关闭以优先性能。</string>
+    <string name="compat_large_texture_downscale_title">大纹理通用降采样兜底</string>
+    <string name="compat_large_texture_downscale_desc">开启后，运行时会对超大纹理启用通用兜底：外部模组的动画/剧情/事件 atlas 会自动降采样，而其他特别大的纹理在 GPU 内存压力超过软预算后也可能被缩小上传，用于降低 HarmonyOS/Android 兼容层上的 Gpu Leak 强杀。代价是部分资源会更糊一些。默认开启。</string>
     <string name="compat_force_linear_mipmap_filter_title">强制线性 mipmap 过滤</string>
     <string name="compat_force_linear_mipmap_filter_desc">开启后会在运行时把依赖 mipmap 的最小过滤降级为 Linear，以规避部分 mod 因 mip 链不完整导致的黑块；修复案例为命运之戒模组人物变为黑块。</string>
     <string name="compat_non_renderable_fbo_format_compat_title">不可渲染的 FBO 格式修复</string>
     <string name="compat_non_renderable_fbo_format_compat_desc">开启后会把 GLES 下不可作为颜色附件的 FrameBuffer 格式（Alpha/Intensity/LuminanceAlpha）自动升级为 RGBA8888，以避免“frame buffer couldn\'t be constructed: incomplete attachment”这类启动崩溃。关闭后更接近模组原始行为，但可能再次触发启动崩溃。如果你的 Haberdashery 遗物展示模组出现问题，可以考虑启用此项。</string>
+    <string name="compat_fbo_idle_reclaim_title">FBO 空闲回收</string>
+    <string name="compat_fbo_idle_reclaim_desc">开启后，长时间未使用的大型 FrameBuffer 会释放 native 资源，并在下次真正使用时懒重建。这样可以降低地图遮罩、后处理等常驻缓冲带来的 GPU 内存压力，但缓冲重新建立时可能会带来一次轻微卡顿。这是运行时兼容开关，下次启动游戏后生效。</string>
+    <string name="compat_fbo_pressure_downscale_title">FBO 压力降分辨率</string>
+    <string name="compat_fbo_pressure_downscale_desc">开启后，当 GPU 内存压力超过软预算时，部分非关键的全屏 FrameBuffer 会自动按更低分辨率分配，用于减少 HarmonyOS/Android 兼容层上的 Gpu Leak 强杀。但这也可能让部分发光、遮罩和后处理效果变得更糊。这是运行时兼容开关，下次启动游戏后生效。</string>
     <string name="touch_mouse_mode_left">左键</string>
     <string name="touch_mouse_mode_right">右键</string>
     <string name="touch_mouse_mode_left_short">左</string>

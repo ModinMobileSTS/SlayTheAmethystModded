@@ -164,6 +164,7 @@ fun LauncherSettingsScreen(
         },
         onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
         onJvmLogcatMirrorChanged = { enabled -> viewModel.onJvmLogcatMirrorChanged(activity, enabled) },
+        onGpuResourceDiagChanged = { enabled -> viewModel.onGpuResourceDiagChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
@@ -219,6 +220,7 @@ private fun LauncherSettingsScreenPreview() {
             preloadAllJreLibrariesEnabled = false,
             logcatCaptureEnabled = true,
             jvmLogcatMirrorEnabled = false,
+            gpuResourceDiagEnabled = true,
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenEnabled = true,
@@ -275,6 +277,7 @@ private fun LauncherSettingsScreenContent(
     onPreloadAllJreLibrariesChanged: (Boolean) -> Unit = {},
     onLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
+    onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
@@ -422,6 +425,7 @@ private fun LauncherSettingsScreenContent(
                         onPreloadAllJreLibrariesChanged = onPreloadAllJreLibrariesChanged,
                         onLogcatCaptureChanged = onLogcatCaptureChanged,
                         onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
+                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged
                     )
@@ -1424,6 +1428,7 @@ private fun SettingsStatusSection(
     onPreloadAllJreLibrariesChanged: (Boolean) -> Unit,
     onLogcatCaptureChanged: (Boolean) -> Unit,
     onJvmLogcatMirrorChanged: (Boolean) -> Unit,
+    onGpuResourceDiagChanged: (Boolean) -> Unit,
     onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
 ) {
@@ -1477,6 +1482,14 @@ private fun SettingsStatusSection(
         disabledText = "JVM 日志转发到 logcat：禁用",
         description = "将 latest.log 的新增内容同步输出到 logcat，默认禁用。",
         onCheckedChange = onJvmLogcatMirrorChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.gpuResourceDiagEnabled,
+        enabled = !uiState.busy,
+        enabledText = "GPU 资源诊断：启用",
+        disabledText = "GPU 资源诊断：禁用",
+        description = "控制 [gdx-diag] GPU 资源摘要、FBO 栈采样和大纹理上传诊断日志。默认启用，关闭后可减少日志量和少量运行时开销。",
+        onCheckedChange = onGpuResourceDiagChanged
     )
     SwitchSettingRow(
         checked = uiState.gdxPadCursorDebugEnabled,

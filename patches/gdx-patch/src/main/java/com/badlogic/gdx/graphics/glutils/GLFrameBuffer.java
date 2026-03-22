@@ -962,6 +962,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			+ " frameBuffersDisposed=" + FRAMEBUFFERS_DISPOSED.get();
 	}
 
+	public static long getEstimatedNativeBytes () {
+		return FRAMEBUFFERS_NATIVE_BYTES.get();
+	}
+
 	private void recordFrameBufferBuild (int colorTextureWidth, int colorTextureHeight, String reason) {
 		nativeResourcesAllocated = true;
 		estimatedNativeBytes = estimateFrameBufferBytes(colorTextureWidth, colorTextureHeight, String.valueOf(format), hasDepth, hasStencil);

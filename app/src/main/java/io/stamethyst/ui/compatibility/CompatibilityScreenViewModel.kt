@@ -21,8 +21,11 @@ class CompatibilityScreenViewModel : ViewModel() {
         val vupShionModCompatEnabled: Boolean = true,
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
+        val largeTextureDownscaleCompatEnabled: Boolean = true,
         val forceLinearMipmapFilterEnabled: Boolean = true,
-        val nonRenderableFboFormatCompatEnabled: Boolean = true
+        val nonRenderableFboFormatCompatEnabled: Boolean = true,
+        val fboIdleReclaimCompatEnabled: Boolean = true,
+        val fboPressureDownscaleCompatEnabled: Boolean = true
     )
 
     var uiState by mutableStateOf(UiState())
@@ -40,8 +43,11 @@ class CompatibilityScreenViewModel : ViewModel() {
             vupShionModCompatEnabled = CompatibilitySettings.isVupShionModCompatEnabled(host),
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
+            largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
-            nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host)
+            nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
+            fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
+            fboPressureDownscaleCompatEnabled = CompatibilitySettings.isFboPressureDownscaleCompatEnabled(host)
         )
     }
 
@@ -109,6 +115,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(runtimeTextureCompatEnabled = enabled)
     }
 
+    fun onLargeTextureDownscaleCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setLargeTextureDownscaleCompatEnabled(host, enabled)
+        uiState = uiState.copy(largeTextureDownscaleCompatEnabled = enabled)
+    }
+
     fun onForceLinearMipmapFilterToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -123,5 +137,21 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setNonRenderableFboFormatCompatEnabled(host, enabled)
         uiState = uiState.copy(nonRenderableFboFormatCompatEnabled = enabled)
+    }
+
+    fun onFboIdleReclaimCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setFboIdleReclaimCompatEnabled(host, enabled)
+        uiState = uiState.copy(fboIdleReclaimCompatEnabled = enabled)
+    }
+
+    fun onFboPressureDownscaleCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setFboPressureDownscaleCompatEnabled(host, enabled)
+        uiState = uiState.copy(fboPressureDownscaleCompatEnabled = enabled)
     }
 }

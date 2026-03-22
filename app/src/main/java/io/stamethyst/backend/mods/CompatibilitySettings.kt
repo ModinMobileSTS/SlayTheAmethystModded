@@ -85,6 +85,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isLargeTextureDownscaleCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isLargeTextureDownscaleCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setLargeTextureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setLargeTextureDownscaleCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
         return LauncherConfig.isForceLinearMipmapFilterEnabled(context)
     }
@@ -102,5 +112,25 @@ object CompatibilitySettings {
     @JvmStatic
     fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setNonRenderableFboFormatCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isFboIdleReclaimCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isFboIdleReclaimCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setFboIdleReclaimCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setFboIdleReclaimCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isFboPressureDownscaleCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isFboPressureDownscaleCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setFboPressureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setFboPressureDownscaleCompatEnabled(context, enabled)
     }
 }

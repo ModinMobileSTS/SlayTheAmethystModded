@@ -168,6 +168,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "diag.jvmLogcatMirrorEnabled" to formatBoolean(
                             LauncherConfig.isJvmLogcatMirrorEnabled(context)
                         ),
+                        "diag.gpuResourceDiagEnabled" to formatBoolean(
+                            LauncherConfig.isGpuResourceDiagEnabled(context)
+                        ),
                         "diag.gdxPadCursorDebugEnabled" to formatBoolean(
                             LauncherConfig.isGdxPadCursorDebugEnabled(context)
                         ),
@@ -203,11 +206,20 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "runtimeTextureCompat" to formatBoolean(
                             CompatibilitySettings.isRuntimeTextureCompatEnabled(context)
                         ),
+                        "largeTextureDownscaleCompat" to formatBoolean(
+                            CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)
+                        ),
                         "forceLinearMipmapFilter" to formatBoolean(
                             CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
                         ),
                         "nonRenderableFboFormatCompat" to formatBoolean(
                             CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)
+                        ),
+                        "fboIdleReclaimCompat" to formatBoolean(
+                            CompatibilitySettings.isFboIdleReclaimCompatEnabled(context)
+                        ),
+                        "fboPressureDownscaleCompat" to formatBoolean(
+                            CompatibilitySettings.isFboPressureDownscaleCompatEnabled(context)
                         )
                     )
                 )

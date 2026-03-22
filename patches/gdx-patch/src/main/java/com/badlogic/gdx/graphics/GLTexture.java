@@ -16,6 +16,9 @@
 
 package com.badlogic.gdx.graphics;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.IntBuffer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -70,14 +73,27 @@ public abstract class GLTexture implements Disposable {
 		"amethyst.gdx.texture_pressure_downscale_scene_min_bytes";
 	private static final long TEXTURE_PRESSURE_DOWNSCALE_SCENE_MIN_BYTES =
 		readLongSystemProperty(TEXTURE_PRESSURE_DOWNSCALE_SCENE_MIN_BYTES_PROP, 8L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private static final String TEXTURE_PRESSURE_DOWNSCALE_SOFT_BYTES_PROP =
+		"amethyst.gdx.texture_pressure_downscale_soft_bytes";
+	private static final long TEXTURE_PRESSURE_DOWNSCALE_SOFT_BYTES =
+		readLongSystemProperty(TEXTURE_PRESSURE_DOWNSCALE_SOFT_BYTES_PROP, 192L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private static final String TEXTURE_PRESSURE_DOWNSCALE_HUGE_MIN_BYTES_PROP =
+		"amethyst.gdx.texture_pressure_downscale_huge_min_bytes";
+	private static final long TEXTURE_PRESSURE_DOWNSCALE_HUGE_MIN_BYTES =
+		readLongSystemProperty(TEXTURE_PRESSURE_DOWNSCALE_HUGE_MIN_BYTES_PROP, 32L * 1024L * 1024L, 0L, Long.MAX_VALUE);
 	private static final String TEXTURE_PRESSURE_DOWNSCALE_DIVISOR_PROP =
 		"amethyst.gdx.texture_pressure_downscale_divisor";
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_DIVISOR =
 		readIntSystemProperty(TEXTURE_PRESSURE_DOWNSCALE_DIVISOR_PROP, 2, 2, 4);
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE = 0;
-	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_SKIN = 1;
-	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_CHARACTER = 2;
-	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_SCENE = 3;
+	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_ANIMATION = 1;
+	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_SCENE = 2;
+	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_PRESSURE = 3;
+	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_GENERIC_PRESSURE = 4;
+	private static final int GL_TEXTURE_2D_ENUM = 0x0DE1;
+	private static final int GL_TEXTURE_BINDING_2D_ENUM = 0x8069;
+	private static final int GL_TEXTURE_CUBE_MAP_ENUM = 0x8513;
+	private static final int GL_TEXTURE_BINDING_CUBE_MAP_ENUM = 0x8514;
 	private static final AtomicLong NEXT_DEBUG_TEXTURE_ID = new AtomicLong(1L);
 	private static final AtomicInteger TEXTURES_CREATED = new AtomicInteger();
 	private static final AtomicInteger TEXTURES_DISPOSED = new AtomicInteger();
@@ -87,8 +103,12 @@ public abstract class GLTexture implements Disposable {
 	private static final AtomicInteger TEXTURE_BUILD_STACK_SUPPRESSED = new AtomicInteger();
 	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_BUILD_STACK_COUNTS =
 		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<Integer, Long> TEXTURE_HANDLE_ESTIMATED_BYTES =
+		new ConcurrentHashMap<Integer, Long>();
+	private static final AtomicLong TEXTURE_NATIVE_ESTIMATED_BYTES = new AtomicLong();
 	private static boolean forceLinearMipmapFilterLogPrinted;
 	private static volatile int textureLivePeak;
+	private static volatile long textureNativeEstimatedBytesPeak;
 	public final int glTarget;
 	protected int glHandle;
 	private final long debugTextureId;
@@ -278,7 +298,9 @@ public abstract class GLTexture implements Disposable {
 			+ " texturesPeak=" + textureLivePeak
 			+ " texturesCreated=" + TEXTURES_CREATED.get()
 			+ " texturesDisposed=" + TEXTURES_DISPOSED.get()
-			+ " textureHandleUpdates=" + TEXTURE_HANDLE_UPDATES.get();
+			+ " textureHandleUpdates=" + TEXTURE_HANDLE_UPDATES.get()
+			+ " textureBytes=" + TEXTURE_NATIVE_ESTIMATED_BYTES.get()
+			+ " textureBytesPeak=" + textureNativeEstimatedBytesPeak;
 	}
 
 	@Override
@@ -293,6 +315,7 @@ public abstract class GLTexture implements Disposable {
 	private int releaseHandle (String reason, boolean deleteGlHandle) {
 		if (glHandle == 0) return 0;
 		int deletedHandle = glHandle;
+		forgetTrackedTextureBytes(deletedHandle);
 		if (deleteGlHandle) {
 			Gdx.gl.glDeleteTexture(glHandle);
 		}
@@ -360,6 +383,7 @@ public abstract class GLTexture implements Disposable {
 				pixmap.getPixels()
 			);
 		}
+		recordTextureNativeBytes(target, pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat(), data.useMipMaps());
 		if (disposePixmap) {
 			pixmap.dispose();
 		}
@@ -375,11 +399,21 @@ public abstract class GLTexture implements Disposable {
 		int width = pixmap.getWidth();
 		int height = pixmap.getHeight();
 		if (width <= 0 || height <= 0) return pixmap;
-		int mode = classifyTexturePressureDownscaleMode(stackKey);
+		Pixmap.Format format = data == null ? pixmap.getFormat() : data.getFormat();
+		long estimatedBytes = estimateTextureBytes(width, height, format);
+		long liveTextureBytes = TEXTURE_NATIVE_ESTIMATED_BYTES.get();
+		long liveFrameBufferBytes = GLFrameBuffer.getEstimatedNativeBytes();
+		long projectedTotalBytes = safeAdd(safeAdd(liveTextureBytes, liveFrameBufferBytes), estimatedBytes);
+		int mode = classifyTexturePressureDownscaleMode(
+			stackKey,
+			width,
+			height,
+			estimatedBytes,
+			projectedTotalBytes
+		);
 		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE) return pixmap;
 
-		long estimatedBytes = estimateTextureBytes(width, height, data == null ? pixmap.getFormat() : data.getFormat());
-		long minimumBytes = mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_SCENE
+		long minimumBytes = mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_SCENE
 			? TEXTURE_PRESSURE_DOWNSCALE_SCENE_MIN_BYTES
 			: TEXTURE_PRESSURE_DOWNSCALE_MIN_BYTES;
 		if (estimatedBytes < minimumBytes) return pixmap;
@@ -407,8 +441,11 @@ public abstract class GLTexture implements Disposable {
 		System.out.println("[gdx-diag] GLTexture pressure_downscale mode=" + texturePressureDownscaleModeName(mode)
 			+ " source=" + width + "x" + height
 			+ " upload=" + scaledWidth + "x" + scaledHeight
-			+ " format=" + String.valueOf(data == null ? pixmap.getFormat() : data.getFormat())
+			+ " format=" + String.valueOf(format)
 			+ " bytes=" + estimatedBytes
+			+ " liveTextureBytes=" + liveTextureBytes
+			+ " liveFrameBufferBytes=" + liveFrameBufferBytes
+			+ " projectedTotalBytes=" + projectedTotalBytes
 			+ " stack=" + (stackKey == null ? "unknown" : stackKey));
 		return scaledPixmap;
 	}
@@ -548,27 +585,162 @@ public abstract class GLTexture implements Disposable {
 		return true;
 	}
 
-	private static int classifyTexturePressureDownscaleMode (String stackKey) {
-		if (stackKey == null || stackKey.length() == 0) return TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE;
-		if (stackKey.indexOf("VUPShionMod.skins.AbstractSkin#loadAnimation") >= 0) {
-			return TEXTURE_PRESSURE_DOWNSCALE_MODE_SKIN;
+	private static int classifyTexturePressureDownscaleMode (
+		String stackKey,
+		int width,
+		int height,
+		long estimatedBytes,
+		long projectedTotalBytes
+	) {
+		if (estimatedBytes <= 0L) return TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE;
+		if (isTexturePressureDownscaleExemptStack(stackKey)) return TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE;
+
+		boolean externalMod = containsExternalModNamespace(stackKey);
+		boolean animationLike = containsAnyStackFragment(
+			stackKey,
+			".skins.AbstractSkin#loadAnimation",
+			".skins.AbstractSkinBase#loadAnimation",
+			"#loadAnimation",
+			"#reloadAnimation",
+			"#preload",
+			"#replace"
+		);
+		boolean sceneLike = containsAnyStackFragment(
+			stackKey,
+			".cutscenes.",
+			".relics.",
+			".events."
+		);
+		boolean largeTexture = width >= 2048 || height >= 2048;
+		boolean hugeTexture = estimatedBytes >= TEXTURE_PRESSURE_DOWNSCALE_HUGE_MIN_BYTES;
+		boolean pressureExceeded = projectedTotalBytes >= TEXTURE_PRESSURE_DOWNSCALE_SOFT_BYTES;
+
+		if (externalMod && animationLike && largeTexture && estimatedBytes >= TEXTURE_PRESSURE_DOWNSCALE_MIN_BYTES) {
+			return TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_ANIMATION;
 		}
-		if (stackKey.indexOf("VUPShionMod.character.") >= 0 && stackKey.indexOf("#reloadAnimation") >= 0) {
-			return TEXTURE_PRESSURE_DOWNSCALE_MODE_CHARACTER;
+		if (externalMod && sceneLike && largeTexture && estimatedBytes >= TEXTURE_PRESSURE_DOWNSCALE_SCENE_MIN_BYTES) {
+			return TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_SCENE;
 		}
-		if (stackKey.indexOf("VUPShionMod.cutscenes.") >= 0
-			|| stackKey.indexOf("VUPShionMod.relics.") >= 0
-			|| stackKey.indexOf("VUPShionMod.events.") >= 0) {
-			return TEXTURE_PRESSURE_DOWNSCALE_MODE_SCENE;
+		if (pressureExceeded && externalMod && largeTexture && estimatedBytes >= TEXTURE_PRESSURE_DOWNSCALE_MIN_BYTES) {
+			return TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_PRESSURE;
+		}
+		if (pressureExceeded && largeTexture && hugeTexture) {
+			return TEXTURE_PRESSURE_DOWNSCALE_MODE_GENERIC_PRESSURE;
 		}
 		return TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE;
 	}
 
+	private static boolean containsStackFragment (String stackKey, String fragment) {
+		return stackKey != null && fragment != null && stackKey.indexOf(fragment) >= 0;
+	}
+
+	private static boolean containsAnyStackFragment (String stackKey, String... fragments) {
+		if (stackKey == null || stackKey.length() == 0 || fragments == null) return false;
+		for (int i = 0; i < fragments.length; i++) {
+			if (containsStackFragment(stackKey, fragments[i])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isTexturePressureDownscaleExemptStack (String stackKey) {
+		return containsAnyStackFragment(
+			stackKey,
+			"com.badlogic.gdx.graphics.g2d.PixmapPacker",
+			"com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator",
+			"com.megacrit.cardcrawl.helpers.FontHelper"
+		);
+	}
+
+	private static boolean containsExternalModNamespace (String stackKey) {
+		if (stackKey == null || stackKey.length() == 0) return false;
+		String[] frames = stackKey.split(" <- ");
+		for (int i = 0; i < frames.length; i++) {
+			String frame = frames[i];
+			int hashIndex = frame.indexOf('#');
+			if (hashIndex <= 0) continue;
+			String className = frame.substring(0, hashIndex);
+			if (className.startsWith("com.megacrit.cardcrawl.")) continue;
+			if (className.startsWith("basemod.")) continue;
+			if (className.startsWith("com.badlogic.gdx.")) continue;
+			if (className.startsWith("java.")) continue;
+			if (className.startsWith("javax.")) continue;
+			if (className.startsWith("sun.")) continue;
+			if (className.startsWith("jdk.")) continue;
+			if (className.startsWith("kotlin.")) continue;
+			if (className.startsWith("org.lwjgl.")) continue;
+			if (className.startsWith("org.apache.")) continue;
+			if (className.startsWith("de.robojumper.")) continue;
+			if (className.startsWith("com.esotericsoftware.")) continue;
+			if (className.startsWith("io.stamethyst.")) continue;
+			return true;
+		}
+		return false;
+	}
+
 	private static String texturePressureDownscaleModeName (int mode) {
-		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_SKIN) return "skin_animation";
-		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_CHARACTER) return "character_reload";
-		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_SCENE) return "scene_or_event";
+		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_ANIMATION) return "external_animation";
+		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_SCENE) return "external_scene";
+		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_PRESSURE) return "external_pressure";
+		if (mode == TEXTURE_PRESSURE_DOWNSCALE_MODE_GENERIC_PRESSURE) return "generic_pressure";
 		return "none";
+	}
+
+	private static void recordTextureNativeBytes (
+		int target,
+		int width,
+		int height,
+		Pixmap.Format format,
+		boolean useMipMaps
+	) {
+		int handle = getCurrentTextureBinding(target);
+		if (handle == 0) return;
+		long estimatedBytes = estimateTextureBytes(width, height, format);
+		if (useMipMaps) {
+			estimatedBytes = Math.max(estimatedBytes, (estimatedBytes * 4L) / 3L);
+		}
+		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.put(handle, estimatedBytes);
+		long delta = estimatedBytes - (previousBytes == null ? 0L : previousBytes.longValue());
+		if (delta == 0L) return;
+		long liveBytes = TEXTURE_NATIVE_ESTIMATED_BYTES.addAndGet(delta);
+		if (liveBytes < 0L) {
+			TEXTURE_NATIVE_ESTIMATED_BYTES.set(0L);
+			liveBytes = 0L;
+		}
+		if (liveBytes > textureNativeEstimatedBytesPeak) {
+			textureNativeEstimatedBytesPeak = liveBytes;
+		}
+	}
+
+	private static void forgetTrackedTextureBytes (int handle) {
+		if (handle == 0) return;
+		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.remove(handle);
+		if (previousBytes == null) return;
+		long liveBytes = TEXTURE_NATIVE_ESTIMATED_BYTES.addAndGet(-previousBytes.longValue());
+		if (liveBytes < 0L) {
+			TEXTURE_NATIVE_ESTIMATED_BYTES.set(0L);
+		}
+	}
+
+	private static int getCurrentTextureBinding (int target) {
+		int bindingQuery = getTextureBindingQueryEnum(target);
+		if (bindingQuery == 0) return 0;
+		IntBuffer intbuf = ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
+		Gdx.gl.glGetIntegerv(bindingQuery, intbuf);
+		return intbuf.get(0);
+	}
+
+	private static int getTextureBindingQueryEnum (int target) {
+		if (target == GL_TEXTURE_2D_ENUM) return GL_TEXTURE_BINDING_2D_ENUM;
+		if (target == GL_TEXTURE_CUBE_MAP_ENUM) return GL_TEXTURE_BINDING_CUBE_MAP_ENUM;
+		return 0;
+	}
+
+	private static long safeAdd (long a, long b) {
+		if (b > 0L && a > Long.MAX_VALUE - b) return Long.MAX_VALUE;
+		if (b < 0L && a < Long.MIN_VALUE - b) return Long.MIN_VALUE;
+		return a + b;
 	}
 
 	private static long estimateTextureBytes (int width, int height, Pixmap.Format format) {

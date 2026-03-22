@@ -170,6 +170,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES,
         val logcatCaptureEnabled: Boolean = LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
+        val gpuResourceDiagEnabled: Boolean = LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
@@ -521,6 +522,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val preloadAllJreLibrariesEnabled = readPreloadAllJreLibrariesSelection(host)
                 val logcatCaptureEnabled = readLogcatCaptureSelection(host)
                 val jvmLogcatMirrorEnabled = readJvmLogcatMirrorSelection(host)
+                val gpuResourceDiagEnabled = readGpuResourceDiagSelection(host)
                 val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
                 val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
                 val touchscreenEnabled = readTouchscreenEnabledSelection(host)
@@ -664,6 +666,8 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nLogcat diagnostics capture: ")
                         .append(if (logcatCaptureEnabled) "ON" else "OFF")
                     append("\nJVM logcat mirror: ").append(if (jvmLogcatMirrorEnabled) "ON" else "OFF")
+                    append("\nGPU resource diagnostics: ")
+                        .append(if (gpuResourceDiagEnabled) "ON" else "OFF")
                     append("\nGDX pad cursor debug log: ")
                         .append(if (gdxPadCursorDebugEnabled) "ON" else "OFF")
                     append("\nGLBridge swap heartbeat log: ")
@@ -731,6 +735,7 @@ class SettingsScreenViewModel : ViewModel() {
                         preloadAllJreLibrariesEnabled = preloadAllJreLibrariesEnabled,
                         logcatCaptureEnabled = logcatCaptureEnabled,
                         jvmLogcatMirrorEnabled = jvmLogcatMirrorEnabled,
+                        gpuResourceDiagEnabled = gpuResourceDiagEnabled,
                         gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
                         glBridgeSwapHeartbeatDebugEnabled = glBridgeSwapHeartbeatDebugEnabled,
                         touchscreenEnabled = touchscreenEnabled,
@@ -1255,6 +1260,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(jvmLogcatMirrorEnabled = enabled)
         saveJvmLogcatMirrorSelection(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onGpuResourceDiagChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(gpuResourceDiagEnabled = enabled)
+        saveGpuResourceDiagSelection(host, enabled)
         refreshStatus(host)
     }
 
@@ -2247,6 +2261,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveJvmLogcatMirrorSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setJvmLogcatMirrorEnabled(host, enabled)
+    }
+
+    private fun readGpuResourceDiagSelection(host: Activity): Boolean {
+        return LauncherPreferences.isGpuResourceDiagEnabled(host)
+    }
+
+    private fun saveGpuResourceDiagSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setGpuResourceDiagEnabled(host, enabled)
     }
 
     private fun readGdxPadCursorDebugSelection(host: Activity): Boolean {

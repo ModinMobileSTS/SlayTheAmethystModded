@@ -222,6 +222,10 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isRuntimeTextureCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.gdx.texture_pressure_downscale=" +
+                if (CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
             "-Damethyst.gdx.force_linear_mipmap_filter=" +
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )
@@ -230,12 +234,24 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.gdx.fbo_idle_reclaim=" +
+                if (CompatibilitySettings.isFboIdleReclaimCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.gdx.fbo_pressure_downscale=" +
+                if (CompatibilitySettings.isFboPressureDownscaleCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
             "-Damethyst.gdx.fragment_shader_precision_compat=" +
                 if (CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(context)) {
                     "true"
                 } else {
                     "false"
                 }
+        )
+        args.add(
+            "-Damethyst.gdx.gpu_resource_diag=" +
+                if (LauncherConfig.isGpuResourceDiagEnabled(context)) "true" else "false"
         )
         val bridgeDelegateMainClass = if (isMtsLaunchMode(launchMode)) {
             "com.evacipated.cardcrawl.modthespire.Loader"
