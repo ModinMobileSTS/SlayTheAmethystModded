@@ -56,7 +56,6 @@ internal class FloatingMouseOverlayController(
 
     companion object {
         private const val IME_LOG_TAG = "STS-IME"
-        private const val TOUCH_MOUSE_LOG_TAG = "STS-TouchMouse"
         private const val FLOATING_MOUSE_IDLE_ALPHA = 0.2f
         private const val FLOATING_MOUSE_ACTIVE_ALPHA = 1.0f
         private const val FLOATING_MOUSE_ACTIVE_KEEP_MS = 1500L
@@ -235,15 +234,12 @@ internal class FloatingMouseOverlayController(
 
     fun pressTouchButtonIfNeeded() {
         if (!isNativeInputDispatchReady.invoke()) {
-            logTouchMouse("press skipped: native input not ready")
             return
         }
         if (touchPressedButton >= 0) {
-            logTouchMouse("press skipped: already pressed button=$touchPressedButton")
             return
         }
         val button = resolveTouchButton()
-        logTouchMouse("press button=$button mode=$touchMouseMode lock=$touchMouseLockEnabled")
         CallbackBridge.sendMouseButton(button, true)
         touchPressedButton = button
         if (autoSwitchBackToLeftAfterRightClick && button == LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt()) {
@@ -254,15 +250,12 @@ internal class FloatingMouseOverlayController(
 
     fun releaseTouchButtonIfNeeded() {
         if (!isNativeInputDispatchReady.invoke()) {
-            logTouchMouse("release skipped: native input not ready")
             touchPressedButton = -1
             return
         }
         if (touchPressedButton < 0) {
-            logTouchMouse("release skipped: no pressed button")
             return
         }
-        logTouchMouse("release button=$touchPressedButton")
         CallbackBridge.sendMouseButton(touchPressedButton, false)
         touchPressedButton = -1
     }
@@ -1235,11 +1228,6 @@ internal class FloatingMouseOverlayController(
 
     private fun dpToPx(dp: Int): Int {
         return (activity.resources.displayMetrics.density * dp).roundToInt()
-    }
-
-    private fun logTouchMouse(message: String) {
-        Log.i(TOUCH_MOUSE_LOG_TAG, message)
-        println("TouchMouseDiag: $message")
     }
 
     private fun placeFloatingButtonAtRightCenter(host: FrameLayout, button: FrameLayout, buttonSize: Int) {

@@ -85,8 +85,6 @@ final public class LwjglInput implements Input {
 	private static int lastCursorDebugReqY = Integer.MIN_VALUE;
 	private static final boolean gdxPadCursorDebugEnabled =
 		java.lang.Boolean.parseBoolean(java.lang.System.getProperty("amethyst.debug.gdx_pad_cursor", "false"));
-	private static final boolean touchInputDiagEnabled =
-		java.lang.Boolean.parseBoolean(java.lang.System.getProperty("amethyst.debug.touch_input_diag", "true"));
 
 	Pool<KeyEvent> usedKeyEvents = new Pool<KeyEvent>(16, 1000) {
 		protected KeyEvent newObject () {
@@ -846,21 +844,6 @@ final public class LwjglInput implements Input {
 					} else {
 						event.type = TouchEvent.TOUCH_UP;
 						pressedButtons.remove(event.button);
-					}
-					if (touchInputDiagEnabled) {
-						System.out.println(
-							"[gdx-inputdiag] mouse_button"
-								+ " type=" + (event.type == TouchEvent.TOUCH_DOWN ? "down" : "up")
-								+ " raw=(" + Mouse.getEventX() + "," + Mouse.getEventY() + ")"
-								+ " eventLogical=(" + eventX + "," + eventY + ")"
-								+ " bridgeRaw=(" + CallbackBridge.nativeGetCursorX() + "," + CallbackBridge.nativeGetCursorY() + ")"
-								+ " cursorLogical=(" + cursorX + "," + cursorY + ")"
-								+ " button=" + button
-								+ " gdxButton=" + gdxButton
-								+ " state=" + Mouse.getEventButtonState()
-								+ " pressed=" + pressedButtons
-								+ " graphics=" + Gdx.graphics.getWidth() + "x" + Gdx.graphics.getHeight()
-						);
 					}
 				}
 

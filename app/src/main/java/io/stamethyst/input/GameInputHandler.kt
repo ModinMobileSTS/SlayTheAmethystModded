@@ -3,8 +3,6 @@ package io.stamethyst.input
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioManager
-import android.os.SystemClock
-import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -30,14 +28,8 @@ class GameInputHandler(
     private val getTargetWindowWidth: () -> Int,
     private val getTargetWindowHeight: () -> Int
 ) {
-    companion object {
-        private const val INPUT_DIAG_TAG = "STS-InputDiag"
-        private const val MOVE_DIAG_THROTTLE_MS = 750L
-    }
-
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var gamepadDirectInputEnableAttempted = false
-    private var lastMoveDiagLoggedAtMs = 0L
 
     private var floatingMouseController: FloatingMouseOverlayController? = null
 
@@ -89,8 +81,7 @@ class GameInputHandler(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = event.getPointerId(0)
-                moveCursor(event.getX(0), event.getY(0), "touch_down")
-                maybeLogTouchButtonRouting("touch_down")
+                moveCursor(event.getX(0), event.getY(0))
                 if (shouldDispatchTouchButtons()) {
                     pressTouchButtonIfNeeded()
                 } else {
@@ -102,8 +93,7 @@ class GameInputHandler(
             MotionEvent.ACTION_POINTER_DOWN -> {
                 val downIndex = event.actionIndex
                 activePointerId = event.getPointerId(downIndex)
-                moveCursor(event.getX(downIndex), event.getY(downIndex), "touch_pointer_down")
-                maybeLogTouchButtonRouting("touch_pointer_down")
+                moveCursor(event.getX(downIndex), event.getY(downIndex))
                 if (shouldDispatchTouchButtons()) {
                     pressTouchButtonIfNeeded()
                 } else {
@@ -119,7 +109,7 @@ class GameInputHandler(
                     pointerIndex = 0
                 }
                 if (pointerIndex >= 0) {
-                    moveCursor(event.getX(pointerIndex), event.getY(pointerIndex), "touch_move")
+                    moveCursor(event.getX(pointerIndex), event.getY(pointerIndex))
                     return true
                 }
                 return false
@@ -131,9 +121,6 @@ class GameInputHandler(
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                maybeLogTouchButtonRouting(
-                    if (event.actionMasked == MotionEvent.ACTION_UP) "touch_up" else "touch_cancel"
-                )
                 releaseTouchButtonIfNeeded()
                 resetTouchState()
                 return true
@@ -153,7 +140,7 @@ class GameInputHandler(
             for (i in 0 until event.pointerCount) {
                 if (i == actionIndex) continue
                 activePointerId = event.getPointerId(i)
-                moveCursor(event.getX(i), event.getY(i), "touch_pointer_promote")
+                moveCursor(event.getX(i), event.getY(i))
                 break
             }
         }
@@ -163,21 +150,20 @@ class GameInputHandler(
         }
     }
 
-    private fun moveCursor(x: Float, y: Float, diagReason: String? = null) {
+    private fun moveCursor(x: Float, y: Float) {
         if (!isInputDispatchReady()) return
-        val mapped = mapToWindowCoords(x, y, diagReason)
+        val mapped = mapToWindowCoords(x, y)
         val targetWindowHeight = getTargetWindowHeight().coerceAtLeast(1)
         val rawCursorY = (targetWindowHeight - 1f - mapped[1]).coerceIn(0f, targetWindowHeight - 1f)
-        maybeLogCursorDispatch(diagReason, mapped[0], mapped[1], rawCursorY, targetWindowHeight)
         CallbackBridge.sendCursorPos(mapped[0], rawCursorY)
     }
 
-    private fun mapToWindowCoords(viewX: Float, viewY: Float, diagReason: String? = null): FloatArray {
+    private fun mapToWindowCoords(viewX: Float, viewY: Float): FloatArray {
         val rawViewWidth = getRenderViewWidth()
         val rawViewHeight = getRenderViewHeight()
         val targetWindowWidth = getTargetWindowWidth()
         val targetWindowHeight = getTargetWindowHeight()
-        val mapped = mapViewToWindowCoords(
+        return mapViewToWindowCoords(
             viewX = viewX,
             viewY = viewY,
             rawViewWidth = rawViewWidth,
@@ -185,70 +171,6 @@ class GameInputHandler(
             windowWidthRaw = targetWindowWidth,
             windowHeightRaw = targetWindowHeight
         )
-        maybeLogInputMapping(
-            reason = diagReason,
-            viewX = viewX,
-            viewY = viewY,
-            rawViewWidth = rawViewWidth,
-            rawViewHeight = rawViewHeight,
-            targetWindowWidth = targetWindowWidth,
-            targetWindowHeight = targetWindowHeight,
-            mapped = mapped
-        )
-        return mapped
-    }
-
-    private fun maybeLogInputMapping(
-        reason: String?,
-        viewX: Float,
-        viewY: Float,
-        rawViewWidth: Int,
-        rawViewHeight: Int,
-        targetWindowWidth: Int,
-        targetWindowHeight: Int,
-        mapped: FloatArray
-    ) {
-        if (reason == null) return
-        if (reason == "touch_move") {
-            val now = SystemClock.uptimeMillis()
-            if (now - lastMoveDiagLoggedAtMs < MOVE_DIAG_THROTTLE_MS) {
-                return
-            }
-            lastMoveDiagLoggedAtMs = now
-        }
-        val message =
-            "InputCoordDiag: reason=$reason " +
-                "view=${rawViewWidth}x${rawViewHeight} " +
-                "target=${targetWindowWidth}x${targetWindowHeight} " +
-                "bridgeWindow=${CallbackBridge.windowWidth}x${CallbackBridge.windowHeight} " +
-                "bridgePhysical=${CallbackBridge.physicalWidth}x${CallbackBridge.physicalHeight} " +
-                "point=${"%.1f".format(viewX)},${"%.1f".format(viewY)} " +
-                "mapped=${"%.1f".format(mapped[0])},${"%.1f".format(mapped[1])}"
-        println(message)
-        Log.i(INPUT_DIAG_TAG, message)
-    }
-
-    private fun maybeLogCursorDispatch(
-        reason: String?,
-        mappedX: Float,
-        mappedTopLeftY: Float,
-        rawCursorY: Float,
-        targetWindowHeight: Int
-    ) {
-        if (reason == null) return
-        if (reason == "touch_move") {
-            val now = SystemClock.uptimeMillis()
-            if (now - lastMoveDiagLoggedAtMs < MOVE_DIAG_THROTTLE_MS) {
-                return
-            }
-        }
-        val message =
-            "InputCoordDiag: reason=$reason " +
-                "dispatch=mappedTopLeft=${"%.1f".format(mappedX)},${"%.1f".format(mappedTopLeftY)} " +
-                "rawCursor=${"%.1f".format(mappedX)},${"%.1f".format(rawCursorY)} " +
-                "targetHeight=$targetWindowHeight"
-        println(message)
-        Log.i(INPUT_DIAG_TAG, message)
     }
 
     private fun pressTouchButtonIfNeeded() {
@@ -261,18 +183,6 @@ class GameInputHandler(
 
     private fun shouldDispatchTouchButtons(): Boolean {
         return floatingMouseController?.isTouchMouseLockEnabled() != true
-    }
-
-    private fun maybeLogTouchButtonRouting(reason: String) {
-        val lockEnabled = floatingMouseController?.isTouchMouseLockEnabled() == true
-        val dispatchButtons = !lockEnabled
-        val message =
-            "InputCoordDiag: reason=$reason " +
-                "touchButtons dispatch=$dispatchButtons " +
-                "lock=$lockEnabled " +
-                "floatingMouse=${floatingMouseController != null}"
-        println(message)
-        Log.i(INPUT_DIAG_TAG, message)
     }
 
     private fun resetTouchState() {
