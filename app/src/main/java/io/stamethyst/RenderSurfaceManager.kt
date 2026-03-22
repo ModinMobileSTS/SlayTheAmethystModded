@@ -207,19 +207,29 @@ class RenderSurfaceManager(
         var anyApplied = false
 
         if (plan.shouldApplyBufferSize && renderHost.currentSurface != null) {
-            val applied = renderHost.applyBufferSize(
+            val result = renderHost.applyBufferSize(
                 width = plan.bufferWidth,
                 height = plan.bufferHeight,
                 surfaceGeneration = renderHost.surfaceGeneration
             )
             state.recordBufferApply(
                 plan = plan,
-                applied = applied,
-                incrementsHolderResize = !renderHost.usesTextureView
+                applied = result.handled,
+                incrementsHolderResize = result.changedSurfaceGeometry && !renderHost.usesTextureView
             )
-            anyApplied = anyApplied || applied
+            logBufferApply(plan, result)
+            anyApplied = anyApplied || result.handled
         } else {
             state.recordBufferApply(plan = plan, applied = false, incrementsHolderResize = false)
+            if (plan.shouldApplyBufferSize) {
+                println(
+                    "RenderSurfaceBuffer: " +
+                        "backend=${if (renderHost.usesTextureView) "TextureView" else "SurfaceView"}, " +
+                        "request=${plan.bufferWidth}x${plan.bufferHeight}, " +
+                        "handled=false, geometryChanged=false, " +
+                        "detail=surface_unavailable bridgeReady=${state.bridgeSurfaceReady}"
+                )
+            }
         }
 
         connectBridgeSurfaceIfNeeded()
@@ -321,6 +331,20 @@ class RenderSurfaceManager(
             append("/")
             append(state.windowSizeSkipCount)
         }
+    }
+
+    private fun logBufferApply(
+        plan: RenderSurfaceState.ApplyPlan,
+        result: RenderSurfaceHost.BufferSizeApplyResult
+    ) {
+        println(
+            "RenderSurfaceBuffer: " +
+                "backend=${if (renderHost.usesTextureView) "TextureView" else "SurfaceView"}, " +
+                "request=${plan.bufferWidth}x${plan.bufferHeight}, " +
+                "handled=${result.handled}, " +
+                "geometryChanged=${result.changedSurfaceGeometry}, " +
+                "detail=${result.detail}"
+        )
     }
 
     fun applyImmersiveMode() {

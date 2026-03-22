@@ -40,6 +40,7 @@ import com.badlogic.gdx.LifecycleListener;
 import com.badlogic.gdx.Net;
 import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.GLTexture;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.backends.lwjgl.audio.OpenALAudio;
@@ -1525,12 +1526,14 @@ public class LwjglApplication implements Application {
 				ensureDisplayContextCurrent("render");
 				graphics.updateTime();
 				graphics.frameId++;
+				GLFrameBuffer.noteFrameRendered(graphics.frameId);
 				if ((graphics.frameId % 600) == 0) {
 					boolean isCurrent = false;
 					try {
 						isCurrent = Display.isCurrent();
 					} catch (Throwable ignored) {
 					}
+					logGpuResourceSummary("frame_" + graphics.frameId);
 					// Reduced log mode: render-heartbeat diagnostic log disabled.
 					// System.out.println("[gdx-patch][diag] render heartbeat frameId=" + graphics.frameId + ", active="
 					//	+ isActive + ", current=" + isCurrent + ", size=" + Display.getWidth() + "x" + Display.getHeight());
@@ -1546,6 +1549,7 @@ public class LwjglApplication implements Application {
 				} finally {
 					finishScaledRenderFrame(scaledRender, Display.getWidth(), Display.getHeight());
 				}
+				GLFrameBuffer.reclaimIdleFrameBuffers(Gdx.app, graphics.frameId);
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;
 				if (forceDefaultFbo || Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {
 					if (forceDefaultFbo && !defaultFramebufferRebindLogged) {
@@ -1581,9 +1585,16 @@ public class LwjglApplication implements Application {
 		listener.pause();
 		listener.dispose();
 		disposeScaledRenderPipeline();
+		logGpuResourceSummary("application_shutdown");
 		Display.destroy();
 		if (audio != null) audio.dispose();
 		if (graphics.config.forceExit) System.exit(-1);
+	}
+
+	private static void logGpuResourceSummary (String reason) {
+		System.out.println("[gdx-diag] GpuResources summary reason=" + reason + " "
+			+ GLTexture.getDebugStatusSummary() + " "
+			+ GLFrameBuffer.getDebugStatusSummary());
 	}
 
 	public boolean executeRunnables () {

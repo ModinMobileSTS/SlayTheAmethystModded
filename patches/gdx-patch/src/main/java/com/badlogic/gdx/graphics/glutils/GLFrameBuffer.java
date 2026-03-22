@@ -21,6 +21,9 @@ import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.Application.ApplicationType;
@@ -29,6 +32,7 @@ import com.badlogic.gdx.backends.lwjgl.LwjglApplication;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.GLTexture;
 import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Disposable;
 
@@ -55,8 +59,82 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static int GL_DEPTH24_STENCIL8_OES = 0x88F0;
 	private final static String NON_RENDERABLE_FBO_FORMAT_COMPAT_PROP =
 		"amethyst.gdx.non_renderable_fbo_format_compat";
+	private final static String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
+	private final static boolean GPU_RESOURCE_DIAG_ENABLED = readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, true);
+	private final static String GPU_RESOURCE_DIAG_FBO_STACKS_PROP =
+		"amethyst.gdx.gpu_resource_diag.fbo_stacks";
+	private final static boolean GPU_RESOURCE_DIAG_FBO_STACKS_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_STACKS_PROP, true);
+	private final static String GPU_RESOURCE_DIAG_FBO_STACK_LIMIT_PROP =
+		"amethyst.gdx.gpu_resource_diag.fbo_stack_limit";
+	private final static int GPU_RESOURCE_DIAG_FBO_STACK_LIMIT =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_STACK_LIMIT_PROP, 8, 1, 128);
+	private final static String GPU_RESOURCE_DIAG_FBO_STACK_DEPTH_PROP =
+		"amethyst.gdx.gpu_resource_diag.fbo_stack_depth";
+	private final static int GPU_RESOURCE_DIAG_FBO_STACK_DEPTH =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_STACK_DEPTH_PROP, 8, 1, 32);
+	private final static String GPU_RESOURCE_DIAG_FBO_STACK_REPEAT_INTERVAL_PROP =
+		"amethyst.gdx.gpu_resource_diag.fbo_stack_repeat_interval";
+	private final static int GPU_RESOURCE_DIAG_FBO_STACK_REPEAT_INTERVAL =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_STACK_REPEAT_INTERVAL_PROP, 25, 1, 10000);
+	private final static String GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_PROP =
+		"amethyst.gdx.fbo_idle_reclaim";
+	private final static boolean GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_PROP, true);
+	private final static String GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_FRAMES_PROP =
+		"amethyst.gdx.fbo_idle_reclaim_frames";
+	private final static int GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_FRAMES =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_FRAMES_PROP, 180, 1, 36000);
+	private final static String GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL_PROP =
+		"amethyst.gdx.fbo_idle_reclaim_sweep_interval_frames";
+	private final static int GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL_PROP, 60, 1, 3600);
+	private final static String GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES_PROP =
+		"amethyst.gdx.fbo_idle_reclaim_min_bytes";
+	private final static long GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES =
+		readLongSystemProperty(GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES_PROP, 6L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private final static String GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_PROP =
+		"amethyst.gdx.fbo_pressure_downscale";
+	private final static boolean GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_PROP, true);
+	private final static int PRESSURE_DOWNSCALE_NONE = 0;
+	private final static int PRESSURE_DOWNSCALE_ALLOW = 1;
+	private final static int PRESSURE_DOWNSCALE_PROTECT = 2;
+	private final static String GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_PROP =
+		"amethyst.gdx.fbo_pressure_soft_budget_bytes";
+	private final static long GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES =
+		readLongSystemProperty(GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_PROP, 48L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private final static AtomicLong NEXT_DEBUG_FRAMEBUFFER_ID = new AtomicLong(1L);
+	private final static AtomicInteger FRAMEBUFFERS_BUILT = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFERS_DISPOSED = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFERS_LIVE = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFERS_NATIVE_LIVE = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFERS_IDLE_RECLAIMED = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFERS_REBUILT = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFER_IDLE_SWEEPS = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFER_BUILD_STACK_UNIQUES = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFER_BUILD_STACK_SUPPRESSED = new AtomicInteger();
+	private final static AtomicLong FRAMEBUFFERS_NATIVE_BYTES = new AtomicLong();
+	private final static ConcurrentHashMap<String, AtomicInteger> FRAMEBUFFER_BUILD_STACK_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private final static ConcurrentHashMap<GLTexture, GLFrameBuffer<?>> FRAMEBUFFER_TEXTURE_OWNERS =
+		new ConcurrentHashMap<GLTexture, GLFrameBuffer<?>>();
 	private static boolean fboFallbackLogged = false;
 	private static boolean nonRenderableFormatFallbackLogged = false;
+	private static volatile int frameBufferLivePeak;
+	private static volatile long frameBufferNativeBytesPeak;
+	private static volatile long currentFrameId;
+	private static volatile long lastIdleSweepFrame = -1L;
+	private final long debugFrameBufferId = allocateDebugFrameBufferId();
+	private int debugBuildGeneration = 0;
+	private boolean nativeResourcesAllocated;
+	private boolean buildInProgress;
+	private boolean disposed;
+	private long lastUsedFrame;
+	private long estimatedNativeBytes;
+	private int allocationWidth;
+	private int allocationHeight;
+	private boolean pressureDownscaled;
 
 	/** the color buffer texture **/
 	protected T colorTexture;
@@ -117,6 +195,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	public GLFrameBuffer (Pixmap.Format format, int width, int height, boolean hasDepth, boolean hasStencil) {
 		this.width = width;
 		this.height = height;
+		this.allocationWidth = width;
+		this.allocationHeight = height;
 		this.format = toCompatibleColorFormat(format);
 		this.hasDepth = hasDepth;
 		this.hasStencil = hasStencil;
@@ -133,6 +213,14 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** Override this method in a derived class to attach the backing texture to the GL framebuffer object. */
 	protected abstract void attachFrameBufferColorTexture ();
+
+	protected final int getColorTextureWidth () {
+		return allocationWidth > 0 ? allocationWidth : width;
+	}
+
+	protected final int getColorTextureHeight () {
+		return allocationHeight > 0 ? allocationHeight : height;
+	}
 
 	private static Pixmap.Format toCompatibleColorFormat (Pixmap.Format requestedFormat) {
 		Pixmap.Format safeFormat = requestedFormat == null ? Pixmap.Format.RGBA8888 : requestedFormat;
@@ -170,6 +258,36 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return defaultValue;
 	}
 
+	private static int readIntSystemProperty (String key, int defaultValue, int minValue, int maxValue) {
+		String configured = System.getProperty(key);
+		if (configured == null) return defaultValue;
+		configured = configured.trim();
+		if (configured.length() == 0) return defaultValue;
+		try {
+			int parsed = Integer.parseInt(configured);
+			if (parsed < minValue) return minValue;
+			if (parsed > maxValue) return maxValue;
+			return parsed;
+		} catch (Throwable ignored) {
+			return defaultValue;
+		}
+	}
+
+	private static long readLongSystemProperty (String key, long defaultValue, long minValue, long maxValue) {
+		String configured = System.getProperty(key);
+		if (configured == null) return defaultValue;
+		configured = configured.trim();
+		if (configured.length() == 0) return defaultValue;
+		try {
+			long parsed = Long.parseLong(configured);
+			if (parsed < minValue) return minValue;
+			if (parsed > maxValue) return maxValue;
+			return parsed;
+		} catch (Throwable ignored) {
+			return defaultValue;
+		}
+	}
+
 	private static int getCurrentFramebufferBinding (GL20 gl) {
 		IntBuffer intbuf = ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
 		gl.glGetIntegerv(GL20.GL_FRAMEBUFFER_BINDING, intbuf);
@@ -177,8 +295,18 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	private void build () {
+		if (disposed) {
+			throw new IllegalStateException("frame buffer has been disposed");
+		}
+		if (nativeResourcesAllocated || buildInProgress) {
+			return;
+		}
+
+		buildInProgress = true;
+		updateAllocationPlan();
 		GL20 gl = Gdx.gl20;
 		int previousFramebufferHandle = getCurrentFramebufferBinding(gl);
+		boolean createdColorTexture = false;
 
 		// iOS uses a different framebuffer handle! (not necessarily 0)
 		if (!defaultFramebufferHandleInitialized) {
@@ -193,7 +321,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		}
 
 		try {
-			colorTexture = createColorTexture();
+			createdColorTexture = ensureColorTextureAvailable("framebuffer_build");
 
 			framebufferHandle = gl.glGenFramebuffer();
 
@@ -205,17 +333,18 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 				stencilbufferHandle = gl.glGenRenderbuffer();
 			}
 
+			int colorTextureWidth = getColorTextureWidth();
+			int colorTextureHeight = getColorTextureHeight();
 			gl.glBindTexture(colorTexture.glTarget, colorTexture.getTextureObjectHandle());
 
 			if (hasDepth) {
 				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, depthbufferHandle);
-				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_DEPTH_COMPONENT16, colorTexture.getWidth(),
-					colorTexture.getHeight());
+				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_DEPTH_COMPONENT16, colorTextureWidth, colorTextureHeight);
 			}
 
 			if (hasStencil) {
 				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, stencilbufferHandle);
-				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_STENCIL_INDEX8, colorTexture.getWidth(), colorTexture.getHeight());
+				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL20.GL_STENCIL_INDEX8, colorTextureWidth, colorTextureHeight);
 			}
 
 			gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, framebufferHandle);
@@ -236,8 +365,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			int result = gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
 
 			if (result == GL20.GL_FRAMEBUFFER_UNSUPPORTED && hasDepth && hasStencil
-				&& (Gdx.graphics.supportsExtension("GL_OES_packed_depth_stencil") ||
-					Gdx.graphics.supportsExtension("GL_EXT_packed_depth_stencil"))) {
+				&& (Gdx.graphics.supportsExtension("GL_OES_packed_depth_stencil")
+					|| Gdx.graphics.supportsExtension("GL_EXT_packed_depth_stencil"))) {
 				if (hasDepth) {
 					gl.glDeleteRenderbuffer(depthbufferHandle);
 					depthbufferHandle = 0;
@@ -250,7 +379,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 				depthStencilPackedBufferHandle = gl.glGenRenderbuffer();
 				hasDepthStencilPackedBuffer = true;
 				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
-				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_OES, colorTexture.getWidth(), colorTexture.getHeight());
+				gl.glRenderbufferStorage(GL20.GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_OES, colorTextureWidth, colorTextureHeight);
 				gl.glBindRenderbuffer(GL20.GL_RENDERBUFFER, 0);
 
 				gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_DEPTH_ATTACHMENT, GL20.GL_RENDERBUFFER, depthStencilPackedBufferHandle);
@@ -272,6 +401,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 								+ Integer.toHexString(originalError) + " -> complete"
 								+ " (recovery glError=0x" + Integer.toHexString(recoveredError) + ")");
 						}
+						recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "unknown_status_recovered");
 						gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 						return;
 					}
@@ -284,6 +414,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 								+ Integer.toHexString(result) + "), recovery glError=0x"
 								+ Integer.toHexString(recoveredError));
 						}
+						recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "unknown_status_bypass");
 						gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 						return;
 					}
@@ -298,16 +429,12 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 				}
 
 				gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
-				disposeColorTexture(colorTexture);
-
-				if (hasDepthStencilPackedBuffer) {
-					gl.glDeleteRenderbuffer(depthStencilPackedBufferHandle);
-				} else {
-					if (hasDepth) gl.glDeleteRenderbuffer(depthbufferHandle);
-					if (hasStencil) gl.glDeleteRenderbuffer(stencilbufferHandle);
+				releaseNativeResources("build_failed", false, true);
+				if (createdColorTexture && colorTexture != null && !nativeResourcesAllocated) {
+					FRAMEBUFFER_TEXTURE_OWNERS.remove(colorTexture);
+					disposeColorTexture(colorTexture);
+					colorTexture = null;
 				}
-
-				gl.glDeleteFramebuffer(framebufferHandle);
 
 				if (result == GL20.GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT)
 					throw new IllegalStateException("frame buffer couldn't be constructed: incomplete attachment");
@@ -319,7 +446,9 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 					throw new IllegalStateException("frame buffer couldn't be constructed: unsupported combination of formats");
 				throw new IllegalStateException("frame buffer couldn't be constructed: unknown error " + result);
 			}
+			recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "build");
 		} finally {
+			buildInProgress = false;
 			gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 		}
 	}
@@ -342,6 +471,270 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_DEPTH_ATTACHMENT, GL20.GL_RENDERBUFFER, 0);
 		gl.glFramebufferRenderbuffer(GL20.GL_FRAMEBUFFER, GL20.GL_STENCIL_ATTACHMENT, GL20.GL_RENDERBUFFER, 0);
 		return gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
+	}
+
+	private void updateAllocationPlan () {
+		allocationWidth = width;
+		allocationHeight = height;
+		pressureDownscaled = false;
+		if (!GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_ENABLED) return;
+		if (!isLargePressureDownscaleCandidate()) return;
+
+		long projectedFullBytes = FRAMEBUFFERS_NATIVE_BYTES.get()
+			+ estimateFrameBufferBytes(width, height, String.valueOf(format), hasDepth, hasStencil);
+		if (projectedFullBytes <= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES) return;
+		int pressureMode = classifyPressureDownscaleMode();
+		if (pressureMode == PRESSURE_DOWNSCALE_PROTECT) {
+			System.out.println("[gdx-diag] GLFrameBuffer pressure_downscale_skip id=" + debugFrameBufferId
+				+ " requested=" + width + "x" + height
+				+ " projectedFullBytes=" + projectedFullBytes
+				+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
+				+ " protected=ApplyScreenPostProcessor");
+			return;
+		}
+		if (pressureMode != PRESSURE_DOWNSCALE_ALLOW) return;
+
+		int downscaledWidth = Math.max(1, (width + 1) / 2);
+		int downscaledHeight = Math.max(1, (height + 1) / 2);
+		allocationWidth = downscaledWidth;
+		allocationHeight = downscaledHeight;
+		pressureDownscaled = true;
+		System.out.println("[gdx-diag] GLFrameBuffer pressure_downscale id=" + debugFrameBufferId
+			+ " requested=" + width + "x" + height
+			+ " allocated=" + allocationWidth + "x" + allocationHeight
+			+ " projectedFullBytes=" + projectedFullBytes
+			+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES);
+	}
+
+	private boolean isLargePressureDownscaleCandidate () {
+		if (width < 2 || height < 2) return false;
+		if (Gdx.graphics != null) {
+			int backBufferWidth = Gdx.graphics.getBackBufferWidth();
+			int backBufferHeight = Gdx.graphics.getBackBufferHeight();
+			if (backBufferWidth > 0 && backBufferHeight > 0) {
+				long requestedPixels = (long)width * (long)height;
+				long backBufferPixels = (long)backBufferWidth * (long)backBufferHeight;
+				boolean largeArea = requestedPixels * 2L >= backBufferPixels;
+				boolean largeWidth = width * 3 >= backBufferWidth * 2;
+				boolean largeHeight = height * 3 >= backBufferHeight * 2;
+				if (largeArea && largeWidth && largeHeight) {
+					return true;
+				}
+			}
+		}
+		return (long)width * (long)height >= 1280L * 720L;
+	}
+
+	private int classifyPressureDownscaleMode () {
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		for (int i = 0; i < stack.length; i++) {
+			String className = stack[i].getClassName();
+			if (className == null) continue;
+			if (className.indexOf("basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor") >= 0) {
+				return PRESSURE_DOWNSCALE_PROTECT;
+			}
+			if (className.indexOf("VUPShionMod.util.ShionMaskHelper") >= 0) {
+				return PRESSURE_DOWNSCALE_ALLOW;
+			}
+			if (className.indexOf("basemod.helpers.CardBorderGlowManager") >= 0) {
+				return PRESSURE_DOWNSCALE_ALLOW;
+			}
+		}
+		return PRESSURE_DOWNSCALE_NONE;
+	}
+
+	private boolean ensureColorTextureAvailable (String reason) {
+		if (colorTexture == null) {
+			colorTexture = createColorTexture();
+			FRAMEBUFFER_TEXTURE_OWNERS.put(colorTexture, this);
+			ensureTextureAllocationMatchesPlan(colorTexture, reason + "_created");
+			return true;
+		}
+		FRAMEBUFFER_TEXTURE_OWNERS.put(colorTexture, this);
+		if (colorTexture.hasTextureObjectHandle()) {
+			return false;
+		}
+		if (colorTexture instanceof Texture) {
+			Texture texture = (Texture)colorTexture;
+			prepareTextureAllocationData(texture, reason + "_restore_prepare");
+			colorTexture.restoreHandleForReuse(Gdx.gl.glGenTexture(), reason + "_texture_restore");
+			try {
+				texture.load(texture.getTextureData());
+				restoreTextureLogicalSize(texture, reason + "_restore_logical");
+			} catch (Throwable t) {
+				colorTexture.releaseHandleForReuse(reason + "_texture_restore_failed");
+				throw t;
+			}
+			return false;
+		}
+
+		T previousTexture = colorTexture;
+		FRAMEBUFFER_TEXTURE_OWNERS.remove(previousTexture);
+		T rebuiltTexture = createColorTexture();
+		colorTexture = rebuiltTexture;
+		FRAMEBUFFER_TEXTURE_OWNERS.put(rebuiltTexture, this);
+		disposeColorTexture(previousTexture);
+		return true;
+	}
+
+	private void ensureTextureAllocationMatchesPlan (T texture, String reason) {
+		if (!(texture instanceof Texture)) return;
+		Texture colorBufferTexture = (Texture)texture;
+		if (!(colorBufferTexture.getTextureData() instanceof GLOnlyTextureData)) return;
+
+		GLOnlyTextureData data = (GLOnlyTextureData)colorBufferTexture.getTextureData();
+		int plannedWidth = getColorTextureWidth();
+		int plannedHeight = getColorTextureHeight();
+		boolean changed = prepareTextureAllocationData(colorBufferTexture, reason);
+		if (changed && colorBufferTexture.hasTextureObjectHandle()) {
+			colorBufferTexture.load(colorBufferTexture.getTextureData());
+			System.out.println("[gdx-diag] GLFrameBuffer allocation_applied id=" + debugFrameBufferId
+				+ " reason=" + reason
+				+ " allocated=" + plannedWidth + "x" + plannedHeight
+				+ " requested=" + width + "x" + height
+				+ " handle=" + colorBufferTexture.peekTextureObjectHandle());
+		}
+		restoreTextureLogicalSize(colorBufferTexture, reason + "_logical");
+		if (!changed && (data.width != width || data.height != height)) {
+			restoreTextureLogicalSize(colorBufferTexture, reason + "_logical");
+		}
+	}
+
+	private boolean prepareTextureAllocationData (Texture colorBufferTexture, String reason) {
+		if (!(colorBufferTexture.getTextureData() instanceof GLOnlyTextureData)) return false;
+		GLOnlyTextureData data = (GLOnlyTextureData)colorBufferTexture.getTextureData();
+		int plannedWidth = getColorTextureWidth();
+		int plannedHeight = getColorTextureHeight();
+		if (data.width == plannedWidth && data.height == plannedHeight) {
+			return false;
+		}
+		int previousWidth = data.width;
+		int previousHeight = data.height;
+		data.width = plannedWidth;
+		data.height = plannedHeight;
+		System.out.println("[gdx-diag] GLFrameBuffer allocation_fixup id=" + debugFrameBufferId
+			+ " reason=" + reason
+			+ " requested=" + width + "x" + height
+			+ " allocated=" + plannedWidth + "x" + plannedHeight
+			+ " previous=" + previousWidth + "x" + previousHeight
+			+ " textureClass=" + colorBufferTexture.getClass().getName());
+		return true;
+	}
+
+	private void restoreTextureLogicalSize (Texture colorBufferTexture, String reason) {
+		if (!(colorBufferTexture.getTextureData() instanceof GLOnlyTextureData)) return;
+		GLOnlyTextureData data = (GLOnlyTextureData)colorBufferTexture.getTextureData();
+		if (data.width == width && data.height == height) {
+			return;
+		}
+		int previousWidth = data.width;
+		int previousHeight = data.height;
+		data.width = width;
+		data.height = height;
+		System.out.println("[gdx-diag] GLFrameBuffer logical_size_restore id=" + debugFrameBufferId
+			+ " reason=" + reason
+			+ " logical=" + width + "x" + height
+			+ " previous=" + previousWidth + "x" + previousHeight);
+	}
+
+	private boolean releaseNativeResources (String reason, boolean permanentDispose, boolean deleteGlHandles) {
+		boolean released = false;
+		GL20 gl = Gdx.gl20;
+		int releasedFramebufferHandle = framebufferHandle;
+		int releasedColorTextureHandle = colorTexture == null ? 0 : colorTexture.peekTextureObjectHandle();
+		long releasedBytes = estimatedNativeBytes;
+
+		if (hasDepthStencilPackedBuffer && depthStencilPackedBufferHandle != 0) {
+			if (deleteGlHandles) {
+				gl.glDeleteRenderbuffer(depthStencilPackedBufferHandle);
+			}
+			depthStencilPackedBufferHandle = 0;
+			released = true;
+		} else {
+			if (depthbufferHandle != 0) {
+				if (deleteGlHandles) {
+					gl.glDeleteRenderbuffer(depthbufferHandle);
+				}
+				depthbufferHandle = 0;
+				released = true;
+			}
+			if (stencilbufferHandle != 0) {
+				if (deleteGlHandles) {
+					gl.glDeleteRenderbuffer(stencilbufferHandle);
+				}
+				stencilbufferHandle = 0;
+				released = true;
+			}
+		}
+		hasDepthStencilPackedBuffer = false;
+
+		if (framebufferHandle != 0) {
+			if (deleteGlHandles) {
+				gl.glDeleteFramebuffer(framebufferHandle);
+			}
+			framebufferHandle = 0;
+			released = true;
+		}
+
+		if (colorTexture != null) {
+			if (permanentDispose) {
+				FRAMEBUFFER_TEXTURE_OWNERS.remove(colorTexture);
+				disposeColorTexture(colorTexture);
+				colorTexture = null;
+				released = released || releasedColorTextureHandle != 0;
+			} else if (colorTexture.hasTextureObjectHandle()) {
+				if (deleteGlHandles) {
+					colorTexture.releaseHandleForReuse("fbo_" + reason);
+				} else {
+					colorTexture.invalidateHandleForReuse("fbo_" + reason);
+				}
+				released = true;
+			}
+		}
+
+		boolean hadNativeResources = nativeResourcesAllocated;
+		nativeResourcesAllocated = false;
+		estimatedNativeBytes = 0L;
+		if (hadNativeResources) {
+			onFrameBufferNativeReleased(debugFrameBufferId, releasedFramebufferHandle, releasedColorTextureHandle, releasedBytes, reason);
+		}
+		return released;
+	}
+
+	private void onColorTextureAccess (String reason) {
+		if (disposed || buildInProgress) return;
+		if (!nativeResourcesAllocated) {
+			build();
+		}
+		markUsed(reason);
+	}
+
+	private void markUsed (String reason) {
+		long frameId = currentFrameId;
+		if (frameId < 0L) {
+			frameId = 0L;
+		}
+		lastUsedFrame = frameId;
+	}
+
+	private boolean isEligibleForIdleReclaim () {
+		return nativeResourcesAllocated && estimatedNativeBytes >= GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES;
+	}
+
+	private boolean reclaimIfIdle (long frameId) {
+		if (!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED) return false;
+		if (disposed || buildInProgress || !isEligibleForIdleReclaim()) return false;
+		if (framebufferHandle == 0) return false;
+		long idleFrames = frameId - lastUsedFrame;
+		if (idleFrames < GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_FRAMES) return false;
+		long reclaimedBytes = estimatedNativeBytes;
+		if (!releaseNativeResources("idle_reclaim", false, true)) return false;
+		int reclaimed = FRAMEBUFFERS_IDLE_RECLAIMED.incrementAndGet();
+		System.out.println("[gdx-diag] GLFrameBuffer idle_reclaim id=" + debugFrameBufferId
+			+ " idleFrames=" + idleFrames
+			+ " bytes=" + reclaimedBytes
+			+ " reclaimed=" + reclaimed);
+		return true;
 	}
 
 	private static boolean isUnknownFramebufferStatus (int status) {
@@ -372,24 +765,19 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	/** Releases all resources associated with the FrameBuffer. */
 	@Override
 	public void dispose () {
-		GL20 gl = Gdx.gl20;
-
-		disposeColorTexture(colorTexture);
-
-		if (hasDepthStencilPackedBuffer) {
-			gl.glDeleteRenderbuffer(depthStencilPackedBufferHandle);
-		} else {
-			if (hasDepth) gl.glDeleteRenderbuffer(depthbufferHandle);
-			if (hasStencil) gl.glDeleteRenderbuffer(stencilbufferHandle);
-		}
-
-		gl.glDeleteFramebuffer(framebufferHandle);
-
+		if (disposed) return;
+		disposed = true;
+		int disposedFramebufferHandle = framebufferHandle;
+		int disposedColorTextureHandle = colorTexture == null ? 0 : colorTexture.peekTextureObjectHandle();
+		releaseNativeResources("dispose", true, true);
+		onFrameBufferDisposed(debugFrameBufferId, disposedFramebufferHandle, disposedColorTextureHandle, "dispose");
 		if (buffers.get(Gdx.app) != null) buffers.get(Gdx.app).removeValue(this, true);
 	}
 
 	/** Makes the frame buffer current so everything gets drawn to it. */
 	public void bind () {
+		build();
+		markUsed("bind");
 		Gdx.gl20.glBindFramebuffer(GL20.GL_FRAMEBUFFER, framebufferHandle);
 	}
 
@@ -409,7 +797,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** Sets viewport to the dimensions of framebuffer. Called by {@link #begin()}. */
 	protected void setFrameBufferViewport () {
-		Gdx.gl20.glViewport(0, 0, colorTexture.getWidth(), colorTexture.getHeight());
+		Gdx.gl20.glViewport(0, 0, getColorTextureWidth(), getColorTextureHeight());
 	}
 
 	/** Unbinds the framebuffer, all drawing will be performed to the normal framebuffer from here on. */
@@ -436,11 +824,14 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** @return the gl texture */
 	public T getColorBufferTexture () {
+		markUsed("get_color_texture");
 		return colorTexture;
 	}
 
 	/** @return The OpenGL handle of the framebuffer (see {@link GL20#glGenFramebuffer()}) */
 	public int getFramebufferHandle () {
+		build();
+		markUsed("get_framebuffer_handle");
 		return framebufferHandle;
 	}
 
@@ -461,17 +852,17 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** @return the height of the framebuffer in pixels */
 	public int getHeight () {
-		return colorTexture.getHeight();
+		return height;
 	}
 
 	/** @return the width of the framebuffer in pixels */
 	public int getWidth () {
-		return colorTexture.getWidth();
+		return width;
 	}
 
 	/** @return the depth of the framebuffer in pixels (if applicable) */
 	public int getDepth () {
-		return colorTexture.getDepth();
+		return colorTexture == null ? 0 : colorTexture.getDepth();
 	}
 
 	private static void addManagedFrameBuffer (Application app, GLFrameBuffer frameBuffer) {
@@ -489,12 +880,59 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		Array<GLFrameBuffer> bufferArray = buffers.get(app);
 		if (bufferArray == null) return;
 		for (int i = 0; i < bufferArray.size; i++) {
-			bufferArray.get(i).build();
+			GLFrameBuffer buffer = bufferArray.get(i);
+			boolean shouldRebuild = buffer.nativeResourcesAllocated;
+			buffer.releaseNativeResources("context_lost", false, false);
+			if (shouldRebuild) {
+				buffer.build();
+			}
 		}
 	}
 
 	public static void clearAllFrameBuffers (Application app) {
 		buffers.remove(app);
+	}
+
+	public static void noteFrameRendered (long frameId) {
+		if (frameId >= 0L) {
+			currentFrameId = frameId;
+		}
+	}
+
+	public static void onExternalTextureAccess (GLTexture texture, String reason) {
+		if (texture == null) return;
+		GLFrameBuffer<?> frameBuffer = FRAMEBUFFER_TEXTURE_OWNERS.get(texture);
+		if (frameBuffer != null) {
+			frameBuffer.onColorTextureAccess(reason);
+		}
+	}
+
+	public static void reclaimIdleFrameBuffers (Application app, long frameId) {
+		if (!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED || Gdx.gl20 == null) return;
+		if (app == null || frameId < 0L) return;
+		if (lastIdleSweepFrame >= 0L
+			&& frameId - lastIdleSweepFrame < GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL) {
+			return;
+		}
+		lastIdleSweepFrame = frameId;
+
+		Array<GLFrameBuffer> bufferArray = buffers.get(app);
+		if (bufferArray == null || bufferArray.size == 0) return;
+
+		int reclaimed = 0;
+		for (int i = 0; i < bufferArray.size; i++) {
+			if (bufferArray.get(i).reclaimIfIdle(frameId)) {
+				reclaimed++;
+			}
+		}
+		if (reclaimed > 0) {
+			int sweeps = FRAMEBUFFER_IDLE_SWEEPS.incrementAndGet();
+			System.out.println("[gdx-diag] GLFrameBuffer idle_sweep frame=" + frameId
+				+ " reclaimed=" + reclaimed
+				+ " sweeps=" + sweeps
+				+ " nativeLive=" + FRAMEBUFFERS_NATIVE_LIVE.get()
+				+ " nativeBytes=" + FRAMEBUFFERS_NATIVE_BYTES.get());
+		}
 	}
 
 	public static StringBuilder getManagedStatus (final StringBuilder builder) {
@@ -509,5 +947,241 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	public static String getManagedStatus () {
 		return getManagedStatus(new StringBuilder()).toString();
+	}
+
+	public static String getDebugStatusSummary () {
+		if (!GPU_RESOURCE_DIAG_ENABLED) return "frameBuffersDiag=disabled";
+		return "frameBuffersLive=" + FRAMEBUFFERS_LIVE.get()
+			+ " frameBuffersPeak=" + frameBufferLivePeak
+			+ " frameBuffersNative=" + FRAMEBUFFERS_NATIVE_LIVE.get()
+			+ " frameBufferBytes=" + FRAMEBUFFERS_NATIVE_BYTES.get()
+			+ " frameBufferBytesPeak=" + frameBufferNativeBytesPeak
+			+ " frameBuffersBuilt=" + FRAMEBUFFERS_BUILT.get()
+			+ " frameBuffersRebuilt=" + FRAMEBUFFERS_REBUILT.get()
+			+ " frameBuffersReclaimed=" + FRAMEBUFFERS_IDLE_RECLAIMED.get()
+			+ " frameBuffersDisposed=" + FRAMEBUFFERS_DISPOSED.get();
+	}
+
+	private void recordFrameBufferBuild (int colorTextureWidth, int colorTextureHeight, String reason) {
+		nativeResourcesAllocated = true;
+		estimatedNativeBytes = estimateFrameBufferBytes(colorTextureWidth, colorTextureHeight, String.valueOf(format), hasDepth, hasStencil);
+		markUsed(reason);
+		debugBuildGeneration++;
+		onFrameBufferBuilt(
+			debugFrameBufferId,
+			getClass().getName(),
+			debugBuildGeneration,
+			framebufferHandle,
+			colorTexture == null ? 0 : colorTexture.peekTextureObjectHandle(),
+			colorTextureWidth,
+			colorTextureHeight,
+			hasDepth,
+			hasStencil,
+			String.valueOf(format),
+			reason
+		);
+	}
+
+	private static long allocateDebugFrameBufferId () {
+		return GPU_RESOURCE_DIAG_ENABLED ? NEXT_DEBUG_FRAMEBUFFER_ID.getAndIncrement() : 0L;
+	}
+
+	private static void onFrameBufferBuilt (
+		long id,
+		String className,
+		int buildGeneration,
+		int framebufferHandle,
+		int colorTextureHandle,
+		int width,
+		int height,
+		boolean hasDepth,
+		boolean hasStencil,
+		String format,
+		String reason
+	) {
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		int built = FRAMEBUFFERS_BUILT.incrementAndGet();
+		int live = FRAMEBUFFERS_LIVE.get();
+		if (buildGeneration == 1) {
+			live = FRAMEBUFFERS_LIVE.incrementAndGet();
+		}
+		int nativeLive = FRAMEBUFFERS_NATIVE_LIVE.incrementAndGet();
+		if (buildGeneration > 1) {
+			FRAMEBUFFERS_REBUILT.incrementAndGet();
+		}
+		long estimatedBytes = estimateFrameBufferBytes(width, height, format, hasDepth, hasStencil);
+		long nativeBytes = FRAMEBUFFERS_NATIVE_BYTES.addAndGet(estimatedBytes);
+		if (live > frameBufferLivePeak) {
+			frameBufferLivePeak = live;
+		}
+		if (nativeBytes > frameBufferNativeBytesPeak) {
+			frameBufferNativeBytesPeak = nativeBytes;
+		}
+		System.out.println("[gdx-diag] GLFrameBuffer build id=" + id
+			+ " generation=" + buildGeneration
+			+ " reason=" + reason
+			+ " class=" + className
+			+ " fb=" + framebufferHandle
+			+ " colorTex=" + colorTextureHandle
+			+ " size=" + width + "x" + height
+			+ " format=" + format
+			+ " depth=" + hasDepth
+			+ " stencil=" + hasStencil
+			+ " built=" + built
+			+ " liveFrameBuffers=" + live
+			+ " nativeFrameBuffers=" + nativeLive
+			+ " nativeBytes=" + nativeBytes);
+		logFrameBufferBuildStack(id, buildGeneration, width, height, format, hasDepth, hasStencil);
+	}
+
+	private static void onFrameBufferNativeReleased (
+		long id,
+		int framebufferHandle,
+		int colorTextureHandle,
+		long releasedBytes,
+		String reason
+	) {
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		int nativeLive = FRAMEBUFFERS_NATIVE_LIVE.decrementAndGet();
+		if (nativeLive < 0) {
+			FRAMEBUFFERS_NATIVE_LIVE.set(0);
+			nativeLive = 0;
+		}
+		long nativeBytes = FRAMEBUFFERS_NATIVE_BYTES.addAndGet(-releasedBytes);
+		if (nativeBytes < 0L) {
+			FRAMEBUFFERS_NATIVE_BYTES.set(0L);
+			nativeBytes = 0L;
+		}
+		System.out.println("[gdx-diag] GLFrameBuffer native_release id=" + id
+			+ " fb=" + framebufferHandle
+			+ " colorTex=" + colorTextureHandle
+			+ " bytes=" + releasedBytes
+			+ " reason=" + reason
+			+ " nativeFrameBuffers=" + nativeLive
+			+ " nativeBytes=" + nativeBytes);
+	}
+
+	private static void onFrameBufferDisposed (long id, int framebufferHandle, int colorTextureHandle, String reason) {
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		int disposed = FRAMEBUFFERS_DISPOSED.incrementAndGet();
+		int live = FRAMEBUFFERS_LIVE.decrementAndGet();
+		if (live < 0) {
+			FRAMEBUFFERS_LIVE.set(0);
+			live = 0;
+		}
+		System.out.println("[gdx-diag] GLFrameBuffer dispose id=" + id
+			+ " fb=" + framebufferHandle
+			+ " colorTex=" + colorTextureHandle
+			+ " reason=" + reason
+			+ " disposed=" + disposed
+			+ " liveFrameBuffers=" + live);
+	}
+
+	private static long estimateFrameBufferBytes (int width, int height, String format, boolean hasDepth, boolean hasStencil) {
+		long pixels = Math.max(0L, (long)width * (long)height);
+		long colorBytes = pixels * estimateBytesPerPixel(format);
+		long extraBytes = 0L;
+		if (hasDepth && hasStencil) {
+			extraBytes = pixels * 4L;
+		} else if (hasDepth) {
+			extraBytes = pixels * 2L;
+		} else if (hasStencil) {
+			extraBytes = pixels;
+		}
+		return colorBytes + extraBytes;
+	}
+
+	private static long estimateBytesPerPixel (String format) {
+		if (format == null) return 4L;
+		if ("RGBA8888".equals(format)) return 4L;
+		if ("RGB888".equals(format)) return 3L;
+		if ("RGB565".equals(format) || "RGBA4444".equals(format) || "RGB5_A1".equals(format)
+			|| "LuminanceAlpha".equals(format)) {
+			return 2L;
+		}
+		if ("Alpha".equals(format) || "Intensity".equals(format) || "Luminance".equals(format)) {
+			return 1L;
+		}
+		return 4L;
+	}
+
+	private static void logFrameBufferBuildStack (
+		long id,
+		int buildGeneration,
+		int width,
+		int height,
+		String format,
+		boolean hasDepth,
+		boolean hasStencil
+	) {
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_FBO_STACKS_ENABLED || id == 0L || buildGeneration != 1) return;
+		String stackKey = captureRelevantFrameBufferBuildStack();
+		if (stackKey == null) return;
+		AtomicInteger existing = FRAMEBUFFER_BUILD_STACK_COUNTS.putIfAbsent(stackKey, new AtomicInteger(1));
+		if (existing == null) {
+			int uniqueCount = FRAMEBUFFER_BUILD_STACK_UNIQUES.incrementAndGet();
+			if (uniqueCount <= GPU_RESOURCE_DIAG_FBO_STACK_LIMIT) {
+				System.out.println("[gdx-diag] GLFrameBuffer stack_sample id=" + id
+					+ " unique=" + uniqueCount
+					+ " size=" + width + "x" + height
+					+ " format=" + format
+					+ " depth=" + hasDepth
+					+ " stencil=" + hasStencil
+					+ " stack=" + stackKey);
+			} else {
+				int suppressed = FRAMEBUFFER_BUILD_STACK_SUPPRESSED.incrementAndGet();
+				if (suppressed == 1 || suppressed % GPU_RESOURCE_DIAG_FBO_STACK_REPEAT_INTERVAL == 0) {
+					System.out.println("[gdx-diag] GLFrameBuffer stack_sample_suppressed suppressed=" + suppressed
+						+ " limit=" + GPU_RESOURCE_DIAG_FBO_STACK_LIMIT
+						+ " latestSize=" + width + "x" + height
+						+ " format=" + format);
+				}
+			}
+			return;
+		}
+
+		int repeatCount = existing.incrementAndGet();
+		if (repeatCount == 2 || repeatCount % GPU_RESOURCE_DIAG_FBO_STACK_REPEAT_INTERVAL == 0) {
+			System.out.println("[gdx-diag] GLFrameBuffer stack_repeat id=" + id
+				+ " repeats=" + repeatCount
+				+ " size=" + width + "x" + height
+				+ " format=" + format
+				+ " stack=" + stackKey);
+		}
+	}
+
+	private static String captureRelevantFrameBufferBuildStack () {
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		StringBuilder builder = new StringBuilder(256);
+		int appended = 0;
+		for (int i = 0; i < stack.length; i++) {
+			StackTraceElement element = stack[i];
+			if (!isRelevantFrameBufferBuildFrame(element)) continue;
+			if (appended > 0) {
+				builder.append(" <- ");
+			}
+			builder.append(element.getClassName());
+			builder.append("#");
+			builder.append(element.getMethodName());
+			builder.append(":");
+			builder.append(element.getLineNumber());
+			appended++;
+			if (appended >= GPU_RESOURCE_DIAG_FBO_STACK_DEPTH) {
+				break;
+			}
+		}
+		return appended == 0 ? null : builder.toString();
+	}
+
+	private static boolean isRelevantFrameBufferBuildFrame (StackTraceElement element) {
+		if (element == null) return false;
+		String className = element.getClassName();
+		if (className == null) return false;
+		if (className.equals(Thread.class.getName())) return false;
+		if (className.equals(GLFrameBuffer.class.getName())) return false;
+		if (className.startsWith("java.lang.reflect.")) return false;
+		if (className.startsWith("sun.reflect.")) return false;
+		if (className.startsWith("jdk.internal.reflect.")) return false;
+		return true;
 	}
 }
