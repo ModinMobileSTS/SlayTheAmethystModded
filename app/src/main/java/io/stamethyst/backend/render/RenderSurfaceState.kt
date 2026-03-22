@@ -112,6 +112,20 @@ internal class RenderSurfaceState {
     }
 
     fun buildApplyPlan(viewWidth: Int = 0, viewHeight: Int = 0): ApplyPlan {
+        return buildApplyPlan(
+            viewWidth = viewWidth,
+            viewHeight = viewHeight,
+            windowWidth = resolvePhysicalWidth(viewWidth),
+            windowHeight = resolvePhysicalHeight(viewHeight)
+        )
+    }
+
+    fun buildApplyPlan(
+        viewWidth: Int = 0,
+        viewHeight: Int = 0,
+        windowWidth: Int,
+        windowHeight: Int
+    ): ApplyPlan {
         val physicalWidth = resolvePhysicalWidth(viewWidth)
         val physicalHeight = resolvePhysicalHeight(viewHeight)
         // Keep the Android surface at physical size. Internal resolution scaling is now
@@ -131,8 +145,8 @@ internal class RenderSurfaceState {
             physicalHeight = physicalHeight,
             bufferWidth = bufferWidth,
             bufferHeight = bufferHeight,
-            windowWidth = physicalWidth,
-            windowHeight = physicalHeight,
+            windowWidth = windowWidth.coerceAtLeast(1),
+            windowHeight = windowHeight.coerceAtLeast(1),
             shouldApplyBufferSize = shouldApplyBufferSize,
             shouldDispatchWindowSize = shouldDispatchWindowSize
         )

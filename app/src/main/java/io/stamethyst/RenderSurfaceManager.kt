@@ -11,6 +11,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.ForegroundResyncScheduler
 import io.stamethyst.backend.render.RenderSurfaceState
+import io.stamethyst.backend.render.VirtualResolutionPolicy
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 
@@ -19,7 +20,7 @@ import org.lwjgl.glfw.CallbackBridge
  */
 class RenderSurfaceManager(
     private val activity: StsGameActivity,
-    renderScale: Float,
+    private val renderScale: Float,
     useTextureViewSurface: Boolean,
     private val avoidDisplayCutout: Boolean,
     private val cropScreenBottom: Boolean,
@@ -172,15 +173,26 @@ class RenderSurfaceManager(
         if (!::renderView.isInitialized) {
             return
         }
-        dispatchWindowSize(state.buildApplyPlan(renderView.width, renderView.height))
+        dispatchWindowSize(buildApplyPlan(renderView.width, renderView.height))
     }
 
     fun syncDisplayConfigToSurfaceSize() {
-        val windowWidth = CallbackBridge.windowWidth.coerceAtLeast(1)
-        val windowHeight = CallbackBridge.windowHeight.coerceAtLeast(1)
+        val windowWidth = resolveVirtualWidth()
+        val windowHeight = resolveVirtualHeight()
         try {
             DisplayConfigSync.syncToCurrentResolution(activity, windowWidth, windowHeight)
-        } catch (_: Throwable) {
+            println(
+                "RenderSurfaceDisplayConfig: synced " +
+                    "virtual=${windowWidth}x${windowHeight}, " +
+                    "physical=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}"
+            )
+        } catch (t: Throwable) {
+            println(
+                "RenderSurfaceDisplayConfig: sync_failed " +
+                    "virtual=${windowWidth}x${windowHeight}, " +
+                    "physical=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}, " +
+                    "error=${t.javaClass.simpleName}: ${t.message}"
+            )
         }
     }
 
@@ -196,6 +208,14 @@ class RenderSurfaceManager(
         return state.resolvePhysicalHeight(if (::renderView.isInitialized) renderView.height else 0)
     }
 
+    fun resolveVirtualWidth(): Int {
+        return resolveVirtualResolution().width
+    }
+
+    fun resolveVirtualHeight(): Int {
+        return resolveVirtualResolution().height
+    }
+
     private fun applyQueuedResync() {
         if (!::renderView.isInitialized || activity.isFinishing || activity.isDestroyed) {
             return
@@ -203,7 +223,7 @@ class RenderSurfaceManager(
         val reasons = resyncScheduler.drain()
         val reasonSummary = reasons.joinToString("+").ifBlank { "unspecified" }
         lastResyncReasonSummary = reasonSummary
-        val plan = state.buildApplyPlan(renderView.width, renderView.height)
+        val plan = buildApplyPlan(renderView.width, renderView.height)
         var anyApplied = false
 
         if (plan.shouldApplyBufferSize && renderHost.currentSurface != null) {
@@ -312,6 +332,12 @@ class RenderSurfaceManager(
             append(resolvePhysicalWidth())
             append("x")
             append(resolvePhysicalHeight())
+            append(", virtual=")
+            append(resolveVirtualWidth())
+            append("x")
+            append(resolveVirtualHeight())
+            append(", effectiveScale=")
+            append(resolveVirtualResolution().effectiveScale)
             append(", buffer=")
             append(state.surfaceBufferWidth)
             append("x")
@@ -332,6 +358,19 @@ class RenderSurfaceManager(
             append(state.windowSizeSkipCount)
         }
     }
+
+    private fun buildApplyPlan(viewWidth: Int, viewHeight: Int): RenderSurfaceState.ApplyPlan {
+        return state.buildApplyPlan(
+            viewWidth = viewWidth,
+            viewHeight = viewHeight
+        )
+    }
+
+    private fun resolveVirtualResolution() = VirtualResolutionPolicy.resolve(
+        physicalWidth = resolvePhysicalWidth(),
+        physicalHeight = resolvePhysicalHeight(),
+        renderScale = renderScale
+    )
 
     private fun logBufferApply(
         plan: RenderSurfaceState.ApplyPlan,

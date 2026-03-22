@@ -135,6 +135,20 @@ class StsGameActivity : AppCompatActivity() {
                 } else {
                     0
                 }
+            },
+            getTargetWindowWidth = {
+                if (::renderSurfaceManager.isInitialized) {
+                    renderSurfaceManager.resolveVirtualWidth()
+                } else {
+                    0
+                }
+            },
+            getTargetWindowHeight = {
+                if (::renderSurfaceManager.isInitialized) {
+                    renderSurfaceManager.resolveVirtualHeight()
+                } else {
+                    0
+                }
             }
         )
 

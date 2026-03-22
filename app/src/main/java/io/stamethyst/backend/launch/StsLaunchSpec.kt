@@ -7,6 +7,7 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.AWTCanvasView
@@ -189,18 +190,28 @@ object StsLaunchSpec {
         rendererDecision.fallbackSummary()?.let {
             args.add("-Damethyst.renderer.fallback_reason=$it")
         }
-        args.add("-Damethyst.gdx.render_scale=${LauncherConfig.readRenderScale(context)}")
+        val renderScale = LauncherConfig.readRenderScale(context)
+        val physicalWidth = Math.max(1, CallbackBridge.physicalWidth)
+        val physicalHeight = Math.max(1, CallbackBridge.physicalHeight)
+        val virtualResolution = VirtualResolutionPolicy.resolve(physicalWidth, physicalHeight, renderScale)
+        val virtualWidth = virtualResolution.width
+        val virtualHeight = virtualResolution.height
+        args.add("-Damethyst.gdx.render_scale=$renderScale")
         args.add("-Damethyst.gdx.native_dir=${RuntimePaths.gdxPatchNativesDir(context).absolutePath}")
         println(
             "StsLaunchSpec: " +
-                "renderScale=${LauncherConfig.readRenderScale(context)}, " +
-                "glfwstub=${Math.max(1, CallbackBridge.windowWidth)}x" +
-                "${Math.max(1, CallbackBridge.windowHeight)}, " +
-                "physical=${Math.max(1, CallbackBridge.physicalWidth)}x" +
-                "${Math.max(1, CallbackBridge.physicalHeight)}"
+                "renderScale=$renderScale, " +
+                "effectiveScale=${virtualResolution.effectiveScale}, " +
+                "virtual=${virtualWidth}x${virtualHeight}, " +
+                "glfwstub=${physicalWidth}x${physicalHeight}, " +
+                "physical=${physicalWidth}x${physicalHeight}"
         )
-        args.add("-Dglfwstub.windowWidth=${Math.max(1, CallbackBridge.windowWidth)}")
-        args.add("-Dglfwstub.windowHeight=${Math.max(1, CallbackBridge.windowHeight)}")
+        args.add("-Dglfwstub.windowWidth=$physicalWidth")
+        args.add("-Dglfwstub.windowHeight=$physicalHeight")
+        args.add("-Dglfwstub.physicalWidth=$physicalWidth")
+        args.add("-Dglfwstub.physicalHeight=$physicalHeight")
+        args.add("-Damethyst.gdx.virtual_width=$virtualWidth")
+        args.add("-Damethyst.gdx.virtual_height=$virtualHeight")
         args.add("-Dglfwstub.initEgl=false")
         args.add("-Djava.awt.headless=false")
         args.add("-Dcacio.managed.screensize=${AWTCanvasView.AWT_CANVAS_WIDTH}x${AWTCanvasView.AWT_CANVAS_HEIGHT}")
@@ -361,4 +372,5 @@ object StsLaunchSpec {
             File(javaHome, "lib/arm64").isDirectory ||
             File(javaHome, "lib/x86_64").isDirectory
     }
+
 }

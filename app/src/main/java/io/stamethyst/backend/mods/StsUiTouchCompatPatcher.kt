@@ -8,6 +8,7 @@ import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.JumpInsnNode
+import org.objectweb.asm.tree.LineNumberNode
 import org.objectweb.asm.tree.MethodNode
 
 internal object StsUiTouchCompatPatcher {
@@ -22,6 +23,33 @@ internal object StsUiTouchCompatPatcher {
     private const val DROP_ZONE_HOVER_FIELD_NAME = "isHoveringDropZone"
     private const val TOUCH_MOUSE_DOWN_FIELD_NAME = "isMouseDown"
     private const val BOOLEAN_FIELD_DESC = "Z"
+    private val LEGACY_TIP_HELPER_LINE_MAP = linkedMapOf(
+        43 to 58,
+        44 to 59,
+        47 to 64,
+        48 to 65,
+        49 to 66,
+        50 to 67,
+        51 to 68,
+        53 to 71,
+        57 to 73,
+        58 to 74,
+        59 to 75,
+        60 to 76,
+        61 to 77,
+        63 to 80,
+        64 to 81,
+        65 to 82,
+        72 to 88,
+        79 to 94,
+        80 to 95,
+        81 to 98,
+        82 to 104,
+        83 to 105,
+        85 to 109,
+        87 to 112,
+        89 to 115
+    )
 
     private data class MemberRef(
         val name: String,
@@ -170,28 +198,69 @@ internal object StsUiTouchCompatPatcher {
                 method.desc == TIP_HELPER_RENDER_METHOD_DESC
         } ?: throw IOException("Missing render method for $STS_PATCH_TIP_HELPER_CLASS")
 
-        if (isTipHelperTouchGuardPatched(renderMethod)) {
+        var changed = false
+        if (isLegacyTipHelperRender(renderMethod)) {
+            rewriteLegacyTipHelperLineNumbers(renderMethod)
+            changed = true
+        }
+
+        if (!isTipHelperTouchGuardPatched(renderMethod)) {
+            val hoverGuardJump = findTipHelperDropZoneHoverGuard(renderMethod)
+                ?: throw IOException("Unsupported TipHelper.render bytecode: drop-zone hover guard not found")
+            renderMethod.instructions.insert(
+                hoverGuardJump,
+                InsnList().apply {
+                    add(
+                        FieldInsnNode(
+                            Opcodes.GETSTATIC,
+                            INPUT_HELPER_INTERNAL_NAME,
+                            TOUCH_MOUSE_DOWN_FIELD_NAME,
+                            BOOLEAN_FIELD_DESC
+                        )
+                    )
+                    add(JumpInsnNode(Opcodes.IFEQ, hoverGuardJump.label))
+                }
+            )
+            changed = true
+        }
+
+        if (!changed) {
             return targetClassBytes
         }
 
-        val hoverGuardJump = findTipHelperDropZoneHoverGuard(renderMethod)
-            ?: throw IOException("Unsupported TipHelper.render bytecode: drop-zone hover guard not found")
-        renderMethod.instructions.insert(
-            hoverGuardJump,
-            InsnList().apply {
-                add(
-                    FieldInsnNode(
-                        Opcodes.GETSTATIC,
-                        INPUT_HELPER_INTERNAL_NAME,
-                        TOUCH_MOUSE_DOWN_FIELD_NAME,
-                        BOOLEAN_FIELD_DESC
-                    )
-                )
-                add(JumpInsnNode(Opcodes.IFEQ, hoverGuardJump.label))
-            }
-        )
-
         return writeClass(targetClass)
+    }
+
+    private fun isLegacyTipHelperRender(renderMethod: MethodNode): Boolean {
+        var hasLegacyStartLine = false
+        var hasExpectedInsertLine = false
+        var current = renderMethod.instructions.first
+        while (current != null) {
+            val lineNode = current as? LineNumberNode
+            if (lineNode != null) {
+                if (lineNode.line == 43) {
+                    hasLegacyStartLine = true
+                } else if (lineNode.line == 104) {
+                    hasExpectedInsertLine = true
+                }
+            }
+            current = current.next
+        }
+        return hasLegacyStartLine || !hasExpectedInsertLine
+    }
+
+    private fun rewriteLegacyTipHelperLineNumbers(renderMethod: MethodNode) {
+        var current = renderMethod.instructions.first
+        while (current != null) {
+            val lineNode = current as? LineNumberNode
+            if (lineNode != null) {
+                val remappedLine = LEGACY_TIP_HELPER_LINE_MAP[lineNode.line]
+                if (remappedLine != null) {
+                    lineNode.line = remappedLine
+                }
+            }
+            current = current.next
+        }
     }
 
     private fun isTipHelperTouchGuardPatched(renderMethod: MethodNode): Boolean {

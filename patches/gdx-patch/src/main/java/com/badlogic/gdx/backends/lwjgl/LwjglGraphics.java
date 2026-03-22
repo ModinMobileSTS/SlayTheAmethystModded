@@ -47,6 +47,9 @@ import com.badlogic.gdx.utils.SharedLibraryLoader;
 /** An implementation of the {@link Graphics} interface based on Lwjgl.
  * @author mzechner */
 public class LwjglGraphics implements Graphics {
+	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
+	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
+	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
 
 	/** The suppored OpenGL extensions */
 	static Array<String> extensions;
@@ -94,29 +97,59 @@ public class LwjglGraphics implements Graphics {
 	public int getHeight () {
 		if (canvas != null)
 			return Math.max(1, canvas.getHeight());
-		else
-			return (int)(Display.getHeight() * PixelScaleCompat.factor());
+		int configured = readPositiveIntProperty(VIRTUAL_HEIGHT_PROP);
+		if (configured > 0) return configured;
+		return scaledLogicalSize((int)(Display.getHeight() * PixelScaleCompat.factor()));
 	}
 
 	public int getWidth () {
 		if (canvas != null)
 			return Math.max(1, canvas.getWidth());
-		else
-			return (int)(Display.getWidth() * PixelScaleCompat.factor());
+		int configured = readPositiveIntProperty(VIRTUAL_WIDTH_PROP);
+		if (configured > 0) return configured;
+		return scaledLogicalSize((int)(Display.getWidth() * PixelScaleCompat.factor()));
 	}
 
 	@Override
 	public int getBackBufferWidth () {
-		int overrideWidth = LwjglApplication.getScaledRenderBackBufferWidthOverride();
-		if (overrideWidth > 0) return overrideWidth;
 		return getWidth();
 	}
 
 	@Override
 	public int getBackBufferHeight () {
-		int overrideHeight = LwjglApplication.getScaledRenderBackBufferHeightOverride();
-		if (overrideHeight > 0) return overrideHeight;
 		return getHeight();
+	}
+
+	private static int scaledLogicalSize (int physicalSize) {
+		if (physicalSize <= 0) return 1;
+		float scale = readConfiguredRenderScale();
+		if (scale >= 0.999f) return physicalSize;
+		return Math.max(1, Math.round(physicalSize * scale));
+	}
+
+	private static float readConfiguredRenderScale () {
+		String configured = System.getProperty(RENDER_SCALE_PROP);
+		if (configured == null) return 1f;
+		try {
+			float parsed = Float.parseFloat(configured.trim());
+			if (Float.isNaN(parsed) || Float.isInfinite(parsed)) return 1f;
+			if (parsed < 0.1f) return 0.1f;
+			if (parsed > 1f) return 1f;
+			return parsed;
+		} catch (Throwable ignored) {
+			return 1f;
+		}
+	}
+
+	private static int readPositiveIntProperty (String property) {
+		String raw = System.getProperty(property);
+		if (raw == null) return 0;
+		try {
+			int value = Integer.parseInt(raw.trim());
+			return value > 0 ? value : 0;
+		} catch (Throwable ignored) {
+			return 0;
+		}
 	}
 
 	public boolean isGL20Available () {

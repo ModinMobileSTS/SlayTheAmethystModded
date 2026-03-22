@@ -18,9 +18,12 @@ package com.badlogic.gdx.backends.lwjgl;
 
 import java.awt.Canvas;
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Map;
 
 import com.badlogic.gdx.ApplicationLogger;
@@ -70,6 +73,10 @@ public class LwjglApplication implements Application {
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
 	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
+	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
+	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
+	private static final String GLFWSTUB_PHYSICAL_WIDTH_PROP = "glfwstub.physicalWidth";
+	private static final String GLFWSTUB_PHYSICAL_HEIGHT_PROP = "glfwstub.physicalHeight";
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
@@ -405,6 +412,41 @@ public class LwjglApplication implements Application {
 		scaledRenderBackBufferHeight = 0;
 	}
 
+	private static int resolvePhysicalDisplayWidth () {
+		int configured = readPositiveIntProperty(GLFWSTUB_PHYSICAL_WIDTH_PROP);
+		if (configured > 0) return configured;
+		return Math.max(1, (int)(Display.getWidth() * PixelScaleCompat.factor()));
+	}
+
+	private static int resolvePhysicalDisplayHeight () {
+		int configured = readPositiveIntProperty(GLFWSTUB_PHYSICAL_HEIGHT_PROP);
+		if (configured > 0) return configured;
+		return Math.max(1, (int)(Display.getHeight() * PixelScaleCompat.factor()));
+	}
+
+	private static int resolveConfiguredVirtualWidth () {
+		int configured = readPositiveIntProperty(VIRTUAL_WIDTH_PROP);
+		if (configured > 0) return configured;
+		return 0;
+	}
+
+	private static int resolveConfiguredVirtualHeight () {
+		int configured = readPositiveIntProperty(VIRTUAL_HEIGHT_PROP);
+		if (configured > 0) return configured;
+		return 0;
+	}
+
+	private static int readPositiveIntProperty (String property) {
+		String raw = System.getProperty(property);
+		if (raw == null) return 0;
+		try {
+			int value = Integer.parseInt(raw.trim());
+			return value > 0 ? value : 0;
+		} catch (Throwable ignored) {
+			return 0;
+		}
+	}
+
 	private static final class ScaledRenderPipeline {
 		private final float scale;
 		private final Matrix4 projection = new Matrix4();
@@ -421,8 +463,8 @@ public class LwjglApplication implements Application {
 		}
 
 		void ensureReady (int screenWidth, int screenHeight, int currentContextGeneration) {
-			int targetWidth = Math.max(1, Math.round(screenWidth * scale));
-			int targetHeight = Math.max(1, Math.round(screenHeight * scale));
+			int targetWidth = Math.max(1, screenWidth);
+			int targetHeight = Math.max(1, screenHeight);
 			boolean sizeChanged = frameBufferWidth != targetWidth || frameBufferHeight != targetHeight;
 			boolean contextChanged = contextGeneration != currentContextGeneration;
 			if (frameBuffer != null && !sizeChanged && !contextChanged) return;
@@ -929,7 +971,7 @@ public class LwjglApplication implements Application {
 		} catch (Throwable ignored) {
 		}
 		try {
-			org.lwjgl.opengl.GL11.glViewport(0, 0, Display.getWidth(), Display.getHeight());
+			org.lwjgl.opengl.GL11.glViewport(0, 0, resolvePhysicalDisplayWidth(), resolvePhysicalDisplayHeight());
 		} catch (Throwable ignored) {
 		}
 	}
@@ -972,8 +1014,16 @@ public class LwjglApplication implements Application {
 		return findField(owner, fieldName).get(null);
 	}
 
+	private static void writeStaticField (Class<?> owner, String fieldName, Object value) throws ReflectiveOperationException {
+		findField(owner, fieldName).set(null, value);
+	}
+
 	private static Object readField (Object target, String fieldName) throws ReflectiveOperationException {
 		return findField(target.getClass(), fieldName).get(target);
+	}
+
+	private static void writeField (Object target, String fieldName, Object value) throws ReflectiveOperationException {
+		findField(target.getClass(), fieldName).set(target, value);
 	}
 
 	private static Object invokeNoArgMethod (Object target, String methodName) {
@@ -993,6 +1043,36 @@ public class LwjglApplication implements Application {
 			return readField(target, fieldName);
 		} catch (Throwable ignored) {
 			return null;
+		}
+	}
+
+	private void syncVirtualDisplayConfigFile (int width, int height) {
+		if (width <= 0 || height <= 0) return;
+		File configFile = new File(System.getProperty("user.dir", "."), "info.displayconfig");
+		try {
+			ArrayList<String> lines = new ArrayList<String>();
+			if (configFile.isFile()) {
+				try {
+					lines.addAll(java.nio.file.Files.readAllLines(configFile.toPath(), StandardCharsets.UTF_8));
+				} catch (Throwable ignored) {
+					lines.clear();
+				}
+			}
+			while (lines.size() < 6) {
+				if (lines.size() == 0 || lines.size() == 1) {
+					lines.add("0");
+				} else if (lines.size() == 2) {
+					lines.add("60");
+				} else {
+					lines.add("false");
+				}
+			}
+			lines.set(0, Integer.toString(width));
+			lines.set(1, Integer.toString(height));
+			java.nio.file.Files.write(configFile.toPath(), lines, StandardCharsets.UTF_8);
+			System.out.println("[gdx-patch] Synced info.displayconfig to virtual size " + width + "x" + height);
+		} catch (IOException e) {
+			System.out.println("[gdx-patch] Failed to sync info.displayconfig: " + e);
 		}
 	}
 
@@ -1396,6 +1476,13 @@ public class LwjglApplication implements Application {
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException(e);
 		}
+		int configuredVirtualWidth = resolveConfiguredVirtualWidth();
+		int configuredVirtualHeight = resolveConfiguredVirtualHeight();
+		if (configuredVirtualWidth > 0) graphics.config.width = configuredVirtualWidth;
+		else graphics.config.width = graphics.getWidth();
+		if (configuredVirtualHeight > 0) graphics.config.height = configuredVirtualHeight;
+		else graphics.config.height = graphics.getHeight();
+		syncVirtualDisplayConfigFile(graphics.config.width, graphics.config.height);
 
 		ensureDisplayContextCurrent("create");
 		applyMobileHudModeFromProperty();
@@ -1474,12 +1561,15 @@ public class LwjglApplication implements Application {
 			} else {
 				graphics.config.x = Display.getX();
 				graphics.config.y = Display.getY();
+				int reportedWidth = graphics.getWidth();
+				int reportedHeight = graphics.getHeight();
 				if (graphics.resize || Display.wasResized()
-					|| (int)(Display.getWidth() * PixelScaleCompat.factor()) != graphics.config.width
-					|| (int)(Display.getHeight() * PixelScaleCompat.factor()) != graphics.config.height) {
+					|| reportedWidth != graphics.config.width
+					|| reportedHeight != graphics.config.height) {
 					graphics.resize = false;
-					graphics.config.width = (int)(Display.getWidth() * PixelScaleCompat.factor());
-					graphics.config.height = (int)(Display.getHeight() * PixelScaleCompat.factor());
+					graphics.config.width = reportedWidth;
+					graphics.config.height = reportedHeight;
+					syncVirtualDisplayConfigFile(graphics.config.width, graphics.config.height);
 					ensureDisplayContextCurrent("window-resize");
 					Gdx.gl.glViewport(0, 0, graphics.config.width, graphics.config.height);
 					ensureDisplayContextCurrent("listener-resize-window");
@@ -1541,13 +1631,17 @@ public class LwjglApplication implements Application {
 				runGlobalTextureCompatOnManagedGrowth("pre-render");
 				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
 				ensureColorMaskWritable();
-				ScaledRenderPipeline scaledRender = beginScaledRenderFrame(Display.getWidth(), Display.getHeight());
+				int physicalWidth = resolvePhysicalDisplayWidth();
+				int physicalHeight = resolvePhysicalDisplayHeight();
+				int renderWidth = graphics.getWidth();
+				int renderHeight = graphics.getHeight();
+				ScaledRenderPipeline scaledRender = beginScaledRenderFrame(renderWidth, renderHeight);
 				try {
 					listener.render();
 					// Catch textures created during listener.render in the same frame.
 					runGlobalTextureCompatOnManagedGrowth("post-render");
 				} finally {
-					finishScaledRenderFrame(scaledRender, Display.getWidth(), Display.getHeight());
+					finishScaledRenderFrame(scaledRender, physicalWidth, physicalHeight);
 				}
 				GLFrameBuffer.reclaimIdleFrameBuffers(Gdx.app, graphics.frameId);
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;

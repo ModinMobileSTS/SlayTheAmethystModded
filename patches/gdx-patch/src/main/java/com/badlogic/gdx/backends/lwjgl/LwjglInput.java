@@ -43,6 +43,7 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
 import com.badlogic.gdx.utils.IntSet;
 
 import org.lwjgl.LWJGLException;
+import org.lwjgl.glfw.CallbackBridge;
 import org.lwjgl.input.Cursor;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
@@ -84,6 +85,8 @@ final public class LwjglInput implements Input {
 	private static int lastCursorDebugReqY = Integer.MIN_VALUE;
 	private static final boolean gdxPadCursorDebugEnabled =
 		java.lang.Boolean.parseBoolean(java.lang.System.getProperty("amethyst.debug.gdx_pad_cursor", "false"));
+	private static final boolean touchInputDiagEnabled =
+		java.lang.Boolean.parseBoolean(java.lang.System.getProperty("amethyst.debug.touch_input_diag", "true"));
 
 	Pool<KeyEvent> usedKeyEvents = new Pool<KeyEvent>(16, 1000) {
 		protected KeyEvent newObject () {
@@ -217,17 +220,11 @@ final public class LwjglInput implements Input {
 	}
 
 	public int getX () {
-		if (hasSyntheticCursorPosition) {
-			return syntheticCursorX;
-		}
-		return (int)(Mouse.getX() * PixelScaleCompat.factor());
+		return getCurrentLogicalCursorX();
 	}
 
 	public int getY () {
-		if (hasSyntheticCursorPosition) {
-			return syntheticCursorY;
-		}
-		return Gdx.graphics.getHeight() - 1 - (int)(Mouse.getY() * PixelScaleCompat.factor());
+		return getCurrentLogicalCursorY();
 	}
 
 	public boolean isAccelerometerAvailable () {
@@ -812,22 +809,22 @@ final public class LwjglInput implements Input {
 			int events = 0;
 			while (Mouse.next()) {
 				events++;
-				int x = (int)(Mouse.getEventX() * PixelScaleCompat.factor());
-				int y = Gdx.graphics.getHeight() - (int)(Mouse.getEventY() * PixelScaleCompat.factor()) - 1;
+				int eventX = getCurrentLogicalCursorX();
+				int eventY = getCurrentLogicalCursorY();
 				hasSyntheticCursorPosition = false;
 				int button = Mouse.getEventButton();
 				int gdxButton = toGdxButton(button);
 				if (button != -1 && gdxButton == -1) continue; // Ignore unknown button.
 
 				TouchEvent event = usedTouchEvents.obtain();
-				event.x = x;
-				event.y = y;
 				event.button = gdxButton;
 				event.pointer = 0;
 				event.timeStamp = Mouse.getEventNanoseconds();
 
 				// could be drag, scroll or move
 				if (button == -1) {
+					event.x = eventX;
+					event.y = eventY;
 					if (Mouse.getEventDWheel() != 0) {
 						event.type = TouchEvent.TOUCH_SCROLLED;
 						event.scrollAmount = (int)-Math.signum(Mouse.getEventDWheel());
@@ -837,6 +834,10 @@ final public class LwjglInput implements Input {
 						event.type = TouchEvent.TOUCH_MOVED;
 					}
 				} else {
+					int cursorX = eventX;
+					int cursorY = eventY;
+					event.x = cursorX;
+					event.y = cursorY;
 					// nope, it's a down or up event.
 					if (Mouse.getEventButtonState()) {
 						event.type = TouchEvent.TOUCH_DOWN;
@@ -846,13 +847,28 @@ final public class LwjglInput implements Input {
 						event.type = TouchEvent.TOUCH_UP;
 						pressedButtons.remove(event.button);
 					}
+					if (touchInputDiagEnabled) {
+						System.out.println(
+							"[gdx-inputdiag] mouse_button"
+								+ " type=" + (event.type == TouchEvent.TOUCH_DOWN ? "down" : "up")
+								+ " raw=(" + Mouse.getEventX() + "," + Mouse.getEventY() + ")"
+								+ " eventLogical=(" + eventX + "," + eventY + ")"
+								+ " bridgeRaw=(" + CallbackBridge.nativeGetCursorX() + "," + CallbackBridge.nativeGetCursorY() + ")"
+								+ " cursorLogical=(" + cursorX + "," + cursorY + ")"
+								+ " button=" + button
+								+ " gdxButton=" + gdxButton
+								+ " state=" + Mouse.getEventButtonState()
+								+ " pressed=" + pressedButtons
+								+ " graphics=" + Gdx.graphics.getWidth() + "x" + Gdx.graphics.getHeight()
+						);
+					}
 				}
 
 				touchEvents.add(event);
+				deltaX = event.x - mouseX;
+				deltaY = event.y - mouseY;
 				mouseX = event.x;
 				mouseY = event.y;
-				deltaX = (int)(Mouse.getEventDX() * PixelScaleCompat.factor());
-				deltaY = (int)(Mouse.getEventDY() * PixelScaleCompat.factor());
 			}
 
 			if (events == 0) {
@@ -862,6 +878,36 @@ final public class LwjglInput implements Input {
 				Gdx.graphics.requestRendering();
 			}
 		}
+	}
+
+	private int getCurrentLogicalCursorX () {
+		return getBridgeLogicalCursorX();
+	}
+
+	private int getCurrentLogicalCursorY () {
+		return getBridgeLogicalCursorY();
+	}
+
+	private int getBridgeLogicalCursorX () {
+		int width = Math.max(1, Gdx.graphics.getWidth());
+		if (hasSyntheticCursorPosition) {
+			return syntheticCursorX;
+		}
+		return clampToRange(Math.round(CallbackBridge.nativeGetCursorX()), width);
+	}
+
+	private int getBridgeLogicalCursorY () {
+		int height = Math.max(1, Gdx.graphics.getHeight());
+		if (hasSyntheticCursorPosition) {
+			return syntheticCursorY;
+		}
+		int logicalY = height - 1 - Math.round(CallbackBridge.nativeGetCursorY());
+		return clampToRange(logicalY, height);
+	}
+
+	private int clampToRange (int value, int exclusiveMax) {
+		if (value < 0) return 0;
+		return Math.min(value, exclusiveMax - 1);
 	}
 
 	void updateKeyboard () {
@@ -1099,6 +1145,7 @@ final public class LwjglInput implements Input {
 				+ ") bounded=(" + boundedX + "," + boundedY
 				+ ") raw=(" + scaledX + "," + scaledY
 				+ ") logical=(" + logicalX + "," + logicalY
+				+ ") bridge=(" + getCurrentLogicalCursorX() + "," + getCurrentLogicalCursorY()
 				+ ") synth=(" + syntheticCursorX + "," + syntheticCursorY + ")"
 				+ ") mode=" + controllerMode
 				+ " touch=" + touchScreen

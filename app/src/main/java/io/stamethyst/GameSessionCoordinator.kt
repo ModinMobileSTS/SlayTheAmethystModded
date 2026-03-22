@@ -93,8 +93,8 @@ internal class GameSessionCoordinator(
             renderSurfaceManager.logRenderInfo()
             renderSurfaceManager.syncDisplayConfigToSurfaceSize()
         },
-        getWindowWidth = { CallbackBridge.windowWidth },
-        getWindowHeight = { CallbackBridge.windowHeight }
+        getWindowWidth = { renderSurfaceManager.resolvePhysicalWidth() },
+        getWindowHeight = { renderSurfaceManager.resolvePhysicalHeight() }
     )
 
     private var performanceOverlayController: GamePerformanceOverlayController? = null

@@ -204,6 +204,20 @@ object CallbackBridgeCodegen {
             jvmVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeGetCursorX",
+            returnType = "float",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetCursorY",
+            returnType = "float",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeClipboard",
             returnType = "String",
             parameters = listOf(

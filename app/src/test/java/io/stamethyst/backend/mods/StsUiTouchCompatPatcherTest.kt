@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
@@ -82,6 +83,68 @@ class StsUiTouchCompatPatcherTest {
             donorClassBytes = donorBytes
         )
         assertArrayEquals(patchedBytes, patchedAgain)
+    }
+
+    @Test
+    fun mergePatchedClass_tipHelper_repairsLegacyMergedLineNumbers() {
+        val originalJar = resolveFixtureFile(
+            "tools/desktop-1.0.jar",
+            "../tools/desktop-1.0.jar"
+        )
+        val patchJar = resolveFixtureFile(
+            "patches/gdx-patch/build/libs/gdx-patch.jar",
+            "../patches/gdx-patch/build/libs/gdx-patch.jar"
+        )
+        assumeTrue(originalJar.isFile)
+        assumeTrue(patchJar.isFile)
+
+        val originalBytes = readJarEntry(originalJar, STS_PATCH_TIP_HELPER_CLASS)
+        val donorBytes = readJarEntry(patchJar, STS_PATCH_TIP_HELPER_CLASS)
+        val legacyPatchedBytes = replaceMethodWithDonorMethod(
+            targetClassBytes = originalBytes,
+            donorClassBytes = donorBytes,
+            methodName = "render",
+            methodDesc = "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V"
+        )
+
+        val legacyRender = findMethod(
+            legacyPatchedBytes,
+            "render",
+            "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V"
+        )
+        assertTrue(lineNumbers(legacyRender).contains(43))
+        assertFalse(lineNumbers(legacyRender).contains(104))
+
+        val repairedBytes = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_TIP_HELPER_CLASS,
+            targetClassBytes = legacyPatchedBytes,
+            donorClassBytes = donorBytes
+        )
+
+        val repairedRender = findMethod(
+            repairedBytes,
+            "render",
+            "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V"
+        )
+        assertFalse(lineNumbers(repairedRender).contains(43))
+        assertTrue(lineNumbers(repairedRender).contains(58))
+        assertTrue(lineNumbers(repairedRender).contains(104))
+        assertTrue(
+            containsFieldAccess(
+                repairedRender,
+                Opcodes.GETSTATIC,
+                "com/megacrit/cardcrawl/helpers/input/InputHelper",
+                "isMouseDown",
+                "Z"
+            )
+        )
+
+        val repairedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_TIP_HELPER_CLASS,
+            targetClassBytes = repairedBytes,
+            donorClassBytes = donorBytes
+        )
+        assertArrayEquals(repairedBytes, repairedAgain)
     }
 
     @Test
@@ -188,6 +251,34 @@ class StsUiTouchCompatPatcherTest {
         ) {
             "Missing method $name$desc"
         }
+    }
+
+    private fun replaceMethodWithDonorMethod(
+        targetClassBytes: ByteArray,
+        donorClassBytes: ByteArray,
+        methodName: String,
+        methodDesc: String
+    ): ByteArray {
+        val targetClass = ClassNode()
+        ClassReader(targetClassBytes).accept(targetClass, 0)
+        val donorClass = ClassNode()
+        ClassReader(donorClassBytes).accept(donorClass, 0)
+        val donorMethod = requireNotNull(
+            donorClass.methods.firstOrNull { method ->
+                method.name == methodName && method.desc == methodDesc
+            }
+        ) {
+            "Missing donor method $methodName$methodDesc"
+        }
+        val targetIndex = targetClass.methods.indexOfFirst { method ->
+            method.name == methodName && method.desc == methodDesc
+        }
+        require(targetIndex >= 0) { "Missing target method $methodName$methodDesc" }
+        targetClass.methods[targetIndex] = donorMethod
+
+        val classWriter = ClassWriter(0)
+        targetClass.accept(classWriter)
+        return classWriter.toByteArray()
     }
 
     private fun lineNumbers(method: MethodNode): List<Int> {

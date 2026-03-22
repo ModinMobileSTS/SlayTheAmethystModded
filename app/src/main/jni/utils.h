@@ -14,4 +14,6 @@ jstring convertStringJVM(JNIEnv* srcEnv, JNIEnv* dstEnv, jstring srcStr);
 JNIEnv* get_attached_env(JavaVM* jvm);
 JNIEXPORT jstring JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeClipboard(JNIEnv* env, jclass clazz, jint action, jbyteArray copySrc);
 JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlContextGeneration(JNIEnv* env, jclass clazz);
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetCursorX(JNIEnv* env, jclass clazz);
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetCursorY(JNIEnv* env, jclass clazz);
 

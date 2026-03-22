@@ -357,6 +357,27 @@ JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlContextGene
     }
     return atomic_load_explicit(&pojav_environ->glContextGeneration, memory_order_relaxed);
 }
+
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetCursorX(
+    __attribute__((unused)) JNIEnv* env,
+    __attribute__((unused)) jclass clazz
+) {
+    if (pojav_environ == NULL) {
+        return 0.0f;
+    }
+    return (jfloat)pojav_environ->cursorX;
+}
+
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetCursorY(
+    __attribute__((unused)) JNIEnv* env,
+    __attribute__((unused)) jclass clazz
+) {
+    if (pojav_environ == NULL) {
+        return 0.0f;
+    }
+    return (jfloat)pojav_environ->cursorY;
+}
+
 JNIEXPORT jboolean JNICALL JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(jboolean inputReady) {
 #ifdef DEBUG
     ;
