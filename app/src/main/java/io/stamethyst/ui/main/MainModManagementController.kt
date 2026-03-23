@@ -8,7 +8,7 @@ import android.net.Uri
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import io.stamethyst.R
-import io.stamethyst.backend.file_interactive.SafExportActivity
+import io.stamethyst.backend.file_interactive.SafFileExporter
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.config.RuntimePaths
@@ -30,6 +30,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.widget.Toast
 
 internal data class MainMtsLaunchValidationIssue(
     val mod: ModItemUi,
@@ -45,7 +46,8 @@ internal class MainModManagementController(
         fun setBusy(
             busy: Boolean,
             message: UiText?,
-            operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+            operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY,
+            progressPercent: Int? = null
         )
 
         fun republish(host: Activity)
@@ -475,12 +477,68 @@ internal class MainModManagementController(
             emitSnackbar(host.getString(R.string.main_mod_export_missing))
             return
         }
-        val exportIntent = Intent(host, SafExportActivity::class.java).apply {
-            putExtra(SafExportActivity.EXTRA_SOURCE_PATH, sourceFile.absolutePath)
-            putExtra(SafExportActivity.EXTRA_SUGGESTED_NAME, sourceFile.name)
-            putExtra(SafExportActivity.EXTRA_MIME_TYPE, "application/java-archive")
+        hostCallbacks.emitEffect(
+            MainScreenViewModel.Effect.OpenExportModPicker(
+                sourcePath = sourceFile.absolutePath,
+                suggestedName = sourceFile.name
+            )
+        )
+    }
+
+    fun onExportModPicked(host: Activity, sourcePath: String?, uri: Uri?) {
+        if (uri == null) {
+            return
         }
-        hostCallbacks.emitEffect(MainScreenViewModel.Effect.LaunchIntent(exportIntent))
+        val normalizedSourcePath = sourcePath?.trim().orEmpty()
+        if (normalizedSourcePath.isEmpty()) {
+            emitSnackbar(host.getString(R.string.main_mod_export_missing))
+            return
+        }
+        val sourceFile = File(normalizedSourcePath)
+        if (!sourceFile.isFile) {
+            emitSnackbar(host.getString(R.string.main_mod_export_missing))
+            return
+        }
+        hostCallbacks.setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.main_mod_export_busy),
+            operation = UiBusyOperation.MOD_IMPORT,
+            progressPercent = 0
+        )
+        executor.execute {
+            try {
+                SafFileExporter.exportFile(host, sourceFile, uri) { percent ->
+                    host.runOnUiThread {
+                        hostCallbacks.setBusy(
+                            busy = true,
+                            message = UiText.StringResource(R.string.main_mod_export_busy),
+                            operation = UiBusyOperation.MOD_IMPORT,
+                            progressPercent = percent
+                        )
+                    }
+                }
+                host.runOnUiThread {
+                    hostCallbacks.setBusy(false, null)
+                    showToast(
+                        host,
+                        host.getString(R.string.main_mod_export_success, sourceFile.name),
+                        Toast.LENGTH_SHORT
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    hostCallbacks.setBusy(false, null)
+                    showToast(
+                        host,
+                        host.getString(
+                            R.string.main_mod_export_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                }
+            }
+        }
     }
 
     fun onShareMod(host: Activity, mod: ModItemUi) {
@@ -1619,19 +1677,25 @@ internal class MainModManagementController(
         hostCallbacks.emitEffect(MainScreenViewModel.Effect.ShowDialog(title, message))
     }
 
+    private fun showToast(host: Activity, message: String, duration: Int) {
+        Toast.makeText(host, message, duration).show()
+    }
+
     private fun setBusyText(
         busy: Boolean,
         message: String?,
-        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY,
+        progressPercent: Int? = null
     ) {
-        setBusy(busy, message?.let(UiText::DynamicString), operation)
+        setBusy(busy, message?.let(UiText::DynamicString), operation, progressPercent)
     }
 
     private fun setBusy(
         busy: Boolean,
         message: UiText?,
-        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY,
+        progressPercent: Int? = null
     ) {
-        hostCallbacks.setBusy(busy, message, operation)
+        hostCallbacks.setBusy(busy, message, operation, progressPercent)
     }
 }

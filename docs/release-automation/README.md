@@ -109,6 +109,7 @@ scripts\prepare-release.bat
 What the script does:
 - Read `application.version.name` from `gradle.properties`.
 - Ask whether to release `v<version>`.
+- Run a local preflight before tagging: `:app:lintDebug` and `:app:assembleRelease`.
 - Create `docs/release/note/v<version>.md` with `新特性` and `修复` sections if it does not already exist.
 - Wait for you to finish editing the release note.
 - Commit only the release note and `gradle.properties` when it has local changes.
@@ -117,8 +118,10 @@ What the script does:
 
 Notes:
 - The script intentionally does not include unrelated working tree changes in the release commit.
+- The local preflight uses the same signing inputs as local release builds. If passwords are not already present in environment variables, the script will prompt for them.
 - On Windows, run it from Git Bash or another Bash environment.
 - On Windows Command Prompt or PowerShell, you can use `scripts\prepare-release.bat`.
+- If you explicitly want to skip the preflight, use `scripts\prepare-release.bat -SkipLocalCheck` or `bash scripts/prepare-release.sh --skip-local-check`.
 
 Tag-based release (publishes GitHub Release automatically):
 

@@ -435,6 +435,9 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="main_expected_back_exit_title">Returned to launcher</string>
     <string name="main_expected_back_exit_message">This is expected: you triggered &quot;Back button: exit to launcher&quot;.\n\nIf you do not want this behavior, change Back button behavior to &quot;Esc&quot; or &quot;No action&quot; in Settings.</string>
     <string name="main_mod_delete_busy">Deleting mod...</string>
+    <string name="main_mod_export_busy">Exporting mod...</string>
+    <string name="main_mod_export_success">Exported mod: %1$s</string>
+    <string name="main_mod_export_failed">Failed to export mod: %1$s</string>
     <string name="main_mod_share_busy">Preparing mod share...</string>
     <string name="main_mod_rename_busy">Renaming mod file...</string>
     <string name="main_folder_deleted">Deleted %1$s</string>

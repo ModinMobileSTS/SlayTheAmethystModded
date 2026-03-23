@@ -82,11 +82,22 @@ fun LauncherMainScreen(
     val uiState = viewModel.uiState
     val snackbarHostState = remember { SnackbarHostState() }
     var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
+    var pendingExportModSourcePath by remember { mutableStateOf<String?>(null) }
     val importModsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (hostActivity != null) {
             viewModel.onModJarsPicked(hostActivity, uris)
+        }
+    }
+    val exportModLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/java-archive")
+    ) { uri ->
+        val activity = hostActivity
+        val sourcePath = pendingExportModSourcePath
+        pendingExportModSourcePath = null
+        if (activity != null && sourcePath != null) {
+            viewModel.onExportModPicked(activity, sourcePath, uri)
         }
     }
     val actions = rememberMainScreenActions(
@@ -124,6 +135,10 @@ fun LauncherMainScreen(
                 is MainScreenViewModel.Effect.ShowSnackbar ->
                     snackbarHostState.showSnackbar(effect.message.resolve(context))
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.OpenExportModPicker -> {
+                    pendingExportModSourcePath = effect.sourcePath
+                    exportModLauncher.launch(effect.suggestedName)
+                }
                 is MainScreenViewModel.Effect.LaunchIntent -> {
                     val activity = hostActivity ?: return@collect
                     activity.startActivity(effect.intent)

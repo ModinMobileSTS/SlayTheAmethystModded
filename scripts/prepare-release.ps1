@@ -1,4 +1,13 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿[CmdletBinding()]
+param(
+    [string]$StoreFile,
+    [string]$KeyAlias = 'upload',
+    [string]$StorePassword,
+    [string]$KeyPassword,
+    [switch]$SkipLocalCheck
+)
+
+$ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
 function Confirm-YesNo {
@@ -83,6 +92,46 @@ function Invoke-Git {
     }
 }
 
+function Invoke-LocalReleaseCheck {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [string]$StoreFile,
+        [string]$KeyAlias,
+        [string]$StorePassword,
+        [string]$KeyPassword
+    )
+
+    $buildScript = Join-Path $RepoRoot 'scripts\build-release.ps1'
+    if (-not (Test-Path -LiteralPath $buildScript)) {
+        throw "未找到本地发布预检脚本: $buildScript"
+    }
+
+    $buildArgs = @{}
+    if (-not [string]::IsNullOrWhiteSpace($StoreFile)) {
+        $buildArgs.StoreFile = $StoreFile
+    }
+    if (-not [string]::IsNullOrWhiteSpace($KeyAlias)) {
+        $buildArgs.KeyAlias = $KeyAlias
+    }
+    if (-not [string]::IsNullOrWhiteSpace($StorePassword)) {
+        $buildArgs.StorePassword = $StorePassword
+    }
+    if (-not [string]::IsNullOrWhiteSpace($KeyPassword)) {
+        $buildArgs.KeyPassword = $KeyPassword
+    }
+
+    Write-Host ''
+    Write-Host '开始执行本地发布预检（lintDebug + assembleRelease）...'
+    try {
+        & $buildScript @buildArgs
+    }
+    catch {
+        throw "本地发布预检失败：$($_.Exception.Message)"
+    }
+    Write-Host '本地发布预检通过。'
+}
+
 function Main {
     $scriptDir = $PSScriptRoot
     $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '..'))
@@ -139,6 +188,17 @@ function Main {
         & git rev-parse -q --verify "refs/tags/$tagName" *> $null
         if ($LASTEXITCODE -eq 0) {
             throw "本地已存在 tag: $tagName"
+        }
+
+        if ($SkipLocalCheck) {
+            Write-Host '已跳过本地发布预检。'
+        } else {
+            Invoke-LocalReleaseCheck `
+                -RepoRoot $repoRoot `
+                -StoreFile $StoreFile `
+                -KeyAlias $KeyAlias `
+                -StorePassword $StorePassword `
+                -KeyPassword $KeyPassword
         }
 
         New-ReleaseNoteTemplate -NoteFile $noteFile -NoteFileRelative $noteFileRelative -TagName $tagName
@@ -243,3 +303,4 @@ catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1
 }
+

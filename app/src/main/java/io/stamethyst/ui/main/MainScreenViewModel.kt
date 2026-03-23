@@ -3,6 +3,7 @@ package io.stamethyst.ui.main
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.ScrollView
@@ -75,6 +76,7 @@ class MainScreenViewModel : ViewModel() {
         val busy: Boolean = false,
         val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
         val busyMessage: UiText? = null,
+        val busyProgressPercent: Int? = null,
         val statusEntries: List<StatusEntry> = emptyList(),
         val optionalMods: List<ModItemUi> = emptyList(),
         val storageIssue: StorageIssueUi? = null,
@@ -93,6 +95,10 @@ class MainScreenViewModel : ViewModel() {
     sealed interface Effect {
         data class ShowSnackbar(val message: UiText) : Effect
         data class ShowDialog(val title: UiText, val message: UiText) : Effect
+        data class OpenExportModPicker(
+            val sourcePath: String,
+            val suggestedName: String
+        ) : Effect
         data class LaunchIntent(val intent: Intent) : Effect
     }
 
@@ -115,9 +121,10 @@ class MainScreenViewModel : ViewModel() {
             override fun setBusy(
                 busy: Boolean,
                 message: UiText?,
-                operation: UiBusyOperation
+                operation: UiBusyOperation,
+                progressPercent: Int?
             ) {
-                this@MainScreenViewModel.setBusy(busy, message, operation)
+                this@MainScreenViewModel.setBusy(busy, message, operation, progressPercent)
             }
 
             override fun republish(host: Activity) {
@@ -154,6 +161,10 @@ class MainScreenViewModel : ViewModel() {
 
     fun onExportMod(host: Activity, mod: ModItemUi) {
         modManagementController.onExportMod(host, mod)
+    }
+
+    fun onExportModPicked(host: Activity, sourcePath: String?, uri: Uri?) {
+        modManagementController.onExportModPicked(host, sourcePath, uri)
     }
 
     fun onShareMod(host: Activity, mod: ModItemUi) {
@@ -872,6 +883,7 @@ class MainScreenViewModel : ViewModel() {
         val currentBusy = uiState.busy
         val currentBusyOperation = uiState.busyOperation
         val currentBusyMessage = uiState.busyMessage
+        val currentBusyProgressPercent = uiState.busyProgressPercent
         val optionalTotal = snapshot.optionalMods.size
         val optionalEnabled = snapshot.optionalMods.count { it.enabled }
         val gameProcessRunning = GameLaunchReturnTracker.isGameProcessRunning(host)
@@ -890,6 +902,7 @@ class MainScreenViewModel : ViewModel() {
             busy = currentBusy,
             busyOperation = if (currentBusy) currentBusyOperation else UiBusyOperation.NONE,
             busyMessage = if (currentBusy) currentBusyMessage else null,
+            busyProgressPercent = if (currentBusy) currentBusyProgressPercent else null,
             statusEntries = statusEntries,
             optionalMods = snapshot.optionalMods,
             storageIssue = storageIssue,
@@ -909,7 +922,8 @@ class MainScreenViewModel : ViewModel() {
     private fun setBusy(
         busy: Boolean,
         message: UiText?,
-        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY,
+        progressPercent: Int? = null
     ) {
         val hasStorageIssue = uiState.storageIssue != null
         uiState = if (busy) {
@@ -917,6 +931,7 @@ class MainScreenViewModel : ViewModel() {
                 busy = true,
                 busyOperation = operation,
                 busyMessage = message,
+                busyProgressPercent = progressPercent?.coerceIn(0, 100),
                 controlsEnabled = resolveControlsEnabled(true, operation, hasStorageIssue)
             )
         } else {
@@ -924,6 +939,7 @@ class MainScreenViewModel : ViewModel() {
                 busy = false,
                 busyOperation = UiBusyOperation.NONE,
                 busyMessage = null,
+                busyProgressPercent = null,
                 controlsEnabled = resolveControlsEnabled(false, UiBusyOperation.NONE, hasStorageIssue)
             )
         }

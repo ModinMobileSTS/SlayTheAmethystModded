@@ -2,6 +2,21 @@
 
 set -euo pipefail
 
+SKIP_LOCAL_CHECK=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-local-check)
+      SKIP_LOCAL_CHECK=1
+      ;;
+    *)
+      echo "未知参数: $1" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -37,6 +52,18 @@ confirm_yes_no() {
         ;;
     esac
   done
+}
+
+read_secret_value() {
+  local prompt="$1"
+  local value=""
+  read -r -s -p "$prompt: " value || exit 1
+  echo
+  if [[ -z "$value" ]]; then
+    echo "Secret cannot be empty: $prompt" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
 }
 
 read_gradle_version_name() {
@@ -76,6 +103,56 @@ create_note_template() {
 EOF
 
   echo "已生成发布说明模板: ${note_file#$REPO_ROOT/}"
+}
+
+run_gradle_wrapper() {
+  local gradle_wrapper="$REPO_ROOT/gradlew"
+
+  if [[ ! -f "$gradle_wrapper" ]]; then
+    echo "未找到 gradle wrapper: $gradle_wrapper" >&2
+    exit 1
+  fi
+
+  if [[ -x "$gradle_wrapper" ]]; then
+    "$gradle_wrapper" "$@"
+  else
+    bash "$gradle_wrapper" "$@"
+  fi
+}
+
+run_local_release_preflight() {
+  local default_store_file="$REPO_ROOT/signing/stamethyst-upload.jks"
+  local resolved_store_file="${RELEASE_STORE_FILE:-$default_store_file}"
+  local resolved_store_password="${RELEASE_STORE_PASSWORD:-}"
+  local resolved_key_alias="${RELEASE_KEY_ALIAS:-upload}"
+  local resolved_key_password="${RELEASE_KEY_PASSWORD:-}"
+
+  if [[ ! -f "$resolved_store_file" ]]; then
+    echo "Missing release keystore: $resolved_store_file" >&2
+    exit 1
+  fi
+
+  if [[ -z "$resolved_store_password" ]]; then
+    resolved_store_password="$(read_secret_value 'RELEASE_STORE_PASSWORD')"
+  fi
+  if [[ -z "$resolved_key_password" ]]; then
+    resolved_key_password="$(read_secret_value 'RELEASE_KEY_PASSWORD')"
+  fi
+
+  echo
+  echo "开始执行本地发布预检（lintDebug + assembleRelease）..."
+  (
+    export RELEASE_STORE_FILE="$resolved_store_file"
+    export RELEASE_STORE_PASSWORD="$resolved_store_password"
+    export RELEASE_KEY_ALIAS="$resolved_key_alias"
+    export RELEASE_KEY_PASSWORD="$resolved_key_password"
+
+    cd "$REPO_ROOT"
+    run_gradle_wrapper :app:lintDebug --stacktrace --console=plain
+    run_gradle_wrapper :app:assembleRelease --stacktrace --console=plain
+  )
+  echo "本地发布预检通过。"
+  echo "Release APK directory: $REPO_ROOT/app/build/outputs/apk/release"
 }
 
 require_command git
@@ -139,6 +216,12 @@ fi
 if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null 2>&1; then
   echo "本地已存在 tag: $TAG_NAME" >&2
   exit 1
+fi
+
+if [[ "$SKIP_LOCAL_CHECK" -eq 1 ]]; then
+  echo "已跳过本地发布预检。"
+else
+  run_local_release_preflight
 fi
 
 create_note_template "$NOTE_FILE" "$TAG_NAME" "$TODAY"

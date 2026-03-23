@@ -83,6 +83,13 @@ fun LauncherContent(
         settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> settingsUiState.busyMessage
         else -> null
     }
+    val blockingImportBusyProgressPercent = when {
+        mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT ->
+            mainUiState.busyProgressPercent
+        settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT ->
+            settingsUiState.busyProgressPercent
+        else -> null
+    }
 
     CompositionLocalProvider(
         LocalNavigator provides navigator,
@@ -223,7 +230,8 @@ fun LauncherContent(
                 if (shouldShowBlockingImportWindow) {
                     BlockingImportInteractionBlocker(
                         message = blockingImportBusyMessage?.resolve()
-                            ?: stringResource(R.string.mod_import_busy_message)
+                            ?: stringResource(R.string.mod_import_busy_message),
+                        progressPercent = blockingImportBusyProgressPercent
                     )
                 }
                 settingsUiState.updatePromptState?.let { promptState ->
@@ -343,7 +351,10 @@ fun LauncherContent(
 }
 
 @Composable
-private fun BlockingImportInteractionBlocker(message: String) {
+private fun BlockingImportInteractionBlocker(
+    message: String,
+    progressPercent: Int? = null
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -363,7 +374,17 @@ private fun BlockingImportInteractionBlocker(message: String) {
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                val progressFraction = progressPercent
+                    ?.coerceIn(0, 100)
+                    ?.div(100f)
+                if (progressFraction != null) {
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium

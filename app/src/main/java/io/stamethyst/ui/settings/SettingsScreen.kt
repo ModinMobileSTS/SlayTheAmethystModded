@@ -677,7 +677,7 @@ private fun SettingsFeedbackEntryCard(
 internal fun SettingsBusyIndicator(
     uiState: SettingsScreenViewModel.UiState
 ) {
-    if (!uiState.busy) {
+    if (!uiState.busy || uiState.busyOperation == UiBusyOperation.MOD_IMPORT) {
         return
     }
     val progressFraction = uiState.busyProgressPercent

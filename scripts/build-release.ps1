@@ -3,7 +3,8 @@ param(
     [string]$StoreFile,
     [string]$KeyAlias = 'upload',
     [string]$StorePassword,
-    [string]$KeyPassword
+    [string]$KeyPassword,
+    [switch]$SkipLintCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,6 +49,22 @@ function Set-OrRestoreEnv {
         } else {
             Remove-Item "Env:$($entry.Key)" -ErrorAction SilentlyContinue
         }
+    }
+}
+
+function Invoke-GradleTask {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$GradleWrapper,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Tasks,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    & $GradleWrapper @Tasks --stacktrace --console=plain
+    if ($LASTEXITCODE -ne 0) {
+        throw $FailureMessage
     }
 }
 
@@ -115,10 +132,16 @@ function Main {
         Push-Location $repoRoot
         $didPushLocation = $true
 
-        & $gradleWrapper :app:assembleRelease --stacktrace --console=plain
-        if ($LASTEXITCODE -ne 0) {
-            throw 'assembleRelease failed.'
+        if (-not $SkipLintCheck) {
+            Invoke-GradleTask `
+                -GradleWrapper $gradleWrapper `
+                -Tasks @(':app:lintDebug') `
+                -FailureMessage 'lintDebug failed.'
         }
+        Invoke-GradleTask `
+            -GradleWrapper $gradleWrapper `
+            -Tasks @(':app:assembleRelease') `
+            -FailureMessage 'assembleRelease failed.'
 
         $outputDir = Join-Path $repoRoot 'app\build\outputs\apk\release'
         Write-Host "Release APK directory: $outputDir"

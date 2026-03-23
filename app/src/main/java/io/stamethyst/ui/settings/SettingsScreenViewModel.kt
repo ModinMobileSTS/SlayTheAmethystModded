@@ -899,6 +899,7 @@ class SettingsScreenViewModel : ViewModel() {
                 R.string.settings_busy_exporting_mods_archive_with_progress,
                 0
             ),
+            operation = UiBusyOperation.MOD_IMPORT,
             progressPercent = 0
         )
         executor.execute {
@@ -914,7 +915,7 @@ class SettingsScreenViewModel : ViewModel() {
                                 R.string.settings_busy_exporting_mods_archive_with_progress,
                                 percent.coerceIn(0, 100)
                             ),
-                            operation = uiState.busyOperation,
+                            operation = UiBusyOperation.MOD_IMPORT,
                             progressPercent = percent
                         )
                     }

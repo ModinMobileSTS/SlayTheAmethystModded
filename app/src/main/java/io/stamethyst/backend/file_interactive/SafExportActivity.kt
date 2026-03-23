@@ -9,8 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.R
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
 
 /**
@@ -102,68 +100,6 @@ class SafExportActivity : AppCompatActivity() {
 
     @Throws(IOException::class)
     private fun writeToUri(source: File, targetUri: Uri) {
-        val directWriteError = try {
-            writeToUriWithFileDescriptor(source, targetUri)
-            null
-        } catch (error: Throwable) {
-            error
-        }
-        if (directWriteError == null) {
-            return
-        }
-
-        try {
-            writeToUriWithOutputStream(source, targetUri)
-        } catch (fallbackError: Throwable) {
-            fallbackError.addSuppressed(directWriteError)
-            throw fallbackError
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun writeToUriWithFileDescriptor(source: File, targetUri: Uri) {
-        contentResolver.openFileDescriptor(targetUri, "rwt").use { descriptor ->
-            if (descriptor == null) {
-                throw IOException("Cannot open target file descriptor")
-            }
-            FileInputStream(source).use { input ->
-                FileOutputStream(descriptor.fileDescriptor).use { output ->
-                    copyStream(input, output)
-                    output.flush()
-                    output.fd.sync()
-                }
-            }
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun writeToUriWithOutputStream(source: File, targetUri: Uri) {
-        contentResolver.openOutputStream(targetUri).use { output ->
-            if (output == null) {
-                throw IOException("Cannot open target stream")
-            }
-            FileInputStream(source).use { input ->
-                copyStream(input, output)
-                output.flush()
-            }
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun copyStream(
-        input: FileInputStream,
-        output: java.io.OutputStream
-    ) {
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) {
-                break
-            }
-            if (read == 0) {
-                continue
-            }
-            output.write(buffer, 0, read)
-        }
+        SafFileExporter.exportFile(this, source, targetUri)
     }
 }
