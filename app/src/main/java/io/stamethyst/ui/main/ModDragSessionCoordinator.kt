@@ -1,10 +1,12 @@
 package io.stamethyst.ui.main
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import io.stamethyst.model.ModItemUi
 import kotlin.math.abs
 
-internal class ModFolderDragController(
+internal class ModDragSessionCoordinator(
     private val interactionState: ModFolderSectionInteractionState,
     private val resolveFolderTokenFromItemKey: (Any) -> String?,
     private val resolveAssignedFolderToken: (ModItemUi) -> String,
@@ -12,66 +14,87 @@ internal class ModFolderDragController(
     private val onMoveModToUnassigned: (ModItemUi) -> Unit,
     private val onRevealFolderToken: (String) -> Unit
 ) {
-    fun onDragStart(
+    val shouldCollapseFolders: Boolean
+        get() = interactionState.activeDragFolderId != null || interactionState.modDragState.collapseFoldersDuringDrag
+
+    fun startModDrag(
         mod: ModItemUi,
         dragInfo: ModCardDragStartInfo,
         isExpanded: Boolean,
     ) {
         interactionState.activeDragFolderId = null
-        interactionState.forceCollapseDuringDrag = true
-        interactionState.activeModDragSession = ModDragSession(
-            mod = mod,
-            sourceFolderTokenId = resolveAssignedFolderToken(mod),
-            overlayAnchor = dragInfo.overlayAnchor,
-            isExpanded = isExpanded
+        interactionState.rememberDragScrollAnchor()
+        interactionState.modDragState = ModDragInteractionState(
+            session = ModDragSession(
+                mod = mod,
+                sourceFolderTokenId = resolveAssignedFolderToken(mod),
+                overlayAnchor = dragInfo.overlayAnchor,
+                isExpanded = isExpanded
+            ),
+            activePointerIdValue = dragInfo.pointerIdValue,
+            collapseFoldersDuringDrag = true
         )
         updateModDragHover(dragInfo.overlayAnchor.pointerWindow)
     }
 
-    fun onDragMove(mod: ModItemUi, position: Offset) {
-        val currentSession = interactionState.activeModDragSession
-        if (currentSession == null || currentSession.mod.storagePath != mod.storagePath) {
+    fun onContainerPointerChanges(
+        changes: List<PointerInputChange>,
+        sectionTopLeftWindow: Offset
+    ) {
+        val activePointerIdValue = interactionState.modDragState.activePointerIdValue ?: return
+        val trackedChange = changes.firstOrNull { change ->
+            change.id.value == activePointerIdValue
+        }
+        if (trackedChange == null) {
+            cancelModDrag()
             return
         }
-        updateModDragHover(position)
-    }
-
-    fun onDragEnd(mod: ModItemUi, rawDropPosition: Offset) {
-        val currentSession = interactionState.activeModDragSession
-        if (currentSession == null || currentSession.mod.storagePath != mod.storagePath) {
-            return
-        }
-        interactionState.activeModDragSession = currentSession.updatePointer(rawDropPosition)
-        handleModDrop(mod, rawDropPosition)
-    }
-
-    fun onDragCancel(mod: ModItemUi) {
-        val currentSession = interactionState.activeModDragSession
-        if (currentSession != null && currentSession.mod.storagePath == mod.storagePath) {
-            clearModDragSession()
+        val pointerWindow = sectionTopLeftWindow + trackedChange.position
+        trackedChange.consume()
+        when {
+            trackedChange.changedToUpIgnoreConsumed() -> endModDrag(pointerWindow)
+            trackedChange.pressed -> updateModDragHover(pointerWindow)
+            else -> cancelModDrag()
         }
     }
 
-    fun clearFolderDragSession() {
+    fun beginFolderReorder(folderTokenId: String, folderTargetIds: List<String>) {
+        cancelModDrag()
+        interactionState.rememberDragScrollAnchor()
+        interactionState.activeDragFolderId = folderTokenId
+        interactionState.folderPreviewOrder = folderTargetIds
+    }
+
+    fun finishFolderReorder() {
         interactionState.activeDragFolderId = null
-        interactionState.forceCollapseDuringDrag = false
+        interactionState.scheduleDragScrollRestore()
+    }
+
+    fun cancelModDrag() {
+        if (interactionState.modDragState.isActive || interactionState.modDragState.activePointerIdValue != null) {
+            interactionState.modDragState = ModDragInteractionState()
+            interactionState.scheduleDragScrollRestore()
+        }
     }
 
     fun updateModDragHover(position: Offset, ignoreFolderId: String? = null) {
-        val currentSession = interactionState.activeModDragSession ?: return
+        val currentSession = interactionState.modDragState.session ?: return
         val nextHoverId = findExactFolderAt(position, ignoreFolderId)
         val updatedSession = currentSession
             .updatePointer(position)
             .copy(hoveredFolderTokenId = nextHoverId)
         if (updatedSession != currentSession) {
-            interactionState.activeModDragSession = updatedSession
+            interactionState.modDragState = interactionState.modDragState.copy(session = updatedSession)
         }
     }
 
-    fun computeAutoScrollDelta(pointerY: Float): Float {
+    fun nextAutoScrollDelta(): Float {
+        val pointerWindow = interactionState.modDragState.session?.overlayAnchor?.pointerWindow ?: return 0f
+        updateModDragHover(pointerWindow)
+        val pointerY = pointerWindow.y
         val viewport = interactionState.listViewportInWindow ?: return 0f
-        val edgeSize = 136f
-        val maxStep = 56f
+        val edgeSize = MOD_DRAG_AUTO_SCROLL_EDGE_PX
+        val maxStep = MOD_DRAG_AUTO_SCROLL_MAX_STEP_PX
         val topTrigger = viewport.top + edgeSize
         val bottomTrigger = viewport.bottom - edgeSize
         return when {
@@ -91,11 +114,11 @@ internal class ModFolderDragController(
         }
     }
 
-    private fun clearModDragSession() {
-        interactionState.activeModDragSession = null
-        if (interactionState.activeDragFolderId == null) {
-            interactionState.forceCollapseDuringDrag = false
-        }
+    private fun endModDrag(pointerWindow: Offset) {
+        val currentSession = interactionState.modDragState.session ?: return
+        val completedSession = currentSession.updatePointer(pointerWindow)
+        interactionState.modDragState = interactionState.modDragState.copy(session = completedSession)
+        handleModDrop(completedSession)
     }
 
     private fun findExactFolderAt(position: Offset, ignoreFolderId: String? = null): String? {
@@ -133,29 +156,27 @@ internal class ModFolderDragController(
             return null
         }
         val maxCenter = candidates.maxOfOrNull { it.second } ?: return null
-        if (pointerY > maxCenter + 80f) {
+        if (pointerY > maxCenter + MOD_DRAG_DROP_AFTER_LAST_MARGIN_PX) {
             return null
         }
         return candidates.minByOrNull { (_, centerY) -> abs(centerY - pointerY) }?.first
     }
 
-    private fun handleModDrop(mod: ModItemUi, rawDropPosition: Offset) {
-        val currentSession = interactionState.activeModDragSession ?: return
-        val realDropPosition = currentSession.overlayAnchor.pointerWindow
-        val targetFolderId = findDropFolderAt(realDropPosition)
-        val sourceFolderId = currentSession.sourceFolderTokenId
-        clearModDragSession()
+    private fun handleModDrop(session: ModDragSession) {
+        val targetFolderId = findDropFolderAt(session.overlayAnchor.pointerWindow)
+        val sourceFolderId = session.sourceFolderTokenId
+        cancelModDrag()
 
         when {
             targetFolderId == null -> Unit
             targetFolderId == sourceFolderId -> Unit
             targetFolderId == UNASSIGNED_FOLDER_ID -> {
-                onMoveModToUnassigned(mod)
+                onMoveModToUnassigned(session.mod)
                 onRevealFolderToken(targetFolderId)
             }
 
             else -> {
-                onAssignModToFolder(mod, targetFolderId)
+                onAssignModToFolder(session.mod, targetFolderId)
                 onRevealFolderToken(targetFolderId)
             }
         }

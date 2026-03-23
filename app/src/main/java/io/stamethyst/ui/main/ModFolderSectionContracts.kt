@@ -16,7 +16,7 @@ internal data class ModFolderSectionCallbacks(
     val onSetUnassignedSelected: (Boolean) -> Unit = {},
     val onToggleFolderCollapsed: (String) -> Unit = {},
     val onToggleUnassignedCollapsed: () -> Unit = {},
-    val onToggleStatusSummaryCollapsed: () -> Unit = {},
+    val onToggleDependencyFolderCollapsed: () -> Unit = {},
     val onMoveFolderUp: (String) -> Unit = {},
     val onMoveFolderDown: (String) -> Unit = {},
     val onMoveUnassignedUp: () -> Unit = {},
@@ -26,13 +26,6 @@ internal data class ModFolderSectionCallbacks(
     val onMoveModToUnassigned: (ModItemUi) -> Unit = {},
     val onRevealFolderToken: (String) -> Unit = {}
 )
-
-enum class StatusTone {
-    Ok,
-    Warn,
-    Error,
-    Info
-}
 
 internal data class FolderUiModel(
     val key: String,

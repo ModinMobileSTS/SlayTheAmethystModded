@@ -39,6 +39,21 @@ internal data class ModDragSession(
     }
 }
 
+internal data class ModDragInteractionState(
+    val session: ModDragSession? = null,
+    val activePointerIdValue: Long? = null,
+    val collapseFoldersDuringDrag: Boolean = false
+) {
+    val isActive: Boolean
+        get() = session != null
+}
+
+internal data class DragScrollAnchor(
+    val firstVisibleItemKey: String?,
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int
+)
+
 internal class ModFolderSectionInteractionState(
     val listState: LazyListState,
     initialFolderOrder: List<String>
@@ -46,15 +61,30 @@ internal class ModFolderSectionInteractionState(
     var filterText by mutableStateOf("")
     var folderPreviewOrder by mutableStateOf(initialFolderOrder)
 
-    var activeModDragSession by mutableStateOf<ModDragSession?>(null)
+    var modDragState by mutableStateOf(ModDragInteractionState())
     var activeDragFolderId by mutableStateOf<String?>(null)
-    var forceCollapseDuringDrag by mutableStateOf(false)
+    var activeDragScrollAnchor by mutableStateOf<DragScrollAnchor?>(null)
+    var pendingDragScrollRestore by mutableStateOf<DragScrollAnchor?>(null)
     val expandedCards = mutableStateMapOf<String, Boolean>()
     var listViewportInWindow by mutableStateOf<Rect?>(null)
     var sectionTopLeftInWindow by mutableStateOf(Offset.Zero)
 
     val isModDragActive: Boolean
-        get() = activeModDragSession != null
+        get() = modDragState.isActive
+
+    fun rememberDragScrollAnchor() {
+        activeDragScrollAnchor = DragScrollAnchor(
+            firstVisibleItemKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String,
+            firstVisibleItemIndex = listState.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset.coerceAtLeast(0)
+        )
+        pendingDragScrollRestore = null
+    }
+
+    fun scheduleDragScrollRestore() {
+        pendingDragScrollRestore = activeDragScrollAnchor
+        activeDragScrollAnchor = null
+    }
 }
 
 @Composable

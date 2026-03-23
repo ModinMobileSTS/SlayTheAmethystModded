@@ -8,6 +8,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
@@ -69,11 +74,13 @@ internal fun ModFolderSection(
     hostAvailable: Boolean,
     callbacks: ModFolderSectionCallbacks
 ) {
+    val dependencyMods = uiState.dependencyMods
     val mods = uiState.optionalMods
     val folders = uiState.modFolders
     val folderAssignments = uiState.folderAssignments
     val folderCollapsed = uiState.folderCollapsed
     val unassignedCollapsed = uiState.unassignedCollapsed
+    val dependencyFolderCollapsed = uiState.dependencyFolderCollapsed
     val showModFileName = uiState.showModFileName
     val unassignedFolderName = uiState.unassignedFolderName
     val unassignedFolderOrder = uiState.unassignedFolderOrder
@@ -106,7 +113,8 @@ internal fun ModFolderSection(
         filteredMods.groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
     }
     val unassignedMods = remember(modsByFolderId) { modsByFolderId[null].orEmpty() }
-    val activeModDragSession = interactionState.activeModDragSession
+    val modDragState = interactionState.modDragState
+    val activeModDragSession = modDragState.session
 
     val displayFolderTargetIds = interactionState.folderPreviewOrder
     val folderDisplayIndexMap = remember(displayFolderTargetIds) {
@@ -129,6 +137,15 @@ internal fun ModFolderSection(
             unassignedFolderName = unassignedFolderName
         )
     }
+    val topLevelItemKeys = remember(dependencyMods.isNotEmpty(), folderUiModels) {
+        buildList {
+            add("modsFilterInput")
+            if (dependencyMods.isNotEmpty()) {
+                add("dependencyFolder")
+            }
+            addAll(folderUiModels.map { it.key })
+        }
+    }
     val folderTokenByItemKey = remember(folderUiModels) {
         folderUiModels.associate { it.key to it.folderTokenId }
     }
@@ -137,15 +154,15 @@ internal fun ModFolderSection(
         return folderTokenByItemKey[key]
     }
 
-    val dragController = remember(
+    val dragCoordinator = remember(
         interactionState,
         folderTokenByItemKey,
         callbacks
     ) {
-        ModFolderDragController(
+        ModDragSessionCoordinator(
             interactionState = interactionState,
             resolveFolderTokenFromItemKey = { itemKey ->
-                val key = itemKey as? String ?: return@ModFolderDragController null
+                val key = itemKey as? String ?: return@ModDragSessionCoordinator null
                 folderTokenByItemKey[key]
             },
             resolveAssignedFolderToken = { mod ->
@@ -191,24 +208,36 @@ internal fun ModFolderSection(
             return@LaunchedEffect
         }
         var smoothAutoScrollDelta = 0f
-        while (interactionState.activeModDragSession != null) {
-            val pointer = interactionState.activeModDragSession?.overlayAnchor?.pointerWindow
-            if (pointer != null) {
-                dragController.updateModDragHover(pointer)
-                val target = dragController.computeAutoScrollDelta(pointer.y)
-                smoothAutoScrollDelta = if (target == 0f) {
-                    smoothAutoScrollDelta * 0.5f
-                } else {
-                    smoothAutoScrollDelta * 0.5f + target * 0.3f
-                }
-                if (abs(smoothAutoScrollDelta) < 0.25f) {
-                    smoothAutoScrollDelta = 0f
-                }
-                if (smoothAutoScrollDelta != 0f) {
-                    interactionState.listState.scrollBy(smoothAutoScrollDelta)
-                }
+        while (interactionState.modDragState.isActive) {
+            val target = dragCoordinator.nextAutoScrollDelta()
+            smoothAutoScrollDelta = if (target == 0f) {
+                smoothAutoScrollDelta * 0.5f
+            } else {
+                smoothAutoScrollDelta * 0.5f + target * 0.3f
+            }
+            if (abs(smoothAutoScrollDelta) < 0.25f) {
+                smoothAutoScrollDelta = 0f
+            }
+            if (smoothAutoScrollDelta != 0f) {
+                interactionState.listState.scrollBy(smoothAutoScrollDelta)
             }
             delay(16)
+        }
+    }
+
+    LaunchedEffect(interactionState.pendingDragScrollRestore, topLevelItemKeys) {
+        val anchor = interactionState.pendingDragScrollRestore ?: return@LaunchedEffect
+        val fallbackIndex = anchor.firstVisibleItemIndex
+            .coerceIn(0, (topLevelItemKeys.size - 1).coerceAtLeast(0))
+        val targetIndex = anchor.firstVisibleItemKey
+            ?.let { key -> topLevelItemKeys.indexOf(key).takeIf { it >= 0 } }
+            ?: fallbackIndex
+        interactionState.listState.scrollToItem(
+            index = targetIndex,
+            scrollOffset = anchor.firstVisibleItemScrollOffset
+        )
+        if (interactionState.pendingDragScrollRestore == anchor) {
+            interactionState.pendingDragScrollRestore = null
         }
     }
 
@@ -218,6 +247,24 @@ internal fun ModFolderSection(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .pointerInput(dragCoordinator) {
+                awaitEachGesture {
+                    awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial
+                    )
+                    while (true) {
+                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                        dragCoordinator.onContainerPointerChanges(
+                            changes = event.changes,
+                            sectionTopLeftWindow = interactionState.sectionTopLeftInWindow
+                        )
+                        if (event.changes.none { it.pressed }) {
+                            break
+                        }
+                    }
+                }
+            }
             .onGloballyPositioned { interactionState.sectionTopLeftInWindow = it.boundsInWindow().topLeft },
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -232,16 +279,16 @@ internal fun ModFolderSection(
             )
         }
 
-        Text(
-            text = stringResource(
-                id = R.string.main_folder_summary_format,
-                filteredMods.size,
-                unassignedMods.size
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.padding(horizontal = 6.dp)
-        )
+//        Text(
+//            text = stringResource(
+//                id = R.string.main_folder_summary_format,
+//                filteredMods.size,
+//                unassignedMods.size
+//            ),
+//            style = MaterialTheme.typography.bodySmall,
+//            color = MaterialTheme.colorScheme.outline,
+//            modifier = Modifier.padding(horizontal = 6.dp)
+//        )
 
         LazyColumn(
             state = interactionState.listState,
@@ -280,6 +327,20 @@ internal fun ModFolderSection(
                 )
             }
 
+            if (dependencyMods.isNotEmpty()) {
+                item(key = "dependencyFolder") {
+                    DependencyFolderListItem(
+                        mods = dependencyMods,
+                        collapsed = dependencyFolderCollapsed,
+                        forceCollapsed = dragCoordinator.shouldCollapseFolders,
+                        showModFileName = showModFileName,
+                        interactionState = interactionState,
+                        collapseEnabled = uiState.controlsEnabled,
+                        onToggleCollapsed = callbacks.onToggleDependencyFolderCollapsed
+                    )
+                }
+            }
+
             itemsIndexed(
                 items = folderUiModels,
                 key = { _, item -> item.key }
@@ -294,7 +355,7 @@ internal fun ModFolderSection(
                 val keepSourceFolderBodyAlive =
                     activeModDragSession != null &&
                         activeDragSourceFolderId == folderTokenId
-                val effectiveCollapsed = if (interactionState.forceCollapseDuringDrag) {
+                val effectiveCollapsed = if (dragCoordinator.shouldCollapseFolders) {
                     true
                 } else {
                     folderUiModel.isCollapsed
@@ -340,7 +401,10 @@ internal fun ModFolderSection(
                         val reorderableItemScope = this
                         val folderScale by animateFloatAsState(
                             targetValue = if (isHovering) HOVERED_FOLDER_SCALE else 1f,
-                            animationSpec = tween(durationMillis = 140, easing = LinearEasing),
+                            animationSpec = tween(
+                                durationMillis = FOLDER_HOVER_ANIMATION_MS,
+                                easing = LinearEasing
+                            ),
                             label = "folderScale-$folderTokenId"
                         )
                         Column(
@@ -407,10 +471,7 @@ internal fun ModFolderSection(
                                         }
                                     },
                                     onDragStarted = {
-                                        interactionState.activeModDragSession = null
-                                        interactionState.activeDragFolderId = folderTokenId
-                                        interactionState.folderPreviewOrder = folderTargetIds
-                                        interactionState.forceCollapseDuringDrag = true
+                                        dragCoordinator.beginFolderReorder(folderTokenId, folderTargetIds)
                                     },
                                     onDragStopped = {
                                         val draggedId = interactionState.activeDragFolderId
@@ -421,7 +482,7 @@ internal fun ModFolderSection(
                                                 callbacks.onMoveFolderTokenToIndex(draggedId, targetIndex)
                                             }
                                         }
-                                        dragController.clearFolderDragSession()
+                                        dragCoordinator.finishFolderReorder()
                                     }
                                 )
                                 TriStateCheckbox(
@@ -554,20 +615,14 @@ internal fun ModFolderSection(
                                                         onShareMod = callbacks.onShareMod,
                                                         onRenameModFile = callbacks.onRenameModFile,
                                                         onDragStart = { dragInfo ->
-                                                            dragController.onDragStart(
+                                                            dragCoordinator.startModDrag(
                                                                 mod = mod,
                                                                 dragInfo = dragInfo,
                                                                 isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                                                             )
                                                         },
-                                                        onDragMove = { position ->
-                                                            dragController.onDragMove(mod = mod, position = position)
-                                                        },
-                                                        onDragEnd = { position ->
-                                                            dragController.onDragEnd(mod = mod, rawDropPosition = position)
-                                                        },
                                                         onDragCancel = {
-                                                            dragController.onDragCancel(mod = mod)
+                                                            dragCoordinator.cancelModDrag()
                                                         }
                                                     )
                                                 )
@@ -584,10 +639,109 @@ internal fun ModFolderSection(
     }
 
     DraggingModCardOverlayLayer(
-        dragSession = interactionState.activeModDragSession,
+        dragSession = modDragState.session,
         showModFileName = showModFileName,
         overlayHostTopLeftWindow = interactionState.sectionTopLeftInWindow
     )
+}
+
+@Composable
+private fun DependencyFolderListItem(
+    mods: List<ModItemUi>,
+    collapsed: Boolean,
+    forceCollapsed: Boolean,
+    showModFileName: Boolean,
+    interactionState: ModFolderSectionInteractionState,
+    collapseEnabled: Boolean,
+    onToggleCollapsed: () -> Unit
+) {
+    val effectiveCollapsed = if (forceCollapsed) true else collapsed
+    val readyCount = mods.count { it.enabled }
+    val folderShape = RoundedCornerShape(10.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 6.dp, top = 8.dp, end = 6.dp, bottom = 8.dp)
+            .clip(folderShape)
+            .background(MaterialTheme.colorScheme.surfaceContainer, folderShape)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = folderShape
+            )
+            .padding(vertical = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(
+                text = stringResource(
+                    R.string.main_folder_name_count_format,
+                    stringResource(R.string.main_status_card_title),
+                    readyCount,
+                    mods.size
+                ),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.primary
+            )
+            IconButton(
+                enabled = collapseEnabled,
+                onClick = onToggleCollapsed
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (effectiveCollapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
+                    ),
+                    contentDescription = stringResource(
+                        if (effectiveCollapsed) R.string.main_folder_expand else R.string.main_folder_collapse
+                    )
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = !effectiveCollapsed,
+            enter = expandVertically(
+                expandFrom = Alignment.Top,
+                animationSpec = tween(
+                    durationMillis = COLLAPSE_ANIMATION_MS,
+                    easing = LinearEasing
+                )
+            ),
+            exit = shrinkVertically(
+                shrinkTowards = Alignment.Top,
+                animationSpec = tween(
+                    durationMillis = COLLAPSE_ANIMATION_MS,
+                    easing = LinearEasing
+                )
+            ),
+            label = "dependencyFolderBody"
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                mods.forEach { mod ->
+                    key(mod.storagePath) {
+                        ModCard(
+                            mod = mod,
+                            isExpanded = interactionState.expandedCards[mod.storagePath] == true,
+                            isDraggedInOverlay = false,
+                            showModFileName = showModFileName,
+                            showActionsButton = false,
+                            setExpanded = { interactionState.expandedCards[mod.storagePath] = it },
+                            selectionEnabled = false,
+                            fileActionsEnabled = false,
+                            dragEnabled = false,
+                            callbacks = ModCardCallbacks()
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

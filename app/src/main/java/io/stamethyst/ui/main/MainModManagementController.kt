@@ -16,6 +16,7 @@ import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.VupShionPatchedDialog
+import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.DuplicateModImportConflict
 import io.stamethyst.ui.settings.InvalidModImportFailure
 import io.stamethyst.ui.settings.ModImportResult
@@ -56,11 +57,12 @@ internal class MainModManagementController(
 
     data class Snapshot(
         val optionalMods: List<ModItemUi>,
+        val requiredMods: List<ModItemUi>,
         val modFolders: List<MainScreenViewModel.ModFolder>,
         val folderAssignments: Map<String, String>,
         val folderCollapsed: Map<String, Boolean>,
         val unassignedCollapsed: Boolean,
-        val statusSummaryCollapsed: Boolean,
+        val dependencyFolderCollapsed: Boolean,
         val unassignedFolderName: String,
         val unassignedFolderOrder: Int
     )
@@ -71,6 +73,7 @@ internal class MainModManagementController(
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val requiredModsSnapshot = ArrayList<ModItemUi>()
     private val optionalModsSnapshot = ArrayList<ModItemUi>()
     private var optionalModsWithPendingSelectionCache: List<ModItemUi> = emptyList()
     private var optionalModsWithPendingSelectionDirty = true
@@ -88,10 +91,10 @@ internal class MainModManagementController(
         set(value) {
             folderStateStore.unassignedIsCollapsed = value
         }
-    private var statusSummaryCollapsed: Boolean
-        get() = folderStateStore.statusSummaryIsCollapsed
+    private var dependencyFolderCollapsed: Boolean
+        get() = folderStateStore.dependencyFolderIsCollapsed
         set(value) {
-            folderStateStore.statusSummaryIsCollapsed = value
+            folderStateStore.dependencyFolderIsCollapsed = value
         }
     private var unassignedFolderName: String
         get() = folderStateStore.unassignedName
@@ -114,6 +117,8 @@ internal class MainModManagementController(
             return
         }
         val mods = loadModItems(host)
+        requiredModsSnapshot.clear()
+        requiredModsSnapshot.addAll(mods.filter { it.required }.map { it.copy(enabled = it.installed) })
         val optionalMods = mods.filter { !it.required }
         if (!pendingSelectionInitialized) {
             initializePendingSelection(optionalMods)
@@ -130,11 +135,12 @@ internal class MainModManagementController(
     fun snapshot(): Snapshot {
         return Snapshot(
             optionalMods = resolveOptionalModsWithPendingSelection(),
+            requiredMods = ArrayList(requiredModsSnapshot),
             modFolders = ArrayList(modFolders),
             folderAssignments = LinkedHashMap(folderAssignments),
             folderCollapsed = LinkedHashMap(folderCollapsed),
             unassignedCollapsed = unassignedCollapsed,
-            statusSummaryCollapsed = statusSummaryCollapsed,
+            dependencyFolderCollapsed = dependencyFolderCollapsed,
             unassignedFolderName = unassignedFolderName,
             unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
         )
@@ -226,7 +232,7 @@ internal class MainModManagementController(
             return
         }
         ensureFolderStateLoaded(host)
-        if (modFolders.none { it.id == folderId }) {
+        val targetFolder = modFolders.firstOrNull { it.id == folderId } ?: run {
             return
         }
         val key = resolveModAssignmentKey(mod) ?: return
@@ -240,6 +246,7 @@ internal class MainModManagementController(
         folderCollapsed[folderId] = false
         persistFolderState(host)
         hostCallbacks.republish(host)
+        emitModMovedSnackbar(host, mod, targetFolder.name)
     }
 
     fun moveModToUnassigned(host: Activity, modId: String) {
@@ -260,6 +267,7 @@ internal class MainModManagementController(
         unassignedCollapsed = false
         persistFolderState(host)
         hostCallbacks.republish(host)
+        emitModMovedSnackbar(host, mod, unassignedFolderName)
     }
 
     fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {
@@ -345,19 +353,19 @@ internal class MainModManagementController(
         hostCallbacks.republish(host)
     }
 
-    fun toggleStatusSummaryCollapsed(host: Activity) {
-        setStatusSummaryCollapsed(host, !statusSummaryCollapsed)
+    fun toggleDependencyFolderCollapsed(host: Activity) {
+        setDependencyFolderCollapsed(host, !dependencyFolderCollapsed)
     }
 
-    fun setStatusSummaryCollapsed(host: Activity, collapsed: Boolean) {
+    fun setDependencyFolderCollapsed(host: Activity, collapsed: Boolean) {
         if (!hostCallbacks.canEditMainScreenState()) {
             return
         }
         ensureFolderStateLoaded(host)
-        if (statusSummaryCollapsed == collapsed) {
+        if (dependencyFolderCollapsed == collapsed) {
             return
         }
-        statusSummaryCollapsed = collapsed
+        dependencyFolderCollapsed = collapsed
         persistFolderState(host)
         hostCallbacks.republish(host)
     }
@@ -1610,6 +1618,14 @@ internal class MainModManagementController(
             index++
         }
         return defaultFolderName(index)
+    }
+
+    private fun emitModMovedSnackbar(host: Activity, mod: ModItemUi, folderName: String) {
+        val displayName = resolveModDisplayName(
+            mod = mod,
+            showModFileName = LauncherPreferences.readShowModFileName(host)
+        )
+        emitSnackbar(host.getString(R.string.main_mod_moved_to_folder, displayName, folderName))
     }
 
     private fun ensureUniqueFolderName(baseName: String, excludeFolderId: String? = null): String {

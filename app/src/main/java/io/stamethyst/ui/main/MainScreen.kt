@@ -179,11 +179,63 @@ private fun LauncherMainScreenPreview() {
         uiState = MainScreenViewModel.UiState(
             initializing = false,
             busy = false,
-            statusEntries = listOf(
-                MainScreenViewModel.StatusEntry("desktop-1.0.jar", "OK", StatusTone.Ok),
-                MainScreenViewModel.StatusEntry("ModTheSpire.jar", "OK", StatusTone.Ok),
-                MainScreenViewModel.StatusEntry("BaseMod.jar", "OK", StatusTone.Ok),
-                MainScreenViewModel.StatusEntry("StSLib.jar", "OK", StatusTone.Ok)
+            dependencyMods = listOf(
+                ModItemUi(
+                    modId = "desktop-1.0.jar",
+                    manifestModId = "desktop-1.0.jar",
+                    storagePath = "__dependency__/desktop-1.0.jar",
+                    name = "desktop-1.0.jar",
+                    version = "available",
+                    description = "核心运行时 Jar",
+                    dependencies = emptyList(),
+                    required = true,
+                    installed = true,
+                    enabled = true,
+                    priorityRoot = false,
+                    priorityLoad = false
+                ),
+                ModItemUi(
+                    modId = "modthespire",
+                    manifestModId = "modthespire",
+                    storagePath = "__dependency__/ModTheSpire.jar",
+                    name = "ModTheSpire.jar",
+                    version = "available",
+                    description = "模组加载器",
+                    dependencies = emptyList(),
+                    required = true,
+                    installed = true,
+                    enabled = true,
+                    priorityRoot = false,
+                    priorityLoad = false
+                ),
+                ModItemUi(
+                    modId = "basemod",
+                    manifestModId = "BaseMod",
+                    storagePath = "__dependency__/BaseMod.jar",
+                    name = "BaseMod.jar",
+                    version = "available",
+                    description = "基础前置模组",
+                    dependencies = emptyList(),
+                    required = true,
+                    installed = true,
+                    enabled = true,
+                    priorityRoot = false,
+                    priorityLoad = false
+                ),
+                ModItemUi(
+                    modId = "stslib",
+                    manifestModId = "StSLib",
+                    storagePath = "__dependency__/StSLib.jar",
+                    name = "StSLib.jar",
+                    version = "available",
+                    description = "通用库前置模组",
+                    dependencies = emptyList(),
+                    required = true,
+                    installed = true,
+                    enabled = true,
+                    priorityRoot = false,
+                    priorityLoad = false
+                )
             ),
             optionalMods = listOf(
                 ModItemUi(
@@ -279,10 +331,10 @@ private fun LauncherMainScreenContent(
                 }
             }
 
-            Text(
-                text = stringResource(R.string.main_select_mods),
-                style = MaterialTheme.typography.titleMedium
-            )
+//            Text(
+//                text = stringResource(R.string.main_select_mods),
+//                style = MaterialTheme.typography.titleMedium
+//            )
 
             MainContentSwitcher(
                 uiState = uiState,
@@ -515,14 +567,6 @@ private fun ColumnScope.MainContentSwitcher(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (uiState.statusEntries.isNotEmpty()) {
-                    MainStatusOverviewCard(
-                        entries = uiState.statusEntries,
-                        collapsed = uiState.statusSummaryCollapsed,
-                        onToggleCollapsed = actions.onToggleStatusSummaryCollapsed
-                    )
-                }
-
                 uiState.storageIssue?.let { issue ->
                     StorageIssueCard(
                         issue = issue,
@@ -559,7 +603,7 @@ private fun ColumnScope.MainContentSwitcher(
                         onSetUnassignedSelected = actions.onSetUnassignedSelected,
                         onToggleFolderCollapsed = actions.onToggleFolderCollapsed,
                         onToggleUnassignedCollapsed = actions.onToggleUnassignedCollapsed,
-                        onToggleStatusSummaryCollapsed = actions.onToggleStatusSummaryCollapsed,
+                        onToggleDependencyFolderCollapsed = actions.onToggleDependencyFolderCollapsed,
                         onMoveFolderUp = actions.onMoveFolderUp,
                         onMoveFolderDown = actions.onMoveFolderDown,
                         onMoveUnassignedUp = actions.onMoveUnassignedUp,
@@ -570,88 +614,6 @@ private fun ColumnScope.MainContentSwitcher(
                         onRevealFolderToken = actions.onRevealFolderToken
                     )
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MainStatusOverviewCard(
-    entries: List<MainScreenViewModel.StatusEntry>,
-    collapsed: Boolean,
-    onToggleCollapsed: () -> Unit
-) {
-    val dependencyEntries = entries.filter { it.tone != StatusTone.Info }
-    val readyCount = dependencyEntries.count { it.tone == StatusTone.Ok }
-    val totalCount = dependencyEntries.size
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = stringResource(R.string.main_status_card_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = stringResource(R.string.main_status_ready_count, readyCount, totalCount),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(
-                    onClick = onToggleCollapsed,
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) {
-                    Icon(
-                        painter = painterResource(
-                            if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
-                        ),
-                        contentDescription = null
-                    )
-                }
-            }
-            if (!collapsed) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    entries.forEach { entry ->
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = when (entry.tone) {
-                                StatusTone.Ok -> MaterialTheme.colorScheme.primaryContainer
-                                StatusTone.Warn -> MaterialTheme.colorScheme.tertiaryContainer
-                                StatusTone.Error -> MaterialTheme.colorScheme.errorContainer
-                                StatusTone.Info -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                            ) {
-                                Text(
-                                    text = entry.label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.align(Alignment.CenterStart)
-                                )
-                                Text(
-                                    text = entry.value,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.align(Alignment.CenterEnd)
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }

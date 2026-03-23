@@ -59,12 +59,6 @@ class MainScreenViewModel : ViewModel() {
         val unassignedCollapsed: Boolean
     )
 
-    data class StatusEntry(
-        val label: String,
-        val value: String,
-        val tone: StatusTone
-    )
-
     data class StorageIssueUi(
         val title: String,
         val message: String,
@@ -77,7 +71,7 @@ class MainScreenViewModel : ViewModel() {
         val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
         val busyMessage: UiText? = null,
         val busyProgressPercent: Int? = null,
-        val statusEntries: List<StatusEntry> = emptyList(),
+        val dependencyMods: List<ModItemUi> = emptyList(),
         val optionalMods: List<ModItemUi> = emptyList(),
         val storageIssue: StorageIssueUi? = null,
         val controlsEnabled: Boolean = true,
@@ -87,7 +81,7 @@ class MainScreenViewModel : ViewModel() {
         val folderAssignments: Map<String, String> = emptyMap(),
         val folderCollapsed: Map<String, Boolean> = emptyMap(),
         val unassignedCollapsed: Boolean = false,
-        val statusSummaryCollapsed: Boolean = true,
+        val dependencyFolderCollapsed: Boolean = true,
         val unassignedFolderName: String = DEFAULT_UNASSIGNED_FOLDER_NAME,
         val unassignedFolderOrder: Int = 0
     )
@@ -246,12 +240,12 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.setUnassignedCollapsed(host, collapsed)
     }
 
-    fun toggleStatusSummaryCollapsed(host: Activity) {
-        modManagementController.toggleStatusSummaryCollapsed(host)
+    fun toggleDependencyFolderCollapsed(host: Activity) {
+        modManagementController.toggleDependencyFolderCollapsed(host)
     }
 
-    fun setStatusSummaryCollapsed(host: Activity, collapsed: Boolean) {
-        modManagementController.setStatusSummaryCollapsed(host, collapsed)
+    fun setDependencyFolderCollapsed(host: Activity, collapsed: Boolean) {
+        modManagementController.setDependencyFolderCollapsed(host, collapsed)
     }
 
     fun moveFolderUp(host: Activity, folderId: String) {
@@ -400,17 +394,102 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun buildMainStatusEntries(
+    private fun buildDependencyFolderMods(
+        host: Activity,
+        requiredMods: List<ModItemUi>,
         hasJar: Boolean,
         hasMts: Boolean,
         hasBaseMod: Boolean,
         hasStsLib: Boolean
-    ): List<StatusEntry> {
+    ): List<ModItemUi> {
+        val requiredModsById = requiredMods.associateBy { normalizeModId(it.modId) }
+        val baseMod = requiredModsById[ModManager.MOD_ID_BASEMOD]
+            ?.copy(enabled = hasBaseMod)
+            ?: buildSyntheticDependencyMod(
+                storageKey = "__dependency__/BaseMod.jar",
+                modId = ModManager.MOD_ID_BASEMOD,
+                displayName = "BaseMod.jar",
+                version = host.getString(
+                    if (hasBaseMod) {
+                        R.string.settings_status_available
+                    } else {
+                        R.string.settings_status_missing
+                    }
+                ),
+                description = host.getString(R.string.main_dependency_basemod_description),
+                installed = hasBaseMod
+            )
+        val stsLib = requiredModsById[ModManager.MOD_ID_STSLIB]
+            ?.copy(enabled = hasStsLib)
+            ?: buildSyntheticDependencyMod(
+                storageKey = "__dependency__/StSLib.jar",
+                modId = ModManager.MOD_ID_STSLIB,
+                displayName = "StSLib.jar",
+                version = host.getString(
+                    if (hasStsLib) {
+                        R.string.settings_status_available
+                    } else {
+                        R.string.settings_status_missing
+                    }
+                ),
+                description = host.getString(R.string.main_dependency_stslib_description),
+                installed = hasStsLib
+            )
         return listOf(
-            StatusEntry("desktop-1.0.jar", if (hasJar) "OK" else "missing", if (hasJar) StatusTone.Ok else StatusTone.Error),
-            StatusEntry("ModTheSpire.jar", if (hasMts) "OK" else "missing", if (hasMts) StatusTone.Ok else StatusTone.Error),
-            StatusEntry("BaseMod.jar", if (hasBaseMod) "OK" else "missing (required)", if (hasBaseMod) StatusTone.Ok else StatusTone.Error),
-            StatusEntry("StSLib.jar", if (hasStsLib) "OK" else "missing (required)", if (hasStsLib) StatusTone.Ok else StatusTone.Error)
+            buildSyntheticDependencyMod(
+                storageKey = "__dependency__/desktop-1.0.jar",
+                modId = "desktop-1.0.jar",
+                displayName = "desktop-1.0.jar",
+                version = host.getString(
+                    if (hasJar) {
+                        R.string.settings_status_available
+                    } else {
+                        R.string.settings_status_missing
+                    }
+                ),
+                description = host.getString(R.string.main_dependency_desktop_description),
+                installed = hasJar
+            ),
+            buildSyntheticDependencyMod(
+                storageKey = "__dependency__/ModTheSpire.jar",
+                modId = "modthespire",
+                displayName = "ModTheSpire.jar",
+                version = host.getString(
+                    if (hasMts) {
+                        R.string.settings_status_available
+                    } else {
+                        R.string.settings_status_missing
+                    }
+                ),
+                description = host.getString(R.string.main_dependency_mts_description),
+                installed = hasMts
+            ),
+            baseMod,
+            stsLib
+        )
+    }
+
+    private fun buildSyntheticDependencyMod(
+        storageKey: String,
+        modId: String,
+        displayName: String,
+        version: String,
+        description: String,
+        installed: Boolean
+    ): ModItemUi {
+        return ModItemUi(
+            modId = modId,
+            manifestModId = modId,
+            storagePath = storageKey,
+            name = displayName,
+            version = version,
+            description = description,
+            dependencies = emptyList(),
+            required = true,
+            installed = installed,
+            enabled = installed,
+            priorityRoot = false,
+            priorityLoad = false
         )
     }
 
@@ -884,26 +963,21 @@ class MainScreenViewModel : ViewModel() {
         val currentBusyOperation = uiState.busyOperation
         val currentBusyMessage = uiState.busyMessage
         val currentBusyProgressPercent = uiState.busyProgressPercent
-        val optionalTotal = snapshot.optionalMods.size
-        val optionalEnabled = snapshot.optionalMods.count { it.enabled }
         val gameProcessRunning = GameLaunchReturnTracker.isGameProcessRunning(host)
-        val statusEntries = if (storageIssue != null && uiState.statusEntries.isNotEmpty()) {
-            uiState.statusEntries
-        } else {
-            buildMainStatusEntries(
-                hasJar = hasJar,
-                hasMts = hasMts,
-                hasBaseMod = hasBaseMod,
-                hasStsLib = hasStsLib
-            )
-        }
         uiState = uiState.copy(
             initializing = false,
             busy = currentBusy,
             busyOperation = if (currentBusy) currentBusyOperation else UiBusyOperation.NONE,
             busyMessage = if (currentBusy) currentBusyMessage else null,
             busyProgressPercent = if (currentBusy) currentBusyProgressPercent else null,
-            statusEntries = statusEntries,
+            dependencyMods = buildDependencyFolderMods(
+                host = host,
+                requiredMods = snapshot.requiredMods,
+                hasJar = hasJar,
+                hasMts = hasMts,
+                hasBaseMod = hasBaseMod,
+                hasStsLib = hasStsLib
+            ),
             optionalMods = snapshot.optionalMods,
             storageIssue = storageIssue,
             controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation, storageIssue != null),
@@ -913,7 +987,7 @@ class MainScreenViewModel : ViewModel() {
             folderAssignments = snapshot.folderAssignments,
             folderCollapsed = snapshot.folderCollapsed,
             unassignedCollapsed = snapshot.unassignedCollapsed,
-            statusSummaryCollapsed = snapshot.statusSummaryCollapsed,
+            dependencyFolderCollapsed = snapshot.dependencyFolderCollapsed,
             unassignedFolderName = snapshot.unassignedFolderName,
             unassignedFolderOrder = snapshot.unassignedFolderOrder
         )

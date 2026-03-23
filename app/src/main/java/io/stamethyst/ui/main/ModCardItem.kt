@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -55,7 +54,8 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 internal data class ModCardDragStartInfo(
-    val overlayAnchor: ModDragOverlayAnchor
+    val overlayAnchor: ModDragOverlayAnchor,
+    val pointerIdValue: Long
 )
 
 internal data class ModCardCallbacks(
@@ -66,8 +66,6 @@ internal data class ModCardCallbacks(
     val onShareMod: (ModItemUi) -> Unit = {},
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
-    val onDragMove: (Offset) -> Unit = {},
-    val onDragEnd: (Offset) -> Unit = {},
     val onDragCancel: () -> Unit = {}
 )
 
@@ -77,6 +75,7 @@ internal fun ModCard(
     isExpanded: Boolean,
     isDraggedInOverlay: Boolean,
     showModFileName: Boolean,
+    showActionsButton: Boolean = true,
     setExpanded: (Boolean) -> Unit,
     selectionEnabled: Boolean,
     fileActionsEnabled: Boolean,
@@ -85,14 +84,14 @@ internal fun ModCard(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    var lastDragPointerWindow by remember(mod.storagePath) { mutableStateOf<Offset?>(null) }
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(10.dp)
     val dragVisualOffsetFromPointer = remember(density) {
-        Offset(x = 0f, y = with(density) { 70.dp.toPx() })
+//        Offset(x = 0f, y = with(density) { MOD_DRAG_VISUAL_OFFSET_Y_DP.dp.toPx() })
+        Offset(x = 0f, y = 0f)
     }
 
     val dragHandleGestureModifier = Modifier
@@ -115,17 +114,16 @@ internal fun ModCard(
                     visualOffsetFromPointer = dragVisualOffsetFromPointer
                 )
                 if (anchor == null) {
-                    lastDragPointerWindow = null
                     callbacks.onDragCancel()
                     return@awaitEachGesture
                 }
 
-                lastDragPointerWindow = anchor.pointerWindow
-                callbacks.onDragStart(ModCardDragStartInfo(overlayAnchor = anchor))
-                callbacks.onDragMove(anchor.pointerWindow)
-
-                var completedNormally = false
-                var sawMovement = false
+                callbacks.onDragStart(
+                    ModCardDragStartInfo(
+                        overlayAnchor = anchor,
+                        pointerIdValue = down.id.value
+                    )
+                )
 
                 while (true) {
                     val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -134,34 +132,11 @@ internal fun ModCard(
                         ?: break
 
                     if (change.changedToUpIgnoreConsumed()) {
-                        val position = handleCoordinates?.localToWindow(change.position)
-                            ?: lastDragPointerWindow
-                        lastDragPointerWindow = null
-                        if (position != null && sawMovement) {
-                            callbacks.onDragEnd(position)
-                        } else {
-                            callbacks.onDragCancel()
-                        }
                         change.consume()
-                        completedNormally = true
                         break
                     }
 
-                    val position = handleCoordinates?.localToWindow(change.position)
-                    if (position != null) {
-                        sawMovement = sawMovement || position != anchor.pointerWindow
-                        lastDragPointerWindow = position
-                        callbacks.onDragMove(position)
-                    }
-                    if (change.positionChanged()) {
-                        sawMovement = true
-                    }
                     change.consume()
-                }
-
-                if (!completedNormally) {
-                    lastDragPointerWindow = null
-                    callbacks.onDragCancel()
                 }
             }
         }
@@ -202,7 +177,7 @@ internal fun ModCard(
             mod = mod,
             isExpanded = isExpanded,
             showModFileName = showModFileName,
-            showActionsButton = true,
+            showActionsButton = showActionsButton,
             actionsEnabled = fileActionsEnabled,
             onActionsClick = {
                 if (fileActionsEnabled) {

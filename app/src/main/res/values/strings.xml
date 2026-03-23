@@ -205,6 +205,10 @@
     <string name="main_select_mods">Select mods</string>
     <string name="main_loading_mods">Loading mod and dependency status...</string>
     <string name="main_status_card_title">Dependency status</string>
+    <string name="main_dependency_desktop_description">Patched game runtime jar required to boot Slay the Spire on Android.</string>
+    <string name="main_dependency_mts_description">Primary mod loader jar used to launch the game with mods.</string>
+    <string name="main_dependency_basemod_description">Core prerequisite mod required by most modded Slay the Spire setups.</string>
+    <string name="main_dependency_stslib_description">Shared library prerequisite used by many mods.</string>
     <string name="main_no_mods_hint">No mods yet. Download from Workshop, then import with the bottom-left button.</string>
     <string name="main_storage_issue_title">External mod directory unavailable</string>
     <string name="main_storage_issue_message">The launcher can\'t access %1$s right now. Mods may appear empty, and launch/export actions are temporarily disabled.</string>
@@ -447,6 +451,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="main_mod_delete_blocked_message">Disable mods that depend on it first: %1$s</string>
     <string name="main_mod_deleted">Deleted mod: %1$s</string>
     <string name="main_mod_missing_deleted">Mod is missing or already deleted: %1$s</string>
+    <string name="main_mod_moved_to_folder">Moved %1$s to %2$s</string>
     <string name="main_mod_delete_failed">Failed to delete mod: %1$s</string>
     <string name="main_mod_export_missing">The mod file is missing and cannot be exported.</string>
     <string name="main_mod_share_missing">The mod file is missing and cannot be shared.</string>
