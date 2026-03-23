@@ -33,7 +33,7 @@
     <string name="compat_frieren_mod_compat_title">FrierenMod startup compatibility patch</string>
     <string name="compat_frieren_mod_compat_desc">When enabled, importing frierenmod automatically patches FrierenMod/utils/AntiPirateHelper.antiPirate() to remove the desktop anti-piracy dialog path that blocks Android startup at 97%. If disabled, newly imported FrierenMod jars are left untouched.</string>
     <string name="compat_downfall_import_compat_title">Downfall import compatibility patch</string>
-    <string name="compat_downfall_import_compat_desc">When enabled, importing downfall automatically patches merchant drawX to use a Settings.WIDTH/xScale-aware position, scales Hexaghost MyBody render offsets with Settings.scale, and moves the boss mechanic popup to a screen-relative right-side layout. This targets wide-screen drift and boss-obscuring UI on mobile. If disabled, newly imported Downfall jars are left untouched.</string>
+    <string name="compat_downfall_import_compat_desc">When enabled, importing downfall automatically patches merchant drawX to use a Settings.WIDTH/xScale-aware position, scales Hexaghost MyBody render offsets with Settings.scale, and reanchors the boss mechanic popup to the active boss so it renders to the right of the boss. This targets wide-screen drift and boss-obscuring UI on mobile. If disabled, newly imported Downfall jars are left untouched.</string>
     <string name="compat_vupshion_mod_compat_title">VUPShionMod import compatibility patch</string>
     <string name="compat_vupshion_mod_compat_desc">When enabled, importing vupshionmod automatically patches VUPShionMod/ui/WebButton to remove the Steam workshop subscription gate that can break main-menu background initialization. If disabled, newly imported VUPShionMod jars are left untouched.</string>
     <string name="compat_fragment_shader_precision_compat_title">Fragment shader default precision compatibility patch</string>
@@ -325,7 +325,7 @@ Patch rule: replace antiPirate() with a no-op so Android startup doesn\'t stall 
 </string>
     <string name="mod_import_downfall_message_item_detail">  Patched classes: %1$d, merchant position classes: %2$d, Hexaghost body classes: %3$d, boss mechanic panel classes: %4$d</string>
     <string name="mod_import_downfall_message_rule">
-Patch rule: merchant drawX now uses Settings.WIDTH/xScale-aware positioning, Hexaghost MyBody offset constants scale with Settings.scale, and BossMechanicDisplayPanel uses a screen-relative right-side layout to stay clear of the boss.</string>
+Patch rule: merchant drawX now uses Settings.WIDTH/xScale-aware positioning, Hexaghost MyBody offset constants scale with Settings.scale, and BossMechanicDisplayPanel updates its x/y/width from the current boss hitbox so the popup stays to the right of the boss.</string>
     <string name="mod_import_vupshion_message_none">No VUPShionMod Steam-gate fixes needed patching in this import.</string>
     <string name="mod_import_vupshion_message_intro">The following mods had VUPShionMod startup compatibility logic auto-patched during import:
 </string>

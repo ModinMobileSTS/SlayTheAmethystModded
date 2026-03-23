@@ -18,6 +18,7 @@ import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.FrameNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
+import org.objectweb.asm.tree.JumpInsnNode
 import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.LineNumberNode
@@ -38,9 +39,13 @@ internal object DownfallImportCompatPatcher {
     private const val FLEEING_MERCHANT_ENTRY = "downfall/monsters/FleeingMerchant.class"
     private const val HEXAGHOST_MY_BODY_ENTRY = "theHexaghost/vfx/MyBody.class"
 
+    private const val ABSTRACT_CHAR_BOSS_INTERNAL_NAME = "charbosses/bosses/AbstractCharBoss"
+    private const val ABSTRACT_CREATURE_INTERNAL_NAME = "com/megacrit/cardcrawl/core/AbstractCreature"
     private const val EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME = "automaton/EasyInfoDisplayPanel"
     private const val EASY_INFO_DISPLAY_PANEL_CTOR_DESC = "(FFF)V"
     private const val ABSTRACT_PLAYER_INTERNAL_NAME = "com/megacrit/cardcrawl/characters/AbstractPlayer"
+    private const val HITBOX_INTERNAL_NAME = "com/megacrit/cardcrawl/helpers/Hitbox"
+    private const val JAVA_MATH_INTERNAL_NAME = "java/lang/Math"
     private const val SETTINGS_INTERNAL_NAME = "com/megacrit/cardcrawl/core/Settings"
     private const val SETTINGS_WIDTH_FIELD_NAME = "WIDTH"
     private const val SETTINGS_HEIGHT_FIELD_NAME = "HEIGHT"
@@ -63,6 +68,13 @@ internal object DownfallImportCompatPatcher {
     private const val MY_BODY_Y_OFFSET = 256.0f
     private const val LEGACY_MY_BODY_Y_OFFSET_TOO_HIGH = 244.0f
     private const val LEGACY_MY_BODY_Y_OFFSET_TOO_LOW = 268.0f
+    private const val BOSS_MECHANIC_DESC_FIELD_NAME = "mechanicDesc"
+    private const val BOSS_FIELD_NAME = "boss"
+    private const val HITBOX_FIELD_NAME = "hb"
+    private const val PANEL_DYNAMIC_WIDTH = 240.0f
+    private const val PANEL_RIGHT_MARGIN = 48.0f
+    private const val PANEL_SCREEN_PADDING = 32.0f
+    private const val PANEL_Y_OFFSET_RATIO = 0.25f
     private const val BOSS_PANEL_X_RATIO = 0.9f
     private const val BOSS_PANEL_Y_RATIO = 0.51f
     private const val BOSS_PANEL_WIDTH_RATIO = 0.15f
@@ -190,10 +202,20 @@ internal object DownfallImportCompatPatcher {
     @Throws(IOException::class)
     private fun patchBossMechanicPanelClassBytes(classBytes: ByteArray): ByteArray? {
         val classNode = readClassNode(classBytes)
-        val patched = classNode.methods.any { method ->
-            method.name == "<init>" &&
+        var patched = false
+        classNode.methods.forEach { method ->
+            if (method.name == "<init>" &&
                 method.desc == "()V" &&
                 patchBossMechanicPanelConstructor(classNode.name, method)
+            ) {
+                patched = true
+            }
+            if (method.name == "getDescription" &&
+                method.desc == "()Ljava/lang/String;" &&
+                patchBossMechanicPanelDescription(classNode.name, method)
+            ) {
+                patched = true
+            }
         }
         if (!patched) {
             return null
@@ -230,6 +252,16 @@ internal object DownfallImportCompatPatcher {
         replaceMethodInstructions(method, buildBossMechanicPanelConstructorInstructions())
         method.maxLocals = maxOf(method.maxLocals, 1)
         method.maxStack = maxOf(method.maxStack, 4)
+        return true
+    }
+
+    private fun patchBossMechanicPanelDescription(ownerInternalName: String, method: MethodNode): Boolean {
+        if (usesBossRelativeMechanicPanelLayout(method)) {
+            return false
+        }
+        replaceMethodInstructions(method, buildBossMechanicPanelDescriptionInstructions(ownerInternalName))
+        method.maxLocals = maxOf(method.maxLocals, 6)
+        method.maxStack = maxOf(method.maxStack, 5)
         return true
     }
 
@@ -271,6 +303,60 @@ internal object DownfallImportCompatPatcher {
             hasXRatio &&
             hasYRatio &&
             hasWidthRatio
+    }
+
+    private fun usesBossRelativeMechanicPanelLayout(method: MethodNode): Boolean {
+        val instructions = method.instructions.toArray().toList()
+        val hasBossRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == ABSTRACT_CHAR_BOSS_INTERNAL_NAME &&
+                node.name == BOSS_FIELD_NAME &&
+                node.desc == "L$ABSTRACT_CHAR_BOSS_INTERNAL_NAME;"
+        }
+        val hasHitboxRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == ABSTRACT_CREATURE_INTERNAL_NAME &&
+                node.name == HITBOX_FIELD_NAME &&
+                node.desc == "L$HITBOX_INTERNAL_NAME;"
+        }
+        val hasMathMin = instructions.any { node ->
+            node is MethodInsnNode &&
+                node.opcode == Opcodes.INVOKESTATIC &&
+                node.owner == JAVA_MATH_INTERNAL_NAME &&
+                node.name == "min" &&
+                node.desc == "(FF)F"
+        }
+        val hasRightMargin = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, PANEL_RIGHT_MARGIN)
+        }
+        val hasScreenPadding = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, PANEL_SCREEN_PADDING)
+        }
+        val hasDynamicWidth = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, PANEL_DYNAMIC_WIDTH)
+        }
+        val hasYOffsetRatio = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, PANEL_Y_OFFSET_RATIO)
+        }
+        val hasPanelWrites = setOf("x", "y", "width").all { fieldName ->
+            instructions.any { node ->
+                node is FieldInsnNode &&
+                    node.opcode == Opcodes.PUTFIELD &&
+                    node.owner == EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME &&
+                    node.name == fieldName &&
+                    node.desc == "F"
+            }
+        }
+        return hasBossRead &&
+            hasHitboxRead &&
+            hasMathMin &&
+            hasRightMargin &&
+            hasScreenPadding &&
+            hasDynamicWidth &&
+            hasYOffsetRatio &&
+            hasPanelWrites
     }
 
     private fun buildMerchantDrawXInstructions(ownerInternalName: String): InsnList {
@@ -317,6 +403,78 @@ internal object DownfallImportCompatPatcher {
                 )
             )
             add(InsnNode(Opcodes.RETURN))
+        }
+    }
+
+    private fun buildBossMechanicPanelDescriptionInstructions(ownerInternalName: String): InsnList {
+        val skipUpdate = LabelNode()
+        return InsnList().apply {
+            add(FieldInsnNode(Opcodes.GETSTATIC, ABSTRACT_CHAR_BOSS_INTERNAL_NAME, BOSS_FIELD_NAME, "L$ABSTRACT_CHAR_BOSS_INTERNAL_NAME;"))
+            add(VarInsnNode(Opcodes.ASTORE, 1))
+            add(VarInsnNode(Opcodes.ALOAD, 1))
+            add(JumpInsnNode(Opcodes.IFNULL, skipUpdate))
+            add(VarInsnNode(Opcodes.ALOAD, 1))
+            add(FieldInsnNode(Opcodes.GETFIELD, ABSTRACT_CREATURE_INTERNAL_NAME, HITBOX_FIELD_NAME, "L$HITBOX_INTERNAL_NAME;"))
+            add(VarInsnNode(Opcodes.ASTORE, 2))
+            add(VarInsnNode(Opcodes.ALOAD, 2))
+            add(JumpInsnNode(Opcodes.IFNULL, skipUpdate))
+
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_SCALE_FIELD_NAME, "F"))
+            add(LdcInsnNode(PANEL_DYNAMIC_WIDTH))
+            add(InsnNode(Opcodes.FMUL))
+            add(VarInsnNode(Opcodes.FSTORE, 3))
+
+            add(VarInsnNode(Opcodes.ALOAD, 2))
+            add(FieldInsnNode(Opcodes.GETFIELD, HITBOX_INTERNAL_NAME, "cX", "F"))
+            add(VarInsnNode(Opcodes.ALOAD, 2))
+            add(FieldInsnNode(Opcodes.GETFIELD, HITBOX_INTERNAL_NAME, "width", "F"))
+            add(LdcInsnNode(0.5f))
+            add(InsnNode(Opcodes.FMUL))
+            add(InsnNode(Opcodes.FADD))
+            add(LdcInsnNode(PANEL_RIGHT_MARGIN))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_SCALE_FIELD_NAME, "F"))
+            add(InsnNode(Opcodes.FMUL))
+            add(InsnNode(Opcodes.FADD))
+            add(VarInsnNode(Opcodes.FSTORE, 4))
+
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(VarInsnNode(Opcodes.FLOAD, 4))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_WIDTH_FIELD_NAME, "I"))
+            add(InsnNode(Opcodes.I2F))
+            add(VarInsnNode(Opcodes.FLOAD, 3))
+            add(InsnNode(Opcodes.FSUB))
+            add(LdcInsnNode(PANEL_SCREEN_PADDING))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_SCALE_FIELD_NAME, "F"))
+            add(InsnNode(Opcodes.FMUL))
+            add(InsnNode(Opcodes.FSUB))
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    JAVA_MATH_INTERNAL_NAME,
+                    "min",
+                    "(FF)F",
+                    false
+                )
+            )
+            add(FieldInsnNode(Opcodes.PUTFIELD, EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME, "x", "F"))
+
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(VarInsnNode(Opcodes.ALOAD, 2))
+            add(FieldInsnNode(Opcodes.GETFIELD, HITBOX_INTERNAL_NAME, "cY", "F"))
+            add(VarInsnNode(Opcodes.ALOAD, 2))
+            add(FieldInsnNode(Opcodes.GETFIELD, HITBOX_INTERNAL_NAME, "height", "F"))
+            add(LdcInsnNode(PANEL_Y_OFFSET_RATIO))
+            add(InsnNode(Opcodes.FMUL))
+            add(InsnNode(Opcodes.FADD))
+            add(FieldInsnNode(Opcodes.PUTFIELD, EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME, "y", "F"))
+
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(VarInsnNode(Opcodes.FLOAD, 3))
+            add(FieldInsnNode(Opcodes.PUTFIELD, EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME, "width", "F"))
+
+            add(skipUpdate)
+            add(FieldInsnNode(Opcodes.GETSTATIC, ownerInternalName, BOSS_MECHANIC_DESC_FIELD_NAME, "Ljava/lang/String;"))
+            add(InsnNode(Opcodes.ARETURN))
         }
     }
 

@@ -21,6 +21,7 @@ import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.LineNumberNode
+import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 
 class DownfallImportCompatPatcherTest {
@@ -31,6 +32,10 @@ class DownfallImportCompatPatcherTest {
         const val LEGACY_RELATIVE_BOSS_PANEL_X_RATIO = 0.05f
         const val LEGACY_RELATIVE_BOSS_PANEL_Y_RATIO = 0.77f
         const val LEGACY_RELATIVE_BOSS_PANEL_WIDTH_RATIO = 0.25f
+        const val BOSS_PANEL_DYNAMIC_WIDTH = 240.0f
+        const val BOSS_PANEL_RIGHT_MARGIN = 48.0f
+        const val BOSS_PANEL_SCREEN_PADDING = 32.0f
+        const val BOSS_PANEL_Y_OFFSET_RATIO = 0.25f
         const val SETTINGS_SCALE_FIELD_NAME = "scale"
         const val SETTINGS_RENDER_SCALE_FIELD_NAME = "renderScale"
     }
@@ -50,7 +55,7 @@ class DownfallImportCompatPatcherTest {
         assertTrue(hasMerchantRugCenteredDrawX(jarFile, "downfall/monsters/FleeingMerchant.class"))
         assertTrue(hasMerchantRugCenteredDrawX(jarFile, "charbosses/bosses/Merchant/CharBossMerchant.class"))
         assertTrue(hasRenderScaleAlignedMyBody(jarFile))
-        assertTrue(hasRelativeBossMechanicPanelLayout(jarFile))
+        assertTrue(hasBossRelativeMechanicPanelLayout(jarFile))
 
         val secondPatch = DownfallImportCompatPatcher.patchInPlace(jarFile)
         assertEquals(0, secondPatch.patchedClassEntries)
@@ -95,7 +100,7 @@ class DownfallImportCompatPatcherTest {
         val patchResult = DownfallImportCompatPatcher.patchInPlace(jarFile)
         assertEquals(1, patchResult.patchedClassEntries)
         assertEquals(1, patchResult.patchedBossMechanicPanelClassEntries)
-        assertTrue(hasRelativeBossMechanicPanelLayout(jarFile))
+        assertTrue(hasBossRelativeMechanicPanelLayout(jarFile))
     }
 
     @Test
@@ -376,6 +381,7 @@ class DownfallImportCompatPatcherTest {
             "automaton/EasyInfoDisplayPanel",
             null
         )
+        classWriter.visitField(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "mechanicDesc", "Ljava/lang/String;", null, null).visitEnd()
         classWriter.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "X", "I", null, null).visitEnd()
         classWriter.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "Y", "I", null, null).visitEnd()
         classWriter.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "WIDTH", "I", null, null).visitEnd()
@@ -400,6 +406,18 @@ class DownfallImportCompatPatcherTest {
         constructor.visitMaxs(4, 1)
         constructor.visitEnd()
 
+        val getDescription = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "getDescription", "()Ljava/lang/String;", null, null)
+        getDescription.visitCode()
+        getDescription.visitFieldInsn(
+            Opcodes.GETSTATIC,
+            "charbosses/BossMechanicDisplayPanel",
+            "mechanicDesc",
+            "Ljava/lang/String;"
+        )
+        getDescription.visitInsn(Opcodes.ARETURN)
+        getDescription.visitMaxs(1, 1)
+        getDescription.visitEnd()
+
         val clinitMethod = classWriter.visitMethod(
             Opcodes.ACC_STATIC,
             "<clinit>",
@@ -408,6 +426,13 @@ class DownfallImportCompatPatcherTest {
             null
         )
         clinitMethod.visitCode()
+        clinitMethod.visitLdcInsn("NORENDER")
+        clinitMethod.visitFieldInsn(
+            Opcodes.PUTSTATIC,
+            "charbosses/BossMechanicDisplayPanel",
+            "mechanicDesc",
+            "Ljava/lang/String;"
+        )
         clinitMethod.visitLdcInsn(1550)
         clinitMethod.visitFieldInsn(Opcodes.PUTSTATIC, "charbosses/BossMechanicDisplayPanel", "X", "I")
         clinitMethod.visitLdcInsn(550)
@@ -436,6 +461,7 @@ class DownfallImportCompatPatcherTest {
             "automaton/EasyInfoDisplayPanel",
             null
         )
+        classWriter.visitField(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "mechanicDesc", "Ljava/lang/String;", null, null).visitEnd()
 
         val constructor = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null)
         constructor.visitCode()
@@ -462,6 +488,18 @@ class DownfallImportCompatPatcherTest {
         constructor.visitInsn(Opcodes.RETURN)
         constructor.visitMaxs(4, 1)
         constructor.visitEnd()
+
+        val getDescription = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "getDescription", "()Ljava/lang/String;", null, null)
+        getDescription.visitCode()
+        getDescription.visitFieldInsn(
+            Opcodes.GETSTATIC,
+            "charbosses/BossMechanicDisplayPanel",
+            "mechanicDesc",
+            "Ljava/lang/String;"
+        )
+        getDescription.visitInsn(Opcodes.ARETURN)
+        getDescription.visitMaxs(1, 1)
+        getDescription.visitEnd()
 
         classWriter.visitEnd()
         return classWriter.toByteArray()
@@ -624,48 +662,94 @@ class DownfallImportCompatPatcherTest {
             !hasLegacyScaleRead
     }
 
-    private fun hasRelativeBossMechanicPanelLayout(jarFile: File): Boolean {
+    private fun hasBossRelativeMechanicPanelLayout(jarFile: File): Boolean {
         val classBytes = JarFileIoUtils.readJarEntryBytes(jarFile, "charbosses/BossMechanicDisplayPanel.class")
         assertNotNull(classBytes)
-        val constructor = readClassNode(classBytes!!).methods.firstOrNull { it.name == "<init>" }
-        assertNotNull(constructor)
-        val instructions = meaningfulInstructions(constructor!!)
-        val hasLegacyPanelFieldReads = instructions.any { node ->
+        val getDescription = readClassNode(classBytes!!).methods.firstOrNull { it.name == "getDescription" }
+        assertNotNull(getDescription)
+        val instructions = meaningfulInstructions(getDescription!!)
+        val hasBossRead = instructions.any { node ->
             node is FieldInsnNode &&
                 node.opcode == Opcodes.GETSTATIC &&
-                node.owner == "charbosses/BossMechanicDisplayPanel" &&
-                node.name in setOf("X", "Y", "WIDTH") &&
-                node.desc == "I"
+                node.owner == "charbosses/bosses/AbstractCharBoss" &&
+                node.name == "boss" &&
+                node.desc == "Lcharbosses/bosses/AbstractCharBoss;"
         }
-        val hasSettingsWidthRead = instructions.any { node ->
+        val hasHitboxRead = instructions.any { node ->
             node is FieldInsnNode &&
-                node.opcode == Opcodes.GETSTATIC &&
-                node.owner == "com/megacrit/cardcrawl/core/Settings" &&
-                node.name == "WIDTH" &&
-                node.desc == "I"
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/core/AbstractCreature" &&
+                node.name == "hb" &&
+                node.desc == "Lcom/megacrit/cardcrawl/helpers/Hitbox;"
         }
-        val hasSettingsHeightRead = instructions.any { node ->
+        val hasHitboxCXRead = instructions.any { node ->
             node is FieldInsnNode &&
-                node.opcode == Opcodes.GETSTATIC &&
-                node.owner == "com/megacrit/cardcrawl/core/Settings" &&
-                node.name == "HEIGHT" &&
-                node.desc == "I"
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/helpers/Hitbox" &&
+                node.name == "cX" &&
+                node.desc == "F"
         }
-        val hasXRatio = instructions.any { node ->
-            node is LdcInsnNode && node.cst == BOSS_PANEL_X_RATIO
+        val hasHitboxCYRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/helpers/Hitbox" &&
+                node.name == "cY" &&
+                node.desc == "F"
         }
-        val hasYRatio = instructions.any { node ->
-            node is LdcInsnNode && node.cst == BOSS_PANEL_Y_RATIO
+        val hasHitboxWidthRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/helpers/Hitbox" &&
+                node.name == "width" &&
+                node.desc == "F"
         }
-        val hasWidthRatio = instructions.any { node ->
-            node is LdcInsnNode && node.cst == BOSS_PANEL_WIDTH_RATIO
+        val hasHitboxHeightRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/helpers/Hitbox" &&
+                node.name == "height" &&
+                node.desc == "F"
         }
-        return !hasLegacyPanelFieldReads &&
-            hasSettingsWidthRead &&
-            hasSettingsHeightRead &&
-            hasXRatio &&
-            hasYRatio &&
-            hasWidthRatio
+        val hasDynamicWidth = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_DYNAMIC_WIDTH
+        }
+        val hasRightMargin = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_RIGHT_MARGIN
+        }
+        val hasScreenPadding = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_SCREEN_PADDING
+        }
+        val hasYOffsetRatio = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_Y_OFFSET_RATIO
+        }
+        val hasMathMin = instructions.any { node ->
+            node is MethodInsnNode &&
+                node.opcode == Opcodes.INVOKESTATIC &&
+                node.owner == "java/lang/Math" &&
+                node.name == "min" &&
+                node.desc == "(FF)F"
+        }
+        val hasPanelWrites = setOf("x", "y", "width").all { fieldName ->
+            instructions.any { node ->
+                node is FieldInsnNode &&
+                    node.opcode == Opcodes.PUTFIELD &&
+                    node.owner == "automaton/EasyInfoDisplayPanel" &&
+                    node.name == fieldName &&
+                    node.desc == "F"
+            }
+        }
+        return hasBossRead &&
+            hasHitboxRead &&
+            hasHitboxCXRead &&
+            hasHitboxCYRead &&
+            hasHitboxWidthRead &&
+            hasHitboxHeightRead &&
+            hasDynamicWidth &&
+            hasRightMargin &&
+            hasScreenPadding &&
+            hasYOffsetRatio &&
+            hasMathMin &&
+            hasPanelWrites
     }
 
     private fun readClassNode(classBytes: ByteArray): ClassNode {
