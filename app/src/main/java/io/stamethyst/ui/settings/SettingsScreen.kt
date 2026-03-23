@@ -872,6 +872,7 @@ private fun SettingsRenderSection(
     onJvmStringDeduplicationChanged: (Boolean) -> Unit,
     onSustainedPerformanceModeChanged: (Boolean) -> Unit,
 ) {
+    val context = LocalContext.current
     val view = LocalView.current
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
@@ -897,13 +898,16 @@ private fun SettingsRenderSection(
         )
     }
 
-    Text(text = "画面清晰度", style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text = stringResource(R.string.settings_render_scale_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
     Text(
         text = RenderScaleService.format(renderScaleSliderValue),
         style = MaterialTheme.typography.bodySmall
     )
     Text(
-        text = "越高越清楚，越低越省性能",
+        text = stringResource(R.string.settings_render_scale_desc),
         style = MaterialTheme.typography.bodySmall
     )
     Slider(
@@ -924,7 +928,10 @@ private fun SettingsRenderSection(
         modifier = Modifier.fillMaxWidth()
     )
 
-    Text(text = "刷新率上限", style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text = stringResource(R.string.settings_target_fps_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
     uiState.targetFpsOptions.forEach { fps ->
         TargetFpsOptionRow(
             fps = fps,
@@ -937,19 +944,18 @@ private fun SettingsRenderSection(
     SwitchSettingRow(
         checked = uiState.sustainedPerformanceModeEnabled,
         enabled = !uiState.busy,
-        enabledText = "持续性能模式：启用",
-        disabledText = "持续性能模式：禁用",
-        description = "仅在设备支持时生效。启用后会在游戏前台请求 Sustained Performance Mode，通常更偏向长时间稳定，而不是更高瞬时峰值；默认关闭。修改后下次进入游戏生效。",
+        enabledText = stringResource(R.string.settings_sustained_performance_enabled),
+        disabledText = stringResource(R.string.settings_sustained_performance_disabled),
+        description = stringResource(R.string.settings_sustained_performance_desc),
         onCheckedChange = onSustainedPerformanceModeChanged
     )
 
     SettingsActionListItem(
-        title = "系统 Game Mode",
-        supportingText = buildString {
-            append("当前：")
-            append(uiState.systemGameModeDisplayName)
-            append("  |  已声明支持：Performance / Battery")
-        },
+        title = stringResource(R.string.settings_system_game_mode_title),
+        supportingText = stringResource(
+            R.string.settings_system_game_mode_summary,
+            uiState.systemGameModeDisplayName
+        ),
         enabled = !uiState.busy,
         onClick = { showGameModeDialog = true }
     )
@@ -958,26 +964,27 @@ private fun SettingsRenderSection(
         style = MaterialTheme.typography.bodySmall
     )
 
-    Text(text = "图形后端", style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text = stringResource(R.string.settings_renderer_backend_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
     SwitchSettingRow(
         checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
         enabled = !uiState.busy,
-        enabledText = "自动选择：启用",
-        disabledText = "自动选择：禁用",
-        description = buildString {
-            if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
-                append("\n当前自动选择：")
-                append(uiState.autoSelectedRendererBackend.displayName)
-                append("（")
-                append(uiState.autoSelectedRendererBackend.briefProsCons())
-                append("）")
-            } else {
-                append("\n关闭后使用手动后端：")
-                append(uiState.manualRendererBackend.displayName)
-                append("（")
-                append(uiState.manualRendererBackend.briefProsCons())
-                append("）")
-            }
+        enabledText = stringResource(R.string.settings_renderer_auto_enabled),
+        disabledText = stringResource(R.string.settings_renderer_auto_disabled),
+        description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
+            stringResource(
+                R.string.settings_renderer_auto_current,
+                uiState.autoSelectedRendererBackend.displayName,
+                uiState.autoSelectedRendererBackend.briefProsCons(context)
+            )
+        } else {
+            stringResource(
+                R.string.settings_renderer_manual_current,
+                uiState.manualRendererBackend.displayName,
+                uiState.manualRendererBackend.briefProsCons(context)
+            )
         },
         onCheckedChange = { checked ->
             onRendererSelectionModeChanged(
@@ -994,16 +1001,20 @@ private fun SettingsRenderSection(
     }
     if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
         SettingsDropdownField(
-            label = "手动后端",
+            label = stringResource(R.string.settings_renderer_manual_label),
             valueText = uiState.manualRendererBackend.displayName,
             enabled = !uiState.busy,
-            supportingText = "当前手动选择：${uiState.manualRendererBackend.displayName}（${uiState.manualRendererBackend.briefProsCons()}）",
+            supportingText = stringResource(
+                R.string.settings_renderer_manual_supporting,
+                uiState.manualRendererBackend.displayName,
+                uiState.manualRendererBackend.briefProsCons(context)
+            ),
             options = uiState.rendererBackendOptions,
             optionEnabled = { option -> option.available },
             optionLabel = { option -> option.backend.displayName },
             optionDescription = { option ->
                 buildList {
-                    add(option.backend.briefProsCons())
+                    add(option.backend.briefProsCons(context))
                     option.reasonText?.let(::add)
                 }.joinToString("  ")
             },
@@ -1013,15 +1024,13 @@ private fun SettingsRenderSection(
 
     if (uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
         SettingsActionListItem(
-            title = "MobileGlues 专项设置",
-            supportingText = buildString {
-                append("ANGLE: ")
-                append(uiState.mobileGluesAnglePolicy.displayName)
-                append("  |  Multidraw: ")
-                append(uiState.mobileGluesMultidrawMode.displayName)
-                append("  |  Custom GL: ")
-                append(uiState.mobileGluesCustomGlVersion.displayName)
-            },
+            title = stringResource(R.string.settings_mobileglues_entry_title),
+            supportingText = stringResource(
+                R.string.settings_mobileglues_entry_summary,
+                uiState.mobileGluesAnglePolicy.displayName(context),
+                uiState.mobileGluesMultidrawMode.displayName(context),
+                uiState.mobileGluesCustomGlVersion.displayName(context)
+            ),
             enabled = !uiState.busy,
             onClick = onOpenMobileGluesSettings
         )
@@ -1033,10 +1042,13 @@ private fun SettingsRenderSection(
     )
     SettingsDropdownField(
         label = stringResource(R.string.settings_render_surface_backend_title),
-        valueText = uiState.renderSurfaceBackend.displayName(),
+        valueText = uiState.renderSurfaceBackend.displayName(context),
         enabled = !uiState.busy,
         supportingText = if (uiState.surfaceBackendForcedByRenderer) {
-            "当前后端已强制覆盖为 ${uiState.effectiveRenderSurfaceBackend.displayName()}。"
+            stringResource(
+                R.string.settings_renderer_surface_forced,
+                uiState.effectiveRenderSurfaceBackend.displayName(context)
+            )
         } else {
             stringResource(R.string.settings_render_surface_backend_desc)
         },
@@ -1046,13 +1058,16 @@ private fun SettingsRenderSection(
             MaterialTheme.colorScheme.onSurfaceVariant
         },
         options = RenderSurfaceBackend.entries,
-        optionLabel = { backend -> backend.displayName() },
+        optionLabel = { backend -> backend.displayName(context) },
         onOptionSelected = onRenderSurfaceBackendChanged
     )
 
-    Text(text = "JVM 堆上限", style = MaterialTheme.typography.bodyMedium)
     Text(
-        text = "${heapSliderValue.roundToInt()} MB",
+        text = stringResource(R.string.settings_jvm_heap_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Text(
+        text = stringResource(R.string.settings_jvm_heap_value_mb, heapSliderValue.roundToInt()),
         style = MaterialTheme.typography.bodySmall
     )
     Slider(
@@ -1077,25 +1092,25 @@ private fun SettingsRenderSection(
         modifier = Modifier.fillMaxWidth()
     )
     Text(
-        text = "如果你不知道你在做什么，请勿修改此项。如果遇到黑屏等问题，可以尝试提高这个值，但过高可能会导致无法进入游戏的问题。为降低大堆启动失败风险，启动时会先使用较小初始堆，再按需扩容到上限。",
+        text = stringResource(R.string.settings_jvm_heap_desc),
         style = MaterialTheme.typography.bodySmall
     )
 
     SwitchSettingRow(
         checked = uiState.compressedPointersEnabled,
         enabled = !uiState.busy,
-        enabledText = "Compressed Oops / Class Pointers：启用",
-        disabledText = "Compressed Oops / Class Pointers：禁用",
-        description = "控制 64 位 JVM 是否启用压缩对象指针和类指针。默认关闭以优先兼容性，启用后可能降低内存占用，但也可能引入设备相关启动问题。",
+        enabledText = stringResource(R.string.settings_jvm_compressed_pointers_enabled),
+        disabledText = stringResource(R.string.settings_jvm_compressed_pointers_disabled),
+        description = stringResource(R.string.settings_jvm_compressed_pointers_desc),
         onCheckedChange = onJvmCompressedPointersChanged
     )
 
     SwitchSettingRow(
         checked = uiState.stringDeduplicationEnabled,
         enabled = !uiState.busy,
-        enabledText = "String Deduplication：启用",
-        disabledText = "String Deduplication：禁用",
-        description = "控制 64 位 G1GC 是否启用字符串去重。启用后可能降低堆占用，但会带来额外的 GC CPU 开销。",
+        enabledText = stringResource(R.string.settings_jvm_string_dedup_enabled),
+        disabledText = stringResource(R.string.settings_jvm_string_dedup_disabled),
+        description = stringResource(R.string.settings_jvm_string_dedup_desc),
         onCheckedChange = onJvmStringDeduplicationChanged
     )
 
@@ -1105,18 +1120,16 @@ private fun SettingsRenderSection(
             title = { Text(stringResource(R.string.settings_system_game_mode_title)) },
             text = {
                 Text(
-                    text = buildString {
-                        append("当前模式：")
-                        append(uiState.systemGameModeDisplayName)
-                        append("\n\n")
-                        append(uiState.systemGameModeDescription)
-                        append("\n\n")
-                        append("这个模式由系统 Game Dashboard 或厂商游戏助手控制，启动器不能直接改系统模式。")
-                        append("\n\n")
-                        append("如果你的设备支持游戏面板，请在游戏运行时从系统面板中切换；不同厂商也可能叫“游戏助手”“游戏空间”等。")
-                        append("\n\n")
-                        append("当前启动器已向系统声明支持 Performance / Battery 两种模式。Battery 模式的系统策略仍可能影响功耗与调度，但启动器不会再额外把目标 FPS 压到 60。")
-                    }
+                    text = listOf(
+                        stringResource(
+                            R.string.settings_system_game_mode_dialog_current,
+                            uiState.systemGameModeDisplayName
+                        ),
+                        uiState.systemGameModeDescription,
+                        stringResource(R.string.settings_system_game_mode_dialog_control),
+                        stringResource(R.string.settings_system_game_mode_dialog_panel),
+                        stringResource(R.string.settings_system_game_mode_dialog_support)
+                    ).joinToString("\n\n")
                 )
             },
             confirmButton = {
@@ -1171,39 +1184,42 @@ private fun SettingsInputSection(
         style = MaterialTheme.typography.bodySmall
     )
 
-    Text(text = "Back 键行为", style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text = stringResource(R.string.settings_back_behavior_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
     BackBehaviorOptionRow(
         behavior = BackBehavior.EXIT_TO_LAUNCHER,
         selected = uiState.backBehavior == BackBehavior.EXIT_TO_LAUNCHER,
         enabled = !uiState.busy,
-        text = "立即退出到启动器",
+        text = stringResource(R.string.settings_back_behavior_exit),
         onSelect = onBackBehaviorChanged
     )
     BackBehaviorOptionRow(
         behavior = BackBehavior.SEND_ESCAPE,
         selected = uiState.backBehavior == BackBehavior.SEND_ESCAPE,
         enabled = !uiState.busy,
-        text = "映射为 Esc 按键，可用于暂停游戏等",
+        text = stringResource(R.string.settings_back_behavior_escape),
         onSelect = onBackBehaviorChanged
     )
     BackBehaviorOptionRow(
         behavior = BackBehavior.NONE,
         selected = uiState.backBehavior == BackBehavior.NONE,
         enabled = !uiState.busy,
-        text = "无行为",
+        text = stringResource(R.string.settings_back_behavior_none),
         onSelect = onBackBehaviorChanged
     )
     Text(
-        text = "决定游戏运行时按下系统 Back 键后的行为。",
+        text = stringResource(R.string.settings_back_behavior_desc),
         style = MaterialTheme.typography.bodySmall
     )
 
     SwitchSettingRow(
         checked = uiState.manualDismissBootOverlay,
         enabled = !uiState.busy,
-        enabledText = "加载遮幕：手动关闭",
-        disabledText = "加载遮幕：自动关闭",
-        description = "启用后，启动时加载遮幕不会自动消失，需要点击遮幕上的按钮手动关闭。",
+        enabledText = stringResource(R.string.settings_boot_overlay_manual_enabled),
+        disabledText = stringResource(R.string.settings_boot_overlay_manual_disabled),
+        description = stringResource(R.string.settings_boot_overlay_manual_desc),
         onCheckedChange = onManualDismissBootOverlayChanged
     )
 
@@ -1228,27 +1244,27 @@ private fun SettingsInputSection(
     SwitchSettingRow(
         checked = uiState.autoSwitchLeftAfterRightClick,
         enabled = !uiState.busy,
-        enabledText = "右键后自动切回左键：启用",
-        disabledText = "右键后自动切回左键：禁用",
-        description = "启用后，触发一次右键后会自动切换回左键模式。",
+        enabledText = stringResource(R.string.settings_auto_switch_left_enabled),
+        disabledText = stringResource(R.string.settings_auto_switch_left_disabled),
+        description = stringResource(R.string.settings_auto_switch_left_desc),
         onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
     )
 
     SwitchSettingRow(
         checked = uiState.showModFileName,
         enabled = !uiState.busy,
-        enabledText = "模组显示名：文件名",
-        disabledText = "模组显示名：原名",
-        description = "启用后，模组卡片标题使用导入文件名。",
+        enabledText = stringResource(R.string.settings_mod_name_from_file_enabled),
+        disabledText = stringResource(R.string.settings_mod_name_from_file_disabled),
+        description = stringResource(R.string.settings_mod_name_from_file_desc),
         onCheckedChange = onShowModFileNameChanged
     )
 
     SwitchSettingRow(
         checked = uiState.mobileHudEnabled,
         enabled = !uiState.busy,
-        enabledText = "移动端 UI：启用",
-        disabledText = "移动端 UI：禁用",
-        description = "控制是否启用原生移动端 UI，启用后 UI 会部分变大，但是可能会出现一些模组渲染不兼容的问题，例如 loadout 控制台不会出现。",
+        enabledText = stringResource(R.string.settings_mobile_hud_enabled),
+        disabledText = stringResource(R.string.settings_mobile_hud_disabled),
+        description = stringResource(R.string.settings_mobile_hud_desc),
         onCheckedChange = onMobileHudEnabledChanged
     )
 
@@ -1264,36 +1280,36 @@ private fun SettingsInputSection(
     SwitchSettingRow(
         checked = uiState.avoidDisplayCutout,
         enabled = !uiState.busy,
-        enabledText = "避让摄像头显示：启用",
-        disabledText = "避让摄像头显示：禁用",
-        description = "启用后，游戏会避开刘海或挖孔区域显示，减少前置摄像头遮挡内容的问题。",
+        enabledText = stringResource(R.string.settings_display_cutout_enabled),
+        disabledText = stringResource(R.string.settings_display_cutout_disabled),
+        description = stringResource(R.string.settings_display_cutout_desc),
         onCheckedChange = onDisplayCutoutAvoidanceChanged
     )
 
     SwitchSettingRow(
         checked = uiState.cropScreenBottom,
         enabled = !uiState.busy,
-        enabledText = "裁剪屏幕底部：启用",
-        disabledText = "裁剪屏幕底部：禁用",
-        description = "启用后，在横屏右侧留出黑边，改善全面屏右侧边缘难点击的问题。",
+        enabledText = stringResource(R.string.settings_crop_screen_bottom_enabled),
+        disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
+        description = stringResource(R.string.settings_crop_screen_bottom_desc),
         onCheckedChange = onScreenBottomCropChanged
     )
 
     SwitchSettingRow(
         checked = uiState.showGamePerformanceOverlay,
         enabled = !uiState.busy,
-        enabledText = "性能浮窗：启用",
-        disabledText = "性能浮窗：禁用",
-        description = "控制游戏内右上角的 FPS / 内存实时监控浮窗是否显示。",
+        enabledText = stringResource(R.string.settings_performance_overlay_enabled),
+        disabledText = stringResource(R.string.settings_performance_overlay_disabled),
+        description = stringResource(R.string.settings_performance_overlay_desc),
         onCheckedChange = onGamePerformanceOverlayChanged
     )
 
     SwitchSettingRow(
         checked = uiState.touchscreenEnabled,
         enabled = !uiState.busy,
-        enabledText = "触屏输入：启用",
-        disabledText = "触屏输入：禁用",
-        description = "控制是否使用原生触控适配模式，关闭后会显示鼠标指针，启用电脑版 UI。",
+        enabledText = stringResource(R.string.settings_touchscreen_enabled),
+        disabledText = stringResource(R.string.settings_touchscreen_disabled),
+        description = stringResource(R.string.settings_touchscreen_desc),
         onCheckedChange = onTouchscreenEnabledChanged
     )
 
@@ -1442,7 +1458,7 @@ private fun SettingsStatusSection(
     }
 
     Text(
-        text = statusPreview.ifBlank { "状态加载中..." },
+        text = statusPreview.ifBlank { stringResource(R.string.settings_status_loading) },
         style = MaterialTheme.typography.bodySmall,
         maxLines = 3,
         overflow = TextOverflow.Ellipsis
@@ -1451,17 +1467,17 @@ private fun SettingsStatusSection(
     SwitchSettingRow(
         checked = uiState.lwjglDebugEnabled,
         enabled = !uiState.busy,
-        enabledText = "LWJGL Debug：启用",
-        disabledText = "LWJGL Debug：禁用",
-        description = "控制 JVM 启动参数中的 org.lwjgl.util.Debug / DebugLoader / DebugFunctions。",
+        enabledText = stringResource(R.string.settings_lwjgl_debug_enabled),
+        disabledText = stringResource(R.string.settings_lwjgl_debug_disabled),
+        description = stringResource(R.string.settings_lwjgl_debug_desc),
         onCheckedChange = onLwjglDebugChanged
     )
     SwitchSettingRow(
         checked = uiState.preloadAllJreLibrariesEnabled,
         enabled = !uiState.busy,
-        enabledText = "预加载全部 JRE 库：启用",
-        disabledText = "预加载全部 JRE 库：禁用",
-        description = "兼容性兜底开关。启用后恢复旧行为，启动时递归预加载运行时目录下全部 .so；禁用时只加载核心 JVM 和当前渲染器所需库，以降低常驻原生内存。",
+        enabledText = stringResource(R.string.settings_preload_all_jre_enabled),
+        disabledText = stringResource(R.string.settings_preload_all_jre_disabled),
+        description = stringResource(R.string.settings_preload_all_jre_desc),
         onCheckedChange = onPreloadAllJreLibrariesChanged
     )
     SwitchSettingRow(
@@ -1475,45 +1491,45 @@ private fun SettingsStatusSection(
     SwitchSettingRow(
         checked = uiState.jvmLogcatMirrorEnabled,
         enabled = !uiState.busy,
-        enabledText = "JVM 日志转发到 logcat：启用",
-        disabledText = "JVM 日志转发到 logcat：禁用",
-        description = "将 latest.log 的新增内容同步输出到 logcat，默认禁用。",
+        enabledText = stringResource(R.string.settings_jvm_logcat_mirror_enabled),
+        disabledText = stringResource(R.string.settings_jvm_logcat_mirror_disabled),
+        description = stringResource(R.string.settings_jvm_logcat_mirror_desc),
         onCheckedChange = onJvmLogcatMirrorChanged
     )
     SwitchSettingRow(
         checked = uiState.gpuResourceDiagEnabled,
         enabled = !uiState.busy,
-        enabledText = "GPU 资源诊断：启用",
-        disabledText = "GPU 资源诊断：禁用",
-        description = "控制 [gdx-diag] GPU 资源摘要、FBO 栈采样和大纹理上传诊断日志。默认启用，关闭后可减少日志量和少量运行时开销。",
+        enabledText = stringResource(R.string.settings_gpu_resource_diag_enabled),
+        disabledText = stringResource(R.string.settings_gpu_resource_diag_disabled),
+        description = stringResource(R.string.settings_gpu_resource_diag_desc),
         onCheckedChange = onGpuResourceDiagChanged
     )
     SwitchSettingRow(
         checked = uiState.gdxPadCursorDebugEnabled,
         enabled = !uiState.busy,
-        enabledText = "GDX 手柄光标日志：启用",
-        disabledText = "GDX 手柄光标日志：禁用",
-        description = "控制 [gdx-pad-debug] setCursorPosition 输出，默认禁用以减少日志刷屏。",
+        enabledText = stringResource(R.string.settings_gdx_pad_cursor_debug_enabled),
+        disabledText = stringResource(R.string.settings_gdx_pad_cursor_debug_disabled),
+        description = stringResource(R.string.settings_gdx_pad_cursor_debug_desc),
         onCheckedChange = onGdxPadCursorDebugChanged
     )
     SwitchSettingRow(
         checked = uiState.glBridgeSwapHeartbeatDebugEnabled,
         enabled = !uiState.busy,
-        enabledText = "GLBridge 心跳日志：启用",
-        disabledText = "GLBridge 心跳日志：禁用",
-        description = "控制 GLBridgeDiag 的 swap heartbeat 输出，默认禁用。",
+        enabledText = stringResource(R.string.settings_glbridge_swap_heartbeat_enabled),
+        disabledText = stringResource(R.string.settings_glbridge_swap_heartbeat_disabled),
+        description = stringResource(R.string.settings_glbridge_swap_heartbeat_desc),
         onCheckedChange = onGlBridgeSwapHeartbeatDebugChanged
     )
 
     HorizontalDivider()
 
     SettingsActionListItem(
-        title = "查看完整状态信息",
+        title = stringResource(R.string.settings_view_full_status),
         enabled = uiState.statusText.isNotBlank(),
         onClick = { showStatusDialog = true }
     )
     SettingsActionListItem(
-        title = "查看日志路径",
+        title = stringResource(R.string.settings_view_log_paths),
         enabled = uiState.logPathText.isNotBlank(),
         onClick = { showLogDialog = true }
     )
@@ -1680,6 +1696,7 @@ fun SettingsEffectsHandler(
 ) {
     val activity = requireNotNull(LocalActivity.current)
     val navigator = currentNavigator
+    val shareLogsChooserTitle = stringResource(R.string.settings_share_logs_chooser_title)
     val importJarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.onJarPicked(activity, uri)
     }
@@ -1734,7 +1751,9 @@ fun SettingsEffectsHandler(
 
                 is SettingsScreenViewModel.Effect.ShareJvmLogsBundle -> {
                     val shareIntent = JvmLogShareService.buildShareIntent(effect.payload)
-                    activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
+                    activity.startActivity(
+                        Intent.createChooser(shareIntent, shareLogsChooserTitle)
+                    )
                 }
 
                 SettingsScreenViewModel.Effect.OpenCompatibility -> {
@@ -1764,7 +1783,7 @@ private fun TargetFpsOptionRow(
     SettingsRadioOptionRow(
         selected = selected,
         enabled = enabled,
-        text = "$fps FPS",
+        text = stringResource(R.string.settings_target_fps_option, fps),
         onSelect = { onSelect(fps) }
     )
 }
@@ -1893,25 +1912,27 @@ internal fun <T> SettingsDropdownField(
     }
 }
 
-private fun RenderSurfaceBackend.displayName(): String {
+private fun RenderSurfaceBackend.displayName(context: Context): String {
     return when (this) {
-        RenderSurfaceBackend.SURFACE_VIEW -> "SurfaceView"
-        RenderSurfaceBackend.TEXTURE_VIEW -> "TextureView"
+        RenderSurfaceBackend.SURFACE_VIEW ->
+            context.getString(R.string.settings_render_surface_backend_surface_view_short)
+        RenderSurfaceBackend.TEXTURE_VIEW ->
+            context.getString(R.string.settings_render_surface_backend_texture_view_short)
     }
 }
 
-private fun RendererBackend.briefProsCons(): String {
+private fun RendererBackend.briefProsCons(context: Context): String {
     return when (this) {
         RendererBackend.OPENGL_ES_MOBILEGLUES ->
-            "优：兼容性取向；缺：仍有部分机型适配问题"
+            context.getString(R.string.settings_renderer_pros_cons_mobileglues)
         RendererBackend.OPENGL_ES2_NATIVE ->
-            "优：最接近旧实现、稳定；缺：功能最保守"
+            context.getString(R.string.settings_renderer_pros_cons_native)
         RendererBackend.OPENGL_ES2_GL4ES ->
-            "优：桌面 GL 兼容更好；缺：有额外转译开销"
+            context.getString(R.string.settings_renderer_pros_cons_gl4es)
         RendererBackend.OPENGL_ES3_DESKTOPGL_ZINK_KOPPER ->
-            "优：走 Vulkan，部分设备更稳；缺：依赖 Vulkan 且强制 TextureView"
+            context.getString(R.string.settings_renderer_pros_cons_kopper)
         RendererBackend.VULKAN_ZINK ->
-            "优：Mesa/Zink 兼容潜力高；缺：驱动和库要求最高"
+            context.getString(R.string.settings_renderer_pros_cons_vulkan_zink)
     }
 }
 

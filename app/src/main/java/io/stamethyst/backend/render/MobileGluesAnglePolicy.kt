@@ -1,35 +1,43 @@
 package io.stamethyst.backend.render
 
+import android.content.Context
+import androidx.annotation.StringRes
+import io.stamethyst.R
+
 enum class MobileGluesAnglePolicy(
     val persistedValue: Int,
     val mobileGluesConfigValue: Int,
-    val displayName: String,
-    val description: String,
+    @StringRes val displayNameResId: Int,
+    @StringRes val descriptionResId: Int,
 ) {
     PREFER_DISABLED(
         persistedValue = 0,
         mobileGluesConfigValue = 0,
-        displayName = "尽量关闭 (Prefer Disabled)",
-        description = "优先不用 ANGLE，仅在兼容性更好时才自动启用。"
+        displayNameResId = R.string.mobileglues_angle_policy_prefer_disabled_title,
+        descriptionResId = R.string.mobileglues_angle_policy_prefer_disabled_desc
     ),
     PREFER_ENABLED(
         persistedValue = 1,
         mobileGluesConfigValue = 1,
-        displayName = "尽量开启 (Prefer Enabled)",
-        description = "默认推荐，优先走 ANGLE，但仍允许按设备情况自动回退。"
+        displayNameResId = R.string.mobileglues_angle_policy_prefer_enabled_title,
+        descriptionResId = R.string.mobileglues_angle_policy_prefer_enabled_desc
     ),
     DISABLE(
         persistedValue = 2,
         mobileGluesConfigValue = 2,
-        displayName = "强制关闭 (Disable)",
-        description = "无论设备表现如何，都不使用 ANGLE。"
+        displayNameResId = R.string.mobileglues_angle_policy_disable_title,
+        descriptionResId = R.string.mobileglues_angle_policy_disable_desc
     ),
     ENABLE(
         persistedValue = 3,
         mobileGluesConfigValue = 3,
-        displayName = "强制开启 (Enable)",
-        description = "无论设备表现如何，都强制使用 ANGLE。"
+        displayNameResId = R.string.mobileglues_angle_policy_enable_title,
+        descriptionResId = R.string.mobileglues_angle_policy_enable_desc
     );
+
+    fun displayName(context: Context): String = context.getString(displayNameResId)
+
+    fun description(context: Context): String = context.getString(descriptionResId)
 
     companion object {
         @JvmStatic

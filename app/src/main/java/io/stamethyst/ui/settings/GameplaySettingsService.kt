@@ -1,18 +1,18 @@
 package io.stamethyst.ui.settings
 
-import android.app.Activity
+import android.content.Context
 import io.stamethyst.config.LauncherConfig
 import java.io.IOException
 
 internal object GameplaySettingsService {
     const val DEFAULT_TOUCHSCREEN_ENABLED = LauncherConfig.DEFAULT_TOUCHSCREEN_ENABLED
 
-    fun readTouchscreenEnabled(host: Activity): Boolean {
-        return LauncherConfig.readTouchscreenEnabled(host)
+    fun readTouchscreenEnabled(context: Context): Boolean {
+        return LauncherConfig.readTouchscreenEnabled(context)
     }
 
     @Throws(IOException::class)
-    fun saveTouchscreenEnabled(host: Activity, enabled: Boolean) {
-        LauncherConfig.saveTouchscreenEnabled(host, enabled)
+    fun saveTouchscreenEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.saveTouchscreenEnabled(context, enabled)
     }
 }

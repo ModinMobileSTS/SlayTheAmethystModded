@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.os.Build
 import android.net.Uri
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -13,7 +14,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
-import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -24,17 +24,16 @@ import io.stamethyst.backend.render.MobileGluesMultidrawMode
 import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesPreset
 import io.stamethyst.backend.render.MobileGluesSettings
+import io.stamethyst.backend.render.RendererAvailability
 import io.stamethyst.backend.render.RendererBackend
-import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.LauncherUpdateUiReducer
-import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateCheckExecutionResult
 import io.stamethyst.backend.update.UpdateDownloadResolution
 import io.stamethyst.backend.update.UpdateReleaseInfo
@@ -58,8 +57,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -232,7 +229,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         startupAutoUpdateCheckRequested = true
         syncStoredUpdateState(host)
-        if (!LauncherPreferences.isAutoCheckUpdatesEnabled(host)) {
+        if (!uiState.autoCheckUpdatesEnabled) {
             return
         }
         runUpdateCheck(host, userInitiated = false)
@@ -244,7 +241,7 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun syncThemeMode(host: Activity) {
-        uiState = uiState.copy(themeMode = readThemeModeSelection(host))
+        uiState = uiState.copy(themeMode = SettingsRepository.loadThemeMode(host))
     }
 
     fun onThemeModeChanged(host: Activity, themeMode: LauncherThemeMode) {
@@ -391,83 +388,16 @@ class SettingsScreenViewModel : ViewModel() {
         updateCheckInProgress: Boolean = uiState.updateCheckInProgress,
         updatePromptState: UpdatePromptState? = uiState.updatePromptState,
     ) {
+        val snapshot = SettingsRepository.loadUpdateStateSnapshot(host)
         uiState = uiState.copy(
-            autoCheckUpdatesEnabled = LauncherPreferences.isAutoCheckUpdatesEnabled(host),
-            preferredUpdateMirror = UpdateSource.normalizePreferredUserSource(
-                LauncherPreferences.readPreferredUpdateMirrorId(host)
-            ),
-            availableUpdateMirrors = UpdateSource.userSelectableSources(),
-            currentVersionText = BuildConfig.VERSION_NAME,
-            updateStatusSummary = buildUpdateStatusSummary(host),
+            autoCheckUpdatesEnabled = snapshot.autoCheckUpdatesEnabled,
+            preferredUpdateMirror = snapshot.preferredUpdateMirror,
+            availableUpdateMirrors = snapshot.availableUpdateMirrors,
+            currentVersionText = snapshot.currentVersionText,
+            updateStatusSummary = snapshot.statusSummary,
             updateCheckInProgress = updateCheckInProgress,
             updatePromptState = updatePromptState
         )
-    }
-
-    private fun buildUpdateStatusSummary(host: Activity): String {
-        val lastCheckedAtMs = LauncherPreferences.readLastUpdateCheckAtMs(host)
-        if (lastCheckedAtMs <= 0L) {
-            return host.getString(R.string.update_status_not_checked)
-        }
-
-        val lines = mutableListOf<String>()
-        lines += host.getString(
-            R.string.update_status_last_checked,
-            formatUpdateCheckTime(lastCheckedAtMs)
-        )
-
-        val remoteTag = LauncherPreferences.readLastKnownRemoteTag(host)
-        if (!remoteTag.isNullOrBlank()) {
-            lines += host.getString(R.string.update_status_remote_version, remoteTag)
-        }
-
-        val metadataSource = resolveUpdateSourceDisplayName(
-            LauncherPreferences.readLastSuccessfulMetadataSourceId(host)
-        )
-        if (metadataSource != null) {
-            lines += host.getString(R.string.update_status_metadata_source, metadataSource)
-        }
-
-        val errorSummary = LauncherPreferences.readLastUpdateErrorSummary(host)
-        if (!errorSummary.isNullOrBlank()) {
-            lines += host.getString(
-                R.string.update_status_result,
-                host.getString(R.string.update_status_result_failed)
-            )
-            lines += errorSummary
-            return lines.joinToString("\n")
-        }
-
-        val hasUpdate = !remoteTag.isNullOrBlank() &&
-            LauncherUpdateVersioning.isRemoteNewer(BuildConfig.VERSION_NAME, remoteTag)
-        lines += host.getString(
-            R.string.update_status_result,
-            if (hasUpdate) {
-                host.getString(R.string.update_status_result_available)
-            } else {
-                host.getString(R.string.update_status_result_latest)
-            }
-        )
-
-        if (hasUpdate) {
-            val downloadSource = resolveUpdateSourceDisplayName(
-                LauncherPreferences.readLastSuccessfulDownloadSourceId(host)
-            )
-            if (downloadSource != null) {
-                lines += host.getString(R.string.update_status_download_source, downloadSource)
-            }
-        }
-
-        return lines.joinToString("\n")
-    }
-
-    private fun resolveUpdateSourceDisplayName(sourceId: String?): String? {
-        return UpdateSource.fromPersistedValue(sourceId)?.displayName
-    }
-
-    private fun formatUpdateCheckTime(timestampMs: Long): String {
-        return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            .format(Date(timestampMs))
     }
 
     private fun hasValidImportedStsJar(host: Activity): Boolean {
@@ -478,59 +408,21 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val hasJar = hasValidImportedStsJar(host)
-
-                val renderScale = RenderScaleService.readValue(host)
-                val playerName = readPlayerNameSelection(host)
-                val targetFps = readTargetFpsSelection(host)
-                val renderSurfaceBackend = readRenderSurfaceBackendSelection(host)
-                val rendererSelectionMode = readRendererSelectionModeSelection(host)
-                val manualRendererBackend = readManualRendererBackendSelection(host)
-                val mobileGluesSettings = readMobileGluesSettingsSelection(host)
-                val rendererDecision = RendererBackendResolver.resolve(
-                    context = host,
-                    requestedSurfaceBackend = renderSurfaceBackend,
-                    selectionMode = rendererSelectionMode,
-                    manualBackend = manualRendererBackend
-                )
+                val snapshot = SettingsRepository.loadSettingsSnapshot(host)
+                val rendering = snapshot.rendering
+                val jvm = snapshot.jvm
+                val input = snapshot.input
+                val diagnostics = snapshot.diagnostics
+                val compatibility = snapshot.compatibility
+                val rendererDecision = rendering.rendererDecision
+                val mobileGluesSettings = rendering.mobileGluesSettings
                 val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
                     RendererBackendOptionState(
                         backend = availability.backend,
                         available = availability.available,
-                        reasonText = availability.describeUnavailable()
+                        reasonText = availability.describeUnavailable(host)
                     )
                 }
-                val jvmHeapMaxMb = readJvmHeapMaxSelection(host)
-                val jvmHeapStartMb = LauncherPreferences.resolveJvmHeapStartMb(jvmHeapMaxMb)
-                val compressedPointersEnabled = readJvmCompressedPointersSelection(host)
-                val stringDeduplicationEnabled = readJvmStringDeduplicationSelection(host)
-                val backBehavior = readBackBehaviorSelection(host)
-                val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
-                val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
-                val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
-                val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
-                val showModFileName = readShowModFileNameSelection(host)
-                val mobileHudEnabled = readMobileHudEnabledSelection(host)
-                val compendiumUpgradeTouchFixEnabled =
-                    readCompendiumUpgradeTouchFixSelection(host)
-                val avoidDisplayCutout = readDisplayCutoutAvoidanceSelection(host)
-                val cropScreenBottom = readScreenBottomCropSelection(host)
-                val showGamePerformanceOverlay = readGamePerformanceOverlaySelection(host)
-                val sustainedPerformanceModeEnabled =
-                    readSustainedPerformanceModeSelection(host)
-                val systemGameMode = AndroidGameModeSupport.readCurrentMode(host)
-                val lwjglDebugEnabled = readLwjglDebugSelection(host)
-                val preloadAllJreLibrariesEnabled = readPreloadAllJreLibrariesSelection(host)
-                val logcatCaptureEnabled = readLogcatCaptureSelection(host)
-                val jvmLogcatMirrorEnabled = readJvmLogcatMirrorSelection(host)
-                val gpuResourceDiagEnabled = readGpuResourceDiagSelection(host)
-                val gdxPadCursorDebugEnabled = readGdxPadCursorDebugSelection(host)
-                val glBridgeSwapHeartbeatDebugEnabled = readGlBridgeSwapHeartbeatDebugSelection(host)
-                val touchscreenEnabled = readTouchscreenEnabledSelection(host)
-                val virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host)
-                val globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)
-                val modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host)
-                val runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host)
-                val forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host)
 
                 val mods = ModManager.listInstalledMods(host)
                 var optionalTotal = 0
@@ -564,118 +456,17 @@ class SettingsScreenViewModel : ViewModel() {
                 )
                 val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
 
-                val status = buildString {
-                    append("核心依赖状态")
-                    append("\ndesktop-1.0.jar: ").append(if (hasJar) "可用" else "缺失")
-                    append('\n').append(formatCoreDependencyLine(coreMtsStatus))
-                    append('\n').append(formatCoreDependencyLine(coreBaseModStatus))
-                    append('\n').append(formatCoreDependencyLine(coreStsLibStatus))
-                    append("\nOptional mods enabled: $optionalEnabled/$optionalTotal")
-
-                    append("\n\n设备信息")
-                    append("\nCPU 型号: ").append(deviceRuntimeStatus.cpuModel)
-                    append("\nCPU 架构: ").append(deviceRuntimeStatus.cpuArch)
-                    append("\n可用内存: ")
-                        .append(formatBytes(deviceRuntimeStatus.availableMemoryBytes))
-                    append(" / 总内存: ")
-                        .append(formatBytes(deviceRuntimeStatus.totalMemoryBytes))
-
-                    append("\n\n启动与兼容设置")
-                    append("\nPlayer name: ").append(playerName)
-                    append("\n画面清晰度: ${RenderScaleService.format(renderScale)} (0.10-1.00)")
-                    append("\nTarget FPS: $targetFps")
-                    append("\nRenderer selection mode: ")
-                        .append(rendererSelectionMode.displayName())
-                    append("\nRenderer auto select: ")
-                        .append(rendererDecision.autoSelectionSummary())
-                    append("\nRenderer effective: ")
-                        .append(rendererDecision.effectiveRendererSummary())
-                    rendererDecision.fallbackSummary()?.let {
-                        append("\nRenderer fallback: ").append(it)
-                    }
-                    append("\nMobileGlues ANGLE policy: ")
-                        .append(mobileGluesSettings.anglePolicy.displayName)
-                    append("\nMobileGlues multidraw: ")
-                        .append(mobileGluesSettings.multidrawMode.displayName)
-                    append("\nMobileGlues no-error: ")
-                        .append(mobileGluesSettings.noErrorPolicy.displayName)
-                    append("\nMobileGlues custom GL version: ")
-                        .append(mobileGluesSettings.customGlVersion.displayName)
-                    append("\nMobileGlues FSR1: ")
-                        .append(mobileGluesSettings.fsr1QualityPreset.displayName)
-                    append("\nRender surface requested: ")
-                        .append(renderSurfaceBackend.displayName(host))
-                    append("\nRender surface effective: ")
-                        .append(rendererDecision.effectiveSurfaceBackend.displayName(host))
-                    if (rendererDecision.surfaceBackendForced) {
-                        append(" (forced by ")
-                            .append(rendererDecision.effectiveBackend.displayName)
-                            .append(")")
-                    }
-                    append("\nJVM heap start/max: ${jvmHeapStartMb}/${jvmHeapMaxMb} MB")
-                    append("\nCompressed Oops / Class Pointers: ")
-                        .append(if (compressedPointersEnabled) "ON" else "OFF")
-                    append("\nString Deduplication: ")
-                        .append(if (stringDeduplicationEnabled) "ON" else "OFF")
-                    append("\nBack behavior: ${backBehavior.displayName()}")
-                    append("\nTouchscreen Enabled: ").append(if (touchscreenEnabled) "ON" else "OFF")
-                    append("\nMobile HUD Enabled: ").append(if (mobileHudEnabled) "ON" else "OFF")
-                    append("\nCompendium upgrade touch fix: ")
-                        .append(if (compendiumUpgradeTouchFixEnabled) "ON" else "OFF")
-                    append("\nAvoid display cutout: ")
-                        .append(if (avoidDisplayCutout) "ON" else "OFF")
-                    append("\nCrop screen bottom: ")
-                        .append(if (cropScreenBottom) "ON" else "OFF")
-                    append("\nPerformance overlay: ")
-                        .append(if (showGamePerformanceOverlay) "ON" else "OFF")
-                    append("\nSustained performance mode: ")
-                        .append(if (sustainedPerformanceModeEnabled) "ON" else "OFF")
-                    append("\nSystem Game Mode: ")
-                        .append(host.getString(systemGameMode.displayNameResId))
-                    append("\nSystem Game Mode detail: ")
-                        .append(host.getString(systemGameMode.descriptionResId))
-                    append("\nManual dismiss boot overlay: ")
-                        .append(if (manualDismissBootOverlay) "ON" else "OFF")
-                    append("\n")
-                        .append(
-                            host.getString(
-                                R.string.status_floating_touch_mouse_window_format,
-                                if (showFloatingMouseWindow) "ON" else "OFF"
-                            )
-                        )
-                    append("\n")
-                        .append(
-                            host.getString(
-                                R.string.status_touch_mouse_long_press_keyboard_format,
-                                if (longPressMouseShowsKeyboard) "ON" else "OFF"
-                            )
-                        )
-                    append("\nRight click auto switch to left: ")
-                        .append(if (autoSwitchLeftAfterRightClick) "ON" else "OFF")
-                    append("\nMod card name from file: ").append(if (showModFileName) "ON" else "OFF")
-                    append("\nLWJGL Debug: ").append(if (lwjglDebugEnabled) "ON" else "OFF")
-                    append("\nPreload all JRE libraries: ")
-                        .append(if (preloadAllJreLibrariesEnabled) "ON" else "OFF")
-                    append("\nLogcat diagnostics capture: ")
-                        .append(if (logcatCaptureEnabled) "ON" else "OFF")
-                    append("\nJVM logcat mirror: ").append(if (jvmLogcatMirrorEnabled) "ON" else "OFF")
-                    append("\nGPU resource diagnostics: ")
-                        .append(if (gpuResourceDiagEnabled) "ON" else "OFF")
-                    append("\nGDX pad cursor debug log: ")
-                        .append(if (gdxPadCursorDebugEnabled) "ON" else "OFF")
-                    append("\nGLBridge swap heartbeat log: ")
-                        .append(if (glBridgeSwapHeartbeatDebugEnabled) "ON" else "OFF")
-                    append("\nVirtual FBO PoC: ").append(if (virtualFboPocEnabled) "ON" else "OFF")
-                    append("\nGlobal atlas filter compat: ")
-                        .append(if (globalAtlasFilterCompatEnabled) "ON" else "OFF")
-                    append("\nMod manifest root compat: ")
-                        .append(if (modManifestRootCompatEnabled) "ON" else "OFF")
-                    append("\nRuntime texture compat: ")
-                        .append(if (runtimeTextureCompatEnabled) "ON" else "OFF")
-                    append("\nForce linear mipmap filter: ")
-                        .append(if (forceLinearMipmapFilterEnabled) "ON" else "OFF")
-                    append("\nBundled JRE path: app/src/main/assets/components/jre")
-                }
+                val status = buildStatusText(
+                    host = host,
+                    snapshot = snapshot,
+                    hasJar = hasJar,
+                    optionalEnabled = optionalEnabled,
+                    optionalTotal = optionalTotal,
+                    coreMtsStatus = coreMtsStatus,
+                    coreBaseModStatus = coreBaseModStatus,
+                    coreStsLibStatus = coreStsLibStatus,
+                    deviceRuntimeStatus = deviceRuntimeStatus
+                )
 
                 host.runOnUiThread {
                     uiState = uiState.copy(
@@ -683,12 +474,13 @@ class SettingsScreenViewModel : ViewModel() {
                         busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
                         busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
-                        playerName = playerName,
-                        selectedRenderScale = renderScale,
-                        selectedTargetFps = targetFps,
-                        renderSurfaceBackend = renderSurfaceBackend,
-                        rendererSelectionMode = rendererSelectionMode,
-                        manualRendererBackend = manualRendererBackend,
+                        themeMode = snapshot.themeMode,
+                        playerName = snapshot.playerName,
+                        selectedRenderScale = rendering.renderScale,
+                        selectedTargetFps = rendering.targetFps,
+                        renderSurfaceBackend = rendering.renderSurfaceBackend,
+                        rendererSelectionMode = rendering.rendererSelectionMode,
+                        manualRendererBackend = rendering.manualRendererBackend,
                         mobileGluesAnglePolicy = mobileGluesSettings.anglePolicy,
                         mobileGluesNoErrorPolicy = mobileGluesSettings.noErrorPolicy,
                         mobileGluesMultidrawMode = mobileGluesSettings.multidrawMode,
@@ -705,33 +497,36 @@ class SettingsScreenViewModel : ViewModel() {
                         effectiveRendererBackend = rendererDecision.effectiveBackend,
                         effectiveRenderSurfaceBackend = rendererDecision.effectiveSurfaceBackend,
                         rendererBackendOptions = rendererBackendOptions,
-                        rendererFallbackText = rendererDecision.fallbackSummary(),
+                        rendererFallbackText = rendererDecision.fallbackSummary(host),
                         surfaceBackendForcedByRenderer = rendererDecision.surfaceBackendForced,
-                        selectedJvmHeapMaxMb = jvmHeapMaxMb,
-                        compressedPointersEnabled = compressedPointersEnabled,
-                        stringDeduplicationEnabled = stringDeduplicationEnabled,
-                        backBehavior = backBehavior,
-                        manualDismissBootOverlay = manualDismissBootOverlay,
-                        showFloatingMouseWindow = showFloatingMouseWindow,
-                        longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
-                        autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
-                        showModFileName = showModFileName,
-                        mobileHudEnabled = mobileHudEnabled,
-                        compendiumUpgradeTouchFixEnabled = compendiumUpgradeTouchFixEnabled,
-                        avoidDisplayCutout = avoidDisplayCutout,
-                        cropScreenBottom = cropScreenBottom,
-                        showGamePerformanceOverlay = showGamePerformanceOverlay,
-                        sustainedPerformanceModeEnabled = sustainedPerformanceModeEnabled,
-                        systemGameModeDisplayName = host.getString(systemGameMode.displayNameResId),
-                        systemGameModeDescription = host.getString(systemGameMode.descriptionResId),
-                        lwjglDebugEnabled = lwjglDebugEnabled,
-                        preloadAllJreLibrariesEnabled = preloadAllJreLibrariesEnabled,
-                        logcatCaptureEnabled = logcatCaptureEnabled,
-                        jvmLogcatMirrorEnabled = jvmLogcatMirrorEnabled,
-                        gpuResourceDiagEnabled = gpuResourceDiagEnabled,
-                        gdxPadCursorDebugEnabled = gdxPadCursorDebugEnabled,
-                        glBridgeSwapHeartbeatDebugEnabled = glBridgeSwapHeartbeatDebugEnabled,
-                        touchscreenEnabled = touchscreenEnabled,
+                        selectedJvmHeapMaxMb = jvm.heapMaxMb,
+                        compressedPointersEnabled = jvm.compressedPointersEnabled,
+                        stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
+                        backBehavior = input.backBehavior,
+                        manualDismissBootOverlay = input.manualDismissBootOverlay,
+                        showFloatingMouseWindow = input.showFloatingMouseWindow,
+                        longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
+                        autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
+                        showModFileName = input.showModFileName,
+                        mobileHudEnabled = input.mobileHudEnabled,
+                        compendiumUpgradeTouchFixEnabled = input.compendiumUpgradeTouchFixEnabled,
+                        avoidDisplayCutout = input.avoidDisplayCutout,
+                        cropScreenBottom = input.cropScreenBottom,
+                        showGamePerformanceOverlay = diagnostics.showGamePerformanceOverlay,
+                        sustainedPerformanceModeEnabled = diagnostics.sustainedPerformanceModeEnabled,
+                        systemGameModeDisplayName =
+                            host.getString(diagnostics.systemGameMode.displayNameResId),
+                        systemGameModeDescription =
+                            host.getString(diagnostics.systemGameMode.descriptionResId),
+                        lwjglDebugEnabled = diagnostics.lwjglDebugEnabled,
+                        preloadAllJreLibrariesEnabled = diagnostics.preloadAllJreLibrariesEnabled,
+                        logcatCaptureEnabled = diagnostics.logcatCaptureEnabled,
+                        jvmLogcatMirrorEnabled = diagnostics.jvmLogcatMirrorEnabled,
+                        gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
+                        gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
+                        glBridgeSwapHeartbeatDebugEnabled =
+                            diagnostics.glBridgeSwapHeartbeatDebugEnabled,
+                        touchscreenEnabled = input.touchscreenEnabled,
                         statusText = status,
                         logPathText = buildLogPathText(host)
                     )
@@ -775,7 +570,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
         val normalizedValue = normalized.toFloatOrNull() ?: clampedValue
         uiState = uiState.copy(selectedRenderScale = normalizedValue)
-        updateStatusRenderScaleLine(normalized)
         refreshStatus(host)
     }
 
@@ -993,7 +787,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesAnglePolicy = policy)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues ANGLE policy"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(anglePolicy = policy) }
         refreshStatus(host)
     }
@@ -1005,7 +799,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesNoErrorPolicy = policy)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues no-error policy"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(noErrorPolicy = policy) }
         refreshStatus(host)
     }
@@ -1017,7 +811,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesMultidrawMode = mode)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues multidraw mode"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(multidrawMode = mode) }
         refreshStatus(host)
     }
@@ -1029,7 +823,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesExtComputeShaderEnabled = enabled)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues compute shader setting"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(extComputeShaderEnabled = enabled) }
         refreshStatus(host)
     }
@@ -1041,7 +835,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesExtTimerQueryEnabled = enabled)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues timer query setting"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(extTimerQueryEnabled = enabled) }
         refreshStatus(host)
     }
@@ -1053,7 +847,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesExtDirectStateAccessEnabled = enabled)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues direct state access setting"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(extDirectStateAccessEnabled = enabled) }
         refreshStatus(host)
     }
@@ -1068,7 +862,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesGlslCacheSizePreset = preset)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues GLSL cache size"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(glslCacheSizePreset = preset) }
         refreshStatus(host)
     }
@@ -1083,7 +877,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesAngleDepthClearFixMode = mode)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues ANGLE depth clear fix mode"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(angleDepthClearFixMode = mode) }
         refreshStatus(host)
     }
@@ -1098,7 +892,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesCustomGlVersion = version)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues custom GL version"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(customGlVersion = version) }
         refreshStatus(host)
     }
@@ -1113,7 +907,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(mobileGluesFsr1QualityPreset = preset)
         persistMobileGluesSettings(
             host = host,
-            failureMessage = "Failed to save MobileGlues FSR1 setting"
+            failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(fsr1QualityPreset = preset) }
         refreshStatus(host)
     }
@@ -1125,7 +919,7 @@ class SettingsScreenViewModel : ViewModel() {
         applyResolvedMobileGluesSettings(
             host = host,
             settings = preset.settings,
-            failureMessage = "Failed to apply MobileGlues preset"
+            failureMessageResId = R.string.settings_mobileglues_apply_preset_failed
         )
         refreshStatus(host)
     }
@@ -1148,7 +942,7 @@ class SettingsScreenViewModel : ViewModel() {
                 customGlVersion = LauncherPreferences.DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION,
                 fsr1QualityPreset = LauncherPreferences.DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET
             ),
-            failureMessage = "Failed to reset MobileGlues settings"
+            failureMessageResId = R.string.settings_mobileglues_reset_failed
         )
         refreshStatus(host)
     }
@@ -1909,6 +1703,246 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun buildStatusText(
+        host: Activity,
+        snapshot: SettingsRepository.SettingsSnapshot,
+        hasJar: Boolean,
+        optionalEnabled: Int,
+        optionalTotal: Int,
+        coreMtsStatus: CoreDependencyStatus,
+        coreBaseModStatus: CoreDependencyStatus,
+        coreStsLibStatus: CoreDependencyStatus,
+        deviceRuntimeStatus: DeviceRuntimeStatus
+    ): String {
+        val rendering = snapshot.rendering
+        val jvm = snapshot.jvm
+        val input = snapshot.input
+        val diagnostics = snapshot.diagnostics
+        val compatibility = snapshot.compatibility
+        val rendererDecision = rendering.rendererDecision
+        val lines = mutableListOf<String>()
+
+        lines += host.getString(R.string.settings_status_section_core_dependencies)
+        lines += host.getString(
+            R.string.settings_status_desktop_jar,
+            availabilityText(host, hasJar)
+        )
+        lines += formatCoreDependencyLine(host, coreMtsStatus)
+        lines += formatCoreDependencyLine(host, coreBaseModStatus)
+        lines += formatCoreDependencyLine(host, coreStsLibStatus)
+        lines += host.getString(
+            R.string.settings_status_optional_mods,
+            optionalEnabled,
+            optionalTotal
+        )
+
+        lines += ""
+        lines += host.getString(R.string.settings_status_section_device_info)
+        lines += host.getString(
+            R.string.settings_status_cpu_model,
+            displayInfoValue(host, deviceRuntimeStatus.cpuModel)
+        )
+        lines += host.getString(
+            R.string.settings_status_cpu_arch,
+            displayInfoValue(host, deviceRuntimeStatus.cpuArch)
+        )
+        lines += host.getString(
+            R.string.settings_status_memory,
+            formatBytes(host, deviceRuntimeStatus.availableMemoryBytes),
+            formatBytes(host, deviceRuntimeStatus.totalMemoryBytes)
+        )
+
+        lines += ""
+        lines += host.getString(R.string.settings_status_section_launch_compat)
+        lines += host.getString(R.string.settings_status_player_name, snapshot.playerName)
+        lines += host.getString(
+            R.string.settings_status_render_scale,
+            RenderScaleService.format(rendering.renderScale)
+        )
+        lines += host.getString(R.string.settings_status_target_fps, rendering.targetFps)
+        lines += host.getString(
+            R.string.settings_status_renderer_selection_mode,
+            rendering.rendererSelectionMode.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_renderer_auto_select,
+            rendererDecision.autoSelectionSummary(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_renderer_effective,
+            rendererDecision.effectiveRendererSummary(host)
+        )
+        rendererDecision.fallbackSummary(host)?.let {
+            lines += host.getString(R.string.settings_status_renderer_fallback, it)
+        }
+        lines += host.getString(
+            R.string.settings_status_mobileglues_angle_policy,
+            rendering.mobileGluesSettings.anglePolicy.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_mobileglues_multidraw,
+            rendering.mobileGluesSettings.multidrawMode.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_mobileglues_no_error,
+            rendering.mobileGluesSettings.noErrorPolicy.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_mobileglues_custom_gl,
+            rendering.mobileGluesSettings.customGlVersion.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_mobileglues_fsr1,
+            rendering.mobileGluesSettings.fsr1QualityPreset.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_render_surface_requested,
+            rendering.renderSurfaceBackend.displayName(host)
+        )
+        lines += buildString {
+            append(
+                host.getString(
+                    R.string.settings_status_render_surface_effective,
+                    rendererDecision.effectiveSurfaceBackend.displayName(host)
+                )
+            )
+            if (rendererDecision.surfaceBackendForced) {
+                append(
+                    host.getString(
+                        R.string.settings_status_render_surface_forced_suffix,
+                        rendererDecision.effectiveBackend.displayName
+                    )
+                )
+            }
+        }
+        lines += host.getString(
+            R.string.settings_status_jvm_heap,
+            jvm.heapStartMb,
+            jvm.heapMaxMb
+        )
+        lines += host.getString(
+            R.string.settings_status_compressed_pointers,
+            toggleStateText(host, jvm.compressedPointersEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_string_dedup,
+            toggleStateText(host, jvm.stringDeduplicationEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_back_behavior,
+            input.backBehavior.displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_touchscreen,
+            toggleStateText(host, input.touchscreenEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_mobile_hud,
+            toggleStateText(host, input.mobileHudEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_compendium_touch_fix,
+            toggleStateText(host, input.compendiumUpgradeTouchFixEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_avoid_display_cutout,
+            toggleStateText(host, input.avoidDisplayCutout)
+        )
+        lines += host.getString(
+            R.string.settings_status_crop_screen_bottom,
+            toggleStateText(host, input.cropScreenBottom)
+        )
+        lines += host.getString(
+            R.string.settings_status_performance_overlay,
+            toggleStateText(host, diagnostics.showGamePerformanceOverlay)
+        )
+        lines += host.getString(
+            R.string.settings_status_sustained_performance,
+            toggleStateText(host, diagnostics.sustainedPerformanceModeEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_system_game_mode,
+            host.getString(diagnostics.systemGameMode.displayNameResId)
+        )
+        lines += host.getString(
+            R.string.settings_status_system_game_mode_detail,
+            host.getString(diagnostics.systemGameMode.descriptionResId)
+        )
+        lines += host.getString(
+            R.string.settings_status_manual_dismiss_boot_overlay,
+            toggleStateText(host, input.manualDismissBootOverlay)
+        )
+        lines += host.getString(
+            R.string.status_floating_touch_mouse_window_format,
+            toggleStateText(host, input.showFloatingMouseWindow)
+        )
+        lines += host.getString(
+            R.string.status_touch_mouse_long_press_keyboard_format,
+            toggleStateText(host, input.longPressMouseShowsKeyboard)
+        )
+        lines += host.getString(
+            R.string.settings_status_auto_switch_left_after_right_click,
+            toggleStateText(host, input.autoSwitchLeftAfterRightClick)
+        )
+        lines += host.getString(
+            R.string.settings_status_mod_name_from_file,
+            toggleStateText(host, input.showModFileName)
+        )
+        lines += host.getString(
+            R.string.settings_status_lwjgl_debug,
+            toggleStateText(host, diagnostics.lwjglDebugEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_preload_all_jre,
+            toggleStateText(host, diagnostics.preloadAllJreLibrariesEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_logcat_capture,
+            toggleStateText(host, diagnostics.logcatCaptureEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_jvm_logcat_mirror,
+            toggleStateText(host, diagnostics.jvmLogcatMirrorEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_gpu_resource_diag,
+            toggleStateText(host, diagnostics.gpuResourceDiagEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_gdx_pad_cursor_debug,
+            toggleStateText(host, diagnostics.gdxPadCursorDebugEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_glbridge_swap_heartbeat,
+            toggleStateText(host, diagnostics.glBridgeSwapHeartbeatDebugEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_virtual_fbo_poc,
+            toggleStateText(host, compatibility.virtualFboPocEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_global_atlas_filter_compat,
+            toggleStateText(host, compatibility.globalAtlasFilterCompatEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_mod_manifest_root_compat,
+            toggleStateText(host, compatibility.modManifestRootCompatEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_runtime_texture_compat,
+            toggleStateText(host, compatibility.runtimeTextureCompatEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_force_linear_mipmap_filter,
+            toggleStateText(host, compatibility.forceLinearMipmapFilterEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_bundled_jre_path,
+            "app/src/main/assets/components/jre"
+        )
+        return lines.joinToString("\n")
+    }
+
     private fun resolveCoreDependencyStatus(
         host: Activity,
         label: String,
@@ -1951,16 +1985,21 @@ class SettingsScreenViewModel : ViewModel() {
         )
     }
 
-    private fun formatCoreDependencyLine(status: CoreDependencyStatus): String {
+    private fun formatCoreDependencyLine(host: Activity, status: CoreDependencyStatus): String {
         if (!status.available) {
-            return "${status.label}: 缺失"
+            return host.getString(R.string.settings_status_core_dependency_missing, status.label)
         }
         val sourceLabel = when (status.source.lowercase(Locale.ROOT)) {
-            "imported" -> "本地文件"
-            "bundled" -> "内置组件"
+            "imported" -> host.getString(R.string.settings_status_source_imported)
+            "bundled" -> host.getString(R.string.settings_status_source_bundled)
             else -> status.source
         }
-        return "${status.label}: 可用 (来源: $sourceLabel, 版本: ${status.version})"
+        return host.getString(
+            R.string.settings_status_core_dependency_available,
+            status.label,
+            sourceLabel,
+            displayInfoValue(host, status.version)
+        )
     }
 
     private fun collectDeviceRuntimeStatus(host: Activity): DeviceRuntimeStatus {
@@ -2065,9 +2104,9 @@ class SettingsScreenViewModel : ViewModel() {
             ?: "unknown"
     }
 
-    private fun formatBytes(bytes: Long): String {
+    private fun formatBytes(host: Activity, bytes: Long): String {
         if (bytes <= 0L) {
-            return "unknown"
+            return host.getString(R.string.settings_status_unknown)
         }
         val units = arrayOf("B", "KB", "MB", "GB", "TB")
         var value = bytes.toDouble()
@@ -2081,6 +2120,81 @@ class SettingsScreenViewModel : ViewModel() {
         } else {
             String.format(Locale.US, "%.1f %s", value, units[unitIndex])
         }
+    }
+
+    private fun displayInfoValue(host: Activity, value: String): String {
+        return if (value.equals("unknown", ignoreCase = true)) {
+            host.getString(R.string.settings_status_unknown)
+        } else {
+            value
+        }
+    }
+
+    private fun availabilityText(host: Activity, available: Boolean): String {
+        return host.getString(
+            if (available) {
+                R.string.settings_status_available
+            } else {
+                R.string.settings_status_missing
+            }
+        )
+    }
+
+    private fun toggleStateText(host: Activity, enabled: Boolean): String {
+        return host.getString(
+            if (enabled) {
+                R.string.settings_status_enabled
+            } else {
+                R.string.settings_status_disabled
+            }
+        )
+    }
+
+    private fun RendererAvailability.describeUnavailable(host: Activity): String? {
+        if (available) {
+            return null
+        }
+        val parts = ArrayList<String>(2)
+        if (reasons.contains(io.stamethyst.backend.render.RendererAvailabilityReason.VULKAN_UNSUPPORTED)) {
+            parts += host.getString(R.string.settings_renderer_requires_vulkan_support)
+        }
+        if (missingLibraries.isNotEmpty()) {
+            parts += host.getString(
+                R.string.settings_renderer_missing_libraries,
+                missingLibraries.joinToString(", ")
+            )
+        }
+        return parts.joinToString("; ")
+            .ifBlank { host.getString(R.string.settings_renderer_unavailable) }
+    }
+
+    private fun RendererDecision.autoSelectionSummary(host: Activity): String {
+        return automaticBackend.displayName
+    }
+
+    private fun RendererDecision.effectiveRendererSummary(host: Activity): String {
+        return buildString {
+            append(effectiveBackend.displayName)
+            if (selectionMode == RendererSelectionMode.AUTO) {
+                append(host.getString(R.string.settings_renderer_effective_auto_suffix))
+            } else if (usedAutomaticFallback) {
+                append(host.getString(R.string.settings_renderer_effective_auto_fallback_suffix))
+            }
+        }
+    }
+
+    private fun RendererDecision.fallbackSummary(host: Activity): String? {
+        val fallback = manualFallbackAvailability ?: return null
+        val manualLabel = manualBackend?.displayName
+            ?: host.getString(R.string.settings_renderer_manual_label)
+        val reasonText = fallback.describeUnavailable(host)
+            ?: host.getString(R.string.settings_renderer_unavailable)
+        return host.getString(
+            R.string.settings_renderer_fallback_format,
+            manualLabel,
+            reasonText,
+            automaticBackend.displayName
+        )
     }
 
     private fun resolveJarVersionFromFile(jarFile: File): String? {
@@ -2200,166 +2314,72 @@ class SettingsScreenViewModel : ViewModel() {
             .replace("\\\\", "\\")
     }
 
-    private fun updateStatusRenderScaleLine(normalizedRenderScale: String) {
-        val status = uiState.statusText
-        if (status.isBlank()) {
-            return
-        }
-        val lines = status.lines().toMutableList()
-        val lineIndex = lines.indexOfFirst { it.startsWith("画面清晰度: ") }
-        if (lineIndex < 0) {
-            return
-        }
-        lines[lineIndex] = "画面清晰度: $normalizedRenderScale (0.10-1.00)"
-        uiState = uiState.copy(statusText = lines.joinToString("\n"))
-    }
-
-    private fun readBackBehaviorSelection(host: Activity): BackBehavior {
-        return LauncherPreferences.readBackBehavior(host)
-    }
-
     private fun saveBackBehaviorSelection(host: Activity, behavior: BackBehavior) {
         LauncherPreferences.saveBackBehavior(host, behavior)
-    }
-
-    private fun readManualDismissBootOverlaySelection(host: Activity): Boolean {
-        return LauncherPreferences.readManualDismissBootOverlay(host)
     }
 
     private fun saveManualDismissBootOverlaySelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveManualDismissBootOverlay(host, enabled)
     }
 
-    private fun readShowFloatingMouseWindowSelection(host: Activity): Boolean {
-        return LauncherPreferences.readShowFloatingMouseWindow(host)
-    }
-
     private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
-    }
-
-    private fun readLongPressMouseShowsKeyboardSelection(host: Activity): Boolean {
-        return LauncherPreferences.readLongPressMouseShowsKeyboard(host)
     }
 
     private fun saveLongPressMouseShowsKeyboardSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveLongPressMouseShowsKeyboard(host, enabled)
     }
 
-    private fun readAutoSwitchLeftAfterRightClickSelection(host: Activity): Boolean {
-        return LauncherPreferences.readAutoSwitchLeftAfterRightClick(host)
-    }
-
     private fun saveAutoSwitchLeftAfterRightClickSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveAutoSwitchLeftAfterRightClick(host, enabled)
-    }
-
-    private fun readShowModFileNameSelection(host: Activity): Boolean {
-        return LauncherPreferences.readShowModFileName(host)
     }
 
     private fun saveShowModFileNameSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveShowModFileName(host, enabled)
     }
 
-    private fun readMobileHudEnabledSelection(host: Activity): Boolean {
-        return LauncherPreferences.readMobileHudEnabled(host)
-    }
-
     private fun saveMobileHudEnabledSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveMobileHudEnabled(host, enabled)
-    }
-
-    private fun readCompendiumUpgradeTouchFixSelection(host: Activity): Boolean {
-        return LauncherPreferences.readCompendiumUpgradeTouchFixEnabled(host)
     }
 
     private fun saveCompendiumUpgradeTouchFixSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveCompendiumUpgradeTouchFixEnabled(host, enabled)
     }
 
-    private fun readDisplayCutoutAvoidanceSelection(host: Activity): Boolean {
-        return LauncherPreferences.isDisplayCutoutAvoidanceEnabled(host)
-    }
-
     private fun saveDisplayCutoutAvoidanceSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setDisplayCutoutAvoidanceEnabled(host, enabled)
-    }
-
-    private fun readScreenBottomCropSelection(host: Activity): Boolean {
-        return LauncherPreferences.isScreenBottomCropEnabled(host)
     }
 
     private fun saveScreenBottomCropSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setScreenBottomCropEnabled(host, enabled)
     }
 
-    private fun readLwjglDebugSelection(host: Activity): Boolean {
-        return LauncherPreferences.isLwjglDebugEnabled(host)
-    }
-
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
-    }
-
-    private fun readPreloadAllJreLibrariesSelection(host: Activity): Boolean {
-        return LauncherPreferences.isPreloadAllJreLibrariesEnabled(host)
     }
 
     private fun savePreloadAllJreLibrariesSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setPreloadAllJreLibrariesEnabled(host, enabled)
     }
 
-    private fun readLogcatCaptureSelection(host: Activity): Boolean {
-        return LauncherPreferences.isLogcatCaptureEnabled(host)
-    }
-
     private fun saveLogcatCaptureSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLogcatCaptureEnabled(host, enabled)
-    }
-
-    private fun readJvmLogcatMirrorSelection(host: Activity): Boolean {
-        return LauncherPreferences.isJvmLogcatMirrorEnabled(host)
     }
 
     private fun saveJvmLogcatMirrorSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setJvmLogcatMirrorEnabled(host, enabled)
     }
 
-    private fun readGpuResourceDiagSelection(host: Activity): Boolean {
-        return LauncherPreferences.isGpuResourceDiagEnabled(host)
-    }
-
     private fun saveGpuResourceDiagSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setGpuResourceDiagEnabled(host, enabled)
-    }
-
-    private fun readGdxPadCursorDebugSelection(host: Activity): Boolean {
-        return LauncherPreferences.isGdxPadCursorDebugEnabled(host)
     }
 
     private fun saveGdxPadCursorDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setGdxPadCursorDebugEnabled(host, enabled)
     }
 
-    private fun readGlBridgeSwapHeartbeatDebugSelection(host: Activity): Boolean {
-        return LauncherPreferences.isGlBridgeSwapHeartbeatDebugEnabled(host)
-    }
-
     private fun saveGlBridgeSwapHeartbeatDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(host, enabled)
-    }
-
-    private fun readTargetFpsSelection(host: Activity): Int {
-        return LauncherPreferences.readTargetFps(host)
-    }
-
-    private fun readRenderSurfaceBackendSelection(host: Activity): RenderSurfaceBackend {
-        return LauncherPreferences.readRenderSurfaceBackend(host)
-    }
-
-    private fun readRendererSelectionModeSelection(host: Activity): RendererSelectionMode {
-        return LauncherPreferences.readRendererSelectionMode(host)
     }
 
     private fun saveRendererSelectionModeSelection(
@@ -2369,31 +2389,26 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveRendererSelectionMode(host, mode)
     }
 
-    private fun readManualRendererBackendSelection(host: Activity): RendererBackend {
-        return LauncherPreferences.readManualRendererBackend(host)
-    }
-
     private fun saveManualRendererBackendSelection(host: Activity, backend: RendererBackend) {
         LauncherPreferences.saveManualRendererBackend(host, backend)
     }
 
-    private fun readMobileGluesSettingsSelection(host: Activity): MobileGluesSettings {
-        return LauncherPreferences.readMobileGluesSettings(host)
-    }
-
     private fun persistMobileGluesSettings(
         host: Activity,
-        failureMessage: String,
+        @StringRes failureMessageResId: Int,
         transform: (MobileGluesSettings) -> MobileGluesSettings
     ) {
         try {
-            val updated = transform(readMobileGluesSettingsSelection(host))
+            val updated = transform(LauncherPreferences.readMobileGluesSettings(host))
             LauncherPreferences.saveMobileGluesSettings(host, updated)
             MobileGluesConfigFile.syncFromLauncherPreferences(host)
         } catch (error: IOException) {
             Toast.makeText(
                 host,
-                "$failureMessage: ${error.message}",
+                host.getString(
+                    failureMessageResId,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -2402,7 +2417,7 @@ class SettingsScreenViewModel : ViewModel() {
     private fun applyResolvedMobileGluesSettings(
         host: Activity,
         settings: MobileGluesSettings,
-        failureMessage: String
+        @StringRes failureMessageResId: Int
     ) {
         uiState = uiState.copy(
             mobileGluesAnglePolicy = settings.anglePolicy,
@@ -2422,18 +2437,13 @@ class SettingsScreenViewModel : ViewModel() {
         } catch (error: IOException) {
             Toast.makeText(
                 host,
-                "$failureMessage: ${error.message}",
+                host.getString(
+                    failureMessageResId,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
                 Toast.LENGTH_LONG
             ).show()
         }
-    }
-
-    private fun readPlayerNameSelection(host: Activity): String {
-        return LauncherPreferences.readPlayerName(host)
-    }
-
-    private fun readThemeModeSelection(host: Activity): LauncherThemeMode {
-        return LauncherPreferences.readThemeMode(host)
     }
 
     private fun savePlayerNameSelection(host: Activity, name: String): Boolean {
@@ -2443,7 +2453,10 @@ class SettingsScreenViewModel : ViewModel() {
         } catch (error: IOException) {
             Toast.makeText(
                 host,
-                "Failed to save player name: ${error.message}",
+                host.getString(
+                    R.string.settings_player_name_save_failed,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
                 Toast.LENGTH_SHORT
             ).show()
             false
@@ -2466,48 +2479,24 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherThemeController.apply(themeMode)
     }
 
-    private fun readJvmHeapMaxSelection(host: Activity): Int {
-        return LauncherPreferences.readJvmHeapMaxMb(host)
-    }
-
     private fun saveJvmHeapMaxSelection(host: Activity, heapMaxMb: Int) {
         LauncherPreferences.saveJvmHeapMaxMb(host, heapMaxMb)
-    }
-
-    private fun readJvmCompressedPointersSelection(host: Activity): Boolean {
-        return LauncherPreferences.isJvmCompressedPointersEnabled(host)
     }
 
     private fun saveJvmCompressedPointersSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setJvmCompressedPointersEnabled(host, enabled)
     }
 
-    private fun readJvmStringDeduplicationSelection(host: Activity): Boolean {
-        return LauncherPreferences.isJvmStringDeduplicationEnabled(host)
-    }
-
     private fun saveJvmStringDeduplicationSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setJvmStringDeduplicationEnabled(host, enabled)
-    }
-
-    private fun readGamePerformanceOverlaySelection(host: Activity): Boolean {
-        return LauncherPreferences.isGamePerformanceOverlayEnabled(host)
     }
 
     private fun saveGamePerformanceOverlaySelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setGamePerformanceOverlayEnabled(host, enabled)
     }
 
-    private fun readSustainedPerformanceModeSelection(host: Activity): Boolean {
-        return LauncherPreferences.isSustainedPerformanceModeEnabled(host)
-    }
-
     private fun saveSustainedPerformanceModeSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSustainedPerformanceModeEnabled(host, enabled)
-    }
-
-    private fun readTouchscreenEnabledSelection(host: Activity): Boolean {
-        return GameplaySettingsService.readTouchscreenEnabled(host)
     }
 
     private fun saveTouchscreenEnabledSelection(host: Activity, enabled: Boolean): Boolean {
@@ -2517,7 +2506,10 @@ class SettingsScreenViewModel : ViewModel() {
         } catch (error: IOException) {
             Toast.makeText(
                 host,
-                "Failed to save touchscreen setting: ${error.message}",
+                host.getString(
+                    R.string.settings_touchscreen_save_failed,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
                 Toast.LENGTH_SHORT
             ).show()
             false
@@ -2529,20 +2521,24 @@ class SettingsScreenViewModel : ViewModel() {
         val archivedDir = RuntimePaths.jvmLogsDir(host)
         val logcatDir = RuntimePaths.logcatDir(host)
         val logs = JvmLogRotationManager.listLogFiles(host)
-        return buildString {
-            append("Log slots: ").append(logs.size).append('/').append(JvmLogRotationManager.MAX_LOG_SLOTS)
-            append("\nlatest.log: ").append(latestLog.absolutePath)
-            append("\narchive dir: ").append(archivedDir.absolutePath)
-            append("\nlogcat dir: ").append(logcatDir.absolutePath)
-            if (logs.isEmpty()) {
-                append("\n(no logs yet)")
-            } else {
-                for (log in logs) {
-                    append("\n- ").append(log.name)
-                    append(" (").append(log.length()).append(" bytes)")
-                }
+        val lines = mutableListOf(
+            host.getString(
+                R.string.settings_log_slots,
+                logs.size,
+                JvmLogRotationManager.MAX_LOG_SLOTS
+            ),
+            host.getString(R.string.settings_log_latest, latestLog.absolutePath),
+            host.getString(R.string.settings_log_archive_dir, archivedDir.absolutePath),
+            host.getString(R.string.settings_log_logcat_dir, logcatDir.absolutePath)
+        )
+        if (logs.isEmpty()) {
+            lines += host.getString(R.string.settings_log_none_yet)
+        } else {
+            lines += logs.map { log ->
+                host.getString(R.string.settings_log_entry, log.name, log.length())
             }
         }
+        return lines.joinToString("\n")
     }
 
     override fun onCleared() {
@@ -2550,11 +2546,14 @@ class SettingsScreenViewModel : ViewModel() {
         super.onCleared()
     }
 
-    private fun BackBehavior.displayName(): String {
+    private fun BackBehavior.displayName(host: Activity): String {
         return when (this) {
-            BackBehavior.EXIT_TO_LAUNCHER -> "Exit to launcher"
-            BackBehavior.SEND_ESCAPE -> "Send Esc"
-            BackBehavior.NONE -> "No action"
+            BackBehavior.EXIT_TO_LAUNCHER ->
+                host.getString(R.string.settings_back_behavior_exit)
+            BackBehavior.SEND_ESCAPE ->
+                host.getString(R.string.settings_back_behavior_escape)
+            BackBehavior.NONE ->
+                host.getString(R.string.settings_back_behavior_none)
         }
     }
 
@@ -2567,10 +2566,12 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun RendererSelectionMode.displayName(): String {
+    private fun RendererSelectionMode.displayName(host: Activity): String {
         return when (this) {
-            RendererSelectionMode.AUTO -> "Auto"
-            RendererSelectionMode.MANUAL -> "Manual"
+            RendererSelectionMode.AUTO ->
+                host.getString(R.string.settings_renderer_selection_mode_auto)
+            RendererSelectionMode.MANUAL ->
+                host.getString(R.string.settings_renderer_selection_mode_manual)
         }
     }
 }

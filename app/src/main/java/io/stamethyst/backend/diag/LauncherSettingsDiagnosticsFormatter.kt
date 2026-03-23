@@ -249,33 +249,33 @@ internal object LauncherSettingsDiagnosticsFormatter {
     }
 
     private fun formatAnglePolicy(policy: MobileGluesAnglePolicy): String {
-        return "${policy.displayName} (${policy.persistedValue})"
+        return "${policy.name} (${policy.persistedValue})"
     }
 
     private fun formatNoErrorPolicy(policy: MobileGluesNoErrorPolicy): String {
-        return "${policy.displayName} (${policy.persistedValue})"
+        return "${policy.name} (${policy.persistedValue})"
     }
 
     private fun formatMultidrawMode(mode: MobileGluesMultidrawMode): String {
-        return "${mode.displayName} (${mode.persistedValue})"
+        return "${mode.name} (${mode.persistedValue})"
     }
 
     private fun formatGlslCacheSize(preset: MobileGluesGlslCacheSizePreset): String {
-        return "${preset.displayName} (${preset.persistedValue})"
+        return "${preset.name} (${preset.persistedValue})"
     }
 
     private fun formatAngleDepthClearFixMode(
         mode: MobileGluesAngleDepthClearFixMode
     ): String {
-        return "${mode.displayName} (${mode.persistedValue})"
+        return "${mode.name} (${mode.persistedValue})"
     }
 
     private fun formatCustomGlVersion(version: MobileGluesCustomGlVersion): String {
-        return "${version.displayName} (${version.persistedValue})"
+        return "${version.name} (${version.persistedValue})"
     }
 
     private fun formatFsr1QualityPreset(preset: MobileGluesFsr1QualityPreset): String {
-        return "${preset.displayName} (${preset.persistedValue})"
+        return "${preset.name} (${preset.persistedValue})"
     }
 
     private fun normalizeValue(value: String): String {

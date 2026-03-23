@@ -1,15 +1,19 @@
 package io.stamethyst.backend.render
 
+import android.content.Context
+import androidx.annotation.StringRes
+import io.stamethyst.R
+
 enum class MobileGluesPreset(
-    val shortLabel: String,
-    val title: String,
-    val description: String,
+    @StringRes val shortLabelResId: Int,
+    @StringRes val titleResId: Int,
+    @StringRes val descriptionResId: Int,
     val settings: MobileGluesSettings,
 ) {
     PERFORMANCE_PRIORITY(
-        shortLabel = "性能",
-        title = "性能优先",
-        description = "优先减少转译和绘制开销，适合驱动稳定、主要追求帧率的设备。风险最高，遇到黑屏、闪退或花屏时应继续往右调。",
+        shortLabelResId = R.string.mobileglues_preset_performance_short,
+        titleResId = R.string.mobileglues_preset_performance_title,
+        descriptionResId = R.string.mobileglues_preset_performance_desc,
         settings = MobileGluesSettings(
             anglePolicy = MobileGluesAnglePolicy.PREFER_DISABLED,
             noErrorPolicy = MobileGluesNoErrorPolicy.AUTO,
@@ -24,9 +28,9 @@ enum class MobileGluesPreset(
         )
     ),
     BALANCED_PERFORMANCE(
-        shortLabel = "偏性能",
-        title = "偏性能平衡",
-        description = "保留较高性能，同时收回一部分激进设置，适合大多数图形驱动正常的机型。",
+        shortLabelResId = R.string.mobileglues_preset_balanced_performance_short,
+        titleResId = R.string.mobileglues_preset_balanced_performance_title,
+        descriptionResId = R.string.mobileglues_preset_balanced_performance_desc,
         settings = MobileGluesSettings(
             anglePolicy = MobileGluesAnglePolicy.PREFER_DISABLED,
             noErrorPolicy = MobileGluesNoErrorPolicy.AUTO,
@@ -41,9 +45,9 @@ enum class MobileGluesPreset(
         )
     ),
     BALANCED_COMPATIBILITY(
-        shortLabel = "偏兼容",
-        title = "偏兼容平衡",
-        description = "优先稳定，开始明显收敛图形路径。适合出现偶发闪退、shader 报错或黑屏的设备。",
+        shortLabelResId = R.string.mobileglues_preset_balanced_compatibility_short,
+        titleResId = R.string.mobileglues_preset_balanced_compatibility_title,
+        descriptionResId = R.string.mobileglues_preset_balanced_compatibility_desc,
         settings = MobileGluesSettings(
             anglePolicy = MobileGluesAnglePolicy.PREFER_ENABLED,
             noErrorPolicy = MobileGluesNoErrorPolicy.DO_NOT_IGNORE,
@@ -58,9 +62,9 @@ enum class MobileGluesPreset(
         )
     ),
     COMPATIBILITY_PRIORITY(
-        shortLabel = "兼容",
-        title = "兼容优先",
-        description = "最大限度收敛到保守路径，适合华为 / Maleoon 或已知不稳定设备。性能最低，但最容易先跑起来。",
+        shortLabelResId = R.string.mobileglues_preset_compatibility_short,
+        titleResId = R.string.mobileglues_preset_compatibility_title,
+        descriptionResId = R.string.mobileglues_preset_compatibility_desc,
         settings = MobileGluesSettings(
             anglePolicy = MobileGluesAnglePolicy.ENABLE,
             noErrorPolicy = MobileGluesNoErrorPolicy.DO_NOT_IGNORE,
@@ -74,6 +78,12 @@ enum class MobileGluesPreset(
             fsr1QualityPreset = MobileGluesFsr1QualityPreset.DISABLED,
         )
     );
+
+    fun shortLabel(context: Context): String = context.getString(shortLabelResId)
+
+    fun title(context: Context): String = context.getString(titleResId)
+
+    fun description(context: Context): String = context.getString(descriptionResId)
 
     companion object {
         fun fromSliderIndex(index: Int): MobileGluesPreset {
