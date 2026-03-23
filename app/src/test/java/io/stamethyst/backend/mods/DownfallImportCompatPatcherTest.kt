@@ -25,6 +25,12 @@ import org.objectweb.asm.tree.MethodNode
 
 class DownfallImportCompatPatcherTest {
     private companion object {
+        const val BOSS_PANEL_X_RATIO = 0.9f
+        const val BOSS_PANEL_Y_RATIO = 0.51f
+        const val BOSS_PANEL_WIDTH_RATIO = 0.15f
+        const val LEGACY_RELATIVE_BOSS_PANEL_X_RATIO = 0.05f
+        const val LEGACY_RELATIVE_BOSS_PANEL_Y_RATIO = 0.77f
+        const val LEGACY_RELATIVE_BOSS_PANEL_WIDTH_RATIO = 0.25f
         const val SETTINGS_SCALE_FIELD_NAME = "scale"
         const val SETTINGS_RENDER_SCALE_FIELD_NAME = "renderScale"
     }
@@ -36,18 +42,21 @@ class DownfallImportCompatPatcherTest {
         createDownfallJar(jarFile)
 
         val firstPatch = DownfallImportCompatPatcher.patchInPlace(jarFile)
-        assertEquals(3, firstPatch.patchedClassEntries)
+        assertEquals(4, firstPatch.patchedClassEntries)
         assertEquals(2, firstPatch.patchedMerchantClassEntries)
         assertEquals(1, firstPatch.patchedHexaghostBodyClassEntries)
+        assertEquals(1, firstPatch.patchedBossMechanicPanelClassEntries)
 
         assertTrue(hasMerchantRugCenteredDrawX(jarFile, "downfall/monsters/FleeingMerchant.class"))
         assertTrue(hasMerchantRugCenteredDrawX(jarFile, "charbosses/bosses/Merchant/CharBossMerchant.class"))
         assertTrue(hasRenderScaleAlignedMyBody(jarFile))
+        assertTrue(hasRelativeBossMechanicPanelLayout(jarFile))
 
         val secondPatch = DownfallImportCompatPatcher.patchInPlace(jarFile)
         assertEquals(0, secondPatch.patchedClassEntries)
         assertEquals(0, secondPatch.patchedMerchantClassEntries)
         assertEquals(0, secondPatch.patchedHexaghostBodyClassEntries)
+        assertEquals(0, secondPatch.patchedBossMechanicPanelClassEntries)
     }
 
     @Test
@@ -64,6 +73,29 @@ class DownfallImportCompatPatcherTest {
         assertEquals(0, patchResult.patchedClassEntries)
         assertEquals(0, patchResult.patchedMerchantClassEntries)
         assertEquals(0, patchResult.patchedHexaghostBodyClassEntries)
+        assertEquals(0, patchResult.patchedBossMechanicPanelClassEntries)
+    }
+
+    @Test
+    fun patchInPlace_rewritesPreviousRelativeBossPanelLayout() {
+        val tempDir = Files.createTempDirectory("downfall-import-patcher-boss-panel-upgrade")
+        val jarFile = tempDir.resolve("Downfall.jar").toFile()
+        ZipOutputStream(jarFile.outputStream()).use { zipOut ->
+            writeClassEntry(
+                zipOut = zipOut,
+                entryName = "charbosses/BossMechanicDisplayPanel.class",
+                classBytes = buildRelativeBossMechanicDisplayPanelClassBytes(
+                    xRatio = LEGACY_RELATIVE_BOSS_PANEL_X_RATIO,
+                    yRatio = LEGACY_RELATIVE_BOSS_PANEL_Y_RATIO,
+                    widthRatio = LEGACY_RELATIVE_BOSS_PANEL_WIDTH_RATIO
+                )
+            )
+        }
+
+        val patchResult = DownfallImportCompatPatcher.patchInPlace(jarFile)
+        assertEquals(1, patchResult.patchedClassEntries)
+        assertEquals(1, patchResult.patchedBossMechanicPanelClassEntries)
+        assertTrue(hasRelativeBossMechanicPanelLayout(jarFile))
     }
 
     @Test
@@ -87,6 +119,7 @@ class DownfallImportCompatPatcherTest {
         assertEquals(1, patchResult.patchedClassEntries)
         assertEquals(0, patchResult.patchedMerchantClassEntries)
         assertEquals(1, patchResult.patchedHexaghostBodyClassEntries)
+        assertEquals(0, patchResult.patchedBossMechanicPanelClassEntries)
         assertTrue(hasRenderScaleAlignedMyBody(jarFile))
     }
 
@@ -106,6 +139,11 @@ class DownfallImportCompatPatcherTest {
                 zipOut = zipOut,
                 entryName = "theHexaghost/vfx/MyBody.class",
                 classBytes = buildMyBodyClassBytes()
+            )
+            writeClassEntry(
+                zipOut = zipOut,
+                entryName = "charbosses/BossMechanicDisplayPanel.class",
+                classBytes = buildBossMechanicDisplayPanelClassBytes()
             )
         }
     }
@@ -328,6 +366,107 @@ class DownfallImportCompatPatcherTest {
         return classWriter.toByteArray()
     }
 
+    private fun buildBossMechanicDisplayPanelClassBytes(): ByteArray {
+        val classWriter = ClassWriter(0)
+        classWriter.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC,
+            "charbosses/BossMechanicDisplayPanel",
+            null,
+            "automaton/EasyInfoDisplayPanel",
+            null
+        )
+        classWriter.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "X", "I", null, null).visitEnd()
+        classWriter.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "Y", "I", null, null).visitEnd()
+        classWriter.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, "WIDTH", "I", null, null).visitEnd()
+
+        val constructor = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null)
+        constructor.visitCode()
+        constructor.visitVarInsn(Opcodes.ALOAD, 0)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "charbosses/BossMechanicDisplayPanel", "X", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "charbosses/BossMechanicDisplayPanel", "Y", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "charbosses/BossMechanicDisplayPanel", "WIDTH", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitMethodInsn(
+            Opcodes.INVOKESPECIAL,
+            "automaton/EasyInfoDisplayPanel",
+            "<init>",
+            "(FFF)V",
+            false
+        )
+        constructor.visitInsn(Opcodes.RETURN)
+        constructor.visitMaxs(4, 1)
+        constructor.visitEnd()
+
+        val clinitMethod = classWriter.visitMethod(
+            Opcodes.ACC_STATIC,
+            "<clinit>",
+            "()V",
+            null,
+            null
+        )
+        clinitMethod.visitCode()
+        clinitMethod.visitLdcInsn(1550)
+        clinitMethod.visitFieldInsn(Opcodes.PUTSTATIC, "charbosses/BossMechanicDisplayPanel", "X", "I")
+        clinitMethod.visitLdcInsn(550)
+        clinitMethod.visitFieldInsn(Opcodes.PUTSTATIC, "charbosses/BossMechanicDisplayPanel", "Y", "I")
+        clinitMethod.visitLdcInsn(287)
+        clinitMethod.visitFieldInsn(Opcodes.PUTSTATIC, "charbosses/BossMechanicDisplayPanel", "WIDTH", "I")
+        clinitMethod.visitInsn(Opcodes.RETURN)
+        clinitMethod.visitMaxs(1, 0)
+        clinitMethod.visitEnd()
+
+        classWriter.visitEnd()
+        return classWriter.toByteArray()
+    }
+
+    private fun buildRelativeBossMechanicDisplayPanelClassBytes(
+        xRatio: Float,
+        yRatio: Float,
+        widthRatio: Float
+    ): ByteArray {
+        val classWriter = ClassWriter(0)
+        classWriter.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC,
+            "charbosses/BossMechanicDisplayPanel",
+            null,
+            "automaton/EasyInfoDisplayPanel",
+            null
+        )
+
+        val constructor = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null)
+        constructor.visitCode()
+        constructor.visitVarInsn(Opcodes.ALOAD, 0)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "WIDTH", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitLdcInsn(xRatio)
+        constructor.visitInsn(Opcodes.FMUL)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "HEIGHT", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitLdcInsn(yRatio)
+        constructor.visitInsn(Opcodes.FMUL)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "WIDTH", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitLdcInsn(widthRatio)
+        constructor.visitInsn(Opcodes.FMUL)
+        constructor.visitMethodInsn(
+            Opcodes.INVOKESPECIAL,
+            "automaton/EasyInfoDisplayPanel",
+            "<init>",
+            "(FFF)V",
+            false
+        )
+        constructor.visitInsn(Opcodes.RETURN)
+        constructor.visitMaxs(4, 1)
+        constructor.visitEnd()
+
+        classWriter.visitEnd()
+        return classWriter.toByteArray()
+    }
+
     private fun hasMerchantRugCenteredDrawX(jarFile: File, entryName: String): Boolean {
         val classBytes = JarFileIoUtils.readJarEntryBytes(jarFile, entryName)
         assertNotNull(classBytes)
@@ -483,6 +622,50 @@ class DownfallImportCompatPatcherTest {
             hasRenderScaleReadInRender &&
             clinitHasRenderScale &&
             !hasLegacyScaleRead
+    }
+
+    private fun hasRelativeBossMechanicPanelLayout(jarFile: File): Boolean {
+        val classBytes = JarFileIoUtils.readJarEntryBytes(jarFile, "charbosses/BossMechanicDisplayPanel.class")
+        assertNotNull(classBytes)
+        val constructor = readClassNode(classBytes!!).methods.firstOrNull { it.name == "<init>" }
+        assertNotNull(constructor)
+        val instructions = meaningfulInstructions(constructor!!)
+        val hasLegacyPanelFieldReads = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == "charbosses/BossMechanicDisplayPanel" &&
+                node.name in setOf("X", "Y", "WIDTH") &&
+                node.desc == "I"
+        }
+        val hasSettingsWidthRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == "com/megacrit/cardcrawl/core/Settings" &&
+                node.name == "WIDTH" &&
+                node.desc == "I"
+        }
+        val hasSettingsHeightRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == "com/megacrit/cardcrawl/core/Settings" &&
+                node.name == "HEIGHT" &&
+                node.desc == "I"
+        }
+        val hasXRatio = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_X_RATIO
+        }
+        val hasYRatio = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_Y_RATIO
+        }
+        val hasWidthRatio = instructions.any { node ->
+            node is LdcInsnNode && node.cst == BOSS_PANEL_WIDTH_RATIO
+        }
+        return !hasLegacyPanelFieldReads &&
+            hasSettingsWidthRead &&
+            hasSettingsHeightRead &&
+            hasXRatio &&
+            hasYRatio &&
+            hasWidthRatio
     }
 
     private fun readClassNode(classBytes: ByteArray): ClassNode {

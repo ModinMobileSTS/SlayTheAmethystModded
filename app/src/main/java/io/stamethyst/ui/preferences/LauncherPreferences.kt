@@ -57,8 +57,6 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
-    val DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED: Boolean
-        get() = LauncherConfig.DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED
     val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
         get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
@@ -141,14 +139,6 @@ object LauncherPreferences {
 
     fun saveShowFloatingMouseWindow(context: Context, enabled: Boolean) {
         LauncherConfig.saveShowFloatingMouseWindow(context, enabled)
-    }
-
-    fun readTouchMouseDoubleTapLockEnabled(context: Context): Boolean {
-        return LauncherConfig.readTouchMouseDoubleTapLockEnabled(context)
-    }
-
-    fun saveTouchMouseDoubleTapLockEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.saveTouchMouseDoubleTapLockEnabled(context, enabled)
     }
 
     fun readLongPressMouseShowsKeyboard(context: Context): Boolean {

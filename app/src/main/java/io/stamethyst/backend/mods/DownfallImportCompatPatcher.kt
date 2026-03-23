@@ -21,22 +21,29 @@ import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.LineNumberNode
+import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.VarInsnNode
 
 internal data class DownfallImportCompatPatchResult(
     val patchedClassEntries: Int,
     val patchedMerchantClassEntries: Int,
-    val patchedHexaghostBodyClassEntries: Int
+    val patchedHexaghostBodyClassEntries: Int,
+    val patchedBossMechanicPanelClassEntries: Int
 )
 
 internal object DownfallImportCompatPatcher {
+    private const val BOSS_MECHANIC_PANEL_ENTRY = "charbosses/BossMechanicDisplayPanel.class"
     private const val CHAR_BOSS_MERCHANT_ENTRY = "charbosses/bosses/Merchant/CharBossMerchant.class"
     private const val FLEEING_MERCHANT_ENTRY = "downfall/monsters/FleeingMerchant.class"
     private const val HEXAGHOST_MY_BODY_ENTRY = "theHexaghost/vfx/MyBody.class"
 
+    private const val EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME = "automaton/EasyInfoDisplayPanel"
+    private const val EASY_INFO_DISPLAY_PANEL_CTOR_DESC = "(FFF)V"
     private const val ABSTRACT_PLAYER_INTERNAL_NAME = "com/megacrit/cardcrawl/characters/AbstractPlayer"
     private const val SETTINGS_INTERNAL_NAME = "com/megacrit/cardcrawl/core/Settings"
+    private const val SETTINGS_WIDTH_FIELD_NAME = "WIDTH"
+    private const val SETTINGS_HEIGHT_FIELD_NAME = "HEIGHT"
     private const val SETTINGS_SCALE_FIELD_NAME = "scale"
     private const val SETTINGS_RENDER_SCALE_FIELD_NAME = "renderScale"
     private const val DRAW_X_FIELD_NAME = "drawX"
@@ -56,6 +63,9 @@ internal object DownfallImportCompatPatcher {
     private const val MY_BODY_Y_OFFSET = 256.0f
     private const val LEGACY_MY_BODY_Y_OFFSET_TOO_HIGH = 244.0f
     private const val LEGACY_MY_BODY_Y_OFFSET_TOO_LOW = 268.0f
+    private const val BOSS_PANEL_X_RATIO = 0.9f
+    private const val BOSS_PANEL_Y_RATIO = 0.51f
+    private const val BOSS_PANEL_WIDTH_RATIO = 0.15f
     private const val FLOAT_TOLERANCE = 0.0001f
 
     @Throws(IOException::class)
@@ -64,11 +74,19 @@ internal object DownfallImportCompatPatcher {
             throw IOException("Mod jar not found: ${modJar.absolutePath}")
         }
 
+        var patchedBossMechanicPanelClassEntries = 0
         var patchedMerchantClassEntries = 0
         var patchedHexaghostBodyClassEntries = 0
         val replacements = LinkedHashMap<String, ByteArray>()
 
         ZipFile(modJar).use { zipFile ->
+            patchClassEntry(zipFile, BOSS_MECHANIC_PANEL_ENTRY) { classBytes ->
+                patchBossMechanicPanelClassBytes(classBytes)
+            }?.let { (entryName, patchedBytes) ->
+                replacements[entryName] = patchedBytes
+                patchedBossMechanicPanelClassEntries++
+            }
+
             patchClassEntry(zipFile, CHAR_BOSS_MERCHANT_ENTRY) { classBytes ->
                 patchMerchantClassBytes(classBytes)
             }?.let { (entryName, patchedBytes) ->
@@ -98,7 +116,8 @@ internal object DownfallImportCompatPatcher {
         return DownfallImportCompatPatchResult(
             patchedClassEntries = replacements.size,
             patchedMerchantClassEntries = patchedMerchantClassEntries,
-            patchedHexaghostBodyClassEntries = patchedHexaghostBodyClassEntries
+            patchedHexaghostBodyClassEntries = patchedHexaghostBodyClassEntries,
+            patchedBossMechanicPanelClassEntries = patchedBossMechanicPanelClassEntries
         )
     }
 
@@ -168,10 +187,96 @@ internal object DownfallImportCompatPatcher {
         return false
     }
 
+    @Throws(IOException::class)
+    private fun patchBossMechanicPanelClassBytes(classBytes: ByteArray): ByteArray? {
+        val classNode = readClassNode(classBytes)
+        val patched = classNode.methods.any { method ->
+            method.name == "<init>" &&
+                method.desc == "()V" &&
+                patchBossMechanicPanelConstructor(classNode.name, method)
+        }
+        if (!patched) {
+            return null
+        }
+        return writeClass(classNode)
+    }
+
+    private fun patchBossMechanicPanelConstructor(ownerInternalName: String, method: MethodNode): Boolean {
+        if (usesRelativeBossMechanicPanelLayout(ownerInternalName, method)) {
+            return false
+        }
+        val hasPanelCoordinateReads = method.instructions.toArray().any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                (
+                    (node.owner == ownerInternalName &&
+                        node.name in setOf("X", "Y", "WIDTH") &&
+                        node.desc == "I") ||
+                        (node.owner == SETTINGS_INTERNAL_NAME &&
+                            node.name in setOf(SETTINGS_WIDTH_FIELD_NAME, SETTINGS_HEIGHT_FIELD_NAME) &&
+                            node.desc == "I")
+                    )
+        }
+        val hasEasyInfoPanelSuperCall = method.instructions.toArray().any { node ->
+            node is MethodInsnNode &&
+                node.opcode == Opcodes.INVOKESPECIAL &&
+                node.owner == EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME &&
+                node.name == "<init>" &&
+                node.desc == EASY_INFO_DISPLAY_PANEL_CTOR_DESC
+        }
+        if (!hasPanelCoordinateReads || !hasEasyInfoPanelSuperCall) {
+            return false
+        }
+        replaceMethodInstructions(method, buildBossMechanicPanelConstructorInstructions())
+        method.maxLocals = maxOf(method.maxLocals, 1)
+        method.maxStack = maxOf(method.maxStack, 4)
+        return true
+    }
+
+    private fun usesRelativeBossMechanicPanelLayout(ownerInternalName: String, method: MethodNode): Boolean {
+        val instructions = method.instructions.toArray().toList()
+        val hasLegacyPanelReads = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == ownerInternalName &&
+                node.name in setOf("X", "Y", "WIDTH") &&
+                node.desc == "I"
+        }
+        val hasWidthRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == SETTINGS_INTERNAL_NAME &&
+                node.name == SETTINGS_WIDTH_FIELD_NAME &&
+                node.desc == "I"
+        }
+        val hasHeightRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == SETTINGS_INTERNAL_NAME &&
+                node.name == SETTINGS_HEIGHT_FIELD_NAME &&
+                node.desc == "I"
+        }
+        val hasXRatio = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, BOSS_PANEL_X_RATIO)
+        }
+        val hasYRatio = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, BOSS_PANEL_Y_RATIO)
+        }
+        val hasWidthRatio = instructions.any { node ->
+            node is LdcInsnNode && isFloatConstant(node.cst, BOSS_PANEL_WIDTH_RATIO)
+        }
+        return !hasLegacyPanelReads &&
+            hasWidthRead &&
+            hasHeightRead &&
+            hasXRatio &&
+            hasYRatio &&
+            hasWidthRatio
+    }
+
     private fun buildMerchantDrawXInstructions(ownerInternalName: String): InsnList {
         return InsnList().apply {
             add(VarInsnNode(Opcodes.ALOAD, 0))
-            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, "WIDTH", "I"))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_WIDTH_FIELD_NAME, "I"))
             add(InsnNode(Opcodes.I2F))
             add(LdcInsnNode(MERCHANT_RUG_WIDTH_RATIO))
             add(InsnNode(Opcodes.FMUL))
@@ -184,6 +289,34 @@ internal object DownfallImportCompatPatcher {
             add(InsnNode(Opcodes.FMUL))
             add(InsnNode(Opcodes.FADD))
             add(FieldInsnNode(Opcodes.PUTFIELD, ownerInternalName, DRAW_X_FIELD_NAME, DRAW_X_FIELD_DESC))
+        }
+    }
+
+    private fun buildBossMechanicPanelConstructorInstructions(): InsnList {
+        return InsnList().apply {
+            add(VarInsnNode(Opcodes.ALOAD, 0))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_WIDTH_FIELD_NAME, "I"))
+            add(InsnNode(Opcodes.I2F))
+            add(LdcInsnNode(BOSS_PANEL_X_RATIO))
+            add(InsnNode(Opcodes.FMUL))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_HEIGHT_FIELD_NAME, "I"))
+            add(InsnNode(Opcodes.I2F))
+            add(LdcInsnNode(BOSS_PANEL_Y_RATIO))
+            add(InsnNode(Opcodes.FMUL))
+            add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_WIDTH_FIELD_NAME, "I"))
+            add(InsnNode(Opcodes.I2F))
+            add(LdcInsnNode(BOSS_PANEL_WIDTH_RATIO))
+            add(InsnNode(Opcodes.FMUL))
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKESPECIAL,
+                    EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME,
+                    "<init>",
+                    EASY_INFO_DISPLAY_PANEL_CTOR_DESC,
+                    false
+                )
+            )
+            add(InsnNode(Opcodes.RETURN))
         }
     }
 
@@ -429,6 +562,17 @@ internal object DownfallImportCompatPatcher {
             }
             current = next
         }
+    }
+
+    private fun replaceMethodInstructions(method: MethodNode, newInstructions: InsnList) {
+        method.instructions.toArray().forEach { node ->
+            method.instructions.remove(node)
+        }
+        method.tryCatchBlocks.clear()
+        method.localVariables?.clear()
+        method.visibleLocalVariableAnnotations?.clear()
+        method.invisibleLocalVariableAnnotations?.clear()
+        method.instructions.add(newInstructions)
     }
 
     private fun readClassNode(classBytes: ByteArray): ClassNode {

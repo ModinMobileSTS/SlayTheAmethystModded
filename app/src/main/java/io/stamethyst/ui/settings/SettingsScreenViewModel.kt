@@ -102,6 +102,7 @@ class SettingsScreenViewModel : ViewModel() {
         val busy: Boolean = false,
         val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
         val busyMessage: UiText? = null,
+        val busyProgressPercent: Int? = null,
         val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
@@ -152,8 +153,6 @@ class SettingsScreenViewModel : ViewModel() {
         val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
-        val touchMouseDoubleTapLockEnabled: Boolean =
-            LauncherPreferences.DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
@@ -507,7 +506,6 @@ class SettingsScreenViewModel : ViewModel() {
                 val backBehavior = readBackBehaviorSelection(host)
                 val manualDismissBootOverlay = readManualDismissBootOverlaySelection(host)
                 val showFloatingMouseWindow = readShowFloatingMouseWindowSelection(host)
-                val touchMouseDoubleTapLockEnabled = readTouchMouseDoubleTapLockSelection(host)
                 val longPressMouseShowsKeyboard = readLongPressMouseShowsKeyboardSelection(host)
                 val autoSwitchLeftAfterRightClick = readAutoSwitchLeftAfterRightClickSelection(host)
                 val showModFileName = readShowModFileNameSelection(host)
@@ -648,13 +646,6 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\n")
                         .append(
                             host.getString(
-                                R.string.status_touch_mouse_double_tap_lock_format,
-                                if (touchMouseDoubleTapLockEnabled) "ON" else "OFF"
-                            )
-                        )
-                    append("\n")
-                        .append(
-                            host.getString(
                                 R.string.status_touch_mouse_long_press_keyboard_format,
                                 if (longPressMouseShowsKeyboard) "ON" else "OFF"
                             )
@@ -691,6 +682,7 @@ class SettingsScreenViewModel : ViewModel() {
                         busy = if (clearBusy) false else uiState.busy,
                         busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
+                        busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
                         playerName = playerName,
                         selectedRenderScale = renderScale,
                         selectedTargetFps = targetFps,
@@ -721,7 +713,6 @@ class SettingsScreenViewModel : ViewModel() {
                         backBehavior = backBehavior,
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         showFloatingMouseWindow = showFloatingMouseWindow,
-                        touchMouseDoubleTapLockEnabled = touchMouseDoubleTapLockEnabled,
                         longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
                         autoSwitchLeftAfterRightClick = autoSwitchLeftAfterRightClick,
                         showModFileName = showModFileName,
@@ -750,7 +741,8 @@ class SettingsScreenViewModel : ViewModel() {
                     if (clearBusy) {
                         uiState = uiState.copy(
                             busy = false,
-                            busyMessage = null
+                            busyMessage = null,
+                            busyProgressPercent = null
                         )
                     }
                 }
@@ -901,10 +893,32 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_mods_archive))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.settings_busy_exporting_mods_archive_with_progress,
+                0
+            ),
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val exportedCount = SettingsFileService.exportModsBundle(host, uri)
+                val exportedCount = SettingsFileService.exportModsBundle(host, uri) { percent ->
+                    host.runOnUiThread {
+                        if (!uiState.busy) {
+                            return@runOnUiThread
+                        }
+                        setBusy(
+                            busy = true,
+                            message = UiText.StringResource(
+                                R.string.settings_busy_exporting_mods_archive_with_progress,
+                                percent.coerceIn(0, 100)
+                            ),
+                            operation = uiState.busyOperation,
+                            progressPercent = percent
+                        )
+                    }
+                }
                 host.runOnUiThread {
                     if (exportedCount > 0) {
                         showToast(
@@ -1218,15 +1232,6 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onTouchMouseDoubleTapLockChanged(host: Activity, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        uiState = uiState.copy(touchMouseDoubleTapLockEnabled = enabled)
-        saveTouchMouseDoubleTapLockSelection(host, enabled)
-        refreshStatus(host)
-    }
-
     fun onLongPressMouseShowsKeyboardChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -1409,6 +1414,7 @@ class SettingsScreenViewModel : ViewModel() {
     fun onJarPicked(
         host: Activity,
         uri: Uri?,
+        showSuccessToast: Boolean = true,
         onCompleted: ((Boolean) -> Unit)? = null
     ) {
         if (uri == null) {
@@ -1431,11 +1437,13 @@ class SettingsScreenViewModel : ViewModel() {
                 val warmupWarning = prewarmMtsClasspathAfterImport(host)
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
-                        host,
-                        host.getString(R.string.sts_jar_import_success),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    if (showSuccessToast) {
+                        Toast.makeText(
+                            host,
+                            host.getString(R.string.sts_jar_import_success),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                     if (warmupWarning != null) {
                         Toast.makeText(host, warmupWarning, Toast.LENGTH_LONG).show()
                     }
@@ -1862,19 +1870,22 @@ class SettingsScreenViewModel : ViewModel() {
     private fun setBusy(
         busy: Boolean,
         message: UiText?,
-        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
+        operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY,
+        progressPercent: Int? = null
     ) {
         uiState = if (busy) {
             uiState.copy(
                 busy = true,
                 busyOperation = operation,
-                busyMessage = message
+                busyMessage = message,
+                busyProgressPercent = progressPercent?.coerceIn(0, 100)
             )
         } else {
             uiState.copy(
                 busy = false,
                 busyOperation = UiBusyOperation.NONE,
-                busyMessage = null
+                busyMessage = null,
+                busyProgressPercent = null
             )
         }
     }
@@ -2224,14 +2235,6 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
-    }
-
-    private fun readTouchMouseDoubleTapLockSelection(host: Activity): Boolean {
-        return LauncherPreferences.readTouchMouseDoubleTapLockEnabled(host)
-    }
-
-    private fun saveTouchMouseDoubleTapLockSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.saveTouchMouseDoubleTapLockEnabled(host, enabled)
     }
 
     private fun readLongPressMouseShowsKeyboardSelection(host: Activity): Boolean {

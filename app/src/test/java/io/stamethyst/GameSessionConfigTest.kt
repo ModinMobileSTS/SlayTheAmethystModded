@@ -62,8 +62,8 @@ class GameSessionConfigTest {
             sustainedPerformanceModeEnabled = false,
             systemGameMode = AndroidGameModeSnapshot(
                 rawMode = 0,
-                displayName = "UNSUPPORTED",
-                description = "",
+                displayNameResId = R.string.settings_game_mode_name_unsupported,
+                descriptionResId = R.string.settings_game_mode_desc_unsupported,
                 supported = false
             )
         )

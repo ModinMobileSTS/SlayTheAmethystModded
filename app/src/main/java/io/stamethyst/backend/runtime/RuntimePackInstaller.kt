@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.system.Os
 import io.stamethyst.R
+import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
@@ -540,7 +541,7 @@ object RuntimePackInstaller {
             }
         }
 
-        deleteRecursively(directory)
+        FileTreeCleaner.deleteRecursively(directory)
         if (!directory.exists()) {
             if (!directory.mkdirs() && !directory.isDirectory) {
                 throw IOException("Failed to create $label: ${directory.absolutePath}")
@@ -560,37 +561,14 @@ object RuntimePackInstaller {
 
         for (child in remaining) {
             throwIfInterrupted()
-            deleteRecursively(child)
+            FileTreeCleaner.deleteRecursively(child)
         }
         val stillRemaining = directory.listFiles()
         if (stillRemaining == null || stillRemaining.isNotEmpty()) {
-            throw IOException("Failed to clean $label: ${directory.absolutePath}")
+            val remainingSummary = FileTreeCleaner.summarizeRemainingEntries(directory)
+            val detail = if (remainingSummary.isNullOrBlank()) "" else " (remaining: $remainingSummary)"
+            throw IOException("Failed to clean $label: ${directory.absolutePath}$detail")
         }
-    }
-
-    private fun deleteRecursively(file: File?): Boolean {
-        if (Thread.currentThread().isInterrupted) {
-            return false
-        }
-        if (file == null || !file.exists()) {
-            return true
-        }
-        var deleted = true
-        if (file.isDirectory) {
-            val children = file.listFiles()
-            if (children != null) {
-                for (child in children) {
-                    if (Thread.currentThread().isInterrupted) {
-                        return false
-                    }
-                    deleted = deleted and deleteRecursively(child)
-                }
-            }
-        }
-        if (!file.delete() && file.exists()) {
-            deleted = false
-        }
-        return deleted
     }
 
     private fun reportProgress(callback: StartupProgressCallback?, percent: Int, message: String) {

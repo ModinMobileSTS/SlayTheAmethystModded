@@ -36,7 +36,6 @@ internal class FloatingMouseOverlayController(
     private val requestRenderViewFocus: () -> Unit,
     private val autoSwitchBackToLeftAfterRightClick: Boolean,
     private val longPressMouseShowsKeyboard: Boolean,
-    private val doubleTapLocksClicksEnabled: Boolean,
 ) {
     private enum class TouchMouseMode {
         LEFT,
@@ -60,14 +59,30 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MOUSE_ACTIVE_ALPHA = 1.0f
         private const val FLOATING_MOUSE_ACTIVE_KEEP_MS = 1500L
         private const val FLOATING_MOUSE_ALPHA_ANIM_DURATION_MS = 180L
+        private const val FLOATING_MENU_ANIM_DURATION_MS = 180L
+        private const val FLOATING_MENU_ANIM_OFFSET_DP = 10
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
         private const val FLOATING_MENU_ANCHOR_GAP_DP = 8
+        private const val FLOATING_COLLAPSE_BUTTON_GAP_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
         private const val SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP = 12f
         private const val SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP = 46
         private const val SPECIAL_KEYS_BUTTON_SPACING_DP = 6
+        private const val VIRTUAL_WHEEL_TRACK_WIDTH_DP = 42
+        private const val VIRTUAL_WHEEL_TRACK_HEIGHT_DP = 88
+        private const val VIRTUAL_WHEEL_TRACK_PADDING_VERTICAL_DP = 10
+        private const val VIRTUAL_WHEEL_THUMB_WIDTH_DP = 30
+        private const val VIRTUAL_WHEEL_THUMB_HEIGHT_DP = 24
+        private const val VIRTUAL_WHEEL_CENTER_MARKER_WIDTH_DP = 16
+        private const val VIRTUAL_WHEEL_CENTER_MARKER_HEIGHT_DP = 2
+        private const val VIRTUAL_WHEEL_ARROW_TEXT_SIZE_SP = 10f
+        private const val VIRTUAL_WHEEL_DEAD_ZONE = 0.16f
+        private const val VIRTUAL_WHEEL_MIN_SCROLL_DELTA = 0.40
+        private const val VIRTUAL_WHEEL_MAX_SCROLL_DELTA = 1.10
+        private const val VIRTUAL_WHEEL_REPEAT_SLOW_MS = 88L
+        private const val VIRTUAL_WHEEL_REPEAT_FAST_MS = 42L
         private const val SOFT_KEY_MIN_PRESS_MS = 70L
         private const val SOFT_TEXT_DUPLICATE_CROSS_SOURCE_WINDOW_MS = 150L
         private const val SOFT_TEXT_DUPLICATE_SAME_SOURCE_WINDOW_MS = 16L
@@ -93,23 +108,21 @@ internal class FloatingMouseOverlayController(
     private var floatingMouseMainIcon: ImageView? = null
     private var imeProxyView: View? = null
     private var floatingMouseExpandedMenu: LinearLayout? = null
+    private var floatingMouseCollapseButton: TextView? = null
+    private var floatingMouseWheelView: VirtualMouseWheelView? = null
+    private var floatingMouseLockButton: TextView? = null
     private var floatingMouseTouchSlop = 0
-    private var floatingMouseDoubleTapSlop = 0
     private var floatingMouseDragging = false
     private var floatingMouseLongPressTriggered = false
     private var floatingMousePressRunnable: Runnable? = null
-    private var floatingMouseSingleTapRunnable: Runnable? = null
     private var floatingMouseIdleRunnable: Runnable? = null
     private var floatingMouseDownRawX = 0f
     private var floatingMouseDownRawY = 0f
     private var floatingMouseDownLeft = 0
     private var floatingMouseDownTop = 0
-    private var floatingMouseLastTapUpAtMs = 0L
-    private var floatingMouseLastTapUpRawX = 0f
-    private var floatingMouseLastTapUpRawY = 0f
     private var touchMouseLockEnabled = false
+    private var floatingMouseMenuExpanded = false
     private val pendingSoftKeyReleaseRunnables = mutableMapOf<Int, Runnable>()
-    private val floatingMouseDoubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
 
     private val toggleSpecialKeyButtons = mutableMapOf<Int, View>()
     private val activeToggleSoftKeys = mutableMapOf<Int, SoftKeyboardTarget>()
@@ -124,7 +137,6 @@ internal class FloatingMouseOverlayController(
         hostView = host
         val viewConfiguration = ViewConfiguration.get(activity)
         floatingMouseTouchSlop = viewConfiguration.scaledTouchSlop
-        floatingMouseDoubleTapSlop = viewConfiguration.scaledDoubleTapSlop
 
         val imeView = GameImeProxyView(activity).apply {
             alpha = 0f
@@ -168,6 +180,23 @@ internal class FloatingMouseOverlayController(
         floatingMouseExpandedMenu = expandedMenu
         populateFloatingMouseExpandedMenu(expandedMenu)
 
+        val collapseButton = createFloatingMouseCollapseButton().apply {
+            visibility = View.GONE
+            alpha = 0f
+        }
+        host.addView(
+            collapseButton,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                dpToPx(SPECIAL_KEYS_BUTTON_HEIGHT_DP),
+                Gravity.TOP or Gravity.START
+            ).apply {
+                leftMargin = 0
+                topMargin = 0
+            }
+        )
+        floatingMouseCollapseButton = collapseButton
+
         val buttonSize = dpToPx(56)
         val iconSize = dpToPx(30)
         val button = FrameLayout(activity).apply {
@@ -206,7 +235,6 @@ internal class FloatingMouseOverlayController(
         flushPendingSoftKeyReleases()
         hideSoftKeyboard()
         cancelFloatingMouseLongPress()
-        clearFloatingMouseSingleTap()
         clearIdleRunnable()
         floatingMouseButton?.animate()?.cancel()
         releaseTouchButtonIfNeeded()
@@ -219,10 +247,13 @@ internal class FloatingMouseOverlayController(
         button.visibility = if (shouldShow) View.VISIBLE else View.GONE
         if (shouldShow) {
             button.animate().cancel()
-            button.alpha = FLOATING_MOUSE_IDLE_ALPHA
+            button.alpha = if (floatingMouseMenuExpanded) {
+                FLOATING_MOUSE_ACTIVE_ALPHA
+            } else {
+                FLOATING_MOUSE_IDLE_ALPHA
+            }
         } else {
-            hideFloatingMouseExpandedMenu()
-            clearFloatingMouseSingleTap()
+            hideFloatingMouseExpandedMenu(animate = false)
             clearIdleRunnable()
             button.animate().cancel()
         }
@@ -274,6 +305,9 @@ internal class FloatingMouseOverlayController(
         floatingMouseButton?.let { button ->
             (button.parent as? FrameLayout)?.removeView(button)
         }
+        floatingMouseCollapseButton?.let { collapse ->
+            (collapse.parent as? FrameLayout)?.removeView(collapse)
+        }
         imeProxyView?.let { ime ->
             (ime.parent as? FrameLayout)?.removeView(ime)
         }
@@ -281,9 +315,13 @@ internal class FloatingMouseOverlayController(
             (menu.parent as? FrameLayout)?.removeView(menu)
         }
         floatingMouseButton = null
+        floatingMouseCollapseButton = null
         floatingMouseMainIcon = null
         imeProxyView = null
         floatingMouseExpandedMenu = null
+        floatingMouseWheelView = null
+        floatingMouseLockButton = null
+        floatingMouseMenuExpanded = false
         toggleSpecialKeyButtons.clear()
     }
 
@@ -299,19 +337,16 @@ internal class FloatingMouseOverlayController(
                 floatingMouseDownRawY = event.rawY
                 floatingMouseDownLeft = params.leftMargin
                 floatingMouseDownTop = params.topMargin
-                if (hasPendingFloatingMouseSingleTap() &&
-                    !canCurrentTapBecomeDoubleTap(event.rawX, event.rawY)
-                ) {
-                    flushPendingFloatingMouseSingleTap()
-                }
-
                 if (longPressMouseShowsKeyboard) {
                     val longPressRunnable = Runnable {
                         if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
                             floatingMouseLongPressTriggered = true
-                            flushPendingFloatingMouseSingleTap()
                             button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            showFloatingMouseExpandedMenu()
+                            if (floatingMouseMenuExpanded) {
+                                hideFloatingMouseExpandedMenu()
+                            } else {
+                                showFloatingMouseExpandedMenu()
+                            }
                         }
                     }
                     floatingMousePressRunnable = longPressRunnable
@@ -330,7 +365,6 @@ internal class FloatingMouseOverlayController(
                 ) {
                     floatingMouseDragging = true
                     cancelFloatingMouseLongPress()
-                    flushPendingFloatingMouseSingleTap()
                 }
                 if (floatingMouseDragging) {
                     val parentView = button.parent as? View
@@ -347,7 +381,7 @@ internal class FloatingMouseOverlayController(
             MotionEvent.ACTION_UP -> {
                 cancelFloatingMouseLongPress()
                 if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
-                    handleFloatingMouseTap(button, event.rawX, event.rawY)
+                    handleFloatingMouseTap(button)
                 }
                 floatingMouseDragging = false
                 floatingMouseLongPressTriggered = false
@@ -357,7 +391,6 @@ internal class FloatingMouseOverlayController(
 
             MotionEvent.ACTION_CANCEL -> {
                 cancelFloatingMouseLongPress()
-                flushPendingFloatingMouseSingleTap()
                 floatingMouseDragging = false
                 floatingMouseLongPressTriggered = false
                 scheduleFloatingMouseIdle()
@@ -374,77 +407,9 @@ internal class FloatingMouseOverlayController(
         floatingMousePressRunnable = null
     }
 
-    private fun handleFloatingMouseTap(button: View, rawX: Float, rawY: Float) {
-        if (!doubleTapLocksClicksEnabled) {
-            clearFloatingMouseSingleTap()
-            floatingMouseLastTapUpAtMs = 0L
-            button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            toggleTouchMouseMode()
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        if (canCurrentTapBecomeDoubleTap(rawX, rawY, now)) {
-            clearFloatingMouseSingleTap()
-            floatingMouseLastTapUpAtMs = 0L
-            button.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            toggleTouchMouseLock()
-            return
-        }
-        if (hasPendingFloatingMouseSingleTap()) {
-            flushPendingFloatingMouseSingleTap()
-        }
-        scheduleFloatingMouseSingleTap(button, rawX, rawY, now)
-    }
-
-    private fun hasPendingFloatingMouseSingleTap(): Boolean {
-        return floatingMouseSingleTapRunnable != null
-    }
-
-    private fun canCurrentTapBecomeDoubleTap(
-        rawX: Float,
-        rawY: Float,
-        now: Long = SystemClock.uptimeMillis()
-    ): Boolean {
-        if (!hasPendingFloatingMouseSingleTap()) {
-            return false
-        }
-        if (now - floatingMouseLastTapUpAtMs > floatingMouseDoubleTapTimeoutMs) {
-            return false
-        }
-        return abs(rawX - floatingMouseLastTapUpRawX) <= floatingMouseDoubleTapSlop &&
-            abs(rawY - floatingMouseLastTapUpRawY) <= floatingMouseDoubleTapSlop
-    }
-
-    private fun scheduleFloatingMouseSingleTap(
-        button: View,
-        rawX: Float,
-        rawY: Float,
-        timestampMs: Long
-    ) {
-        clearFloatingMouseSingleTap()
-        floatingMouseLastTapUpAtMs = timestampMs
-        floatingMouseLastTapUpRawX = rawX
-        floatingMouseLastTapUpRawY = rawY
-        val singleTapRunnable = Runnable {
-            floatingMouseSingleTapRunnable = null
-            floatingMouseLastTapUpAtMs = 0L
-            button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            toggleTouchMouseMode()
-        }
-        floatingMouseSingleTapRunnable = singleTapRunnable
-        button.postDelayed(singleTapRunnable, floatingMouseDoubleTapTimeoutMs)
-    }
-
-    private fun clearFloatingMouseSingleTap() {
-        val singleTapRunnable = floatingMouseSingleTapRunnable ?: return
-        floatingMouseButton?.removeCallbacks(singleTapRunnable)
-        floatingMouseSingleTapRunnable = null
-    }
-
-    private fun flushPendingFloatingMouseSingleTap() {
-        val singleTapRunnable = floatingMouseSingleTapRunnable ?: return
-        floatingMouseButton?.removeCallbacks(singleTapRunnable)
-        singleTapRunnable.run()
+    private fun handleFloatingMouseTap(button: View) {
+        button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        toggleTouchMouseMode()
     }
 
     private fun highlightFloatingMouse() {
@@ -465,6 +430,11 @@ internal class FloatingMouseOverlayController(
 
     private fun scheduleFloatingMouseIdle() {
         val button = floatingMouseButton ?: return
+        if (floatingMouseMenuExpanded) {
+            button.animate().cancel()
+            button.alpha = FLOATING_MOUSE_ACTIVE_ALPHA
+            return
+        }
         clearIdleRunnable()
         val idleRunnable = Runnable {
             if (button.visibility != View.VISIBLE) {
@@ -491,9 +461,6 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun toggleTouchMouseLock() {
-        if (!doubleTapLocksClicksEnabled) {
-            return
-        }
         releaseTouchButtonIfNeeded()
         touchMouseLockEnabled = !touchMouseLockEnabled
         updateTouchMouseModeUi()
@@ -523,6 +490,7 @@ internal class FloatingMouseOverlayController(
                 R.drawable.bg_touch_mouse_floating
             }
         )
+        updateFloatingMouseLockButtonUi()
     }
 
     private fun resolveTouchButton(): Int {
@@ -547,24 +515,75 @@ internal class FloatingMouseOverlayController(
     private fun populateFloatingMouseExpandedMenu(menu: LinearLayout) {
         toggleSpecialKeyButtons.clear()
         menu.removeAllViews()
+        val buttonColumn = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+        }
         val firstRow = listOf(
             SpecialKeySpec("Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, toggleable = true),
             SpecialKeySpec("Shift", KeyEvent.KEYCODE_SHIFT_LEFT, toggleable = true),
             SpecialKeySpec("Tab", KeyEvent.KEYCODE_TAB)
         )
-        addFloatingMouseExpandedMenuRow(menu, firstRow.map(::createFloatingMouseTextButton))
+        addFloatingMouseExpandedMenuRow(buttonColumn, firstRow.map(::createFloatingMouseTextButton))
         addFloatingMouseExpandedMenuRow(
-            menu,
+            buttonColumn,
             listOf(
                 createFloatingMouseTextButton(SpecialKeySpec("Alt", KeyEvent.KEYCODE_ALT_LEFT, toggleable = true)),
-                createFloatingMouseTextActionButton(activity.getString(R.string.touch_mouse_floating_menu_collapse)) {
-                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    hideFloatingMouseExpandedMenu()
-                },
+                createFloatingMouseLockButton(),
                 createFloatingMouseKeyboardButton()
             ),
             addTopMargin = true
         )
+
+        menu.addView(
+            LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    buttonColumn,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+                addView(
+                    createFloatingMouseWheelPanel(),
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        leftMargin = dpToPx(SPECIAL_KEYS_BUTTON_SPACING_DP)
+                    }
+                )
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+    }
+
+    private fun createFloatingMouseWheelPanel(): View {
+        val wheelView = VirtualMouseWheelView(activity).apply {
+            contentDescription = activity.getString(R.string.touch_mouse_floating_menu_wheel)
+        }
+        floatingMouseWheelView = wheelView
+
+        return FrameLayout(activity).apply {
+            updateFloatingMouseMenuButtonAppearance(this, false)
+            minimumWidth = dpToPx(SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP)
+            contentDescription = activity.getString(R.string.touch_mouse_floating_menu_wheel)
+            isFocusable = false
+            isFocusableInTouchMode = false
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+            addView(
+                wheelView,
+                FrameLayout.LayoutParams(
+                    dpToPx(VIRTUAL_WHEEL_TRACK_WIDTH_DP),
+                    dpToPx(VIRTUAL_WHEEL_TRACK_HEIGHT_DP),
+                    Gravity.CENTER
+                )
+            )
+        }
     }
 
     private fun createFloatingMouseTextButton(spec: SpecialKeySpec): TextView {
@@ -617,6 +636,37 @@ internal class FloatingMouseOverlayController(
             isFocusableInTouchMode = false
             updateFloatingMouseMenuButtonAppearance(this, false)
             setOnClickListener(onClick)
+        }
+    }
+
+    private fun createFloatingMouseLockButton(): TextView {
+        return TextView(activity).apply {
+            gravity = Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP
+            minWidth = dpToPx(SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP)
+            setPadding(
+                dpToPx(12),
+                0,
+                dpToPx(12),
+                0
+            )
+            isAllCaps = false
+            isFocusable = false
+            isFocusableInTouchMode = false
+            floatingMouseLockButton = this
+            updateFloatingMouseLockButtonUi()
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                toggleTouchMouseLock()
+            }
+        }
+    }
+
+    private fun createFloatingMouseCollapseButton(): TextView {
+        return createFloatingMouseTextActionButton(activity.getString(R.string.touch_mouse_floating_menu_collapse)) {
+            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            hideFloatingMouseExpandedMenu()
         }
     }
 
@@ -697,26 +747,114 @@ internal class FloatingMouseOverlayController(
         }
     }
 
+    private fun updateFloatingMouseLockButtonUi() {
+        val lockButton = floatingMouseLockButton ?: return
+        lockButton.text = activity.getString(
+            if (touchMouseLockEnabled) {
+                R.string.touch_mouse_floating_menu_unlock
+            } else {
+                R.string.touch_mouse_floating_menu_lock
+            }
+        )
+        updateFloatingMouseMenuButtonAppearance(lockButton, touchMouseLockEnabled)
+    }
+
     private fun showFloatingMouseExpandedMenu() {
         if (!longPressMouseShowsKeyboard || isSoftKeyboardVisible()) {
             return
         }
         val menu = floatingMouseExpandedMenu ?: return
-        menu.visibility = View.VISIBLE
-        menu.bringToFront()
-        floatingMouseButton?.bringToFront()
+        val collapseButton = floatingMouseCollapseButton ?: return
+        if (floatingMouseMenuExpanded) {
+            return
+        }
+        floatingMouseMenuExpanded = true
+        clearIdleRunnable()
+        highlightFloatingMouse()
         updateFloatingMouseExpandedMenuPosition()
+        menu.animate().cancel()
+        collapseButton.animate().cancel()
+        menu.visibility = View.VISIBLE
+        collapseButton.visibility = View.VISIBLE
+        menu.alpha = 0f
+        menu.scaleX = 0.92f
+        menu.scaleY = 0.92f
+        menu.translationY = dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat()
+        collapseButton.alpha = 0f
+        collapseButton.translationY = -dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat()
+        menu.bringToFront()
+        collapseButton.bringToFront()
+        floatingMouseButton?.bringToFront()
+        menu.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .translationY(0f)
+            .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
+            .start()
+        collapseButton.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
+            .start()
     }
 
-    private fun hideFloatingMouseExpandedMenu() {
-        floatingMouseExpandedMenu?.visibility = View.GONE
+    private fun hideFloatingMouseExpandedMenu(animate: Boolean = true) {
+        floatingMouseWheelView?.resetToCenter()
+        val menu = floatingMouseExpandedMenu
+        val collapseButton = floatingMouseCollapseButton
+        floatingMouseMenuExpanded = false
+        if (menu == null || collapseButton == null) {
+            scheduleFloatingMouseIdle()
+            return
+        }
+        menu.animate().cancel()
+        collapseButton.animate().cancel()
+        if (!animate || menu.visibility != View.VISIBLE) {
+            menu.visibility = View.GONE
+            collapseButton.visibility = View.GONE
+            menu.alpha = 1f
+            menu.scaleX = 1f
+            menu.scaleY = 1f
+            menu.translationY = 0f
+            collapseButton.alpha = 1f
+            collapseButton.translationY = 0f
+            scheduleFloatingMouseIdle()
+            return
+        }
+        menu.animate()
+            .alpha(0f)
+            .scaleX(0.96f)
+            .scaleY(0.96f)
+            .translationY(dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat())
+            .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
+            .withEndAction {
+                menu.visibility = View.GONE
+                menu.alpha = 1f
+                menu.scaleX = 1f
+                menu.scaleY = 1f
+                menu.translationY = 0f
+                scheduleFloatingMouseIdle()
+            }
+            .start()
+        collapseButton.animate()
+            .alpha(0f)
+            .translationY(-dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat())
+            .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
+            .withEndAction {
+                collapseButton.visibility = View.GONE
+                collapseButton.alpha = 1f
+                collapseButton.translationY = 0f
+            }
+            .start()
     }
 
     private fun updateFloatingMouseExpandedMenuPosition() {
         val host = hostView ?: return
         val menu = floatingMouseExpandedMenu ?: return
         val button = floatingMouseButton ?: return
-        if (menu.visibility != View.VISIBLE) {
+        val collapseButton = floatingMouseCollapseButton
+        if (!floatingMouseMenuExpanded && menu.visibility != View.VISIBLE && collapseButton?.visibility != View.VISIBLE) {
             return
         }
         if (host.width == 0 || host.height == 0 || button.width == 0 || button.height == 0) {
@@ -744,11 +882,44 @@ internal class FloatingMouseOverlayController(
         val preferredTop = buttonParams.topMargin + (button.height - menuHeight) / 2
         menuParams.topMargin = preferredTop.coerceIn(0, maxTop)
         menu.layoutParams = menuParams
+        updateFloatingMouseCollapseButtonPosition(host, button)
+    }
+
+    private fun updateFloatingMouseCollapseButtonPosition(host: FrameLayout, button: View) {
+        val collapseButton = floatingMouseCollapseButton ?: return
+        if (!floatingMouseMenuExpanded && collapseButton.visibility != View.VISIBLE) {
+            return
+        }
+        collapseButton.measure(
+            View.MeasureSpec.makeMeasureSpec(host.width, View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec(host.height, View.MeasureSpec.AT_MOST)
+        )
+        val collapseWidth = collapseButton.measuredWidth
+        val collapseHeight = collapseButton.measuredHeight
+        val buttonParams = button.layoutParams as? FrameLayout.LayoutParams ?: return
+        val collapseParams = collapseButton.layoutParams as? FrameLayout.LayoutParams ?: return
+        val maxLeft = (host.width - collapseWidth).coerceAtLeast(0)
+        val centeredLeft = buttonParams.leftMargin + (button.width - collapseWidth) / 2
+        collapseParams.leftMargin = centeredLeft.coerceIn(0, maxLeft)
+        val maxTop = (host.height - collapseHeight).coerceAtLeast(0)
+        val preferredTop = buttonParams.topMargin + button.height + dpToPx(FLOATING_COLLAPSE_BUTTON_GAP_DP)
+        collapseParams.topMargin = preferredTop.coerceIn(0, maxTop)
+        collapseButton.layoutParams = collapseParams
     }
 
     private fun isSoftKeyboardVisible(): Boolean {
         val anchorView = imeProxyView ?: floatingMouseButton ?: return false
         return ViewCompat.getRootWindowInsets(anchorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+    }
+
+    private fun dispatchVirtualMouseScroll(verticalOffset: Double) {
+        if (!isNativeInputDispatchReady.invoke()) {
+            return
+        }
+        if (verticalOffset == 0.0) {
+            return
+        }
+        CallbackBridge.sendScroll(0.0, verticalOffset)
     }
 
     private fun toggleSpecialKey(androidKeyCode: Int) {
@@ -1240,6 +1411,233 @@ internal class FloatingMouseOverlayController(
             params.topMargin = (maxTop / 2).coerceAtLeast(0)
             button.layoutParams = params
             updateFloatingMouseExpandedMenuPosition()
+        }
+    }
+
+    private inner class VirtualMouseWheelView(context: android.content.Context) : FrameLayout(context) {
+        private val thumbView = View(context)
+        private var normalizedOffset = 0f
+        private var scrollRepeatRunnable: Runnable? = null
+
+        init {
+            isClickable = true
+            isFocusable = false
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, dpToPx(VIRTUAL_WHEEL_TRACK_PADDING_VERTICAL_DP), 0, dpToPx(VIRTUAL_WHEEL_TRACK_PADDING_VERTICAL_DP))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(12).toFloat()
+                setColor(0xFF1E1E1E.toInt())
+                setStroke(dpToPx(1), 0xFF4D4D4D.toInt())
+            }
+
+            addView(
+                TextView(context).apply {
+                    text = "▲"
+                    gravity = Gravity.CENTER
+                    setTextColor(0xFFCACACA.toInt())
+                    textSize = VIRTUAL_WHEEL_ARROW_TEXT_SIZE_SP
+                },
+                LayoutParams(
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                ).apply {
+                    topMargin = dpToPx(2)
+                }
+            )
+
+            addView(
+                View(context).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = dpToPx(2).toFloat()
+                        setColor(0xFF7D7D7D.toInt())
+                    }
+                },
+                LayoutParams(
+                    dpToPx(VIRTUAL_WHEEL_CENTER_MARKER_WIDTH_DP),
+                    dpToPx(VIRTUAL_WHEEL_CENTER_MARKER_HEIGHT_DP),
+                    Gravity.CENTER
+                )
+            )
+
+            addView(
+                TextView(context).apply {
+                    text = "▼"
+                    gravity = Gravity.CENTER
+                    setTextColor(0xFFCACACA.toInt())
+                    textSize = VIRTUAL_WHEEL_ARROW_TEXT_SIZE_SP
+                },
+                LayoutParams(
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                ).apply {
+                    bottomMargin = dpToPx(2)
+                }
+            )
+
+            addView(
+                thumbView.apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = dpToPx(8).toFloat()
+                        setColor(0xFFEEEEEE.toInt())
+                    }
+                    alpha = 0.96f
+                    elevation = dpToPx(2).toFloat()
+                },
+                LayoutParams(
+                    dpToPx(VIRTUAL_WHEEL_THUMB_WIDTH_DP),
+                    dpToPx(VIRTUAL_WHEEL_THUMB_HEIGHT_DP),
+                    Gravity.CENTER
+                )
+            )
+
+            setOnTouchListener { _, event -> handleWheelTouch(event) }
+        }
+
+        fun resetToCenter() {
+            stopRepeating()
+            normalizedOffset = 0f
+            thumbView.animate().cancel()
+            thumbView.animate()
+                .translationY(0f)
+                .setDuration(120L)
+                .start()
+            updateThumbAppearance(active = false)
+        }
+
+        override fun onDetachedFromWindow() {
+            stopRepeating()
+            super.onDetachedFromWindow()
+        }
+
+        private fun handleWheelTouch(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    thumbView.animate().cancel()
+                    val previousOffset = normalizedOffset
+                    updateNormalizedOffset(event.y)
+                    maybeKickoffScrolling(previousOffset)
+                    return true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val previousOffset = normalizedOffset
+                    updateNormalizedOffset(event.y)
+                    maybeKickoffScrolling(previousOffset)
+                    return true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    resetToCenter()
+                    return true
+                }
+
+                else -> return false
+            }
+        }
+
+        private fun updateNormalizedOffset(touchY: Float) {
+            val travel = maxThumbTravel()
+            if (travel <= 0f) {
+                normalizedOffset = 0f
+                thumbView.translationY = 0f
+                updateThumbAppearance(active = false)
+                return
+            }
+
+            val centerY = height / 2f
+            normalizedOffset = ((centerY - touchY) / travel).coerceIn(-1f, 1f)
+            thumbView.translationY = -normalizedOffset * travel
+            updateThumbAppearance(active = isActive())
+        }
+
+        private fun maybeKickoffScrolling(previousOffset: Float) {
+            val active = isActive()
+            if (!active) {
+                stopRepeating()
+                return
+            }
+
+            val previousActive = abs(previousOffset) >= VIRTUAL_WHEEL_DEAD_ZONE
+            val previousDirection = previousOffset.compareTo(0f)
+            val currentDirection = normalizedOffset.compareTo(0f)
+            if (!previousActive || previousDirection != currentDirection) {
+                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                dispatchScrollTick()
+            }
+            ensureRepeating()
+        }
+
+        private fun isActive(): Boolean {
+            return abs(normalizedOffset) >= VIRTUAL_WHEEL_DEAD_ZONE
+        }
+
+        private fun ensureRepeating() {
+            if (scrollRepeatRunnable != null) {
+                return
+            }
+            val repeatRunnable = object : Runnable {
+                override fun run() {
+                    if (!isActive()) {
+                        scrollRepeatRunnable = null
+                        return
+                    }
+                    dispatchScrollTick()
+                    postDelayed(this, currentRepeatDelayMs())
+                }
+            }
+            scrollRepeatRunnable = repeatRunnable
+            postDelayed(repeatRunnable, currentRepeatDelayMs())
+        }
+
+        private fun stopRepeating() {
+            scrollRepeatRunnable?.let(::removeCallbacks)
+            scrollRepeatRunnable = null
+        }
+
+        private fun currentRepeatDelayMs(): Long {
+            val strength = normalizedStrength()
+            val delayRange = (VIRTUAL_WHEEL_REPEAT_SLOW_MS - VIRTUAL_WHEEL_REPEAT_FAST_MS).toFloat()
+            val nextDelay = VIRTUAL_WHEEL_REPEAT_SLOW_MS - (delayRange * strength).roundToInt().toLong()
+            return nextDelay.coerceIn(
+                VIRTUAL_WHEEL_REPEAT_FAST_MS,
+                VIRTUAL_WHEEL_REPEAT_SLOW_MS
+            )
+        }
+
+        private fun dispatchScrollTick() {
+            val strength = normalizedStrength()
+            if (strength <= 0f) {
+                return
+            }
+            val magnitude = VIRTUAL_WHEEL_MIN_SCROLL_DELTA +
+                (VIRTUAL_WHEEL_MAX_SCROLL_DELTA - VIRTUAL_WHEEL_MIN_SCROLL_DELTA) * strength
+            val direction = if (normalizedOffset >= 0f) 1.0 else -1.0
+            dispatchVirtualMouseScroll(direction * magnitude)
+        }
+
+        private fun normalizedStrength(): Float {
+            val strength = (abs(normalizedOffset) - VIRTUAL_WHEEL_DEAD_ZONE) / (1f - VIRTUAL_WHEEL_DEAD_ZONE)
+            return strength.coerceIn(0f, 1f)
+        }
+
+        private fun updateThumbAppearance(active: Boolean) {
+            thumbView.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(8).toFloat()
+                setColor(if (active) 0xFF98D96A.toInt() else 0xFFEEEEEE.toInt())
+            }
+        }
+
+        private fun maxThumbTravel(): Float {
+            val availableHeight = height - paddingTop - paddingBottom - thumbView.height
+            return (availableHeight / 2f).coerceAtLeast(0f)
         }
     }
 

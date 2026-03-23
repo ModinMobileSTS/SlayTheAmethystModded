@@ -39,8 +39,6 @@ object LauncherConfig {
     private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
     private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
     private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
-    private const val PREF_KEY_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED =
-        "touch_mouse_double_tap_lock_enabled"
     private const val PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD =
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
@@ -141,7 +139,6 @@ object LauncherConfig {
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
-    const val DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
@@ -264,19 +261,6 @@ object LauncherConfig {
     fun saveShowFloatingMouseWindow(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, enabled)
-        }
-    }
-
-    fun readTouchMouseDoubleTapLockEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED,
-            DEFAULT_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED
-        )
-    }
-
-    fun saveTouchMouseDoubleTapLockEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_TOUCH_MOUSE_DOUBLE_TAP_LOCK_ENABLED, enabled)
         }
     }
 

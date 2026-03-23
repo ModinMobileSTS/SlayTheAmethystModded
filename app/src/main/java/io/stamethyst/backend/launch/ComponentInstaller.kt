@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.content.res.AssetManager
 import io.stamethyst.R
+import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.config.RuntimePaths
@@ -523,37 +524,42 @@ object ComponentInstaller {
     private fun prepareCleanDirectory(directory: File, label: String) {
         throwIfInterrupted()
         val parent = directory.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw IOException("Failed to create $label parent: $parent")
-        }
-        deleteRecursively(directory)
-        if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
-            throw IOException("Failed to create $label: ${directory.absolutePath}")
-        }
-    }
-
-    private fun deleteRecursively(file: File?): Boolean {
-        if (Thread.currentThread().isInterrupted) {
-            return false
-        }
-        if (file == null || !file.exists()) {
-            return true
-        }
-        var deleted = true
-        if (file.isDirectory) {
-            val children = file.listFiles()
-            if (children != null) {
-                for (child in children) {
-                    if (Thread.currentThread().isInterrupted) {
-                        return false
-                    }
-                    deleted = deleted && deleteRecursively(child)
-                }
+        if (parent != null) {
+            if (parent.exists() && !parent.isDirectory) {
+                throw IOException("$label parent is not a directory: ${parent.absolutePath}")
+            }
+            if (!parent.exists() && !parent.mkdirs()) {
+                throw IOException("Failed to create $label parent: ${parent.absolutePath}")
             }
         }
-        if (!file.delete() && file.exists()) {
-            deleted = false
+
+        FileTreeCleaner.deleteRecursively(directory)
+        if (!directory.exists()) {
+            if (!directory.mkdirs() && !directory.isDirectory) {
+                throw IOException("Failed to create $label: ${directory.absolutePath}")
+            }
+            return
         }
-        return deleted
+
+        if (!directory.isDirectory) {
+            throw IOException("$label path is not a directory: ${directory.absolutePath}")
+        }
+
+        val remaining = directory.listFiles()
+            ?: throw IOException("Failed to inspect $label: ${directory.absolutePath}")
+        if (remaining.isEmpty()) {
+            return
+        }
+
+        for (child in remaining) {
+            throwIfInterrupted()
+            FileTreeCleaner.deleteRecursively(child)
+        }
+        val stillRemaining = directory.listFiles()
+        if (stillRemaining == null || stillRemaining.isNotEmpty()) {
+            val remainingSummary = FileTreeCleaner.summarizeRemainingEntries(directory)
+            val detail = if (remainingSummary.isNullOrBlank()) "" else " (remaining: $remainingSummary)"
+            throw IOException("Failed to clean $label: ${directory.absolutePath}$detail")
+        }
     }
 }

@@ -44,6 +44,9 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_HEAP_PRESSURE_HEAP_MAX_BYTES = "io.stamethyst.heap_pressure_heap_max_bytes"
         const val EXTRA_HEAP_PRESSURE_CURRENT_HEAP_MB = "io.stamethyst.heap_pressure_current_heap_mb"
         const val EXTRA_HEAP_PRESSURE_SUGGESTED_HEAP_MB = "io.stamethyst.heap_pressure_suggested_heap_mb"
+        private const val EXTRA_EXTERNAL_STS_IMPORT_NOTICE = "io.stamethyst.external_sts_import_notice"
+        private const val EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME = "io.stamethyst.external_sts_import_file_name"
+        private const val STS_JAR_FILE_NAME = "desktop-1.0.jar"
 
         private val JAR_MIME_TYPES = setOf(
             "application/java-archive",
@@ -61,6 +64,17 @@ class LauncherActivity : AppCompatActivity() {
         val parseError: String?
     )
 
+    private sealed interface IncomingJarIntentTarget {
+        data class StsJar(
+            val uri: Uri,
+            val displayName: String
+        ) : IncomingJarIntentTarget
+
+        data class ModJar(
+            val preview: ModImportPreview
+        ) : IncomingJarIntentTarget
+    }
+
     private val mainViewModel: MainScreenViewModel by viewModels()
     private val settingsViewModel: SettingsScreenViewModel by viewModels()
     private var pendingImportDialog: AlertDialog? = null
@@ -68,6 +82,7 @@ class LauncherActivity : AppCompatActivity() {
     private var queuedImportUri: Uri? = null
     private var pendingModImportFlow = false
     private var pendingGameReturnAnalysis: Runnable? = null
+    private var launchedWithoutImportedStsJar = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,7 +104,9 @@ class LauncherActivity : AppCompatActivity() {
             LegacyStsStorageMigration.migrateIfNeeded(this)
         }.getOrNull()
 
-        val initialRoute = if (StsJarValidator.isValid(RuntimePaths.importedStsJar(this))) {
+        val hasImportedStsJar = StsJarValidator.isValid(RuntimePaths.importedStsJar(this))
+        launchedWithoutImportedStsJar = !hasImportedStsJar
+        val initialRoute = if (hasImportedStsJar) {
             Route.Main
         } else {
             Route.QuickStart
@@ -110,7 +127,8 @@ class LauncherActivity : AppCompatActivity() {
         if (storageMigrationResult != null) {
             showStorageMigrationDialog(storageMigrationResult)
         }
-        maybeImportModJarFromIntent(intent)
+        maybeShowExternalStsImportNotice(intent)
+        maybeHandleJarIntent(intent)
         maybeStartStartupAutoUpdateCheck()
     }
 
@@ -118,7 +136,8 @@ class LauncherActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingLauncherIntent(intent)
-        maybeImportModJarFromIntent(intent)
+        maybeShowExternalStsImportNotice(intent)
+        maybeHandleJarIntent(intent)
         maybeScheduleGameReturnAnalysis()
     }
 
@@ -221,14 +240,14 @@ class LauncherActivity : AppCompatActivity() {
         pendingGameReturnAnalysis = null
     }
 
-    private fun maybeImportModJarFromIntent(incomingIntent: Intent?) {
+    private fun maybeHandleJarIntent(incomingIntent: Intent?) {
         val uri = consumeJarImportUri(incomingIntent) ?: return
         pendingModImportFlow = true
         if (pendingStorageMigrationDialog?.isShowing == true) {
             queuedImportUri = uri
             return
         }
-        loadModImportPreviewAndPrompt(uri)
+        loadIncomingJarIntentTarget(uri)
     }
 
     private fun consumeJarImportUri(incomingIntent: Intent?): Uri? {
@@ -260,27 +279,35 @@ class LauncherActivity : AppCompatActivity() {
         return lowerPath.endsWith(".jar")
     }
 
-    private fun loadModImportPreviewAndPrompt(uri: Uri) {
+    private fun loadIncomingJarIntentTarget(uri: Uri) {
         Thread {
-            val preview = buildModImportPreview(uri)
+            val target = buildIncomingJarIntentTarget(uri)
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
-                    pendingModImportFlow = false
-                    maybeStartStartupAutoUpdateCheck()
+                    finishPendingJarIntentFlow()
                     return@runOnUiThread
                 }
-                showModImportDialog(preview)
+                when (target) {
+                    is IncomingJarIntentTarget.StsJar -> importExternalStsJar(target)
+                    is IncomingJarIntentTarget.ModJar -> showModImportDialog(target.preview)
+                }
             }
         }.start()
     }
 
-    private fun buildModImportPreview(uri: Uri): ModImportPreview {
+    private fun buildIncomingJarIntentTarget(uri: Uri): IncomingJarIntentTarget {
         val displayName = SettingsFileService.resolveDisplayName(this, uri)
+        if (displayName.trim().equals(STS_JAR_FILE_NAME, ignoreCase = true)) {
+            return IncomingJarIntentTarget.StsJar(uri = uri, displayName = displayName)
+        }
         val tempJar = File(cacheDir, "import-preview-${System.nanoTime()}.jar")
         var manifest: ModJarSupport.ModManifestInfo? = null
         var parseError: String? = null
         try {
             SettingsFileService.copyUriToFile(this, uri, tempJar)
+            if (StsJarValidator.isValid(tempJar)) {
+                return IncomingJarIntentTarget.StsJar(uri = uri, displayName = displayName)
+            }
             if (CompatibilitySettings.isModManifestRootCompatEnabled(this)) {
                 ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempJar)
             }
@@ -292,12 +319,31 @@ class LauncherActivity : AppCompatActivity() {
                 tempJar.delete()
             }
         }
-        return ModImportPreview(
-            uri = uri,
-            displayName = displayName,
-            manifest = manifest,
-            parseError = parseError
+        return IncomingJarIntentTarget.ModJar(
+            ModImportPreview(
+                uri = uri,
+                displayName = displayName,
+                manifest = manifest,
+                parseError = parseError
+            )
         )
+    }
+
+    private fun importExternalStsJar(target: IncomingJarIntentTarget.StsJar) {
+        settingsViewModel.onJarPicked(this, target.uri, showSuccessToast = false) { success ->
+            if (!success) {
+                finishPendingJarIntentFlow()
+                return@onJarPicked
+            }
+            if (launchedWithoutImportedStsJar) {
+                intent.putExtra(EXTRA_EXTERNAL_STS_IMPORT_NOTICE, true)
+                intent.putExtra(EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME, target.displayName)
+                recreate()
+                return@onJarPicked
+            }
+            mainViewModel.refresh(this)
+            showExternalStsImportNoticeDialog(target.displayName)
+        }
     }
 
     private fun showModImportDialog(preview: ModImportPreview) {
@@ -329,8 +375,46 @@ class LauncherActivity : AppCompatActivity() {
         dialog.setOnDismissListener {
             if (pendingImportDialog === dialog) {
                 pendingImportDialog = null
-                pendingModImportFlow = false
-                maybeStartStartupAutoUpdateCheck()
+                finishPendingJarIntentFlow()
+            }
+        }
+        pendingImportDialog = dialog
+        dialog.show()
+    }
+
+    private fun maybeShowExternalStsImportNotice(incomingIntent: Intent?) {
+        val displayName = consumeExternalStsImportNoticeDisplayName(incomingIntent) ?: return
+        showExternalStsImportNoticeDialog(displayName)
+    }
+
+    private fun consumeExternalStsImportNoticeDisplayName(incomingIntent: Intent?): String? {
+        if (incomingIntent == null ||
+            !incomingIntent.getBooleanExtra(EXTRA_EXTERNAL_STS_IMPORT_NOTICE, false)
+        ) {
+            return null
+        }
+        val displayName = incomingIntent.getStringExtra(EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME)
+            .orEmpty()
+            .trim()
+            .ifBlank { STS_JAR_FILE_NAME }
+        incomingIntent.removeExtra(EXTRA_EXTERNAL_STS_IMPORT_NOTICE)
+        incomingIntent.removeExtra(EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME)
+        return displayName
+    }
+
+    private fun showExternalStsImportNoticeDialog(displayName: String) {
+        val previousDialog = pendingImportDialog
+        pendingImportDialog = null
+        previousDialog?.dismiss()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.sts_jar_external_import_notice_title)
+            .setMessage(getString(R.string.sts_jar_external_import_notice_message, displayName))
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+        dialog.setOnDismissListener {
+            if (pendingImportDialog === dialog) {
+                pendingImportDialog = null
+                finishPendingJarIntentFlow()
             }
         }
         pendingImportDialog = dialog
@@ -379,7 +463,7 @@ class LauncherActivity : AppCompatActivity() {
     private fun drainQueuedImportUri() {
         if (isFinishing || isDestroyed) {
             queuedImportUri = null
-            pendingModImportFlow = false
+            finishPendingJarIntentFlow()
             return
         }
         if (pendingStorageMigrationDialog?.isShowing == true) {
@@ -387,7 +471,12 @@ class LauncherActivity : AppCompatActivity() {
         }
         val uri = queuedImportUri ?: return
         queuedImportUri = null
-        loadModImportPreviewAndPrompt(uri)
+        loadIncomingJarIntentTarget(uri)
+    }
+
+    private fun finishPendingJarIntentFlow() {
+        pendingModImportFlow = false
+        maybeStartStartupAutoUpdateCheck()
     }
 
     private fun maybeStartStartupAutoUpdateCheck() {

@@ -139,7 +139,6 @@ fun LauncherSettingsScreen(
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
-        onTouchMouseDoubleTapLockChanged = { enabled -> viewModel.onTouchMouseDoubleTapLockChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
@@ -208,7 +207,6 @@ private fun LauncherSettingsScreenPreview() {
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
-            touchMouseDoubleTapLockEnabled = true,
             longPressMouseShowsKeyboard = true,
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
@@ -264,7 +262,6 @@ private fun LauncherSettingsScreenContent(
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
-    onTouchMouseDoubleTapLockChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
@@ -383,7 +380,6 @@ private fun LauncherSettingsScreenContent(
                         onBackBehaviorChanged = onBackBehaviorChanged,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
-                        onTouchMouseDoubleTapLockChanged = onTouchMouseDoubleTapLockChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
@@ -684,7 +680,17 @@ internal fun SettingsBusyIndicator(
     if (!uiState.busy) {
         return
     }
-    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    val progressFraction = uiState.busyProgressPercent
+        ?.coerceIn(0, 100)
+        ?.div(100f)
+    if (progressFraction != null) {
+        LinearProgressIndicator(
+            progress = { progressFraction },
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
     uiState.busyMessage?.let {
         Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
     }
@@ -1138,7 +1144,6 @@ private fun SettingsInputSection(
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
-    onTouchMouseDoubleTapLockChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
@@ -1209,15 +1214,6 @@ private fun SettingsInputSection(
         disabledText = stringResource(R.string.settings_touch_mouse_floating_window_hidden),
         description = stringResource(R.string.settings_touch_mouse_floating_window_desc),
         onCheckedChange = onShowFloatingMouseWindowChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.touchMouseDoubleTapLockEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touch_mouse_double_tap_lock_enabled),
-        disabledText = stringResource(R.string.settings_touch_mouse_double_tap_lock_disabled),
-        description = stringResource(R.string.settings_touch_mouse_double_tap_lock_desc),
-        onCheckedChange = onTouchMouseDoubleTapLockChanged
     )
 
     SwitchSettingRow(

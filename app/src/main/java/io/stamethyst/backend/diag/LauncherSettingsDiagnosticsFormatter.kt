@@ -75,9 +75,6 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "showFloatingMouseWindow" to formatBoolean(
                             LauncherConfig.readShowFloatingMouseWindow(context)
                         ),
-                        "touchMouseDoubleTapLockEnabled" to formatBoolean(
-                            LauncherConfig.readTouchMouseDoubleTapLockEnabled(context)
-                        ),
                         "longPressMouseShowsKeyboard" to formatBoolean(
                             LauncherConfig.readLongPressMouseShowsKeyboard(context)
                         ),

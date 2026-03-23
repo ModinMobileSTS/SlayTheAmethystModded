@@ -59,6 +59,7 @@ internal data class ModImportResult(
     val patchedDownfallClassEntries: Int = 0,
     val patchedDownfallMerchantClassEntries: Int = 0,
     val patchedDownfallHexaghostBodyClassEntries: Int = 0,
+    val patchedDownfallBossMechanicPanelClassEntries: Int = 0,
     val patchedVupShionWebButtonConstructor: Boolean = false
 ) {
     val wasAtlasPatched: Boolean
@@ -132,6 +133,14 @@ private data class ModExportSource(
     val file: File? = null,
     val assetPath: String? = null
 )
+
+internal fun interface ArchiveExportProgressCallback {
+    fun onProgress(percent: Int)
+}
+
+private fun interface ZipEntryWriteProgressCallback {
+    fun onBytesWritten(byteCount: Long)
+}
 
 internal object SettingsFileService {
     class ReservedModImportException(
@@ -237,7 +246,11 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun exportModsBundle(host: Activity, uri: Uri): Int {
+    fun exportModsBundle(
+        host: Activity,
+        uri: Uri,
+        progressCallback: ArchiveExportProgressCallback? = null
+    ): Int {
         host.contentResolver.openOutputStream(uri).use { output ->
             if (output == null) {
                 throw IOException("Unable to open destination file")
@@ -253,20 +266,47 @@ internal object SettingsFileService {
                         "- ${RuntimePaths.optionalModsLibraryDir(host).absolutePath}\n"
                     zipOutput.write(message.toByteArray(StandardCharsets.UTF_8))
                     zipOutput.closeEntry()
+                    reportArchiveExportProgress(progressCallback, 100)
                     return 0
                 }
 
-                sources.forEach { source ->
+                reportArchiveExportProgress(progressCallback, 0)
+                val totalSources = sources.size.coerceAtLeast(1)
+                sources.forEachIndexed { index, source ->
                     val entryName = "mods/${source.entryName}"
+                    val startPercent = (index * 100) / totalSources
+                    val endPercent = ((index + 1) * 100) / totalSources
+                    reportArchiveExportProgress(progressCallback, startPercent)
                     val file = source.file
                     if (file != null) {
-                        writeFileToZip(zipOutput, file, entryName)
-                        return@forEach
+                        val totalBytes = file.length().coerceAtLeast(1L)
+                        var writtenBytes = 0L
+                        var lastReportedPercent = startPercent
+                        writeFileToZip(
+                            zipOutput = zipOutput,
+                            sourceFile = file,
+                            entryName = entryName,
+                            progressCallback = ZipEntryWriteProgressCallback { byteCount ->
+                                writtenBytes += byteCount
+                                if (endPercent > startPercent) {
+                                    val mappedProgress = startPercent + (
+                                        (writtenBytes.coerceAtMost(totalBytes) * (endPercent - startPercent).toLong()) /
+                                            totalBytes
+                                        ).toInt()
+                                    if (mappedProgress > lastReportedPercent) {
+                                        lastReportedPercent = mappedProgress
+                                        reportArchiveExportProgress(progressCallback, mappedProgress)
+                                    }
+                                }
+                            }
+                        )
+                    } else {
+                        val assetPath = source.assetPath
+                        if (!assetPath.isNullOrBlank()) {
+                            writeAssetToZip(host, zipOutput, assetPath, entryName)
+                        }
                     }
-                    val assetPath = source.assetPath
-                    if (!assetPath.isNullOrBlank()) {
-                        writeAssetToZip(host, zipOutput, assetPath, entryName)
-                    }
+                    reportArchiveExportProgress(progressCallback, endPercent)
                 }
                 return sources.size
             }
@@ -387,6 +427,7 @@ internal object SettingsFileService {
             var patchedDownfallClassEntries = 0
             var patchedDownfallMerchantClassEntries = 0
             var patchedDownfallHexaghostBodyClassEntries = 0
+            var patchedDownfallBossMechanicPanelClassEntries = 0
             if (CompatibilitySettings.isDownfallImportCompatEnabled(host)
                 && modId == DOWNFALL_MOD_ID
             ) {
@@ -394,6 +435,8 @@ internal object SettingsFileService {
                 patchedDownfallClassEntries = patchResult.patchedClassEntries
                 patchedDownfallMerchantClassEntries = patchResult.patchedMerchantClassEntries
                 patchedDownfallHexaghostBodyClassEntries = patchResult.patchedHexaghostBodyClassEntries
+                patchedDownfallBossMechanicPanelClassEntries =
+                    patchResult.patchedBossMechanicPanelClassEntries
             }
             var patchedVupShionWebButtonConstructor = false
             if (CompatibilitySettings.isVupShionModCompatEnabled(host)
@@ -425,6 +468,8 @@ internal object SettingsFileService {
                 patchedDownfallClassEntries = patchedDownfallClassEntries,
                 patchedDownfallMerchantClassEntries = patchedDownfallMerchantClassEntries,
                 patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
+                patchedDownfallBossMechanicPanelClassEntries =
+                    patchedDownfallBossMechanicPanelClassEntries,
                 patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor
             )
         } finally {
@@ -508,6 +553,9 @@ internal object SettingsFileService {
                             patchedDownfallHexaghostBodyClassEntries =
                                 existing.patchedDownfallHexaghostBodyClassEntries +
                                     result.patchedDownfallHexaghostBodyClassEntries,
+                            patchedDownfallBossMechanicPanelClassEntries =
+                                existing.patchedDownfallBossMechanicPanelClassEntries +
+                                    result.patchedDownfallBossMechanicPanelClassEntries,
                             patchedVupShionWebButtonConstructor =
                                 existing.patchedVupShionWebButtonConstructor ||
                                     result.patchedVupShionWebButtonConstructor
@@ -952,7 +1000,10 @@ internal object SettingsFileService {
                             result.patchedDownfallMerchantClassEntries,
                     patchedDownfallHexaghostBodyClassEntries =
                         existing.patchedDownfallHexaghostBodyClassEntries +
-                            result.patchedDownfallHexaghostBodyClassEntries
+                            result.patchedDownfallHexaghostBodyClassEntries,
+                    patchedDownfallBossMechanicPanelClassEntries =
+                        existing.patchedDownfallBossMechanicPanelClassEntries +
+                            result.patchedDownfallBossMechanicPanelClassEntries
                 )
             }
         }
@@ -978,7 +1029,8 @@ internal object SettingsFileService {
                         R.string.mod_import_downfall_message_item_detail,
                         result.patchedDownfallClassEntries,
                         result.patchedDownfallMerchantClassEntries,
-                        result.patchedDownfallHexaghostBodyClassEntries
+                        result.patchedDownfallHexaghostBodyClassEntries,
+                        result.patchedDownfallBossMechanicPanelClassEntries
                     )
                 )
                 append('\n')
@@ -1569,7 +1621,12 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    private fun writeFileToZip(zipOutput: ZipOutputStream, sourceFile: File, entryName: String) {
+    private fun writeFileToZip(
+        zipOutput: ZipOutputStream,
+        sourceFile: File,
+        entryName: String,
+        progressCallback: ZipEntryWriteProgressCallback? = null
+    ) {
         val entry = ZipEntry(entryName)
         if (sourceFile.lastModified() > 0) {
             entry.time = sourceFile.lastModified()
@@ -1583,6 +1640,7 @@ internal object SettingsFileService {
                     break
                 }
                 zipOutput.write(buffer, 0, read)
+                progressCallback?.onBytesWritten(read.toLong())
             }
         }
         zipOutput.closeEntry()
@@ -1593,7 +1651,8 @@ internal object SettingsFileService {
         host: Activity,
         zipOutput: ZipOutputStream,
         assetPath: String,
-        entryName: String
+        entryName: String,
+        progressCallback: ZipEntryWriteProgressCallback? = null
     ) {
         val entry = ZipEntry(entryName)
         zipOutput.putNextEntry(entry)
@@ -1608,9 +1667,17 @@ internal object SettingsFileService {
                     continue
                 }
                 zipOutput.write(buffer, 0, read)
+                progressCallback?.onBytesWritten(read.toLong())
             }
         }
         zipOutput.closeEntry()
+    }
+
+    private fun reportArchiveExportProgress(
+        progressCallback: ArchiveExportProgressCallback?,
+        percent: Int
+    ) {
+        progressCallback?.onProgress(percent.coerceIn(0, 100))
     }
 
 }

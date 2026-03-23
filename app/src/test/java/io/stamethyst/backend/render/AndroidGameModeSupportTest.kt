@@ -1,6 +1,7 @@
 package io.stamethyst.backend.render
 
 import android.app.GameManager
+import io.stamethyst.R
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -9,8 +10,8 @@ class AndroidGameModeSupportTest {
     fun resolveTargetFps_keepsRequestedValueInBatteryMode() {
         val snapshot = AndroidGameModeSnapshot(
             rawMode = GameManager.GAME_MODE_BATTERY,
-            displayName = "BATTERY",
-            description = "",
+            displayNameResId = R.string.settings_game_mode_name_battery,
+            descriptionResId = R.string.settings_game_mode_desc_battery,
             supported = true
         )
 
@@ -22,8 +23,8 @@ class AndroidGameModeSupportTest {
     fun resolveTargetFps_keepsRequestedValueForPerformanceMode() {
         val snapshot = AndroidGameModeSnapshot(
             rawMode = GameManager.GAME_MODE_PERFORMANCE,
-            displayName = "PERFORMANCE",
-            description = "",
+            displayNameResId = R.string.settings_game_mode_name_performance,
+            descriptionResId = R.string.settings_game_mode_desc_performance,
             supported = true
         )
 
