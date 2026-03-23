@@ -222,7 +222,7 @@ fun LauncherContent(
                 )
                 if (shouldShowBlockingImportWindow) {
                     BlockingImportInteractionBlocker(
-                        message = blockingImportBusyMessage
+                        message = blockingImportBusyMessage?.resolve()
                             ?: stringResource(R.string.mod_import_busy_message)
                     )
                 }
@@ -296,13 +296,16 @@ fun LauncherContent(
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(
                     onDismissRequest = FeedbackInboxCoordinator::dismissUnreadNotice,
-                    title = { Text("你的反馈有新的进展") },
+                    title = { Text(stringResource(R.string.main_feedback_notice_title)) },
                     text = {
                         Text(
                             if (notice.unreadIssueCount == 1) {
-                                "有 1 个我关注的议题出现了新的更新。"
+                                stringResource(R.string.main_feedback_notice_single)
                             } else {
-                                "有 ${notice.unreadIssueCount} 个我关注的议题出现了新的更新。"
+                                stringResource(
+                                    R.string.main_feedback_notice_multiple,
+                                    notice.unreadIssueCount
+                                )
                             }
                         )
                     },
@@ -324,12 +327,12 @@ fun LauncherContent(
                                 }
                             }
                         ) {
-                            Text("查看")
+                            Text(stringResource(R.string.main_feedback_notice_open))
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = FeedbackInboxCoordinator::dismissUnreadNotice) {
-                            Text("稍后")
+                            Text(stringResource(R.string.main_feedback_notice_later))
                         }
                     }
                 )

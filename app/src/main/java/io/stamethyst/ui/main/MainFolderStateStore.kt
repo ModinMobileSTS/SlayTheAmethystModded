@@ -12,7 +12,7 @@ internal class MainFolderStateStore {
     private val folderAssignments = LinkedHashMap<String, String>()
     private val folderCollapsed = LinkedHashMap<String, Boolean>()
     private var unassignedCollapsed = false
-    private var statusSummaryCollapsed = false
+    private var statusSummaryCollapsed = true
     private var unassignedFolderName = DEFAULT_UNASSIGNED_FOLDER_NAME
     private var unassignedFolderOrder = 0
     private var loaded = false
@@ -187,7 +187,7 @@ internal class MainFolderStateStore {
         }
 
         unassignedCollapsed = preferences.getBoolean(KEY_UNASSIGNED_COLLAPSED, false)
-        statusSummaryCollapsed = preferences.getBoolean(KEY_STATUS_SUMMARY_COLLAPSED, false)
+        statusSummaryCollapsed = preferences.getBoolean(KEY_STATUS_SUMMARY_COLLAPSED, true)
         unassignedFolderName = preferences.getString(KEY_UNASSIGNED_NAME, DEFAULT_UNASSIGNED_FOLDER_NAME)
             ?.trim()
             ?.ifEmpty { DEFAULT_UNASSIGNED_FOLDER_NAME }

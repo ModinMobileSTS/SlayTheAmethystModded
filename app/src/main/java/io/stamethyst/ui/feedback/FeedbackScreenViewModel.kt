@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
+import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackCategory
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueSyncService
@@ -201,10 +202,14 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         val remaining = MAX_SCREENSHOT_ATTACHMENTS - screenshotAttachments.size
         if (remaining <= 0) {
-            Toast.makeText(host, "最多附加 $MAX_SCREENSHOT_ATTACHMENTS 张截图。", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                host,
+                host.getString(R.string.feedback_screenshot_limit, MAX_SCREENSHOT_ATTACHMENTS),
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
-        setBusy(true, "正在处理截图...")
+        setBusy(true, host.getString(R.string.feedback_busy_processing_screenshots))
         executor.execute {
             try {
                 val copied = ArrayList<ScreenshotAttachment>()
@@ -219,7 +224,10 @@ class FeedbackScreenViewModel : ViewModel() {
                     if (uris.size > remaining) {
                         Toast.makeText(
                             host,
-                            "已达到截图上限，仅保留前 $MAX_SCREENSHOT_ATTACHMENTS 张。",
+                            host.getString(
+                                R.string.feedback_screenshot_limit_trimmed,
+                                MAX_SCREENSHOT_ATTACHMENTS
+                            ),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -227,7 +235,14 @@ class FeedbackScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "处理截图失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_screenshot_processing_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -268,7 +283,7 @@ class FeedbackScreenViewModel : ViewModel() {
         if (ignoreBriefFeedbackWarning && uiState.showBriefFeedbackConfirmation) {
             uiState = uiState.copy(showBriefFeedbackConfirmation = false)
         }
-        val validationError = validateDraft()
+        val validationError = validateDraft(host)
         if (validationError != null) {
             Toast.makeText(host, validationError, Toast.LENGTH_LONG).show()
             return
@@ -276,7 +291,7 @@ class FeedbackScreenViewModel : ViewModel() {
         if (!uiState.endpointConfigured) {
             Toast.makeText(
                 host,
-                "当前构建未配置反馈上传地址，暂时无法提交。",
+                host.getString(R.string.feedback_endpoint_missing_submit),
                 Toast.LENGTH_LONG
             ).show()
             return
@@ -288,7 +303,7 @@ class FeedbackScreenViewModel : ViewModel() {
 
         uiState = uiState.copy(showBriefFeedbackConfirmation = false)
         val draft = buildDraft()
-        setBusy(true, "正在整理反馈并上传...")
+        setBusy(true, host.getString(R.string.feedback_busy_submitting))
         executor.execute {
             try {
                 val result = FeedbackSubmissionService.submit(host, draft)
@@ -296,14 +311,21 @@ class FeedbackScreenViewModel : ViewModel() {
                     autoSubscribeCreatedIssue(host, draft, result)
                 }.getOrDefault(false)
                 host.runOnUiThread {
-                    val notice = buildSubmissionNotice(result, autoSubscribed)
+                    val notice = buildSubmissionNotice(host, result, autoSubscribed)
                     applySubmissionSuccess()
                     _effects.tryEmit(Effect.SubmissionCompleted(notice))
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "提交反馈失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_submit_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -412,41 +434,42 @@ class FeedbackScreenViewModel : ViewModel() {
         )
     }
 
-    private fun validateDraft(): String? {
-        val category = uiState.category ?: return "请先选择反馈类型。"
+    private fun validateDraft(host: Activity): String? {
+        val category = uiState.category ?: return host.getString(R.string.feedback_validation_select_category)
         if (uiState.summary.trim().isEmpty()) {
-            return "请先填写一句话总结。"
+            return host.getString(R.string.feedback_validation_summary_required)
         }
         if (uiState.emailNotificationsEnabled) {
             if (uiState.email.trim().isEmpty()) {
-                return "如需邮件通知，请先填写邮箱。"
+                return host.getString(R.string.feedback_validation_email_required)
             }
             if (!Patterns.EMAIL_ADDRESS.matcher(uiState.email.trim()).matches()) {
-                return "邮箱格式看起来不正确。"
+                return host.getString(R.string.feedback_validation_email_invalid)
             }
         }
         return when (category) {
             FeedbackCategory.FEATURE_REQUEST -> {
                 if (uiState.detail.trim().isEmpty()) {
-                    "请描述你希望加入的功能。"
+                    host.getString(R.string.feedback_validation_feature_detail)
                 } else {
                     null
                 }
             }
             FeedbackCategory.LAUNCHER_BUG -> {
                 when {
-                    uiState.detail.trim().isEmpty() -> "请描述启动器问题。"
-                    uiState.reproductionSteps.trim().isEmpty() -> "请填写复现步骤。"
+                    uiState.detail.trim().isEmpty() -> host.getString(R.string.feedback_validation_launcher_detail)
+                    uiState.reproductionSteps.trim().isEmpty() -> host.getString(R.string.feedback_validation_reproduction)
                     else -> null
                 }
             }
             FeedbackCategory.GAME_BUG -> {
                 when {
-                    uiState.reproducedOnLastRun == null -> "请先判断这是不是最近一次运行复现的问题。"
-                    !uiState.suspectUnknown && uiState.selectedSuspectedModKeys.isEmpty() -> "请勾选你怀疑的模组，或选择“不确定”。"
-                    uiState.gameIssueType == null -> "请选择问题表现类型。"
-                    uiState.detail.trim().isEmpty() -> "请描述游戏内问题。"
-                    uiState.reproductionSteps.trim().isEmpty() -> "请填写复现步骤。"
+                    uiState.reproducedOnLastRun == null -> host.getString(R.string.feedback_validation_recent_run)
+                    !uiState.suspectUnknown && uiState.selectedSuspectedModKeys.isEmpty() ->
+                        host.getString(R.string.feedback_validation_suspected_mod)
+                    uiState.gameIssueType == null -> host.getString(R.string.feedback_validation_issue_type)
+                    uiState.detail.trim().isEmpty() -> host.getString(R.string.feedback_validation_game_detail)
+                    uiState.reproductionSteps.trim().isEmpty() -> host.getString(R.string.feedback_validation_reproduction)
                     else -> null
                 }
             }
@@ -513,28 +536,35 @@ class FeedbackScreenViewModel : ViewModel() {
             issueNumber = issueNumber,
             issueUrl = issueUrl,
             title = buildSubmittedIssueTitle(draft),
-            issueBody = buildSubmittedIssueBodyPreview(draft)
+            issueBody = buildSubmittedIssueBodyPreview(host, draft)
         )
         FeedbackInboxCoordinator.refreshFromStorage(host)
         return true
     }
 
     private fun buildSubmissionNotice(
+        host: Activity,
         result: FeedbackUploadResult,
         autoSubscribed: Boolean
     ): FeedbackSubmissionNotice {
         val message = when {
             result.issueNumber != null && autoSubscribed -> {
-                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建，并已自动加入“我关注的议题”。\n\n后续可从 设置 -> 问题反馈 -> 我关注的议题 跟进这个反馈；如果有新的进展，主界面右上角也会显示反馈更新提示。"
+                host.getString(
+                    R.string.feedback_submission_notice_issue_followed,
+                    result.issueNumber
+                )
             }
             result.issueNumber != null -> {
-                "反馈已提交，GitHub Issue #${result.issueNumber} 已创建。\n\n后续可从 设置 -> 问题反馈 -> 我关注的议题 跟进这个反馈。"
+                host.getString(
+                    R.string.feedback_submission_notice_issue_created,
+                    result.issueNumber
+                )
             }
-            !result.issueUrl.isNullOrBlank() -> "反馈已提交，Issue 已创建。"
-            else -> "反馈已提交，云函数已接收请求。"
+            !result.issueUrl.isNullOrBlank() -> host.getString(R.string.feedback_submission_notice_issue_generic)
+            else -> host.getString(R.string.feedback_submission_notice_request_received)
         }
         return FeedbackSubmissionNotice(
-            title = "反馈已提交",
+            title = host.getString(R.string.feedback_submission_notice_title),
             message = message,
             issueUrl = result.issueUrl ?: result.issueNumber?.let { issueNumber ->
                 FeedbackIssueSyncService.buildIssueUrl(issueNumber)
@@ -571,14 +601,15 @@ class FeedbackScreenViewModel : ViewModel() {
         return "$prefix ${draft.summary.trim().replace('\n', ' ')}".take(120)
     }
 
-    private fun buildSubmittedIssueBodyPreview(draft: FeedbackSubmissionDraft): String {
+    private fun buildSubmittedIssueBodyPreview(host: Activity, draft: FeedbackSubmissionDraft): String {
         return buildString {
             append(draft.detail.trim())
             if (draft.reproductionSteps.isNotBlank()) {
                 if (isNotEmpty()) {
                     append("\n\n")
                 }
-                append("复现步骤：\n")
+                append(host.getString(R.string.feedback_issue_body_preview_reproduction_steps))
+                append('\n')
                 append(draft.reproductionSteps.trim())
             }
         }

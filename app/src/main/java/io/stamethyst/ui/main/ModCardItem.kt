@@ -5,7 +5,6 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -54,17 +53,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 internal data class ModCardDragStartInfo(
-    val pointerWindow: Offset,
-    val cardTopLeftWindow: Offset,
-    val cardSizePx: IntSize
-)
-
-internal data class ModCardDragOverlayState(
-    val mod: ModItemUi,
-    val pointerWindow: Offset,
-    val touchOffsetInsideCard: Offset,
-    val cardSizePx: IntSize,
-    val isExpanded: Boolean
+    val overlayAnchor: ModDragOverlayAnchor
 )
 
 internal data class ModCardCallbacks(
@@ -93,17 +82,16 @@ internal fun ModCard(
     callbacks: ModCardCallbacks
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     var lastDragPointerWindow by remember(mod.storagePath) { mutableStateOf<Offset?>(null) }
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
-    var renameInput by remember(mod.storagePath) {
-        mutableStateOf(resolveModFileNameWithoutJar(mod.storagePath).orEmpty())
-    }
     val cardShape = RoundedCornerShape(10.dp)
-    val renameRequiresFileNameMessage =
-        stringResource(R.string.main_mod_rename_requires_file_name_display)
+    val dragVisualOffsetFromPointer = remember(density) {
+        Offset(x = 0f, y = with(density) { 70.dp.toPx() })
+    }
 
     val dragHandleGestureModifier = Modifier
         .onGloballyPositioned { handleCoordinates = it }
@@ -113,17 +101,30 @@ internal fun ModCard(
             }
             detectDragGestures(
                 onDragStart = { start ->
-                    val pointerPosition = handleCoordinates?.localToWindow(start)
-                    val cardBounds = cardCoordinates?.boundsInWindow()
-                    if (pointerPosition != null && cardBounds != null) {
+                    val handleLayoutCoordinates = handleCoordinates
+                    val cardLayoutCoordinates = cardCoordinates
+                    val pointerPosition = handleLayoutCoordinates?.localToWindow(start)
+                    val cardBounds = cardLayoutCoordinates?.boundsInWindow()
+                    val pointerOffsetInsideCard = if (
+                        handleLayoutCoordinates != null &&
+                        cardLayoutCoordinates != null
+                    ) {
+                        cardLayoutCoordinates.localPositionOf(handleLayoutCoordinates, start)
+                    } else {
+                        null
+                    }
+                    if (pointerPosition != null && cardBounds != null && pointerOffsetInsideCard != null) {
                         lastDragPointerWindow = pointerPosition
                         callbacks.onDragStart(
                             ModCardDragStartInfo(
-                                pointerWindow = pointerPosition,
-                                cardTopLeftWindow = cardBounds.topLeft,
-                                cardSizePx = IntSize(
-                                    width = max(1, cardBounds.width.roundToInt()),
-                                    height = max(1, cardBounds.height.roundToInt())
+                                overlayAnchor = ModDragOverlayAnchor(
+                                    pointerWindow = pointerPosition,
+                                    pointerOffsetInsideCard = pointerOffsetInsideCard,
+                                    visualOffsetFromPointer = dragVisualOffsetFromPointer,
+                                    cardSizePx = IntSize(
+                                        width = max(1, cardBounds.width.roundToInt()),
+                                        height = max(1, cardBounds.height.roundToInt())
+                                    )
                                 )
                             )
                         )
@@ -160,11 +161,11 @@ internal fun ModCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .onGloballyPositioned { cardCoordinates = it }
             .graphicsLayer {
                 alpha = if (isDraggedInOverlay) 0f else 1f
             }
             .padding(horizontal = 8.dp, vertical = 3.dp)
+            .onGloballyPositioned { cardCoordinates = it }
             .clip(cardShape)
             .border(
                 1.dp,
@@ -244,41 +245,31 @@ internal fun ModCard(
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
         onRename = {
-            if (showModFileName) {
-                renameInput = resolveModFileNameWithoutJar(mod.storagePath).orEmpty()
-                showRenameDialog = true
-            } else {
-                Toast.makeText(
-                    context,
-                    renameRequiresFileNameMessage,
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            showRenameDialog = true
         },
         onDelete = { callbacks.onDeleteMod(mod) }
     )
 
     RenameModFileDialog(
         visible = showRenameDialog,
-        value = renameInput,
+        value = resolveModFileNameWithoutJar(mod.storagePath).orEmpty(),
         controlsEnabled = fileActionsEnabled,
-        onValueChange = { renameInput = it },
         onDismiss = { showRenameDialog = false },
-        onConfirm = {
+        onConfirm = { newFileName ->
             showRenameDialog = false
-            callbacks.onRenameModFile(mod, renameInput)
+            callbacks.onRenameModFile(mod, newFileName)
         }
     )
 }
 
 @Composable
 internal fun DraggingModCardOverlayLayer(
-    overlayState: State<ModCardDragOverlayState?>,
+    dragSession: ModDragSession?,
     showModFileName: Boolean,
     overlayHostTopLeftWindow: Offset
 ) {
     DraggingModCardOverlay(
-        overlayState = overlayState.value,
+        dragSession = dragSession,
         showModFileName = showModFileName,
         overlayHostTopLeftWindow = overlayHostTopLeftWindow
     )
@@ -286,25 +277,24 @@ internal fun DraggingModCardOverlayLayer(
 
 @Composable
 internal fun DraggingModCardOverlay(
-    overlayState: ModCardDragOverlayState?,
+    dragSession: ModDragSession?,
     showModFileName: Boolean,
     overlayHostTopLeftWindow: Offset
 ) {
-    if (overlayState == null) {
+    if (dragSession == null) {
         return
     }
 
-    val mod = overlayState.mod
+    val mod = dragSession.mod
     val density = LocalDensity.current
     val cardShape = RoundedCornerShape(10.dp)
     val cardWidth = with(density) {
-        max(1, overlayState.cardSizePx.width).toDp()
+        max(1, dragSession.overlayAnchor.cardSizePx.width).toDp()
     }
-    val cardLeft = overlayState.pointerWindow.x - overlayState.touchOffsetInsideCard.x
-    val cardTop = overlayState.pointerWindow.y - overlayState.touchOffsetInsideCard.y
+    val overlayOrigin = dragSession.overlayAnchor.overlayTopLeftInWindow()
     val popupOffset = IntOffset(
-        x = (cardLeft - overlayHostTopLeftWindow.x).roundToInt(),
-        y = (cardTop - overlayHostTopLeftWindow.y).roundToInt()
+        x = (overlayOrigin.x - overlayHostTopLeftWindow.x).roundToInt(),
+        y = (overlayOrigin.y - overlayHostTopLeftWindow.y).roundToInt()
     )
 
     Popup(
@@ -337,7 +327,7 @@ internal fun DraggingModCardOverlay(
         ) {
             ModCardBodyContent(
                 mod = mod,
-                isExpanded = overlayState.isExpanded,
+                isExpanded = dragSession.isExpanded,
                 showModFileName = showModFileName,
                 showActionsButton = false,
                 actionsEnabled = false,
@@ -348,12 +338,16 @@ internal fun DraggingModCardOverlay(
                         onCheckedChange = null,
                         enabled = false
                     )
-                    Icon(
-                        painter = painterResource(R.drawable.ic_drag_handle),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Box(
+                        modifier = Modifier.size(26.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_drag_handle),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             )
         }

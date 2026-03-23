@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.R
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -45,7 +46,7 @@ class SafExportActivity : AppCompatActivity() {
         }
         val file = File(sourcePath)
         if (!file.isFile || !file.exists()) {
-            Toast.makeText(this, "Export source missing", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.saf_export_source_missing), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -83,9 +84,16 @@ class SafExportActivity : AppCompatActivity() {
 
         try {
             writeToUri(file, targetUri)
-            Toast.makeText(this, "Exported to selected location", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.saf_export_success), Toast.LENGTH_SHORT).show()
         } catch (error: Throwable) {
-            Toast.makeText(this, "Export failed: ${error.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                getString(
+                    R.string.saf_export_failed,
+                    error.message ?: getString(R.string.feedback_unknown_error)
+                ),
+                Toast.LENGTH_LONG
+            ).show()
         } finally {
             finish()
         }

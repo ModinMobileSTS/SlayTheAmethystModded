@@ -12,9 +12,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.unit.IntSize
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
-import java.util.concurrent.atomic.AtomicReference
+
+internal data class ModDragOverlayAnchor(
+    val pointerWindow: Offset,
+    val pointerOffsetInsideCard: Offset,
+    val visualOffsetFromPointer: Offset,
+    val cardSizePx: IntSize
+) {
+    fun overlayTopLeftInWindow(): Offset {
+        return pointerWindow - pointerOffsetInsideCard + visualOffsetFromPointer
+    }
+}
+
+internal data class ModDragSession(
+    val mod: ModItemUi,
+    val sourceFolderTokenId: String,
+    val hoveredFolderTokenId: String? = null,
+    val overlayAnchor: ModDragOverlayAnchor,
+    val isExpanded: Boolean
+) {
+    fun updatePointer(pointerWindow: Offset): ModDragSession {
+        return copy(overlayAnchor = overlayAnchor.copy(pointerWindow = pointerWindow))
+    }
+}
 
 internal class ModFolderSectionInteractionState(
     val listState: LazyListState,
@@ -23,17 +46,15 @@ internal class ModFolderSectionInteractionState(
     var filterText by mutableStateOf("")
     var folderPreviewOrder by mutableStateOf(initialFolderOrder)
 
-    var dragHoveredFolderId by mutableStateOf<String?>(null)
-    var activeDragModStoragePath by mutableStateOf<String?>(null)
+    var activeModDragSession by mutableStateOf<ModDragSession?>(null)
     var activeDragFolderId by mutableStateOf<String?>(null)
-    var activeDragModSourceFolderId by mutableStateOf<String?>(null)
-    var dragSessionActive by mutableStateOf(false)
-    val activeDragOverlayState = mutableStateOf<ModCardDragOverlayState?>(null)
-    var folderDragSnapshot by mutableStateOf<MainScreenViewModel.FolderCollapseSnapshot?>(null)
+    var forceCollapseDuringDrag by mutableStateOf(false)
     val expandedCards = mutableStateMapOf<String, Boolean>()
-    val lastPointerWindowRef = AtomicReference<Offset?>(null)
     var listViewportInWindow by mutableStateOf<Rect?>(null)
     var sectionTopLeftInWindow by mutableStateOf(Offset.Zero)
+
+    val isModDragActive: Boolean
+        get() = activeModDragSession != null
 }
 
 @Composable
@@ -51,26 +72,6 @@ internal fun rememberModFolderSectionInteractionState(
         state.folderPreviewOrder = folderTargetIds
     }
     return state
-}
-
-internal fun parseStatusSummaryEntries(summary: String): List<StatusSummaryEntry> {
-    return summary.lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .map { line ->
-            val colonIndex = line.indexOf(':')
-            val label = if (colonIndex >= 0) line.substring(0, colonIndex).trim() else line
-            val value = if (colonIndex >= 0) line.substring(colonIndex + 1).trim() else ""
-            val lowercase = value.lowercase()
-            val tone = when {
-                lowercase.contains("ok") -> StatusTone.Ok
-                lowercase.contains("warn") -> StatusTone.Warn
-                lowercase.contains("missing") || lowercase.contains("error") || lowercase.contains("fail") -> StatusTone.Error
-                else -> StatusTone.Info
-            }
-            StatusSummaryEntry(label = label, value = value, tone = tone)
-        }
-        .toList()
 }
 
 internal fun buildFolderTargetIds(

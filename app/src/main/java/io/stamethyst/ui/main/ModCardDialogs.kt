@@ -19,6 +19,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
@@ -124,29 +128,43 @@ internal fun RenameModFileDialog(
     visible: Boolean,
     value: String,
     controlsEnabled: Boolean,
-    onValueChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (String) -> Unit
 ) {
     if (!visible) {
         return
+    }
+    var input by remember(visible, value) { mutableStateOf(value) }
+    val normalizedInput = input.trim()
+    val errorText = when {
+        normalizedInput.isEmpty() -> stringResource(R.string.main_mod_rename_error_empty)
+        normalizedInput.contains('/') || normalizedInput.contains('\\') ->
+            stringResource(R.string.main_mod_rename_error_separator)
+
+        else -> null
     }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.main_mod_rename_dialog_title)) },
         text = {
             OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
+                value = input,
+                onValueChange = { input = it },
                 singleLine = true,
                 label = { Text(stringResource(R.string.main_mod_rename_hint)) },
-                enabled = controlsEnabled
+                enabled = controlsEnabled,
+                isError = errorText != null,
+                supportingText = {
+                    if (errorText != null) {
+                        Text(text = errorText)
+                    }
+                }
             )
         },
         confirmButton = {
             TextButton(
-                onClick = onConfirm,
-                enabled = controlsEnabled
+                onClick = { onConfirm(normalizedInput) },
+                enabled = controlsEnabled && errorText == null
             ) {
                 Text(stringResource(R.string.main_folder_dialog_confirm))
             }

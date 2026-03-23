@@ -10,77 +10,61 @@ internal class ModFolderDragController(
     private val resolveAssignedFolderToken: (ModItemUi) -> String,
     private val onAssignModToFolder: (ModItemUi, String) -> Unit,
     private val onMoveModToUnassigned: (ModItemUi) -> Unit,
-    private val onCollapseAllFoldersForModDrag: () -> Unit,
-    private val onExpandOnlySourceFolderAfterModDrag: (String) -> Unit
+    private val onRevealFolderToken: (String) -> Unit
 ) {
     fun onDragStart(
         mod: ModItemUi,
         dragInfo: ModCardDragStartInfo,
         isExpanded: Boolean,
-        sourceFolderTokenId: String
     ) {
         interactionState.activeDragFolderId = null
-        interactionState.activeDragModSourceFolderId = sourceFolderTokenId
-        interactionState.activeDragModStoragePath = mod.storagePath
-        interactionState.dragSessionActive = true
-        interactionState.activeDragOverlayState.value = ModCardDragOverlayState(
+        interactionState.forceCollapseDuringDrag = true
+        interactionState.activeModDragSession = ModDragSession(
             mod = mod,
-            pointerWindow = dragInfo.pointerWindow,
-            touchOffsetInsideCard = dragInfo.pointerWindow - dragInfo.cardTopLeftWindow,
-            cardSizePx = dragInfo.cardSizePx,
+            sourceFolderTokenId = resolveAssignedFolderToken(mod),
+            overlayAnchor = dragInfo.overlayAnchor,
             isExpanded = isExpanded
         )
-        onCollapseAllFoldersForModDrag()
-        interactionState.lastPointerWindowRef.set(dragInfo.pointerWindow)
-        updateDragHover(dragInfo.pointerWindow)
+        updateModDragHover(dragInfo.overlayAnchor.pointerWindow)
     }
 
     fun onDragMove(mod: ModItemUi, position: Offset) {
-        interactionState.lastPointerWindowRef.set(position)
-        updateDragHover(position)
-        val current = interactionState.activeDragOverlayState.value
-        if (current != null && current.mod.storagePath == mod.storagePath) {
-            interactionState.activeDragOverlayState.value = current.copy(pointerWindow = position)
+        val currentSession = interactionState.activeModDragSession
+        if (currentSession == null || currentSession.mod.storagePath != mod.storagePath) {
+            return
         }
+        updateModDragHover(position)
     }
 
     fun onDragEnd(mod: ModItemUi, rawDropPosition: Offset) {
-        interactionState.lastPointerWindowRef.set(rawDropPosition)
-        val current = interactionState.activeDragOverlayState.value
-        if (current != null && current.mod.storagePath == mod.storagePath) {
-            interactionState.activeDragOverlayState.value = current.copy(pointerWindow = rawDropPosition)
+        val currentSession = interactionState.activeModDragSession
+        if (currentSession == null || currentSession.mod.storagePath != mod.storagePath) {
+            return
         }
+        interactionState.activeModDragSession = currentSession.updatePointer(rawDropPosition)
         handleModDrop(mod, rawDropPosition)
-        expandSourceFolderAfterModDrag()
     }
 
     fun onDragCancel(mod: ModItemUi) {
-        interactionState.dragHoveredFolderId = null
-        interactionState.dragSessionActive = false
-        interactionState.activeDragOverlayState.value = null
-        if (interactionState.activeDragModStoragePath == mod.storagePath) {
-            interactionState.activeDragModStoragePath = null
+        val currentSession = interactionState.activeModDragSession
+        if (currentSession != null && currentSession.mod.storagePath == mod.storagePath) {
+            clearModDragSession()
         }
-        expandSourceFolderAfterModDrag()
     }
 
     fun clearFolderDragSession() {
         interactionState.activeDragFolderId = null
-        interactionState.dragHoveredFolderId = null
-        interactionState.dragSessionActive = false
-        interactionState.activeDragOverlayState.value = null
+        interactionState.forceCollapseDuringDrag = false
     }
 
-    fun updateDragHover(position: Offset, ignoreFolderId: String? = null) {
-        if (!interactionState.dragSessionActive) {
-            if (interactionState.dragHoveredFolderId != null) {
-                interactionState.dragHoveredFolderId = null
-            }
-            return
-        }
+    fun updateModDragHover(position: Offset, ignoreFolderId: String? = null) {
+        val currentSession = interactionState.activeModDragSession ?: return
         val nextHoverId = findExactFolderAt(position, ignoreFolderId)
-        if (interactionState.dragHoveredFolderId != nextHoverId) {
-            interactionState.dragHoveredFolderId = nextHoverId
+        val updatedSession = currentSession
+            .updatePointer(position)
+            .copy(hoveredFolderTokenId = nextHoverId)
+        if (updatedSession != currentSession) {
+            interactionState.activeModDragSession = updatedSession
         }
     }
 
@@ -104,6 +88,13 @@ internal class ModFolderDragController(
             }
 
             else -> 0f
+        }
+    }
+
+    private fun clearModDragSession() {
+        interactionState.activeModDragSession = null
+        if (interactionState.activeDragFolderId == null) {
+            interactionState.forceCollapseDuringDrag = false
         }
     }
 
@@ -149,30 +140,24 @@ internal class ModFolderDragController(
     }
 
     private fun handleModDrop(mod: ModItemUi, rawDropPosition: Offset) {
-        val realDropPosition = interactionState.lastPointerWindowRef.get() ?: rawDropPosition
+        val currentSession = interactionState.activeModDragSession ?: return
+        val realDropPosition = currentSession.overlayAnchor.pointerWindow
         val targetFolderId = findDropFolderAt(realDropPosition)
-        val sourceFolderId = resolveAssignedFolderToken(mod)
-
-        interactionState.dragHoveredFolderId = null
-        interactionState.dragSessionActive = false
-        interactionState.activeDragOverlayState.value = null
-        if (interactionState.activeDragModStoragePath == mod.storagePath) {
-            interactionState.activeDragModStoragePath = null
-        }
+        val sourceFolderId = currentSession.sourceFolderTokenId
+        clearModDragSession()
 
         when {
             targetFolderId == null -> Unit
             targetFolderId == sourceFolderId -> Unit
-            targetFolderId == UNASSIGNED_FOLDER_ID -> onMoveModToUnassigned(mod)
-            else -> onAssignModToFolder(mod, targetFolderId)
-        }
-    }
+            targetFolderId == UNASSIGNED_FOLDER_ID -> {
+                onMoveModToUnassigned(mod)
+                onRevealFolderToken(targetFolderId)
+            }
 
-    private fun expandSourceFolderAfterModDrag() {
-        val sourceFolderTokenId = interactionState.activeDragModSourceFolderId
-        if (!sourceFolderTokenId.isNullOrBlank()) {
-            onExpandOnlySourceFolderAfterModDrag(sourceFolderTokenId)
+            else -> {
+                onAssignModToFolder(mod, targetFolderId)
+                onRevealFolderToken(targetFolderId)
+            }
         }
-        interactionState.activeDragModSourceFolderId = null
     }
 }

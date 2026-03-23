@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackConversationService
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueLocalStore
@@ -117,7 +118,7 @@ class FeedbackConversationViewModel(
         if (uiState.busy) {
             return
         }
-        setBusy(true, "正在刷新议题内容...")
+        setBusy(true, host.getString(R.string.feedback_busy_refreshing_issue))
         executor.execute {
             runCatching {
                 FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = true)
@@ -130,7 +131,14 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "刷新失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_refresh_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -153,10 +161,14 @@ class FeedbackConversationViewModel(
         }
         val remaining = MAX_SCREENSHOT_ATTACHMENTS - screenshotAttachments.size
         if (remaining <= 0) {
-            Toast.makeText(host, "最多附加 $MAX_SCREENSHOT_ATTACHMENTS 张截图。", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                host,
+                host.getString(R.string.feedback_screenshot_limit, MAX_SCREENSHOT_ATTACHMENTS),
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
-        setBusy(true, "正在处理截图...")
+        setBusy(true, host.getString(R.string.feedback_busy_processing_screenshots))
         executor.execute {
             runCatching {
                 uris.take(remaining).map { uri ->
@@ -171,7 +183,14 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "处理截图失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_screenshot_processing_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -196,7 +215,7 @@ class FeedbackConversationViewModel(
         }
         val message = uiState.messageText.trim()
         if (message.isEmpty() && screenshotAttachments.isEmpty()) {
-            Toast.makeText(host, "请先输入消息或附加截图。", Toast.LENGTH_LONG).show()
+            Toast.makeText(host, host.getString(R.string.feedback_message_required), Toast.LENGTH_LONG).show()
             return
         }
         val screenshots = screenshotAttachments.map {
@@ -205,7 +224,7 @@ class FeedbackConversationViewModel(
                 displayName = it.displayName
             )
         }
-        setBusy(true, "正在发送消息...")
+        setBusy(true, host.getString(R.string.feedback_busy_sending_message))
         executor.execute {
             runCatching {
                 FeedbackConversationService.postMessage(
@@ -221,7 +240,7 @@ class FeedbackConversationViewModel(
                     clearDraftState()
                     setBusy(false, null)
                     applyCache(optimisticCache)
-                    Toast.makeText(host, "消息已发送。", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(host, host.getString(R.string.feedback_message_sent), Toast.LENGTH_SHORT).show()
                 }
                 runCatching {
                     FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = true)
@@ -235,18 +254,35 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "发送失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_send_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
     }
 
     fun onCloseIssue(host: Activity) {
-        updateIssueState(host, "closed", "正在关闭议题...", "议题已关闭。")
+        updateIssueState(
+            host,
+            "closed",
+            host.getString(R.string.feedback_busy_closing_issue),
+            host.getString(R.string.feedback_issue_closed)
+        )
     }
 
     fun onReopenIssue(host: Activity) {
-        updateIssueState(host, "open", "正在重新打开议题...", "议题已重新打开。")
+        updateIssueState(
+            host,
+            "open",
+            host.getString(R.string.feedback_busy_reopening_issue),
+            host.getString(R.string.feedback_issue_reopened)
+        )
     }
 
     override fun onCleared() {
@@ -283,7 +319,14 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(host, "操作失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_action_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -306,7 +349,7 @@ class FeedbackConversationViewModel(
             ?: FeedbackIssueThreadCache(
                 issueNumber = issueNumber,
                 issueUrl = FeedbackIssueSyncService.buildIssueUrl(issueNumber),
-                title = uiState.title.ifBlank { "Issue #$issueNumber" },
+                title = uiState.title.ifBlank { host.getString(R.string.feedback_issue_fallback_title, issueNumber) },
                 state = uiState.state,
                 body = uiState.issueBody,
                 updatedAtMs = comment.createdAtMs,
@@ -323,7 +366,7 @@ class FeedbackConversationViewModel(
                     id = eventId,
                     type = FeedbackThreadEventType.COMMENT,
                     authorType = FeedbackThreadAuthorType.ME,
-                    authorLabel = comment.playerName.ifBlank { "我" },
+                    authorLabel = comment.playerName.ifBlank { host.getString(R.string.feedback_author_me) },
                     body = comment.body,
                     createdAtMs = comment.createdAtMs,
                     htmlUrl = comment.commentUrl,
@@ -345,7 +388,7 @@ class FeedbackConversationViewModel(
             ?: FeedbackIssueThreadCache(
                 issueNumber = issueNumber,
                 issueUrl = FeedbackIssueSyncService.buildIssueUrl(issueNumber),
-                title = uiState.title.ifBlank { "Issue #$issueNumber" },
+                title = uiState.title.ifBlank { host.getString(R.string.feedback_issue_fallback_title, issueNumber) },
                 state = state,
                 body = uiState.issueBody,
                 updatedAtMs = now,
@@ -359,11 +402,11 @@ class FeedbackConversationViewModel(
                     id = "local-state-$now",
                     type = FeedbackThreadEventType.STATE_CHANGE,
                     authorType = FeedbackThreadAuthorType.SYSTEM,
-                    authorLabel = "反馈系统",
+                    authorLabel = host.getString(R.string.feedback_system_author),
                     body = if (state.equals("closed", ignoreCase = true)) {
-                        "已关闭这个议题"
+                        host.getString(R.string.feedback_system_event_closed)
                     } else {
-                        "重新打开了这个议题"
+                        host.getString(R.string.feedback_system_event_reopened)
                     },
                     createdAtMs = now,
                     htmlUrl = null,

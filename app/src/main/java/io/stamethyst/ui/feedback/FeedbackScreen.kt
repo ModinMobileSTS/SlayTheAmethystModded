@@ -42,12 +42,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackCategory
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackInboxUiState
@@ -182,12 +184,12 @@ private fun LauncherFeedbackScreenContent(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("反馈新问题") },
+                title = { Text(stringResource(R.string.feedback_new_issue_title)) },
                 navigationIcon = {
                     IconButton(onClick = onGoBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.common_content_desc_back)
                         )
                     }
                 }
@@ -222,15 +224,15 @@ private fun LauncherFeedbackScreenContent(
     if (formUiState.showBriefFeedbackConfirmation) {
         AlertDialog(
             onDismissRequest = onDismissBriefFeedbackConfirmation,
-            title = { Text("警告") },
+            title = { Text(stringResource(R.string.feedback_brief_warning_title)) },
             text = {
                 Text(
-                    "目前反馈信息较少，开发者可能不能准确定位问题。建议尽量补充问题现象、触发条件和复现方式，可以带有一些自己的猜想，方便开发者更好地锁定问题。"
+                    stringResource(R.string.feedback_brief_warning_message)
                 )
             },
             confirmButton = {
                 TextButton(onClick = onDismissBriefFeedbackConfirmation) {
-                    Text("继续更改")
+                    Text(stringResource(R.string.feedback_brief_warning_continue_editing))
                 }
             },
             dismissButton = {
@@ -240,7 +242,7 @@ private fun LauncherFeedbackScreenContent(
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
-                    Text("仍然提交")
+                    Text(stringResource(R.string.feedback_brief_warning_submit_anyway))
                 }
             }
         )
@@ -264,9 +266,12 @@ private fun LauncherFeedbackSubscriptionsScreenContent(
                 title = {
                     Text(
                         if (inboxState.unreadIssueCount > 0) {
-                            "我关注的议题 (${inboxState.unreadIssueCount})"
+                            stringResource(
+                                R.string.feedback_subscriptions_title_with_count,
+                                inboxState.unreadIssueCount
+                            )
                         } else {
-                            "我关注的议题"
+                            stringResource(R.string.feedback_subscriptions_title)
                         }
                     )
                 },
@@ -274,7 +279,7 @@ private fun LauncherFeedbackSubscriptionsScreenContent(
                     IconButton(onClick = onGoBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.common_content_desc_back)
                         )
                     }
                 }
@@ -309,12 +314,12 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("关注新议题") },
+                title = { Text(stringResource(R.string.feedback_issue_browser_title)) },
                 navigationIcon = {
                     IconButton(onClick = onGoBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.common_content_desc_back)
                         )
                     }
                 }
@@ -374,9 +379,9 @@ private fun FeedbackSubmissionTabContent(
         }
 
         item {
-            FeedbackSectionCard(title = "说明") {
+            FeedbackSectionCard(title = stringResource(R.string.feedback_section_intro_title)) {
                 Text(
-                    text = "这里用于提交启动器 Bug、游戏内 Bug 和功能建议。提交时会自动附带日志、设备信息、启用模组快照，并支持附加截图。",
+                    text = stringResource(R.string.feedback_submission_intro),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -385,11 +390,11 @@ private fun FeedbackSubmissionTabContent(
         if (!uiState.endpointConfigured) {
             item {
                 FeedbackSectionCard(
-                    title = "上传未配置",
+                    title = stringResource(R.string.feedback_endpoint_unconfigured_title),
                     containerColor = MaterialTheme.colorScheme.errorContainer
                 ) {
                     Text(
-                        text = "当前构建没有配置反馈上传地址，表单可以填写，但无法真正提交到云函数。",
+                        text = stringResource(R.string.feedback_endpoint_unconfigured_message),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -397,23 +402,23 @@ private fun FeedbackSubmissionTabContent(
         }
 
         item {
-            FeedbackSectionCard(title = "1. 反馈类型") {
+            FeedbackSectionCard(title = stringResource(R.string.feedback_section_category)) {
                 FeedbackRadioRow(
                     selected = uiState.category == FeedbackCategory.GAME_BUG,
                     enabled = !uiState.busy,
-                    text = "游戏内 Bug",
+                    text = stringResource(R.string.feedback_category_game_bug),
                     onClick = { onCategorySelected(FeedbackCategory.GAME_BUG) }
                 )
                 FeedbackRadioRow(
                     selected = uiState.category == FeedbackCategory.LAUNCHER_BUG,
                     enabled = !uiState.busy,
-                    text = "启动器 Bug",
+                    text = stringResource(R.string.feedback_category_launcher_bug),
                     onClick = { onCategorySelected(FeedbackCategory.LAUNCHER_BUG) }
                 )
                 FeedbackRadioRow(
                     selected = uiState.category == FeedbackCategory.FEATURE_REQUEST,
                     enabled = !uiState.busy,
-                    text = "功能建议",
+                    text = stringResource(R.string.feedback_category_feature_request),
                     onClick = { onCategorySelected(FeedbackCategory.FEATURE_REQUEST) }
                 )
             }
@@ -421,22 +426,22 @@ private fun FeedbackSubmissionTabContent(
 
         if (isGameBug) {
             item {
-                FeedbackSectionCard(title = "2. 最近一次运行") {
+                FeedbackSectionCard(title = stringResource(R.string.feedback_section_recent_run)) {
                     FeedbackRadioRow(
                         selected = uiState.reproducedOnLastRun == true,
                         enabled = !uiState.busy,
-                        text = "是，这就是最近一次运行复现的问题",
+                        text = stringResource(R.string.feedback_recent_run_yes),
                         onClick = { onReproducedOnLastRunSelected(true) }
                     )
                     FeedbackRadioRow(
                         selected = uiState.reproducedOnLastRun == false,
                         enabled = !uiState.busy,
-                        text = "不是，但我仍要继续提交",
+                        text = stringResource(R.string.feedback_recent_run_no),
                         onClick = { onReproducedOnLastRunSelected(false) }
                     )
                     if (uiState.reproducedOnLastRun == false) {
                         Text(
-                            text = "建议先复现一次以便收集更完整日志，但也可以继续提交。",
+                            text = stringResource(R.string.feedback_recent_run_hint),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -444,17 +449,17 @@ private fun FeedbackSubmissionTabContent(
             }
 
             item {
-                FeedbackSectionCard(title = "3. 怀疑模组") {
+                FeedbackSectionCard(title = stringResource(R.string.feedback_section_suspected_mods)) {
                     FeedbackCheckboxRow(
                         checked = uiState.suspectUnknown,
                         enabled = !uiState.busy,
-                        title = "不确定",
-                        subtitle = "如果无法定位具体模组，请至少勾选这个选项。",
+                        title = stringResource(R.string.feedback_suspected_unknown_title),
+                        subtitle = stringResource(R.string.feedback_suspected_unknown_subtitle),
                         onCheckedChange = onSuspectUnknownChanged
                     )
                     if (uiState.availableMods.isEmpty()) {
                         Text(
-                            text = "当前没有已启用模组，提交时会只附带日志和环境信息。",
+                            text = stringResource(R.string.feedback_suspected_no_mods),
                             style = MaterialTheme.typography.bodySmall
                         )
                     } else {
@@ -465,7 +470,7 @@ private fun FeedbackSubmissionTabContent(
                                     append(" · ").append(mod.version)
                                 }
                                 if (mod.required) {
-                                    append(" · 核心")
+                                    append(" · ").append(stringResource(R.string.feedback_mod_core))
                                 }
                             }
                             FeedbackCheckboxRow(
@@ -483,23 +488,23 @@ private fun FeedbackSubmissionTabContent(
             }
 
             item {
-                FeedbackSectionCard(title = "4. 问题表现") {
+                FeedbackSectionCard(title = stringResource(R.string.feedback_section_issue_type)) {
                     FeedbackRadioRow(
                         selected = uiState.gameIssueType == GameIssueType.PERFORMANCE,
                         enabled = !uiState.busy,
-                        text = "卡顿",
+                        text = stringResource(R.string.feedback_issue_type_performance),
                         onClick = { onGameIssueTypeSelected(GameIssueType.PERFORMANCE) }
                     )
                     FeedbackRadioRow(
                         selected = uiState.gameIssueType == GameIssueType.DISPLAY,
                         enabled = !uiState.busy,
-                        text = "显示不正常",
+                        text = stringResource(R.string.feedback_issue_type_display),
                         onClick = { onGameIssueTypeSelected(GameIssueType.DISPLAY) }
                     )
                     FeedbackRadioRow(
                         selected = uiState.gameIssueType == GameIssueType.CRASH,
                         enabled = !uiState.busy,
-                        text = "崩溃",
+                        text = stringResource(R.string.feedback_issue_type_crash),
                         onClick = { onGameIssueTypeSelected(GameIssueType.CRASH) }
                     )
                 }
@@ -507,12 +512,20 @@ private fun FeedbackSubmissionTabContent(
         }
 
         item {
-            FeedbackSectionCard(title = if (isGameBug) "5. 问题说明" else "2. 问题说明") {
+            FeedbackSectionCard(
+                title = stringResource(
+                    if (isGameBug) {
+                        R.string.feedback_section_details_game
+                    } else {
+                        R.string.feedback_section_details_other
+                    }
+                )
+            ) {
                 OutlinedTextField(
                     value = uiState.summary,
                     onValueChange = onSummaryChanged,
                     enabled = !uiState.busy,
-                    label = { Text("一句话总结") },
+                    label = { Text(stringResource(R.string.feedback_summary_label)) },
                     placeholder = { Text(summaryPlaceholder(uiState)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -540,20 +553,28 @@ private fun FeedbackSubmissionTabContent(
         }
 
         item {
-            FeedbackSectionCard(title = if (isGameBug) "6. 截图" else "3. 截图") {
+            FeedbackSectionCard(
+                title = stringResource(
+                    if (isGameBug) {
+                        R.string.feedback_section_screenshots_game
+                    } else {
+                        R.string.feedback_section_screenshots_other
+                    }
+                )
+            ) {
                 Text(
-                    text = "截图为可选，最多 4 张。建议优先附上异常画面、报错弹窗或卡住时的界面。",
+                    text = stringResource(R.string.feedback_screenshots_hint),
                     style = MaterialTheme.typography.bodySmall
                 )
                 TextButton(
                     onClick = onAddScreenshots,
                     enabled = !uiState.busy && uiState.screenshots.size < 4
                 ) {
-                    Text("添加截图")
+                    Text(stringResource(R.string.feedback_add_screenshot))
                 }
                 if (uiState.screenshots.isEmpty()) {
                     Text(
-                        text = "当前未附加截图。",
+                        text = stringResource(R.string.feedback_no_screenshots),
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
@@ -577,7 +598,7 @@ private fun FeedbackSubmissionTabContent(
                                 onClick = { onRemoveScreenshot(screenshot.id) },
                                 enabled = !uiState.busy
                             ) {
-                                Text("移除")
+                                Text(stringResource(R.string.feedback_remove))
                             }
                         }
                     }
@@ -586,19 +607,27 @@ private fun FeedbackSubmissionTabContent(
         }
 
         item {
-            FeedbackSectionCard(title = if (isGameBug) "7. 邮箱通知（可选）" else "4. 邮箱通知（可选）") {
+            FeedbackSectionCard(
+                title = stringResource(
+                    if (isGameBug) {
+                        R.string.feedback_section_email_game
+                    } else {
+                        R.string.feedback_section_email_other
+                    }
+                )
+            ) {
                 FeedbackCheckboxRow(
                     checked = uiState.emailNotificationsEnabled,
                     enabled = !uiState.busy,
-                    title = "勾选后，在您的反馈有进展时向您发送邮件消息。",
-                    subtitle = "邮件地址不会公开显示在 GitHub Issue 中。",
+                    title = stringResource(R.string.feedback_email_opt_in_title),
+                    subtitle = stringResource(R.string.feedback_email_opt_in_subtitle),
                     onCheckedChange = onEmailNotificationsEnabledChanged
                 )
                 OutlinedTextField(
                     value = uiState.email,
                     onValueChange = onEmailChanged,
                     enabled = !uiState.busy,
-                    label = { Text("通知邮箱地址") },
+                    label = { Text(stringResource(R.string.feedback_email_label)) },
                     placeholder = { Text("name@example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -612,7 +641,7 @@ private fun FeedbackSubmissionTabContent(
                 enabled = !uiState.busy && uiState.endpointConfigured,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("提交反馈")
+                Text(stringResource(R.string.feedback_submit))
             }
         }
     }
@@ -636,7 +665,7 @@ private fun FeedbackSubscriptionsContent(
             if (uiState.busy || inboxState.syncing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    text = uiState.busyMessage ?: "正在同步我关注的议题...",
+                    text = uiState.busyMessage ?: stringResource(R.string.feedback_busy_syncing_subscriptions),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)
                 )
@@ -644,25 +673,25 @@ private fun FeedbackSubscriptionsContent(
         }
 
         item {
-            FeedbackSectionCard(title = "说明") {
+            FeedbackSectionCard(title = stringResource(R.string.feedback_section_intro_title)) {
                 Text(
-                    text = "这里显示你已经关注的反馈议题。你可以在这里继续查看进展、打开对话，或取消关注。",
+                    text = stringResource(R.string.feedback_subscriptions_intro),
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedButton(
                     onClick = onRefreshSubscriptions,
                     enabled = !uiState.busy
                 ) {
-                    Text("立即同步")
+                    Text(stringResource(R.string.feedback_refresh_now))
                 }
             }
         }
 
         item {
-            FeedbackSectionCard(title = "我关注的议题") {
+            FeedbackSectionCard(title = stringResource(R.string.feedback_subscriptions_list_title)) {
                 if (inboxState.subscriptions.isEmpty()) {
                     Text(
-                        text = "当前还没有关注任何反馈议题。",
+                        text = stringResource(R.string.feedback_subscriptions_empty),
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
@@ -712,50 +741,50 @@ private fun FeedbackIssueBrowserContent(
         }
 
         item {
-            FeedbackSectionCard(title = "仓库议题列表") {
+            FeedbackSectionCard(title = stringResource(R.string.feedback_issue_browser_intro_title)) {
                 Text(
-                    text = "这里会按最近更新时间从新到旧显示当前仓库里的所有反馈议题，也可以按状态筛选。找到你想继续跟进的议题后，直接点“关注”即可。",
+                    text = stringResource(R.string.feedback_issue_browser_intro),
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedButton(
                     onClick = onRefreshIssues,
                     enabled = !uiState.busy && !uiState.loadingMore
                 ) {
-                    Text("刷新列表")
+                    Text(stringResource(R.string.feedback_refresh_list))
                 }
             }
         }
 
         item {
-            FeedbackSectionCard(title = "可关注的议题") {
+            FeedbackSectionCard(title = stringResource(R.string.feedback_followable_issues_title)) {
                 Text(
-                    text = "筛选状态",
+                    text = stringResource(R.string.feedback_filter_state),
                     style = MaterialTheme.typography.labelMedium
                 )
                 FeedbackIssueBrowserViewModel.IssueStateFilter.values().forEach { filter ->
                     FeedbackRadioRow(
                         selected = uiState.issueStateFilter == filter,
                         enabled = !uiState.busy && !uiState.loadingMore,
-                        text = filter.label,
+                        text = stringResource(filter.labelResId),
                         onClick = { onIssueStateFilterSelected(filter) }
                     )
                 }
                 if (!uiState.initialLoaded && !uiState.busy) {
                     Text(
-                        text = "正在准备议题列表...",
+                        text = stringResource(R.string.feedback_issue_browser_preparing),
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else if (uiState.issues.isEmpty()) {
                     Text(
-                        text = "当前没有可展示的议题。",
+                        text = stringResource(R.string.feedback_issue_browser_empty),
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else if (visibleIssues.isEmpty()) {
                     Text(
                         text = if (uiState.hasMore) {
-                            "当前筛选条件下还没有匹配的议题，可以继续加载更多或切换筛选。"
+                            stringResource(R.string.feedback_issue_browser_empty_filtered_more)
                         } else {
-                            "当前筛选条件下没有匹配的议题。"
+                            stringResource(R.string.feedback_issue_browser_empty_filtered_done)
                         },
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -786,11 +815,11 @@ private fun FeedbackIssueBrowserContent(
                         onClick = onLoadMoreIssues,
                         enabled = !uiState.busy
                     ) {
-                        Text("加载更多议题")
+                        Text(stringResource(R.string.feedback_load_more_issues))
                     }
                 } else {
                     Text(
-                        text = "已经加载完当前可见的议题列表。",
+                        text = stringResource(R.string.feedback_issue_browser_loaded_all),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -818,7 +847,9 @@ private fun FeedbackSubscriptionRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = subscription.title.ifBlank { "Issue #${subscription.issueNumber}" },
+                text = subscription.title.ifBlank {
+                    stringResource(R.string.feedback_issue_fallback_title, subscription.issueNumber)
+                },
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
                 maxLines = 2,
@@ -826,7 +857,7 @@ private fun FeedbackSubscriptionRow(
             )
             if (subscription.unread) {
                 Text(
-                    text = "有更新",
+                    text = stringResource(R.string.feedback_updates_badge),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -841,10 +872,10 @@ private fun FeedbackSubscriptionRow(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(onClick = onOpenConversation) {
-                Text("打开对话")
+                Text(stringResource(R.string.feedback_open_conversation))
             }
             TextButton(onClick = onUnsubscribe) {
-                Text("取消订阅")
+                Text(stringResource(R.string.feedback_unsubscribe))
             }
         }
     }
@@ -868,7 +899,9 @@ private fun FeedbackIssueBrowserRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = issue.title.ifBlank { "Issue #${issue.issueNumber}" },
+                text = issue.title.ifBlank {
+                    stringResource(R.string.feedback_issue_fallback_title, issue.issueNumber)
+                },
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
                 maxLines = 2,
@@ -876,7 +909,7 @@ private fun FeedbackIssueBrowserRow(
             )
             if (followed) {
                 Text(
-                    text = "已关注",
+                    text = stringResource(R.string.feedback_followed),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -905,7 +938,7 @@ private fun FeedbackIssueBrowserRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "发起者：${issue.authorLabel}",
+                text = stringResource(R.string.feedback_author_format, issue.authorLabel),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
@@ -914,14 +947,14 @@ private fun FeedbackIssueBrowserRow(
                     onClick = {},
                     enabled = false
                 ) {
-                    Text("已关注")
+                    Text(stringResource(R.string.feedback_followed))
                 }
             } else {
                 Button(
                     onClick = onFollowIssue,
                     enabled = !busy
                 ) {
-                    Text("关注")
+                    Text(stringResource(R.string.feedback_follow))
                 }
             }
         }
@@ -1039,64 +1072,70 @@ private fun FeedbackEffectsHandler(
     }
 }
 
+@Composable
 private fun summaryPlaceholder(uiState: FeedbackScreenViewModel.UiState): String {
     return when (uiState.category) {
-        FeedbackCategory.FEATURE_REQUEST -> "例如：希望反馈入口能自动记住上次填写的邮箱"
-        FeedbackCategory.LAUNCHER_BUG -> "例如：导入某个模组后启动器直接闪退"
+        FeedbackCategory.FEATURE_REQUEST -> stringResource(R.string.feedback_summary_placeholder_feature)
+        FeedbackCategory.LAUNCHER_BUG -> stringResource(R.string.feedback_summary_placeholder_launcher)
         FeedbackCategory.GAME_BUG -> when (uiState.gameIssueType) {
-            GameIssueType.PERFORMANCE -> "例如：进入战斗后明显掉帧"
-            GameIssueType.DISPLAY -> "例如：主菜单出现大面积黑块"
-            GameIssueType.CRASH -> "例如：打出某张牌后游戏黑屏闪退"
-            null -> "例如：进入游戏后出现异常表现"
+            GameIssueType.PERFORMANCE -> stringResource(R.string.feedback_summary_placeholder_game_performance)
+            GameIssueType.DISPLAY -> stringResource(R.string.feedback_summary_placeholder_game_display)
+            GameIssueType.CRASH -> stringResource(R.string.feedback_summary_placeholder_game_crash)
+            null -> stringResource(R.string.feedback_summary_placeholder_game_generic)
         }
 
-        null -> "先选择反馈类型，再填写总结"
+        null -> stringResource(R.string.feedback_summary_placeholder_unselected)
     }
 }
 
+@Composable
 private fun detailLabel(uiState: FeedbackScreenViewModel.UiState): String {
     return when (uiState.category) {
-        FeedbackCategory.FEATURE_REQUEST -> "功能需求说明"
-        FeedbackCategory.LAUNCHER_BUG -> "启动器问题描述"
-        FeedbackCategory.GAME_BUG -> "游戏内问题描述"
-        null -> "详细描述"
+        FeedbackCategory.FEATURE_REQUEST -> stringResource(R.string.feedback_detail_label_feature)
+        FeedbackCategory.LAUNCHER_BUG -> stringResource(R.string.feedback_detail_label_launcher)
+        FeedbackCategory.GAME_BUG -> stringResource(R.string.feedback_detail_label_game)
+        null -> stringResource(R.string.feedback_detail_label_default)
     }
 }
 
+@Composable
 private fun detailPlaceholder(uiState: FeedbackScreenViewModel.UiState): String {
     return when (uiState.category) {
-        FeedbackCategory.FEATURE_REQUEST -> "说明你为什么需要这个功能，它解决什么痛点。"
-        FeedbackCategory.LAUNCHER_BUG -> "说明你在启动器里做了什么、看到了什么、哪里不符合预期。"
+        FeedbackCategory.FEATURE_REQUEST -> stringResource(R.string.feedback_detail_placeholder_feature)
+        FeedbackCategory.LAUNCHER_BUG -> stringResource(R.string.feedback_detail_placeholder_launcher)
         FeedbackCategory.GAME_BUG -> when (uiState.gameIssueType) {
-            GameIssueType.PERFORMANCE -> "例如：使用卡包大师进入战斗后持续卡顿。"
-            GameIssueType.DISPLAY -> "例如：使用命运之戒进入主菜单后出现大量黑块。"
-            GameIssueType.CRASH -> "例如：使用某模组角色打出某张牌后黑屏闪退。"
-            null -> "简要描述你在游戏里遇到的问题。"
+            GameIssueType.PERFORMANCE -> stringResource(R.string.feedback_detail_placeholder_game_performance)
+            GameIssueType.DISPLAY -> stringResource(R.string.feedback_detail_placeholder_game_display)
+            GameIssueType.CRASH -> stringResource(R.string.feedback_detail_placeholder_game_crash)
+            null -> stringResource(R.string.feedback_detail_placeholder_game_generic)
         }
 
-        null -> "先选择反馈类型，再填写详细描述"
+        null -> stringResource(R.string.feedback_detail_placeholder_unselected)
     }
 }
 
+@Composable
 private fun reproductionLabel(uiState: FeedbackScreenViewModel.UiState): String {
     return if (uiState.category == FeedbackCategory.FEATURE_REQUEST) {
-        "使用场景（可选）"
+        stringResource(R.string.feedback_reproduction_label_feature)
     } else {
-        "复现步骤"
+        stringResource(R.string.feedback_reproduction_label_other)
     }
 }
 
+@Composable
 private fun reproductionPlaceholder(uiState: FeedbackScreenViewModel.UiState): String {
     return if (uiState.category == FeedbackCategory.FEATURE_REQUEST) {
-        "例如：经常切换不同模组组合时，希望减少重复填写。"
+        stringResource(R.string.feedback_reproduction_placeholder_feature)
     } else {
-        "按顺序写出你做了哪些操作，越具体越好。"
+        stringResource(R.string.feedback_reproduction_placeholder_other)
     }
 }
 
+@Composable
 private fun formatFeedbackIssueListTime(timestampMs: Long): String {
     if (timestampMs <= 0L) {
-        return "未知时间"
+        return stringResource(R.string.feedback_unknown_time)
     }
     return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestampMs))
 }
@@ -1104,6 +1143,7 @@ private fun formatFeedbackIssueListTime(timestampMs: Long): String {
 private val FeedbackIssueResolvedColor = Color(0xFF2E7D32)
 private val FeedbackIssueInProgressColor = Color(0xFFC62828)
 
+@Composable
 private fun buildFeedbackIssueMetaText(
     issueNumber: Long,
     isClosed: Boolean,
@@ -1122,7 +1162,15 @@ private fun buildFeedbackIssueMetaText(
             }
         )
     ) {
-        append(if (isClosed) "已解决" else "进行中")
+        append(
+            stringResource(
+                if (isClosed) {
+                    R.string.feedback_meta_resolved
+                } else {
+                    R.string.feedback_meta_in_progress
+                }
+            )
+        )
     }
     updatedAtMs?.let {
         append(" · ")
@@ -1130,7 +1178,6 @@ private fun buildFeedbackIssueMetaText(
     }
     commentCount?.let {
         append(" · ")
-        append(it.toString())
-        append(" 条评论")
+        append(stringResource(R.string.feedback_meta_comments_format, it))
     }
 }

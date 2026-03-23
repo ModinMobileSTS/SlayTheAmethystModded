@@ -24,31 +24,14 @@ internal data class ModFolderSectionCallbacks(
     val onMoveFolderTokenToIndex: (String, Int) -> Unit = { _, _ -> },
     val onAssignModToFolder: (ModItemUi, String) -> Unit = { _, _ -> },
     val onMoveModToUnassigned: (ModItemUi) -> Unit = {},
-    val onCollapseAllFoldersForModDrag: () -> Unit = {},
-    val onExpandOnlySourceFolderAfterModDrag: (String) -> Unit = {},
-    val onCollapseAllFoldersForDragWithSnapshot: () -> MainScreenViewModel.FolderCollapseSnapshot? = { null },
-    val onRestoreFolderCollapseSnapshot: (MainScreenViewModel.FolderCollapseSnapshot?) -> Unit = {}
+    val onRevealFolderToken: (String) -> Unit = {}
 )
 
-internal enum class StatusTone {
+enum class StatusTone {
     Ok,
     Warn,
     Error,
     Info
-}
-
-internal data class StatusSummaryEntry(
-    val label: String,
-    val value: String,
-    val tone: StatusTone
-)
-
-internal data class StatusSummaryUiModel(
-    val entries: List<StatusSummaryEntry>
-) {
-    val hasEntries: Boolean = entries.isNotEmpty()
-    val okCount: Int = entries.count { it.tone == StatusTone.Ok }
-    val totalCount: Int = entries.size
 }
 
 internal data class FolderUiModel(

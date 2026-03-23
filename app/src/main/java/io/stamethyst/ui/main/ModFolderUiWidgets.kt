@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -95,7 +96,13 @@ internal fun FolderNameDialog(
     if (!visible) {
         return
     }
-    var value by remember(visible, initialText) { mutableStateOf(initialText) }
+    var value by remember(visible, initialText) { mutableStateOf(TextFieldValue(initialText)) }
+    val trimmedValue = value.text.trim()
+    val errorText = if (trimmedValue.isEmpty()) {
+        stringResource(R.string.main_folder_dialog_name_empty)
+    } else {
+        null
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = title) },
@@ -104,15 +111,23 @@ internal fun FolderNameDialog(
                 value = value,
                 onValueChange = { value = it },
                 singleLine = true,
-                label = { Text(stringResource(R.string.main_folder_dialog_name_hint)) }
+                label = { Text(stringResource(R.string.main_folder_dialog_name_hint)) },
+                isError = errorText != null,
+                supportingText = {
+                    if (errorText != null) {
+                        Text(text = errorText)
+                    }
+                }
             )
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    onDismiss()
-                    onConfirm(value.trim())
-                }
+                    if (errorText == null) {
+                        onConfirm(trimmedValue)
+                    }
+                },
+                enabled = errorText == null
             ) {
                 Text(text = stringResource(R.string.main_folder_dialog_confirm))
             }

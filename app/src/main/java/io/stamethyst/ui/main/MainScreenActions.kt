@@ -30,10 +30,7 @@ internal data class MainScreenActions(
     val onMoveFolderTokenToIndex: (String, Int) -> Unit = { _, _ -> },
     val onAssignModToFolder: (ModItemUi, String) -> Unit = { _, _ -> },
     val onMoveModToUnassigned: (ModItemUi) -> Unit = {},
-    val onCollapseAllFoldersForModDrag: () -> Unit = {},
-    val onExpandOnlySourceFolderAfterModDrag: (String) -> Unit = {},
-    val onCollapseAllFoldersForDragWithSnapshot: () -> MainScreenViewModel.FolderCollapseSnapshot? = { null },
-    val onRestoreFolderCollapseSnapshot: (MainScreenViewModel.FolderCollapseSnapshot?) -> Unit = {},
+    val onRevealFolderToken: (String) -> Unit = {},
     val onRetryStorageCheck: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onLaunch: () -> Unit = {}
@@ -76,14 +73,7 @@ internal fun rememberMainScreenActions(
                 onMoveFolderTokenToIndex = { folderId, index -> viewModel.moveFolderTokenToIndex(activity, folderId, index) },
                 onAssignModToFolder = { mod, folderId -> viewModel.assignModToFolder(activity, mod, folderId) },
                 onMoveModToUnassigned = { mod -> viewModel.moveModToUnassigned(activity, mod) },
-                onCollapseAllFoldersForModDrag = { viewModel.collapseAllFoldersForModDrag(activity) },
-                onExpandOnlySourceFolderAfterModDrag = { folderTokenId ->
-                    viewModel.expandOnlySourceFolderAfterModDrag(activity, folderTokenId)
-                },
-                onCollapseAllFoldersForDragWithSnapshot = { viewModel.collapseAllFoldersForDragWithSnapshot(activity) },
-                onRestoreFolderCollapseSnapshot = { snapshot ->
-                    viewModel.restoreFolderCollapseSnapshot(activity, snapshot)
-                },
+                onRevealFolderToken = { folderTokenId -> viewModel.revealFolderToken(activity, folderTokenId) },
                 onRetryStorageCheck = { viewModel.refresh(activity) },
                 onImportMods = {
                     importModsLauncher.launch(

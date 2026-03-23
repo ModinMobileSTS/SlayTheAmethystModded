@@ -22,9 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
+import io.stamethyst.model.ModItemUi
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import sh.calvin.reorderable.ReorderableItem
@@ -64,7 +65,6 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 internal fun ModFolderSection(
     modifier: Modifier = Modifier,
     uiState: MainScreenViewModel.UiState,
-    statusSummary: String,
     contentBottomInset: Dp = 0.dp,
     hostAvailable: Boolean,
     callbacks: ModFolderSectionCallbacks
@@ -74,7 +74,6 @@ internal fun ModFolderSection(
     val folderAssignments = uiState.folderAssignments
     val folderCollapsed = uiState.folderCollapsed
     val unassignedCollapsed = uiState.unassignedCollapsed
-    val statusCollapsed = uiState.statusSummaryCollapsed
     val showModFileName = uiState.showModFileName
     val unassignedFolderName = uiState.unassignedFolderName
     val unassignedFolderOrder = uiState.unassignedFolderOrder
@@ -85,6 +84,7 @@ internal fun ModFolderSection(
     val organizationControlsEnabled = uiState.controlsEnabled && hostAvailable
     val modFileActionsEnabled = !uiState.busy && hostAvailable
     val interactionState = rememberModFolderSectionInteractionState(folderTargetIds = folderTargetIds)
+    var pendingDeleteMod by remember { mutableStateOf<ModItemUi?>(null) }
     val filterText = interactionState.filterText
     val filteredMods = remember(mods, filterText) {
         val keyword = filterText.trim()
@@ -102,11 +102,11 @@ internal fun ModFolderSection(
 
     val folderIds = remember(folders) { folders.map { it.id }.toSet() }
     val foldersById = remember(folders) { folders.associateBy { it.id } }
-    val modsByStoragePath = remember(filteredMods) { filteredMods.associateBy { it.storagePath } }
     val modsByFolderId = remember(filteredMods, folderAssignments, folderIds) {
         filteredMods.groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
     }
     val unassignedMods = remember(modsByFolderId) { modsByFolderId[null].orEmpty() }
+    val activeModDragSession = interactionState.activeModDragSession
 
     val displayFolderTargetIds = interactionState.folderPreviewOrder
     val folderDisplayIndexMap = remember(displayFolderTargetIds) {
@@ -140,9 +140,6 @@ internal fun ModFolderSection(
     val dragController = remember(
         interactionState,
         folderTokenByItemKey,
-        folderAssignments,
-        folderIds,
-        modsByStoragePath,
         callbacks
     ) {
         ModFolderDragController(
@@ -156,24 +153,17 @@ internal fun ModFolderSection(
             },
             onAssignModToFolder = callbacks.onAssignModToFolder,
             onMoveModToUnassigned = callbacks.onMoveModToUnassigned,
-            onCollapseAllFoldersForModDrag = callbacks.onCollapseAllFoldersForModDrag,
-            onExpandOnlySourceFolderAfterModDrag = callbacks.onExpandOnlySourceFolderAfterModDrag
+            onRevealFolderToken = callbacks.onRevealFolderToken
         )
     }
 
     val activeDragSourceFolderId = remember(
         interactionState.activeDragFolderId,
-        interactionState.activeDragModStoragePath,
-        modsByStoragePath,
-        folderAssignments,
-        folderIds
+        activeModDragSession
     ) {
         when {
             interactionState.activeDragFolderId != null -> interactionState.activeDragFolderId
-            interactionState.activeDragModStoragePath != null -> {
-                modsByStoragePath[interactionState.activeDragModStoragePath]
-                    ?.let { resolveAssignedFolderId(it, folderAssignments, folderIds) ?: UNASSIGNED_FOLDER_ID }
-            }
+            activeModDragSession != null -> activeModDragSession.sourceFolderTokenId
             else -> null
         }
     }
@@ -196,15 +186,15 @@ internal fun ModFolderSection(
         }
     )
 
-    LaunchedEffect(interactionState.dragSessionActive) {
-        if (!interactionState.dragSessionActive) {
+    LaunchedEffect(interactionState.isModDragActive) {
+        if (!interactionState.isModDragActive) {
             return@LaunchedEffect
         }
         var smoothAutoScrollDelta = 0f
-        while (interactionState.dragSessionActive) {
-            val pointer = interactionState.lastPointerWindowRef.get()
-            if (pointer != null && interactionState.activeDragModStoragePath != null) {
-                dragController.updateDragHover(pointer)
+        while (interactionState.activeModDragSession != null) {
+            val pointer = interactionState.activeModDragSession?.overlayAnchor?.pointerWindow
+            if (pointer != null) {
+                dragController.updateModDragHover(pointer)
                 val target = dragController.computeAutoScrollDelta(pointer.y)
                 smoothAutoScrollDelta = if (target == 0f) {
                     smoothAutoScrollDelta * 0.5f
@@ -224,9 +214,6 @@ internal fun ModFolderSection(
 
     val folderBackgroundColor = MaterialTheme.colorScheme.surfaceContainer
     val hoveredFolderBackgroundColor = MaterialTheme.colorScheme.secondaryContainer
-    val statusSummaryUiModel = remember(statusSummary) {
-        StatusSummaryUiModel(entries = parseStatusSummaryEntries(statusSummary))
-    }
 
     Column(
         modifier = modifier
@@ -234,6 +221,17 @@ internal fun ModFolderSection(
             .onGloballyPositioned { interactionState.sectionTopLeftInWindow = it.boundsInWindow().topLeft },
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        pendingDeleteMod?.let { mod ->
+            AlertDeleteModDialog(
+                mod = mod,
+                onDismiss = { pendingDeleteMod = null },
+                onConfirm = {
+                    pendingDeleteMod = null
+                    callbacks.onDeleteMod(mod)
+                }
+            )
+        }
+
         Text(
             text = stringResource(
                 id = R.string.main_folder_summary_format,
@@ -282,39 +280,32 @@ internal fun ModFolderSection(
                 )
             }
 
-            if (statusSummaryUiModel.hasEntries) {
-                item(key = "statusSummaryFolder") {
-                    StatusSummaryFolderCard(
-                        uiModel = statusSummaryUiModel,
-                        collapsed = statusCollapsed,
-                        folderBackgroundColor = folderBackgroundColor,
-                        onToggleCollapsed = callbacks.onToggleStatusSummaryCollapsed
-                    )
-                }
-            }
-
             itemsIndexed(
                 items = folderUiModels,
                 key = { _, item -> item.key }
             ) { index, folderUiModel ->
                 val folderTokenId = folderUiModel.folderTokenId
                 val isHovering =
-                    interactionState.dragHoveredFolderId == folderTokenId &&
+                    activeModDragSession?.hoveredFolderTokenId == folderTokenId &&
                         interactionState.activeDragFolderId == null
                 val isSourceFolderDuringModDrag =
-                    interactionState.dragSessionActive &&
-                        interactionState.activeDragModStoragePath != null &&
+                    activeModDragSession != null &&
                         activeDragSourceFolderId == folderTokenId
                 val keepSourceFolderBodyAlive =
-                    interactionState.activeDragModStoragePath != null &&
+                    activeModDragSession != null &&
                         activeDragSourceFolderId == folderTokenId
-                val bodyVisible = !folderUiModel.isCollapsed || keepSourceFolderBodyAlive
-                val bodyMods = if (keepSourceFolderBodyAlive && folderUiModel.isCollapsed) {
-                    folderUiModel.mods.filter { it.storagePath == interactionState.activeDragModStoragePath }
+                val effectiveCollapsed = if (interactionState.forceCollapseDuringDrag) {
+                    true
+                } else {
+                    folderUiModel.isCollapsed
+                }
+                val bodyVisible = !effectiveCollapsed || keepSourceFolderBodyAlive
+                val bodyMods = if (keepSourceFolderBodyAlive && effectiveCollapsed) {
+                    folderUiModel.mods.filter { it.storagePath == activeModDragSession.mod.storagePath }
                 } else {
                     folderUiModel.mods
                 }
-                val isModDragActive = interactionState.dragSessionActive && interactionState.activeDragModStoragePath != null
+                val isModDragActive = activeModDragSession != null
                 val folderOverlayZIndex = when {
                     isHovering && isModDragActive -> DRAGGED_FOLDER_Z_INDEX + 40f
                     isHovering -> DRAGGED_FOLDER_Z_INDEX + 30f
@@ -332,6 +323,7 @@ internal fun ModFolderSection(
                     onDismiss = { renameDialog = false },
                     onConfirm = { newName ->
                         callbacks.onRenameFolder(folderTokenId, newName)
+                        renameDialog = false
                     }
                 )
 
@@ -356,7 +348,7 @@ internal fun ModFolderSection(
                                 .fillMaxWidth()
                                 .padding(
                                     start = 6.dp,
-                                    top = if (index == 0 && !statusSummaryUiModel.hasEntries) 0.dp else 8.dp,
+                                    top = if (index == 0) 0.dp else 8.dp,
                                     end = 6.dp
                                 )
                                 .zIndex(
@@ -415,13 +407,10 @@ internal fun ModFolderSection(
                                         }
                                     },
                                     onDragStarted = {
-                                        interactionState.activeDragModStoragePath = null
-                                        interactionState.activeDragOverlayState.value = null
+                                        interactionState.activeModDragSession = null
                                         interactionState.activeDragFolderId = folderTokenId
                                         interactionState.folderPreviewOrder = folderTargetIds
-                                        interactionState.folderDragSnapshot =
-                                            callbacks.onCollapseAllFoldersForDragWithSnapshot()
-                                        interactionState.dragSessionActive = true
+                                        interactionState.forceCollapseDuringDrag = true
                                     },
                                     onDragStopped = {
                                         val draggedId = interactionState.activeDragFolderId
@@ -433,8 +422,6 @@ internal fun ModFolderSection(
                                             }
                                         }
                                         dragController.clearFolderDragSession()
-                                        callbacks.onRestoreFolderCollapseSnapshot(interactionState.folderDragSnapshot)
-                                        interactionState.folderDragSnapshot = null
                                     }
                                 )
                                 TriStateCheckbox(
@@ -477,10 +464,10 @@ internal fun ModFolderSection(
                                 ) {
                                     Icon(
                                         painter = painterResource(
-                                            if (folderUiModel.isCollapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
+                                            if (effectiveCollapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
                                         ),
                                         contentDescription = stringResource(
-                                            if (folderUiModel.isCollapsed) R.string.main_folder_expand else R.string.main_folder_collapse
+                                            if (effectiveCollapsed) R.string.main_folder_expand else R.string.main_folder_collapse
                                         )
                                     )
                                 }
@@ -553,7 +540,7 @@ internal fun ModFolderSection(
                                                 ModCard(
                                                     mod = mod,
                                                     isExpanded = interactionState.expandedCards[mod.storagePath] == true,
-                                                    isDraggedInOverlay = interactionState.activeDragModStoragePath == mod.storagePath,
+                                                    isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                                     showModFileName = showModFileName,
                                                     setExpanded = { interactionState.expandedCards[mod.storagePath] = it },
                                                     selectionEnabled = organizationControlsEnabled && mod.installed,
@@ -562,19 +549,15 @@ internal fun ModFolderSection(
                                                     callbacks = ModCardCallbacks(
                                                         onToggleMod = callbacks.onToggleMod,
                                                         onTogglePriorityLoad = callbacks.onTogglePriorityLoad,
-                                                        onDeleteMod = callbacks.onDeleteMod,
+                                                        onDeleteMod = { pendingDeleteMod = it },
                                                         onExportMod = callbacks.onExportMod,
                                                         onShareMod = callbacks.onShareMod,
                                                         onRenameModFile = callbacks.onRenameModFile,
                                                         onDragStart = { dragInfo ->
-                                                            val sourceFolderTokenId =
-                                                                resolveAssignedFolderId(mod, folderAssignments, folderIds)
-                                                                    ?: UNASSIGNED_FOLDER_ID
                                                             dragController.onDragStart(
                                                                 mod = mod,
                                                                 dragInfo = dragInfo,
                                                                 isExpanded = interactionState.expandedCards[mod.storagePath] == true,
-                                                                sourceFolderTokenId = sourceFolderTokenId
                                                             )
                                                         },
                                                         onDragMove = { position ->
@@ -601,142 +584,39 @@ internal fun ModFolderSection(
     }
 
     DraggingModCardOverlayLayer(
-        overlayState = interactionState.activeDragOverlayState,
+        dragSession = interactionState.activeModDragSession,
         showModFileName = showModFileName,
         overlayHostTopLeftWindow = interactionState.sectionTopLeftInWindow
     )
 }
 
 @Composable
-private fun StatusSummaryFolderCard(
-    uiModel: StatusSummaryUiModel,
-    collapsed: Boolean,
-    folderBackgroundColor: Color,
-    onToggleCollapsed: () -> Unit
+private fun AlertDeleteModDialog(
+    mod: ModItemUi,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
 ) {
-    val folderShape = RoundedCornerShape(10.dp)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 6.dp, top = 4.dp, end = 6.dp)
-            .clip(folderShape)
-            .background(folderBackgroundColor, folderShape)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                shape = folderShape
-            )
-            .padding(vertical = 6.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    val displayName = resolveModDisplayName(mod, showModFileName = true)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.main_mod_delete)) },
+        text = {
             Text(
                 text = stringResource(
-                    R.string.main_folder_name_count_format,
-                    stringResource(R.string.main_status_card_title),
-                    uiModel.okCount,
-                    uiModel.totalCount
-                ),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary
+                    R.string.main_mod_delete_confirm_format,
+                    displayName
+                )
             )
-            IconButton(onClick = onToggleCollapsed) {
-                Icon(
-                    painter = painterResource(
-                        if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
-                    ),
-                    contentDescription = stringResource(
-                        if (collapsed) R.string.main_folder_expand else R.string.main_folder_collapse
-                    )
-                )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(text = stringResource(R.string.main_folder_dialog_confirm))
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_folder_dialog_cancel))
             }
         }
-
-        AnimatedVisibility(
-            visible = !collapsed,
-            enter = expandVertically(
-                expandFrom = Alignment.Top,
-                animationSpec = tween(
-                    durationMillis = COLLAPSE_ANIMATION_MS,
-                    easing = LinearEasing
-                )
-            ),
-            exit = shrinkVertically(
-                shrinkTowards = Alignment.Top,
-                animationSpec = tween(
-                    durationMillis = COLLAPSE_ANIMATION_MS,
-                    easing = LinearEasing
-                )
-            ),
-            label = "statusSummaryBody"
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                uiModel.entries.forEachIndexed { index, entry ->
-                    val dotColor = when (entry.tone) {
-                        StatusTone.Ok -> MaterialTheme.colorScheme.primary
-                        StatusTone.Warn -> MaterialTheme.colorScheme.tertiary
-                        StatusTone.Error -> MaterialTheme.colorScheme.error
-                        StatusTone.Info -> MaterialTheme.colorScheme.outline
-                    }
-                    val badgeContainerColor = when (entry.tone) {
-                        StatusTone.Ok -> MaterialTheme.colorScheme.primaryContainer
-                        StatusTone.Warn -> MaterialTheme.colorScheme.tertiaryContainer
-                        StatusTone.Error -> MaterialTheme.colorScheme.errorContainer
-                        StatusTone.Info -> MaterialTheme.colorScheme.surfaceVariant
-                    }
-                    val badgeTextColor = when (entry.tone) {
-                        StatusTone.Error -> MaterialTheme.colorScheme.onErrorContainer
-                        StatusTone.Warn -> MaterialTheme.colorScheme.onTertiaryContainer
-                        StatusTone.Ok -> MaterialTheme.colorScheme.onPrimaryContainer
-                        StatusTone.Info -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-
-                    if (index > 0) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(dotColor)
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text(
-                            text = entry.label,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (entry.value.isNotBlank()) {
-                            Text(
-                                text = entry.value,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = badgeTextColor,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(badgeContainerColor)
-                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+    )
 }

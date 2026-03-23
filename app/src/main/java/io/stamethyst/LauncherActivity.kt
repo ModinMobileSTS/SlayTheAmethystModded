@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.config.LegacyStsStorageMigration
@@ -158,6 +159,7 @@ class LauncherActivity : AppCompatActivity() {
         val decorView = window.decorView
         val analysisRunnable = object : Runnable {
             private var remainingAttempts = GAME_RETURN_ANALYSIS_ATTEMPTS
+            private var killRequested = false
 
             override fun run() {
                 if (pendingGameReturnAnalysis !== this) {
@@ -174,13 +176,25 @@ class LauncherActivity : AppCompatActivity() {
                             return
                         }
                 if (GameLaunchReturnTracker.isGameProcessRunning(this@LauncherActivity)) {
+                    if (!killRequested) {
+                        GameLaunchReturnTracker.terminateTrackedGameProcess(this@LauncherActivity)
+                        LogcatCaptureProcessClient.stopCapture(this@LauncherActivity)
+                        killRequested = true
+                    }
                     remainingAttempts--
                     if (remainingAttempts <= 0) {
                         GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                        mainViewModel.refresh(this@LauncherActivity)
                         cancelPendingGameReturnAnalysis()
                         return
                     }
                     decorView.postDelayed(this, GAME_RETURN_ANALYSIS_DELAY_MS)
+                    return
+                }
+                if (killRequested) {
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    mainViewModel.refresh(this@LauncherActivity)
+                    cancelPendingGameReturnAnalysis()
                     return
                 }
                 if (mainViewModel.handleGameProcessExitAnalysis(this@LauncherActivity, intent, currentLaunchStartedAt)) {

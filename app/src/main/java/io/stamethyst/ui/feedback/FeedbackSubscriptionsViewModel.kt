@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueSyncService
 import java.util.concurrent.ExecutorService
@@ -32,14 +33,21 @@ class FeedbackSubscriptionsViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, "正在同步我关注的议题...")
+        setBusy(true, host.getString(R.string.feedback_busy_syncing_subscriptions))
         FeedbackInboxCoordinator.runManualSync(host) { result ->
             host.runOnUiThread {
                 setBusy(false, null)
                 result.onSuccess {
-                    Toast.makeText(host, "我关注的议题已同步。", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(host, host.getString(R.string.feedback_sync_completed), Toast.LENGTH_SHORT).show()
                 }.onFailure { error ->
-                    Toast.makeText(host, "同步失败：${error.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        host,
+                        host.getString(
+                            R.string.feedback_sync_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -49,13 +57,17 @@ class FeedbackSubscriptionsViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, "正在取消订阅...")
+        setBusy(true, host.getString(R.string.feedback_busy_unsubscribing))
         executor.execute {
             FeedbackIssueSyncService.unsubscribe(host, issueNumber)
             FeedbackInboxCoordinator.refreshFromStorage(host)
             host.runOnUiThread {
                 setBusy(false, null)
-                Toast.makeText(host, "已取消关注 Issue #$issueNumber。", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    host,
+                    host.getString(R.string.feedback_unsubscribed, issueNumber),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

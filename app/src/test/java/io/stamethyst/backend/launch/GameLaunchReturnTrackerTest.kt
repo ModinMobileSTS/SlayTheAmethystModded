@@ -6,6 +6,34 @@ import org.junit.Test
 
 class GameLaunchReturnTrackerTest {
     @Test
+    fun isTrackedGameProcess_matchesOnlyLiveGameProcessName() {
+        assertTrue(
+            GameLaunchReturnTracker.isTrackedGameProcess(
+                processName = "io.stamethyst:game",
+                packageName = "io.stamethyst",
+                pid = 42,
+                importance = 100
+            )
+        )
+        assertFalse(
+            GameLaunchReturnTracker.isTrackedGameProcess(
+                processName = "io.stamethyst",
+                packageName = "io.stamethyst",
+                pid = 42,
+                importance = 100
+            )
+        )
+        assertFalse(
+            GameLaunchReturnTracker.isTrackedGameProcess(
+                processName = "io.stamethyst:game",
+                packageName = "io.stamethyst",
+                pid = 42,
+                importance = 400
+            )
+        )
+    }
+
+    @Test
     fun isTrackedGameProcessAlive_returnsTrue_forForegroundOrServiceLikeImportance() {
         assertTrue(GameLaunchReturnTracker.isTrackedGameProcessAlive(pid = 42, importance = 100))
         assertTrue(GameLaunchReturnTracker.isTrackedGameProcessAlive(pid = 42, importance = 300))

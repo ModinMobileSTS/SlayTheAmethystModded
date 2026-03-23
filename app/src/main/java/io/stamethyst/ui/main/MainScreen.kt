@@ -28,18 +28,19 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,9 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,15 +63,15 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.Settings
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherMainScreen(
     modifier: Modifier = Modifier,
-    viewModel: MainScreenViewModel = MainScreenViewModel(),
+    viewModel: MainScreenViewModel,
     onOpenSettings: () -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
@@ -81,6 +80,8 @@ fun LauncherMainScreen(
     val hostActivity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState = viewModel.uiState
+    val snackbarHostState = remember { SnackbarHostState() }
+    var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
     val importModsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -117,10 +118,38 @@ fun LauncherMainScreen(
         }
     }
 
+    LaunchedEffect(viewModel, hostActivity) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is MainScreenViewModel.Effect.ShowSnackbar ->
+                    snackbarHostState.showSnackbar(effect.message.resolve(context))
+                is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.LaunchIntent -> {
+                    val activity = hostActivity ?: return@collect
+                    activity.startActivity(effect.intent)
+                }
+            }
+        }
+    }
+
+    effectDialog?.let { dialog ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { effectDialog = null },
+            title = { Text(dialog.title.resolve()) },
+            text = { Text(dialog.message.resolve()) },
+            confirmButton = {
+                Button(onClick = { effectDialog = null }) {
+                    Text(text = stringResource(R.string.common_action_confirm))
+                }
+            }
+        )
+    }
+
     LauncherMainScreenContent(
         modifier = modifier,
         uiState = uiState,
         actions = actions,
+        snackbarHostState = snackbarHostState,
         onOpenSettings = onOpenSettings,
         feedbackUnreadCount = feedbackUnreadCount,
         onOpenFeedbackUpdates = onOpenFeedbackUpdates
@@ -135,7 +164,12 @@ private fun LauncherMainScreenPreview() {
         uiState = MainScreenViewModel.UiState(
             initializing = false,
             busy = false,
-            statusSummary = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK",
+            statusEntries = listOf(
+                MainScreenViewModel.StatusEntry("desktop-1.0.jar", "OK", StatusTone.Ok),
+                MainScreenViewModel.StatusEntry("ModTheSpire.jar", "OK", StatusTone.Ok),
+                MainScreenViewModel.StatusEntry("BaseMod.jar", "OK", StatusTone.Ok),
+                MainScreenViewModel.StatusEntry("StSLib.jar", "OK", StatusTone.Ok)
+            ),
             optionalMods = listOf(
                 ModItemUi(
                     modId = "samplemod",
@@ -157,7 +191,8 @@ private fun LauncherMainScreenPreview() {
                 MainScreenViewModel.ModFolder(id = "folder-demo", name = "示例文件夹")
             )
         ),
-        actions = MainScreenActions(isHostAvailable = true)
+        actions = MainScreenActions(isHostAvailable = true),
+        snackbarHostState = SnackbarHostState()
     )
 }
 
@@ -167,23 +202,13 @@ private fun LauncherMainScreenContent(
     modifier: Modifier = Modifier,
     uiState: MainScreenViewModel.UiState,
     actions: MainScreenActions = MainScreenActions(isHostAvailable = false),
+    snackbarHostState: SnackbarHostState,
     onOpenSettings: () -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
 ) {
     var showCreateFolderDialog by remember { mutableStateOf(false) }
-    var actionBarHeightPx by remember { mutableStateOf(0) }
-    var minimumLoadingElapsed by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-    val actionBarBottomPadding = (
-        with(density) { actionBarHeightPx.toDp() }.coerceAtMost(76.dp) + 8.dp
-        ).coerceAtLeast(12.dp)
-    val showInitializing = uiState.initializing || !minimumLoadingElapsed
-
-    LaunchedEffect(Unit) {
-        delay(1_000L)
-        minimumLoadingElapsed = true
-    }
+    val showInitializing = uiState.initializing
 
     FolderNameDialog(
         visible = showCreateFolderDialog,
@@ -191,8 +216,8 @@ private fun LauncherMainScreenContent(
         initialText = actions.onSuggestNextFolderName(),
         onDismiss = { showCreateFolderDialog = false },
         onConfirm = { name ->
-            showCreateFolderDialog = false
             actions.onAddFolder(name)
+            showCreateFolderDialog = false
         }
     )
 
@@ -209,17 +234,21 @@ private fun LauncherMainScreenContent(
                 onOpenFeedbackUpdates = onOpenFeedbackUpdates
             )
         },
-        floatingActionButtonPosition = FabPosition.Center,
-        floatingActionButton = {
+        bottomBar = {
             MainBottomFixedActions(
                 importEnabled = !uiState.busy && uiState.storageIssue == null,
                 launchEnabled = !uiState.busy &&
-                    uiState.storageIssue == null,
+                    uiState.storageIssue == null &&
+                    !uiState.gameProcessRunning,
                 onImportMods = actions.onImportMods,
                 onLaunch = actions.onLaunch,
-                onMeasured = { actionBarHeightPx = it }
+                enabledCount = uiState.optionalMods.count { it.enabled },
+                totalCount = uiState.optionalMods.size,
+                gameRunning = uiState.gameProcessRunning,
+                hasStorageIssue = uiState.storageIssue != null
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = modifier
@@ -231,7 +260,7 @@ private fun LauncherMainScreenContent(
             if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 uiState.busyMessage?.let {
-                    Text(text = it, style = MaterialTheme.typography.bodyMedium)
+                    Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
@@ -243,7 +272,7 @@ private fun LauncherMainScreenContent(
             MainContentSwitcher(
                 uiState = uiState,
                 showInitializing = showInitializing,
-                actionBarBottomPadding = actionBarBottomPadding,
+                actionBarBottomPadding = 0.dp,
                 actions = actions
             )
         }
@@ -284,7 +313,7 @@ private fun MainTopBar(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_feedback_updates),
-                            contentDescription = "反馈有更新"
+                            contentDescription = stringResource(R.string.main_feedback_updates_content_description)
                         )
                     }
                 }
@@ -344,27 +373,42 @@ private fun MainBottomFixedActions(
     launchEnabled: Boolean,
     onImportMods: () -> Unit,
     onLaunch: () -> Unit,
-    onMeasured: (Int) -> Unit
+    enabledCount: Int,
+    totalCount: Int,
+    gameRunning: Boolean,
+    hasStorageIssue: Boolean
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .onSizeChanged { onMeasured(it.height) },
-        color = Color.Transparent,
+            .navigationBarsPadding(),
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         val buttonShape = RoundedCornerShape(16.dp)
-        val buttonWidth = 120.dp
-        val buttonHeight = 44.dp
-        val flatButtonElevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 0.dp,
-            pressedElevation = 0.dp,
-            disabledElevation = 0.dp
-        )
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.main_enabled_mods_count, enabledCount, totalCount),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = when {
+                    hasStorageIssue -> stringResource(R.string.main_status_storage_unavailable_os_issue)
+                    gameRunning -> stringResource(R.string.main_status_game_running)
+                    else -> stringResource(R.string.main_status_mods_ok)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Box(modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = onImportMods,
                 enabled = importEnabled,
@@ -373,16 +417,12 @@ private fun MainBottomFixedActions(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ),
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                ),
-                elevation = flatButtonElevation,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .width(buttonWidth)
-                    .height(buttonHeight)
+                    .width(124.dp)
+                    .height(46.dp)
             ) {
                 Text(
                     text = stringResource(R.string.main_import_mods),
@@ -398,23 +438,24 @@ private fun MainBottomFixedActions(
                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-                ),
-                elevation = flatButtonElevation,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .width(buttonWidth)
-                    .height(buttonHeight)
+                    .width(148.dp)
+                    .height(46.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.main_launch_game),
+                    text = if (gameRunning) {
+                        stringResource(R.string.main_game_running)
+                    } else {
+                        stringResource(R.string.main_launch_game)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
+        }
         }
     }
 }
@@ -459,6 +500,14 @@ private fun ColumnScope.MainContentSwitcher(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (uiState.statusEntries.isNotEmpty()) {
+                    MainStatusOverviewCard(
+                        entries = uiState.statusEntries,
+                        collapsed = uiState.statusSummaryCollapsed,
+                        onToggleCollapsed = actions.onToggleStatusSummaryCollapsed
+                    )
+                }
+
                 uiState.storageIssue?.let { issue ->
                     StorageIssueCard(
                         issue = issue,
@@ -480,7 +529,6 @@ private fun ColumnScope.MainContentSwitcher(
                         .fillMaxWidth()
                         .weight(1f),
                     uiState = uiState,
-                    statusSummary = uiState.statusSummary,
                     contentBottomInset = actionBarBottomPadding,
                     hostAvailable = actions.isHostAvailable,
                     callbacks = ModFolderSectionCallbacks(
@@ -504,12 +552,91 @@ private fun ColumnScope.MainContentSwitcher(
                         onMoveFolderTokenToIndex = actions.onMoveFolderTokenToIndex,
                         onAssignModToFolder = actions.onAssignModToFolder,
                         onMoveModToUnassigned = actions.onMoveModToUnassigned,
-                        onCollapseAllFoldersForModDrag = actions.onCollapseAllFoldersForModDrag,
-                        onExpandOnlySourceFolderAfterModDrag = actions.onExpandOnlySourceFolderAfterModDrag,
-                        onCollapseAllFoldersForDragWithSnapshot = actions.onCollapseAllFoldersForDragWithSnapshot,
-                        onRestoreFolderCollapseSnapshot = actions.onRestoreFolderCollapseSnapshot
+                        onRevealFolderToken = actions.onRevealFolderToken
                     )
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MainStatusOverviewCard(
+    entries: List<MainScreenViewModel.StatusEntry>,
+    collapsed: Boolean,
+    onToggleCollapsed: () -> Unit
+) {
+    val dependencyEntries = entries.filter { it.tone != StatusTone.Info }
+    val readyCount = dependencyEntries.count { it.tone == StatusTone.Ok }
+    val totalCount = dependencyEntries.size
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = stringResource(R.string.main_status_card_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.main_status_ready_count, readyCount, totalCount),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(
+                    onClick = onToggleCollapsed,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            if (collapsed) R.drawable.ic_chevron_right else R.drawable.ic_expand_more
+                        ),
+                        contentDescription = null
+                    )
+                }
+            }
+            if (!collapsed) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    entries.forEach { entry ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = when (entry.tone) {
+                                StatusTone.Ok -> MaterialTheme.colorScheme.primaryContainer
+                                StatusTone.Warn -> MaterialTheme.colorScheme.tertiaryContainer
+                                StatusTone.Error -> MaterialTheme.colorScheme.errorContainer
+                                StatusTone.Info -> MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = entry.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.align(Alignment.CenterStart)
+                                )
+                                Text(
+                                    text = entry.value,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.align(Alignment.CenterEnd)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

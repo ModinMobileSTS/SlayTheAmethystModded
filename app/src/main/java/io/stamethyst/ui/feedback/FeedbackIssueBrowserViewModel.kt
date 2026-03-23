@@ -3,11 +3,13 @@ package io.stamethyst.ui.feedback
 import android.app.Activity
 import android.util.Log
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueBrowseItem
 import io.stamethyst.backend.feedback.FeedbackIssueSyncService
@@ -20,10 +22,10 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         private const val TAG = "FeedbackIssueBrowser"
     }
 
-    enum class IssueStateFilter(val label: String) {
-        ALL("全部议题"),
-        OPEN_ONLY("只看进行中"),
-        CLOSED_ONLY("只看已解决");
+    enum class IssueStateFilter(@StringRes val labelResId: Int) {
+        ALL(R.string.feedback_filter_all),
+        OPEN_ONLY(R.string.feedback_filter_open),
+        CLOSED_ONLY(R.string.feedback_filter_closed);
 
         fun matches(issue: FeedbackIssueBrowseItem): Boolean {
             return when (this) {
@@ -91,7 +93,7 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         if (uiState.busy || uiState.loadingMore) {
             return
         }
-        setBusy(true, "正在关注议题...")
+        setBusy(true, host.getString(R.string.feedback_busy_following_issue))
         executor.execute {
             runCatching {
                 FeedbackIssueSyncService.subscribeToIssue(host, issueNumber)
@@ -101,7 +103,7 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                     setBusy(false, null)
                     Toast.makeText(
                         host,
-                        "已关注 Issue #${subscription.issueNumber}，可从“我关注的议题”继续跟进。",
+                        host.getString(R.string.feedback_follow_success, subscription.issueNumber),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -111,7 +113,10 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                     setBusy(false, null)
                     Toast.makeText(
                         host,
-                        "关注失败：${error.toReadableMessage()}",
+                        host.getString(
+                            R.string.feedback_follow_failed,
+                            error.toReadableMessage(host)
+                        ),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -126,7 +131,7 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
 
     private fun loadPage(host: Activity, reset: Boolean) {
         if (reset) {
-            setBusy(true, "正在加载议题列表...")
+            setBusy(true, host.getString(R.string.feedback_busy_loading_issues))
         } else {
             uiState = uiState.copy(loadingMore = true)
         }
@@ -162,7 +167,10 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                     )
                     Toast.makeText(
                         host,
-                        "议题列表加载失败：${error.toReadableMessage()}",
+                        host.getString(
+                            R.string.feedback_issue_browser_load_failed,
+                            error.toReadableMessage(host)
+                        ),
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -197,7 +205,7 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         }
     }
 
-    private fun Throwable.toReadableMessage(): String {
+    private fun Throwable.toReadableMessage(host: Activity): String {
         val rawMessage = message?.trim().orEmpty()
         if (rawMessage.isNotEmpty() && rawMessage != javaClass.name) {
             return rawMessage
@@ -206,6 +214,6 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         if (causeMessage.isNotEmpty()) {
             return "${javaClass.simpleName}: $causeMessage"
         }
-        return javaClass.simpleName.ifBlank { "未知错误" }
+        return javaClass.simpleName.ifBlank { host.getString(R.string.feedback_unknown_error) }
     }
 }

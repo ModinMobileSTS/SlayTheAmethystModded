@@ -48,10 +48,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import io.stamethyst.R
+import io.stamethyst.ui.resolve
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 import kotlinx.coroutines.delay
 
@@ -124,7 +127,13 @@ fun QuickStartScreen(
                     label = "quickstart-title"
                 ) { isImported ->
                     Text(
-                        text = if (isImported) "导入完成，欢迎使用" else "快速开始",
+                        text = stringResource(
+                            if (isImported) {
+                                R.string.quick_start_title_done
+                            } else {
+                                R.string.quick_start_title
+                            }
+                        ),
                         style = if (isImported) MaterialTheme.typography.displaySmall else MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
@@ -139,7 +148,7 @@ fun QuickStartScreen(
                         text = if (isImported) {
                             ""
                         } else {
-                            "首次启动需要先导入 desktop-1.0.jar 才能进入主界面。"
+                            stringResource(R.string.quick_start_subtitle)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -171,7 +180,7 @@ fun QuickStartScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "导入 desktop-1.0.jar",
+                            text = stringResource(R.string.quick_start_import_button),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
@@ -181,7 +190,7 @@ fun QuickStartScreen(
 
                 AnimatedVisibility(visible = !imported, label = "quickstart-jar-source-toggle") {
                     Text(
-                        text = "找不到 desktop-1.0.jar？",
+                        text = stringResource(R.string.quick_start_missing_jar_link),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
@@ -196,7 +205,7 @@ fun QuickStartScreen(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     uiState.busyMessage?.let { busyMessage ->
                         Text(
-                            text = busyMessage,
+                            text = busyMessage.resolve(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -280,7 +289,7 @@ fun QuickStartScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "找不到 desktop-1.0.jar？",
+                                text = stringResource(R.string.quick_start_missing_jar_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Center
@@ -291,28 +300,28 @@ fun QuickStartScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "desktop-1.0.jar 来自电脑版 Slay the Spire 安装目录。",
+                                    text = stringResource(R.string.quick_start_missing_jar_intro),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "获取方法",
+                                    text = stringResource(R.string.quick_start_missing_jar_howto),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "1. 在电脑上从安装目录拷贝 desktop-1.0.jar",
+                                    text = stringResource(R.string.quick_start_missing_jar_step1),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "2. 常见目录：SteamLibrary/common/SlayTheSpire/desktop-1.0.jar",
+                                    text = stringResource(R.string.quick_start_missing_jar_step2),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Text(
-                                text = "我知道了",
+                                text = stringResource(R.string.quick_start_acknowledge),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 textDecoration = TextDecoration.Underline,

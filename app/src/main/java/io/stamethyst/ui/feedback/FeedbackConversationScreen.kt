@@ -37,9 +37,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackThreadAuthorType
 import io.stamethyst.backend.feedback.FeedbackThreadEvent
 import io.stamethyst.backend.feedback.FeedbackThreadEventType
@@ -92,7 +94,7 @@ fun LauncherFeedbackConversationScreen(
                 title = {
                     Text(
                         text = if (uiState.title.isBlank()) {
-                            "Issue #$issueNumber"
+                            stringResource(R.string.feedback_issue_fallback_title, issueNumber)
                         } else {
                             uiState.title
                         },
@@ -104,18 +106,18 @@ fun LauncherFeedbackConversationScreen(
                     IconButton(onClick = navigator::goBack) {
                         Icon(
                             imageVector = Icons.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.common_content_desc_back)
                         )
                     }
                 },
                 actions = {
                     if (uiState.issueUrl.isNotBlank()) {
                         TextButton(onClick = { uriHandler.openUri(uiState.issueUrl) }) {
-                            Text("Issue")
+                            Text(stringResource(R.string.common_action_open_issue))
                         }
                     }
                     TextButton(onClick = { viewModel.onRefresh(activity) }) {
-                        Text("刷新")
+                        Text(stringResource(R.string.feedback_conversation_refresh))
                     }
                 }
             )
@@ -167,7 +169,16 @@ fun LauncherFeedbackConversationScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "状态：${if (uiState.isClosed) "已关闭" else "进行中"}",
+                            text = stringResource(
+                                R.string.feedback_conversation_status_format,
+                                stringResource(
+                                    if (uiState.isClosed) {
+                                        R.string.feedback_conversation_state_closed
+                                    } else {
+                                        R.string.feedback_conversation_state_in_progress
+                                    }
+                                )
+                            ),
                             style = MaterialTheme.typography.labelMedium
                         )
                         if (uiState.issueBody.isNotBlank()) {
@@ -198,14 +209,26 @@ fun LauncherFeedbackConversationScreen(
     pendingStateAction?.let { targetState ->
         AlertDialog(
             onDismissRequest = { pendingStateAction = null },
-            title = { Text(if (targetState == "closed") "关闭议题" else "重新打开议题") },
+            title = {
+                Text(
+                    stringResource(
+                        if (targetState == "closed") {
+                            R.string.feedback_conversation_close_title
+                        } else {
+                            R.string.feedback_conversation_reopen_title
+                        }
+                    )
+                )
+            },
             text = {
                 Text(
-                    if (targetState == "closed") {
-                        "确认通过启动器关闭这个 Issue 吗？"
-                    } else {
-                        "确认通过启动器重新打开这个 Issue 吗？"
-                    }
+                    stringResource(
+                        if (targetState == "closed") {
+                            R.string.feedback_conversation_close_confirm
+                        } else {
+                            R.string.feedback_conversation_reopen_confirm
+                        }
+                    )
                 )
             },
             confirmButton = {
@@ -219,12 +242,12 @@ fun LauncherFeedbackConversationScreen(
                         }
                     }
                 ) {
-                    Text("确认")
+                    Text(stringResource(R.string.common_action_confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingStateAction = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
                 }
             }
         )
@@ -265,7 +288,7 @@ private fun FeedbackConversationComposer(
                             )
                         }
                         TextButton(onClick = { onRemoveScreenshot(screenshot.id) }) {
-                            Text("移除")
+                            Text(stringResource(R.string.feedback_remove))
                         }
                     }
                 }
@@ -276,8 +299,8 @@ private fun FeedbackConversationComposer(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 enabled = !uiState.busy,
-                label = { Text("继续补充说明") },
-                placeholder = { Text("输入你想补充给开发者的内容。") }
+                label = { Text(stringResource(R.string.feedback_conversation_message_label)) },
+                placeholder = { Text(stringResource(R.string.feedback_conversation_message_placeholder)) }
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -288,20 +311,28 @@ private fun FeedbackConversationComposer(
                     onClick = onAddScreenshots,
                     enabled = !uiState.busy && uiState.screenshots.size < 4
                 ) {
-                    Text("添加截图")
+                    Text(stringResource(R.string.feedback_add_screenshot))
                 }
                 TextButton(
                     onClick = onRequestClose,
                     enabled = !uiState.busy
                 ) {
-                    Text(if (uiState.isClosed) "重新打开" else "关闭议题")
+                    Text(
+                        stringResource(
+                            if (uiState.isClosed) {
+                                R.string.feedback_conversation_reopen_action
+                            } else {
+                                R.string.feedback_conversation_close_action
+                            }
+                        )
+                    )
                 }
                 Button(
                     onClick = onSendMessage,
                     enabled = !uiState.busy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("发送")
+                    Text(stringResource(R.string.feedback_conversation_send))
                 }
             }
         }
@@ -357,7 +388,12 @@ private fun FeedbackConversationEventCard(
                         onClick = { onOpenAttachment(attachment.url) },
                         contentPadding = PaddingValues(0.dp)
                     ) {
-                        Text("查看附件：${attachment.name.ifBlank { attachment.url }}")
+                        Text(
+                            stringResource(
+                                R.string.feedback_attachment_view_format,
+                                attachment.name.ifBlank { attachment.url }
+                            )
+                        )
                     }
                 }
                 if (!event.htmlUrl.isNullOrBlank()) {
@@ -365,7 +401,7 @@ private fun FeedbackConversationEventCard(
                         onClick = { onOpenComment(event.htmlUrl) },
                         contentPadding = PaddingValues(0.dp)
                     ) {
-                        Text("在 GitHub 中查看")
+                        Text(stringResource(R.string.feedback_view_on_github))
                     }
                 }
             }
@@ -373,9 +409,10 @@ private fun FeedbackConversationEventCard(
     }
 }
 
+@Composable
 private fun formatFeedbackEventTime(timestampMs: Long): String {
     if (timestampMs <= 0L) {
-        return "未知时间"
+        return stringResource(R.string.feedback_unknown_time)
     }
     return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestampMs))
 }

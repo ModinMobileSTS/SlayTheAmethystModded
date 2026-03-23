@@ -78,6 +78,7 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
@@ -297,7 +298,7 @@ private fun LauncherSettingsScreenContent(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     HapticIconButton(
                         onClick = onGoBack,
@@ -305,7 +306,7 @@ private fun LauncherSettingsScreenContent(
                     ) {
                         Icon(
                             imageVector = Icons.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_content_desc_back),
                         )
                     }
                 },
@@ -342,7 +343,7 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
-                SettingsSectionCard(title = "资源与文件") {
+                SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files)) {
                     SettingsImportSection(
                         busy = uiState.busy,
                         onImportJar = onImportJar,
@@ -357,7 +358,7 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
-                SettingsSectionCard(title = "渲染") {
+                SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
                     SettingsRenderSection(
                         uiState = uiState,
                         onRenderScaleSelected = onRenderScaleSelected,
@@ -375,7 +376,7 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
-                SettingsSectionCard(title = "输入与交互") {
+                SettingsSectionCard(title = stringResource(R.string.settings_section_input)) {
                     SettingsInputSection(
                         uiState = uiState,
                         onPlayerNameChanged = onPlayerNameChanged,
@@ -418,7 +419,7 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
-                SettingsSectionCard(title = "状态与日志") {
+                SettingsSectionCard(title = stringResource(R.string.settings_section_status_logs)) {
                     SettingsStatusSection(
                         uiState = uiState,
                         onLwjglDebugChanged = onLwjglDebugChanged,
@@ -453,18 +454,18 @@ private fun LauncherSettingsScreenContent(
                             uriHandler.openUri(notice.issueUrl)
                         }
                     ) {
-                        Text("打开 Issue")
+                        Text(stringResource(R.string.common_action_open_issue))
                     }
                 } else {
                     TextButton(onClick = onDismissFeedbackSubmissionNotice) {
-                        Text("知道了")
+                        Text(stringResource(R.string.common_action_acknowledge))
                     }
                 }
             },
             dismissButton = {
                 if (!notice.issueUrl.isNullOrBlank()) {
                     TextButton(onClick = onDismissFeedbackSubmissionNotice) {
-                        Text("知道了")
+                        Text(stringResource(R.string.common_action_acknowledge))
                     }
                 }
             }
@@ -650,25 +651,25 @@ private fun SettingsFeedbackEntryCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "问题反馈",
+                text = stringResource(R.string.settings_feedback_entry_title),
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                text = "提交启动器问题、游戏内问题和功能建议。此汇报方式优于其他汇报方式。",
+                text = stringResource(R.string.settings_feedback_entry_desc),
                 style = MaterialTheme.typography.bodySmall
             )
             SettingsActionListItem(
-                title = "反馈新问题",
+                title = stringResource(R.string.settings_feedback_entry_new),
                 enabled = !busy,
                 onClick = onOpenFeedback
             )
             SettingsActionListItem(
-                title = "我关注的议题",
+                title = stringResource(R.string.settings_feedback_entry_subscriptions),
                 enabled = !busy,
                 onClick = onOpenFeedbackSubscriptions
             )
             SettingsActionListItem(
-                title = "关注新议题",
+                title = stringResource(R.string.settings_feedback_entry_issue_browser),
                 enabled = !busy,
                 onClick = onOpenFeedbackIssueBrowser
             )
@@ -685,7 +686,7 @@ internal fun SettingsBusyIndicator(
     }
     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
     uiState.busyMessage?.let {
-        Text(text = it, style = MaterialTheme.typography.bodyMedium)
+        Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -750,32 +751,32 @@ private fun SettingsImportSection(
             }
         )
         SettingsActionListItem(
-            title = "导入模组",
+            title = stringResource(R.string.main_import_mods),
             enabled = !busy,
             onClick = onImportMods
         )
         SettingsActionListItem(
-            title = "导出所有模组",
+            title = stringResource(R.string.settings_export_all_mods),
             enabled = !busy,
             onClick = onExportMods
         )
         SettingsActionListItem(
-            title = "导入存档",
+            title = stringResource(R.string.settings_import_saves),
             enabled = !busy,
             onClick = onImportSaves
         )
         SettingsActionListItem(
-            title = "导出存档",
+            title = stringResource(R.string.settings_export_saves),
             enabled = !busy,
             onClick = onExportSaves
         )
         SettingsActionListItem(
-            title = "分享错误日志",
+            title = stringResource(R.string.sts_share_crash_report),
             enabled = !busy,
             onClick = onExportLogs
         )
         SettingsActionListItem(
-            title = "导出错误日志",
+            title = stringResource(R.string.settings_export_error_logs),
             enabled = !busy,
             onClick = onExportLogsToFile
         )
@@ -1095,7 +1096,7 @@ private fun SettingsRenderSection(
     if (showGameModeDialog) {
         AlertDialog(
             onDismissRequest = { showGameModeDialog = false },
-            title = { Text("系统 Game Mode") },
+            title = { Text(stringResource(R.string.settings_system_game_mode_title)) },
             text = {
                 Text(
                     text = buildString {
@@ -1114,7 +1115,7 @@ private fun SettingsRenderSection(
             },
             confirmButton = {
                 TextButton(onClick = { showGameModeDialog = false }) {
-                    Text("我知道了")
+                    Text(stringResource(R.string.settings_system_game_mode_acknowledge))
                 }
             }
         )
@@ -1527,40 +1528,42 @@ private fun SettingsStatusSection(
     )
 
     if (showStatusDialog) {
+        val emptyStatusInfo = stringResource(R.string.settings_status_info_empty)
         AlertDialog(
             onDismissRequest = { showStatusDialog = false },
-            title = { Text("状态信息") },
+            title = { Text(stringResource(R.string.settings_status_info_title)) },
             text = {
                 SelectionContainer {
                     Text(
-                        text = uiState.statusText.ifBlank { "暂无状态信息" },
+                        text = uiState.statusText.ifBlank { emptyStatusInfo },
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             },
             confirmButton = {
                 HapticTextButton(onClick = { showStatusDialog = false }) {
-                    Text("关闭")
+                    Text(stringResource(R.string.common_action_close))
                 }
             }
         )
     }
 
     if (showLogDialog) {
+        val emptyLogPaths = stringResource(R.string.settings_log_paths_empty)
         AlertDialog(
             onDismissRequest = { showLogDialog = false },
-            title = { Text("日志路径") },
+            title = { Text(stringResource(R.string.settings_log_paths_title)) },
             text = {
                 SelectionContainer {
                     Text(
-                        text = uiState.logPathText.ifBlank { "暂无日志路径" },
+                        text = uiState.logPathText.ifBlank { emptyLogPaths },
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             },
             confirmButton = {
                 HapticTextButton(onClick = { showLogDialog = false }) {
-                    Text("关闭")
+                    Text(stringResource(R.string.common_action_close))
                 }
             }
         )

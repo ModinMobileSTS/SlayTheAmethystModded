@@ -34,17 +34,64 @@ internal object GameLaunchReturnTracker {
     fun isGameProcessRunning(context: Context): Boolean {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return false
-        val targetProcessName = context.packageName + GAME_PROCESS_SUFFIX
         return try {
             activityManager.runningAppProcesses
                 ?.any { process ->
-                    process.processName == targetProcessName &&
-                        isTrackedGameProcessAlive(process.pid, process.importance)
+                    isTrackedGameProcess(
+                        processName = process.processName,
+                        packageName = context.packageName,
+                        pid = process.pid,
+                        importance = process.importance
+                    )
                 }
                 ?: false
         } catch (_: Throwable) {
             false
         }
+    }
+
+    fun terminateTrackedGameProcess(context: Context): Boolean {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return false
+        val targetPids = try {
+            activityManager.runningAppProcesses
+                ?.asSequence()
+                ?.filter { process ->
+                    isTrackedGameProcess(
+                        processName = process.processName,
+                        packageName = context.packageName,
+                        pid = process.pid,
+                        importance = process.importance
+                    )
+                }
+                ?.map { it.pid }
+                ?.distinct()
+                ?.toList()
+                .orEmpty()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        if (targetPids.isEmpty()) {
+            return false
+        }
+        var killed = false
+        targetPids.forEach { pid ->
+            runCatching {
+                android.os.Process.killProcess(pid)
+                killed = true
+            }
+        }
+        return killed
+    }
+
+    internal fun isTrackedGameProcess(
+        processName: String?,
+        packageName: String,
+        pid: Int,
+        importance: Int
+    ): Boolean {
+        return processName == packageName + GAME_PROCESS_SUFFIX &&
+            isTrackedGameProcessAlive(pid, importance)
     }
 
     internal fun isTrackedGameProcessAlive(pid: Int, importance: Int): Boolean {

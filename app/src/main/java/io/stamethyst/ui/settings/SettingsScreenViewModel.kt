@@ -48,6 +48,8 @@ import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.backend.mods.StsJarValidator
+import io.stamethyst.ui.UiText
+import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.VupShionPatchedDialog
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -99,7 +101,7 @@ class SettingsScreenViewModel : ViewModel() {
     data class UiState(
         val busy: Boolean = false,
         val busyOperation: UiBusyOperation = UiBusyOperation.NONE,
-        val busyMessage: String? = null,
+        val busyMessage: UiText? = null,
         val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
@@ -163,8 +165,8 @@ class SettingsScreenViewModel : ViewModel() {
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
         val sustainedPerformanceModeEnabled: Boolean =
             LauncherPreferences.DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED,
-        val systemGameModeDisplayName: String = "不可用",
-        val systemGameModeDescription: String = "当前还没有读取系统 Game Mode 状态。",
+        val systemGameModeDisplayName: String = "",
+        val systemGameModeDescription: String = "",
         val lwjglDebugEnabled: Boolean = LauncherPreferences.DEFAULT_LWJGL_DEBUG,
         val preloadAllJreLibrariesEnabled: Boolean =
             LauncherPreferences.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES,
@@ -631,9 +633,9 @@ class SettingsScreenViewModel : ViewModel() {
                     append("\nSustained performance mode: ")
                         .append(if (sustainedPerformanceModeEnabled) "ON" else "OFF")
                     append("\nSystem Game Mode: ")
-                        .append(systemGameMode.displayName)
+                        .append(host.getString(systemGameMode.displayNameResId))
                     append("\nSystem Game Mode detail: ")
-                        .append(systemGameMode.description)
+                        .append(host.getString(systemGameMode.descriptionResId))
                     append("\nManual dismiss boot overlay: ")
                         .append(if (manualDismissBootOverlay) "ON" else "OFF")
                     append("\n")
@@ -729,8 +731,8 @@ class SettingsScreenViewModel : ViewModel() {
                         cropScreenBottom = cropScreenBottom,
                         showGamePerformanceOverlay = showGamePerformanceOverlay,
                         sustainedPerformanceModeEnabled = sustainedPerformanceModeEnabled,
-                        systemGameModeDisplayName = systemGameMode.displayName,
-                        systemGameModeDescription = systemGameMode.description,
+                        systemGameModeDisplayName = host.getString(systemGameMode.displayNameResId),
+                        systemGameModeDescription = host.getString(systemGameMode.descriptionResId),
                         lwjglDebugEnabled = lwjglDebugEnabled,
                         preloadAllJreLibrariesEnabled = preloadAllJreLibrariesEnabled,
                         logcatCaptureEnabled = logcatCaptureEnabled,
@@ -770,7 +772,13 @@ class SettingsScreenViewModel : ViewModel() {
         val normalized = try {
             RenderScaleService.save(host, clampedValue)
         } catch (error: IOException) {
-            Toast.makeText(host, error.message ?: "Failed to save render scale", Toast.LENGTH_SHORT).show()
+            showToast(
+                host,
+                UiText.DynamicString(
+                    error.message ?: host.getString(R.string.settings_render_scale_save_failed)
+                ),
+                Toast.LENGTH_SHORT
+            )
             return
         }
         val normalizedValue = normalized.toFloatOrNull() ?: clampedValue
@@ -825,7 +833,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, "Preparing JVM log bundle...")
+        setBusy(true, UiText.StringResource(R.string.common_busy_preparing_jvm_log_bundle))
         executor.execute {
             try {
                 val payload = JvmLogShareService.prepareSharePayload(host)
@@ -835,11 +843,17 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(
+                    setBusy(false, null)
+                    showToast(
                         host,
-                        StsExternalStorageAccess.buildFailureMessage(host, "Log share failed", error),
-                        Toast.LENGTH_LONG
-                    ).show()
+                        UiText.DynamicString(
+                            StsExternalStorageAccess.buildFailureMessage(
+                                host,
+                                host.getString(R.string.settings_log_share_failed_prefix),
+                                error
+                            )
+                        )
+                    )
                     refreshStatus(host)
                 }
             }
@@ -850,25 +864,33 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, "Exporting JVM logs...")
+        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_jvm_logs))
         executor.execute {
             try {
                 val exportedCount = SettingsFileService.exportJvmLogBundle(host, uri)
                 host.runOnUiThread {
                     if (exportedCount > 0) {
-                        Toast.makeText(host, "Log archive exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                        showToast(
+                            host,
+                            UiText.StringResource(R.string.settings_logs_exported, exportedCount)
+                        )
                     } else {
-                        Toast.makeText(host, "Log archive exported (no logs yet)", Toast.LENGTH_LONG).show()
+                        showToast(host, UiText.StringResource(R.string.settings_logs_exported_empty))
                     }
                     refreshStatus(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(
+                    showToast(
                         host,
-                        StsExternalStorageAccess.buildFailureMessage(host, "Log export failed", error),
-                        Toast.LENGTH_LONG
-                    ).show()
+                        UiText.DynamicString(
+                            StsExternalStorageAccess.buildFailureMessage(
+                                host,
+                                host.getString(R.string.settings_log_export_failed_prefix),
+                                error
+                            )
+                        )
+                    )
                     refreshStatus(host)
                 }
             }
@@ -879,25 +901,33 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, "Exporting mods archive...")
+        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_mods_archive))
         executor.execute {
             try {
                 val exportedCount = SettingsFileService.exportModsBundle(host, uri)
                 host.runOnUiThread {
                     if (exportedCount > 0) {
-                        Toast.makeText(host, "Mod archive exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                        showToast(
+                            host,
+                            UiText.StringResource(R.string.settings_mods_exported, exportedCount)
+                        )
                     } else {
-                        Toast.makeText(host, "Mod archive exported (no mods yet)", Toast.LENGTH_LONG).show()
+                        showToast(host, UiText.StringResource(R.string.settings_mods_exported_empty))
                     }
                     refreshStatus(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(
+                    showToast(
                         host,
-                        StsExternalStorageAccess.buildFailureMessage(host, "Mod export failed", error),
-                        Toast.LENGTH_LONG
-                    ).show()
+                        UiText.DynamicString(
+                            StsExternalStorageAccess.buildFailureMessage(
+                                host,
+                                host.getString(R.string.settings_mod_export_failed_prefix),
+                                error
+                            )
+                        )
+                    )
                     refreshStatus(host)
                 }
             }
@@ -1386,7 +1416,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         setBusy(
             busy = true,
-            message = host.getString(R.string.sts_jar_import_busy),
+            message = UiText.StringResource(R.string.sts_jar_import_busy),
             operation = UiBusyOperation.MOD_IMPORT
         )
         executor.execute {
@@ -1451,7 +1481,7 @@ class SettingsScreenViewModel : ViewModel() {
     ) {
         setBusy(
             busy = true,
-            message = host.getString(R.string.mod_import_busy_message),
+            message = UiText.StringResource(R.string.mod_import_busy_message),
             operation = UiBusyOperation.MOD_IMPORT
         )
         executor.execute {
@@ -1724,7 +1754,7 @@ class SettingsScreenViewModel : ViewModel() {
                 host.runOnUiThread {
                     setBusy(
                         busy = true,
-                        message = message,
+                        message = UiText.DynamicString(message),
                         operation = UiBusyOperation.MOD_IMPORT
                     )
                 }
@@ -1761,22 +1791,35 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun importSavesArchive(host: Activity, uri: Uri) {
-        setBusy(true, "Importing save archive...")
+        setBusy(true, UiText.StringResource(R.string.settings_busy_importing_save_archive))
         executor.execute {
             try {
                 val result = SettingsFileService.importSaveArchive(host, uri)
                 host.runOnUiThread {
                     val message = if (result.backupLabel.isNullOrEmpty()) {
-                        "Imported ${result.importedFiles} save files"
+                        UiText.StringResource(
+                            R.string.settings_save_imported,
+                            result.importedFiles
+                        )
                     } else {
-                        "Imported ${result.importedFiles} save files (backup: ${result.backupLabel})"
+                        UiText.StringResource(
+                            R.string.settings_save_imported_with_backup,
+                            result.importedFiles,
+                            result.backupLabel
+                        )
                     }
-                    Toast.makeText(host, message, Toast.LENGTH_LONG).show()
+                    showToast(host, message)
                     refreshStatus(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(host, "Save import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_save_import_failed,
+                            error.message ?: error.javaClass.simpleName
+                        )
+                    )
                     refreshStatus(host)
                 }
             }
@@ -1787,21 +1830,29 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, "Exporting save archive...")
+        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_save_archive))
         executor.execute {
             try {
                 val exportedCount = SettingsFileService.exportSaveBundle(host, uri)
                 host.runOnUiThread {
-                    Toast.makeText(host, "Save archive exported ($exportedCount files)", Toast.LENGTH_LONG).show()
+                    showToast(
+                        host,
+                        UiText.StringResource(R.string.settings_save_exported, exportedCount)
+                    )
                     refreshStatus(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    Toast.makeText(
+                    showToast(
                         host,
-                        StsExternalStorageAccess.buildFailureMessage(host, "Save export failed", error),
-                        Toast.LENGTH_LONG
-                    ).show()
+                        UiText.DynamicString(
+                            StsExternalStorageAccess.buildFailureMessage(
+                                host,
+                                host.getString(R.string.settings_save_export_failed_prefix),
+                                error
+                            )
+                        )
+                    )
                     refreshStatus(host)
                 }
             }
@@ -1810,7 +1861,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun setBusy(
         busy: Boolean,
-        message: String?,
+        message: UiText?,
         operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY
     ) {
         uiState = if (busy) {
@@ -1826,6 +1877,14 @@ class SettingsScreenViewModel : ViewModel() {
                 busyMessage = null
             )
         }
+    }
+
+    private fun showToast(
+        host: Activity,
+        message: UiText,
+        duration: Int = Toast.LENGTH_LONG
+    ) {
+        Toast.makeText(host, message.resolve(host), duration).show()
     }
 
     private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {
