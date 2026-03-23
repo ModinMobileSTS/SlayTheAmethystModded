@@ -42,7 +42,6 @@ class GameSessionConfigTest {
             manualDismissBootOverlay = false,
             forceJvmCrash = false,
             showFloatingMouseWindow = false,
-            touchMouseDoubleTapLockEnabled = false,
             showGamePerformanceOverlay = false,
             mirrorJvmLogsToLogcat = false,
             longPressMouseShowsKeyboard = false,
