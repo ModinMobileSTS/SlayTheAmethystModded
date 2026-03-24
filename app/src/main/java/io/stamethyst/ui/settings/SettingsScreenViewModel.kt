@@ -41,6 +41,7 @@ import io.stamethyst.backend.update.UpdateUiMessage
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
@@ -140,6 +141,7 @@ class SettingsScreenViewModel : ViewModel() {
         val rendererFallbackText: String? = null,
         val surfaceBackendForcedByRenderer: Boolean = false,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
+        val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
         val stringDeduplicationEnabled: Boolean =
@@ -211,7 +213,7 @@ class SettingsScreenViewModel : ViewModel() {
         activity: Activity,
         targetFpsOptions: IntArray = LauncherPreferences.TARGET_FPS_OPTIONS
     ) {
-        syncThemeMode(activity)
+        syncThemeAppearance(activity)
         val options = targetFpsOptions.toList()
         if (uiState.targetFpsOptions != options) {
             uiState = uiState.copy(targetFpsOptions = options)
@@ -240,13 +242,21 @@ class SettingsScreenViewModel : ViewModel() {
         syncStoredUpdateState(host)
     }
 
-    fun syncThemeMode(host: Activity) {
-        uiState = uiState.copy(themeMode = SettingsRepository.loadThemeMode(host))
+    fun syncThemeAppearance(host: Activity) {
+        uiState = uiState.copy(
+            themeMode = SettingsRepository.loadThemeMode(host),
+            themeColor = SettingsRepository.loadThemeColor(host)
+        )
     }
 
     fun onThemeModeChanged(host: Activity, themeMode: LauncherThemeMode) {
         saveThemeModeSelection(host, themeMode)
-        syncThemeMode(host)
+        syncThemeAppearance(host)
+    }
+
+    fun onThemeColorChanged(host: Activity, themeColor: LauncherThemeColor) {
+        saveThemeColorSelection(host, themeColor)
+        syncThemeAppearance(host)
     }
 
     fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
@@ -475,6 +485,7 @@ class SettingsScreenViewModel : ViewModel() {
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
                         busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
                         themeMode = snapshot.themeMode,
+                        themeColor = snapshot.themeColor,
                         playerName = snapshot.playerName,
                         selectedRenderScale = rendering.renderScale,
                         selectedTargetFps = rendering.targetFps,
@@ -2477,6 +2488,10 @@ class SettingsScreenViewModel : ViewModel() {
     private fun saveThemeModeSelection(host: Activity, themeMode: LauncherThemeMode) {
         LauncherPreferences.saveThemeMode(host, themeMode)
         LauncherThemeController.apply(themeMode)
+    }
+
+    private fun saveThemeColorSelection(host: Activity, themeColor: LauncherThemeColor) {
+        LauncherPreferences.saveThemeColor(host, themeColor)
     }
 
     private fun saveJvmHeapMaxSelection(host: Activity, heapMaxMb: Int) {

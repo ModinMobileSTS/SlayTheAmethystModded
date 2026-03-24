@@ -8,6 +8,8 @@ import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +21,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
@@ -72,6 +76,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.navigation.Route
@@ -127,6 +132,9 @@ fun LauncherSettingsScreen(
         },
         onThemeModeChanged = { themeMode ->
             viewModel.onThemeModeChanged(activity, themeMode)
+        },
+        onThemeColorChanged = { themeColor ->
+            viewModel.onThemeColorChanged(activity, themeColor)
         },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onJvmCompressedPointersChanged = { enabled ->
@@ -198,6 +206,7 @@ private fun LauncherSettingsScreenPreview() {
             selectedTargetFps = 60,
             renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             themeMode = LauncherThemeMode.FOLLOW_SYSTEM,
+            themeColor = LauncherThemeColor.GUANJIE,
             selectedJvmHeapMaxMb = 512,
             compressedPointersEnabled = false,
             stringDeduplicationEnabled = false,
@@ -219,7 +228,7 @@ private fun LauncherSettingsScreenPreview() {
             preloadAllJreLibrariesEnabled = false,
             logcatCaptureEnabled = true,
             jvmLogcatMirrorEnabled = false,
-            gpuResourceDiagEnabled = true,
+            gpuResourceDiagEnabled = false,
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenEnabled = true,
@@ -255,6 +264,7 @@ private fun LauncherSettingsScreenContent(
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
     onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
+    onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
     onJvmCompressedPointersChanged: (Boolean) -> Unit = {},
     onJvmStringDeduplicationChanged: (Boolean) -> Unit = {},
@@ -334,7 +344,8 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = stringResource(R.string.settings_appearance_section_title)) {
                     SettingsAppearanceSection(
                         uiState = uiState,
-                        onThemeModeChanged = onThemeModeChanged
+                        onThemeModeChanged = onThemeModeChanged,
+                        onThemeColorChanged = onThemeColorChanged
                     )
                 }
             }
@@ -473,8 +484,10 @@ private fun LauncherSettingsScreenContent(
 private fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onThemeModeChanged: (LauncherThemeMode) -> Unit,
+    onThemeColorChanged: (LauncherThemeColor) -> Unit,
 ) {
     var showThemeModeDialog by rememberSaveable { mutableStateOf(false) }
+    var showThemeColorDialog by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
@@ -485,6 +498,18 @@ private fun SettingsAppearanceSection(
         )
         Text(
             text = stringResource(R.string.settings_theme_mode_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_theme_color_title),
+            supportingText = themeColorDisplayName(uiState.themeColor),
+            enabled = !uiState.busy,
+            onClick = { showThemeColorDialog = true }
+        )
+        ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
+        Text(
+            text = stringResource(R.string.settings_theme_color_desc),
             style = MaterialTheme.typography.bodySmall
         )
     }
@@ -510,6 +535,33 @@ private fun SettingsAppearanceSection(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showThemeModeDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+
+    if (showThemeColorDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeColorDialog = false },
+            title = { Text(stringResource(R.string.settings_theme_color_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LauncherThemeColor.entries.forEach { themeColor ->
+                        ThemeColorOptionRow(
+                            themeColor = themeColor,
+                            selected = uiState.themeColor == themeColor,
+                            enabled = !uiState.busy,
+                            onSelect = {
+                                onThemeColorChanged(themeColor)
+                                showThemeColorDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showThemeColorDialog = false }) {
                     Text(stringResource(R.string.main_folder_dialog_confirm))
                 }
             }
@@ -694,6 +746,83 @@ internal fun SettingsBusyIndicator(
     uiState.busyMessage?.let {
         Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+@Composable
+private fun themeColorDisplayName(themeColor: LauncherThemeColor): String {
+    return when (themeColor) {
+        LauncherThemeColor.ZHANSHIGE ->
+            stringResource(R.string.settings_theme_color_zhanshige)
+        LauncherThemeColor.LIEBAO ->
+            stringResource(R.string.settings_theme_color_liebao)
+        LauncherThemeColor.JIBAO ->
+            stringResource(R.string.settings_theme_color_jibao)
+        LauncherThemeColor.GUANJIE ->
+            stringResource(R.string.settings_theme_color_guanjie)
+        LauncherThemeColor.COLORLESS ->
+            stringResource(R.string.settings_theme_color_colorless)
+    }
+}
+
+@Composable
+private fun ThemeColorPreviewRow(selectedThemeColor: LauncherThemeColor) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LauncherThemeColor.entries.forEach { themeColor ->
+            ThemeColorSwatch(
+                themeColor = themeColor,
+                selected = themeColor == selectedThemeColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeColorOptionRow(
+    themeColor: LauncherThemeColor,
+    selected: Boolean,
+    enabled: Boolean,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .hapticToggleable(
+                value = selected,
+                enabled = enabled,
+                onValueChange = { onSelect() }
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        ThemeColorSwatch(themeColor = themeColor, selected = selected)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(text = themeColorDisplayName(themeColor))
+    }
+}
+
+@Composable
+private fun ThemeColorSwatch(
+    themeColor: LauncherThemeColor,
+    selected: Boolean,
+) {
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    }
+    Box(
+        modifier = Modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(themeColor.seedColor)
+            .border(width = 2.dp, color = borderColor, shape = CircleShape)
+    )
 }
 
 @Composable

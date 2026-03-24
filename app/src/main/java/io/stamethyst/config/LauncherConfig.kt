@@ -63,6 +63,7 @@ object LauncherConfig {
     private const val PREF_KEY_MOBILEGLUES_FSR1_QUALITY_PRESET =
         "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
+    private const val PREF_KEY_THEME_COLOR = "theme_color"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED =
@@ -138,6 +139,7 @@ object LauncherConfig {
     val DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET: MobileGluesFsr1QualityPreset =
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
+    val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.GUANJIE
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
@@ -152,7 +154,7 @@ object LauncherConfig {
     const val DEFAULT_PRELOAD_ALL_JRE_LIBRARIES = false
     const val DEFAULT_LOGCAT_CAPTURE_ENABLED = true
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
-    const val DEFAULT_GPU_RESOURCE_DIAG_ENABLED = true
+    const val DEFAULT_GPU_RESOURCE_DIAG_ENABLED = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
@@ -450,6 +452,20 @@ object LauncherConfig {
     fun saveThemeMode(context: Context, themeMode: LauncherThemeMode) {
         prefs(context).edit {
             putString(PREF_KEY_THEME_MODE, themeMode.persistedValue)
+        }
+    }
+
+    fun readThemeColor(context: Context): LauncherThemeColor {
+        val stored = prefs(context).getString(
+            PREF_KEY_THEME_COLOR,
+            DEFAULT_THEME_COLOR.persistedValue
+        )
+        return LauncherThemeColor.fromPersistedValue(stored) ?: DEFAULT_THEME_COLOR
+    }
+
+    fun saveThemeColor(context: Context, themeColor: LauncherThemeColor) {
+        prefs(context).edit {
+            putString(PREF_KEY_THEME_COLOR, themeColor.persistedValue)
         }
     }
 

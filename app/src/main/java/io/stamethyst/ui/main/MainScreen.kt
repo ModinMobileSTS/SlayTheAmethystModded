@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
@@ -38,6 +39,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -66,6 +68,12 @@ import io.stamethyst.ui.Icons
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.Settings
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import dev.chrisbanes.haze.materials.HazeMaterials
+import dev.chrisbanes.haze.rememberHazeState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -276,6 +284,7 @@ private fun LauncherMainScreenContent(
 ) {
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     val showInitializing = uiState.initializing
+    val hazeState = rememberHazeState()
 
     FolderNameDialog(
         visible = showCreateFolderDialog,
@@ -290,8 +299,36 @@ private fun LauncherMainScreenContent(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) {
+        Box(
+            modifier = modifier.fillMaxSize()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .hazeSource(state = hazeState)
+                    .padding(start = 16.dp, top = 16.dp, end = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    uiState.busyMessage?.let {
+                        Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                MainContentSwitcher(
+                    uiState = uiState,
+                    showInitializing = showInitializing,
+                    actionBarBottomPadding = 156.dp,
+                    actions = actions
+                )
+            }
+
             MainTopBar(
+                modifier = Modifier.align(Alignment.TopCenter),
+                hazeState = hazeState,
                 folderControlsEnabled = uiState.controlsEnabled,
                 settingsEnabled = !uiState.busy,
                 hostAvailable = actions.isHostAvailable,
@@ -300,9 +337,9 @@ private fun LauncherMainScreenContent(
                 onOpenSettings = onOpenSettings,
                 onOpenFeedbackUpdates = onOpenFeedbackUpdates
             )
-        },
-        bottomBar = {
             MainBottomFixedActions(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                hazeState = hazeState,
                 importEnabled = !uiState.busy && uiState.storageIssue == null,
                 launchEnabled = !uiState.busy &&
                     uiState.storageIssue == null &&
@@ -314,34 +351,6 @@ private fun LauncherMainScreenContent(
                 gameRunning = uiState.gameProcessRunning,
                 hasStorageIssue = uiState.storageIssue != null
             )
-        },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-    ) { paddingValues ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                uiState.busyMessage?.let {
-                    Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-
-//            Text(
-//                text = stringResource(R.string.main_select_mods),
-//                style = MaterialTheme.typography.titleMedium
-//            )
-
-            MainContentSwitcher(
-                uiState = uiState,
-                showInitializing = showInitializing,
-                actionBarBottomPadding = 0.dp,
-                actions = actions
-            )
         }
     }
 }
@@ -349,6 +358,8 @@ private fun LauncherMainScreenContent(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun MainTopBar(
+    modifier: Modifier = Modifier,
+    hazeState: HazeState,
     folderControlsEnabled: Boolean,
     settingsEnabled: Boolean,
     hostAvailable: Boolean,
@@ -357,54 +368,69 @@ private fun MainTopBar(
     onOpenSettings: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit
 ) {
-    TopAppBar(
-        title = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(stringResource(R.string.main_app_title))
-                Text(
-                    text = "v${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        actions = {
-            if (feedbackUnreadCount > 0) {
-                IconButton(
-                    onClick = onOpenFeedbackUpdates,
-                    enabled = settingsEnabled
-                ) {
-                    NotificationBadge(
-                        count = feedbackUnreadCount,
-                        badgeShape = RoundedCornerShape(999.dp)
+    FrostedGlassChrome(
+        modifier = modifier
+            .fillMaxWidth(),
+        hazeState = hazeState,
+        shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+    ) {
+        TopAppBar(
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            windowInsets = TopAppBarDefaults.windowInsets,
+            title = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(R.string.main_app_title))
+                    Text(
+                        text = "v${BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            actions = {
+                if (feedbackUnreadCount > 0) {
+                    IconButton(
+                        onClick = onOpenFeedbackUpdates,
+                        enabled = settingsEnabled
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_feedback_updates),
-                            contentDescription = stringResource(R.string.main_feedback_updates_content_description)
-                        )
+                        NotificationBadge(
+                            count = feedbackUnreadCount,
+                            badgeShape = RoundedCornerShape(999.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_feedback_updates),
+                                contentDescription = stringResource(R.string.main_feedback_updates_content_description)
+                            )
+                        }
                     }
                 }
+                IconButton(
+                    onClick = onAddFolderClick,
+                    enabled = folderControlsEnabled && hostAvailable
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_folder_add),
+                        contentDescription = stringResource(R.string.main_action_add_folder)
+                    )
+                }
+                IconButton(
+                    onClick = onOpenSettings,
+                    enabled = settingsEnabled
+                ) {
+                    Icon(
+                        imageVector = Icons.Settings,
+                        contentDescription = stringResource(R.string.main_open_settings)
+                    )
+                }
             }
-            IconButton(
-                onClick = onAddFolderClick,
-                enabled = folderControlsEnabled && hostAvailable
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_folder_add),
-                    contentDescription = stringResource(R.string.main_action_add_folder)
-                )
-            }
-            IconButton(
-                onClick = onOpenSettings,
-                enabled = settingsEnabled
-            ) {
-                Icon(
-                    imageVector = Icons.Settings,
-                    contentDescription = stringResource(R.string.main_open_settings)
-                )
-            }
-        }
-    )
+        )
+    }
 }
 
 @Composable
@@ -436,6 +462,8 @@ private fun NotificationBadge(
 
 @Composable
 private fun MainBottomFixedActions(
+    modifier: Modifier = Modifier,
+    hazeState: HazeState,
     importEnabled: Boolean,
     launchEnabled: Boolean,
     onImportMods: () -> Unit,
@@ -445,20 +473,18 @@ private fun MainBottomFixedActions(
     gameRunning: Boolean,
     hasStorageIssue: Boolean
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding(),
+    FrostedGlassChrome(
+        modifier = modifier
+            .fillMaxWidth(),
+        hazeState = hazeState,
         shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
     ) {
         val buttonShape = RoundedCornerShape(16.dp)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
@@ -481,7 +507,7 @@ private fun MainBottomFixedActions(
                 enabled = importEnabled,
                 shape = buttonShape,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.42f),
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
@@ -502,7 +528,7 @@ private fun MainBottomFixedActions(
                 enabled = launchEnabled,
                 shape = buttonShape,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
@@ -523,6 +549,42 @@ private fun MainBottomFixedActions(
                 )
             }
         }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalHazeMaterialsApi::class)
+private fun FrostedGlassChrome(
+    modifier: Modifier = Modifier,
+    hazeState: HazeState,
+    shape: Shape,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable BoxScope.() -> Unit
+) {
+    val chromeModifier = modifier.hazeEffect(
+        state = hazeState,
+        style = HazeMaterials.ultraThin()
+    ) {
+        blurRadius = 12.dp
+    }
+    Surface(
+        modifier = chromeModifier,
+        shape = shape,
+        color = Color.Transparent,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(contentPadding)
+        ) {
+            content()
         }
     }
 }

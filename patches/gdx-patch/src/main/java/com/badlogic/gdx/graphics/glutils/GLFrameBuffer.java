@@ -60,7 +60,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static String NON_RENDERABLE_FBO_FORMAT_COMPAT_PROP =
 		"amethyst.gdx.non_renderable_fbo_format_compat";
 	private final static String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
-	private final static boolean GPU_RESOURCE_DIAG_ENABLED = readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, true);
+	private final static boolean GPU_RESOURCE_DIAG_ENABLED = readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false);
 	private final static String GPU_RESOURCE_DIAG_FBO_STACKS_PROP =
 		"amethyst.gdx.gpu_resource_diag.fbo_stacks";
 	private final static boolean GPU_RESOURCE_DIAG_FBO_STACKS_ENABLED =

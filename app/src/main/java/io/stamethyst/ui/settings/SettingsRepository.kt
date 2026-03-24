@@ -14,6 +14,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -24,6 +25,7 @@ import java.util.Locale
 internal object SettingsRepository {
     data class SettingsSnapshot(
         val themeMode: LauncherThemeMode,
+        val themeColor: LauncherThemeColor,
         val playerName: String,
         val rendering: RenderingSnapshot,
         val jvm: JvmSnapshot,
@@ -96,6 +98,10 @@ internal object SettingsRepository {
         return LauncherPreferences.readThemeMode(context)
     }
 
+    fun loadThemeColor(context: Context): LauncherThemeColor {
+        return LauncherPreferences.readThemeColor(context)
+    }
+
     fun loadSettingsSnapshot(context: Context): SettingsSnapshot {
         val renderSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(context)
         val rendererSelectionMode = LauncherPreferences.readRendererSelectionMode(context)
@@ -110,6 +116,7 @@ internal object SettingsRepository {
         val heapMaxMb = LauncherPreferences.readJvmHeapMaxMb(context)
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
+            themeColor = LauncherPreferences.readThemeColor(context),
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),

@@ -139,6 +139,7 @@ internal fun ModFolderSection(
     }
     val topLevelItemKeys = remember(dependencyMods.isNotEmpty(), folderUiModels) {
         buildList {
+            add(MOD_LIST_TOP_PLACEHOLDER_KEY)
             add("modsFilterInput")
             if (dependencyMods.isNotEmpty()) {
                 add("dependencyFolder")
@@ -298,6 +299,14 @@ internal fun ModFolderSection(
                 .onGloballyPositioned { interactionState.listViewportInWindow = it.boundsInWindow() },
             contentPadding = PaddingValues(bottom = contentBottomInset)
         ) {
+            item(key = MOD_LIST_TOP_PLACEHOLDER_KEY) {
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(MOD_LIST_TOP_PLACEHOLDER_HEIGHT)
+                )
+            }
+
             item(key = "modsFilterInput") {
                 OutlinedTextField(
                     value = filterText,
@@ -774,3 +783,6 @@ private fun AlertDeleteModDialog(
         }
     )
 }
+
+private const val MOD_LIST_TOP_PLACEHOLDER_KEY = "modListTopPlaceholder"
+private val MOD_LIST_TOP_PLACEHOLDER_HEIGHT = 84.dp

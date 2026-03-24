@@ -112,9 +112,12 @@ class LauncherActivity : AppCompatActivity() {
             Route.QuickStart
         }
 
-        settingsViewModel.syncThemeMode(this)
+        settingsViewModel.syncThemeAppearance(this)
         setContent {
-            LauncherTheme(themeMode = settingsViewModel.uiState.themeMode) {
+            LauncherTheme(
+                themeMode = settingsViewModel.uiState.themeMode,
+                themeColor = settingsViewModel.uiState.themeColor
+            ) {
                 LauncherContent(
                     initialRoute = initialRoute,
                     mainViewModel = mainViewModel,

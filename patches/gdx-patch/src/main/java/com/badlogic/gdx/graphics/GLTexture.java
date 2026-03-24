@@ -40,7 +40,7 @@ public abstract class GLTexture implements Disposable {
 	private static final String FORCE_LINEAR_MIPMAP_FILTER_PROP = "amethyst.gdx.force_linear_mipmap_filter";
 	private static final String FORCE_LINEAR_MIPMAP_FILTER_ENV = "AMETHYST_GDX_FORCE_LINEAR_MIPMAP_FILTER";
 	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
-	private static final boolean GPU_RESOURCE_DIAG_ENABLED = readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, true);
+	private static final boolean GPU_RESOURCE_DIAG_ENABLED = readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false);
 	private static final String GPU_RESOURCE_DIAG_TEXTURE_STACKS_PROP =
 		"amethyst.gdx.gpu_resource_diag.texture_stacks";
 	private static final boolean GPU_RESOURCE_DIAG_TEXTURE_STACKS_ENABLED =

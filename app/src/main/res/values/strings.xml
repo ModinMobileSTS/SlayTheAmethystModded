@@ -360,6 +360,13 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_theme_mode_follow_system">Follow system</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_theme_color_title">Theme color</string>
+    <string name="settings_theme_color_desc">Choose the launcher accent color. The same color palette is automatically adapted for light and dark mode.</string>
+    <string name="settings_theme_color_zhanshige">Zhanshige</string>
+    <string name="settings_theme_color_liebao">Liebao</string>
+    <string name="settings_theme_color_jibao">Jibao</string>
+    <string name="settings_theme_color_guanjie">Guanjie</string>
+    <string name="settings_theme_color_colorless">Colorless</string>
     <string name="update_section_title">Updates</string>
     <string name="update_auto_check_enabled">Auto-check updates: Enabled</string>
     <string name="update_auto_check_disabled">Auto-check updates: Disabled</string>
@@ -574,7 +581,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_jvm_logcat_mirror_desc">Mirrors appended content from `latest.log` to logcat. Disabled by default.</string>
     <string name="settings_gpu_resource_diag_enabled">GPU resource diagnostics: Enabled</string>
     <string name="settings_gpu_resource_diag_disabled">GPU resource diagnostics: Disabled</string>
-    <string name="settings_gpu_resource_diag_desc">Controls `[gdx-diag]` GPU resource summaries, FBO stack sampling, and large texture upload diagnostics. Enabled by default. Turning it off reduces log volume and a small amount of runtime overhead.</string>
+    <string name="settings_gpu_resource_diag_desc">Controls `[gdx-diag]` GPU resource summaries, FBO stack sampling, and large texture upload diagnostics. Disabled by default. Turning it on increases log volume and a small amount of runtime overhead.</string>
     <string name="settings_gdx_pad_cursor_debug_enabled">GDX gamepad cursor log: Enabled</string>
     <string name="settings_gdx_pad_cursor_debug_disabled">GDX gamepad cursor log: Disabled</string>
     <string name="settings_gdx_pad_cursor_debug_desc">Controls `[gdx-pad-debug]` setCursorPosition output. Disabled by default to reduce log spam.</string>

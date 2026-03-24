@@ -13,6 +13,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 
@@ -55,6 +56,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode
         get() = LauncherConfig.DEFAULT_THEME_MODE
+    val DEFAULT_THEME_COLOR: LauncherThemeColor
+        get() = LauncherConfig.DEFAULT_THEME_COLOR
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
@@ -203,6 +206,14 @@ object LauncherPreferences {
 
     fun saveThemeMode(context: Context, themeMode: LauncherThemeMode) {
         LauncherConfig.saveThemeMode(context, themeMode)
+    }
+
+    fun readThemeColor(context: Context): LauncherThemeColor {
+        return LauncherConfig.readThemeColor(context)
+    }
+
+    fun saveThemeColor(context: Context, themeColor: LauncherThemeColor) {
+        LauncherConfig.saveThemeColor(context, themeColor)
     }
 
     fun readShowModFileName(context: Context): Boolean {
