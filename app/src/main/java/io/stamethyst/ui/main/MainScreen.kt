@@ -300,9 +300,11 @@ private fun LauncherMainScreenContent(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-    ) {
+    ) { scaffoldPaddingValues ->
         Box(
-            modifier = modifier.fillMaxSize()
+            modifier = modifier
+                .fillMaxSize()
+                .padding(scaffoldPaddingValues)
         ) {
             Column(
                 modifier = Modifier

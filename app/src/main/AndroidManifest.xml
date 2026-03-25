@@ -13,6 +13,7 @@
         android:name="io.stamethyst.StsApplication"
         android:allowBackup="true"
         android:appCategory="game"
+        android:isGame="true"
         android:allowNativeHeapPointerTagging="false"
         android:icon="@mipmap/ic_launcher_amethyst"
         android:label="SlayTheAmethyst"

@@ -64,12 +64,9 @@ if (hasReleaseSigning && !File(releaseStoreFilePath).isFile) {
     throw GradleException("RELEASE_STORE_FILE does not exist: $releaseStoreFilePath")
 }
 if (isReleaseTaskRequested && !hasReleaseSigning) {
-    throw GradleException(
-        "Missing release signing configuration. Required env vars or local properties: " +
-            "RELEASE_STORE_FILE/release.storeFile, " +
-            "RELEASE_STORE_PASSWORD/release.storePassword, " +
-            "RELEASE_KEY_ALIAS/release.keyAlias, " +
-            "RELEASE_KEY_PASSWORD/release.keyPassword"
+    logger.warn(
+        "Release signing configuration missing; falling back to the debug signing config " +
+            "for local release tasks."
     )
 }
 
@@ -206,6 +203,8 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.haze)
+    implementation(libs.haze.materials)
     implementation(libs.reorderable)
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
