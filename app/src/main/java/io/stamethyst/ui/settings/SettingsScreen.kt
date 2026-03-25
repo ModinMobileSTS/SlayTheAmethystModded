@@ -226,7 +226,7 @@ private fun LauncherSettingsScreenPreview() {
             sustainedPerformanceModeEnabled = false,
             lwjglDebugEnabled = false,
             preloadAllJreLibrariesEnabled = false,
-            logcatCaptureEnabled = true,
+            logcatCaptureEnabled = false,
             jvmLogcatMirrorEnabled = false,
             gpuResourceDiagEnabled = false,
             gdxPadCursorDebugEnabled = false,
