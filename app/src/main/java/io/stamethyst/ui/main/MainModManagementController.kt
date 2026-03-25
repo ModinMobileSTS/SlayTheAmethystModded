@@ -451,7 +451,7 @@ internal class MainModManagementController(
                     setBusy(false, null)
                     clearPendingSelectionForMod(mod)
                     removeFolderAssignmentForDeletedMod(mod)
-                    persistFolderState(host)
+                    refresh(host, storageAccessible = true)
                     emitSnackbar(
                         if (deleted) {
                             host.getString(R.string.main_mod_deleted, displayName)
@@ -602,7 +602,7 @@ internal class MainModManagementController(
     }
 
     fun onRenameModFile(host: Activity, mod: ModItemUi, newFileNameInput: String) {
-        if (hostCallbacks.isBusy() || !mod.installed) {
+        if (hostCallbacks.isBusy() || mod.required || !mod.installed) {
             return
         }
         val sourceFile = resolveExportableModFile(mod)
@@ -630,22 +630,23 @@ internal class MainModManagementController(
         }
 
         val assignedFolderId = resolveAssignedFolderId(mod)
-        val shouldRestorePriorityRoot = mod.priorityRoot
         setBusy(true, UiText.StringResource(R.string.main_mod_rename_busy))
         executor.execute {
             try {
-                moveFileReplacing(sourceFile, targetFile)
-                if (shouldRestorePriorityRoot) {
-                    ModManager.setOptionalModPriorityRoot(host, targetFile.absolutePath, true)
-                }
+                val renamedFile = ModManager.renameOptionalModByStoragePath(
+                    context = host,
+                    storagePath = mod.storagePath,
+                    requestedFileName = normalizedFileName
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
+                    replacePendingSelectionForRenamedMod(mod, renamedFile.absolutePath)
                     clearAssignmentForMod(mod)
                     if (!assignedFolderId.isNullOrBlank()) {
-                        folderAssignments[targetFile.absolutePath] = assignedFolderId
-                        persistFolderState(host)
+                        folderAssignments[renamedFile.absolutePath] = assignedFolderId
                     }
-                    emitSnackbar(host.getString(R.string.main_mod_renamed, targetFile.name))
+                    refresh(host, storageAccessible = true)
+                    emitSnackbar(host.getString(R.string.main_mod_renamed, renamedFile.name))
                     hostCallbacks.republish(host)
                 }
             } catch (error: Throwable) {
@@ -1074,12 +1075,9 @@ internal class MainModManagementController(
     }
 
     private fun resolveExportableModFile(mod: ModItemUi): File? {
-        val path = mod.storagePath.trim()
-        if (path.isEmpty()) {
-            return null
-        }
-        val file = File(path)
-        return if (file.exists() && file.isFile) file else null
+        val resolvedPath = resolveExistingModStoragePath(mod.storagePath) ?: return null
+        val file = File(resolvedPath)
+        return file.takeIf { it.isFile }
     }
 
     private fun normalizeModJarFileName(input: String): String? {
@@ -1091,28 +1089,6 @@ internal class MainModManagementController(
             trimmed
         } else {
             "$trimmed.jar"
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun moveFileReplacing(source: File, target: File) {
-        if (target.exists()) {
-            throw IOException("Target already exists: ${target.absolutePath}")
-        }
-        if (source.renameTo(target)) {
-            return
-        }
-        source.inputStream().use { input ->
-            target.outputStream().use { output ->
-                input.copyTo(output)
-                output.flush()
-            }
-        }
-        if (!source.delete()) {
-            if (!target.delete()) {
-                // ignore cleanup failure, keep the copied file as best-effort output.
-            }
-            throw IOException("Failed to delete old file: ${source.absolutePath}")
         }
     }
 
@@ -1528,6 +1504,15 @@ internal class MainModManagementController(
 
     private fun clearPendingSelectionForMod(mod: ModItemUi) {
         setPendingOptionalModEnabled(mod, false)
+    }
+
+    private fun replacePendingSelectionForRenamedMod(mod: ModItemUi, newStoragePath: String) {
+        val oldStoredId = resolveStoredOptionalModId(mod) ?: return
+        if (!pendingEnabledOptionalModIds.remove(oldStoredId)) {
+            return
+        }
+        pendingEnabledOptionalModIds.add(newStoragePath)
+        markOptionalModsWithPendingSelectionDirty()
     }
 
     private fun resolveStoredOptionalModId(mod: ModItemUi): String? {

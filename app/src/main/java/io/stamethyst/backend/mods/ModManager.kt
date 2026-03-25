@@ -360,6 +360,75 @@ object ModManager {
     }
 
     @JvmStatic
+    @Throws(IOException::class)
+    fun renameOptionalModByStoragePath(
+        context: Context,
+        storagePath: String,
+        requestedFileName: String
+    ): File {
+        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
+        val normalizedPath = normalizeSelectionToken(context, storagePath)
+        if (!looksLikePathToken(normalizedPath)) {
+            throw IOException("Invalid mod storage path: $storagePath")
+        }
+
+        val libraryDir = RuntimePaths.optionalModsLibraryDir(context)
+        var source = File(normalizedPath)
+        if (
+            source.parentFile?.absolutePath != libraryDir.absolutePath &&
+            !isReservedJarName(source.name)
+        ) {
+            val libraryCandidate = File(libraryDir, source.name)
+            if (libraryCandidate.isFile) {
+                source = libraryCandidate
+            }
+        }
+        if (!source.isFile || isReservedJarName(source.name)) {
+            throw IOException("Mod file missing: ${source.absolutePath}")
+        }
+        val expectedDirPath = libraryDir.absolutePath
+        if (source.parentFile?.absolutePath != expectedDirPath) {
+            throw IOException("Only optional library mods can be renamed: ${source.absolutePath}")
+        }
+
+        val targetName = sanitizeImportedJarFileName(requestedFileName)
+        if (isReservedJarName(targetName)) {
+            throw IOException("Reserved mod file name: $targetName")
+        }
+        val target = File(source.parentFile, targetName)
+        if (source.absolutePath == target.absolutePath) {
+            return source
+        }
+        if (target.exists()) {
+            throw IOException("Target already exists: ${target.absolutePath}")
+        }
+
+        val optionalModFiles = findOptionalModFiles(context)
+        val sourceKey = resolveSelectionKey(context, source.absolutePath, optionalModFiles)
+            ?: resolveOptionalStorageKey(source)
+        moveFileReplacing(source, target)
+
+        val targetKey = resolveOptionalStorageKey(target)
+        rewriteRenamedOptionalSelection(
+            context = context,
+            sourceKey = sourceKey,
+            targetKey = targetKey,
+            readSelection = ::readEnabledOptionalModKeysSafely,
+            normalizeSelection = ::normalizeEnabledOptionalSelection,
+            writeSelection = ::writeEnabledOptionalModKeys
+        )
+        rewriteRenamedOptionalSelection(
+            context = context,
+            sourceKey = sourceKey,
+            targetKey = targetKey,
+            readSelection = ::readPriorityRootOptionalModKeysSafely,
+            normalizeSelection = ::normalizeEnabledOptionalSelection,
+            writeSelection = ::writePriorityRootOptionalModKeys
+        )
+        return target
+    }
+
+    @JvmStatic
     fun listInstalledMods(context: Context): List<InstalledMod> {
         val result = ArrayList<InstalledMod>()
         result.add(
@@ -1117,6 +1186,48 @@ object ModManager {
 
     private fun looksLikePathToken(token: String): Boolean {
         return token.contains('/') || token.contains('\\')
+    }
+
+    @Throws(IOException::class)
+    private fun moveFileReplacing(source: File, target: File) {
+        if (target.exists()) {
+            throw IOException("Target already exists: ${target.absolutePath}")
+        }
+        if (source.renameTo(target)) {
+            return
+        }
+        source.inputStream().use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+                output.flush()
+            }
+        }
+        if (!source.delete()) {
+            if (!target.delete()) {
+                // Keep the copied file as best-effort output if cleanup fails.
+            }
+            throw IOException("Failed to delete old file: ${source.absolutePath}")
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun rewriteRenamedOptionalSelection(
+        context: Context,
+        sourceKey: String,
+        targetKey: String,
+        readSelection: (Context) -> MutableSet<String>,
+        normalizeSelection: (Context, Collection<String>, List<OptionalModFileEntry>) -> MutableSet<String>,
+        writeSelection: (Context, Set<String>) -> Unit
+    ) {
+        val rawSelection = readSelection(context)
+        val normalizedSelection = normalizeSelection(context, rawSelection, findOptionalModFiles(context))
+        val changed = normalizedSelection.remove(sourceKey)
+        if (changed) {
+            normalizedSelection.add(targetKey)
+        }
+        if (changed || rawSelection != normalizedSelection) {
+            writeSelection(context, normalizedSelection)
+        }
     }
 
     private fun resolveOptionalStorageKey(file: File): String {

@@ -1,6 +1,7 @@
 package io.stamethyst.ui.main
 
 import io.stamethyst.model.ModItemUi
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,6 +64,41 @@ class ModFolderUiHelpersTest {
                 "/data/user/0/io.stamethyst/files/sts/mods/TestMod.jar"
             )
         )
+    }
+
+    @Test
+    fun resolveExistingModStoragePath_prefersDirectStoragePathWhenPresent() {
+        val storagePath = "/storage/emulated/0/Android/data/io.stamethyst/files/sts/mods_library/TestMod.jar"
+
+        val resolved = resolveExistingModStoragePath(storagePath) { candidate ->
+            candidate == storagePath
+        }
+
+        assertEquals(storagePath, resolved)
+    }
+
+    @Test
+    fun resolveExistingModStoragePath_fallsBackToSiblingRuntimePath() {
+        val storagePath = "/storage/emulated/0/Android/data/io.stamethyst/files/sts/mods_library/TestMod.jar"
+        val runtimePath = "/storage/emulated/0/Android/data/io.stamethyst/files/sts/mods/TestMod.jar"
+
+        val resolved = resolveExistingModStoragePath(storagePath) { candidate ->
+            candidate == runtimePath
+        }
+
+        assertEquals(runtimePath, resolved)
+    }
+
+    @Test
+    fun resolveExistingModStoragePath_fallsBackToLegacyInternalLibraryPath() {
+        val storagePath = "/storage/emulated/0/Android/data/io.stamethyst/files/sts/mods_library/TestMod.jar"
+        val legacyInternalPath = "/data/user/0/io.stamethyst/files/sts/mods_library/TestMod.jar"
+
+        val resolved = resolveExistingModStoragePath(storagePath) { candidate ->
+            candidate == legacyInternalPath
+        }
+
+        assertEquals(legacyInternalPath, resolved)
     }
 
     private fun createMod(storagePath: String): ModItemUi {

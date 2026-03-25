@@ -35,6 +35,19 @@ internal fun resolveAssignmentKeyCandidates(mod: ModItemUi): List<String> {
     return keys.toList()
 }
 
+internal fun resolveModStoragePathCandidates(storagePath: String): List<String> {
+    val candidates = LinkedHashSet<String>()
+    addAssignmentPathCandidates(candidates, storagePath)
+    return candidates.toList()
+}
+
+internal fun resolveExistingModStoragePath(
+    storagePath: String,
+    exists: (String) -> Boolean = { candidate -> File(candidate).isFile }
+): String? {
+    return resolveModStoragePathCandidates(storagePath).firstOrNull(exists)
+}
+
 private fun addAssignmentPathCandidates(
     keys: MutableSet<String>,
     storagePath: String
