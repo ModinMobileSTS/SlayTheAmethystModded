@@ -6,6 +6,8 @@ import android.widget.TextView
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
+import io.stamethyst.backend.render.AndroidGameModeSupport
+import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
@@ -42,6 +44,9 @@ internal class GameSessionCoordinator(
     @Volatile
     private var crashReturnTriggered = false
 
+    @Volatile
+    private var activityResumed = false
+
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
     private val backExitForceRestartRunnable = Runnable {
@@ -57,6 +62,7 @@ internal class GameSessionCoordinator(
         onDismissed = {
             updateFloatingMouseVisibility()
             updatePerformanceOverlayVisibility()
+            updateSystemGameState()
         },
         onRequestEarlyDismiss = {
             bootOverlayController.setEarlyDismissRequestTimestamp(
@@ -70,6 +76,7 @@ internal class GameSessionCoordinator(
         activity = activity,
         launchMode = config.launchMode,
         rendererDecision = config.rendererDecision,
+        renderScale = config.renderScale,
         forceJvmCrash = config.forceJvmCrash,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
@@ -86,6 +93,7 @@ internal class GameSessionCoordinator(
                 applyForegroundWindowState()
                 updateFloatingMouseVisibility()
                 updatePerformanceOverlayVisibility()
+                updateSystemGameState()
             }
         },
         onSurfaceSizeSync = {
@@ -120,25 +128,32 @@ internal class GameSessionCoordinator(
 
     fun onDestroy() {
         cancelBackExitForceRestart()
+        activityResumed = false
+        updateSystemGameState()
         syncRuntimeForegroundState(false)
         bootOverlayController.onDestroy()
         performanceOverlayController?.onDestroy()
+        restoreRequestedTargetFps()
         jvmLaunchController.cleanup()
     }
 
     fun onResume() {
+        activityResumed = true
         performanceOverlayController?.onResume()
         syncRuntimeForegroundState(true)
         applyForegroundWindowState()
         updateFloatingMouseVisibility()
         updatePerformanceOverlayVisibility()
+        updateSystemGameState()
         tryStartJvmWhenSurfaceReady()
     }
 
     fun onPause() {
+        activityResumed = false
         performanceOverlayController?.onPause()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
+        updateSystemGameState()
     }
 
     fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -377,6 +392,7 @@ internal class GameSessionCoordinator(
         }
         backExitRequested = true
         backExitLauncherShown = false
+        updateSystemGameState()
         val bootOverlayActive = !bootOverlayController.isDismissed
 
         inputHandler.hideSoftKeyboard()
@@ -486,6 +502,7 @@ internal class GameSessionCoordinator(
         detail: String?,
         terminateProcessAfterReturn: Boolean
     ) {
+        updateSystemGameState()
         val crashIntent = LauncherReturnCoordinator.createCrashIntent(activity, code, isSignal, detail)
         if (terminateProcessAfterReturn) {
             val launchedImmediately = try {
@@ -607,5 +624,23 @@ internal class GameSessionCoordinator(
             bootOverlayController.isDismissed &&
             activity.hasWindowFocus()
         performanceOverlayController?.setVisible(shouldShow)
+    }
+
+    private fun updateSystemGameState() {
+        val inForeground = activityResumed && !backExitRequested
+        val isLoading = inForeground &&
+            (!jvmLaunchController.runtimeLifecycleReady || !bootOverlayController.isDismissed)
+        AndroidGameModeSupport.reportGameState(
+            context = activity,
+            isLoading = isLoading,
+            inForeground = inForeground
+        )
+    }
+
+    private fun restoreRequestedTargetFps() {
+        try {
+            DisplayConfigSync.saveTargetFpsLimit(activity, config.requestedTargetFps)
+        } catch (_: Throwable) {
+        }
     }
 }

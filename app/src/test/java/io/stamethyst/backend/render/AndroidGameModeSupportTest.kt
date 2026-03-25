@@ -7,7 +7,7 @@ import org.junit.Test
 
 class AndroidGameModeSupportTest {
     @Test
-    fun resolveTargetFps_keepsRequestedValueInBatteryMode() {
+    fun resolveTargetFps_capsRequestedValueInBatteryMode() {
         val snapshot = AndroidGameModeSnapshot(
             rawMode = GameManager.GAME_MODE_BATTERY,
             displayNameResId = R.string.settings_game_mode_name_battery,
@@ -15,8 +15,8 @@ class AndroidGameModeSupportTest {
             supported = true
         )
 
-        assertEquals(120, AndroidGameModeSupport.resolveTargetFps(120, snapshot))
-        assertEquals(60, AndroidGameModeSupport.resolveTargetFps(60, snapshot))
+        assertEquals(30, AndroidGameModeSupport.resolveTargetFps(120, snapshot))
+        assertEquals(24, AndroidGameModeSupport.resolveTargetFps(24, snapshot))
     }
 
     @Test
@@ -29,5 +29,18 @@ class AndroidGameModeSupportTest {
         )
 
         assertEquals(120, AndroidGameModeSupport.resolveTargetFps(120, snapshot))
+    }
+
+    @Test
+    fun resolveRenderScale_capsRequestedValueInBatteryMode() {
+        val snapshot = AndroidGameModeSnapshot(
+            rawMode = GameManager.GAME_MODE_BATTERY,
+            displayNameResId = R.string.settings_game_mode_name_battery,
+            descriptionResId = R.string.settings_game_mode_desc_battery,
+            supported = true
+        )
+
+        assertEquals(0.85f, AndroidGameModeSupport.resolveRenderScale(1.0f, snapshot))
+        assertEquals(0.70f, AndroidGameModeSupport.resolveRenderScale(0.70f, snapshot))
     }
 }

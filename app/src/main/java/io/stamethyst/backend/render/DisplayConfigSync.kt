@@ -21,12 +21,18 @@ object DisplayConfigSync {
 
     @JvmStatic
     @Throws(IOException::class)
-    fun syncToCurrentResolution(context: Context, width: Int, height: Int) {
+    fun syncToCurrentResolution(
+        context: Context,
+        width: Int,
+        height: Int,
+        targetFpsLimitOverride: Int? = null
+    ) {
         val configFile = RuntimePaths.displayConfigFile(context)
         val lines = buildConfigLines(
             existingLines = readExistingLines(configFile),
             width = width,
-            height = height
+            height = height,
+            targetFpsLimitOverride = targetFpsLimitOverride
         )
         writeConfig(configFile, lines)
     }
@@ -51,7 +57,8 @@ object DisplayConfigSync {
     internal fun buildConfigLines(
         existingLines: List<String>?,
         width: Int,
-        height: Int
+        height: Int,
+        targetFpsLimitOverride: Int? = null
     ): List<String> {
         // Keep the display config aligned with the actual scaled render surface.
         // If this file clamps to a larger minimum than the active surface/window size,
@@ -59,11 +66,16 @@ object DisplayConfigSync {
         val safeWidth = width.coerceAtLeast(MIN_WIDTH)
         val safeHeight = height.coerceAtLeast(MIN_HEIGHT)
         val state = readExisting(existingLines)
+        val fpsLimit = if (targetFpsLimitOverride != null) {
+            normalizeTargetFpsLimit(targetFpsLimitOverride)
+        } else {
+            state.fpsLimit
+        }
 
         return ArrayList<String>(6).apply {
             add(safeWidth.toString())
             add(safeHeight.toString())
-            add(state.fpsLimit.toString())
+            add(fpsLimit.toString())
             add(java.lang.Boolean.toString(state.fullscreen))
             add(java.lang.Boolean.toString(state.windowedFullscreen))
             add(java.lang.Boolean.toString(state.vsync))

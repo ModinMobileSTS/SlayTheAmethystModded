@@ -29,6 +29,7 @@ class JvmLaunchController(
     private val activity: StsGameActivity,
     private val launchMode: String,
     private val rendererDecision: RendererDecision,
+    private val renderScale: Float,
     private val forceJvmCrash: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
@@ -266,6 +267,7 @@ class JvmLaunchController(
                         resolvedJavaHome,
                         launchMode,
                         rendererDecision,
+                        renderScale,
                         forceJvmCrash
                     )
                 )

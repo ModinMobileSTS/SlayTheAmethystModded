@@ -13,6 +13,9 @@ import io.stamethyst.config.RenderSurfaceBackend
 
 internal data class GameSessionConfig(
     val renderScale: Float,
+    val requestedRenderScale: Float,
+    val requestedTargetFps: Int,
+    val effectiveTargetFps: Int,
     val launchMode: String,
     val backBehavior: BackBehavior,
     val manualDismissBootOverlay: Boolean,
@@ -51,9 +54,18 @@ internal data class GameSessionConfig(
                 manualBackend = LauncherConfig.readManualRendererBackend(context)
             )
             val systemGameMode = AndroidGameModeSupport.readCurrentMode(context)
+            val requestedRenderScale = LauncherConfig.readRenderScale(context)
+            val requestedTargetFps = LauncherConfig.readTargetFps(context)
+            val effectiveRenderScale =
+                AndroidGameModeSupport.resolveRenderScale(requestedRenderScale, systemGameMode)
+            val effectiveTargetFps =
+                AndroidGameModeSupport.resolveTargetFps(requestedTargetFps, systemGameMode)
 
             return GameSessionConfig(
-                renderScale = LauncherConfig.readRenderScale(context),
+                renderScale = effectiveRenderScale,
+                requestedRenderScale = requestedRenderScale,
+                requestedTargetFps = requestedTargetFps,
+                effectiveTargetFps = effectiveTargetFps,
                 launchMode = launchMode,
                 backBehavior = parseBackBehavior(intent),
                 manualDismissBootOverlay = intent.getBooleanExtra(

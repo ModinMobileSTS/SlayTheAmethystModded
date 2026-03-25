@@ -47,6 +47,21 @@ class DisplayConfigSyncTest {
     }
 
     @Test
+    fun buildConfigLines_appliesFpsOverrideWithoutChangingWindowFlags() {
+        val lines = DisplayConfigSync.buildConfigLines(
+            existingLines = listOf("1920", "1080", "120", "true", "false", "false"),
+            width = 1600,
+            height = 900,
+            targetFpsLimitOverride = 30
+        )
+
+        assertEquals(
+            listOf("1600", "900", "30", "true", "false", "false"),
+            lines
+        )
+    }
+
+    @Test
     fun buildTargetFpsConfigLines_updatesOnlyFpsLimit() {
         val lines = DisplayConfigSync.buildTargetFpsConfigLines(
             existingLines = listOf("1920", "1080", "60", "true", "false", "true"),

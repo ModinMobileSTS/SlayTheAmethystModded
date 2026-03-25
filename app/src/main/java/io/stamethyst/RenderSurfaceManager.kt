@@ -9,6 +9,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
+import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.ForegroundResyncScheduler
 import io.stamethyst.backend.render.RenderSurfaceState
 import io.stamethyst.backend.render.VirtualResolutionPolicy
@@ -21,6 +22,7 @@ import org.lwjgl.glfw.CallbackBridge
 class RenderSurfaceManager(
     private val activity: StsGameActivity,
     private val renderScale: Float,
+    private val targetFpsLimit: Int,
     useTextureViewSurface: Boolean,
     private val avoidDisplayCutout: Boolean,
     private val cropScreenBottom: Boolean,
@@ -35,6 +37,7 @@ class RenderSurfaceManager(
     } else {
         SurfaceViewHost(activity)
     }
+    private val refreshRateController = DisplayRefreshRateController(activity, targetFpsLimit)
     private var pendingSurfaceReadyCallback = false
     private var lastResyncReasonSummary = "init"
     private var resyncApplyCount = 0
@@ -78,6 +81,7 @@ class RenderSurfaceManager(
         renderHost.attach(root, object : RenderSurfaceHost.Callbacks {
             override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
                 state.markSurfaceAvailable(surfaceGeneration, width, height)
+                syncPreferredRefreshRate("surface_available")
                 connectBridgeSurfaceIfNeeded()
                 pendingSurfaceReadyCallback = true
                 requestForegroundResync("surface_available")
@@ -89,6 +93,7 @@ class RenderSurfaceManager(
                 } else if (::renderView.isInitialized) {
                     state.rememberPhysicalSize(renderView.width, renderView.height)
                 }
+                syncPreferredRefreshRate("surface_size_changed")
                 pendingSurfaceReadyCallback = true
                 requestForegroundResync("surface_size_changed")
             }
@@ -97,6 +102,7 @@ class RenderSurfaceManager(
                 pendingSurfaceReadyCallback = false
                 disconnectBridgeSurfaceIfNeeded()
                 state.markSurfaceDestroyed()
+                syncPreferredRefreshRate("surface_destroyed")
                 onSurfaceDestroyed()
             }
 
@@ -136,6 +142,12 @@ class RenderSurfaceManager(
         if (::renderView.isInitialized) {
             renderView.removeCallbacks(foregroundResyncRunnable)
         }
+        refreshRateController.sync(
+            inForeground = false,
+            hasWindowFocus = false,
+            surface = renderHost.currentSurface,
+            reason = "destroy"
+        )
         renderRoot?.let { ViewCompat.setOnApplyWindowInsetsListener(it, null) }
         renderRoot = null
         disconnectBridgeSurfaceIfNeeded()
@@ -144,6 +156,7 @@ class RenderSurfaceManager(
 
     fun onForegroundChanged(foreground: Boolean) {
         state.markForeground(foreground)
+        syncPreferredRefreshRate(if (foreground) "resume" else "pause")
         if (foreground) {
             requestForegroundResync("resume")
         }
@@ -151,6 +164,7 @@ class RenderSurfaceManager(
 
     fun onWindowFocusChanged(hasFocus: Boolean) {
         state.markWindowFocus(hasFocus)
+        syncPreferredRefreshRate(if (hasFocus) "focus_gain" else "focus_loss")
         if (hasFocus) {
             requestForegroundResync("focus")
         }
@@ -180,17 +194,24 @@ class RenderSurfaceManager(
         val windowWidth = resolveVirtualWidth()
         val windowHeight = resolveVirtualHeight()
         try {
-            DisplayConfigSync.syncToCurrentResolution(activity, windowWidth, windowHeight)
+            DisplayConfigSync.syncToCurrentResolution(
+                activity,
+                windowWidth,
+                windowHeight,
+                targetFpsLimit
+            )
             println(
                 "RenderSurfaceDisplayConfig: synced " +
                     "virtual=${windowWidth}x${windowHeight}, " +
-                    "physical=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}"
+                    "physical=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}, " +
+                    "targetFps=$targetFpsLimit"
             )
         } catch (t: Throwable) {
             println(
                 "RenderSurfaceDisplayConfig: sync_failed " +
                     "virtual=${windowWidth}x${windowHeight}, " +
                     "physical=${resolvePhysicalWidth()}x${resolvePhysicalHeight()}, " +
+                    "targetFps=$targetFpsLimit, " +
                     "error=${t.javaClass.simpleName}: ${t.message}"
             )
         }
@@ -310,6 +331,15 @@ class RenderSurfaceManager(
         CallbackBridge.sendUpdateWindowSize(plan.windowWidth, plan.windowHeight)
         state.recordWindowSizeDispatch(plan, dispatched = true)
         return true
+    }
+
+    private fun syncPreferredRefreshRate(reason: String) {
+        refreshRateController.sync(
+            inForeground = state.isForeground,
+            hasWindowFocus = state.hasWindowFocus,
+            surface = renderHost.currentSurface,
+            reason = reason
+        )
     }
 
     private fun buildDiagnostics(prefix: String): String {

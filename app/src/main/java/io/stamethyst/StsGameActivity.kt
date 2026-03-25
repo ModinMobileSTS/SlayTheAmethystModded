@@ -155,6 +155,7 @@ class StsGameActivity : AppCompatActivity() {
         renderSurfaceManager = RenderSurfaceManager(
             activity = this,
             renderScale = sessionConfig.renderScale,
+            targetFpsLimit = sessionConfig.effectiveTargetFps,
             useTextureViewSurface = sessionConfig.useTextureViewSurface,
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             cropScreenBottom = sessionConfig.cropScreenBottom,

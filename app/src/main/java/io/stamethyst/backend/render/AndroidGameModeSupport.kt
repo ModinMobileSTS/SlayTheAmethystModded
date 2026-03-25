@@ -1,6 +1,7 @@
 package io.stamethyst.backend.render
 
 import android.app.GameManager
+import android.app.GameState
 import android.content.Context
 import android.os.Build
 import androidx.annotation.StringRes
@@ -14,6 +15,9 @@ internal data class AndroidGameModeSnapshot(
 )
 
 internal object AndroidGameModeSupport {
+    private const val BATTERY_MODE_TARGET_FPS_CAP = 30
+    private const val BATTERY_MODE_RENDER_SCALE_CAP = 0.85f
+
     fun readCurrentMode(context: Context): AndroidGameModeSnapshot {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return AndroidGameModeSnapshot(
@@ -74,6 +78,38 @@ internal object AndroidGameModeSupport {
     }
 
     fun resolveTargetFps(requestedTargetFps: Int, snapshot: AndroidGameModeSnapshot): Int {
-        return requestedTargetFps
+        return when (snapshot.rawMode) {
+            GameManager.GAME_MODE_BATTERY -> requestedTargetFps.coerceAtMost(
+                BATTERY_MODE_TARGET_FPS_CAP
+            )
+
+            else -> requestedTargetFps
+        }
+    }
+
+    fun resolveRenderScale(requestedRenderScale: Float, snapshot: AndroidGameModeSnapshot): Float {
+        return when (snapshot.rawMode) {
+            GameManager.GAME_MODE_BATTERY -> requestedRenderScale.coerceAtMost(
+                BATTERY_MODE_RENDER_SCALE_CAP
+            )
+
+            else -> requestedRenderScale
+        }
+    }
+
+    fun reportGameState(context: Context, isLoading: Boolean, inForeground: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        val gameManager = context.getSystemService(GameManager::class.java) ?: return
+        val mode = if (inForeground && !isLoading) {
+            GameState.MODE_GAMEPLAY_INTERRUPTIBLE
+        } else {
+            GameState.MODE_NONE
+        }
+        try {
+            gameManager.setGameState(GameState(isLoading, mode))
+        } catch (_: Throwable) {
+        }
     }
 }

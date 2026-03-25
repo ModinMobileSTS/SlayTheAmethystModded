@@ -59,6 +59,7 @@ object StsLaunchSpec {
         javaHome: File,
         launchMode: String,
         rendererDecision: RendererDecision,
+        renderScaleOverride: Float? = null,
         forceJvmCrash: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
@@ -190,7 +191,7 @@ object StsLaunchSpec {
         rendererDecision.fallbackSummary()?.let {
             args.add("-Damethyst.renderer.fallback_reason=$it")
         }
-        val renderScale = LauncherConfig.readRenderScale(context)
+        val renderScale = renderScaleOverride ?: LauncherConfig.readRenderScale(context)
         val physicalWidth = Math.max(1, CallbackBridge.physicalWidth)
         val physicalHeight = Math.max(1, CallbackBridge.physicalHeight)
         val virtualResolution = VirtualResolutionPolicy.resolve(physicalWidth, physicalHeight, renderScale)

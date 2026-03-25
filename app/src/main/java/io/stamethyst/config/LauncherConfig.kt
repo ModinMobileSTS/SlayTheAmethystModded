@@ -73,6 +73,7 @@ object LauncherConfig {
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
         "sustained_performance_mode_enabled"
+    private const val PREF_KEY_TARGET_FPS = "target_fps"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
     private const val PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED =
@@ -543,11 +544,25 @@ object LauncherConfig {
     }
 
     fun readTargetFps(context: Context): Int {
-        return DisplayConfigSync.readTargetFpsLimit(context)
+        val preferences = prefs(context)
+        if (preferences.contains(PREF_KEY_TARGET_FPS)) {
+            return normalizeTargetFps(
+                preferences.getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS)
+            )
+        }
+        val migrated = normalizeTargetFps(DisplayConfigSync.readTargetFpsLimit(context))
+        preferences.edit {
+            putInt(PREF_KEY_TARGET_FPS, migrated)
+        }
+        return migrated
     }
 
     fun saveTargetFps(context: Context, targetFps: Int) {
-        DisplayConfigSync.saveTargetFpsLimit(context, normalizeTargetFps(targetFps))
+        val normalizedTargetFps = normalizeTargetFps(targetFps)
+        prefs(context).edit {
+            putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps)
+        }
+        DisplayConfigSync.saveTargetFpsLimit(context, normalizedTargetFps)
     }
 
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {
