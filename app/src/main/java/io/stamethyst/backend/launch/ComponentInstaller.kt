@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets
 object ComponentInstaller {
     private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
-    private const val GDX_VIDEO_NATIVE_ASSET_DIR = "components/gdx_video_natives"
+    private const val BUNDLED_RUNTIME_NATIVE_ASSET_DIR = "components/bundled_runtime_natives"
     private const val LEGACY_HINA_VIDEO_PATCH_JAR = "hina-video-compat.jar"
     private const val PREF_FILE_PLAYER = "STSPlayer"
     private const val PREF_FILE_PLAYER_BACKUP = "STSPlayer.backUp"
@@ -138,10 +138,14 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             48,
-            context.progressText(R.string.startup_progress_installing_gdx_video_natives)
+            context.progressText(R.string.startup_progress_installing_bundled_native_libraries)
         )
-        if (hasAssetChildren(assets, GDX_VIDEO_NATIVE_ASSET_DIR)) {
-            copyAssetTree(assets, GDX_VIDEO_NATIVE_ASSET_DIR, RuntimePaths.gdxPatchNativesDir(context))
+        if (hasAssetChildren(assets, BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
+            copyAssetTree(
+                assets,
+                BUNDLED_RUNTIME_NATIVE_ASSET_DIR,
+                RuntimePaths.gdxPatchNativesDir(context)
+            )
         }
         throwIfInterrupted()
         reportProgress(
@@ -461,9 +465,8 @@ object ComponentInstaller {
         if (!File(RuntimePaths.cacioDir(context), "version").isFile) {
             return false
         }
-        if (hasAssetChildren(assets, GDX_VIDEO_NATIVE_ASSET_DIR)) {
-            val nativeFiles = RuntimePaths.gdxPatchNativesDir(context).listFiles()
-            if (nativeFiles.isNullOrEmpty() || nativeFiles.none { it.isFile && it.length() > 0L }) {
+        if (hasAssetChildren(assets, BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
+            if (!containsNonEmptyFile(RuntimePaths.gdxPatchNativesDir(context))) {
                 return false
             }
         }
@@ -511,6 +514,16 @@ object ComponentInstaller {
         }
         val bounded = percent.coerceIn(0, 100)
         callback.onProgress(bounded, message)
+    }
+
+    private fun containsNonEmptyFile(root: File): Boolean {
+        if (!root.exists()) {
+            return false
+        }
+        if (root.isFile) {
+            return root.length() > 0L
+        }
+        return root.listFiles().orEmpty().any(::containsNonEmptyFile)
     }
 
     private fun removeLegacyCompatArtifacts(gdxPatchDir: File) {

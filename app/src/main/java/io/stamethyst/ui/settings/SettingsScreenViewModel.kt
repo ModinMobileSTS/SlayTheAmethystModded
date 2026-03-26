@@ -14,6 +14,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
+import io.stamethyst.backend.nativelib.NativeLibraryMarketAvailability
+import io.stamethyst.backend.nativelib.NativeLibraryMarketCatalogEntry
+import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
+import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -184,6 +188,9 @@ class SettingsScreenViewModel : ViewModel() {
         val updateStatusSummary: String = "",
         val updateCheckInProgress: Boolean = false,
         val updatePromptState: UpdatePromptState? = null,
+        val nativeLibraryMarketPackages: List<NativeLibraryMarketPackageState> = emptyList(),
+        val nativeLibraryMarketLoading: Boolean = false,
+        val nativeLibraryMarketErrorText: String? = null,
     )
 
     private data class CoreDependencyStatus(
@@ -203,6 +210,7 @@ class SettingsScreenViewModel : ViewModel() {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     private var startupAutoUpdateCheckRequested = false
+    private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -266,6 +274,11 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         LauncherPreferences.savePreferredUpdateMirrorId(host, source.id)
+        nativeLibraryMarketCatalog = emptyList()
+        uiState = uiState.copy(
+            nativeLibraryMarketPackages = emptyList(),
+            nativeLibraryMarketErrorText = null
+        )
         syncStoredUpdateState(host)
     }
 
@@ -282,14 +295,165 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    fun onOpenNativeLibraryMarket(host: Activity) {
+        if (uiState.nativeLibraryMarketPackages.isEmpty() && !uiState.nativeLibraryMarketLoading) {
+            refreshNativeLibraryMarket(host)
+        }
+    }
+
+    fun refreshNativeLibraryMarket(host: Activity) {
+        if (uiState.nativeLibraryMarketLoading) {
+            return
+        }
+        val mirrorSource = resolveSelectedMirrorSource(host)
+        uiState = uiState.copy(
+            nativeLibraryMarketLoading = true,
+            nativeLibraryMarketErrorText = null
+        )
+        executor.execute {
+            try {
+                val catalog = NativeLibraryMarketService.fetchCatalog(mirrorSource)
+                nativeLibraryMarketCatalog = catalog
+                val packageStates = NativeLibraryMarketService.resolvePackageStates(host, catalog)
+                host.runOnUiThread {
+                    uiState = uiState.copy(
+                        nativeLibraryMarketPackages = packageStates,
+                        nativeLibraryMarketLoading = false,
+                        nativeLibraryMarketErrorText = null
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    uiState = uiState.copy(
+                        nativeLibraryMarketLoading = false,
+                        nativeLibraryMarketErrorText = summarizeNativeLibraryMarketError(
+                            host,
+                            error,
+                            mirrorSource
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun onInstallNativeLibraryPackage(host: Activity, packageId: String) {
+        if (uiState.busy) {
+            return
+        }
+        val entry = nativeLibraryMarketCatalog.firstOrNull { it.id == packageId } ?: return
+        val packageState = uiState.nativeLibraryMarketPackages.firstOrNull {
+            it.catalogEntry.id == packageId
+        } ?: return
+        if (packageState.availability != NativeLibraryMarketAvailability.NOT_INSTALLED) {
+            return
+        }
+
+        setBusy(
+            true,
+            UiText.StringResource(R.string.settings_native_library_market_installing, entry.displayName)
+        )
+        val mirrorSource = resolveSelectedMirrorSource(host)
+        executor.execute {
+            try {
+                NativeLibraryMarketService.installPackage(host, entry, mirrorSource)
+                val packageStates = NativeLibraryMarketService.resolvePackageStates(
+                    host,
+                    nativeLibraryMarketCatalog
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    uiState = uiState.copy(
+                        nativeLibraryMarketPackages = packageStates,
+                        nativeLibraryMarketErrorText = null
+                    )
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_native_library_market_installed,
+                            entry.displayName
+                        )
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    val summary = summarizeNativeLibraryMarketError(host, error, mirrorSource)
+                    uiState = uiState.copy(nativeLibraryMarketErrorText = summary)
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_native_library_market_install_failed,
+                            entry.displayName,
+                            summary
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun onRemoveNativeLibraryPackage(host: Activity, packageId: String) {
+        if (uiState.busy) {
+            return
+        }
+        val entry = nativeLibraryMarketCatalog.firstOrNull { it.id == packageId } ?: return
+        val packageState = uiState.nativeLibraryMarketPackages.firstOrNull {
+            it.catalogEntry.id == packageId
+        } ?: return
+        if (packageState.availability != NativeLibraryMarketAvailability.INSTALLED) {
+            return
+        }
+
+        setBusy(
+            true,
+            UiText.StringResource(R.string.settings_native_library_market_removing, entry.displayName)
+        )
+        executor.execute {
+            try {
+                NativeLibraryMarketService.uninstallPackage(host, entry.id)
+                val packageStates = NativeLibraryMarketService.resolvePackageStates(
+                    host,
+                    nativeLibraryMarketCatalog
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    uiState = uiState.copy(
+                        nativeLibraryMarketPackages = packageStates,
+                        nativeLibraryMarketErrorText = null
+                    )
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_native_library_market_removed,
+                            entry.displayName
+                        )
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    val summary = summarizeNativeLibraryMarketError(host, error)
+                    uiState = uiState.copy(nativeLibraryMarketErrorText = summary)
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_native_library_market_remove_failed,
+                            entry.displayName,
+                            summary
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     private fun runUpdateCheck(host: Activity, userInitiated: Boolean) {
         if (uiState.updateCheckInProgress) {
             return
         }
         uiState = uiState.copy(updateCheckInProgress = true)
-        val preferredSource = UpdateSource.normalizePreferredUserSource(
-            LauncherPreferences.readPreferredUpdateMirrorId(host)
-        )
+        val preferredSource = resolveSelectedMirrorSource(host)
         executor.execute {
             val result = LauncherUpdateService.checkForUpdates(
                 currentVersion = BuildConfig.VERSION_NAME,
@@ -392,6 +556,12 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.update_dialog_notes_empty)
             },
             downloadUrl = resolvedDownload.resolvedUrl
+        )
+    }
+
+    private fun resolveSelectedMirrorSource(host: Activity): UpdateSource {
+        return UpdateSource.normalizePreferredUserSource(
+            LauncherPreferences.readPreferredUpdateMirrorId(host)
         )
     }
 
@@ -1721,6 +1891,23 @@ class SettingsScreenViewModel : ViewModel() {
         duration: Int = Toast.LENGTH_LONG
     ) {
         Toast.makeText(host, message.resolve(host), duration).show()
+    }
+
+    private fun summarizeNativeLibraryMarketError(
+        host: Activity,
+        error: Throwable,
+        source: UpdateSource? = null,
+    ): String {
+        val message = error.message
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: host.getString(R.string.settings_native_library_market_error_unknown)
+        val displayName = source?.displayName?.trim().orEmpty()
+        return if (displayName.isNotEmpty()) {
+            "$displayName: $message"
+        } else {
+            message
+        }
     }
 
     private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {

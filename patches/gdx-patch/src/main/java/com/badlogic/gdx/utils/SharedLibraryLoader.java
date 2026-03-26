@@ -130,33 +130,45 @@ public class SharedLibraryLoader {
     }
 
     private boolean tryLoadFromAmethystNativeDir(String libraryName, String platformName) {
-        String nativeDir = resolveAmethystNativeDir();
-        if (nativeDir.length() == 0) return false;
-
-        File baseDir = new File(nativeDir);
-        if (!baseDir.exists() && !baseDir.mkdirs()) return false;
+        String[] nativeDirs = resolveAmethystNativeDirs();
+        if (nativeDirs.length == 0) return false;
 
         String[] candidateNames = buildNativeCandidateNames(libraryName, platformName);
-        for (String candidateName : candidateNames) {
-            File candidate = new File(baseDir, candidateName);
-            if (!candidate.exists()) {
-                tryExtractToFile(candidateName, candidate);
-            }
-            if (tryLoadAbsolute(candidate)) {
-                System.out.println("[gdx-patch] SharedLibraryLoader.load loaded from amethyst native dir: "
-                        + candidate.getAbsolutePath());
-                return true;
+        for (String nativeDir : nativeDirs) {
+            File baseDir = new File(nativeDir);
+            if (!baseDir.exists() && !baseDir.mkdirs()) continue;
+
+            for (String candidateName : candidateNames) {
+                File candidate = new File(baseDir, candidateName);
+                if (!candidate.exists()) {
+                    tryExtractToFile(candidateName, candidate);
+                }
+                if (tryLoadAbsolute(candidate)) {
+                    System.out.println("[gdx-patch] SharedLibraryLoader.load loaded from amethyst native dir: "
+                            + candidate.getAbsolutePath());
+                    return true;
+                }
             }
         }
         return false;
     }
 
-    private String resolveAmethystNativeDir() {
+    private String[] resolveAmethystNativeDirs() {
         String value = System.getProperty("amethyst.gdx.native_dir");
         if (value == null || value.trim().length() == 0) {
             value = System.getenv("AMETHYST_GDX_NATIVE_DIR");
         }
-        return value == null ? "" : value.trim();
+        if (value == null) return new String[0];
+
+        String[] rawValues = value.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator));
+        java.util.ArrayList<String> directories = new java.util.ArrayList<String>();
+        for (String rawValue : rawValues) {
+            if (rawValue == null) continue;
+            String trimmed = rawValue.trim();
+            if (trimmed.length() == 0) continue;
+            if (!directories.contains(trimmed)) directories.add(trimmed);
+        }
+        return directories.toArray(new String[0]);
     }
 
     private String[] buildNativeCandidateNames(String libraryName, String platformName) {

@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +28,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -116,6 +119,7 @@ fun LauncherSettingsScreen(
         onExportSaves = viewModel::onExportSaves,
         onExportLogs = { viewModel.onExportLogs(activity) },
         onExportLogsToFile = viewModel::onExportLogsToFile,
+        onOpenNativeLibraryMarket = { navigator.push(Route.NativeLibraryMarket) },
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onRendererSelectionModeChanged = { mode ->
@@ -255,6 +259,7 @@ private fun LauncherSettingsScreenContent(
     onExportSaves: () -> Unit = {},
     onExportLogs: () -> Unit = {},
     onExportLogsToFile: () -> Unit = {},
+    onOpenNativeLibraryMarket: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
@@ -358,6 +363,7 @@ private fun LauncherSettingsScreenContent(
                         onExportSaves = onExportSaves,
                         onExportLogs = onExportLogs,
                         onExportLogsToFile = onExportLogsToFile,
+                        onOpenNativeLibraryMarket = onOpenNativeLibraryMarket
                     )
                 }
             }
@@ -857,6 +863,7 @@ private fun SettingsImportSection(
     onExportSaves: () -> Unit,
     onExportLogs: () -> Unit,
     onExportLogsToFile: () -> Unit,
+    onOpenNativeLibraryMarket: () -> Unit,
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -917,6 +924,12 @@ private fun SettingsImportSection(
             supportingText = stringResource(R.string.settings_reimport_sts_jar_desc),
             enabled = !busy,
             onClick = onImportJar
+        )
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_native_library_market_title),
+            supportingText = stringResource(R.string.settings_native_library_market_desc),
+            enabled = !busy,
+            onClick = onOpenNativeLibraryMarket
         )
     }
 }

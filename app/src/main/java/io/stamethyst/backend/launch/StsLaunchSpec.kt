@@ -206,7 +206,10 @@ object StsLaunchSpec {
         val virtualWidth = virtualResolution.width
         val virtualHeight = virtualResolution.height
         args.add("-Damethyst.gdx.render_scale=$renderScale")
-        args.add("-Damethyst.gdx.native_dir=${RuntimePaths.gdxPatchNativesDir(context).absolutePath}")
+        args.add(
+            "-Damethyst.gdx.native_dir=" +
+                NativeLibraryPathResolver.buildAmethystGdxNativeDirValue(context)
+        )
         println(
             "StsLaunchSpec: " +
                 "renderScale=$renderScale, " +

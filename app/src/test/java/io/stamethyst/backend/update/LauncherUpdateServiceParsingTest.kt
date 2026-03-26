@@ -2,6 +2,7 @@ package io.stamethyst.backend.update
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LauncherUpdateServiceParsingTest {
@@ -42,5 +43,24 @@ class LauncherUpdateServiceParsingTest {
             "https://github.com/example/release.apk",
             UpdateSource.OFFICIAL.buildUrl("https://github.com/example/release.apk")
         )
+    }
+
+    @Test
+    fun buildUrl_prefixesGithubRawUrlsButLeavesExternalUrlsUnchanged() {
+        assertEquals(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/example/repo/main/file.txt",
+            UpdateSource.GH_PROXY_COM.buildUrl(
+                "https://raw.githubusercontent.com/example/repo/main/file.txt"
+            )
+        )
+        assertEquals(
+            "https://example.com/file.txt",
+            UpdateSource.GH_PROXY_COM.buildUrl("https://example.com/file.txt")
+        )
+    }
+
+    @Test
+    fun userSelectableSources_includeOfficialSource() {
+        assertTrue(UpdateSource.userSelectableSources().contains(UpdateSource.OFFICIAL))
     }
 }

@@ -3,6 +3,7 @@ package io.stamethyst.backend.update
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.net.URL
 import java.util.LinkedHashSet
 import java.util.Locale
 
@@ -52,15 +53,35 @@ enum class UpdateSource(
         proxyPrefix = null,
         supportsMetadataCheck = true,
         supportsDownloadProxy = true,
-        userSelectable = false
+        userSelectable = true
     );
 
     fun buildUrl(targetUrl: String): String {
-        return proxyPrefix?.plus(targetUrl) ?: targetUrl
+        val normalizedTarget = targetUrl.trim()
+        if (normalizedTarget.isEmpty()) {
+            return normalizedTarget
+        }
+        val prefix = proxyPrefix ?: return normalizedTarget
+        if (normalizedTarget.startsWith(prefix, ignoreCase = true)) {
+            return normalizedTarget
+        }
+        if (!isMirrorableGithubUrl(normalizedTarget)) {
+            return normalizedTarget
+        }
+        return prefix + normalizedTarget
     }
 
     companion object {
         val DEFAULT_PREFERRED_USER_SOURCE: UpdateSource = GH_PROXY_COM
+        private val mirrorableGithubHosts = setOf(
+            "github.com",
+            "api.github.com",
+            "raw.githubusercontent.com",
+            "codeload.github.com",
+            "objects.githubusercontent.com",
+            "media.githubusercontent.com",
+            "release-assets.githubusercontent.com"
+        )
 
         fun fromPersistedValue(value: String?): UpdateSource? {
             return entries.firstOrNull { it.id == value }
@@ -83,7 +104,7 @@ enum class UpdateSource(
             val preferred = normalizePreferredUserSource(preferredUserSource.id)
             val ordered = LinkedHashSet<UpdateSource>()
             ordered += preferred
-            for (source in userSelectableSources()) {
+            for (source in fallbackMirrorSources()) {
                 if (source != preferred && source.supportsMetadataCheck) {
                     ordered += source
                 }
@@ -98,7 +119,7 @@ enum class UpdateSource(
         ): List<UpdateSource> {
             val preferred = normalizePreferredUserSource(preferredUserSource.id)
             val ordered = LinkedHashSet<UpdateSource>()
-            for (source in userSelectableSources()) {
+            for (source in fallbackMirrorSources()) {
                 if (source.supportsDownloadProxy && source == preferred) {
                     ordered += source
                 }
@@ -106,7 +127,7 @@ enum class UpdateSource(
             if (metadataSource.supportsDownloadProxy) {
                 ordered += metadataSource
             }
-            for (source in userSelectableSources()) {
+            for (source in fallbackMirrorSources()) {
                 if (source.supportsDownloadProxy && source != preferred) {
                     ordered += source
                 }
@@ -114,6 +135,16 @@ enum class UpdateSource(
             ordered += GH_PROXY_NET
             ordered += OFFICIAL
             return ordered.filter { it.supportsDownloadProxy }
+        }
+
+        private fun fallbackMirrorSources(): List<UpdateSource> {
+            return entries.filter { it.userSelectable && it != OFFICIAL }
+        }
+
+        private fun isMirrorableGithubUrl(targetUrl: String): Boolean {
+            val host = runCatching { URL(targetUrl).host.lowercase(Locale.ROOT) }.getOrNull()
+                ?: return false
+            return host in mirrorableGithubHosts || host.endsWith(".githubusercontent.com")
         }
     }
 }

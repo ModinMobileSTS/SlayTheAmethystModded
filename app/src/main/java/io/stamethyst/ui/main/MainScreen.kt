@@ -65,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -405,7 +406,8 @@ private fun CrashRecoveryScreen(
     onCloseApp: () -> Unit,
 ) {
     val context = LocalContext.current
-    val infoBadges = remember(crashRecovery.code, crashRecovery.isSignal, context) {
+    val resources = LocalResources.current
+    val infoBadges = remember(crashRecovery.code, crashRecovery.isSignal, context, resources) {
         val rendererDecision = RendererBackendResolver.resolve(
             context = context,
             requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(context),
@@ -414,20 +416,20 @@ private fun CrashRecoveryScreen(
         )
         buildList {
             add(
-                context.getString(
+                resources.getString(
                     R.string.sts_crash_page_chip_renderer_format,
                     rendererDecision.effectiveBackend.displayName
                 )
             )
             add(
-                context.getString(
+                resources.getString(
                     R.string.sts_crash_page_chip_android_format,
                     Build.VERSION.RELEASE.orEmpty().ifBlank { "?" },
                     Build.VERSION.SDK_INT
                 )
             )
             add(
-                context.getString(
+                resources.getString(
                     R.string.sts_crash_page_chip_build_format,
                     BuildConfig.VERSION_NAME,
                     BuildConfig.BUILD_TYPE
@@ -435,12 +437,12 @@ private fun CrashRecoveryScreen(
             )
             add(
                 if (crashRecovery.isSignal) {
-                    context.getString(
+                    resources.getString(
                         R.string.sts_crash_page_chip_signal_format,
                         crashRecovery.code
                     )
                 } else {
-                    context.getString(
+                    resources.getString(
                         R.string.sts_crash_page_chip_exit_code_format,
                         crashRecovery.code
                     )

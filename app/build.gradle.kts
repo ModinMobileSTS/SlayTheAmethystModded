@@ -240,9 +240,6 @@ val log4jRuntimeComponents by configurations.creating {
 }
 val adb: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
 val runtimePackZip: RegularFile = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
-val gdxVideoNativeAssetFiles = listOf(
-    rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so")
-)
 val tensorFlowNativeAssetDir = rootProject.layout.projectDirectory.dir("runtime-pack/tensorflow_natives")
 val supportedLaunchModes = setOf("mts", "vanilla")
 val stsJvmLogExportMaxSlots = 5
@@ -423,13 +420,8 @@ val installPatchJars by tasks.registering(Sync::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_patch") })
 }
 
-val installGdxVideoNatives by tasks.registering(Sync::class) {
+val installBundledRuntimeNatives by tasks.registering(Sync::class) {
     doFirst {
-        gdxVideoNativeAssetFiles.forEach { nativeFile ->
-            if (!nativeFile.asFile.isFile) {
-                throw GradleException("Missing gdx-video native asset: ${nativeFile.asFile.absolutePath}")
-            }
-        }
         val tensorFlowNativeDirFile = tensorFlowNativeAssetDir.asFile
         if (tensorFlowNativeDirFile.isDirectory) {
             val hasTensorFlowJni = fileTree(tensorFlowNativeDirFile).matching {
@@ -459,9 +451,8 @@ val installGdxVideoNatives by tasks.registering(Sync::class) {
             }
         }
     }
-    from(gdxVideoNativeAssetFiles)
     from(tensorFlowNativeAssetDir)
-    into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_video_natives") })
+    into(generatedRuntimeAssetsDir.map { it.dir("components/bundled_runtime_natives") })
 }
 
 val installLog4jRuntimeAssets by tasks.registering(Sync::class) {
@@ -509,7 +500,7 @@ tasks.preBuild.configure {
     dependsOn(installBootBridgeJar)
     dependsOn(installLwjglBridgeAssets)
     dependsOn(installPatchJars)
-    dependsOn(installGdxVideoNatives)
+    dependsOn(installBundledRuntimeNatives)
     dependsOn(installLog4jRuntimeAssets)
     dependsOn(installRuntimePackAssets)
 }

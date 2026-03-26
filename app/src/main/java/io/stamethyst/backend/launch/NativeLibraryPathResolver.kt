@@ -10,8 +10,15 @@ import java.util.LinkedHashSet
 internal object NativeLibraryPathResolver {
     fun collectAdditionalSearchDirectories(context: Context): List<File> {
         val directories = LinkedHashSet<String>()
-        addDirectoryAndLibraryChildren(directories, RuntimePaths.gdxPatchNativesDir(context))
+        collectNativeSearchRoots(context).forEach { root ->
+            addDirectoryAndLibraryChildren(directories, root)
+        }
         return directories.map(::File)
+    }
+
+    fun buildAmethystGdxNativeDirValue(context: Context): String {
+        return collectAdditionalSearchDirectories(context)
+            .joinToString(File.pathSeparator) { it.absolutePath }
     }
 
     fun buildJavaLibraryPath(
@@ -74,6 +81,13 @@ internal object NativeLibraryPathResolver {
             }
         }
         return null
+    }
+
+    private fun collectNativeSearchRoots(context: Context): List<File> {
+        return listOf(
+            RuntimePaths.gdxPatchNativesDir(context),
+            RuntimePaths.nativeMarketActiveDir(context)
+        )
     }
 
     private fun addDirectoryAndLibraryChildren(

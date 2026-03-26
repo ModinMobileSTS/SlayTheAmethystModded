@@ -21,29 +21,15 @@ object LauncherUpdateService {
         currentVersion: String,
         preferredUserSource: UpdateSource,
     ): UpdateCheckExecutionResult {
-        var lastErrorSummary = "Unable to reach any update source."
-        var successfulMetadataSource: UpdateSource? = null
-        var releaseInfo: UpdateReleaseInfo? = null
-
-        for (source in UpdateSource.metadataCandidates(preferredUserSource)) {
-            val requestUrl = source.buildUrl(LATEST_RELEASE_API_URL)
-            try {
-                val responseText = requestText(requestUrl)
-                val parsed = parseLatestRelease(responseText)
-                    ?: throw IOException("Invalid release payload.")
-                successfulMetadataSource = source
-                releaseInfo = parsed
-                break
-            } catch (error: Throwable) {
-                lastErrorSummary = "${source.displayName}: ${summarizeError(error)}"
-            }
-        }
-
-        val metadataSource = successfulMetadataSource
-        val release = releaseInfo
-        if (metadataSource == null || release == null) {
+        val metadataSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
+        val release = try {
+            val responseText = requestText(metadataSource.buildUrl(LATEST_RELEASE_API_URL))
+            parseLatestRelease(responseText)
+                ?: throw IOException("Invalid release payload.")
+        } catch (error: Throwable) {
             return UpdateCheckExecutionResult.Failure(
-                errorSummary = lastErrorSummary
+                errorSummary = "${metadataSource.displayName}: ${summarizeError(error)}",
+                metadataSource = metadataSource
             )
         }
 
@@ -63,12 +49,11 @@ object LauncherUpdateService {
 
         val downloadResolution = resolveDownloadResolution(
             release = release,
-            preferredUserSource = preferredUserSource,
-            metadataSource = metadataSource
+            source = metadataSource
         )
         if (downloadResolution == null) {
             return UpdateCheckExecutionResult.Failure(
-                errorSummary = "Unable to resolve a reachable APK download link.",
+                errorSummary = "${metadataSource.displayName}: Unable to resolve a reachable APK download link.",
                 release = release,
                 metadataSource = metadataSource
             )
@@ -111,17 +96,14 @@ object LauncherUpdateService {
 
     internal fun resolveDownloadResolution(
         release: UpdateReleaseInfo,
-        preferredUserSource: UpdateSource,
-        metadataSource: UpdateSource,
+        source: UpdateSource,
     ): UpdateDownloadResolution? {
-        for (source in UpdateSource.downloadCandidates(preferredUserSource, metadataSource)) {
-            val candidateUrl = source.buildUrl(release.assetDownloadUrl)
-            if (isDownloadCandidateReachable(candidateUrl)) {
-                return UpdateDownloadResolution(
-                    source = source,
-                    resolvedUrl = candidateUrl
-                )
-            }
+        val candidateUrl = source.buildUrl(release.assetDownloadUrl)
+        if (isDownloadCandidateReachable(candidateUrl)) {
+            return UpdateDownloadResolution(
+                source = source,
+                resolvedUrl = candidateUrl
+            )
         }
         return null
     }

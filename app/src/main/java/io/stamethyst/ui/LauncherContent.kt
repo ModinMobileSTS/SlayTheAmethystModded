@@ -54,6 +54,7 @@ import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
 import io.stamethyst.ui.settings.LauncherMobileGluesSettingsScreen
+import io.stamethyst.ui.settings.LauncherNativeLibraryMarketScreen
 import io.stamethyst.ui.settings.LauncherSettingsScreen
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 
@@ -178,6 +179,13 @@ fun LauncherContent(
                                 onDismissFeedbackSubmissionNotice = {
                                     pendingFeedbackNotice = null
                                 }
+                            )
+                        }
+
+                        entry<Route.NativeLibraryMarket> {
+                            LauncherNativeLibraryMarketScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
 

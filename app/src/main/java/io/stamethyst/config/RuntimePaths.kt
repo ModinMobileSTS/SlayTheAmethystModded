@@ -215,6 +215,19 @@ object RuntimePaths {
     fun gdxPatchNativesDir(context: Context): File = File(gdxPatchDir(context), "natives")
 
     @JvmStatic
+    fun nativeMarketDir(context: Context): File = File(componentRoot(context), "native_market")
+
+    @JvmStatic
+    fun nativeMarketPackagesDir(context: Context): File = File(nativeMarketDir(context), "packages")
+
+    @JvmStatic
+    fun nativeMarketPackageDir(context: Context, packageId: String): File =
+        File(nativeMarketPackagesDir(context), packageId)
+
+    @JvmStatic
+    fun nativeMarketActiveDir(context: Context): File = File(nativeMarketDir(context), "active")
+
+    @JvmStatic
     fun cacioDir(context: Context): File = File(componentRoot(context), "caciocavallo")
 
     @JvmStatic
@@ -421,6 +434,8 @@ object RuntimePaths {
         bootBridgeDir(context).mkdirs()
         gdxPatchDir(context).mkdirs()
         gdxPatchNativesDir(context).mkdirs()
+        nativeMarketPackagesDir(context).mkdirs()
+        nativeMarketActiveDir(context).mkdirs()
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         runtimeRoot(context).mkdirs()
