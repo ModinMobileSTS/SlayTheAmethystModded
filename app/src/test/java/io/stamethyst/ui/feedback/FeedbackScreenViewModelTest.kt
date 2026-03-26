@@ -1,5 +1,6 @@
 package io.stamethyst.ui.feedback
 
+import io.stamethyst.backend.feedback.FeedbackCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -37,5 +38,125 @@ class FeedbackScreenViewModelTest {
 
         assertEquals(101, uiState.detailedFeedbackLength)
         assertFalse(uiState.shouldWarnAboutBriefFeedback)
+    }
+
+    @Test
+    fun startsInCategorySelectionStep() {
+        val viewModel = FeedbackScreenViewModel()
+
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            viewModel.uiState.submissionStep
+        )
+    }
+
+    @Test
+    fun continueAfterCategorySelected_movesToFormStep() {
+        val viewModel = FeedbackScreenViewModel()
+
+        viewModel.onCategorySelected(FeedbackCategory.LAUNCHER_BUG)
+        viewModel.onContinueAfterCategorySelected()
+
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.FORM,
+            viewModel.uiState.submissionStep
+        )
+    }
+
+    @Test
+    fun continueWithoutCategory_keepsCategorySelectionStep() {
+        val viewModel = FeedbackScreenViewModel()
+
+        viewModel.onContinueAfterCategorySelected()
+
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            viewModel.uiState.submissionStep
+        )
+    }
+
+    @Test
+    fun returnToCategorySelection_movesBackToFirstStep() {
+        val viewModel = FeedbackScreenViewModel()
+
+        viewModel.onCategorySelected(FeedbackCategory.GAME_BUG)
+        viewModel.onContinueAfterCategorySelected()
+        viewModel.onReturnToCategorySelection()
+
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            viewModel.uiState.submissionStep
+        )
+        assertFalse(viewModel.uiState.showBriefFeedbackConfirmation)
+    }
+
+    @Test
+    fun uiStateAllSubmissionAcknowledgementsChecked_onlyTrueWhenAllChecked() {
+        val allAcknowledgements = FeedbackScreenViewModel.SubmissionAcknowledgement.entries.toSet()
+        val incompleteState = FeedbackScreenViewModel.UiState(
+            checkedSubmissionAcknowledgements = allAcknowledgements -
+                FeedbackScreenViewModel.SubmissionAcknowledgement.DEVELOPER_IS_NOT_CUSTOMER_SUPPORT
+        )
+        val completeState = incompleteState.copy(
+            checkedSubmissionAcknowledgements = allAcknowledgements
+        )
+
+        assertFalse(incompleteState.allSubmissionAcknowledgementsChecked)
+        assertTrue(completeState.allSubmissionAcknowledgementsChecked)
+    }
+
+    @Test
+    fun acknowledgementToggles_updateAllSubmissionAcknowledgementsChecked() {
+        val viewModel = FeedbackScreenViewModel()
+
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.UNCLEAR_DESCRIPTION_DELAYS_RESOLUTION,
+            true
+        )
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.MOD_CONFLICT_NOT_SUPPORTED,
+            true
+        )
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.TRIED_FIXING_BEFORE_SUBMITTING,
+            true
+        )
+        assertFalse(viewModel.uiState.allSubmissionAcknowledgementsChecked)
+
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.DEVELOPER_IS_NOT_CUSTOMER_SUPPORT,
+            true
+        )
+
+        assertTrue(viewModel.uiState.allSubmissionAcknowledgementsChecked)
+    }
+
+    @Test
+    fun returnToForm_setsFormStep() {
+        val viewModel = FeedbackScreenViewModel()
+
+        viewModel.onReturnToForm()
+
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.FORM,
+            viewModel.uiState.submissionStep
+        )
+        assertFalse(viewModel.uiState.showBriefFeedbackConfirmation)
+    }
+
+    @Test
+    fun submissionStepPreviousStep_matchesExpectedFlow() {
+        assertEquals(
+            null,
+            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION.previousStep()
+        )
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            FeedbackScreenViewModel.SubmissionStep.FORM.previousStep()
+        )
+        assertEquals(
+            FeedbackScreenViewModel.SubmissionStep.FORM,
+            FeedbackScreenViewModel.SubmissionStep.SUBMISSION_CONFIRMATION.previousStep()
+        )
     }
 }

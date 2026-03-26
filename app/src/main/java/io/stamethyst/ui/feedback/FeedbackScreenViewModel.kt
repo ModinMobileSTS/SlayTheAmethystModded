@@ -4,6 +4,7 @@ import android.app.Activity
 import android.net.Uri
 import android.util.Patterns
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +48,35 @@ class FeedbackScreenViewModel : ViewModel() {
         private const val MAX_SCREENSHOT_ATTACHMENTS = 4
     }
 
+    enum class SubmissionStep {
+        CATEGORY_SELECTION,
+        FORM,
+        SUBMISSION_CONFIRMATION;
+
+        fun previousStep(): SubmissionStep? = when (this) {
+            CATEGORY_SELECTION -> null
+            FORM -> CATEGORY_SELECTION
+            SUBMISSION_CONFIRMATION -> FORM
+        }
+    }
+
+    enum class SubmissionAcknowledgement(
+        @param:StringRes val titleResId: Int
+    ) {
+        UNCLEAR_DESCRIPTION_DELAYS_RESOLUTION(
+            R.string.feedback_submission_acknowledgement_1
+        ),
+        MOD_CONFLICT_NOT_SUPPORTED(
+            R.string.feedback_submission_acknowledgement_2
+        ),
+        TRIED_FIXING_BEFORE_SUBMITTING(
+            R.string.feedback_submission_acknowledgement_3
+        ),
+        DEVELOPER_IS_NOT_CUSTOMER_SUPPORT(
+            R.string.feedback_submission_acknowledgement_4
+        )
+    }
+
     sealed interface Effect {
         data object OpenScreenshotPicker : Effect
         data class SubmissionCompleted(
@@ -74,6 +104,7 @@ class FeedbackScreenViewModel : ViewModel() {
         val busy: Boolean = false,
         val busyMessage: String? = null,
         val endpointConfigured: Boolean = BuildConfig.FEEDBACK_ENDPOINT.trim().isNotEmpty(),
+        val submissionStep: SubmissionStep = SubmissionStep.CATEGORY_SELECTION,
         val availableMods: List<ModOption> = emptyList(),
         val category: FeedbackCategory? = null,
         val gameIssueType: GameIssueType? = null,
@@ -86,6 +117,7 @@ class FeedbackScreenViewModel : ViewModel() {
         val email: String = "",
         val emailNotificationsEnabled: Boolean = true,
         val screenshots: List<ScreenshotItem> = emptyList(),
+        val checkedSubmissionAcknowledgements: Set<SubmissionAcknowledgement> = emptySet(),
         val showBriefFeedbackConfirmation: Boolean = false
     ) {
         val detailedFeedbackLength: Int
@@ -93,6 +125,9 @@ class FeedbackScreenViewModel : ViewModel() {
 
         val shouldWarnAboutBriefFeedback: Boolean
             get() = detailedFeedbackLength <= BRIEF_FEEDBACK_WARNING_THRESHOLD
+
+        val allSubmissionAcknowledgementsChecked: Boolean
+            get() = checkedSubmissionAcknowledgements.containsAll(SubmissionAcknowledgement.entries)
     }
 
     private data class ScreenshotAttachment(
@@ -133,6 +168,69 @@ class FeedbackScreenViewModel : ViewModel() {
                 selectedSuspectedModKeys = emptySet()
             )
         }
+    }
+
+    fun onContinueAfterCategorySelected() {
+        if (uiState.category == null) {
+            return
+        }
+        uiState = uiState.copy(submissionStep = SubmissionStep.FORM)
+    }
+
+    fun onReturnToCategorySelection() {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(
+            submissionStep = SubmissionStep.CATEGORY_SELECTION,
+            showBriefFeedbackConfirmation = false
+        )
+    }
+
+    fun onContinueAfterFormFilled(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        val validationError = validateDraft(host)
+        if (validationError != null) {
+            Toast.makeText(host, validationError, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!uiState.endpointConfigured) {
+            Toast.makeText(
+                host,
+                host.getString(R.string.feedback_endpoint_missing_submit),
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        uiState = uiState.copy(
+            submissionStep = SubmissionStep.SUBMISSION_CONFIRMATION,
+            showBriefFeedbackConfirmation = false
+        )
+    }
+
+    fun onReturnToForm() {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(
+            submissionStep = SubmissionStep.FORM,
+            showBriefFeedbackConfirmation = false
+        )
+    }
+
+    fun onSubmissionAcknowledgementChanged(
+        acknowledgement: SubmissionAcknowledgement,
+        checked: Boolean
+    ) {
+        val next = uiState.checkedSubmissionAcknowledgements.toMutableSet()
+        if (checked) {
+            next.add(acknowledgement)
+        } else {
+            next.remove(acknowledgement)
+        }
+        uiState = uiState.copy(checkedSubmissionAcknowledgements = next)
     }
 
     fun onGameIssueTypeSelected(issueType: GameIssueType) {
@@ -286,6 +384,11 @@ class FeedbackScreenViewModel : ViewModel() {
         val validationError = validateDraft(host)
         if (validationError != null) {
             Toast.makeText(host, validationError, Toast.LENGTH_LONG).show()
+            return
+        }
+        val acknowledgementValidationError = validateSubmissionAcknowledgements(host)
+        if (acknowledgementValidationError != null) {
+            Toast.makeText(host, acknowledgementValidationError, Toast.LENGTH_LONG).show()
             return
         }
         if (!uiState.endpointConfigured) {
@@ -519,6 +622,7 @@ class FeedbackScreenViewModel : ViewModel() {
         clearWorkingDir()
         screenshotAttachments.clear()
         uiState = UiState(
+            submissionStep = SubmissionStep.CATEGORY_SELECTION,
             endpointConfigured = uiState.endpointConfigured,
             availableMods = currentMods
         )
@@ -612,6 +716,14 @@ class FeedbackScreenViewModel : ViewModel() {
                 append('\n')
                 append(draft.reproductionSteps.trim())
             }
+        }
+    }
+
+    private fun validateSubmissionAcknowledgements(host: Activity): String? {
+        return if (uiState.allSubmissionAcknowledgementsChecked) {
+            null
+        } else {
+            host.getString(R.string.feedback_validation_submission_acknowledgements)
         }
     }
 

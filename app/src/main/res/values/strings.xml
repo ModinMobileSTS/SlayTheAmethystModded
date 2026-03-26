@@ -640,9 +640,17 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_endpoint_unconfigured_title">Upload unavailable</string>
     <string name="feedback_endpoint_unconfigured_message">This build has no feedback upload endpoint configured. You can fill in the form, but it cannot actually submit to the cloud function.</string>
     <string name="feedback_section_category">1. Report type</string>
+    <string name="feedback_question_category_title">1. What do you want to report?</string>
+    <string name="feedback_question_category_hint">Choose the closest type first, then continue to the detailed form.</string>
     <string name="feedback_category_game_bug">In-game bug</string>
+    <string name="feedback_category_game_bug_description">Includes game crashes, display problems, and mods not working correctly in game.</string>
     <string name="feedback_category_launcher_bug">Launcher bug</string>
+    <string name="feedback_category_launcher_bug_description">Problems outside the game, for example when launcher mod categories stop working.</string>
     <string name="feedback_category_feature_request">Feature request</string>
+    <string name="feedback_category_feature_request_description">Ask for a new feature, for example the ability to rename mods in the launcher.</string>
+    <string name="feedback_next_step">Next</string>
+    <string name="feedback_change_category">Choose again</string>
+    <string name="feedback_form_confirm">Confirm</string>
     <string name="feedback_section_recent_run">2. Most recent run</string>
     <string name="feedback_recent_run_yes">Yes, this happened in the most recent run</string>
     <string name="feedback_recent_run_no">No, but I still want to submit it</string>
@@ -658,6 +666,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_issue_type_crash">Crash</string>
     <string name="feedback_section_details_game">5. Details</string>
     <string name="feedback_section_details_other">2. Details</string>
+    <string name="feedback_details_subtitle">When filling out this section, describe the issue in as much detail and with as much precision as possible so developers can locate and fix it accurately.</string>
     <string name="feedback_summary_label">One-line summary</string>
     <string name="feedback_section_screenshots_game">6. Screenshots</string>
     <string name="feedback_section_screenshots_other">3. Screenshots</string>
@@ -670,6 +679,11 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_email_opt_in_title">Send me an email when this report gets an update.</string>
     <string name="feedback_email_opt_in_subtitle">Your email address will not be shown publicly in the GitHub Issue.</string>
     <string name="feedback_email_label">Notification email</string>
+    <string name="feedback_submission_confirmation_title">Before you submit</string>
+    <string name="feedback_submission_acknowledgement_1">I understand that confusing issue descriptions will slow down the resolution process.</string>
+    <string name="feedback_submission_acknowledgement_2">I understand that the launcher will not provide fixes for conflicts caused between mods.</string>
+    <string name="feedback_submission_acknowledgement_3">I confirm that before submitting this feedback, I already tried to fix the problem, but still could not solve it, or only partially located the cause.</string>
+    <string name="feedback_submission_acknowledgement_4">I understand that the developer is not customer support and is not obligated to solve problems for me.</string>
     <string name="feedback_submit">Submit feedback</string>
     <string name="feedback_busy_syncing_subscriptions">Syncing tracked issues...</string>
     <string name="feedback_subscriptions_intro">This page lists the issues you already follow. You can check progress, open the conversation, or unfollow them here.</string>
@@ -754,6 +768,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_validation_suspected_mod">Select the mods you suspect, or choose &quot;Not sure&quot;.</string>
     <string name="feedback_validation_issue_type">Choose the symptom type.</string>
     <string name="feedback_validation_game_detail">Describe the in-game issue.</string>
+    <string name="feedback_validation_submission_acknowledgements">Check all pre-submission confirmation items first.</string>
     <string name="feedback_submission_notice_title">Feedback submitted</string>
     <string name="feedback_submission_notice_issue_followed">Feedback submitted. GitHub Issue #%1$d was created and automatically added to Tracked issues.\n\nYou can follow it later from Settings -> Feedback -> Tracked issues. When there are updates, the launcher home screen will also show a notification.</string>
     <string name="feedback_submission_notice_issue_created">Feedback submitted. GitHub Issue #%1$d was created.\n\nYou can follow it later from Settings -> Feedback -> Tracked issues.</string>
