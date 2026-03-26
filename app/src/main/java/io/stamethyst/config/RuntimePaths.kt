@@ -228,6 +228,13 @@ object RuntimePaths {
     fun nativeMarketActiveDir(context: Context): File = File(nativeMarketDir(context), "active")
 
     @JvmStatic
+    fun modSuggestionDir(context: Context): File = File(componentRoot(context), "mod_suggestions")
+
+    @JvmStatic
+    fun modSuggestionCacheFile(context: Context, localeKey: String): File =
+        File(modSuggestionDir(context), "suggestion-$localeKey.json")
+
+    @JvmStatic
     fun cacioDir(context: Context): File = File(componentRoot(context), "caciocavallo")
 
     @JvmStatic
@@ -436,6 +443,7 @@ object RuntimePaths {
         gdxPatchNativesDir(context).mkdirs()
         nativeMarketPackagesDir(context).mkdirs()
         nativeMarketActiveDir(context).mkdirs()
+        modSuggestionDir(context).mkdirs()
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         runtimeRoot(context).mkdirs()

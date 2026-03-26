@@ -134,6 +134,7 @@ fun LauncherMainScreen(
     LaunchedEffect(hostActivity) {
         if (hostActivity != null) {
             viewModel.refresh(hostActivity)
+            viewModel.syncModSuggestionsIfNeeded(hostActivity)
         }
     }
 
@@ -145,6 +146,7 @@ fun LauncherMainScreen(
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
                     viewModel.refresh(activity)
+                    viewModel.syncModSuggestionsIfNeeded(activity)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)

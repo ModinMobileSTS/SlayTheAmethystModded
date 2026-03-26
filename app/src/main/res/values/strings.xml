@@ -260,6 +260,9 @@
     <string name="main_mod_actions">Action</string>
     <string name="main_mod_actions_title">Mod actions</string>
     <string name="main_mod_priority_badge">Priority</string>
+    <string name="main_mod_suggestion_update_title">Mod notices updated</string>
+    <string name="main_mod_suggestion_update_message">The mod notice list was updated. Mods with a circled exclamation mark now have notices you can open from their cards.</string>
+    <string name="main_mod_suggestion_dialog_title_format">%1$s notice</string>
     <string name="main_mod_priority_add">Mark priority load</string>
     <string name="main_mod_priority_remove">Remove priority load</string>
     <string name="main_mod_export">Export</string>

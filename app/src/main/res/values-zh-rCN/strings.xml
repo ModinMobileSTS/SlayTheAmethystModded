@@ -260,6 +260,9 @@
     <string name="main_mod_actions">操作</string>
     <string name="main_mod_actions_title">模组操作</string>
     <string name="main_mod_priority_badge">优先</string>
+    <string name="main_mod_suggestion_update_title">模组提示已更新</string>
+    <string name="main_mod_suggestion_update_message">模组提示列表已更新。带有圆圈感叹号的模组卡片现在可以点开查看提示。</string>
+    <string name="main_mod_suggestion_dialog_title_format">%1$s 提示</string>
     <string name="main_mod_priority_add">标记优先加载</string>
     <string name="main_mod_priority_remove">取消优先加载</string>
     <string name="main_mod_export">导出</string>

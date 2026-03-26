@@ -34,8 +34,10 @@ import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.ModSuggestionService
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
+import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.StsExternalStorageAccess
@@ -46,6 +48,8 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.JvmLogShareService
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
@@ -88,6 +92,7 @@ class MainScreenViewModel : ViewModel() {
         val controlsEnabled: Boolean = true,
         val gameProcessRunning: Boolean = false,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
+        val modSuggestions: Map<String, String> = emptyMap(),
         val modFolders: List<ModFolder> = emptyList(),
         val folderAssignments: Map<String, String> = emptyMap(),
         val folderCollapsed: Map<String, Boolean> = emptyMap(),
@@ -109,6 +114,10 @@ class MainScreenViewModel : ViewModel() {
 
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 32)
     val effects = _effects.asSharedFlow()
+    private val suggestionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var currentModSuggestions: Map<String, String> = emptyMap()
+    private var modSuggestionSyncInProgress = false
+    private var lastSuccessfulModSuggestionSyncSignature: String? = null
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -148,6 +157,7 @@ class MainScreenViewModel : ViewModel() {
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
         val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
         val hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
+        currentModSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
 
         modManagementController.refresh(host, storageAccessible = storageIssue == null)
         publishUiState(
@@ -158,6 +168,47 @@ class MainScreenViewModel : ViewModel() {
             hasStsLib = hasStsLib,
             storageIssue = storageIssue
         )
+    }
+
+    fun syncModSuggestionsIfNeeded(host: Activity) {
+        val cachedSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
+        if (cachedSuggestions != currentModSuggestions) {
+            currentModSuggestions = cachedSuggestions
+            uiState = uiState.copy(modSuggestions = currentModSuggestions)
+        }
+
+        val selectedSource = UpdateSource.normalizePreferredUserSource(
+            LauncherPreferences.readPreferredUpdateMirrorId(host)
+        )
+        val syncSignature = "${ModSuggestionService.currentLocaleKey(host)}|${selectedSource.id}"
+        if (modSuggestionSyncInProgress || lastSuccessfulModSuggestionSyncSignature == syncSignature) {
+            return
+        }
+
+        modSuggestionSyncInProgress = true
+        suggestionExecutor.execute {
+            val result = runCatching {
+                ModSuggestionService.sync(host, selectedSource)
+            }.getOrNull()
+            host.runOnUiThread {
+                modSuggestionSyncInProgress = false
+                if (host.isFinishing || host.isDestroyed || result == null) {
+                    return@runOnUiThread
+                }
+
+                lastSuccessfulModSuggestionSyncSignature = syncSignature
+                currentModSuggestions = result.snapshot.suggestions
+                uiState = uiState.copy(modSuggestions = currentModSuggestions)
+                if (result.contentChanged) {
+                    _effects.tryEmit(
+                        Effect.ShowDialog(
+                            title = UiText.StringResource(R.string.main_mod_suggestion_update_title),
+                            message = UiText.StringResource(R.string.main_mod_suggestion_update_message)
+                        )
+                    )
+                }
+            }
+        }
     }
 
     fun onDeleteMod(host: Activity, mod: ModItemUi) {
@@ -1036,6 +1087,7 @@ class MainScreenViewModel : ViewModel() {
             controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation, storageIssue != null),
             gameProcessRunning = gameProcessRunning,
             showModFileName = LauncherPreferences.readShowModFileName(host),
+            modSuggestions = currentModSuggestions,
             modFolders = snapshot.modFolders,
             folderAssignments = snapshot.folderAssignments,
             folderCollapsed = snapshot.folderCollapsed,
@@ -1118,6 +1170,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        suggestionExecutor.shutdownNow()
         modManagementController.shutdown()
         super.onCleared()
     }

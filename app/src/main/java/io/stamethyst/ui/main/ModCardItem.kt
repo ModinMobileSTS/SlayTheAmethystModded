@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +75,7 @@ internal data class ModCardCallbacks(
 @Composable
 internal fun ModCard(
     mod: ModItemUi,
+    suggestionText: String? = null,
     isExpanded: Boolean,
     isDraggedInOverlay: Boolean,
     showModFileName: Boolean,
@@ -89,6 +93,7 @@ internal fun ModCard(
     var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDisplayModeWarningDialog by remember(mod.storagePath) { mutableStateOf(false) }
+    var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(10.dp)
     val dragVisualOffsetFromPointer = remember(density) {
 //        Offset(x = 0f, y = with(density) { MOD_DRAG_VISUAL_OFFSET_Y_DP.dp.toPx() })
@@ -185,6 +190,9 @@ internal fun ModCard(
                     showActionsDialog = true
                 }
             },
+            modSuggestionText = suggestionText,
+            suggestionBadgeEnabled = true,
+            onSuggestionClick = { showSuggestionDialog = true },
             headerTrailing = {
                 if (selectionEnabled) {
                     Checkbox(
@@ -216,6 +224,26 @@ internal fun ModCard(
                             MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
                         }
                     )
+                }
+            }
+        )
+    }
+
+    if (showSuggestionDialog && !suggestionText.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { showSuggestionDialog = false },
+            title = {
+                Text(
+                    text = stringResource(
+                        R.string.main_mod_suggestion_dialog_title_format,
+                        resolveModDisplayName(mod, showModFileName = false)
+                    )
+                )
+            },
+            text = { Text(text = suggestionText) },
+            confirmButton = {
+                TextButton(onClick = { showSuggestionDialog = false }) {
+                    Text(text = stringResource(R.string.common_action_confirm))
                 }
             }
         )
@@ -353,6 +381,9 @@ internal fun DraggingModCardOverlay(
                 showActionsButton = false,
                 actionsEnabled = false,
                 onActionsClick = {},
+                modSuggestionText = null,
+                suggestionBadgeEnabled = false,
+                onSuggestionClick = {},
                 headerTrailing = {
                     Checkbox(
                         checked = mod.enabled,

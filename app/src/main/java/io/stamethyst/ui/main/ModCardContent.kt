@@ -1,5 +1,6 @@
 package io.stamethyst.ui.main
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +36,9 @@ internal fun ModCardBodyContent(
     showActionsButton: Boolean,
     actionsEnabled: Boolean,
     onActionsClick: () -> Unit,
+    modSuggestionText: String? = null,
+    suggestionBadgeEnabled: Boolean = true,
+    onSuggestionClick: () -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
     val resolvedName = resolveModDisplayName(mod, showModFileName = showModFileName)
@@ -56,18 +60,26 @@ internal fun ModCardBodyContent(
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = resolvedName,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f, fill = false),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (!modSuggestionText.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    ModSuggestionIcon(
+                        enabled = suggestionBadgeEnabled,
+                        onClick = onSuggestionClick
+                    )
+                }
                 if (mod.priorityLoad) {
+                    Spacer(modifier = Modifier.width(6.dp))
                     PriorityLoadBadge()
                 }
             }
@@ -115,6 +127,25 @@ internal fun ModCardBodyContent(
             }
         }
     }
+}
+
+@Composable
+private fun ModSuggestionIcon(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Icon(
+        painter = painterResource(R.drawable.ic_error_outline),
+        contentDescription = null,
+        tint = if (enabled) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.outline
+        },
+        modifier = Modifier
+            .size(18.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+    )
 }
 
 @Composable

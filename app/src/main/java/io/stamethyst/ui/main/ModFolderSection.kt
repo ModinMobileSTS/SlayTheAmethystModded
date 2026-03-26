@@ -340,6 +340,7 @@ internal fun ModFolderSection(
                 item(key = "dependencyFolder") {
                     DependencyFolderListItem(
                         mods = dependencyMods,
+                        modSuggestions = uiState.modSuggestions,
                         collapsed = dependencyFolderCollapsed,
                         forceCollapsed = dragCoordinator.shouldCollapseFolders,
                         showModFileName = showModFileName,
@@ -609,6 +610,7 @@ internal fun ModFolderSection(
                                             key(mod.storagePath) {
                                                 ModCard(
                                                     mod = mod,
+                                                    suggestionText = resolveModSuggestionText(mod, uiState.modSuggestions),
                                                     isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                                                     isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                                     showModFileName = showModFileName,
@@ -657,6 +659,7 @@ internal fun ModFolderSection(
 @Composable
 private fun DependencyFolderListItem(
     mods: List<ModItemUi>,
+    modSuggestions: Map<String, String>,
     collapsed: Boolean,
     forceCollapsed: Boolean,
     showModFileName: Boolean,
@@ -736,6 +739,7 @@ private fun DependencyFolderListItem(
                     key(mod.storagePath) {
                         ModCard(
                             mod = mod,
+                            suggestionText = resolveModSuggestionText(mod, modSuggestions),
                             isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                             isDraggedInOverlay = false,
                             showModFileName = showModFileName,

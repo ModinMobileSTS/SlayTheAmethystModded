@@ -97,6 +97,31 @@ internal fun resolveModDisplayName(mod: ModItemUi, showModFileName: Boolean = fa
     }
 }
 
+internal fun resolveModSuggestionText(
+    mod: ModItemUi,
+    suggestions: Map<String, String>
+): String? {
+    if (suggestions.isEmpty()) {
+        return null
+    }
+    val candidateIds = LinkedHashSet<String>()
+    val normalizedManifest = normalizeModId(mod.manifestModId)
+    if (normalizedManifest.isNotEmpty()) {
+        candidateIds.add(normalizedManifest)
+    }
+    val normalizedModId = normalizeModId(mod.modId)
+    if (normalizedModId.isNotEmpty()) {
+        candidateIds.add(normalizedModId)
+    }
+    candidateIds.forEach { candidateId ->
+        val suggestion = suggestions[candidateId]?.trim()
+        if (!suggestion.isNullOrEmpty()) {
+            return suggestion
+        }
+    }
+    return null
+}
+
 internal fun resolveModFileNameWithoutJar(storagePath: String): String? {
     val path = storagePath.trim()
     if (path.isEmpty()) {
