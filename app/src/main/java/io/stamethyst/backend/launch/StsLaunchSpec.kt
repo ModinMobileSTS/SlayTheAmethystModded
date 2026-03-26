@@ -140,6 +140,14 @@ object StsLaunchSpec {
         )
         args.add("-Djava.home=${javaHome.absolutePath}")
         args.add("-Djava.io.tmpdir=${context.cacheDir.absolutePath}")
+        args.add(
+            "-Djava.library.path=" +
+                NativeLibraryPathResolver.buildJavaLibraryPath(
+                    context = context,
+                    javaHome = javaHome,
+                    appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
+                )
+        )
         args.add("-Duser.home=${stsHome.absolutePath}")
         args.add("-Duser.dir=${stsRoot.absolutePath}")
         args.add(

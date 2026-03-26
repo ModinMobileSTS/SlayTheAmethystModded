@@ -87,8 +87,6 @@ import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
-
 private const val WORKSHOP_DOWNLOADER_PACKAGE_NAME = "top.apricityx.workshop"
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,8 +101,7 @@ fun LauncherSettingsScreen(
     val navigator = currentNavigator
     val uiState = viewModel.uiState
 
-    LaunchedEffect(Unit) {
-        delay(320)
+    LaunchedEffect(activity) {
         viewModel.bind(activity)
     }
 

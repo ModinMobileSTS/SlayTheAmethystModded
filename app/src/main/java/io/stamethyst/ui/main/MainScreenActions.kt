@@ -32,6 +32,11 @@ internal data class MainScreenActions(
     val onMoveModToUnassigned: (ModItemUi) -> Unit = {},
     val onRevealFolderToken: (String) -> Unit = {},
     val onRetryStorageCheck: () -> Unit = {},
+    val onDismissCrashRecovery: () -> Unit = {},
+    val onRetryLaunchAfterCrash: () -> Unit = {},
+    val onCopyCrashReport: () -> Unit = {},
+    val onShareCrashRecoveryReport: () -> Unit = {},
+    val onCloseApp: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onLaunch: () -> Unit = {}
 )
@@ -75,6 +80,11 @@ internal fun rememberMainScreenActions(
                 onMoveModToUnassigned = { mod -> viewModel.moveModToUnassigned(activity, mod) },
                 onRevealFolderToken = { folderTokenId -> viewModel.revealFolderToken(activity, folderTokenId) },
                 onRetryStorageCheck = { viewModel.refresh(activity) },
+                onDismissCrashRecovery = { viewModel.dismissCrashRecovery() },
+                onRetryLaunchAfterCrash = { viewModel.retryLaunchAfterCrash(activity) },
+                onCopyCrashReport = { viewModel.copyCrashRecoveryReport(activity) },
+                onShareCrashRecoveryReport = { viewModel.shareCrashRecoveryReport(activity) },
+                onCloseApp = { activity.finishAffinity() },
                 onImportMods = {
                     importModsLauncher.launch(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")

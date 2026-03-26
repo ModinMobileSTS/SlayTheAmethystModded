@@ -106,7 +106,7 @@ android {
 
         ndk {
             //noinspection ChromeOsAbiSupport
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            abiFilters += listOf("arm64-v8a")
         }
 
         @Suppress("UnstableApiUsage")
@@ -241,9 +241,9 @@ val log4jRuntimeComponents by configurations.creating {
 val adb: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
 val runtimePackZip: RegularFile = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
 val gdxVideoNativeAssetFiles = listOf(
-    rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so"),
-    rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so")
+    rootProject.layout.projectDirectory.file("runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so")
 )
+val tensorFlowNativeAssetDir = rootProject.layout.projectDirectory.dir("runtime-pack/tensorflow_natives")
 val supportedLaunchModes = setOf("mts", "vanilla")
 val stsJvmLogExportMaxSlots = 5
 
@@ -430,8 +430,37 @@ val installGdxVideoNatives by tasks.registering(Sync::class) {
                 throw GradleException("Missing gdx-video native asset: ${nativeFile.asFile.absolutePath}")
             }
         }
+        val tensorFlowNativeDirFile = tensorFlowNativeAssetDir.asFile
+        if (tensorFlowNativeDirFile.isDirectory) {
+            val hasTensorFlowJni = fileTree(tensorFlowNativeDirFile).matching {
+                include("**/libjnitensorflow.so")
+            }.files.isNotEmpty()
+            if (!hasTensorFlowJni) {
+                throw GradleException(
+                    "TensorFlow native directory exists but libjnitensorflow.so is missing: " +
+                        tensorFlowNativeDirFile.absolutePath
+                )
+            }
+            val hasTensorFlowDependency = fileTree(tensorFlowNativeDirFile).matching {
+                include(
+                    "**/libjnitensorflow.so2",
+                    "**/libjnitensorflow.so.*",
+                    "**/libtensorflow.so.*",
+                    "**/libtensorflow_framework.so.*"
+                )
+            }.files.isNotEmpty()
+            if (!hasTensorFlowDependency) {
+                logger.warn(
+                    "Bundled TensorFlow natives do not include a versioned companion library under " +
+                        "${tensorFlowNativeDirFile.absolutePath}. If your JNI build depends on " +
+                        "libjnitensorflow.so2, libtensorflow.so.2, or libtensorflow_framework.so.2, " +
+                        "place them in runtime-pack/tensorflow_natives as well."
+                )
+            }
+        }
     }
     from(gdxVideoNativeAssetFiles)
+    from(tensorFlowNativeAssetDir)
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_video_natives") })
 }
 
@@ -470,7 +499,7 @@ val installRuntimePackAssets by tasks.registering(Sync::class) {
         }
     }
     from(zipTree(runtimePackZip)) {
-        exclude("bin-x86.tar.xz", "bin-x86_64.tar.xz")
+        exclude("bin-arm.tar.xz", "bin-x86.tar.xz", "bin-x86_64.tar.xz")
     }
     into(generatedRuntimeAssetsDir.map { it.dir("components/jre") })
 }
@@ -521,7 +550,7 @@ val importRendererBackendLibs by tasks.registering {
         tempDir.mkdirs()
         val apkFile = extractApk(source, tempDir)
         ZipFile(apkFile).use { apkZip ->
-            for (abi in listOf("arm64-v8a", "armeabi-v7a")) {
+            for (abi in listOf("arm64-v8a")) {
                 val targetDir = file("src/main/jniLibs/$abi")
                 targetDir.mkdirs()
                 for (libraryName in rendererBackendImportLibraries) {

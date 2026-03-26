@@ -45,4 +45,22 @@ class GameLaunchReturnTrackerTest {
         assertFalse(GameLaunchReturnTracker.isTrackedGameProcessAlive(pid = 42, importance = 500))
         assertFalse(GameLaunchReturnTracker.isTrackedGameProcessAlive(pid = 0, importance = 100))
     }
+
+    @Test
+    fun isTrackedGameProcessAlive_canIncludeCachedProcesses_forForcedCleanup() {
+        assertTrue(
+            GameLaunchReturnTracker.isTrackedGameProcessAlive(
+                pid = 42,
+                importance = 400,
+                includeCached = true
+            )
+        )
+        assertFalse(
+            GameLaunchReturnTracker.isTrackedGameProcessAlive(
+                pid = 0,
+                importance = 400,
+                includeCached = true
+            )
+        )
+    }
 }

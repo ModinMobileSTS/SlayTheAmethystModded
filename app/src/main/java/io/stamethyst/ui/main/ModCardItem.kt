@@ -88,6 +88,7 @@ internal fun ModCard(
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
+    var showRenameDisplayModeWarningDialog by remember(mod.storagePath) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(10.dp)
     val dragVisualOffsetFromPointer = remember(density) {
 //        Offset(x = 0f, y = with(density) { MOD_DRAG_VISUAL_OFFSET_Y_DP.dp.toPx() })
@@ -229,9 +230,22 @@ internal fun ModCard(
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
         onRename = {
-            showRenameDialog = true
+            if (showModFileName) {
+                showRenameDialog = true
+            } else {
+                showRenameDisplayModeWarningDialog = true
+            }
         },
         onDelete = { callbacks.onDeleteMod(mod) }
+    )
+
+    RenameModFileDisplayModeWarningDialog(
+        visible = showRenameDisplayModeWarningDialog,
+        onDismiss = { showRenameDisplayModeWarningDialog = false },
+        onConfirm = {
+            showRenameDisplayModeWarningDialog = false
+            showRenameDialog = true
+        }
     )
 
     RenameModFileDialog(

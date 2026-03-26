@@ -219,10 +219,12 @@ class SettingsScreenViewModel : ViewModel() {
             uiState = uiState.copy(targetFpsOptions = options)
         }
         syncStoredUpdateState(activity)
-
-        if (uiState.statusText.isBlank()) {
-            refreshStatus(activity, clearBusy = false)
+        runCatching {
+            SettingsRepository.loadSettingsSnapshot(activity)
+        }.getOrNull()?.let { snapshot ->
+            applySnapshot(activity, snapshot)
         }
+        refreshStatus(activity, clearBusy = false)
     }
 
     fun startStartupAutoUpdateCheck(host: Activity) {
@@ -479,65 +481,12 @@ class SettingsScreenViewModel : ViewModel() {
                 )
 
                 host.runOnUiThread {
+                    applySnapshot(host, snapshot)
                     uiState = uiState.copy(
                         busy = if (clearBusy) false else uiState.busy,
                         busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
                         busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
-                        themeMode = snapshot.themeMode,
-                        themeColor = snapshot.themeColor,
-                        playerName = snapshot.playerName,
-                        selectedRenderScale = rendering.renderScale,
-                        selectedTargetFps = rendering.targetFps,
-                        renderSurfaceBackend = rendering.renderSurfaceBackend,
-                        rendererSelectionMode = rendering.rendererSelectionMode,
-                        manualRendererBackend = rendering.manualRendererBackend,
-                        mobileGluesAnglePolicy = mobileGluesSettings.anglePolicy,
-                        mobileGluesNoErrorPolicy = mobileGluesSettings.noErrorPolicy,
-                        mobileGluesMultidrawMode = mobileGluesSettings.multidrawMode,
-                        mobileGluesExtComputeShaderEnabled = mobileGluesSettings.extComputeShaderEnabled,
-                        mobileGluesExtTimerQueryEnabled = mobileGluesSettings.extTimerQueryEnabled,
-                        mobileGluesExtDirectStateAccessEnabled =
-                            mobileGluesSettings.extDirectStateAccessEnabled,
-                        mobileGluesGlslCacheSizePreset = mobileGluesSettings.glslCacheSizePreset,
-                        mobileGluesAngleDepthClearFixMode =
-                            mobileGluesSettings.angleDepthClearFixMode,
-                        mobileGluesCustomGlVersion = mobileGluesSettings.customGlVersion,
-                        mobileGluesFsr1QualityPreset = mobileGluesSettings.fsr1QualityPreset,
-                        autoSelectedRendererBackend = rendererDecision.automaticBackend,
-                        effectiveRendererBackend = rendererDecision.effectiveBackend,
-                        effectiveRenderSurfaceBackend = rendererDecision.effectiveSurfaceBackend,
-                        rendererBackendOptions = rendererBackendOptions,
-                        rendererFallbackText = rendererDecision.fallbackSummary(host),
-                        surfaceBackendForcedByRenderer = rendererDecision.surfaceBackendForced,
-                        selectedJvmHeapMaxMb = jvm.heapMaxMb,
-                        compressedPointersEnabled = jvm.compressedPointersEnabled,
-                        stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
-                        backBehavior = input.backBehavior,
-                        manualDismissBootOverlay = input.manualDismissBootOverlay,
-                        showFloatingMouseWindow = input.showFloatingMouseWindow,
-                        longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
-                        autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
-                        showModFileName = input.showModFileName,
-                        mobileHudEnabled = input.mobileHudEnabled,
-                        compendiumUpgradeTouchFixEnabled = input.compendiumUpgradeTouchFixEnabled,
-                        avoidDisplayCutout = input.avoidDisplayCutout,
-                        cropScreenBottom = input.cropScreenBottom,
-                        showGamePerformanceOverlay = diagnostics.showGamePerformanceOverlay,
-                        sustainedPerformanceModeEnabled = diagnostics.sustainedPerformanceModeEnabled,
-                        systemGameModeDisplayName =
-                            host.getString(diagnostics.systemGameMode.displayNameResId),
-                        systemGameModeDescription =
-                            host.getString(diagnostics.systemGameMode.descriptionResId),
-                        lwjglDebugEnabled = diagnostics.lwjglDebugEnabled,
-                        preloadAllJreLibrariesEnabled = diagnostics.preloadAllJreLibrariesEnabled,
-                        logcatCaptureEnabled = diagnostics.logcatCaptureEnabled,
-                        jvmLogcatMirrorEnabled = diagnostics.jvmLogcatMirrorEnabled,
-                        gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
-                        gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
-                        glBridgeSwapHeartbeatDebugEnabled =
-                            diagnostics.glBridgeSwapHeartbeatDebugEnabled,
-                        touchscreenEnabled = input.touchscreenEnabled,
                         statusText = status,
                         logPathText = buildLogPathText(host)
                     )
@@ -1423,6 +1372,76 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private fun applySnapshot(
+        host: Activity,
+        snapshot: SettingsRepository.SettingsSnapshot
+    ) {
+        val rendering = snapshot.rendering
+        val jvm = snapshot.jvm
+        val input = snapshot.input
+        val diagnostics = snapshot.diagnostics
+        val rendererDecision = rendering.rendererDecision
+        val mobileGluesSettings = rendering.mobileGluesSettings
+        val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
+            RendererBackendOptionState(
+                backend = availability.backend,
+                available = availability.available,
+                reasonText = availability.describeUnavailable(host)
+            )
+        }
+        uiState = uiState.copy(
+            themeMode = snapshot.themeMode,
+            themeColor = snapshot.themeColor,
+            playerName = snapshot.playerName,
+            selectedRenderScale = rendering.renderScale,
+            selectedTargetFps = rendering.targetFps,
+            renderSurfaceBackend = rendering.renderSurfaceBackend,
+            rendererSelectionMode = rendering.rendererSelectionMode,
+            manualRendererBackend = rendering.manualRendererBackend,
+            mobileGluesAnglePolicy = mobileGluesSettings.anglePolicy,
+            mobileGluesNoErrorPolicy = mobileGluesSettings.noErrorPolicy,
+            mobileGluesMultidrawMode = mobileGluesSettings.multidrawMode,
+            mobileGluesExtComputeShaderEnabled = mobileGluesSettings.extComputeShaderEnabled,
+            mobileGluesExtTimerQueryEnabled = mobileGluesSettings.extTimerQueryEnabled,
+            mobileGluesExtDirectStateAccessEnabled = mobileGluesSettings.extDirectStateAccessEnabled,
+            mobileGluesGlslCacheSizePreset = mobileGluesSettings.glslCacheSizePreset,
+            mobileGluesAngleDepthClearFixMode = mobileGluesSettings.angleDepthClearFixMode,
+            mobileGluesCustomGlVersion = mobileGluesSettings.customGlVersion,
+            mobileGluesFsr1QualityPreset = mobileGluesSettings.fsr1QualityPreset,
+            autoSelectedRendererBackend = rendererDecision.automaticBackend,
+            effectiveRendererBackend = rendererDecision.effectiveBackend,
+            effectiveRenderSurfaceBackend = rendererDecision.effectiveSurfaceBackend,
+            rendererBackendOptions = rendererBackendOptions,
+            rendererFallbackText = rendererDecision.fallbackSummary(host),
+            surfaceBackendForcedByRenderer = rendererDecision.surfaceBackendForced,
+            selectedJvmHeapMaxMb = jvm.heapMaxMb,
+            compressedPointersEnabled = jvm.compressedPointersEnabled,
+            stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
+            backBehavior = input.backBehavior,
+            manualDismissBootOverlay = input.manualDismissBootOverlay,
+            showFloatingMouseWindow = input.showFloatingMouseWindow,
+            longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
+            autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
+            showModFileName = input.showModFileName,
+            mobileHudEnabled = input.mobileHudEnabled,
+            compendiumUpgradeTouchFixEnabled = input.compendiumUpgradeTouchFixEnabled,
+            avoidDisplayCutout = input.avoidDisplayCutout,
+            cropScreenBottom = input.cropScreenBottom,
+            showGamePerformanceOverlay = diagnostics.showGamePerformanceOverlay,
+            sustainedPerformanceModeEnabled = diagnostics.sustainedPerformanceModeEnabled,
+            systemGameModeDisplayName = host.getString(diagnostics.systemGameMode.displayNameResId),
+            systemGameModeDescription = host.getString(diagnostics.systemGameMode.descriptionResId),
+            lwjglDebugEnabled = diagnostics.lwjglDebugEnabled,
+            preloadAllJreLibrariesEnabled = diagnostics.preloadAllJreLibrariesEnabled,
+            logcatCaptureEnabled = diagnostics.logcatCaptureEnabled,
+            jvmLogcatMirrorEnabled = diagnostics.jvmLogcatMirrorEnabled,
+            gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
+            gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
+            glBridgeSwapHeartbeatDebugEnabled = diagnostics.glBridgeSwapHeartbeatDebugEnabled,
+            touchscreenEnabled = input.touchscreenEnabled
+        )
     }
 
     private fun showInvalidModImportDialog(

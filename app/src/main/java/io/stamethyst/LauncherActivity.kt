@@ -213,14 +213,21 @@ class LauncherActivity : AppCompatActivity() {
                     decorView.postDelayed(this, GAME_RETURN_ANALYSIS_DELAY_MS)
                     return
                 }
-                if (killRequested) {
+                if (mainViewModel.handleGameProcessExitAnalysis(
+                        this@LauncherActivity,
+                        intent,
+                        currentLaunchStartedAt,
+                        allowProcessExitCrashFallback = !killRequested
+                    )
+                ) {
                     GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
                     mainViewModel.refresh(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
                     return
                 }
-                if (mainViewModel.handleGameProcessExitAnalysis(this@LauncherActivity, intent, currentLaunchStartedAt)) {
+                if (killRequested) {
                     GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    mainViewModel.refresh(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
                     return
                 }

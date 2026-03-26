@@ -66,23 +66,54 @@ public final class JREUtils {
     }
 
     public static void relocateLibPath(String nativeLibDir, String javaHome) {
+        relocateLibPath(nativeLibDir, javaHome, null);
+    }
+
+    public static void relocateLibPath(String nativeLibDir, String javaHome, String[] extraLibDirs) {
         runtimeLibDir = findRuntimeLibDir(javaHome);
-        StringBuilder ldPath = new StringBuilder();
-        ldPath.append(javaHome).append("/").append(runtimeLibDir).append("/jli").append(":");
-        ldPath.append(javaHome).append("/").append(runtimeLibDir).append(":");
+        ArrayList<String> pathEntries = new ArrayList<>();
+        appendUniquePathEntry(pathEntries, javaHome + "/" + runtimeLibDir + "/jli");
+        appendUniquePathEntry(pathEntries, javaHome + "/" + runtimeLibDir);
         if (is64BitRuntimeLibDir(runtimeLibDir)) {
-            ldPath.append("/system/lib64:/vendor/lib64:/vendor/lib64/hw:");
+            appendUniquePathEntry(pathEntries, "/system/lib64");
+            appendUniquePathEntry(pathEntries, "/vendor/lib64");
+            appendUniquePathEntry(pathEntries, "/vendor/lib64/hw");
         } else {
-            ldPath.append("/system/lib:/vendor/lib:/vendor/lib/hw:");
+            appendUniquePathEntry(pathEntries, "/system/lib");
+            appendUniquePathEntry(pathEntries, "/vendor/lib");
+            appendUniquePathEntry(pathEntries, "/vendor/lib/hw");
         }
-        ldPath.append(nativeLibDir);
-        LD_LIBRARY_PATH = ldPath.toString();
+        appendUniquePathEntry(pathEntries, nativeLibDir);
+        if (extraLibDirs != null) {
+            for (String extraLibDir : extraLibDirs) {
+                appendUniquePathEntry(pathEntries, extraLibDir);
+            }
+        }
+        LD_LIBRARY_PATH = joinPathEntries(pathEntries);
 
         try {
             Os.setenv("LD_LIBRARY_PATH", LD_LIBRARY_PATH, true);
         } catch (ErrnoException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static void appendUniquePathEntry(ArrayList<String> entries, String path) {
+        if (path == null || path.isEmpty() || entries.contains(path)) {
+            return;
+        }
+        entries.add(path);
+    }
+
+    private static String joinPathEntries(ArrayList<String> entries) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < entries.size(); i++) {
+            if (i > 0) {
+                builder.append(":");
+            }
+            builder.append(entries.get(i));
+        }
+        return builder.toString();
     }
 
     public static void setJavaEnvironment(
@@ -307,10 +338,6 @@ public final class JREUtils {
         String[] candidates = {
                 "lib/aarch64",
                 "lib/arm64",
-                "lib/aarch32",
-                "lib/arm32",
-                "lib/armeabi-v7a",
-                "lib/arm",
                 "lib"
         };
         for (String candidate : candidates) {

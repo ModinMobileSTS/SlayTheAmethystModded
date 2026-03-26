@@ -50,7 +50,7 @@ internal object GameLaunchReturnTracker {
         }
     }
 
-    fun terminateTrackedGameProcess(context: Context): Boolean {
+    fun terminateTrackedGameProcess(context: Context, includeCached: Boolean = false): Boolean {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return false
         val targetPids = try {
@@ -61,7 +61,8 @@ internal object GameLaunchReturnTracker {
                         processName = process.processName,
                         packageName = context.packageName,
                         pid = process.pid,
-                        importance = process.importance
+                        importance = process.importance,
+                        includeCached = includeCached
                     )
                 }
                 ?.map { it.pid }
@@ -88,20 +89,25 @@ internal object GameLaunchReturnTracker {
         processName: String?,
         packageName: String,
         pid: Int,
-        importance: Int
+        importance: Int,
+        includeCached: Boolean = false
     ): Boolean {
         return processName == packageName + GAME_PROCESS_SUFFIX &&
-            isTrackedGameProcessAlive(pid, importance)
+            isTrackedGameProcessAlive(pid, importance, includeCached)
     }
 
-    internal fun isTrackedGameProcessAlive(pid: Int, importance: Int): Boolean {
+    internal fun isTrackedGameProcessAlive(
+        pid: Int,
+        importance: Int,
+        includeCached: Boolean = false
+    ): Boolean {
         if (pid <= 0) {
             return false
         }
         // Ignore cached/empty processes that Android keeps around after the game
         // activity has already finished, otherwise the launcher stays stuck in
         // "game is still running" state.
-        return importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+        return includeCached || importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
     }
 
     private fun pendingGameLaunchMarker(context: Context): File {

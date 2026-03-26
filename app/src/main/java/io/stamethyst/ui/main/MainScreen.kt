@@ -1,6 +1,8 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
+import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -10,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,27 +20,37 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -54,6 +67,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -63,11 +77,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
+import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.Settings
+import io.stamethyst.ui.preferences.LauncherPreferences
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
@@ -285,6 +301,11 @@ private fun LauncherMainScreenContent(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     val showInitializing = uiState.initializing
     val hazeState = rememberHazeState()
+    val crashRecovery = uiState.crashRecovery
+
+    if (crashRecovery != null) {
+        BackHandler(onBack = actions.onDismissCrashRecovery)
+    }
 
     FolderNameDialog(
         visible = showCreateFolderDialog,
@@ -306,54 +327,348 @@ private fun LauncherMainScreenContent(
                 .fillMaxSize()
                 .padding(scaffoldPaddingValues)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .hazeSource(state = hazeState)
-                    .padding(start = 16.dp, top = 16.dp, end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    uiState.busyMessage?.let {
-                        Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+            if (crashRecovery != null) {
+                CrashRecoveryScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    crashRecovery = crashRecovery,
+                    busy = uiState.busy,
+                    busyMessage = uiState.busyMessage?.resolve(),
+                    onOpenRecoverySettings = onOpenSettings,
+                    onRetryLaunch = actions.onRetryLaunchAfterCrash,
+                    onCopyReport = actions.onCopyCrashReport,
+                    onShareLogs = actions.onShareCrashRecoveryReport,
+                    onCloseApp = actions.onCloseApp
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .hazeSource(state = hazeState)
+                        .padding(start = 16.dp, top = 16.dp, end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        uiState.busyMessage?.let {
+                            Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
+
+                    MainContentSwitcher(
+                        uiState = uiState,
+                        showInitializing = showInitializing,
+                        actionBarBottomPadding = 156.dp,
+                        actions = actions
+                    )
                 }
 
-                MainContentSwitcher(
-                    uiState = uiState,
-                    showInitializing = showInitializing,
-                    actionBarBottomPadding = 156.dp,
-                    actions = actions
+                MainTopBar(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    hazeState = hazeState,
+                    folderControlsEnabled = uiState.controlsEnabled,
+                    settingsEnabled = !uiState.busy,
+                    hostAvailable = actions.isHostAvailable,
+                    feedbackUnreadCount = feedbackUnreadCount,
+                    onAddFolderClick = { showCreateFolderDialog = true },
+                    onOpenSettings = onOpenSettings,
+                    onOpenFeedbackUpdates = onOpenFeedbackUpdates
+                )
+                MainBottomFixedActions(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    hazeState = hazeState,
+                    importEnabled = !uiState.busy && uiState.storageIssue == null,
+                    launchEnabled = !uiState.busy &&
+                        uiState.storageIssue == null &&
+                        !uiState.gameProcessRunning,
+                    onImportMods = actions.onImportMods,
+                    onLaunch = actions.onLaunch,
+                    enabledCount = uiState.optionalMods.count { it.enabled },
+                    totalCount = uiState.optionalMods.size,
+                    gameRunning = uiState.gameProcessRunning,
+                    hasStorageIssue = uiState.storageIssue != null
                 )
             }
+        }
+    }
+}
 
-            MainTopBar(
-                modifier = Modifier.align(Alignment.TopCenter),
-                hazeState = hazeState,
-                folderControlsEnabled = uiState.controlsEnabled,
-                settingsEnabled = !uiState.busy,
-                hostAvailable = actions.isHostAvailable,
-                feedbackUnreadCount = feedbackUnreadCount,
-                onAddFolderClick = { showCreateFolderDialog = true },
-                onOpenSettings = onOpenSettings,
-                onOpenFeedbackUpdates = onOpenFeedbackUpdates
+@Composable
+private fun CrashRecoveryScreen(
+    modifier: Modifier = Modifier,
+    crashRecovery: MainScreenViewModel.CrashRecoveryState,
+    busy: Boolean,
+    busyMessage: String?,
+    onOpenRecoverySettings: () -> Unit,
+    onRetryLaunch: () -> Unit,
+    onCopyReport: () -> Unit,
+    onShareLogs: () -> Unit,
+    onCloseApp: () -> Unit,
+) {
+    val context = LocalContext.current
+    val infoBadges = remember(crashRecovery.code, crashRecovery.isSignal, context) {
+        val rendererDecision = RendererBackendResolver.resolve(
+            context = context,
+            requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(context),
+            selectionMode = LauncherPreferences.readRendererSelectionMode(context),
+            manualBackend = LauncherPreferences.readManualRendererBackend(context)
+        )
+        buildList {
+            add(
+                context.getString(
+                    R.string.sts_crash_page_chip_renderer_format,
+                    rendererDecision.effectiveBackend.displayName
+                )
             )
-            MainBottomFixedActions(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                hazeState = hazeState,
-                importEnabled = !uiState.busy && uiState.storageIssue == null,
-                launchEnabled = !uiState.busy &&
-                    uiState.storageIssue == null &&
-                    !uiState.gameProcessRunning,
-                onImportMods = actions.onImportMods,
-                onLaunch = actions.onLaunch,
-                enabledCount = uiState.optionalMods.count { it.enabled },
-                totalCount = uiState.optionalMods.size,
-                gameRunning = uiState.gameProcessRunning,
-                hasStorageIssue = uiState.storageIssue != null
+            add(
+                context.getString(
+                    R.string.sts_crash_page_chip_android_format,
+                    Build.VERSION.RELEASE.orEmpty().ifBlank { "?" },
+                    Build.VERSION.SDK_INT
+                )
+            )
+            add(
+                context.getString(
+                    R.string.sts_crash_page_chip_build_format,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.BUILD_TYPE
+                )
+            )
+            add(
+                if (crashRecovery.isSignal) {
+                    context.getString(
+                        R.string.sts_crash_page_chip_signal_format,
+                        crashRecovery.code
+                    )
+                } else {
+                    context.getString(
+                        R.string.sts_crash_page_chip_exit_code_format,
+                        crashRecovery.code
+                    )
+                }
             )
         }
+    }
+
+    Column(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.sts_crash_page_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = stringResource(R.string.sts_crash_page_subtitle),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (busy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            busyMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        CrashRecoveryCard {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(56.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "!",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.sts_crash_page_capture_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = crashRecovery.summaryText,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(
+                        if (crashRecovery.isOutOfMemory) {
+                            R.string.sts_crash_page_guidance_oom
+                        } else {
+                            R.string.sts_crash_page_guidance_default
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    infoBadges.forEach { label ->
+                        CrashInfoChip(text = label)
+                    }
+                }
+            }
+        }
+
+        CrashRecoveryCard {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    text = stringResource(R.string.sts_crash_page_actions_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.sts_crash_page_actions_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onOpenRecoverySettings,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.sts_crash_page_action_recovery))
+                    }
+                    OutlinedButton(
+                        onClick = onRetryLaunch,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.sts_crash_page_action_retry))
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onCopyReport,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.sts_crash_page_action_copy))
+                    }
+                    OutlinedButton(
+                        onClick = onCloseApp,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.sts_crash_page_action_close))
+                    }
+                }
+            }
+        }
+
+        CrashRecoveryCard {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    text = stringResource(R.string.sts_crash_page_report_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.sts_crash_page_report_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SelectionContainer {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                        )
+                    ) {
+                        Text(
+                            text = crashRecovery.reportText,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        )
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                TextButton(onClick = onShareLogs) {
+                    Text(stringResource(R.string.sts_share_crash_report))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CrashRecoveryCard(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.96f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun CrashInfoChip(text: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+        )
     }
 }
 

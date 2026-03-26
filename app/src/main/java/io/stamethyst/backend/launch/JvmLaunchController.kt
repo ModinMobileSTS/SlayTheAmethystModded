@@ -230,7 +230,15 @@ class JvmLaunchController(
                 )
 
                 throwIfCancelled()
-                JREUtils.relocateLibPath(activity.applicationInfo.nativeLibraryDir, resolvedJavaHome.absolutePath)
+                val extraNativeLibraryDirs = NativeLibraryPathResolver
+                    .collectAdditionalSearchDirectories(activity)
+                    .map(File::getAbsolutePath)
+                    .toTypedArray()
+                JREUtils.relocateLibPath(
+                    activity.applicationInfo.nativeLibraryDir,
+                    resolvedJavaHome.absolutePath,
+                    extraNativeLibraryDirs
+                )
                 if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
                     try {
                         MobileGluesConfigFile.syncFromLauncherPreferences(activity)

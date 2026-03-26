@@ -27,7 +27,7 @@
 <p align="center">
   <img alt="Android API 26+" src="https://img.shields.io/badge/Android-API%2026%2B-34A853?style=flat-square&logo=android&logoColor=white" />
   <img alt="Java 8 bridge" src="https://img.shields.io/badge/Runtime-Java%208%20bridge-5b4638?style=flat-square&logo=openjdk&logoColor=white" />
-  <img alt="ABI arm64-v8a and armeabi-v7a" src="https://img.shields.io/badge/ABI-arm64--v8a%20%7C%20armeabi--v7a-f97316?style=flat-square" />
+  <img alt="ABI arm64-v8a" src="https://img.shields.io/badge/ABI-arm64--v8a-f97316?style=flat-square" />
   <img alt="GitHub release workflow" src="https://img.shields.io/badge/CI-GitHub%20Release%20workflow-24292f?style=flat-square&logo=githubactions&logoColor=white" />
 </p>
 
@@ -52,7 +52,7 @@
 | Mod compatibility | Targets real `ModTheSpire` / `BaseMod` / `StSLib` style stacks instead of a vanilla-only Android wrapper. |
 | Runtime | Uses JavaSE instead of ART to avoid compatibility problems caused by implementation differences. |
 | Mobile interaction | Adds touch-oriented control and UI adaptation for Android devices. |
-| Device coverage | Builds for both `arm64-v8a` and `armeabi-v7a`. |
+| Device coverage | Builds for `arm64-v8a` only. |
 
 > [!NOTE]
 > Although Slay the Spire is written with LibGDX, some mods still rely on desktop-specific behavior. This project uses an Android-adapted JavaSE runtime plus matching native libraries to load those mods and preserve their behavior as much as possible.
@@ -69,7 +69,6 @@ Required files:
 - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
 - `runtime-pack/jre8-pojav.zip`
 - `runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so`
-- `runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so`
 
 Dependency download sources:
 - Runtime pack: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/tag/pojav-jre8)

@@ -178,6 +178,34 @@ internal fun RenameModFileDialog(
 }
 
 @Composable
+internal fun RenameModFileDisplayModeWarningDialog(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    if (!visible) {
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.main_mod_rename_display_mode_warning_title)) },
+        text = {
+            Text(text = stringResource(R.string.main_mod_rename_display_mode_warning_message))
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = stringResource(R.string.main_mod_rename_display_mode_warning_confirm))
+            }
+        },
+        dismissButton = {
+            PillCancelButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_mod_rename_display_mode_warning_dismiss))
+            }
+        }
+    )
+}
+
+@Composable
 private fun ModActionDialogListItem(
     text: String,
     enabled: Boolean,

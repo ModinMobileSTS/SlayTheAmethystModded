@@ -2,6 +2,8 @@ package io.stamethyst.ui.main
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.util.TypedValue
@@ -65,6 +67,14 @@ class MainScreenViewModel : ViewModel() {
         val recovery: String
     )
 
+    data class CrashRecoveryState(
+        val code: Int,
+        val isSignal: Boolean,
+        val summaryText: String,
+        val reportText: String,
+        val isOutOfMemory: Boolean
+    )
+
     data class UiState(
         val initializing: Boolean = true,
         val busy: Boolean = false,
@@ -74,6 +84,7 @@ class MainScreenViewModel : ViewModel() {
         val dependencyMods: List<ModItemUi> = emptyList(),
         val optionalMods: List<ModItemUi> = emptyList(),
         val storageIssue: StorageIssueUi? = null,
+        val crashRecovery: CrashRecoveryState? = null,
         val controlsEnabled: Boolean = true,
         val gameProcessRunning: Boolean = false,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
@@ -181,7 +192,43 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
+        dismissCrashRecovery()
         prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS, forceJvmCrash = false)
+    }
+
+    fun dismissCrashRecovery() {
+        if (uiState.crashRecovery == null) {
+            return
+        }
+        uiState = uiState.copy(crashRecovery = null)
+    }
+
+    fun retryLaunchAfterCrash(host: Activity) {
+        dismissCrashRecovery()
+        onLaunch(host)
+    }
+
+    fun copyCrashRecoveryReport(host: Activity) {
+        val crashRecovery = uiState.crashRecovery ?: return
+        val clipboard = host.getSystemService(ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("sts-crash-report", crashRecovery.reportText)
+        )
+        Toast.makeText(
+            host,
+            host.getString(R.string.sts_crash_page_copy_success),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    fun shareCrashRecoveryReport(host: Activity) {
+        val crashRecovery = uiState.crashRecovery ?: return
+        shareCrashLogs(
+            host = host,
+            code = crashRecovery.code,
+            isSignal = crashRecovery.isSignal,
+            detail = crashRecovery.reportText
+        )
     }
 
     fun suggestNextFolderName(): String {
@@ -293,21 +340,25 @@ class MainScreenViewModel : ViewModel() {
     fun handleGameProcessExitAnalysis(
         host: Activity,
         intent: Intent?,
-        launchStartedAtMs: Long
+        launchStartedAtMs: Long,
+        allowProcessExitCrashFallback: Boolean = true
     ): Boolean {
         LogcatCaptureProcessClient.stopCapture(host)
         val action = LauncherReturnActionResolver.resolve(
             buildLauncherReturnSnapshot(
                 host = host,
                 intent = intent,
-                launchStartedAtMs = launchStartedAtMs
+                launchStartedAtMs = launchStartedAtMs,
+                allowProcessExitCrashFallback = allowProcessExitCrashFallback
             )
         )
         return when (action) {
             LauncherReturnAction.None -> false
             LauncherReturnAction.ExpectedBackExit -> {
+                GameLaunchReturnTracker.terminateTrackedGameProcess(host, includeCached = true)
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                dismissCrashRecovery()
                 showExpectedBackExitDialog(host)
                 true
             }
@@ -318,11 +369,13 @@ class MainScreenViewModel : ViewModel() {
                     clearCrashExtras(intent)
                 }
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                dismissCrashRecovery()
                 true
             }
 
             LauncherReturnAction.HeapPressureWarning -> {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                dismissCrashRecovery()
                 maybeShowHeapPressureDialog(host, intent ?: return false)
             }
 
@@ -330,12 +383,11 @@ class MainScreenViewModel : ViewModel() {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
                 clearCrashExtras(intent ?: return false)
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
-                showCrashDialog(
-                    host = host,
+                showCrashRecovery(
                     code = action.payload.code,
                     isSignal = action.payload.isSignal,
                     detail = action.payload.detail,
-                    message = buildCrashDialogMessage(host, action.payload)
+                    fallbackMessage = buildCrashDialogMessage(host, action.payload)
                 )
                 true
             }
@@ -345,12 +397,11 @@ class MainScreenViewModel : ViewModel() {
                 ProcessExitInfoCapture.markLatestInterestingProcessExitInfoHandled(host, launchStartedAtMs)
                 val detail = buildProcessExitCrashDetail(host, action.summary)
                 val code = action.summary.status.takeIf { it != 0 } ?: -1
-                showCrashDialog(
-                    host,
-                    code,
-                    action.summary.isSignal,
-                    detail,
-                    host.getString(R.string.sts_crash_detail_format, detail)
+                showCrashRecovery(
+                    code = code,
+                    isSignal = action.summary.isSignal,
+                    detail = detail,
+                    fallbackMessage = host.getString(R.string.sts_crash_detail_format, detail)
                 )
                 true
             }
@@ -360,7 +411,8 @@ class MainScreenViewModel : ViewModel() {
     private fun buildLauncherReturnSnapshot(
         host: Activity,
         intent: Intent?,
-        launchStartedAtMs: Long
+        launchStartedAtMs: Long,
+        allowProcessExitCrashFallback: Boolean
     ): LauncherReturnSnapshot {
         val expectedCleanShutdown = LatestLogCleanShutdownDetector.detect(host) != null
         val explicitCrash = if (expectedCleanShutdown) {
@@ -368,7 +420,7 @@ class MainScreenViewModel : ViewModel() {
         } else {
             buildExplicitCrashPayload(intent)
         }
-        val processExitCrash = if (!expectedCleanShutdown && explicitCrash == null) {
+        val processExitCrash = if (allowProcessExitCrashFallback && !expectedCleanShutdown && explicitCrash == null) {
             ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(host, launchStartedAtMs)
         } else {
             null
@@ -704,21 +756,22 @@ class MainScreenViewModel : ViewModel() {
         }.trim()
     }
 
-    private fun showCrashDialog(
-        host: Activity,
+    private fun showCrashRecovery(
         code: Int,
         isSignal: Boolean,
         detail: String?,
-        message: String
+        fallbackMessage: String
     ) {
-        AlertDialog.Builder(host)
-            .setTitle(R.string.sts_crash_dialog_title)
-            .setView(createScrollableDialogMessageView(host, message))
-            .setNeutralButton(R.string.sts_share_crash_report) { _, _ ->
-                shareCrashLogs(host, code, isSignal, detail)
-            }
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
+        val report = CrashRecoveryReportFormatter.format(detail, fallbackMessage)
+        uiState = uiState.copy(
+            crashRecovery = CrashRecoveryState(
+                code = code,
+                isSignal = isSignal,
+                summaryText = report.summaryText,
+                reportText = report.reportText,
+                isOutOfMemory = isOutOfMemoryCrash(code, detail)
+            )
+        )
     }
 
     private fun maybeShowHeapPressureDialog(

@@ -98,10 +98,6 @@ jobs:
             echo "Missing gdx-video arm64 native in dependency bundle." >&2
             exit 1
           fi
-          if [ ! -f "$deps_root/runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so" ]; then
-            echo "Missing gdx-video arm native in dependency bundle." >&2
-            exit 1
-          fi
 
           mkdir -p runtime-pack
           cp -R "$deps_root/runtime-pack/." runtime-pack/

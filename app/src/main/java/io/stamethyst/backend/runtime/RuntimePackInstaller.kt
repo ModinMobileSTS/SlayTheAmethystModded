@@ -26,7 +26,6 @@ object RuntimePackInstaller {
     private const val ARCHIVE_VERSION = "version"
     private const val ARCHIVE_AARCH64 = "bin-aarch64.tar.xz"
     private const val ARCHIVE_ARM64 = "bin-arm64.tar.xz"
-    private const val ARCHIVE_ARM32 = "bin-arm.tar.xz"
 
     @Throws(IOException::class)
     private fun throwIfInterrupted() {
@@ -393,14 +392,9 @@ object RuntimePackInstaller {
             )
         }
 
-        if (assetExists(assets, "components/jre/$ARCHIVE_ARM32")) {
-            return ARCHIVE_ARM32
-        }
-
         throw IOException(
-            "Runtime pack missing required architecture archive: " +
-                ARCHIVE_ARM32 +
-                " (process=32-bit, available=" +
+            "This build only supports 64-bit ARM devices; refusing to install a 32-bit runtime " +
+                "(available=" +
                 listRuntimeArchives(assets) +
                 ")"
         )
@@ -431,7 +425,7 @@ object RuntimePackInstaller {
 
     private fun findRuntimeArchLibDir(javaHome: File): File? {
         val libRoot = File(javaHome, "lib")
-        val candidates = arrayOf("aarch64", "arm64", "aarch32", "arm32", "armeabi-v7a", "arm")
+        val candidates = arrayOf("aarch64", "arm64")
         for (candidate in candidates) {
             val dir = File(libRoot, candidate)
             if (dir.isDirectory) {
