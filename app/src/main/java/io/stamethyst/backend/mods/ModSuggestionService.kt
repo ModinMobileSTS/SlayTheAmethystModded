@@ -1,6 +1,7 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
+import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
 import java.io.BufferedInputStream
@@ -71,7 +72,9 @@ object ModSuggestionService {
         val localeKey = currentLocaleKey(context)
         val cacheFile = RuntimePaths.modSuggestionCacheFile(context, localeKey)
         val existingRawJson = readCacheFile(cacheFile)
-        val fetchedRawJson = requestText(source.buildUrl(resolveSuggestionUrl(localeKey)))
+        val fetchedRawJson = GithubMirrorFallback.run(source) { candidate ->
+            requestText(candidate.buildUrl(resolveSuggestionUrl(localeKey)))
+        }.value
         val contentChanged = hasContentChanged(existingRawJson, fetchedRawJson)
         if (contentChanged) {
             writeCacheFile(cacheFile, fetchedRawJson)

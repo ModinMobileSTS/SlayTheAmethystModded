@@ -21,17 +21,21 @@ object LauncherUpdateService {
         currentVersion: String,
         preferredUserSource: UpdateSource,
     ): UpdateCheckExecutionResult {
-        val metadataSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
-        val release = try {
-            val responseText = requestText(metadataSource.buildUrl(LATEST_RELEASE_API_URL))
-            parseLatestRelease(responseText)
-                ?: throw IOException("Invalid release payload.")
+        val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
+        val metadataResult = try {
+            GithubMirrorFallback.run(normalizedPreferredSource) { source ->
+                val responseText = requestText(source.buildUrl(LATEST_RELEASE_API_URL))
+                parseLatestRelease(responseText)
+                    ?: throw IOException("Invalid release payload.")
+            }
         } catch (error: Throwable) {
             return UpdateCheckExecutionResult.Failure(
-                errorSummary = "${metadataSource.displayName}: ${summarizeError(error)}",
-                metadataSource = metadataSource
+                errorSummary = GithubMirrorFallback.summarize(error),
+                metadataSource = null
             )
         }
+        val metadataSource = metadataResult.source
+        val release = metadataResult.value
 
         val hasUpdate = LauncherUpdateVersioning.isRemoteNewer(
             currentVersion = currentVersion,
@@ -47,13 +51,16 @@ object LauncherUpdateService {
             )
         }
 
-        val downloadResolution = resolveDownloadResolution(
-            release = release,
-            source = metadataSource
-        )
-        if (downloadResolution == null) {
+        val downloadResolution = try {
+            resolveDownloadResolution(
+                release = release,
+                preferredUserSource = normalizedPreferredSource,
+                metadataSource = metadataSource
+            )
+        } catch (error: Throwable) {
             return UpdateCheckExecutionResult.Failure(
-                errorSummary = "${metadataSource.displayName}: Unable to resolve a reachable APK download link.",
+                errorSummary = "Unable to resolve a reachable APK download link. ${GithubMirrorFallback.summarize(error)}"
+                    .trim(),
                 release = release,
                 metadataSource = metadataSource
             )
@@ -96,16 +103,24 @@ object LauncherUpdateService {
 
     internal fun resolveDownloadResolution(
         release: UpdateReleaseInfo,
-        source: UpdateSource,
-    ): UpdateDownloadResolution? {
-        val candidateUrl = source.buildUrl(release.assetDownloadUrl)
-        if (isDownloadCandidateReachable(candidateUrl)) {
-            return UpdateDownloadResolution(
+        preferredUserSource: UpdateSource,
+        metadataSource: UpdateSource,
+    ): UpdateDownloadResolution {
+        return GithubMirrorFallback.run(
+            UpdateSource.downloadCandidates(
+                preferredUserSource = preferredUserSource,
+                metadataSource = metadataSource
+            )
+        ) { source ->
+            val candidateUrl = source.buildUrl(release.assetDownloadUrl)
+            if (!isDownloadCandidateReachable(candidateUrl)) {
+                throw IOException("Unreachable APK download link.")
+            }
+            UpdateDownloadResolution(
                 source = source,
                 resolvedUrl = candidateUrl
             )
-        }
-        return null
+        }.value
     }
 
     private fun requestText(requestUrl: String): String {
@@ -199,14 +214,5 @@ object LauncherUpdateService {
             }
         }
         return null
-    }
-
-    private fun summarizeError(error: Throwable): String {
-        val message = error.message?.trim().orEmpty()
-        return if (message.isNotEmpty()) {
-            message
-        } else {
-            error.javaClass.simpleName
-        }
     }
 }

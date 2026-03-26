@@ -100,51 +100,46 @@ enum class UpdateSource(
             }
         }
 
-        fun metadataCandidates(preferredUserSource: UpdateSource): List<UpdateSource> {
-            val preferred = normalizePreferredUserSource(preferredUserSource.id)
+        fun githubResourceFallbackCandidates(preferredUserSource: UpdateSource): List<UpdateSource> {
+            val preferred = normalizePreferredGithubResourceSource(preferredUserSource)
             val ordered = LinkedHashSet<UpdateSource>()
             ordered += preferred
-            for (source in fallbackMirrorSources()) {
-                if (source != preferred && source.supportsMetadataCheck) {
+            entries.forEach { source ->
+                if (source != preferred && source != OFFICIAL) {
                     ordered += source
                 }
             }
-            ordered += OFFICIAL
-            return ordered.filter { it.supportsMetadataCheck }
+            if (preferred != OFFICIAL) {
+                ordered += OFFICIAL
+            }
+            return ordered.toList()
+        }
+
+        fun metadataCandidates(preferredUserSource: UpdateSource): List<UpdateSource> {
+            return githubResourceFallbackCandidates(preferredUserSource)
         }
 
         fun downloadCandidates(
             preferredUserSource: UpdateSource,
             metadataSource: UpdateSource,
         ): List<UpdateSource> {
-            val preferred = normalizePreferredUserSource(preferredUserSource.id)
-            val ordered = LinkedHashSet<UpdateSource>()
-            for (source in fallbackMirrorSources()) {
-                if (source.supportsDownloadProxy && source == preferred) {
-                    ordered += source
-                }
-            }
-            if (metadataSource.supportsDownloadProxy) {
-                ordered += metadataSource
-            }
-            for (source in fallbackMirrorSources()) {
-                if (source.supportsDownloadProxy && source != preferred) {
-                    ordered += source
-                }
-            }
-            ordered += GH_PROXY_NET
-            ordered += OFFICIAL
-            return ordered.filter { it.supportsDownloadProxy }
-        }
-
-        private fun fallbackMirrorSources(): List<UpdateSource> {
-            return entries.filter { it.userSelectable && it != OFFICIAL }
+            return githubResourceFallbackCandidates(preferredUserSource)
         }
 
         private fun isMirrorableGithubUrl(targetUrl: String): Boolean {
             val host = runCatching { URL(targetUrl).host.lowercase(Locale.ROOT) }.getOrNull()
                 ?: return false
             return host in mirrorableGithubHosts || host.endsWith(".githubusercontent.com")
+        }
+
+        private fun normalizePreferredGithubResourceSource(
+            preferredUserSource: UpdateSource
+        ): UpdateSource {
+            return when {
+                preferredUserSource == OFFICIAL -> OFFICIAL
+                preferredUserSource.userSelectable -> preferredUserSource
+                else -> normalizePreferredUserSource(preferredUserSource.id)
+            }
         }
     }
 }

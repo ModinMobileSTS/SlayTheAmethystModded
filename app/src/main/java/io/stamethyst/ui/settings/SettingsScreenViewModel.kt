@@ -42,6 +42,7 @@ import io.stamethyst.backend.update.UpdateCheckExecutionResult
 import io.stamethyst.backend.update.UpdateDownloadResolution
 import io.stamethyst.backend.update.UpdateReleaseInfo
 import io.stamethyst.backend.update.UpdateUiMessage
+import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
@@ -1898,12 +1899,12 @@ class SettingsScreenViewModel : ViewModel() {
         error: Throwable,
         source: UpdateSource? = null,
     ): String {
-        val message = error.message
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+        val message = GithubMirrorFallback.summarize(error)
+            .trim()
+            .takeIf { it.isNotEmpty() }
             ?: host.getString(R.string.settings_native_library_market_error_unknown)
         val displayName = source?.displayName?.trim().orEmpty()
-        return if (displayName.isNotEmpty()) {
+        return if (displayName.isNotEmpty() && !message.contains("${displayName}:")) {
             "$displayName: $message"
         } else {
             message

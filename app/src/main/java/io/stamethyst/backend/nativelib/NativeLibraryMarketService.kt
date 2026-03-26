@@ -3,6 +3,7 @@ package io.stamethyst.backend.nativelib
 import android.content.Context
 import android.content.res.AssetManager
 import io.stamethyst.backend.fs.FileTreeCleaner
+import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
 import java.io.BufferedInputStream
@@ -54,7 +55,9 @@ object NativeLibraryMarketService {
     private const val USER_AGENT = "SlayTheAmethyst-NativeMarket"
 
     fun fetchCatalog(source: UpdateSource): List<NativeLibraryMarketCatalogEntry> {
-        return parseCatalog(requestText(source.buildUrl(METADATA_URL)))
+        return GithubMirrorFallback.run(source) { candidate ->
+            parseCatalog(requestText(candidate.buildUrl(METADATA_URL)))
+        }.value
     }
 
     internal fun parseCatalog(responseText: String): List<NativeLibraryMarketCatalogEntry> {
@@ -127,7 +130,12 @@ object NativeLibraryMarketService {
         prepareCleanDirectory(stagingDir)
         try {
             entry.files.forEach { file ->
-                downloadFile(source.buildUrl(file.downloadUrl), File(stagingDir, file.fileName))
+                GithubMirrorFallback.run(source) { candidate ->
+                    downloadFile(
+                        candidate.buildUrl(file.downloadUrl),
+                        File(stagingDir, file.fileName)
+                    )
+                }
             }
 
             val packageDir = RuntimePaths.nativeMarketPackageDir(context, entry.id)
@@ -399,10 +407,27 @@ object NativeLibraryMarketService {
             if (parent != null && !parent.exists() && !parent.mkdirs()) {
                 throw IOException("Failed to create directory: ${parent.absolutePath}")
             }
+            val tempFile = File(
+                parent ?: targetFile.parentFile ?: targetFile.absoluteFile.parentFile ?: targetFile.parentFile,
+                "${targetFile.name}.part"
+            )
             BufferedInputStream(connection.inputStream).use { input ->
-                FileOutputStream(targetFile, false).use { output ->
-                    input.copyTo(output)
+                FileOutputStream(tempFile, false).use { output ->
+                    try {
+                        input.copyTo(output)
+                    } catch (error: Throwable) {
+                        tempFile.delete()
+                        throw error
+                    }
                 }
+            }
+            if (targetFile.exists() && !targetFile.delete()) {
+                tempFile.delete()
+                throw IOException("Failed to replace file: ${targetFile.absolutePath}")
+            }
+            if (!tempFile.renameTo(targetFile)) {
+                copyFile(tempFile, targetFile)
+                tempFile.delete()
             }
             targetFile.setReadable(true, false)
             targetFile.setWritable(true, true)

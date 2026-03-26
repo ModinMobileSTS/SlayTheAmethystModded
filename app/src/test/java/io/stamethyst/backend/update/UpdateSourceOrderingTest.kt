@@ -7,11 +7,13 @@ import org.junit.Test
 
 class UpdateSourceOrderingTest {
     @Test
-    fun metadataCandidates_skipDownloadOnlyPreferredSource() {
+    fun metadataCandidates_keepPreferredSourceFirstEvenWhenItWasDownloadOnly() {
         assertEquals(
             listOf(
+                UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_PROXY_VIP,
                 UpdateSource.GH_LLKK,
+                UpdateSource.GH_PROXY_NET,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_COM)
@@ -19,11 +21,13 @@ class UpdateSourceOrderingTest {
     }
 
     @Test
-    fun metadataCandidates_prioritizePreferredVipFirst() {
+    fun metadataCandidates_prioritizePreferredVipFirstThenOtherMirrors() {
         assertEquals(
             listOf(
                 UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_LLKK,
+                UpdateSource.GH_PROXY_NET,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_VIP)
@@ -31,11 +35,13 @@ class UpdateSourceOrderingTest {
     }
 
     @Test
-    fun metadataCandidates_prioritizePreferredLlkkFirst() {
+    fun metadataCandidates_prioritizePreferredLlkkFirstThenOtherMirrors() {
         assertEquals(
             listOf(
                 UpdateSource.GH_LLKK,
+                UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_PROXY_NET,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_LLKK)
@@ -43,10 +49,10 @@ class UpdateSourceOrderingTest {
     }
 
     @Test
-    fun metadataCandidates_excludeGhproxyNetAndKeepOfficialLast() {
+    fun metadataCandidates_includeAllMirrorsAndKeepOfficialLast() {
         val candidates = UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_VIP)
 
-        assertFalse(candidates.contains(UpdateSource.GH_PROXY_NET))
+        assertTrue(candidates.contains(UpdateSource.GH_PROXY_NET))
         assertEquals(UpdateSource.OFFICIAL, candidates.last())
     }
 
@@ -65,12 +71,12 @@ class UpdateSourceOrderingTest {
     }
 
     @Test
-    fun downloadCandidates_prioritizePreferredSourceBeforeMetadataSource() {
+    fun downloadCandidates_followPreferredThenOtherMirrorsThenOfficial() {
         assertEquals(
             listOf(
                 UpdateSource.GH_PROXY_COM,
-                UpdateSource.GH_LLKK,
                 UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_LLKK,
                 UpdateSource.GH_PROXY_NET,
                 UpdateSource.OFFICIAL
             ),

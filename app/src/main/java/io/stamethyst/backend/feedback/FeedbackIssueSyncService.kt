@@ -2,6 +2,7 @@ package io.stamethyst.backend.feedback
 
 import android.content.Context
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedInputStream
@@ -122,12 +123,12 @@ object FeedbackIssueSyncService {
         val preferred = UpdateSource.normalizePreferredUserSource(
             LauncherPreferences.readPreferredUpdateMirrorId(context)
         )
-        for (source in UpdateSource.metadataCandidates(preferred)) {
-            try {
-                return fetchIssuePageFromSource(source, page, pageSize)
-            } catch (error: Throwable) {
-                lastError = error
-            }
+        try {
+            return GithubMirrorFallback.run(preferred) { source ->
+                fetchIssuePageFromSource(source, page, pageSize)
+            }.value
+        } catch (error: Throwable) {
+            lastError = error
         }
         throw buildWrappedIOException("无法加载议题列表：", lastError)
     }
@@ -217,15 +218,13 @@ object FeedbackIssueSyncService {
         val preferred = UpdateSource.normalizePreferredUserSource(
             LauncherPreferences.readPreferredUpdateMirrorId(context)
         )
-        var lastError: Throwable? = null
-        for (source in UpdateSource.metadataCandidates(preferred)) {
-            try {
-                return fetchRemoteIssueFromSource(source, issueNumber)
-            } catch (error: Throwable) {
-                lastError = error
-            }
+        return try {
+            GithubMirrorFallback.run(preferred) { source ->
+                fetchRemoteIssueFromSource(source, issueNumber)
+            }.value
+        } catch (error: Throwable) {
+            throw buildWrappedIOException("无法同步 Issue #$issueNumber：", error)
         }
-        throw buildWrappedIOException("无法同步 Issue #$issueNumber：", lastError)
     }
 
     private fun fetchIssuePageFromSource(
