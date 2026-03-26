@@ -48,7 +48,6 @@ The CI runner needs these files packaged as `build-deps.tar.gz`:
 
 - `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
 - `build-deps/runtime-pack/jre8-pojav.zip`
-- `build-deps/runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so`
 
 Compute SHA256:
 

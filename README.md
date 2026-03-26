@@ -27,7 +27,7 @@
 <p align="center">
   <img alt="Android API 26+" src="https://img.shields.io/badge/Android-API%2026%2B-34A853?style=flat-square&logo=android&logoColor=white" />
   <img alt="Runtime Java 8 Bridge" src="https://img.shields.io/badge/Runtime-Java%208%20Bridge-5b4638?style=flat-square&logo=openjdk&logoColor=white" />
-  <img alt="ABI arm64-v8a and armeabi-v7a" src="https://img.shields.io/badge/ABI-arm64--v8a%20%7C%20armeabi--v7a-f97316?style=flat-square" />
+  <img alt="ABI arm64-v8a" src="https://img.shields.io/badge/ABI-arm64--v8a-f97316?style=flat-square" />
   <img alt="CI GitHub Release Workflow" src="https://img.shields.io/badge/CI-GitHub%20Release%20Workflow-24292f?style=flat-square&logo=githubactions&logoColor=white" />
 </p>
 
@@ -52,7 +52,7 @@
 | 模组兼容性 | 目标是支持真实的 `ModTheSpire` / `BaseMod` / `StSLib` 模组堆栈，而不是只跑原版内容。 |
 | 运行时   | 运行 JavaSE 而不是 ART，避免因为实现不一致导致的兼容性问题。                          |
 | 移动端交互 | 针对触屏补充了控制适配与界面适配。                                             |
-| 设备覆盖  | 同时支持 `arm64-v8a` 与 `armeabi-v7a`。                             |
+| 设备覆盖  | 仅支持 `arm64-v8a`。                                             |
 
 > [!Note]
 > 虽然尖塔采用了 LibGDX 编写，但是部分模组仍采用一些桌面特性进行编写，本项目旨在使用适配安卓的 JavaSE 与配套 Native 库来加载这些模组，从而最大限度还原模组的表现。
@@ -67,12 +67,10 @@
 必需文件：
 - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
 - `runtime-pack/jre8-pojav.zip`
-- `runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so`
-- `runtime-pack/gdx_video_natives/libgdx-video-desktoparm.so`
 
 依赖下载来源：
 - Runtime Pack: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/tag/pojav-jre8)
-- `gdx-video` 原生桥接库: [ModinMobileSTS/GdxVideoDesktopAndroidNative](https://github.com/ModinMobileSTS/GdxVideoDesktopAndroidNative/releases)
+- 原生库市场: [ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
 
 > [!NOTE]
 > `ModTheSpire.jar`、`BaseMod.jar`、`StSLib.jar` 等核心模组 jar 由应用资源打包提供，不会在构建时从外部模组源动态解析。

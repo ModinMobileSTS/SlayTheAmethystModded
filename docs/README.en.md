@@ -68,11 +68,10 @@ Set `STEAM_PATH` as an environment variable, or set `steam.path` in `gradle.prop
 Required files:
 - `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
 - `runtime-pack/jre8-pojav.zip`
-- `runtime-pack/gdx_video_natives/libgdx-video-desktoparm64.so`
 
 Dependency download sources:
 - Runtime pack: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/tag/pojav-jre8)
-- `gdx-video` native bridge libs: [ModinMobileSTS/GdxVideoDesktopAndroidNative](https://github.com/ModinMobileSTS/GdxVideoDesktopAndroidNative/releases)
+- Native library market: [ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
 
 > [!NOTE]
 > Core mod jars such as `ModTheSpire.jar`, `BaseMod.jar`, and `StSLib.jar` are bundled from app assets. They are not fetched from external mod sources at build time.
