@@ -240,7 +240,6 @@ val log4jRuntimeComponents by configurations.creating {
 }
 val adb: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
 val runtimePackZip: RegularFile = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
-val tensorFlowNativeAssetDir = rootProject.layout.projectDirectory.dir("runtime-pack/tensorflow_natives")
 val supportedLaunchModes = setOf("mts", "vanilla")
 val stsJvmLogExportMaxSlots = 5
 
@@ -420,41 +419,6 @@ val installPatchJars by tasks.registering(Sync::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_patch") })
 }
 
-val installBundledRuntimeNatives by tasks.registering(Sync::class) {
-    doFirst {
-        val tensorFlowNativeDirFile = tensorFlowNativeAssetDir.asFile
-        if (tensorFlowNativeDirFile.isDirectory) {
-            val hasTensorFlowJni = fileTree(tensorFlowNativeDirFile).matching {
-                include("**/libjnitensorflow.so")
-            }.files.isNotEmpty()
-            if (!hasTensorFlowJni) {
-                throw GradleException(
-                    "TensorFlow native directory exists but libjnitensorflow.so is missing: " +
-                        tensorFlowNativeDirFile.absolutePath
-                )
-            }
-            val hasTensorFlowDependency = fileTree(tensorFlowNativeDirFile).matching {
-                include(
-                    "**/libjnitensorflow.so2",
-                    "**/libjnitensorflow.so.*",
-                    "**/libtensorflow.so.*",
-                    "**/libtensorflow_framework.so.*"
-                )
-            }.files.isNotEmpty()
-            if (!hasTensorFlowDependency) {
-                logger.warn(
-                    "Bundled TensorFlow natives do not include a versioned companion library under " +
-                        "${tensorFlowNativeDirFile.absolutePath}. If your JNI build depends on " +
-                        "libjnitensorflow.so2, libtensorflow.so.2, or libtensorflow_framework.so.2, " +
-                        "place them in runtime-pack/tensorflow_natives as well."
-                )
-            }
-        }
-    }
-    from(tensorFlowNativeAssetDir)
-    into(generatedRuntimeAssetsDir.map { it.dir("components/bundled_runtime_natives") })
-}
-
 val installLog4jRuntimeAssets by tasks.registering(Sync::class) {
     from(log4jRuntimeComponents) {
         include("log4j-api-*.jar")
@@ -500,7 +464,6 @@ tasks.preBuild.configure {
     dependsOn(installBootBridgeJar)
     dependsOn(installLwjglBridgeAssets)
     dependsOn(installPatchJars)
-    dependsOn(installBundledRuntimeNatives)
     dependsOn(installLog4jRuntimeAssets)
     dependsOn(installRuntimePackAssets)
 }
