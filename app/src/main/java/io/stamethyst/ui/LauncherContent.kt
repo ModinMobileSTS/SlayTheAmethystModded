@@ -53,6 +53,7 @@ import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
+import io.stamethyst.ui.settings.LauncherDeveloperSettingsScreen
 import io.stamethyst.ui.settings.LauncherMobileGluesSettingsScreen
 import io.stamethyst.ui.settings.LauncherNativeLibraryMarketScreen
 import io.stamethyst.ui.settings.LauncherSettingsScreen
@@ -179,6 +180,13 @@ fun LauncherContent(
                                 onDismissFeedbackSubmissionNotice = {
                                     pendingFeedbackNotice = null
                                 }
+                            )
+                        }
+
+                        entry<Route.DeveloperSettings> {
+                            LauncherDeveloperSettingsScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
 

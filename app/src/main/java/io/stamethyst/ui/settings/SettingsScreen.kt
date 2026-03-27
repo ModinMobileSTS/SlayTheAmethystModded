@@ -186,6 +186,7 @@ fun LauncherSettingsScreen(
         onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onOpenMobileGluesSettings = viewModel::onOpenMobileGluesSettings,
+        onOpenDeveloperSettings = { navigator.push(Route.DeveloperSettings) },
         onOpenFeedback = viewModel::onOpenFeedback,
         onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
         onOpenFeedbackIssueBrowser = { navigator.push(Route.FeedbackIssueBrowser) },
@@ -193,6 +194,62 @@ fun LauncherSettingsScreen(
         onDismissFeedbackSubmissionNotice = onDismissFeedbackSubmissionNotice,
     )
     SettingsEffectsHandler(viewModel = viewModel)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LauncherDeveloperSettingsScreen(
+    viewModel: SettingsScreenViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val activity = requireNotNull(LocalActivity.current)
+    val navigator = currentNavigator
+    val uiState = viewModel.uiState
+
+    LaunchedEffect(activity) {
+        viewModel.bind(activity)
+    }
+
+    LauncherDeveloperSettingsScreenContent(
+        modifier = modifier,
+        uiState = uiState,
+        onGoBack = navigator::goBack,
+        onRendererSelectionModeChanged = { mode ->
+            viewModel.onRendererSelectionModeChanged(activity, mode)
+        },
+        onManualRendererBackendChanged = { backend ->
+            viewModel.onManualRendererBackendChanged(activity, backend)
+        },
+        onOpenMobileGluesSettings = { navigator.push(Route.MobileGluesSettings) },
+        onRenderSurfaceBackendChanged = { backend ->
+            viewModel.onRenderSurfaceBackendChanged(activity, backend)
+        },
+        onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
+        onJvmCompressedPointersChanged = { enabled ->
+            viewModel.onJvmCompressedPointersChanged(activity, enabled)
+        },
+        onJvmStringDeduplicationChanged = { enabled ->
+            viewModel.onJvmStringDeduplicationChanged(activity, enabled)
+        },
+        onOpenCompatibility = { navigator.push(Route.Compatibility) },
+        onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
+        onPreloadAllJreLibrariesChanged = { enabled ->
+            viewModel.onPreloadAllJreLibrariesChanged(activity, enabled)
+        },
+        onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
+        onJvmLogcatMirrorChanged = { enabled ->
+            viewModel.onJvmLogcatMirrorChanged(activity, enabled)
+        },
+        onGpuResourceDiagChanged = { enabled ->
+            viewModel.onGpuResourceDiagChanged(activity, enabled)
+        },
+        onGdxPadCursorDebugChanged = { enabled ->
+            viewModel.onGdxPadCursorDebugChanged(activity, enabled)
+        },
+        onGlBridgeSwapHeartbeatDebugChanged = { enabled ->
+            viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled)
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -296,13 +353,14 @@ private fun LauncherSettingsScreenContent(
     onManualCheckUpdates: () -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
+    onOpenDeveloperSettings: () -> Unit = {},
     onOpenFeedback: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onOpenFeedbackIssueBrowser: () -> Unit = {},
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
-    val blockingImportInteractionLocked = uiState.busyOperation == UiBusyOperation.MOD_IMPORT
+    val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
     val uriHandler = LocalUriHandler.current
     Scaffold(
         topBar = {
@@ -311,7 +369,7 @@ private fun LauncherSettingsScreenContent(
                 navigationIcon = {
                     HapticIconButton(
                         onClick = onGoBack,
-                        enabled = !blockingImportInteractionLocked
+                        enabled = !blockingInteractionLocked
                     ) {
                         Icon(
                             imageVector = Icons.ArrowBack,
@@ -370,17 +428,10 @@ private fun LauncherSettingsScreenContent(
 
             item {
                 SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
-                    SettingsRenderSection(
+                    SettingsPerformanceSection(
                         uiState = uiState,
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
-                        onRendererSelectionModeChanged = onRendererSelectionModeChanged,
-                        onManualRendererBackendChanged = onManualRendererBackendChanged,
-                        onOpenMobileGluesSettings = onOpenMobileGluesSettings,
-                        onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
-                        onJvmHeapMaxSelected = onJvmHeapMaxSelected,
-                        onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
-                        onJvmStringDeduplicationChanged = onJvmStringDeduplicationChanged,
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                     )
                 }
@@ -420,25 +471,10 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
-                SettingsSectionCard(title = stringResource(R.string.compat_settings_title)) {
-                    SettingsCompatibilitySection(
+                SettingsSectionCard(title = stringResource(R.string.settings_developer_title)) {
+                    SettingsDeveloperEntrySection(
                         busy = uiState.busy,
-                        onOpenCompatibility = onOpenCompatibility,
-                    )
-                }
-            }
-
-            item {
-                SettingsSectionCard(title = stringResource(R.string.settings_section_status_logs)) {
-                    SettingsStatusSection(
-                        uiState = uiState,
-                        onLwjglDebugChanged = onLwjglDebugChanged,
-                        onPreloadAllJreLibrariesChanged = onPreloadAllJreLibrariesChanged,
-                        onLogcatCaptureChanged = onLogcatCaptureChanged,
-                        onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
-                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
-                        onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
-                        onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged
+                        onOpenDeveloperSettings = onOpenDeveloperSettings
                     )
                 }
             }
@@ -732,7 +768,7 @@ private fun SettingsFeedbackEntryCard(
 internal fun SettingsBusyIndicator(
     uiState: SettingsScreenViewModel.UiState
 ) {
-    if (!uiState.busy || uiState.busyOperation == UiBusyOperation.MOD_IMPORT) {
+    if (!uiState.busy || uiState.busyOperation.usesBlockingOverlay()) {
         return
     }
     val progressFraction = uiState.busyProgressPercent
@@ -997,44 +1033,127 @@ private fun GetNewModsDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsRenderSection(
+private fun LauncherDeveloperSettingsScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: SettingsScreenViewModel.UiState,
+    onGoBack: () -> Unit = {},
+    onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
+    onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
+    onOpenMobileGluesSettings: () -> Unit = {},
+    onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
+    onJvmHeapMaxSelected: (Int) -> Unit = {},
+    onJvmCompressedPointersChanged: (Boolean) -> Unit = {},
+    onJvmStringDeduplicationChanged: (Boolean) -> Unit = {},
+    onOpenCompatibility: () -> Unit = {},
+    onLwjglDebugChanged: (Boolean) -> Unit = {},
+    onPreloadAllJreLibrariesChanged: (Boolean) -> Unit = {},
+    onLogcatCaptureChanged: (Boolean) -> Unit = {},
+    onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
+    onGpuResourceDiagChanged: (Boolean) -> Unit = {},
+    onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
+    onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
+) {
+    val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_developer_title)) },
+                navigationIcon = {
+                    HapticIconButton(
+                        onClick = onGoBack,
+                        enabled = !blockingInteractionLocked
+                    ) {
+                        Icon(
+                            imageVector = Icons.ArrowBack,
+                            contentDescription = stringResource(R.string.common_content_desc_back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                SettingsBusyIndicator(uiState = uiState)
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_developer_render_title)) {
+                    SettingsAdvancedRenderSection(
+                        uiState = uiState,
+                        onRendererSelectionModeChanged = onRendererSelectionModeChanged,
+                        onManualRendererBackendChanged = onManualRendererBackendChanged,
+                        onOpenMobileGluesSettings = onOpenMobileGluesSettings,
+                        onRenderSurfaceBackendChanged = onRenderSurfaceBackendChanged,
+                        onJvmHeapMaxSelected = onJvmHeapMaxSelected,
+                        onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
+                        onJvmStringDeduplicationChanged = onJvmStringDeduplicationChanged,
+                    )
+                }
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.compat_settings_title)) {
+                    SettingsCompatibilitySection(
+                        busy = uiState.busy,
+                        onOpenCompatibility = onOpenCompatibility,
+                    )
+                }
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_section_status_logs)) {
+                    SettingsStatusSection(
+                        uiState = uiState,
+                        onLwjglDebugChanged = onLwjglDebugChanged,
+                        onPreloadAllJreLibrariesChanged = onPreloadAllJreLibrariesChanged,
+                        onLogcatCaptureChanged = onLogcatCaptureChanged,
+                        onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
+                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
+                        onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
+                        onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsDeveloperEntrySection(
+    busy: Boolean,
+    onOpenDeveloperSettings: () -> Unit,
+) {
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_developer_open),
+        supportingText = stringResource(R.string.settings_developer_summary),
+        enabled = !busy,
+        onClick = onOpenDeveloperSettings
+    )
+}
+
+@Composable
+private fun SettingsPerformanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
-    onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit,
-    onManualRendererBackendChanged: (RendererBackend) -> Unit,
-    onOpenMobileGluesSettings: () -> Unit,
-    onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
-    onJvmHeapMaxSelected: (Int) -> Unit,
-    onJvmCompressedPointersChanged: (Boolean) -> Unit,
-    onJvmStringDeduplicationChanged: (Boolean) -> Unit,
     onSustainedPerformanceModeChanged: (Boolean) -> Unit,
 ) {
-    val context = LocalContext.current
     val view = LocalView.current
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
-    var heapSliderValue by remember(uiState.selectedJvmHeapMaxMb) {
-        mutableFloatStateOf(uiState.selectedJvmHeapMaxMb.toFloat())
-    }
     var lastRenderScaleStep by remember(uiState.selectedRenderScale) {
         mutableIntStateOf(renderScaleToStep(uiState.selectedRenderScale))
-    }
-    var lastHeapStep by remember(
-        uiState.selectedJvmHeapMaxMb,
-        uiState.jvmHeapMinMb,
-        uiState.jvmHeapStepMb,
-    ) {
-        mutableIntStateOf(
-            heapSliderToStep(
-                value = uiState.selectedJvmHeapMaxMb.toFloat(),
-                min = uiState.jvmHeapMinMb,
-                step = uiState.jvmHeapStepMb,
-            )
-        )
     }
 
     Text(
@@ -1102,6 +1221,63 @@ private fun SettingsRenderSection(
         text = uiState.systemGameModeDescription,
         style = MaterialTheme.typography.bodySmall
     )
+
+    if (showGameModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showGameModeDialog = false },
+            title = { Text(stringResource(R.string.settings_system_game_mode_title)) },
+            text = {
+                Text(
+                    text = listOf(
+                        stringResource(
+                            R.string.settings_system_game_mode_dialog_current,
+                            uiState.systemGameModeDisplayName
+                        ),
+                        uiState.systemGameModeDescription,
+                        stringResource(R.string.settings_system_game_mode_dialog_control),
+                        stringResource(R.string.settings_system_game_mode_dialog_panel),
+                        stringResource(R.string.settings_system_game_mode_dialog_support)
+                    ).joinToString("\n\n")
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showGameModeDialog = false }) {
+                    Text(stringResource(R.string.settings_system_game_mode_acknowledge))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsAdvancedRenderSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit,
+    onManualRendererBackendChanged: (RendererBackend) -> Unit,
+    onOpenMobileGluesSettings: () -> Unit,
+    onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit,
+    onJvmHeapMaxSelected: (Int) -> Unit,
+    onJvmCompressedPointersChanged: (Boolean) -> Unit,
+    onJvmStringDeduplicationChanged: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    var heapSliderValue by remember(uiState.selectedJvmHeapMaxMb) {
+        mutableFloatStateOf(uiState.selectedJvmHeapMaxMb.toFloat())
+    }
+    var lastHeapStep by remember(
+        uiState.selectedJvmHeapMaxMb,
+        uiState.jvmHeapMinMb,
+        uiState.jvmHeapStepMb,
+    ) {
+        mutableIntStateOf(
+            heapSliderToStep(
+                value = uiState.selectedJvmHeapMaxMb.toFloat(),
+                min = uiState.jvmHeapMinMb,
+                step = uiState.jvmHeapStepMb,
+            )
+        )
+    }
 
     Text(
         text = stringResource(R.string.settings_renderer_backend_title),
@@ -1252,32 +1428,6 @@ private fun SettingsRenderSection(
         description = stringResource(R.string.settings_jvm_string_dedup_desc),
         onCheckedChange = onJvmStringDeduplicationChanged
     )
-
-    if (showGameModeDialog) {
-        AlertDialog(
-            onDismissRequest = { showGameModeDialog = false },
-            title = { Text(stringResource(R.string.settings_system_game_mode_title)) },
-            text = {
-                Text(
-                    text = listOf(
-                        stringResource(
-                            R.string.settings_system_game_mode_dialog_current,
-                            uiState.systemGameModeDisplayName
-                        ),
-                        uiState.systemGameModeDescription,
-                        stringResource(R.string.settings_system_game_mode_dialog_control),
-                        stringResource(R.string.settings_system_game_mode_dialog_panel),
-                        stringResource(R.string.settings_system_game_mode_dialog_support)
-                    ).joinToString("\n\n")
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showGameModeDialog = false }) {
-                    Text(stringResource(R.string.settings_system_game_mode_acknowledge))
-                }
-            }
-        )
-    }
 }
 
 private fun renderScaleToStep(value: Float): Int {

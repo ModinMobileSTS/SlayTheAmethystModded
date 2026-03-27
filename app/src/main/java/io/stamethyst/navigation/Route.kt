@@ -12,6 +12,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object Settings : Route
     @Serializable
+    data object DeveloperSettings : Route
+    @Serializable
     data object NativeLibraryMarket : Route
     @Serializable
     data object Compatibility : Route

@@ -544,6 +544,10 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_section_render">Rendering</string>
     <string name="settings_section_input">Input and interaction</string>
     <string name="settings_section_status_logs">Status and logs</string>
+    <string name="settings_developer_title">Developer settings</string>
+    <string name="settings_developer_open">Open developer settings</string>
+    <string name="settings_developer_summary">Advanced rendering, compatibility patches, and diagnostic switches. Most players should not need to change these.</string>
+    <string name="settings_developer_render_title">Advanced rendering</string>
     <string name="settings_feedback_entry_title">Feedback</string>
     <string name="settings_feedback_entry_desc">Submit launcher issues, in-game issues, and feature requests. This is the preferred reporting path.</string>
     <string name="settings_feedback_entry_new">Report new issue</string>
