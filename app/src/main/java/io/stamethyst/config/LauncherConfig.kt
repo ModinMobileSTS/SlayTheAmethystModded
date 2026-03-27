@@ -150,7 +150,7 @@ object LauncherConfig {
     const val DEFAULT_AVOID_DISPLAY_CUTOUT = false
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
-    const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = false
+    const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_PRELOAD_ALL_JRE_LIBRARIES = false
     const val DEFAULT_LOGCAT_CAPTURE_ENABLED = false

@@ -146,7 +146,6 @@ fun LauncherSettingsScreen(
         },
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
-        onManualDismissBootOverlayChanged = { enabled -> viewModel.onManualDismissBootOverlayChanged(activity, enabled) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
@@ -163,9 +162,6 @@ fun LauncherSettingsScreen(
         },
         onGamePerformanceOverlayChanged = { enabled ->
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
-        },
-        onSustainedPerformanceModeChanged = { enabled ->
-            viewModel.onSustainedPerformanceModeChanged(activity, enabled)
         },
         onLwjglDebugChanged = { enabled -> viewModel.onLwjglDebugChanged(activity, enabled) },
         onPreloadAllJreLibrariesChanged = {
@@ -214,6 +210,12 @@ fun LauncherDeveloperSettingsScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
+        onManualDismissBootOverlayChanged = { enabled ->
+            viewModel.onManualDismissBootOverlayChanged(activity, enabled)
+        },
+        onSustainedPerformanceModeChanged = { enabled ->
+            viewModel.onSustainedPerformanceModeChanged(activity, enabled)
+        },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
         },
@@ -281,7 +283,7 @@ private fun LauncherSettingsScreenPreview() {
             avoidDisplayCutout = false,
             cropScreenBottom = false,
             showGamePerformanceOverlay = false,
-            sustainedPerformanceModeEnabled = false,
+            sustainedPerformanceModeEnabled = true,
             lwjglDebugEnabled = false,
             preloadAllJreLibrariesEnabled = false,
             logcatCaptureEnabled = false,
@@ -329,7 +331,6 @@ private fun LauncherSettingsScreenContent(
     onJvmStringDeduplicationChanged: (Boolean) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
-    onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
@@ -339,7 +340,6 @@ private fun LauncherSettingsScreenContent(
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
     onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
-    onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onPreloadAllJreLibrariesChanged: (Boolean) -> Unit = {},
     onLogcatCaptureChanged: (Boolean) -> Unit = {},
@@ -432,7 +432,6 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
-                        onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                     )
                 }
             }
@@ -443,7 +442,6 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onPlayerNameChanged = onPlayerNameChanged,
                         onBackBehaviorChanged = onBackBehaviorChanged,
-                        onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
@@ -1039,6 +1037,8 @@ private fun LauncherDeveloperSettingsScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
+    onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
+    onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
@@ -1083,6 +1083,16 @@ private fun LauncherDeveloperSettingsScreenContent(
         ) {
             item {
                 SettingsBusyIndicator(uiState = uiState)
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_developer_runtime_title)) {
+                    SettingsDeveloperRuntimeSection(
+                        uiState = uiState,
+                        onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
+                        onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
+                    )
+                }
             }
 
             item {
@@ -1145,10 +1155,8 @@ private fun SettingsPerformanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
-    onSustainedPerformanceModeChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
-    var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
@@ -1198,6 +1206,15 @@ private fun SettingsPerformanceSection(
             onSelect = onTargetFpsSelected
         )
     }
+}
+
+@Composable
+private fun SettingsDeveloperRuntimeSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onManualDismissBootOverlayChanged: (Boolean) -> Unit,
+    onSustainedPerformanceModeChanged: (Boolean) -> Unit,
+) {
+    var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
 
     SwitchSettingRow(
         checked = uiState.sustainedPerformanceModeEnabled,
@@ -1220,6 +1237,15 @@ private fun SettingsPerformanceSection(
     Text(
         text = uiState.systemGameModeDescription,
         style = MaterialTheme.typography.bodySmall
+    )
+
+    SwitchSettingRow(
+        checked = uiState.manualDismissBootOverlay,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_boot_overlay_manual_enabled),
+        disabledText = stringResource(R.string.settings_boot_overlay_manual_disabled),
+        description = stringResource(R.string.settings_boot_overlay_manual_desc),
+        onCheckedChange = onManualDismissBootOverlayChanged
     )
 
     if (showGameModeDialog) {
@@ -1444,7 +1470,6 @@ private fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
-    onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
@@ -1501,15 +1526,6 @@ private fun SettingsInputSection(
     Text(
         text = stringResource(R.string.settings_back_behavior_desc),
         style = MaterialTheme.typography.bodySmall
-    )
-
-    SwitchSettingRow(
-        checked = uiState.manualDismissBootOverlay,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_boot_overlay_manual_enabled),
-        disabledText = stringResource(R.string.settings_boot_overlay_manual_disabled),
-        description = stringResource(R.string.settings_boot_overlay_manual_desc),
-        onCheckedChange = onManualDismissBootOverlayChanged
     )
 
     SwitchSettingRow(

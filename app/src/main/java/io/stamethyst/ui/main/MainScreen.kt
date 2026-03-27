@@ -578,7 +578,7 @@ private fun CrashRecoveryScreen(
                     ) {
                         Text(stringResource(R.string.sts_crash_page_action_share))
                     }
-                    Button(
+                    OutlinedButton(
                         onClick = onCopyReport,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)

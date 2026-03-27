@@ -24,6 +24,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import net.kdt.pojavlaunch.AWTInputBridge
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
@@ -469,7 +470,7 @@ internal class FloatingMouseOverlayController(
         } else {
             R.string.touch_mouse_lock_disabled_toast
         }
-        Toast.makeText(activity, messageRes, Toast.LENGTH_SHORT).show()
+        LauncherTransientNoticeBus.show(activity, messageRes, Toast.LENGTH_SHORT)
     }
 
     private fun updateTouchMouseModeUi() {
