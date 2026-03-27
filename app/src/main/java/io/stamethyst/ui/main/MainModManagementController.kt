@@ -13,6 +13,7 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.VupShionPatchedDialog
@@ -527,17 +528,12 @@ internal class MainModManagementController(
                 }
                 host.runOnUiThread {
                     hostCallbacks.setBusy(false, null)
-                    showToast(
-                        host,
-                        host.getString(R.string.main_mod_export_success, sourceFile.name),
-                        Toast.LENGTH_SHORT
-                    )
+                    showToast(host.getString(R.string.main_mod_export_success, sourceFile.name), Toast.LENGTH_SHORT)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     hostCallbacks.setBusy(false, null)
                     showToast(
-                        host,
                         host.getString(
                             R.string.main_mod_export_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
@@ -1662,12 +1658,18 @@ internal class MainModManagementController(
         folderStateStore.sanitize(optionalMods)
     }
 
-    private fun emitSnackbar(message: String) {
-        emitSnackbar(UiText.DynamicString(message))
+    private fun emitSnackbar(
+        message: String,
+        duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
+    ) {
+        emitSnackbar(UiText.DynamicString(message), duration)
     }
 
-    private fun emitSnackbar(message: UiText) {
-        hostCallbacks.emitEffect(MainScreenViewModel.Effect.ShowSnackbar(message))
+    private fun emitSnackbar(
+        message: UiText,
+        duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
+    ) {
+        hostCallbacks.emitEffect(MainScreenViewModel.Effect.ShowSnackbar(message, duration))
     }
 
     private fun emitDialog(title: String, message: String) {
@@ -1678,8 +1680,15 @@ internal class MainModManagementController(
         hostCallbacks.emitEffect(MainScreenViewModel.Effect.ShowDialog(title, message))
     }
 
-    private fun showToast(host: Activity, message: String, duration: Int) {
-        Toast.makeText(host, message, duration).show()
+    private fun showToast(message: String, duration: Int) {
+        emitSnackbar(
+            message = message,
+            duration = if (duration == Toast.LENGTH_SHORT) {
+                LauncherTransientNoticeDuration.SHORT
+            } else {
+                LauncherTransientNoticeDuration.LONG
+            }
+        )
     }
 
     private fun setBusyText(

@@ -14,8 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +33,10 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +76,7 @@ fun LauncherContent(
     val activity = requireNotNull(LocalActivity.current)
     val navigator = rememberAppNavigator(initialRoute)
     val uriHandler = LocalUriHandler.current
+    val transientNoticeHostState = remember { SnackbarHostState() }
     var pendingFeedbackNotice by remember {
         mutableStateOf<FeedbackSubmissionNotice?>(null)
     }
@@ -75,20 +84,20 @@ fun LauncherContent(
     val mainUiState = mainViewModel.uiState
     val settingsUiState = settingsViewModel.uiState
     val currentRoute = navigator.backStack.lastOrNull() as? Route
-    val isBlockingImportInteractionLocked =
-        mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT ||
-            settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT
-    val shouldShowBlockingImportWindow =
-        isBlockingImportInteractionLocked && currentRoute != Route.QuickStart
-    val blockingImportBusyMessage = when {
-        mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> mainUiState.busyMessage
-        settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT -> settingsUiState.busyMessage
+    val isBlockingBusyInteractionLocked =
+        mainUiState.busyOperation.usesBlockingOverlay() ||
+            settingsUiState.busyOperation.usesBlockingOverlay()
+    val shouldShowBlockingBusyWindow =
+        isBlockingBusyInteractionLocked && currentRoute != Route.QuickStart
+    val blockingBusyMessage = when {
+        mainUiState.busyOperation.usesBlockingOverlay() -> mainUiState.busyMessage
+        settingsUiState.busyOperation.usesBlockingOverlay() -> settingsUiState.busyMessage
         else -> null
     }
-    val blockingImportBusyProgressPercent = when {
-        mainUiState.busyOperation == UiBusyOperation.MOD_IMPORT ->
+    val blockingBusyProgressPercent = when {
+        mainUiState.busyOperation.usesBlockingOverlay() ->
             mainUiState.busyProgressPercent
-        settingsUiState.busyOperation == UiBusyOperation.MOD_IMPORT ->
+        settingsUiState.busyOperation.usesBlockingOverlay() ->
             settingsUiState.busyProgressPercent
         else -> null
     }
@@ -96,9 +105,20 @@ fun LauncherContent(
     CompositionLocalProvider(
         LocalNavigator provides navigator,
     ) {
-        androidx.compose.runtime.LaunchedEffect(activity) {
+        LaunchedEffect(activity) {
             FeedbackInboxCoordinator.bind(activity.applicationContext)
             FeedbackInboxCoordinator.startPolling(activity.applicationContext)
+        }
+        LaunchedEffect(activity, transientNoticeHostState) {
+            LauncherTransientNoticeBus.requests.collect { request ->
+                transientNoticeHostState.showSnackbar(
+                    message = request.message.resolve(activity),
+                    duration = when (request.duration) {
+                        LauncherTransientNoticeDuration.SHORT -> SnackbarDuration.Short
+                        LauncherTransientNoticeDuration.LONG -> SnackbarDuration.Long
+                    }
+                )
+            }
         }
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -112,7 +132,7 @@ fun LauncherContent(
                         rememberViewModelStoreNavEntryDecorator(),
                     ),
                     onBack = {
-                        if (!isBlockingImportInteractionLocked) {
+                        if (!isBlockingBusyInteractionLocked) {
                             navigator.goBack()
                         }
                     },
@@ -153,6 +173,7 @@ fun LauncherContent(
                                 viewModel = mainViewModel,
                                 modifier = Modifier.fillMaxSize(),
                                 onOpenSettings = { navigator.push(Route.Settings) },
+                                onOpenFeedback = { navigator.push(Route.Feedback) },
                                 feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
                                 onOpenFeedbackUpdates = {
                                     val unreadIssues = feedbackInboxState.subscriptions
@@ -243,13 +264,43 @@ fun LauncherContent(
                         }
                     }
                 )
-                if (shouldShowBlockingImportWindow) {
-                    BlockingImportInteractionBlocker(
-                        message = blockingImportBusyMessage?.resolve()
+                if (shouldShowBlockingBusyWindow) {
+                    BlockingBusyInteractionBlocker(
+                        message = blockingBusyMessage?.resolve()
                             ?: stringResource(R.string.mod_import_busy_message),
-                        progressPercent = blockingImportBusyProgressPercent
+                        progressPercent = blockingBusyProgressPercent
                     )
                 }
+                SnackbarHost(
+                    hostState = transientNoticeHostState,
+                    snackbar = { snackbarData ->
+                        Snackbar(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 56.dp),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            action = {
+                                snackbarData.visuals.actionLabel?.let { actionLabel ->
+                                    TextButton(onClick = { snackbarData.performAction() }) {
+                                        Text(text = actionLabel)
+                                    }
+                                }
+                            },
+                            dismissAction = {
+                                TextButton(onClick = { snackbarData.dismiss() }) {
+                                    Text(text = stringResource(R.string.common_action_close))
+                                }
+                            },
+                            actionOnNewLine = false
+                        ) {
+                            Text(text = snackbarData.visuals.message)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 20.dp)
+                )
                 settingsUiState.updatePromptState?.let { promptState ->
                     AlertDialog(
                         onDismissRequest = settingsViewModel::dismissUpdatePrompt,
@@ -367,7 +418,7 @@ fun LauncherContent(
 }
 
 @Composable
-private fun BlockingImportInteractionBlocker(
+private fun BlockingBusyInteractionBlocker(
     message: String,
     progressPercent: Int? = null
 ) {

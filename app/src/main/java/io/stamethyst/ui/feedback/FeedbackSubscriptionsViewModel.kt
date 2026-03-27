@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueSyncService
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -38,16 +39,20 @@ class FeedbackSubscriptionsViewModel : ViewModel() {
             host.runOnUiThread {
                 setBusy(false, null)
                 result.onSuccess {
-                    Toast.makeText(host, host.getString(R.string.feedback_sync_completed), Toast.LENGTH_SHORT).show()
+                    LauncherTransientNoticeBus.show(
+                        host,
+                        host.getString(R.string.feedback_sync_completed),
+                        Toast.LENGTH_SHORT
+                    )
                 }.onFailure { error ->
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_sync_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
@@ -63,11 +68,11 @@ class FeedbackSubscriptionsViewModel : ViewModel() {
             FeedbackInboxCoordinator.refreshFromStorage(host)
             host.runOnUiThread {
                 setBusy(false, null)
-                Toast.makeText(
+                LauncherTransientNoticeBus.show(
                     host,
                     host.getString(R.string.feedback_unsubscribed, issueNumber),
                     Toast.LENGTH_SHORT
-                ).show()
+                )
             }
         }
     }

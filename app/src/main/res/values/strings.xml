@@ -27,6 +27,8 @@
     <string name="sts_crash_page_actions_desc">Retry immediately, or adjust recovery settings before launching again. The report below supports selection and copy, which is more convenient for long screenshots.</string>
     <string name="sts_crash_page_action_recovery">Open recovery settings</string>
     <string name="sts_crash_page_action_retry">Retry launch</string>
+    <string name="sts_crash_page_action_share">Share error report</string>
+    <string name="sts_crash_page_action_feedback">Send feedback</string>
     <string name="sts_crash_page_action_copy">Copy report</string>
     <string name="sts_crash_page_action_close">Close app</string>
     <string name="sts_crash_page_report_title">Crash report</string>

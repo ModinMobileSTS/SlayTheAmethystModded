@@ -46,8 +46,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,6 +77,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.resolve
@@ -98,6 +97,7 @@ fun LauncherMainScreen(
     modifier: Modifier = Modifier,
     viewModel: MainScreenViewModel,
     onOpenSettings: () -> Unit = {},
+    onOpenFeedback: () -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
 ) {
@@ -105,7 +105,6 @@ fun LauncherMainScreen(
     val hostActivity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState = viewModel.uiState
-    val snackbarHostState = remember { SnackbarHostState() }
     var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
     var pendingExportModSourcePath by remember { mutableStateOf<String?>(null) }
     val importModsLauncher = rememberLauncherForActivityResult(
@@ -160,7 +159,7 @@ fun LauncherMainScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 is MainScreenViewModel.Effect.ShowSnackbar ->
-                    snackbarHostState.showSnackbar(effect.message.resolve(context))
+                    LauncherTransientNoticeBus.show(effect.message, effect.duration)
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
                 is MainScreenViewModel.Effect.OpenExportModPicker -> {
                     pendingExportModSourcePath = effect.sourcePath
@@ -191,8 +190,8 @@ fun LauncherMainScreen(
         modifier = modifier,
         uiState = uiState,
         actions = actions,
-        snackbarHostState = snackbarHostState,
         onOpenSettings = onOpenSettings,
+        onOpenFeedback = onOpenFeedback,
         feedbackUnreadCount = feedbackUnreadCount,
         onOpenFeedbackUpdates = onOpenFeedbackUpdates
     )
@@ -286,7 +285,6 @@ private fun LauncherMainScreenPreview() {
             )
         ),
         actions = MainScreenActions(isHostAvailable = true),
-        snackbarHostState = SnackbarHostState()
     )
 }
 
@@ -296,8 +294,8 @@ private fun LauncherMainScreenContent(
     modifier: Modifier = Modifier,
     uiState: MainScreenViewModel.UiState,
     actions: MainScreenActions = MainScreenActions(isHostAvailable = false),
-    snackbarHostState: SnackbarHostState,
     onOpenSettings: () -> Unit = {},
+    onOpenFeedback: () -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
 ) {
@@ -322,8 +320,7 @@ private fun LauncherMainScreenContent(
     )
 
     Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { scaffoldPaddingValues ->
         Box(
             modifier = modifier
@@ -337,6 +334,7 @@ private fun LauncherMainScreenContent(
                     busy = uiState.busy,
                     busyMessage = uiState.busyMessage?.resolve(),
                     onOpenRecoverySettings = onOpenSettings,
+                    onOpenFeedback = onOpenFeedback,
                     onRetryLaunch = actions.onRetryLaunchAfterCrash,
                     onCopyReport = actions.onCopyCrashReport,
                     onShareLogs = actions.onShareCrashRecoveryReport,
@@ -350,7 +348,7 @@ private fun LauncherMainScreenContent(
                         .padding(start = 16.dp, top = 16.dp, end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (uiState.busy && uiState.busyOperation != UiBusyOperation.MOD_IMPORT) {
+                    if (uiState.busy && !uiState.busyOperation.usesBlockingOverlay()) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         uiState.busyMessage?.let {
                             Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
@@ -402,6 +400,7 @@ private fun CrashRecoveryScreen(
     busy: Boolean,
     busyMessage: String?,
     onOpenRecoverySettings: () -> Unit,
+    onOpenFeedback: () -> Unit,
     onRetryLaunch: () -> Unit,
     onCopyReport: () -> Unit,
     onShareLogs: () -> Unit,
@@ -549,11 +548,6 @@ private fun CrashRecoveryScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = stringResource(R.string.sts_crash_page_actions_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -578,16 +572,39 @@ private fun CrashRecoveryScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
+                        onClick = onShareLogs,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.sts_crash_page_action_share))
+                    }
+                    Button(
                         onClick = onCopyReport,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(stringResource(R.string.sts_crash_page_action_copy))
                     }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     OutlinedButton(
-                        onClick = onCloseApp,
+                        onClick = onOpenFeedback,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.sts_crash_page_action_feedback))
+                    }
+                    Button(
+                        onClick = onCloseApp,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
                     ) {
                         Text(stringResource(R.string.sts_crash_page_action_close))
                     }
@@ -626,10 +643,6 @@ private fun CrashRecoveryScreen(
                                 .padding(16.dp)
                         )
                     }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                TextButton(onClick = onShareLogs) {
-                    Text(stringResource(R.string.sts_share_crash_report))
                 }
             }
         }

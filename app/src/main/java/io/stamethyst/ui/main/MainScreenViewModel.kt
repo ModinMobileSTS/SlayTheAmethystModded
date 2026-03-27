@@ -42,6 +42,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -103,7 +104,10 @@ class MainScreenViewModel : ViewModel() {
     )
 
     sealed interface Effect {
-        data class ShowSnackbar(val message: UiText) : Effect
+        data class ShowSnackbar(
+            val message: UiText,
+            val duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
+        ) : Effect
         data class ShowDialog(val title: UiText, val message: UiText) : Effect
         data class OpenExportModPicker(
             val sourcePath: String,
@@ -265,11 +269,12 @@ class MainScreenViewModel : ViewModel() {
         clipboard.setPrimaryClip(
             ClipData.newPlainText("sts-crash-report", crashRecovery.reportText)
         )
-        Toast.makeText(
-            host,
-            host.getString(R.string.sts_crash_page_copy_success),
-            Toast.LENGTH_SHORT
-        ).show()
+        _effects.tryEmit(
+            Effect.ShowSnackbar(
+                message = UiText.StringResource(R.string.sts_crash_page_copy_success),
+                duration = LauncherTransientNoticeDuration.SHORT
+            )
+        )
     }
 
     fun shareCrashRecoveryReport(host: Activity) {
@@ -632,11 +637,18 @@ class MainScreenViewModel : ViewModel() {
         try {
             modManagementController.applyPendingSelection(host)
         } catch (error: Throwable) {
-            Toast.makeText(
-                host,
-                StsExternalStorageAccess.buildFailureMessage(host, "Failed to apply mod selection", error),
-                Toast.LENGTH_LONG
-            ).show()
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    message = UiText.DynamicString(
+                        StsExternalStorageAccess.buildFailureMessage(
+                            host,
+                            "Failed to apply mod selection",
+                            error
+                        )
+                    ),
+                    duration = LauncherTransientNoticeDuration.LONG
+                )
+            )
             return
         }
         val backBehavior = readBackBehaviorSelection(host)
@@ -647,7 +659,12 @@ class MainScreenViewModel : ViewModel() {
             false
         }
         if (!launcherSettingsSynced) {
-            Toast.makeText(host, host.getString(R.string.main_launch_settings_sync_failed), Toast.LENGTH_LONG).show()
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    message = UiText.StringResource(R.string.main_launch_settings_sync_failed),
+                    duration = LauncherTransientNoticeDuration.LONG
+                )
+            )
             return
         }
 
@@ -668,14 +685,15 @@ class MainScreenViewModel : ViewModel() {
         } catch (error: Throwable) {
             LogcatCaptureProcessClient.stopCapture(host)
             GameLaunchReturnTracker.clearPendingGameLaunch(host)
-            Toast.makeText(
-                host,
-                host.getString(
-                    R.string.main_launch_game_failed,
-                    error.message ?: error.javaClass.simpleName
-                ),
-                Toast.LENGTH_LONG
-            ).show()
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    message = UiText.StringResource(
+                        R.string.main_launch_game_failed,
+                        error.message ?: error.javaClass.simpleName
+                    ),
+                    duration = LauncherTransientNoticeDuration.LONG
+                )
+            )
         }
     }
 
@@ -683,11 +701,12 @@ class MainScreenViewModel : ViewModel() {
         if (!GameLaunchReturnTracker.isGameProcessRunning(host)) {
             return false
         }
-        Toast.makeText(
-            host,
-            host.getString(R.string.main_launch_game_already_running),
-            Toast.LENGTH_LONG
-        ).show()
+        _effects.tryEmit(
+            Effect.ShowSnackbar(
+                message = UiText.StringResource(R.string.main_launch_game_already_running),
+                duration = LauncherTransientNoticeDuration.LONG
+            )
+        )
         return true
     }
 
@@ -959,11 +978,12 @@ class MainScreenViewModel : ViewModel() {
             setBusy(false, null)
         }.onFailure {
             setBusy(false, null)
-            Toast.makeText(
-                host,
-                host.getString(R.string.sts_share_crash_report_failed),
-                Toast.LENGTH_LONG
-            ).show()
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    message = UiText.StringResource(R.string.sts_share_crash_report_failed),
+                    duration = LauncherTransientNoticeDuration.LONG
+                )
+            )
         }
     }
 
@@ -1138,7 +1158,7 @@ class MainScreenViewModel : ViewModel() {
         operation: UiBusyOperation,
         hasStorageIssue: Boolean
     ): Boolean {
-        return !hasStorageIssue && (!busy || operation == UiBusyOperation.MOD_IMPORT)
+        return !hasStorageIssue && (!busy || operation.usesBlockingOverlay())
     }
 
     private fun isRequiredModAvailable(host: Activity, modId: String): Boolean {

@@ -20,6 +20,7 @@ import io.stamethyst.backend.feedback.FeedbackScreenshotAttachment
 import io.stamethyst.backend.feedback.FeedbackThreadAuthorType
 import io.stamethyst.backend.feedback.FeedbackThreadEvent
 import io.stamethyst.backend.feedback.FeedbackThreadEventType
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.settings.SettingsFileService
 import java.io.File
 import java.io.IOException
@@ -131,14 +132,14 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_refresh_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
@@ -161,11 +162,11 @@ class FeedbackConversationViewModel(
         }
         val remaining = MAX_SCREENSHOT_ATTACHMENTS - screenshotAttachments.size
         if (remaining <= 0) {
-            Toast.makeText(
+            LauncherTransientNoticeBus.show(
                 host,
                 host.getString(R.string.feedback_screenshot_limit, MAX_SCREENSHOT_ATTACHMENTS),
                 Toast.LENGTH_SHORT
-            ).show()
+            )
             return
         }
         setBusy(true, host.getString(R.string.feedback_busy_processing_screenshots))
@@ -183,14 +184,14 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_screenshot_processing_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
@@ -215,7 +216,11 @@ class FeedbackConversationViewModel(
         }
         val message = uiState.messageText.trim()
         if (message.isEmpty() && screenshotAttachments.isEmpty()) {
-            Toast.makeText(host, host.getString(R.string.feedback_message_required), Toast.LENGTH_LONG).show()
+            LauncherTransientNoticeBus.show(
+                host,
+                host.getString(R.string.feedback_message_required),
+                Toast.LENGTH_LONG
+            )
             return
         }
         val screenshots = screenshotAttachments.map {
@@ -240,7 +245,11 @@ class FeedbackConversationViewModel(
                     clearDraftState()
                     setBusy(false, null)
                     applyCache(optimisticCache)
-                    Toast.makeText(host, host.getString(R.string.feedback_message_sent), Toast.LENGTH_SHORT).show()
+                    LauncherTransientNoticeBus.show(
+                        host,
+                        host.getString(R.string.feedback_message_sent),
+                        Toast.LENGTH_SHORT
+                    )
                 }
                 runCatching {
                     FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = true)
@@ -254,14 +263,14 @@ class FeedbackConversationViewModel(
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_send_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
@@ -314,19 +323,19 @@ class FeedbackConversationViewModel(
                 host.runOnUiThread {
                     setBusy(false, null)
                     applyCache(updatedCache)
-                    Toast.makeText(host, successMessage, Toast.LENGTH_SHORT).show()
+                    LauncherTransientNoticeBus.show(host, successMessage, Toast.LENGTH_SHORT)
                 }
             }.onFailure { error ->
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_action_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }

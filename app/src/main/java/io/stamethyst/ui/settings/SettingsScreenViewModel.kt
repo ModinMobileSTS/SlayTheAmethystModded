@@ -53,6 +53,7 @@ import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.backend.mods.StsJarValidator
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
@@ -352,7 +353,8 @@ class SettingsScreenViewModel : ViewModel() {
 
         setBusy(
             true,
-            UiText.StringResource(R.string.settings_native_library_market_installing, entry.displayName)
+            UiText.StringResource(R.string.settings_native_library_market_installing, entry.displayName),
+            operation = UiBusyOperation.NATIVE_LIBRARY_INSTALL
         )
         val mirrorSource = resolveSelectedMirrorSource(host)
         executor.execute {
@@ -468,7 +470,7 @@ class SettingsScreenViewModel : ViewModel() {
                         handleUpdateCheckFailure(host, result, userInitiated)
                 }
                 if (!toastMessage.isNullOrBlank()) {
-                    Toast.makeText(host, toastMessage, Toast.LENGTH_LONG).show()
+                    showToast(host, toastMessage, Toast.LENGTH_LONG)
                 }
             }
         }
@@ -1364,14 +1366,10 @@ class SettingsScreenViewModel : ViewModel() {
                 host.runOnUiThread {
                     setBusy(false, null)
                     if (showSuccessToast) {
-                        Toast.makeText(
-                            host,
-                            host.getString(R.string.sts_jar_import_success),
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showToast(host, UiText.StringResource(R.string.sts_jar_import_success), Toast.LENGTH_SHORT)
                     }
                     if (warmupWarning != null) {
-                        Toast.makeText(host, warmupWarning, Toast.LENGTH_LONG).show()
+                        showToast(host, warmupWarning, Toast.LENGTH_LONG)
                     }
                     refreshStatus(host)
                     onCompleted?.invoke(true)
@@ -1380,14 +1378,14 @@ class SettingsScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    showToast(
                         host,
-                        host.getString(
+                        UiText.StringResource(
                             R.string.sts_jar_import_failed,
                             resolveThrowableMessage(host, error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                     refreshStatus(host)
                     onCompleted?.invoke(false)
                 }
@@ -1473,54 +1471,54 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
-                            Toast.makeText(
+                            showToast(
                                 host,
-                                host.getString(R.string.mod_import_result_success, importedCount),
+                                UiText.StringResource(R.string.mod_import_result_success, importedCount),
                                 Toast.LENGTH_SHORT
-                            ).show()
+                            )
                         }
 
                         importedCount > 0 -> {
-                            Toast.makeText(
+                            showToast(
                                 host,
-                                host.getString(
+                                UiText.StringResource(
                                     R.string.mod_import_result_partial,
                                     importedCount,
                                     failedCount,
                                     resolveErrorMessage(host, firstError)
                                 ),
                                 Toast.LENGTH_LONG
-                            ).show()
+                            )
                         }
 
                         failedCount > 0 && invalidModJars.isEmpty() -> {
-                            Toast.makeText(
+                            showToast(
                                 host,
-                                host.getString(
+                                UiText.StringResource(
                                     R.string.mod_import_result_failed,
                                     resolveErrorMessage(host, firstError)
                                 ),
                                 Toast.LENGTH_LONG
-                            ).show()
+                            )
                         }
 
                         blockedCount > 0 -> {
-                            Toast.makeText(
+                            showToast(
                                 host,
-                                host.getString(
+                                UiText.StringResource(
                                     R.string.mod_import_result_blocked_builtin,
                                     blockedCount
                                 ),
                                 Toast.LENGTH_SHORT
-                            ).show()
+                            )
                         }
 
                         compressedArchiveCount > 0 -> {
-                            Toast.makeText(
+                            showToast(
                                 host,
-                                host.getString(R.string.mod_import_result_archive_detected),
+                                UiText.StringResource(R.string.mod_import_result_archive_detected),
                                 Toast.LENGTH_SHORT
-                            ).show()
+                            )
                         }
                     }
                     refreshStatus(host)
@@ -1530,14 +1528,14 @@ class SettingsScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    showToast(
                         host,
-                        host.getString(
+                        UiText.StringResource(
                             R.string.mod_import_result_failed,
                             resolveThrowableMessage(host, error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                     refreshStatus(host)
                     onCompleted?.invoke()
                 }
@@ -1646,7 +1644,7 @@ class SettingsScreenViewModel : ViewModel() {
                 )
             )
             .setNegativeButton(R.string.mod_import_dialog_duplicate_cancel) { _, _ ->
-                Toast.makeText(host, host.getString(R.string.mod_import_cancelled), Toast.LENGTH_SHORT).show()
+                showToast(host, UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
                 onCompleted?.invoke()
             }
             .setNeutralButton(R.string.mod_import_dialog_duplicate_replace_existing) { _, _ ->
@@ -1662,7 +1660,7 @@ class SettingsScreenViewModel : ViewModel() {
                 startModJarImport(host, uris, onCompleted, skipDuplicateCheck = true)
             }
             .setOnCancelListener {
-                Toast.makeText(host, host.getString(R.string.mod_import_cancelled), Toast.LENGTH_SHORT).show()
+                showToast(host, UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
                 onCompleted?.invoke()
             }
             .show()
@@ -1891,7 +1889,15 @@ class SettingsScreenViewModel : ViewModel() {
         message: UiText,
         duration: Int = Toast.LENGTH_LONG
     ) {
-        Toast.makeText(host, message.resolve(host), duration).show()
+        LauncherTransientNoticeBus.show(host, message, duration)
+    }
+
+    private fun showToast(
+        host: Activity,
+        message: String,
+        duration: Int = Toast.LENGTH_LONG
+    ) {
+        LauncherTransientNoticeBus.show(host, message, duration)
     }
 
     private fun summarizeNativeLibraryMarketError(
@@ -2621,14 +2627,14 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.saveMobileGluesSettings(host, updated)
             MobileGluesConfigFile.syncFromLauncherPreferences(host)
         } catch (error: IOException) {
-            Toast.makeText(
+            showToast(
                 host,
-                host.getString(
+                UiText.StringResource(
                     failureMessageResId,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_LONG
-            ).show()
+            )
         }
     }
 
@@ -2653,14 +2659,14 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.saveMobileGluesSettings(host, settings)
             MobileGluesConfigFile.syncFromLauncherPreferences(host)
         } catch (error: IOException) {
-            Toast.makeText(
+            showToast(
                 host,
-                host.getString(
+                UiText.StringResource(
                     failureMessageResId,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_LONG
-            ).show()
+            )
         }
     }
 
@@ -2669,14 +2675,14 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.savePlayerName(host, name)
             true
         } catch (error: IOException) {
-            Toast.makeText(
+            showToast(
                 host,
-                host.getString(
+                UiText.StringResource(
                     R.string.settings_player_name_save_failed,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_SHORT
-            ).show()
+            )
             false
         }
     }
@@ -2726,14 +2732,14 @@ class SettingsScreenViewModel : ViewModel() {
             GameplaySettingsService.saveTouchscreenEnabled(host, enabled)
             true
         } catch (error: IOException) {
-            Toast.makeText(
+            showToast(
                 host,
-                host.getString(
+                UiText.StringResource(
                     R.string.settings_touchscreen_save_failed,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_SHORT
-            ).show()
+            )
             false
         }
     }

@@ -13,6 +13,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueBrowseItem
 import io.stamethyst.backend.feedback.FeedbackIssueSyncService
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -101,24 +102,24 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                 FeedbackInboxCoordinator.refreshFromStorage(host)
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(R.string.feedback_follow_success, subscription.issueNumber),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to follow issue", error)
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_follow_failed,
                             error.toReadableMessage(host)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
@@ -165,14 +166,14 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                         loadingMore = false,
                         initialLoaded = true
                     )
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_issue_browser_load_failed,
                             error.toReadableMessage(host)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }

@@ -22,6 +22,7 @@ import io.stamethyst.backend.feedback.FeedbackSubmissionService
 import io.stamethyst.backend.feedback.FeedbackUploadResult
 import io.stamethyst.backend.feedback.GameIssueType
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.settings.SettingsFileService
 import java.io.File
 import java.io.IOException
@@ -193,15 +194,15 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         val validationError = validateDraft(host)
         if (validationError != null) {
-            Toast.makeText(host, validationError, Toast.LENGTH_LONG).show()
+            LauncherTransientNoticeBus.show(host, validationError, Toast.LENGTH_LONG)
             return
         }
         if (!uiState.endpointConfigured) {
-            Toast.makeText(
+            LauncherTransientNoticeBus.show(
                 host,
                 host.getString(R.string.feedback_endpoint_missing_submit),
                 Toast.LENGTH_LONG
-            ).show()
+            )
             return
         }
         uiState = uiState.copy(
@@ -300,11 +301,11 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         val remaining = MAX_SCREENSHOT_ATTACHMENTS - screenshotAttachments.size
         if (remaining <= 0) {
-            Toast.makeText(
+            LauncherTransientNoticeBus.show(
                 host,
                 host.getString(R.string.feedback_screenshot_limit, MAX_SCREENSHOT_ATTACHMENTS),
                 Toast.LENGTH_SHORT
-            ).show()
+            )
             return
         }
         setBusy(true, host.getString(R.string.feedback_busy_processing_screenshots))
@@ -320,27 +321,27 @@ class FeedbackScreenViewModel : ViewModel() {
                     publishScreenshotState()
                     setBusy(false, null)
                     if (uris.size > remaining) {
-                        Toast.makeText(
+                        LauncherTransientNoticeBus.show(
                             host,
                             host.getString(
                                 R.string.feedback_screenshot_limit_trimmed,
                                 MAX_SCREENSHOT_ATTACHMENTS
                             ),
                             Toast.LENGTH_LONG
-                        ).show()
+                        )
                     }
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_screenshot_processing_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
@@ -383,20 +384,20 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         val validationError = validateDraft(host)
         if (validationError != null) {
-            Toast.makeText(host, validationError, Toast.LENGTH_LONG).show()
+            LauncherTransientNoticeBus.show(host, validationError, Toast.LENGTH_LONG)
             return
         }
         val acknowledgementValidationError = validateSubmissionAcknowledgements(host)
         if (acknowledgementValidationError != null) {
-            Toast.makeText(host, acknowledgementValidationError, Toast.LENGTH_LONG).show()
+            LauncherTransientNoticeBus.show(host, acknowledgementValidationError, Toast.LENGTH_LONG)
             return
         }
         if (!uiState.endpointConfigured) {
-            Toast.makeText(
+            LauncherTransientNoticeBus.show(
                 host,
                 host.getString(R.string.feedback_endpoint_missing_submit),
                 Toast.LENGTH_LONG
-            ).show()
+            )
             return
         }
         if (!ignoreBriefFeedbackWarning && uiState.shouldWarnAboutBriefFeedback) {
@@ -421,14 +422,14 @@ class FeedbackScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
-                    Toast.makeText(
+                    LauncherTransientNoticeBus.show(
                         host,
                         host.getString(
                             R.string.feedback_submit_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
-                    ).show()
+                    )
                 }
             }
         }
