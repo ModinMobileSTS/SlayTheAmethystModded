@@ -14,6 +14,8 @@ import androidx.core.graphics.ColorUtils
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 
+private val DefaultLightColorScheme = lightColorScheme()
+private val DefaultDarkColorScheme = darkColorScheme()
 private val LightSurfaceBase = Color(0xFFFFF8FC)
 private val LightOnSurfaceBase = Color(0xFF1E1A20)
 private val DarkSurfaceBase = Color(0xFF15121A)
@@ -59,6 +61,9 @@ fun LauncherTheme(
 }
 
 private fun lightLauncherColorScheme(themeColor: LauncherThemeColor): ColorScheme {
+    if (themeColor == LauncherThemeColor.COLORLESS) {
+        return DefaultLightColorScheme
+    }
     val seed = themeColor.seedColor
     val primary = transformColor(
         seed,
@@ -126,6 +131,9 @@ private fun lightLauncherColorScheme(themeColor: LauncherThemeColor): ColorSchem
 }
 
 private fun darkLauncherColorScheme(themeColor: LauncherThemeColor): ColorScheme {
+    if (themeColor == LauncherThemeColor.COLORLESS) {
+        return DefaultDarkColorScheme
+    }
     val seed = themeColor.seedColor
     val primary = blend(seed, Color.White, 0.42f)
     val secondary = blend(

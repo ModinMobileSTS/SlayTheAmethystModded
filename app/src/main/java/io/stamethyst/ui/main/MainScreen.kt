@@ -34,6 +34,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -896,12 +898,15 @@ private fun FrostedGlassChrome(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    val chromeModifier = modifier.hazeEffect(
-        state = hazeState,
-        style = HazeMaterials.ultraThin()
-    ) {
-        blurRadius = 12.dp
-    }
+    val chromeModifier = modifier
+        .clip(shape)
+        .hazeEffect(
+            state = hazeState,
+            style = HazeMaterials.ultraThin()
+        ) {
+            blurRadius = 12.dp
+            blurredEdgeTreatment = BlurredEdgeTreatment(shape)
+        }
     Surface(
         modifier = chromeModifier,
         shape = shape,

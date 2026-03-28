@@ -10,7 +10,7 @@ enum class LauncherThemeColor(
     LIEBAO("liebao", Color(0xFF3F8A4B)),
     JIBAO("jibao", Color(0xFFD2A72E)),
     GUANJIE("guanjie", Color(0xFF6F4C93)),
-    COLORLESS("colorless", Color(0xFF7B7E86));
+    COLORLESS("colorless", Color(0xFF6750A4));
 
     companion object {
         @JvmStatic
