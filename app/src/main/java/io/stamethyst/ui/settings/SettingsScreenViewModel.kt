@@ -16,6 +16,7 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.nativelib.NativeLibraryMarketAvailability
 import io.stamethyst.backend.nativelib.NativeLibraryMarketCatalogEntry
+import io.stamethyst.backend.nativelib.NativeLibraryMarketInstallProgress
 import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
@@ -359,7 +360,23 @@ class SettingsScreenViewModel : ViewModel() {
         val mirrorSource = resolveSelectedMirrorSource(host)
         executor.execute {
             try {
-                NativeLibraryMarketService.installPackage(host, entry, mirrorSource)
+                NativeLibraryMarketService.installPackage(host, entry, mirrorSource) { progress ->
+                    host.runOnUiThread {
+                        if (!uiState.busy ||
+                            uiState.busyOperation != UiBusyOperation.NATIVE_LIBRARY_INSTALL
+                        ) {
+                            return@runOnUiThread
+                        }
+                        setBusy(
+                            true,
+                            UiText.DynamicString(
+                                buildNativeLibraryInstallProgressMessage(host, progress)
+                            ),
+                            operation = UiBusyOperation.NATIVE_LIBRARY_INSTALL,
+                            progressPercent = progress.progressPercent
+                        )
+                    }
+                }
                 val packageStates = NativeLibraryMarketService.resolvePackageStates(
                     host,
                     nativeLibraryMarketCatalog
@@ -1880,6 +1897,35 @@ class SettingsScreenViewModel : ViewModel() {
                 busyOperation = UiBusyOperation.NONE,
                 busyMessage = null,
                 busyProgressPercent = null
+            )
+        }
+    }
+
+    private fun buildNativeLibraryInstallProgressMessage(
+        host: Activity,
+        progress: NativeLibraryMarketInstallProgress
+    ): String {
+        val downloadedText = NativeLibraryMarketService.formatTransferBytes(progress.downloadedBytes)
+        val speedText = "${NativeLibraryMarketService.formatTransferBytes(progress.bytesPerSecond)}/s"
+        val totalBytes = progress.totalBytes
+        return if (totalBytes != null) {
+            host.getString(
+                R.string.settings_native_library_market_downloading_with_total,
+                progress.fileName,
+                progress.fileIndex,
+                progress.fileCount,
+                downloadedText,
+                NativeLibraryMarketService.formatTransferBytes(totalBytes),
+                speedText
+            )
+        } else {
+            host.getString(
+                R.string.settings_native_library_market_downloading_without_total,
+                progress.fileName,
+                progress.fileIndex,
+                progress.fileCount,
+                downloadedText,
+                speedText
             )
         }
     }

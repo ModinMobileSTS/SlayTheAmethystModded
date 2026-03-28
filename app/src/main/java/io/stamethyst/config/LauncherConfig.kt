@@ -140,7 +140,7 @@ object LauncherConfig {
     val DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET: MobileGluesFsr1QualityPreset =
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
-    val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.GUANJIE
+    val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true

@@ -14,8 +14,109 @@ import androidx.core.graphics.ColorUtils
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 
-private val DefaultLightColorScheme = lightColorScheme()
-private val DefaultDarkColorScheme = darkColorScheme()
+// Material 3 Tonal Spot roles generated from the colorless source blue (#2196F3).
+private val ColorlessLightColorScheme = lightColorScheme(
+    primary = Color(0xFF36618E),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD1E4FF),
+    onPrimaryContainer = Color(0xFF194975),
+    inversePrimary = Color(0xFFA0CAFD),
+    secondary = Color(0xFF535F70),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD7E3F7),
+    onSecondaryContainer = Color(0xFF3B4858),
+    tertiary = Color(0xFF6B5778),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFF2DAFF),
+    onTertiaryContainer = Color(0xFF523F5F),
+    background = Color(0xFFF8F9FF),
+    onBackground = Color(0xFF191C20),
+    surface = Color(0xFFF8F9FF),
+    onSurface = Color(0xFF191C20),
+    surfaceVariant = Color(0xFFDFE2EB),
+    onSurfaceVariant = Color(0xFF43474E),
+    surfaceTint = Color(0xFF36618E),
+    inverseSurface = Color(0xFF2E3135),
+    inverseOnSurface = Color(0xFFEFF0F7),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF93000A),
+    outline = Color(0xFF73777F),
+    outlineVariant = Color(0xFFC3C7CF),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFFF8F9FF),
+    surfaceDim = Color(0xFFD8DAE0),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF2F3FA),
+    surfaceContainer = Color(0xFFECEEF4),
+    surfaceContainerHigh = Color(0xFFE6E8EE),
+    surfaceContainerHighest = Color(0xFFE1E2E8),
+    primaryFixed = Color(0xFFD1E4FF),
+    primaryFixedDim = Color(0xFFA0CAFD),
+    onPrimaryFixed = Color(0xFF001D36),
+    onPrimaryFixedVariant = Color(0xFF194975),
+    secondaryFixed = Color(0xFFD7E3F7),
+    secondaryFixedDim = Color(0xFFBBC7DB),
+    onSecondaryFixed = Color(0xFF101C2B),
+    onSecondaryFixedVariant = Color(0xFF3B4858),
+    tertiaryFixed = Color(0xFFF2DAFF),
+    tertiaryFixedDim = Color(0xFFD6BEE4),
+    onTertiaryFixed = Color(0xFF251431),
+    onTertiaryFixedVariant = Color(0xFF523F5F),
+)
+
+private val ColorlessDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFA0CAFD),
+    onPrimary = Color(0xFF003258),
+    primaryContainer = Color(0xFF194975),
+    onPrimaryContainer = Color(0xFFD1E4FF),
+    inversePrimary = Color(0xFF36618E),
+    secondary = Color(0xFFBBC7DB),
+    onSecondary = Color(0xFF253140),
+    secondaryContainer = Color(0xFF3B4858),
+    onSecondaryContainer = Color(0xFFD7E3F7),
+    tertiary = Color(0xFFD6BEE4),
+    onTertiary = Color(0xFF3B2948),
+    tertiaryContainer = Color(0xFF523F5F),
+    onTertiaryContainer = Color(0xFFF2DAFF),
+    background = Color(0xFF111418),
+    onBackground = Color(0xFFE1E2E8),
+    surface = Color(0xFF111418),
+    onSurface = Color(0xFFE1E2E8),
+    surfaceVariant = Color(0xFF43474E),
+    onSurfaceVariant = Color(0xFFC3C7CF),
+    surfaceTint = Color(0xFFA0CAFD),
+    inverseSurface = Color(0xFFE1E2E8),
+    inverseOnSurface = Color(0xFF2E3135),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    outline = Color(0xFF8D9199),
+    outlineVariant = Color(0xFF43474E),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFF36393E),
+    surfaceDim = Color(0xFF111418),
+    surfaceContainerLowest = Color(0xFF0B0E13),
+    surfaceContainerLow = Color(0xFF191C20),
+    surfaceContainer = Color(0xFF1D2024),
+    surfaceContainerHigh = Color(0xFF272A2F),
+    surfaceContainerHighest = Color(0xFF32353A),
+    primaryFixed = Color(0xFFD1E4FF),
+    primaryFixedDim = Color(0xFFA0CAFD),
+    onPrimaryFixed = Color(0xFF001D36),
+    onPrimaryFixedVariant = Color(0xFF194975),
+    secondaryFixed = Color(0xFFD7E3F7),
+    secondaryFixedDim = Color(0xFFBBC7DB),
+    onSecondaryFixed = Color(0xFF101C2B),
+    onSecondaryFixedVariant = Color(0xFF3B4858),
+    tertiaryFixed = Color(0xFFF2DAFF),
+    tertiaryFixedDim = Color(0xFFD6BEE4),
+    onTertiaryFixed = Color(0xFF251431),
+    onTertiaryFixedVariant = Color(0xFF523F5F),
+)
+
 private val LightSurfaceBase = Color(0xFFFFF8FC)
 private val LightOnSurfaceBase = Color(0xFF1E1A20)
 private val DarkSurfaceBase = Color(0xFF15121A)
@@ -62,7 +163,7 @@ fun LauncherTheme(
 
 private fun lightLauncherColorScheme(themeColor: LauncherThemeColor): ColorScheme {
     if (themeColor == LauncherThemeColor.COLORLESS) {
-        return DefaultLightColorScheme
+        return ColorlessLightColorScheme
     }
     val seed = themeColor.seedColor
     val primary = transformColor(
@@ -132,7 +233,7 @@ private fun lightLauncherColorScheme(themeColor: LauncherThemeColor): ColorSchem
 
 private fun darkLauncherColorScheme(themeColor: LauncherThemeColor): ColorScheme {
     if (themeColor == LauncherThemeColor.COLORLESS) {
-        return DefaultDarkColorScheme
+        return ColorlessDarkColorScheme
     }
     val seed = themeColor.seedColor
     val primary = blend(seed, Color.White, 0.42f)

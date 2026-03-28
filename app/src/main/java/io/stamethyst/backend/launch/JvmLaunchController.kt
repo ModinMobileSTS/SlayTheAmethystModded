@@ -239,7 +239,6 @@ class JvmLaunchController(
                     resolvedJavaHome.absolutePath,
                     extraNativeLibraryDirs
                 )
-                AdditionalNativeLibraryPreloader.preload(activity)
                 if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
                     try {
                         MobileGluesConfigFile.syncFromLauncherPreferences(activity)

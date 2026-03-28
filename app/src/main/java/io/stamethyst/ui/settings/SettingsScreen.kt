@@ -266,7 +266,7 @@ private fun LauncherSettingsScreenPreview() {
             selectedTargetFps = 60,
             renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             themeMode = LauncherThemeMode.FOLLOW_SYSTEM,
-            themeColor = LauncherThemeColor.GUANJIE,
+            themeColor = LauncherThemeColor.COLORLESS,
             selectedJvmHeapMaxMb = 512,
             compressedPointersEnabled = false,
             stringDeduplicationEnabled = false,

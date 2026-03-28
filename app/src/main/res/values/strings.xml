@@ -540,6 +540,8 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_native_library_market_status_bundled">Status: bundled with this build</string>
     <string name="settings_native_library_market_files">Files: %1$s</string>
     <string name="settings_native_library_market_installing">Installing %1$s…</string>
+    <string name="settings_native_library_market_downloading_with_total">Downloading %1$s (%2$d/%3$d)... %4$s / %5$s, %6$s</string>
+    <string name="settings_native_library_market_downloading_without_total">Downloading %1$s (%2$d/%3$d)... %4$s, %5$s</string>
     <string name="settings_native_library_market_installed">%1$s installed.</string>
     <string name="settings_native_library_market_install_failed">Failed to install %1$s: %2$s</string>
     <string name="settings_native_library_market_removing">Removing %1$s…</string>
