@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -32,6 +31,7 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -279,22 +279,33 @@ fun LauncherContent(
                                 .fillMaxWidth()
                                 .defaultMinSize(minHeight = 56.dp),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            action = {
-                                snackbarData.visuals.actionLabel?.let { actionLabel ->
-                                    TextButton(onClick = { snackbarData.performAction() }) {
-                                        Text(text = actionLabel)
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(text = snackbarData.visuals.message)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        snackbarData.visuals.actionLabel?.let { actionLabel ->
+                                            TextButton(onClick = { snackbarData.performAction() }) {
+                                                Text(text = actionLabel)
+                                            }
+                                        }
+                                        Button(onClick = { snackbarData.dismiss() }) {
+                                            Text(text = stringResource(R.string.common_action_close))
+                                        }
                                     }
                                 }
-                            },
-                            dismissAction = {
-                                TextButton(onClick = { snackbarData.dismiss() }) {
-                                    Text(text = stringResource(R.string.common_action_close))
-                                }
-                            },
-                            actionOnNewLine = false
-                        ) {
-                            Text(text = snackbarData.visuals.message)
+                            }
                         }
                     },
                     modifier = Modifier

@@ -120,6 +120,7 @@ class MainScreenViewModel : ViewModel() {
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 32)
     val effects = _effects.asSharedFlow()
     private val suggestionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val diagnosticsExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
     private var modSuggestionSyncInProgress = false
@@ -1025,28 +1026,41 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         setBusy(true, UiText.StringResource(R.string.common_busy_preparing_jvm_log_bundle))
-        runCatching {
-            val payload = JvmLogShareService.prepareCrashSharePayload(
-                host,
-                code,
-                isSignal,
-                detail
-            )
-            val shareIntent = JvmLogShareService.buildShareIntent(payload)
-            val chooserIntent = Intent.createChooser(
-                shareIntent,
-                host.getString(R.string.sts_share_crash_chooser_title)
-            )
-            _effects.tryEmit(Effect.LaunchIntent(chooserIntent))
-            setBusy(false, null)
-        }.onFailure {
-            setBusy(false, null)
-            _effects.tryEmit(
-                Effect.ShowSnackbar(
-                    message = UiText.StringResource(R.string.sts_share_crash_report_failed),
-                    duration = LauncherTransientNoticeDuration.LONG
+        diagnosticsExecutor.execute {
+            runCatching {
+                val payload = JvmLogShareService.prepareCrashSharePayload(
+                    host,
+                    code,
+                    isSignal,
+                    detail
                 )
-            )
+                val shareIntent = JvmLogShareService.buildShareIntent(payload)
+                Intent.createChooser(
+                    shareIntent,
+                    host.getString(R.string.sts_share_crash_chooser_title)
+                )
+            }.onSuccess { chooserIntent ->
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (host.isFinishing || host.isDestroyed) {
+                        return@runOnUiThread
+                    }
+                    _effects.tryEmit(Effect.LaunchIntent(chooserIntent))
+                }
+            }.onFailure {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (host.isFinishing || host.isDestroyed) {
+                        return@runOnUiThread
+                    }
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(R.string.sts_share_crash_report_failed),
+                            duration = LauncherTransientNoticeDuration.LONG
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -1269,6 +1283,7 @@ class MainScreenViewModel : ViewModel() {
 
     override fun onCleared() {
         launchExecutor.shutdownNow()
+        diagnosticsExecutor.shutdownNow()
         suggestionExecutor.shutdownNow()
         modManagementController.shutdown()
         super.onCleared()
