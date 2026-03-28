@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -155,23 +156,36 @@ internal fun ModFolderSection(
         return folderTokenByItemKey[key]
     }
 
-    val dragCoordinator = remember(
-        interactionState,
-        folderTokenByItemKey,
-        callbacks
-    ) {
+    val latestFolderTokenByItemKey = rememberUpdatedState(folderTokenByItemKey)
+    val latestFolderAssignments = rememberUpdatedState(folderAssignments)
+    val latestFolderIds = rememberUpdatedState(folderIds)
+    val latestCallbacks = rememberUpdatedState(callbacks)
+
+    // Keep the coordinator stable during a drag gesture, but resolve folder state
+    // from the latest UI snapshot after moves have already updated assignments.
+    val dragCoordinator = remember(interactionState) {
         ModDragSessionCoordinator(
             interactionState = interactionState,
             resolveFolderTokenFromItemKey = { itemKey ->
                 val key = itemKey as? String ?: return@ModDragSessionCoordinator null
-                folderTokenByItemKey[key]
+                latestFolderTokenByItemKey.value[key]
             },
             resolveAssignedFolderToken = { mod ->
-                resolveAssignedFolderId(mod, folderAssignments, folderIds) ?: UNASSIGNED_FOLDER_ID
+                resolveAssignedFolderId(
+                    mod,
+                    latestFolderAssignments.value,
+                    latestFolderIds.value
+                ) ?: UNASSIGNED_FOLDER_ID
             },
-            onAssignModToFolder = callbacks.onAssignModToFolder,
-            onMoveModToUnassigned = callbacks.onMoveModToUnassigned,
-            onRevealFolderToken = callbacks.onRevealFolderToken
+            onAssignModToFolder = { mod, folderId ->
+                latestCallbacks.value.onAssignModToFolder(mod, folderId)
+            },
+            onMoveModToUnassigned = { mod ->
+                latestCallbacks.value.onMoveModToUnassigned(mod)
+            },
+            onRevealFolderToken = { folderTokenId ->
+                latestCallbacks.value.onRevealFolderToken(folderTokenId)
+            }
         )
     }
 
