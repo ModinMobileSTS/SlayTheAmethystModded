@@ -223,6 +223,8 @@
     <string name="main_import_mods">Import mods</string>
     <string name="main_launch_game">Launch game</string>
     <string name="main_launch_game_already_running">The game process is still running. Return to that session or wait for it to exit before starting again.</string>
+    <string name="main_launch_game_cleanup_busy">Killing leftover game process...</string>
+    <string name="main_launch_game_cleanup_failed">The previous game process did not exit fully. Please wait a moment and try again.</string>
     <string name="main_launch_settings_sync_failed">Failed to save launcher settings before launch. Please try again.</string>
     <string name="main_select_mods">Select mods</string>
     <string name="main_loading_mods">Loading mod and dependency status...</string>
@@ -471,6 +473,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="main_status_game_running">A game session is still running</string>
     <string name="main_status_mods_ok">Mod status is normal</string>
     <string name="main_game_running">Game running</string>
+    <string name="main_restart_game">Restart game</string>
     <string name="main_status_ready_count">%1$d / %2$d ready</string>
     <string name="main_launch_game_failed">Failed to launch the game: %1$s</string>
     <string name="main_duplicate_modid_title">Duplicate modid detected</string>

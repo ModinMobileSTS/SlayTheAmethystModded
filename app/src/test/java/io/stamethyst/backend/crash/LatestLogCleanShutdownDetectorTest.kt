@@ -18,6 +18,18 @@ class LatestLogCleanShutdownDetectorTest {
             09:25:52.190 INFO core.CardCrawlGame> Game shutting down...
             09:25:52.191 INFO core.CardCrawlGame> Flushing logs to disk. Clean shutdown successful.
             Game closed.FORTIFY: pthread_mutex_lock called on a destroyed mutex (0x7397a0eac8)
+            native teardown line 1
+            native teardown line 2
+            native teardown line 3
+            native teardown line 4
+            native teardown line 5
+            native teardown line 6
+            native teardown line 7
+            native teardown line 8
+            native teardown line 9
+            native teardown line 10
+            native teardown line 11
+            native teardown line 12
             """.trimIndent()
         )
 
@@ -43,6 +55,27 @@ class LatestLogCleanShutdownDetectorTest {
         val summary = LatestLogCleanShutdownDetector.detect(logFile)
 
         assertFalse(summary?.quitRequestedFromMenu ?: true)
+    }
+
+    @Test
+    fun shouldSuppressCrashReport_returnsTrue_onlyForMenuQuitShutdown() {
+        assertTrue(
+            LatestLogCleanShutdownDetector.shouldSuppressCrashReport(
+                LatestLogCleanShutdownSummary(
+                    quitRequestedFromMenu = true,
+                    marker = "clean shutdown"
+                )
+            )
+        )
+        assertFalse(
+            LatestLogCleanShutdownDetector.shouldSuppressCrashReport(
+                LatestLogCleanShutdownSummary(
+                    quitRequestedFromMenu = false,
+                    marker = "clean shutdown"
+                )
+            )
+        )
+        assertFalse(LatestLogCleanShutdownDetector.shouldSuppressCrashReport(null))
     }
 
     @Test

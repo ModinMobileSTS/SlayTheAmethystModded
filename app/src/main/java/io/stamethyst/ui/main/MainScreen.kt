@@ -380,7 +380,7 @@ private fun LauncherMainScreenContent(
                     importEnabled = !uiState.busy && uiState.storageIssue == null,
                     launchEnabled = !uiState.busy &&
                         uiState.storageIssue == null &&
-                        !uiState.gameProcessRunning,
+                        !uiState.launchInFlight,
                     onImportMods = actions.onImportMods,
                     onLaunch = actions.onLaunch,
                     enabledCount = uiState.optionalMods.count { it.enabled },
@@ -874,7 +874,7 @@ private fun MainBottomFixedActions(
             ) {
                 Text(
                     text = if (gameRunning) {
-                        stringResource(R.string.main_game_running)
+                        stringResource(R.string.main_restart_game)
                     } else {
                         stringResource(R.string.main_launch_game)
                     },

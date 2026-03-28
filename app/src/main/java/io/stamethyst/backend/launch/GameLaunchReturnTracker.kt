@@ -2,6 +2,7 @@ package io.stamethyst.backend.launch
 
 import android.app.ActivityManager
 import android.content.Context
+import android.os.SystemClock
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -9,6 +10,8 @@ import java.nio.charset.StandardCharsets
 internal object GameLaunchReturnTracker {
     private const val PENDING_GAME_LAUNCH_MARKER_FILE_NAME = ".pending_game_launch"
     private const val GAME_PROCESS_SUFFIX = ":game"
+    private const val PROCESS_EXIT_WAIT_TIMEOUT_MS = 2_500L
+    private const val PROCESS_EXIT_POLL_INTERVAL_MS = 80L
 
     fun markGameLaunchStarted(context: Context, startedAtMs: Long = System.currentTimeMillis()): Long {
         writeMarker(pendingGameLaunchMarker(context), startedAtMs)
@@ -31,7 +34,7 @@ internal object GameLaunchReturnTracker {
         clearMarker(pendingGameLaunchMarker(context))
     }
 
-    fun isGameProcessRunning(context: Context): Boolean {
+    fun isGameProcessRunning(context: Context, includeCached: Boolean = false): Boolean {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return false
         return try {
@@ -41,7 +44,8 @@ internal object GameLaunchReturnTracker {
                         processName = process.processName,
                         packageName = context.packageName,
                         pid = process.pid,
-                        importance = process.importance
+                        importance = process.importance,
+                        includeCached = includeCached
                     )
                 }
                 ?: false
@@ -83,6 +87,31 @@ internal object GameLaunchReturnTracker {
             }
         }
         return killed
+    }
+
+    fun terminateTrackedGameProcessAndWait(
+        context: Context,
+        timeoutMs: Long = PROCESS_EXIT_WAIT_TIMEOUT_MS,
+        pollIntervalMs: Long = PROCESS_EXIT_POLL_INTERVAL_MS
+    ): Boolean {
+        val safePollIntervalMs = pollIntervalMs.coerceAtLeast(20L)
+        val deadlineMs = SystemClock.uptimeMillis() + timeoutMs.coerceAtLeast(safePollIntervalMs)
+        do {
+            terminateTrackedGameProcess(context, includeCached = true)
+            if (!isGameProcessRunning(context, includeCached = true)) {
+                return true
+            }
+            if (SystemClock.uptimeMillis() >= deadlineMs) {
+                break
+            }
+            try {
+                Thread.sleep(safePollIntervalMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        } while (true)
+        return !isGameProcessRunning(context, includeCached = true)
     }
 
     internal fun isTrackedGameProcess(

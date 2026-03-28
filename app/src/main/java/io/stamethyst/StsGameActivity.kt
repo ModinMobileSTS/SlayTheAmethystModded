@@ -14,11 +14,13 @@ import android.window.OnBackInvokedDispatcher
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.input.GameInputHandler
+import java.util.UUID
 
 class StsGameActivity : AppCompatActivity() {
     companion object {
@@ -55,6 +57,8 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var sessionCoordinator: GameSessionCoordinator
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
     private var bootOverlayKeepScreenOn = false
+    private val launchGuardToken: String = UUID.randomUUID().toString()
+    private var launchGuardAcquired = false
 
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
@@ -64,6 +68,11 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        launchGuardAcquired = GameProcessLaunchGuard.tryAcquire(launchGuardToken)
+        if (!launchGuardAcquired) {
+            finish()
+            return
+        }
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
 
@@ -77,9 +86,19 @@ class StsGameActivity : AppCompatActivity() {
     override fun onDestroy() {
         unregisterSystemBackInvokedCallback()
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
-        inputHandler.onDestroy()
-        renderSurfaceManager.onDestroy()
-        sessionCoordinator.onDestroy()
+        if (::inputHandler.isInitialized) {
+            inputHandler.onDestroy()
+        }
+        if (::renderSurfaceManager.isInitialized) {
+            renderSurfaceManager.onDestroy()
+        }
+        if (::sessionCoordinator.isInitialized) {
+            sessionCoordinator.onDestroy()
+        }
+        if (launchGuardAcquired) {
+            GameProcessLaunchGuard.release(launchGuardToken)
+            launchGuardAcquired = false
+        }
         super.onDestroy()
     }
 

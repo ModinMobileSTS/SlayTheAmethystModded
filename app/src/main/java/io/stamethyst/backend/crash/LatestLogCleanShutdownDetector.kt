@@ -13,13 +13,17 @@ data class LatestLogCleanShutdownSummary(
 
 object LatestLogCleanShutdownDetector {
     private const val MAX_READ_BYTES = 256 * 1024
-    private const val MAX_LINES_AFTER_CLEAN_SHUTDOWN = 8
     private const val SHUTDOWN_MARKER = "Game shutting down..."
     private const val CLEAN_SHUTDOWN_MARKER = "Flushing logs to disk. Clean shutdown successful."
     private const val QUIT_BUTTON_MARKER = "Quit Game button clicked!"
 
     @JvmStatic
     fun detect(context: Context): LatestLogCleanShutdownSummary? = detect(RuntimePaths.latestLog(context))
+
+    @JvmStatic
+    fun shouldSuppressCrashReport(summary: LatestLogCleanShutdownSummary?): Boolean {
+        return summary?.quitRequestedFromMenu == true
+    }
 
     @JvmStatic
     fun detect(logFile: File): LatestLogCleanShutdownSummary? {
@@ -49,9 +53,6 @@ object LatestLogCleanShutdownDetector {
             line.contains(CLEAN_SHUTDOWN_MARKER, ignoreCase = true)
         }
         if (cleanShutdownIndex == -1) {
-            return null
-        }
-        if (lines.lastIndex - cleanShutdownIndex > MAX_LINES_AFTER_CLEAN_SHUTDOWN) {
             return null
         }
 

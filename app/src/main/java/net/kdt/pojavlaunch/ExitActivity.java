@@ -52,7 +52,9 @@ public class ExitActivity extends AppCompatActivity {
             );
             return;
         }
-        if (LatestLogCleanShutdownDetector.detect(context) != null) {
+        if (LatestLogCleanShutdownDetector.shouldSuppressCrashReport(
+                LatestLogCleanShutdownDetector.detect(context)
+        )) {
             LauncherReturnCoordinator.scheduleLauncherRestart(
                     context,
                     LAUNCHER_RESTART_DELAY_MS,

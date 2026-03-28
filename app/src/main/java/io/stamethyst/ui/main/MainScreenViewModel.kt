@@ -92,6 +92,7 @@ class MainScreenViewModel : ViewModel() {
         val crashRecovery: CrashRecoveryState? = null,
         val controlsEnabled: Boolean = true,
         val gameProcessRunning: Boolean = false,
+        val launchInFlight: Boolean = false,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val modSuggestions: Map<String, String> = emptyMap(),
         val modFolders: List<ModFolder> = emptyList(),
@@ -119,9 +120,12 @@ class MainScreenViewModel : ViewModel() {
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 32)
     val effects = _effects.asSharedFlow()
     private val suggestionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
     private var modSuggestionSyncInProgress = false
     private var lastSuccessfulModSuggestionSyncSignature: String? = null
+    @Volatile
+    private var launchInFlight = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -156,6 +160,7 @@ class MainScreenViewModel : ViewModel() {
     )
 
     fun refresh(host: Activity) {
+        clearLaunchInFlightState()
         val storageIssue = detectStorageIssue(host)
         val hasJar = hasValidImportedStsJar(host)
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
@@ -244,11 +249,11 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onLaunch(host: Activity) {
-        if (uiState.busy) {
+        if (!tryBeginLaunchRequest()) {
             return
         }
         dismissCrashRecovery()
-        prepareAndLaunch(host, StsLaunchSpec.LAUNCH_MODE_MTS, forceJvmCrash = false)
+        beginLaunchFlow(host, StsLaunchSpec.LAUNCH_MODE_MTS, forceJvmCrash = false)
     }
 
     fun dismissCrashRecovery() {
@@ -470,7 +475,9 @@ class MainScreenViewModel : ViewModel() {
         launchStartedAtMs: Long,
         allowProcessExitCrashFallback: Boolean
     ): LauncherReturnSnapshot {
-        val expectedCleanShutdown = LatestLogCleanShutdownDetector.detect(host) != null
+        val cleanShutdownSummary = LatestLogCleanShutdownDetector.detect(host)
+        val expectedCleanShutdown =
+            LatestLogCleanShutdownDetector.shouldSuppressCrashReport(cleanShutdownSummary)
         val explicitCrash = if (expectedCleanShutdown) {
             null
         } else {
@@ -610,27 +617,82 @@ class MainScreenViewModel : ViewModel() {
             return
         }
 
-        prepareAndLaunch(host, debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA, forceJvmCrash = forceJvmCrash)
+        if (!tryBeginLaunchRequest()) {
+            return
+        }
+        beginLaunchFlow(
+            host,
+            debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA,
+            forceJvmCrash = forceJvmCrash
+        )
+    }
+
+    private fun tryBeginLaunchRequest(): Boolean {
+        if (uiState.busy || launchInFlight) {
+            return false
+        }
+        markLaunchInFlight()
+        return true
+    }
+
+    private fun beginLaunchFlow(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
+        if (GameLaunchReturnTracker.isGameProcessRunning(host, includeCached = true)) {
+            cleanupResidualGameProcessAndLaunch(host, launchMode, forceJvmCrash)
+            return
+        }
+        prepareAndLaunch(host, launchMode, forceJvmCrash)
+    }
+
+    private fun cleanupResidualGameProcessAndLaunch(
+        host: Activity,
+        launchMode: String,
+        forceJvmCrash: Boolean
+    ) {
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.main_launch_game_cleanup_busy),
+            operation = UiBusyOperation.GAME_PROCESS_CLEANUP
+        )
+        launchExecutor.execute {
+            val cleaned = GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(host)
+            host.runOnUiThread {
+                setBusy(false, null)
+                if (host.isFinishing || host.isDestroyed) {
+                    clearLaunchInFlightState()
+                    return@runOnUiThread
+                }
+                if (!cleaned) {
+                    notifyResidualGameProcessCleanupFailed(host)
+                    return@runOnUiThread
+                }
+                GameLaunchReturnTracker.clearPendingGameLaunch(host)
+                markLaunchInFlight()
+                prepareAndLaunch(host, launchMode, forceJvmCrash)
+            }
+        }
     }
 
     private fun prepareAndLaunch(host: Activity, launchMode: String, forceJvmCrash: Boolean) {
-        if (showGameAlreadyRunningToastIfNeeded(host)) {
-            refresh(host)
+        if (GameLaunchReturnTracker.isGameProcessRunning(host, includeCached = true)) {
+            notifyResidualGameProcessCleanupFailed(host)
             return
         }
         if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
             if (showLegacyDesktopJarReimportDialogIfNeeded(host)) {
+                clearLaunchInFlightState()
                 return
             }
             val optionalMods = modManagementController.currentOptionalMods()
             val duplicateGroups = modManagementController.findEnabledDuplicateModIdGroups(optionalMods)
             if (duplicateGroups.isNotEmpty()) {
                 showDuplicateModIdDialog(host, duplicateGroups)
+                clearLaunchInFlightState()
                 return
             }
             val invalidMods = modManagementController.findEnabledMtsLaunchValidationIssues(optionalMods)
             if (invalidMods.isNotEmpty()) {
                 showMtsLaunchValidationDialog(host, invalidMods)
+                clearLaunchInFlightState()
                 return
             }
         }
@@ -649,6 +711,7 @@ class MainScreenViewModel : ViewModel() {
                     duration = LauncherTransientNoticeDuration.LONG
                 )
             )
+            clearLaunchInFlightState()
             return
         }
         val backBehavior = readBackBehaviorSelection(host)
@@ -665,6 +728,7 @@ class MainScreenViewModel : ViewModel() {
                     duration = LauncherTransientNoticeDuration.LONG
                 )
             )
+            clearLaunchInFlightState()
             return
         }
 
@@ -694,20 +758,19 @@ class MainScreenViewModel : ViewModel() {
                     duration = LauncherTransientNoticeDuration.LONG
                 )
             )
+            clearLaunchInFlightState()
         }
     }
 
-    private fun showGameAlreadyRunningToastIfNeeded(host: Activity): Boolean {
-        if (!GameLaunchReturnTracker.isGameProcessRunning(host)) {
-            return false
-        }
+    private fun notifyResidualGameProcessCleanupFailed(host: Activity) {
+        clearLaunchInFlightState()
+        refresh(host)
         _effects.tryEmit(
             Effect.ShowSnackbar(
-                message = UiText.StringResource(R.string.main_launch_game_already_running),
+                message = UiText.StringResource(R.string.main_launch_game_cleanup_failed),
                 duration = LauncherTransientNoticeDuration.LONG
             )
         )
-        return true
     }
 
     private fun showLegacyDesktopJarReimportDialogIfNeeded(host: Activity): Boolean {
@@ -1106,6 +1169,7 @@ class MainScreenViewModel : ViewModel() {
             storageIssue = storageIssue,
             controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation, storageIssue != null),
             gameProcessRunning = gameProcessRunning,
+            launchInFlight = launchInFlight,
             showModFileName = LauncherPreferences.readShowModFileName(host),
             modSuggestions = currentModSuggestions,
             modFolders = snapshot.modFolders,
@@ -1141,6 +1205,20 @@ class MainScreenViewModel : ViewModel() {
                 busyProgressPercent = null,
                 controlsEnabled = resolveControlsEnabled(false, UiBusyOperation.NONE, hasStorageIssue)
             )
+        }
+    }
+
+    private fun markLaunchInFlight() {
+        launchInFlight = true
+        if (!uiState.launchInFlight) {
+            uiState = uiState.copy(launchInFlight = true)
+        }
+    }
+
+    private fun clearLaunchInFlightState() {
+        launchInFlight = false
+        if (uiState.launchInFlight) {
+            uiState = uiState.copy(launchInFlight = false)
         }
     }
 
@@ -1190,6 +1268,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        launchExecutor.shutdownNow()
         suggestionExecutor.shutdownNow()
         modManagementController.shutdown()
         super.onCleared()
