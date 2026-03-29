@@ -15,7 +15,6 @@ internal data class AndroidGameModeSnapshot(
 )
 
 internal object AndroidGameModeSupport {
-    private const val BATTERY_MODE_TARGET_FPS_CAP = 30
     private const val BATTERY_MODE_RENDER_SCALE_CAP = 0.85f
 
     fun readCurrentMode(context: Context): AndroidGameModeSnapshot {
@@ -77,14 +76,9 @@ internal object AndroidGameModeSupport {
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun resolveTargetFps(requestedTargetFps: Int, snapshot: AndroidGameModeSnapshot): Int {
-        return when (snapshot.rawMode) {
-            GameManager.GAME_MODE_BATTERY -> requestedTargetFps.coerceAtMost(
-                BATTERY_MODE_TARGET_FPS_CAP
-            )
-
-            else -> requestedTargetFps
-        }
+        return requestedTargetFps
     }
 
     fun resolveRenderScale(requestedRenderScale: Float, snapshot: AndroidGameModeSnapshot): Float {

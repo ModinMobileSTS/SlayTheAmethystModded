@@ -601,7 +601,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_system_game_mode_dialog_current">Current mode: %1$s</string>
     <string name="settings_system_game_mode_dialog_control">This mode is controlled by the system Game Dashboard or the vendor game assistant. The launcher cannot change the system mode directly.</string>
     <string name="settings_system_game_mode_dialog_panel">If your device supports a game panel, switch it while the game is running from the system panel. Different vendors may call it things like &quot;Game Assistant&quot; or &quot;Game Space&quot;.</string>
-    <string name="settings_system_game_mode_dialog_support">The launcher currently declares support for Performance and Battery modes. Battery mode may still affect power and scheduling, but the launcher will not lower your target FPS to 60 on top of that.</string>
+    <string name="settings_system_game_mode_dialog_support">The launcher currently declares support for Performance and Battery modes. Battery mode may still affect power and scheduling, but the launcher itself does not apply an extra FPS cap.</string>
     <string name="settings_back_behavior_title">Back button behavior</string>
     <string name="settings_back_behavior_exit">Exit to launcher immediately</string>
     <string name="settings_back_behavior_escape">Map to Esc, useful for pausing the game and similar actions</string>
@@ -684,7 +684,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_game_mode_name_performance">PERFORMANCE</string>
     <string name="settings_game_mode_desc_performance">The system is using performance mode. The launcher will run at your configured target FPS.</string>
     <string name="settings_game_mode_name_battery">BATTERY</string>
-    <string name="settings_game_mode_desc_battery">The system is using battery mode, but the launcher will not lower your target FPS any further.</string>
+    <string name="settings_game_mode_desc_battery">The system is using battery mode. The launcher will still use your configured target FPS.</string>
     <string name="settings_game_mode_name_custom">CUSTOM</string>
     <string name="settings_game_mode_desc_custom">The system is using a custom game mode. The launcher currently treats it like the standard mode.</string>
     <string name="settings_game_mode_name_unsupported">UNSUPPORTED</string>
