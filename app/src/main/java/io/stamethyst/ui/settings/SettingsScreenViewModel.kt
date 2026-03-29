@@ -2203,6 +2203,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, compatibility.runtimeTextureCompatEnabled)
         )
         lines += host.getString(
+            R.string.settings_status_texture_pressure_downscale_divisor,
+            compatibility.texturePressureDownscaleDivisor
+        )
+        lines += host.getString(
             R.string.settings_status_force_linear_mipmap_filter,
             toggleStateText(host, compatibility.forceLinearMipmapFilterEnabled)
         )

@@ -89,6 +89,8 @@ object LauncherConfig {
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT =
         "compat_large_texture_downscale"
+    private const val PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR =
+        "compat_texture_pressure_downscale_divisor"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
@@ -169,6 +171,9 @@ object LauncherConfig {
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = true
+    const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
+    const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
+    const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = true
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = true
 
@@ -738,6 +743,28 @@ object LauncherConfig {
     fun setLargeTextureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT, enabled)
+        }
+    }
+
+    fun readTexturePressureDownscaleDivisor(context: Context): Int {
+        return prefs(context).getInt(
+            PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR,
+            DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR
+        ).coerceIn(
+            MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR,
+            MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR
+        )
+    }
+
+    fun saveTexturePressureDownscaleDivisor(context: Context, divisor: Int) {
+        prefs(context).edit {
+            putInt(
+                PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR,
+                divisor.coerceIn(
+                    MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR,
+                    MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR
+                )
+            )
         }
     }
 

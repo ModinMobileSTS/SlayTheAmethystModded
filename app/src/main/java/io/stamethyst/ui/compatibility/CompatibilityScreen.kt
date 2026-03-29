@@ -1,5 +1,6 @@
 package io.stamethyst.ui.compatibility
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,7 @@ import io.stamethyst.R
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.settings.SettingsDropdownField
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +67,9 @@ fun LauncherCompatibilityScreen(
         onLargeTextureDownscaleCompatToggled = { enabled ->
             viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
         },
+        onTexturePressureDownscaleDivisorChanged = { divisor ->
+            viewModel.onTexturePressureDownscaleDivisorChanged(context, divisor)
+        },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onNonRenderableFboFormatCompatToggled = { enabled ->
             viewModel.onNonRenderableFboFormatCompatToggled(context, enabled)
@@ -94,6 +99,7 @@ private fun LauncherCompatibilityScreenPreview() {
             fragmentShaderPrecisionCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             largeTextureDownscaleCompatEnabled = true,
+            texturePressureDownscaleDivisor = 2,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,
             fboIdleReclaimCompatEnabled = true,
@@ -117,11 +123,14 @@ private fun LauncherCompatibilityScreenContent(
     onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
+    onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
     onFboIdleReclaimCompatToggled: (Boolean) -> Unit = {},
     onFboPressureDownscaleCompatToggled: (Boolean) -> Unit = {},
 ) {
+    val context = LocalContext.current
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -186,6 +195,26 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.largeTextureDownscaleCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onLargeTextureDownscaleCompatToggled
+                )
+
+                SettingsDropdownField(
+                    label = stringResource(R.string.compat_texture_pressure_downscale_divisor_title),
+                    valueText = texturePressureDownscaleDivisorLabel(
+                        context,
+                        uiState.texturePressureDownscaleDivisor
+                    ),
+                    enabled = !uiState.busy,
+                    supportingText = stringResource(
+                        R.string.compat_texture_pressure_downscale_divisor_desc
+                    ),
+                    options = listOf(2, 3, 4),
+                    optionLabel = { divisor ->
+                        texturePressureDownscaleDivisorLabel(context, divisor)
+                    },
+                    optionDescription = { divisor ->
+                        texturePressureDownscaleDivisorOptionDescription(context, divisor)
+                    },
+                    onOptionSelected = onTexturePressureDownscaleDivisorChanged
                 )
 
                 CompatibilitySwitchRow(
@@ -334,4 +363,20 @@ private fun CompatibilitySwitchRow(
             )
         }
     }
+}
+
+private fun texturePressureDownscaleDivisorLabel(context: Context, divisor: Int): String {
+    return context.getString(R.string.compat_texture_pressure_downscale_divisor_value, divisor)
+}
+
+private fun texturePressureDownscaleDivisorOptionDescription(
+    context: Context,
+    divisor: Int
+): String {
+    val scaledSize = (2048 + divisor - 1) / divisor
+    return context.getString(
+        R.string.compat_texture_pressure_downscale_divisor_option_desc,
+        scaledSize,
+        scaledSize
+    )
 }

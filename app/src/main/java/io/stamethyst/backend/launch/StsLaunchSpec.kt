@@ -249,6 +249,10 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.gdx.texture_pressure_downscale_divisor=" +
+                CompatibilitySettings.readTexturePressureDownscaleDivisor(context)
+        )
+        args.add(
             "-Damethyst.gdx.force_linear_mipmap_filter=" +
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )

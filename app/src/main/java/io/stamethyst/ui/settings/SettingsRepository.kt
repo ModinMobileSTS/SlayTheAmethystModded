@@ -83,6 +83,7 @@ internal object SettingsRepository {
         val globalAtlasFilterCompatEnabled: Boolean,
         val modManifestRootCompatEnabled: Boolean,
         val runtimeTextureCompatEnabled: Boolean,
+        val texturePressureDownscaleDivisor: Int,
         val forceLinearMipmapFilterEnabled: Boolean
     )
 
@@ -169,6 +170,8 @@ internal object SettingsRepository {
                 modManifestRootCompatEnabled =
                     CompatibilitySettings.isModManifestRootCompatEnabled(context),
                 runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(context),
+                texturePressureDownscaleDivisor =
+                    CompatibilitySettings.readTexturePressureDownscaleDivisor(context),
                 forceLinearMipmapFilterEnabled =
                     CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
             )

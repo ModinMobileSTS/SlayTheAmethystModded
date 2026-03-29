@@ -95,6 +95,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun readTexturePressureDownscaleDivisor(context: Context): Int {
+        return LauncherConfig.readTexturePressureDownscaleDivisor(context)
+    }
+
+    @JvmStatic
+    fun saveTexturePressureDownscaleDivisor(context: Context, divisor: Int) {
+        LauncherConfig.saveTexturePressureDownscaleDivisor(context, divisor)
+    }
+
+    @JvmStatic
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
         return LauncherConfig.isForceLinearMipmapFilterEnabled(context)
     }

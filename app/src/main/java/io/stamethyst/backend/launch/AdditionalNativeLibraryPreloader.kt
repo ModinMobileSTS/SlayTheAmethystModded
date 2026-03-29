@@ -2,53 +2,64 @@ package io.stamethyst.backend.launch
 
 import android.content.Context
 import android.util.Log
-import net.kdt.pojavlaunch.utils.JREUtils
+import io.stamethyst.config.RuntimePaths
 import java.io.File
-import java.util.LinkedHashSet
+import java.nio.file.Files
 
 internal object AdditionalNativeLibraryPreloader {
     private const val TAG = "STS-JVM"
 
-    // Keep the preload order narrow and explicit so startup remains predictable.
-    private val preloadLibraryNames = listOf(
-        "libjnijavacpp.so",
-        "libtensorflow_cc.so",
-        "libtensorflow_framework.so.2",
-        "libtensorflow.so.2",
-        "libjnitensorflow.so",
-        "libtensorflow_jni.so"
+    private val compatibilityAliases = linkedMapOf(
+        "libtensorflow_framework.so" to "libtensorflow_framework.so.2",
+        "libtensorflow.so" to "libtensorflow.so.2"
     )
 
     fun preload(context: Context) {
-        val searchedDirectories = NativeLibraryPathResolver.collectAdditionalSearchDirectories(context)
-        if (searchedDirectories.isEmpty()) {
+        ensureCompatibilityAliases(RuntimePaths.nativeMarketActiveDir(context))
+    }
+
+    internal fun buildCompatibilityAliasPlan(availableNames: Set<String>): Map<String, String> {
+        val plannedAliases = LinkedHashMap<String, String>()
+        compatibilityAliases.forEach { (aliasName, targetName) ->
+            if (!availableNames.contains(aliasName) && availableNames.contains(targetName)) {
+                plannedAliases[aliasName] = targetName
+            }
+        }
+        return plannedAliases
+    }
+
+    private fun ensureCompatibilityAliases(directory: File) {
+        if (!directory.isDirectory) {
             return
         }
-
-        val loadedPaths = LinkedHashSet<String>()
-        preloadLibraryNames.forEach { libraryName ->
-            val resolved = resolveLibrary(searchedDirectories, libraryName) ?: return@forEach
-            if (!loadedPaths.add(resolved.absolutePath)) {
+        val availableNames = directory.listFiles()
+            ?.filter(File::isFile)
+            ?.map(File::getName)
+            ?.toSet()
+            .orEmpty()
+        buildCompatibilityAliasPlan(availableNames).forEach { (aliasName, targetName) ->
+            val targetFile = File(directory, targetName)
+            val aliasFile = File(directory, aliasName)
+            if (!targetFile.isFile() || aliasFile.exists()) {
                 return@forEach
             }
-            val loaded = JREUtils.dlopen(resolved.absolutePath)
+            val created = createCompatibilityAlias(aliasFile, targetFile)
             Log.i(
                 TAG,
-                "Preloaded extra native library name=$libraryName loaded=$loaded path=${resolved.absolutePath}"
+                "Prepared TensorFlow compatibility alias alias=${aliasFile.name} target=${targetFile.name} created=$created"
             )
         }
     }
 
-    private fun resolveLibrary(
-        directories: List<File>,
-        libraryName: String
-    ): File? {
-        directories.forEach { directory ->
-            val candidate = File(directory, libraryName)
-            if (candidate.isFile()) {
-                return candidate
-            }
+    private fun createCompatibilityAlias(aliasFile: File, targetFile: File): Boolean {
+        return try {
+            Files.createSymbolicLink(aliasFile.toPath(), targetFile.toPath().fileName)
+            true
+        } catch (_: Throwable) {
+            runCatching {
+                Files.createLink(aliasFile.toPath(), targetFile.toPath())
+                true
+            }.getOrDefault(false)
         }
-        return null
     }
 }

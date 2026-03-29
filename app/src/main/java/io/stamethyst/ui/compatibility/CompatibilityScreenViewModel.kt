@@ -22,6 +22,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val largeTextureDownscaleCompatEnabled: Boolean = true,
+        val texturePressureDownscaleDivisor: Int = 2,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
         val fboIdleReclaimCompatEnabled: Boolean = true,
@@ -44,6 +45,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
+            texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
             fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
@@ -121,6 +123,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setLargeTextureDownscaleCompatEnabled(host, enabled)
         uiState = uiState.copy(largeTextureDownscaleCompatEnabled = enabled)
+    }
+
+    fun onTexturePressureDownscaleDivisorChanged(host: Context, divisor: Int) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.saveTexturePressureDownscaleDivisor(host, divisor)
+        uiState = uiState.copy(texturePressureDownscaleDivisor = divisor)
     }
 
     fun onForceLinearMipmapFilterToggled(host: Context, enabled: Boolean) {

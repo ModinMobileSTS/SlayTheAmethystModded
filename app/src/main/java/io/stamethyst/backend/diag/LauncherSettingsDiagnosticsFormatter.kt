@@ -206,6 +206,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "largeTextureDownscaleCompat" to formatBoolean(
                             CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)
                         ),
+                        "texturePressureDownscaleDivisor" to formatTexturePressureDownscaleDivisor(
+                            CompatibilitySettings.readTexturePressureDownscaleDivisor(context)
+                        ),
                         "forceLinearMipmapFilter" to formatBoolean(
                             CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
                         ),
@@ -226,6 +229,10 @@ internal object LauncherSettingsDiagnosticsFormatter {
 
     private fun formatBoolean(value: Boolean): String {
         return if (value) "true" else "false"
+    }
+
+    private fun formatTexturePressureDownscaleDivisor(value: Int): String {
+        return "x$value"
     }
 
     private fun formatThemeMode(themeMode: LauncherThemeMode): String {

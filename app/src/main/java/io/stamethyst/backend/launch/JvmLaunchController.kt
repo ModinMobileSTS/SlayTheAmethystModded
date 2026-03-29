@@ -254,6 +254,8 @@ class JvmLaunchController(
                     rendererDecision
                 )
                 throwIfCancelled()
+                AdditionalNativeLibraryPreloader.preload(activity)
+                throwIfCancelled()
                 JREUtils.initJavaRuntime(activity.applicationContext, resolvedJavaHome.absolutePath)
                 throwIfCancelled()
                 JREUtils.setupExitMethod(activity.applicationContext)

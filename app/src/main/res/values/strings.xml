@@ -63,6 +63,10 @@
     <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you see missing materials/textures, consider enabling it. Pros: continues fixing black blocks not covered during import-time patching. Cons: increases startup CPU/GPU overhead from managed texture scanning, and runtime Linear/Clamp fallback may make some textures blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_large_texture_downscale_title">Large texture fallback downscale</string>
     <string name="compat_large_texture_downscale_desc">When enabled, the runtime applies a generic fallback for very large texture uploads: external-mod animation/scene atlases are downscaled automatically, and other huge textures can also be reduced after GPU memory pressure crosses the soft budget. This lowers HarmonyOS/Android compatibility-layer GPU leak kills, but some affected assets may look softer. Default is ON.</string>
+    <string name="compat_texture_pressure_downscale_divisor_title">Large texture downscale strength</string>
+    <string name="compat_texture_pressure_downscale_divisor_desc">Controls the hidden runtime parameter amethyst.gdx.texture_pressure_downscale_divisor. Larger values downscale external animation atlases more aggressively. This only affects runtime upload size and takes effect on next launch.</string>
+    <string name="compat_texture_pressure_downscale_divisor_value">x%1$d</string>
+    <string name="compat_texture_pressure_downscale_divisor_option_desc">A 2048x2048 atlas page uploads at about %1$dx%2$d.</string>
     <string name="compat_force_linear_mipmap_filter_title">Force linear mipmap filter fallback</string>
     <string name="compat_force_linear_mipmap_filter_desc">When enabled, mipmap-dependent min filters are downgraded to Linear at runtime to avoid black blocks caused by incomplete mip chains in some mods. Example fix: Ring of Fate character models turning into black blocks.</string>
     <string name="compat_non_renderable_fbo_format_compat_title">Non-renderable FBO format fallback</string>
@@ -946,6 +950,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_status_global_atlas_filter_compat">Global atlas filter compat: %1$s</string>
     <string name="settings_status_mod_manifest_root_compat">Mod manifest root compat: %1$s</string>
     <string name="settings_status_runtime_texture_compat">Runtime texture compat: %1$s</string>
+    <string name="settings_status_texture_pressure_downscale_divisor">Texture pressure downscale divisor: x%1$d</string>
     <string name="settings_status_force_linear_mipmap_filter">Force linear mipmap filter: %1$s</string>
     <string name="settings_status_bundled_jre_path">Bundled JRE path: %1$s</string>
     <string name="settings_status_core_dependency_missing">%1$s: missing</string>
