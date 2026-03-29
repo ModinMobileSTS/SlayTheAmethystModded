@@ -29,8 +29,10 @@ import com.badlogic.gdx.math.Affine2;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.NumberUtils;
-import com.badlogic.gdx.utils.ObjectSet;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
 
 /** Draws batched quads using indices.
  * @see Batch
@@ -68,7 +70,7 @@ public class SpriteBatch implements Batch {
 
 	float color = Color.WHITE.toFloatBits();
 	private Color tempColor = new Color(1, 1, 1, 1);
-	private final ObjectSet<Texture> compatTouchedTextures = new ObjectSet<Texture>();
+	private final Set<Texture> compatTouchedTextures = Collections.newSetFromMap(new WeakHashMap<Texture, Boolean>());
 	private int compatAppliedTotal;
 	private int compatSkippedTotal;
 
@@ -1188,6 +1190,7 @@ public class SpriteBatch implements Batch {
 
 	@Override
 	public void dispose () {
+		compatTouchedTextures.clear();
 		mesh.dispose();
 		if (ownsShader && shader != null) shader.dispose();
 	}

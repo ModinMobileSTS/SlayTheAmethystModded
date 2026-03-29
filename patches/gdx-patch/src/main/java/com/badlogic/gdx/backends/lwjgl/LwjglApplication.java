@@ -24,7 +24,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
 
 import com.badlogic.gdx.ApplicationLogger;
 import org.lwjgl.LWJGLException;
@@ -55,7 +58,6 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Clipboard;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 import com.badlogic.gdx.utils.ObjectMap;
-import com.badlogic.gdx.utils.ObjectSet;
 import com.badlogic.gdx.utils.SnapshotArray;
 
 /** An OpenGL surface fullscreen or in a lightweight window. */
@@ -134,9 +136,10 @@ public class LwjglApplication implements Application {
 	private int globalTextureCompatScanTotal;
 	private int globalTextureCompatKnownManagedCount = -1;
 	private final float configuredRenderScale = readConfiguredRenderScale();
-	private final ObjectSet<Texture> globalTextureCompatSeen = new ObjectSet<Texture>();
-	private final ObjectMap<Texture, Integer> globalTextureCompatFailureCounts = new ObjectMap<Texture, Integer>();
-	private final ObjectMap<Texture, String> globalTextureCompatSourceCache = new ObjectMap<Texture, String>();
+	private final Set<Texture> globalTextureCompatSeen =
+		Collections.newSetFromMap(new WeakHashMap<Texture, Boolean>());
+	private final Map<Texture, Integer> globalTextureCompatFailureCounts = new WeakHashMap<Texture, Integer>();
+	private final Map<Texture, String> globalTextureCompatSourceCache = new WeakHashMap<Texture, String>();
 	private ScaledRenderPipeline scaledRenderPipeline;
 	private boolean scaledRenderPipelineDisabled;
 	private boolean scaledRenderPipelineLogged;
@@ -1417,7 +1420,8 @@ public class LwjglApplication implements Application {
 				}
 
 				failedThisScan++;
-				int failureCount = globalTextureCompatFailureCounts.get(texture, 0) + 1;
+				Integer previousFailureCount = globalTextureCompatFailureCounts.get(texture);
+				int failureCount = (previousFailureCount == null ? 0 : previousFailureCount.intValue()) + 1;
 				globalTextureCompatFailureCounts.put(texture, failureCount);
 				// Reduced log mode: per-texture repair-failed log disabled.
 				// if (verbose || failureCount <= 3 || (failureCount % 10) == 0) {
