@@ -43,9 +43,16 @@ class RenderSurfaceManager(
     private var resyncApplyCount = 0
     private var resyncSkipCount = 0
     private var renderRoot: FrameLayout? = null
+    private var postBootSurfaceSoftRefreshScheduled = false
+    private var postBootSurfaceSoftRefreshCompleted = false
+    private var postBootSurfaceSoftRefreshAttempts = 0
+    private var postBootSurfaceSoftRefreshInFlight = false
 
     private val foregroundResyncRunnable = Runnable {
         applyQueuedResync()
+    }
+    private val postBootSurfaceSoftRefreshRunnable = Runnable {
+        performPostBootSurfaceSoftRefresh()
     }
 
     lateinit var renderView: View
@@ -141,6 +148,7 @@ class RenderSurfaceManager(
     fun onDestroy() {
         if (::renderView.isInitialized) {
             renderView.removeCallbacks(foregroundResyncRunnable)
+            renderView.removeCallbacks(postBootSurfaceSoftRefreshRunnable)
         }
         refreshRateController.sync(
             inForeground = false,
@@ -178,7 +186,32 @@ class RenderSurfaceManager(
         if (!::renderView.isInitialized) {
             return
         }
-        if (resyncScheduler.request(reason)) {
+        if (
+            shouldSkipSurfaceViewSteadyStateResync(
+                useTextureViewSurface = renderHost.usesTextureView,
+                pendingSurfaceReadyCallback = pendingSurfaceReadyCallback,
+                bridgeSurfaceReady = state.bridgeSurfaceReady,
+                hasCurrentSurface = renderHost.currentSurface != null,
+                reason = reason
+            )
+        ) {
+            println(
+                "RenderSurfaceResync: backend=SurfaceView reason=$reason skipped=steady_state"
+            )
+            return
+        }
+        val scheduled = resyncScheduler.request(reason)
+        val delayMs = resolveForegroundResyncDelayMs(renderHost.usesTextureView, reason)
+        if (delayMs > 0L) {
+            renderView.removeCallbacks(foregroundResyncRunnable)
+            renderView.postDelayed(foregroundResyncRunnable, delayMs)
+            println(
+                "RenderSurfaceResync: backend=SurfaceView reason=$reason " +
+                    "scheduled=$scheduled delayMs=$delayMs mode=debounced"
+            )
+            return
+        }
+        if (scheduled) {
             renderView.post(foregroundResyncRunnable)
         }
     }
@@ -188,6 +221,33 @@ class RenderSurfaceManager(
             return
         }
         dispatchWindowSize(buildApplyPlan(renderView.width, renderView.height))
+    }
+
+    fun schedulePostBootSurfaceSoftRefresh(triggerReason: String) {
+        if (renderHost.usesTextureView ||
+            postBootSurfaceSoftRefreshCompleted ||
+            postBootSurfaceSoftRefreshInFlight ||
+            !::renderView.isInitialized
+        ) {
+            return
+        }
+        if (postBootSurfaceSoftRefreshScheduled) {
+            println(
+                "RenderSurfaceRefresh: backend=SurfaceView trigger=$triggerReason " +
+                    "scheduled=false reason=already_scheduled"
+            )
+            return
+        }
+        postBootSurfaceSoftRefreshScheduled = true
+        renderView.removeCallbacks(postBootSurfaceSoftRefreshRunnable)
+        renderView.postDelayed(
+            postBootSurfaceSoftRefreshRunnable,
+            POST_BOOT_SURFACE_SOFT_REFRESH_DELAY_MS
+        )
+        println(
+            "RenderSurfaceRefresh: backend=SurfaceView trigger=$triggerReason " +
+                "scheduled=true delayMs=$POST_BOOT_SURFACE_SOFT_REFRESH_DELAY_MS"
+        )
     }
 
     fun syncDisplayConfigToSurfaceSize() {
@@ -339,6 +399,77 @@ class RenderSurfaceManager(
             hasWindowFocus = state.hasWindowFocus,
             surface = renderHost.currentSurface,
             reason = reason
+        )
+    }
+
+    private fun performPostBootSurfaceSoftRefresh() {
+        postBootSurfaceSoftRefreshScheduled = false
+        if (renderHost.usesTextureView ||
+            postBootSurfaceSoftRefreshCompleted ||
+            postBootSurfaceSoftRefreshInFlight ||
+            !::renderView.isInitialized ||
+            activity.isFinishing ||
+            activity.isDestroyed
+        ) {
+            return
+        }
+        if (!state.isForeground || !state.hasWindowFocus) {
+            retryPostBootSurfaceSoftRefresh("not_ready_foreground")
+            return
+        }
+        if (renderHost.currentSurface == null) {
+            retryPostBootSurfaceSoftRefresh("surface_unavailable")
+            return
+        }
+        postBootSurfaceSoftRefreshAttempts++
+        postBootSurfaceSoftRefreshInFlight = true
+        println(
+            "RenderSurfaceRefresh: backend=SurfaceView action=soft_visibility_start " +
+                "attempt=$postBootSurfaceSoftRefreshAttempts generation=${renderHost.surfaceGeneration}"
+        )
+        renderView.visibility = View.INVISIBLE
+        renderView.invalidate()
+        renderView.postOnAnimationDelayed({
+            completePostBootSurfaceSoftRefresh()
+        }, POST_BOOT_SURFACE_SOFT_REFRESH_HIDDEN_MS)
+    }
+
+    private fun completePostBootSurfaceSoftRefresh() {
+        postBootSurfaceSoftRefreshInFlight = false
+        if (!::renderView.isInitialized || activity.isFinishing || activity.isDestroyed) {
+            return
+        }
+        renderView.visibility = View.VISIBLE
+        renderView.requestLayout()
+        renderView.invalidate()
+        postBootSurfaceSoftRefreshCompleted = true
+        println(
+            "RenderSurfaceRefresh: backend=SurfaceView action=soft_visibility_complete " +
+                "attempt=$postBootSurfaceSoftRefreshAttempts generation=${renderHost.surfaceGeneration}"
+        )
+        requestForegroundResync("post_boot_surface_soft_refresh")
+    }
+
+    private fun retryPostBootSurfaceSoftRefresh(reason: String) {
+        if (postBootSurfaceSoftRefreshCompleted ||
+            postBootSurfaceSoftRefreshAttempts >= MAX_POST_BOOT_SURFACE_SOFT_REFRESH_ATTEMPTS
+        ) {
+            println(
+                "RenderSurfaceRefresh: backend=SurfaceView action=aborted " +
+                    "attempts=$postBootSurfaceSoftRefreshAttempts reason=$reason"
+            )
+            return
+        }
+        postBootSurfaceSoftRefreshScheduled = true
+        renderView.removeCallbacks(postBootSurfaceSoftRefreshRunnable)
+        renderView.postDelayed(
+            postBootSurfaceSoftRefreshRunnable,
+            POST_BOOT_SURFACE_SOFT_REFRESH_RETRY_DELAY_MS
+        )
+        println(
+            "RenderSurfaceRefresh: backend=SurfaceView action=retry " +
+                "attempt=$postBootSurfaceSoftRefreshAttempts reason=$reason " +
+                "delayMs=$POST_BOOT_SURFACE_SOFT_REFRESH_RETRY_DELAY_MS"
         )
     }
 
@@ -566,5 +697,53 @@ class RenderSurfaceManager(
         }
         attributes.layoutInDisplayCutoutMode = targetMode
         activity.window.attributes = attributes
+    }
+
+    companion object {
+        private const val SURFACE_VIEW_STARTUP_RESYNC_DEBOUNCE_MS = 16L
+        private const val SURFACE_VIEW_STABLE_RESYNC_DEBOUNCE_MS = 48L
+        private const val POST_BOOT_SURFACE_SOFT_REFRESH_DELAY_MS = 220L
+        private const val POST_BOOT_SURFACE_SOFT_REFRESH_HIDDEN_MS = 32L
+        private const val POST_BOOT_SURFACE_SOFT_REFRESH_RETRY_DELAY_MS = 160L
+        private const val MAX_POST_BOOT_SURFACE_SOFT_REFRESH_ATTEMPTS = 3
+
+        internal fun resolveForegroundResyncDelayMs(
+            useTextureViewSurface: Boolean,
+            reason: String
+        ): Long {
+            if (useTextureViewSurface) {
+                return 0L
+            }
+            return when (reason) {
+                "surface_available",
+                "surface_size_changed",
+                "attach_complete" -> SURFACE_VIEW_STARTUP_RESYNC_DEBOUNCE_MS
+
+                "layout",
+                "right_crop",
+                "resume",
+                "focus",
+                "legacy_foreground" -> SURFACE_VIEW_STABLE_RESYNC_DEBOUNCE_MS
+
+                else -> 0L
+            }
+        }
+
+        internal fun shouldSkipSurfaceViewSteadyStateResync(
+            useTextureViewSurface: Boolean,
+            pendingSurfaceReadyCallback: Boolean,
+            bridgeSurfaceReady: Boolean,
+            hasCurrentSurface: Boolean,
+            reason: String
+        ): Boolean {
+            if (useTextureViewSurface ||
+                pendingSurfaceReadyCallback ||
+                !bridgeSurfaceReady ||
+                !hasCurrentSurface
+            ) {
+                return false
+            }
+            return reason == "resume" || reason == "focus" || reason == "legacy_foreground"
+        }
     }
 }

@@ -63,6 +63,7 @@ internal class GameSessionCoordinator(
             updateFloatingMouseVisibility()
             updatePerformanceOverlayVisibility()
             updateSystemGameState()
+            trySchedulePostBootSurfaceSoftRefresh("overlay_dismissed")
         },
         onRequestEarlyDismiss = {
             bootOverlayController.setEarlyDismissRequestTimestamp(
@@ -94,6 +95,7 @@ internal class GameSessionCoordinator(
                 updateFloatingMouseVisibility()
                 updatePerformanceOverlayVisibility()
                 updateSystemGameState()
+                trySchedulePostBootSurfaceSoftRefresh("runtime_ready")
             }
         },
         onSurfaceSizeSync = {
@@ -635,6 +637,16 @@ internal class GameSessionCoordinator(
             isLoading = isLoading,
             inForeground = inForeground
         )
+    }
+
+    private fun trySchedulePostBootSurfaceSoftRefresh(triggerReason: String) {
+        if (config.useTextureViewSurface ||
+            !jvmLaunchController.runtimeLifecycleReady ||
+            !bootOverlayController.isDismissed
+        ) {
+            return
+        }
+        renderSurfaceManager.schedulePostBootSurfaceSoftRefresh(triggerReason)
     }
 
     private fun restoreRequestedTargetFps() {

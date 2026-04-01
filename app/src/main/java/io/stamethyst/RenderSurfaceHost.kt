@@ -331,6 +331,29 @@ internal class SurfaceViewHost(
                 detail = "$detailPrefix duplicate"
             )
         }
+        val view = surfaceView
+        val frame = holder.surfaceFrame
+        val viewWidth = view?.width ?: 0
+        val viewHeight = view?.height ?: 0
+        val frameWidth = frame?.width() ?: 0
+        val frameHeight = frame?.height() ?: 0
+        val matchesViewBounds = requestedMatchesSize(width, height, viewWidth, viewHeight)
+        val matchesSurfaceFrame = requestedMatchesSize(width, height, frameWidth, frameHeight)
+        if (matchesViewBounds || matchesSurfaceFrame) {
+            lastAppliedGeneration = this.surfaceGeneration
+            lastAppliedBufferWidth = width
+            lastAppliedBufferHeight = height
+            val suppressionReason = when {
+                matchesViewBounds && matchesSurfaceFrame -> "fixed_size_suppressed_view_and_frame_match"
+                matchesViewBounds -> "fixed_size_suppressed_view_match"
+                else -> "fixed_size_suppressed_frame_match"
+            }
+            return RenderSurfaceHost.BufferSizeApplyResult(
+                handled = true,
+                changedSurfaceGeometry = false,
+                detail = "$detailPrefix $suppressionReason"
+            )
+        }
         try {
             holder.setFixedSize(width, height)
         } catch (_: Throwable) {
@@ -378,5 +401,19 @@ internal class SurfaceViewHost(
             append(" surfaceValid=")
             append(holder.surface.isValid)
         }
+    }
+
+    private fun requestedMatchesSize(
+        requestedWidth: Int,
+        requestedHeight: Int,
+        actualWidth: Int,
+        actualHeight: Int
+    ): Boolean {
+        return requestedWidth > 0 &&
+            requestedHeight > 0 &&
+            actualWidth > 0 &&
+            actualHeight > 0 &&
+            requestedWidth == actualWidth &&
+            requestedHeight == actualHeight
     }
 }
