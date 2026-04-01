@@ -69,10 +69,18 @@ object RuntimePaths {
     fun importedStsLibJar(context: Context): File = File(modsDir(context), "StSLib.jar")
 
     @JvmStatic
+    fun importedAmethystRuntimeCompatJar(context: Context): File =
+        File(modsDir(context), "AmethystRuntimeCompat.jar")
+
+    @JvmStatic
     fun enabledModsConfig(context: Context): File = File(stsRoot(context), "enabled_mods.txt")
 
     @JvmStatic
     fun priorityModsConfig(context: Context): File = File(stsRoot(context), "priority_mod_roots.txt")
+
+    @JvmStatic
+    fun importedModPatchMetadataFile(context: Context): File =
+        File(stsRoot(context), "imported_mod_patch_metadata.json")
 
     @JvmStatic
     fun optionalModsLibraryMigrationMarker(context: Context): File =

@@ -49,6 +49,8 @@
     <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Used to avoid unknown framebuffer status crashes, but it affects post-processing and can cause some render-skip issues. If you hit rendering-related crashes, consider enabling this option.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
     <string name="compat_global_atlas_filter_compat_desc">Newly imported mods are patched offline during import: atlas filter lines containing mipmap are rewritten to Linear,Linear. Keeping this enabled gives higher compatibility; if disabled, new imports will not be patched. Example fix: black blocks on the Ring of Fate main menu.</string>
+    <string name="compat_import_atlas_downscale_compat_title">Import-time atlas offline pre-downscale</string>
+    <string name="compat_import_atlas_downscale_compat_desc">When enabled, newly imported mods are preprocessed offline: atlas or Spine page images larger than 512px are resampled to 512x512 or smaller, and atlas coordinates are rewritten to match. This lowers runtime memory spikes and helps heavy animation mods stay stable, but affected assets can look noticeably softer. A dialog is shown when preprocessing happens. Default is OFF.</string>
     <string name="compat_mod_manifest_root_compat_title">ModTheSpire manifest root compatibility patch</string>
     <string name="compat_mod_manifest_root_compat_desc">During mod import, jars are automatically patched when ModTheSpire.json is incorrectly packaged under an outer folder (for example, Fabricate/ModTheSpire.json): it is rewritten to the jar root. Keeping this enabled gives higher compatibility; if disabled, newly imported mods are not patched. A dialog is shown when auto-fix happens.</string>
     <string name="compat_frieren_mod_compat_title">FrierenMod startup compatibility patch</string>
@@ -237,6 +239,7 @@
     <string name="main_dependency_mts_description">Primary mod loader jar used to launch the game with mods.</string>
     <string name="main_dependency_basemod_description">Core prerequisite mod required by most modded Slay the Spire setups.</string>
     <string name="main_dependency_stslib_description">Shared library prerequisite used by many mods.</string>
+    <string name="main_dependency_runtime_compat_description">Bundled runtime compat mod that caches expensive Duelist Guarded dynamic-value lookups and shortcuts expensive Duelist tribute/summon base-value rendering paths on mobile.</string>
     <string name="main_no_mods_hint">No mods yet. Download from Workshop, then import with the bottom-left button.</string>
     <string name="main_storage_issue_title">External mod directory unavailable</string>
     <string name="main_storage_issue_message">The launcher can\'t access %1$s right now. Mods may appear empty, and launch/export actions are temporarily disabled.</string>
@@ -271,6 +274,14 @@
     <string name="main_mod_suggestion_update_title">Mod notices updated</string>
     <string name="main_mod_suggestion_update_message">The mod notice list was updated. Mods with a circled exclamation mark now have notices you can open from their cards.</string>
     <string name="main_mod_suggestion_dialog_title_format">%1$s notice</string>
+    <string name="main_mod_patch_badge_content_description">Open import patch details</string>
+    <string name="main_mod_patch_dialog_title_format">%1$s import patches</string>
+    <string name="main_mod_patch_section_atlas_title">Atlas filter compatibility</string>
+    <string name="main_mod_patch_section_downscale_title">Atlas offline downscale</string>
+    <string name="main_mod_patch_section_manifest_title">ModTheSpire.json root fix</string>
+    <string name="main_mod_patch_section_frieren_title">FrierenMod startup compatibility</string>
+    <string name="main_mod_patch_section_downfall_title">Downfall layout compatibility</string>
+    <string name="main_mod_patch_section_vupshion_title">VUPShionMod startup compatibility</string>
     <string name="main_mod_priority_add">Mark priority load</string>
     <string name="main_mod_priority_remove">Remove priority load</string>
     <string name="main_mod_export">Export</string>
@@ -299,6 +310,7 @@
     <string name="mod_import_dialog_duplicate_keep_both">Keep both</string>
     <string name="mod_import_cancelled">Import cancelled</string>
     <string name="mod_import_dialog_atlas_patched_title">Atlas patched offline</string>
+    <string name="mod_import_dialog_atlas_downscale_title">Atlas preprocessed offline</string>
     <string name="mod_import_dialog_manifest_root_patched_title">ModID structure auto-fixed</string>
     <string name="mod_import_dialog_frieren_patched_title">FrierenMod auto-patched</string>
     <string name="mod_import_dialog_downfall_patched_title">Downfall auto-patched</string>
@@ -346,6 +358,12 @@ BaseMod, StSLib, and ModTheSpire are bundled and managed by the launcher. Do not
     <string name="mod_import_atlas_message_item_detail">  Patched atlas files: %1$d, replaced filter lines: %2$d</string>
     <string name="mod_import_atlas_message_rule">
 Patch rule: rewrite filter lines containing mipmap to Linear,Linear.</string>
+    <string name="mod_import_atlas_downscale_message_none">No atlas page images needed offline preprocessing in this import.</string>
+    <string name="mod_import_atlas_downscale_message_intro">The following mods had oversized atlas page images preprocessed during import:
+</string>
+    <string name="mod_import_atlas_downscale_message_item_detail">  Rewritten atlas files: %1$d, downscaled page images: %2$d</string>
+    <string name="mod_import_atlas_downscale_message_rule">
+Patch rule: atlas page images larger than 512px are resampled to 512x512 or smaller, and atlas coordinates are rewritten to match.</string>
     <string name="mod_import_manifest_message_none">No ModTheSpire.json root-path issues were found in this import.</string>
     <string name="mod_import_manifest_message_intro">The following mods had ModTheSpire.json root paths auto-fixed during import:
 </string>
@@ -376,6 +394,8 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="mod_import_preview_name_label">Name: %1$s</string>
     <string name="mod_import_preview_description_label">Description: %1$s</string>
     <string name="mod_import_preview_manifest_read_failed">Could not read ModTheSpire.json: %1$s</string>
+    <string name="external_import_loading_title">Analyzing import file...</string>
+    <string name="external_import_loading_message">Reading and checking %1$s. Please wait...</string>
     <string name="sts_jar_import_busy">Importing desktop-1.0.jar...</string>
     <string name="sts_jar_import_success">Imported desktop-1.0.jar</string>
     <string name="sts_jar_import_failed">Import failed: %1$s</string>
@@ -949,6 +969,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_status_glbridge_swap_heartbeat">GLBridge swap heartbeat log: %1$s</string>
     <string name="settings_status_virtual_fbo_poc">Virtual FBO PoC: %1$s</string>
     <string name="settings_status_global_atlas_filter_compat">Global atlas filter compat: %1$s</string>
+    <string name="settings_status_import_atlas_downscale_compat">Import atlas pre-downscale: %1$s</string>
     <string name="settings_status_mod_manifest_root_compat">Mod manifest root compat: %1$s</string>
     <string name="settings_status_runtime_texture_compat">Runtime texture compat: %1$s</string>
     <string name="settings_status_texture_pressure_downscale_divisor">Texture pressure downscale divisor: x%1$d</string>

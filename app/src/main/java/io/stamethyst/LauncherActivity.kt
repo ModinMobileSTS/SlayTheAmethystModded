@@ -5,6 +5,10 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,16 +17,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
-import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.settings.InvalidModImportFailure
+import io.stamethyst.ui.settings.JarImportInspectionService
 import io.stamethyst.ui.settings.SettingsFileService
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 import io.stamethyst.ui.theme.LauncherTheme
@@ -78,6 +81,7 @@ class LauncherActivity : AppCompatActivity() {
     private val mainViewModel: MainScreenViewModel by viewModels()
     private val settingsViewModel: SettingsScreenViewModel by viewModels()
     private var pendingImportDialog: AlertDialog? = null
+    private var pendingImportLoadingDialog: AlertDialog? = null
     private var pendingStorageMigrationDialog: AlertDialog? = null
     private var queuedImportUri: Uri? = null
     private var pendingModImportFlow = false
@@ -159,6 +163,8 @@ class LauncherActivity : AppCompatActivity() {
         queuedImportUri = null
         pendingImportDialog?.dismiss()
         pendingImportDialog = null
+        pendingImportLoadingDialog?.dismiss()
+        pendingImportLoadingDialog = null
         pendingStorageMigrationDialog?.dismiss()
         pendingStorageMigrationDialog = null
         super.onDestroy()
@@ -290,10 +296,13 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun loadIncomingJarIntentTarget(uri: Uri) {
+        val displayName = SettingsFileService.resolveDisplayName(this, uri)
+        showImportLoadingDialog(displayName)
         Thread {
-            val target = buildIncomingJarIntentTarget(uri)
+            val target = buildIncomingJarIntentTarget(uri, displayName)
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
+                    dismissImportLoadingDialog()
                     finishPendingJarIntentFlow()
                     return@runOnUiThread
                 }
@@ -305,23 +314,26 @@ class LauncherActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun buildIncomingJarIntentTarget(uri: Uri): IncomingJarIntentTarget {
-        val displayName = SettingsFileService.resolveDisplayName(this, uri)
+    private fun buildIncomingJarIntentTarget(
+        uri: Uri,
+        displayName: String
+    ): IncomingJarIntentTarget {
         if (displayName.trim().equals(STS_JAR_FILE_NAME, ignoreCase = true)) {
             return IncomingJarIntentTarget.StsJar(uri = uri, displayName = displayName)
         }
         val tempJar = File(cacheDir, "import-preview-${System.nanoTime()}.jar")
+        var previewDisplayName = displayName
         var manifest: ModJarSupport.ModManifestInfo? = null
         var parseError: String? = null
         try {
-            SettingsFileService.copyUriToFile(this, uri, tempJar)
+            val preparedDisplayName = JarImportInspectionService.prepareImportedJar(this, uri, tempJar)
+            previewDisplayName = preparedDisplayName
             if (StsJarValidator.isValid(tempJar)) {
-                return IncomingJarIntentTarget.StsJar(uri = uri, displayName = displayName)
+                return IncomingJarIntentTarget.StsJar(uri = uri, displayName = preparedDisplayName)
             }
-            if (CompatibilitySettings.isModManifestRootCompatEnabled(this)) {
-                ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempJar)
-            }
-            manifest = ModJarSupport.readModManifest(tempJar)
+            val inspection = JarImportInspectionService.inspectPreparedModJar(this, tempJar, preparedDisplayName)
+            manifest = inspection.manifest
+            parseError = inspection.parseError
         } catch (error: Throwable) {
             parseError = error.message ?: error.javaClass.simpleName
         } finally {
@@ -332,7 +344,7 @@ class LauncherActivity : AppCompatActivity() {
         return IncomingJarIntentTarget.ModJar(
             ModImportPreview(
                 uri = uri,
-                displayName = displayName,
+                displayName = previewDisplayName,
                 manifest = manifest,
                 parseError = parseError
             )
@@ -342,21 +354,25 @@ class LauncherActivity : AppCompatActivity() {
     private fun importExternalStsJar(target: IncomingJarIntentTarget.StsJar) {
         settingsViewModel.onJarPicked(this, target.uri, showSuccessToast = false) { success ->
             if (!success) {
+                dismissImportLoadingDialog()
                 finishPendingJarIntentFlow()
                 return@onJarPicked
             }
             if (launchedWithoutImportedStsJar) {
+                dismissImportLoadingDialog()
                 intent.putExtra(EXTRA_EXTERNAL_STS_IMPORT_NOTICE, true)
                 intent.putExtra(EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME, target.displayName)
                 recreate()
                 return@onJarPicked
             }
+            dismissImportLoadingDialog()
             mainViewModel.refresh(this)
             showExternalStsImportNoticeDialog(target.displayName)
         }
     }
 
     private fun showModImportDialog(preview: ModImportPreview) {
+        dismissImportLoadingDialog()
         val previousDialog = pendingImportDialog
         pendingImportDialog = null
         previousDialog?.dismiss()
@@ -390,6 +406,44 @@ class LauncherActivity : AppCompatActivity() {
         }
         pendingImportDialog = dialog
         dialog.show()
+    }
+
+    private fun showImportLoadingDialog(displayName: String) {
+        val previousDialog = pendingImportLoadingDialog
+        pendingImportLoadingDialog = null
+        previousDialog?.dismiss()
+
+        val density = resources.displayMetrics.density
+        val padding = (24 * density).toInt()
+        val spacing = (16 * density).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, padding, padding, padding)
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val progressBar = ProgressBar(this).apply {
+            isIndeterminate = true
+        }
+        val messageView = TextView(this).apply {
+            text = getString(R.string.external_import_loading_message, displayName)
+            setPadding(0, spacing, 0, 0)
+        }
+        container.addView(progressBar)
+        container.addView(messageView)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.external_import_loading_title)
+            .setView(container)
+            .setCancelable(false)
+            .create()
+        pendingImportLoadingDialog = dialog
+        dialog.show()
+    }
+
+    private fun dismissImportLoadingDialog() {
+        val dialog = pendingImportLoadingDialog ?: return
+        pendingImportLoadingDialog = null
+        dialog.dismiss()
     }
 
     private fun maybeShowExternalStsImportNotice(incomingIntent: Intent?) {

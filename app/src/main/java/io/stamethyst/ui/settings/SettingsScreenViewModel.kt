@@ -656,6 +656,12 @@ class SettingsScreenViewModel : ViewModel() {
                     importedJar = RuntimePaths.importedStsLibJar(host),
                     bundledAssetPath = "components/mods/StSLib.jar"
                 )
+                val coreRuntimeCompatStatus = resolveCoreDependencyStatus(
+                    host = host,
+                    label = "Amethyst Runtime Compat",
+                    importedJar = RuntimePaths.importedAmethystRuntimeCompatJar(host),
+                    bundledAssetPath = "components/mods/AmethystRuntimeCompat.jar"
+                )
                 val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
 
                 val status = buildStatusText(
@@ -667,6 +673,7 @@ class SettingsScreenViewModel : ViewModel() {
                     coreMtsStatus = coreMtsStatus,
                     coreBaseModStatus = coreBaseModStatus,
                     coreStsLibStatus = coreStsLibStatus,
+                    coreRuntimeCompatStatus = coreRuntimeCompatStatus,
                     deviceRuntimeStatus = deviceRuntimeStatus
                 )
 
@@ -1481,6 +1488,7 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                     if (patchedResults.isNotEmpty()) {
                         showAtlasPatchSummaryDialog(host, patchedResults)
+                        showAtlasDownscaleSummaryDialog(host, patchedResults)
                         showManifestRootPatchSummaryDialog(host, patchedResults)
                         showFrierenPatchSummaryDialog(host, patchedResults)
                         showDownfallPatchSummaryDialog(host, patchedResults)
@@ -1691,6 +1699,22 @@ class SettingsScreenViewModel : ViewModel() {
             .setTitle(R.string.mod_import_dialog_atlas_patched_title)
             .setMessage(
                 SettingsFileService.buildAtlasPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showAtlasDownscaleSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasAtlasDownscaled }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_atlas_downscale_title)
+            .setMessage(
+                SettingsFileService.buildAtlasDownscaleImportSummaryMessage(
                     context = host,
                     patchedResults = patchedResults
                 )
@@ -1982,6 +2006,7 @@ class SettingsScreenViewModel : ViewModel() {
         coreMtsStatus: CoreDependencyStatus,
         coreBaseModStatus: CoreDependencyStatus,
         coreStsLibStatus: CoreDependencyStatus,
+        coreRuntimeCompatStatus: CoreDependencyStatus,
         deviceRuntimeStatus: DeviceRuntimeStatus
     ): String {
         val rendering = snapshot.rendering
@@ -2000,6 +2025,7 @@ class SettingsScreenViewModel : ViewModel() {
         lines += formatCoreDependencyLine(host, coreMtsStatus)
         lines += formatCoreDependencyLine(host, coreBaseModStatus)
         lines += formatCoreDependencyLine(host, coreStsLibStatus)
+        lines += formatCoreDependencyLine(host, coreRuntimeCompatStatus)
         lines += host.getString(
             R.string.settings_status_optional_mods,
             optionalEnabled,
@@ -2193,6 +2219,10 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_global_atlas_filter_compat,
             toggleStateText(host, compatibility.globalAtlasFilterCompatEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_import_atlas_downscale_compat,
+            toggleStateText(host, compatibility.importAtlasDownscaleCompatEnabled)
         )
         lines += host.getString(
             R.string.settings_status_mod_manifest_root_compat,

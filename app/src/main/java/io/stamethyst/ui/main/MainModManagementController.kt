@@ -9,6 +9,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import io.stamethyst.R
 import io.stamethyst.backend.file_interactive.SafFileExporter
+import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.config.RuntimePaths
@@ -885,6 +886,7 @@ internal class MainModManagementController(
                     }
                     if (patchedResults.isNotEmpty()) {
                         showAtlasPatchSummaryDialog(host, patchedResults)
+                        showAtlasDownscaleSummaryDialog(host, patchedResults)
                         showManifestRootPatchSummaryDialog(host, patchedResults)
                         showDownfallPatchSummaryDialog(host, patchedResults)
                         showVupShionPatchSummaryDialog(host, patchedResults)
@@ -1003,6 +1005,22 @@ internal class MainModManagementController(
             .setTitle(R.string.mod_import_dialog_atlas_patched_title)
             .setMessage(
                 SettingsFileService.buildAtlasPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showAtlasDownscaleSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
+        if (patchedResults.none { it.wasAtlasDownscaled }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_atlas_downscale_title)
+            .setMessage(
+                SettingsFileService.buildAtlasDownscaleImportSummaryMessage(
                     context = host,
                     patchedResults = patchedResults
                 )
@@ -1421,7 +1439,15 @@ internal class MainModManagementController(
     }
 
     private fun loadModItems(host: Activity): List<ModItemUi> {
+        val importedPatchInfoByPath = ImportedModPatchRegistry.readAll(host)
         return ModManager.listInstalledMods(host).map { mod ->
+            val importPatchDetails = if (mod.required) {
+                null
+            } else {
+                importedPatchInfoByPath[mod.jarFile.absolutePath]?.let { patchInfo ->
+                    SettingsFileService.buildModImportPatchDetailMessage(host, patchInfo)
+                }
+            }
             ModItemUi(
                 modId = mod.modId,
                 manifestModId = mod.manifestModId,
@@ -1434,7 +1460,8 @@ internal class MainModManagementController(
                 installed = mod.installed,
                 enabled = mod.enabled,
                 priorityRoot = mod.priorityRoot,
-                priorityLoad = mod.priorityLoad
+                priorityLoad = mod.priorityLoad,
+                importPatchDetails = importPatchDetails
             )
         }
     }

@@ -15,5 +15,6 @@ data class ModItemUi(
     val installed: Boolean,
     val enabled: Boolean,
     val priorityRoot: Boolean,
-    val priorityLoad: Boolean
+    val priorityLoad: Boolean,
+    val importPatchDetails: String? = null
 )

@@ -94,6 +94,7 @@ internal fun ModCard(
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDisplayModeWarningDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
+    var showImportPatchDialog by remember(mod.storagePath, mod.importPatchDetails) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(10.dp)
     val dragVisualOffsetFromPointer = remember(density) {
 //        Offset(x = 0f, y = with(density) { MOD_DRAG_VISUAL_OFFSET_Y_DP.dp.toPx() })
@@ -193,6 +194,8 @@ internal fun ModCard(
             modSuggestionText = suggestionText,
             suggestionBadgeEnabled = true,
             onSuggestionClick = { showSuggestionDialog = true },
+            importPatchBadgeEnabled = true,
+            onImportPatchClick = { showImportPatchDialog = true },
             headerTrailing = {
                 if (selectionEnabled) {
                     Checkbox(
@@ -243,6 +246,26 @@ internal fun ModCard(
             text = { Text(text = suggestionText) },
             confirmButton = {
                 TextButton(onClick = { showSuggestionDialog = false }) {
+                    Text(text = stringResource(R.string.common_action_confirm))
+                }
+            }
+        )
+    }
+
+    if (showImportPatchDialog && !mod.importPatchDetails.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { showImportPatchDialog = false },
+            title = {
+                Text(
+                    text = stringResource(
+                        R.string.main_mod_patch_dialog_title_format,
+                        resolveModDisplayName(mod, showModFileName = false)
+                    )
+                )
+            },
+            text = { Text(text = mod.importPatchDetails.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = { showImportPatchDialog = false }) {
                     Text(text = stringResource(R.string.common_action_confirm))
                 }
             }
@@ -384,6 +407,8 @@ internal fun DraggingModCardOverlay(
                 modSuggestionText = null,
                 suggestionBadgeEnabled = false,
                 onSuggestionClick = {},
+                importPatchBadgeEnabled = false,
+                onImportPatchClick = {},
                 headerTrailing = {
                     Checkbox(
                         checked = mod.enabled,

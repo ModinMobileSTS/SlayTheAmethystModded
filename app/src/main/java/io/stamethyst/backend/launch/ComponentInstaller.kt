@@ -53,9 +53,10 @@ object ComponentInstaller {
         RuntimePaths.ensureBaseDirs(context)
         val assets = context.assets
         val packagedComponentsMarker = resolvePackagedComponentsMarker(context)
+        val packagedComponentsCurrent = arePackagedComponentsCurrent(context, assets, packagedComponentsMarker)
 
         throwIfInterrupted()
-        if (arePackagedComponentsCurrent(context, assets, packagedComponentsMarker)) {
+        if (packagedComponentsCurrent) {
             reportProgress(
                 progressCallback,
                 72,
@@ -72,7 +73,7 @@ object ComponentInstaller {
             72,
             context.progressText(R.string.startup_progress_installing_bundled_mods)
         )
-        installBundledMods(assets, context)
+        installBundledMods(assets, context, forceReplaceExisting = !packagedComponentsCurrent)
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -168,12 +169,17 @@ object ComponentInstaller {
     }
 
     @Throws(IOException::class)
-    private fun installBundledMods(assets: AssetManager, context: Context) {
+    private fun installBundledMods(
+        assets: AssetManager,
+        context: Context,
+        forceReplaceExisting: Boolean
+    ) {
         ensureBundledMod(
             assets,
             "components/mods/ModTheSpire.jar",
             RuntimePaths.importedMtsJar(context),
-            ModJarSupport::validateMtsJar
+            ModJarSupport::validateMtsJar,
+            replaceExisting = forceReplaceExisting
         )
         MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
         ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
@@ -181,13 +187,22 @@ object ComponentInstaller {
             assets,
             "components/mods/BaseMod.jar",
             RuntimePaths.importedBaseModJar(context),
-            ModJarSupport::validateBaseModJar
+            ModJarSupport::validateBaseModJar,
+            replaceExisting = forceReplaceExisting
         )
         ensureBundledMod(
             assets,
             "components/mods/StSLib.jar",
             RuntimePaths.importedStsLibJar(context),
-            ModJarSupport::validateStsLibJar
+            ModJarSupport::validateStsLibJar,
+            replaceExisting = forceReplaceExisting
+        )
+        ensureBundledMod(
+            assets,
+            "components/mods/AmethystRuntimeCompat.jar",
+            RuntimePaths.importedAmethystRuntimeCompatJar(context),
+            ModJarSupport::validateAmethystRuntimeCompatJar,
+            replaceExisting = forceReplaceExisting
         )
     }
 
@@ -280,10 +295,11 @@ object ComponentInstaller {
         assets: AssetManager,
         assetPath: String,
         targetFile: File,
-        validator: JarValidator
+        validator: JarValidator,
+        replaceExisting: Boolean = false
     ) {
         throwIfInterrupted()
-        if (targetFile.isFile && targetFile.length() > 0) {
+        if (!replaceExisting && targetFile.isFile && targetFile.length() > 0) {
             try {
                 validator.validate(targetFile)
                 return
@@ -293,7 +309,10 @@ object ComponentInstaller {
                 }
             }
         }
-        copyFileIfMissing(assets, assetPath, targetFile)
+        if (replaceExisting && targetFile.exists() && !targetFile.delete()) {
+            throw IOException("Failed to replace bundled mod file: ${targetFile.absolutePath}")
+        }
+        copyFile(assets, assetPath, targetFile)
         if (!targetFile.isFile || targetFile.length() <= 0) {
             throw IOException("Bundled mod install failed: ${targetFile.absolutePath}")
         }

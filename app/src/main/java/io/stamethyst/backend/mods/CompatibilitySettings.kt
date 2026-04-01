@@ -25,6 +25,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isImportAtlasDownscaleCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isImportAtlasDownscaleCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setImportAtlasDownscaleCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setImportAtlasDownscaleCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isModManifestRootCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isModManifestRootCompatEnabled(context)
     }

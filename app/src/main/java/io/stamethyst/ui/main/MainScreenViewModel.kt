@@ -167,6 +167,7 @@ class MainScreenViewModel : ViewModel() {
         val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
         val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
         val hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
+        val hasRuntimeCompat = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT)
         currentModSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
 
         modManagementController.refresh(host, storageAccessible = storageIssue == null)
@@ -176,6 +177,7 @@ class MainScreenViewModel : ViewModel() {
             hasMts = hasMts,
             hasBaseMod = hasBaseMod,
             hasStsLib = hasStsLib,
+            hasRuntimeCompat = hasRuntimeCompat,
             storageIssue = storageIssue
         )
     }
@@ -516,7 +518,8 @@ class MainScreenViewModel : ViewModel() {
         hasJar: Boolean,
         hasMts: Boolean,
         hasBaseMod: Boolean,
-        hasStsLib: Boolean
+        hasStsLib: Boolean,
+        hasRuntimeCompat: Boolean
     ): List<ModItemUi> {
         val requiredModsById = requiredMods.associateBy { normalizeModId(it.modId) }
         val baseMod = requiredModsById[ModManager.MOD_ID_BASEMOD]
@@ -551,6 +554,22 @@ class MainScreenViewModel : ViewModel() {
                 description = host.getString(R.string.main_dependency_stslib_description),
                 installed = hasStsLib
             )
+        val runtimeCompat = requiredModsById[ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT]
+            ?.copy(enabled = hasRuntimeCompat)
+            ?: buildSyntheticDependencyMod(
+                storageKey = "__dependency__/AmethystRuntimeCompat.jar",
+                modId = ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT,
+                displayName = "AmethystRuntimeCompat.jar",
+                version = host.getString(
+                    if (hasRuntimeCompat) {
+                        R.string.settings_status_available
+                    } else {
+                        R.string.settings_status_missing
+                    }
+                ),
+                description = host.getString(R.string.main_dependency_runtime_compat_description),
+                installed = hasRuntimeCompat
+            )
         return listOf(
             buildSyntheticDependencyMod(
                 storageKey = "__dependency__/desktop-1.0.jar",
@@ -581,7 +600,8 @@ class MainScreenViewModel : ViewModel() {
                 installed = hasMts
             ),
             baseMod,
-            stsLib
+            stsLib,
+            runtimeCompat
         )
     }
 
@@ -1147,6 +1167,7 @@ class MainScreenViewModel : ViewModel() {
             hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
             hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB),
+            hasRuntimeCompat = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT),
             storageIssue = detectStorageIssue(host)
         )
     }
@@ -1157,6 +1178,7 @@ class MainScreenViewModel : ViewModel() {
         hasMts: Boolean,
         hasBaseMod: Boolean,
         hasStsLib: Boolean,
+        hasRuntimeCompat: Boolean,
         storageIssue: StorageIssueUi?
     ) {
         val snapshot = modManagementController.snapshot()
@@ -1177,7 +1199,8 @@ class MainScreenViewModel : ViewModel() {
                 hasJar = hasJar,
                 hasMts = hasMts,
                 hasBaseMod = hasBaseMod,
-                hasStsLib = hasStsLib
+                hasStsLib = hasStsLib,
+                hasRuntimeCompat = hasRuntimeCompat
             ),
             optionalMods = snapshot.optionalMods,
             storageIssue = storageIssue,
@@ -1260,6 +1283,10 @@ class MainScreenViewModel : ViewModel() {
 
             ModManager.MOD_ID_STSLIB ->
                 RuntimePaths.importedStsLibJar(host).exists() || hasBundledAsset(host, "components/mods/StSLib.jar")
+
+            ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT ->
+                RuntimePaths.importedAmethystRuntimeCompatJar(host).exists() ||
+                    hasBundledAsset(host, "components/mods/AmethystRuntimeCompat.jar")
 
             else -> true
         }

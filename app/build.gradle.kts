@@ -233,6 +233,9 @@ androidComponents.onVariants { variant ->
 val patchProjectPaths = listOf(
     ":patches:gdx-patch"
 )
+val bundledModProjectPaths = listOf(
+    ":mods:amethyst-runtime-compat"
+)
 val log4jRuntimeComponents by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -419,6 +422,17 @@ val installPatchJars by tasks.registering(Sync::class) {
     into(generatedRuntimeAssetsDir.map { it.dir("components/gdx_patch") })
 }
 
+val installBundledModJars by tasks.registering(Sync::class) {
+    val bundledModJarTaskPaths = bundledModProjectPaths.map { projectPath -> "$projectPath:jar" }
+    dependsOn(bundledModJarTaskPaths)
+    bundledModProjectPaths.forEach { projectPath ->
+        from(project(projectPath).layout.buildDirectory.dir("libs")) {
+            include("*.jar")
+        }
+    }
+    into(generatedRuntimeAssetsDir.map { it.dir("components/mods") })
+}
+
 val installLog4jRuntimeAssets by tasks.registering(Sync::class) {
     from(log4jRuntimeComponents) {
         include("log4j-api-*.jar")
@@ -464,6 +478,7 @@ tasks.preBuild.configure {
     dependsOn(installBootBridgeJar)
     dependsOn(installLwjglBridgeAssets)
     dependsOn(installPatchJars)
+    dependsOn(installBundledModJars)
     dependsOn(installLog4jRuntimeAssets)
     dependsOn(installRuntimePackAssets)
 }

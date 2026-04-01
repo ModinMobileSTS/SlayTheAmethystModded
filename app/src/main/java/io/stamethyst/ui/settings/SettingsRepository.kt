@@ -81,6 +81,7 @@ internal object SettingsRepository {
     data class CompatibilitySnapshot(
         val virtualFboPocEnabled: Boolean,
         val globalAtlasFilterCompatEnabled: Boolean,
+        val importAtlasDownscaleCompatEnabled: Boolean,
         val modManifestRootCompatEnabled: Boolean,
         val runtimeTextureCompatEnabled: Boolean,
         val texturePressureDownscaleDivisor: Int,
@@ -167,6 +168,8 @@ internal object SettingsRepository {
                 virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(context),
                 globalAtlasFilterCompatEnabled =
                     CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context),
+                importAtlasDownscaleCompatEnabled =
+                    CompatibilitySettings.isImportAtlasDownscaleCompatEnabled(context),
                 modManifestRootCompatEnabled =
                     CompatibilitySettings.isModManifestRootCompatEnabled(context),
                 runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(context),

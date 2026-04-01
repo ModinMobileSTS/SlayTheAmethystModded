@@ -71,6 +71,25 @@ object ModJarSupport {
 
     @JvmStatic
     @Throws(IOException::class)
+    fun validateAmethystRuntimeCompatJar(jarFile: File?) {
+        if (jarFile == null || !jarFile.isFile) {
+            throw IOException("AmethystRuntimeCompat.jar not found")
+        }
+        ZipFile(jarFile).use { zipFile ->
+            if (zipFile.getEntry("io/stamethyst/compatmod/AmethystRuntimeCompat.class") == null) {
+                throw IOException(
+                    "Invalid AmethystRuntimeCompat.jar: missing runtime compat entry class"
+                )
+            }
+        }
+        val modId = ModJarManifestParser.normalizeModId(resolveModId(jarFile))
+        if (ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT != modId) {
+            throw IOException("Invalid AmethystRuntimeCompat.jar: modid is $modId")
+        }
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
     fun readModManifest(modJar: File?): ModManifestInfo {
         return ModJarManifestParser.readModManifest(modJar)
     }

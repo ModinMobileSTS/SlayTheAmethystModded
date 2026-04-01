@@ -19,8 +19,10 @@ import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.DownfallImportCompatPatcher
 import io.stamethyst.backend.mods.FrierenModCompatPatcher
+import io.stamethyst.backend.mods.ImportedModPatchInfo
+import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
-import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
+import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.VupShionModCompatPatcher
@@ -40,7 +42,6 @@ import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 internal data class SaveImportResult(
@@ -53,6 +54,8 @@ internal data class ModImportResult(
     val modName: String,
     val patchedAtlasEntries: Int,
     val patchedFilterLines: Int,
+    val downscaledAtlasEntries: Int = 0,
+    val downscaledAtlasPageEntries: Int = 0,
     val patchedManifestRootEntries: Int = 0,
     val patchedManifestRootPrefix: String = "",
     val patchedFrierenAntiPirateMethod: Boolean = false,
@@ -64,6 +67,8 @@ internal data class ModImportResult(
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
+    val wasAtlasDownscaled: Boolean
+        get() = downscaledAtlasPageEntries > 0
     val wasManifestRootPatched: Boolean
         get() = patchedManifestRootEntries > 0
     val wasFrierenAntiPiratePatched: Boolean
@@ -74,6 +79,7 @@ internal data class ModImportResult(
         get() = patchedVupShionWebButtonConstructor
     val hasCompatibilityPatches: Boolean
         get() = wasAtlasPatched ||
+            wasAtlasDownscaled ||
             wasManifestRootPatched ||
             wasFrierenAntiPiratePatched ||
             wasDownfallPatched ||
@@ -152,13 +158,9 @@ internal object SettingsFileService {
         @JvmField val reason: String
     ) : IOException(reason)
 
-    private const val RESERVED_COMPONENT_BASEMOD = "BaseMod"
-    private const val RESERVED_COMPONENT_STSLIB = "StSLib"
-    private const val RESERVED_COMPONENT_MTS = "ModTheSpire"
     private const val DOWNFALL_MOD_ID = "downfall"
     private const val FRIEREN_MOD_ID = "frierenmod"
     private const val VUPSHION_MOD_ID = "vupshionmod"
-    private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
         ".zip",
         ".rar",
@@ -373,34 +375,28 @@ internal object SettingsFileService {
             throw IOException("Failed to create mods directory")
         }
 
-        val displayName = resolveDisplayName(host, uri)
         val tempFile = File(modsDir, ".import-${System.nanoTime()}.tmp.jar")
-        copyUriToFile(host, uri, tempFile)
+        val displayName = JarImportInspectionService.prepareImportedJar(host, uri, tempFile)
         try {
-            var patchedManifestRootEntries = 0
-            var patchedManifestRootPrefix = ""
-            val manifest = try {
-                if (CompatibilitySettings.isModManifestRootCompatEnabled(host)) {
-                    val patchResult = ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempFile)
-                    patchedManifestRootEntries = patchResult.patchedFileEntries
-                    patchedManifestRootPrefix = patchResult.sourceRootPrefix
-                }
-                ModJarSupport.readModManifest(tempFile)
-            } catch (error: Throwable) {
-                if (isLikelyModTheSpireJar(tempFile, displayName)) {
-                    throw ReservedModImportException(RESERVED_COMPONENT_MTS)
+            val inspection = JarImportInspectionService.inspectPreparedModJar(host, tempFile, displayName)
+            val manifest = inspection.manifest
+            if (manifest == null) {
+                if (JarImportInspectionService.isLikelyModTheSpireJar(tempFile, displayName)) {
+                    throw ReservedModImportException(JarImportInspectionService.RESERVED_COMPONENT_MTS)
                 }
                 throw InvalidModImportException(
                     displayName = displayName,
-                    reason = error.message.orEmpty()
+                    reason = inspection.parseError.orEmpty()
                 )
             }
 
-            val modId = ModManager.normalizeModId(manifest.modId)
+            var patchedManifestRootEntries = inspection.patchedManifestRootEntries
+            var patchedManifestRootPrefix = inspection.patchedManifestRootPrefix
+            val modId = inspection.normalizedModId
             if (modId.isBlank()) {
                 throw IOException("modid is empty")
             }
-            val blockedComponent = resolveReservedComponent(modId)
+            val blockedComponent = inspection.reservedComponent
             if (blockedComponent != null) {
                 throw ReservedModImportException(blockedComponent)
             }
@@ -416,6 +412,15 @@ internal object SettingsFileService {
                 val patchResult = ModAtlasFilterCompatPatcher.patchMipMapFiltersInPlace(tempFile)
                 patchedAtlasEntries = patchResult.patchedAtlasEntries
                 patchedFilterLines = patchResult.patchedFilterLines
+            }
+            var downscaledAtlasEntries = 0
+            var downscaledAtlasPageEntries = 0
+            if (CompatibilitySettings.isImportAtlasDownscaleCompatEnabled(host)) {
+                val patchResult = ModAtlasOfflineDownscalePatcher.patchOversizedAtlasPagesInPlace(
+                    tempFile
+                )
+                downscaledAtlasEntries = patchResult.patchedAtlasEntries
+                downscaledAtlasPageEntries = patchResult.downscaledPageEntries
             }
             var patchedFrierenAntiPirateMethod = false
             if (CompatibilitySettings.isFrierenModCompatEnabled(host)
@@ -457,11 +462,13 @@ internal object SettingsFileService {
             val targetFile = ModManager.resolveStorageFileForImportedMod(host, requestedFileName)
             moveFileReplacing(tempFile, targetFile)
             val modName = manifest.name.trim().ifBlank { modId }
-            return ModImportResult(
+            val result = ModImportResult(
                 modId = modId,
                 modName = modName,
                 patchedAtlasEntries = patchedAtlasEntries,
                 patchedFilterLines = patchedFilterLines,
+                downscaledAtlasEntries = downscaledAtlasEntries,
+                downscaledAtlasPageEntries = downscaledAtlasPageEntries,
                 patchedManifestRootEntries = patchedManifestRootEntries,
                 patchedManifestRootPrefix = patchedManifestRootPrefix,
                 patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
@@ -472,6 +479,14 @@ internal object SettingsFileService {
                     patchedDownfallBossMechanicPanelClassEntries,
                 patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor
             )
+            runCatching {
+                ImportedModPatchRegistry.put(
+                    context = host,
+                    storagePath = targetFile.absolutePath,
+                    patchInfo = result.toImportedModPatchInfo()
+                )
+            }
+            return result
         } finally {
             if (tempFile.exists()) {
                 tempFile.delete()
@@ -537,6 +552,10 @@ internal object SettingsFileService {
                             modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
                             patchedAtlasEntries = existing.patchedAtlasEntries + result.patchedAtlasEntries,
                             patchedFilterLines = existing.patchedFilterLines + result.patchedFilterLines,
+                            downscaledAtlasEntries =
+                                existing.downscaledAtlasEntries + result.downscaledAtlasEntries,
+                            downscaledAtlasPageEntries =
+                                existing.downscaledAtlasPageEntries + result.downscaledAtlasPageEntries,
                             patchedManifestRootEntries = existing.patchedManifestRootEntries + result.patchedManifestRootEntries,
                             patchedManifestRootPrefix = if (existing.patchedManifestRootPrefix.isNotBlank()) {
                                 existing.patchedManifestRootPrefix
@@ -775,9 +794,10 @@ internal object SettingsFileService {
             normalizeReservedComponentName(component)?.let { uniqueComponents.add(it) }
         }
         if (uniqueComponents.isEmpty()) {
-            uniqueComponents.add(RESERVED_COMPONENT_BASEMOD)
-            uniqueComponents.add(RESERVED_COMPONENT_STSLIB)
-            uniqueComponents.add(RESERVED_COMPONENT_MTS)
+            uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_BASEMOD)
+            uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_STSLIB)
+            uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_MTS)
+            uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT)
         }
 
         return buildString {
@@ -869,6 +889,58 @@ internal object SettingsFileService {
                 append('\n')
             }
             append(context.getString(R.string.mod_import_atlas_message_rule))
+        }.trimEnd()
+    }
+
+    fun buildAtlasDownscaleImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasAtlasDownscaled) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    downscaledAtlasEntries =
+                        existing.downscaledAtlasEntries + result.downscaledAtlasEntries,
+                    downscaledAtlasPageEntries =
+                        existing.downscaledAtlasPageEntries + result.downscaledAtlasPageEntries
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return context.getString(R.string.mod_import_atlas_downscale_message_none)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_atlas_downscale_message_intro))
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
+                append('\n')
+                append(
+                    context.getString(
+                        R.string.mod_import_atlas_downscale_message_item_detail,
+                        result.downscaledAtlasEntries,
+                        result.downscaledAtlasPageEntries
+                    )
+                )
+                append('\n')
+            }
+            append(context.getString(R.string.mod_import_atlas_downscale_message_rule))
         }.trimEnd()
     }
 
@@ -1084,6 +1156,100 @@ internal object SettingsFileService {
         }.trimEnd()
     }
 
+    fun buildModImportPatchDetailMessage(
+        context: Context,
+        patchInfo: ImportedModPatchInfo
+    ): String {
+        val sections = ArrayList<String>()
+        fun addSection(titleResId: Int, detail: String, rule: String) {
+            sections.add(
+                buildString {
+                    append(context.getString(titleResId))
+                    append('\n')
+                    append(detail.trim())
+                    append('\n')
+                    append(rule.trim())
+                }
+            )
+        }
+
+        if (patchInfo.wasAtlasPatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_atlas_title,
+                detail = context.getString(
+                    R.string.mod_import_atlas_message_item_detail,
+                    patchInfo.patchedAtlasEntries,
+                    patchInfo.patchedFilterLines
+                ),
+                rule = context.getString(R.string.mod_import_atlas_message_rule)
+            )
+        }
+        if (patchInfo.wasAtlasDownscaled) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_downscale_title,
+                detail = context.getString(
+                    R.string.mod_import_atlas_downscale_message_item_detail,
+                    patchInfo.downscaledAtlasEntries,
+                    patchInfo.downscaledAtlasPageEntries
+                ),
+                rule = context.getString(R.string.mod_import_atlas_downscale_message_rule)
+            )
+        }
+        if (patchInfo.wasManifestRootPatched) {
+            val detail = buildString {
+                append(
+                    context.getString(
+                        R.string.mod_import_manifest_message_item_detail,
+                        patchInfo.patchedManifestRootEntries
+                    ).trim()
+                )
+                val normalizedPrefix =
+                    normalizeManifestRootPrefixForDisplay(patchInfo.patchedManifestRootPrefix)
+                if (normalizedPrefix.isNotEmpty()) {
+                    append(
+                        context.getString(
+                            R.string.mod_import_manifest_message_item_prefix,
+                            normalizedPrefix
+                        )
+                    )
+                }
+            }
+            addSection(
+                titleResId = R.string.main_mod_patch_section_manifest_title,
+                detail = detail,
+                rule = context.getString(R.string.mod_import_manifest_message_rule)
+            )
+        }
+        if (patchInfo.wasFrierenAntiPiratePatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_frieren_title,
+                detail = context.getString(R.string.mod_import_frieren_message_item_detail),
+                rule = context.getString(R.string.mod_import_frieren_message_rule)
+            )
+        }
+        if (patchInfo.wasDownfallPatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_downfall_title,
+                detail = context.getString(
+                    R.string.mod_import_downfall_message_item_detail,
+                    patchInfo.patchedDownfallClassEntries,
+                    patchInfo.patchedDownfallMerchantClassEntries,
+                    patchInfo.patchedDownfallHexaghostBodyClassEntries,
+                    patchInfo.patchedDownfallBossMechanicPanelClassEntries
+                ),
+                rule = context.getString(R.string.mod_import_downfall_message_rule)
+            )
+        }
+        if (patchInfo.wasVupShionPatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_vupshion_title,
+                detail = context.getString(R.string.mod_import_vupshion_message_item_detail),
+                rule = context.getString(R.string.mod_import_vupshion_message_rule)
+            )
+        }
+        return sections.joinToString(separator = "\n\n")
+    }
+
     private fun normalizeManifestRootPrefixForDisplay(prefix: String?): String {
         var normalized = prefix?.trim().orEmpty().replace('\\', '/')
         while (normalized.startsWith("/")) {
@@ -1126,26 +1292,22 @@ internal object SettingsFileService {
         }
         val tempFile = File(scratchDir, ".preview-${System.nanoTime()}.jar")
         return try {
-            copyUriToFile(host, uri, tempFile)
-            if (CompatibilitySettings.isModManifestRootCompatEnabled(host)) {
-                ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(tempFile)
-            }
-            val manifest = try {
-                ModJarSupport.readModManifest(tempFile)
-            } catch (_: Throwable) {
+            val preparedDisplayName = JarImportInspectionService.prepareImportedJar(host, uri, tempFile)
+            val inspection = JarImportInspectionService.inspectPreparedModJar(host, tempFile, preparedDisplayName)
+            val manifest = inspection.manifest ?: run {
                 return null
             }
-            val normalizedModId = ModManager.normalizeModId(manifest.modId)
+            val normalizedModId = inspection.normalizedModId
             if (normalizedModId.isEmpty()) {
                 return null
             }
-            if (resolveReservedComponent(normalizedModId) != null) {
+            if (inspection.reservedComponent != null) {
                 return null
             }
             ModImportIdentityPreview(
                 normalizedModId = normalizedModId,
                 displayModId = manifest.modId.trim().ifBlank { normalizedModId },
-                displayName = displayName.ifBlank { "$normalizedModId.jar" }
+                displayName = preparedDisplayName.ifBlank { "$normalizedModId.jar" }
             )
         } catch (_: Throwable) {
             null
@@ -1154,6 +1316,26 @@ internal object SettingsFileService {
                 tempFile.delete()
             }
         }
+    }
+
+    private fun ModImportResult.toImportedModPatchInfo(): ImportedModPatchInfo {
+        return ImportedModPatchInfo(
+            modId = modId,
+            modName = modName,
+            patchedAtlasEntries = patchedAtlasEntries,
+            patchedFilterLines = patchedFilterLines,
+            downscaledAtlasEntries = downscaledAtlasEntries,
+            downscaledAtlasPageEntries = downscaledAtlasPageEntries,
+            patchedManifestRootEntries = patchedManifestRootEntries,
+            patchedManifestRootPrefix = patchedManifestRootPrefix,
+            patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
+            patchedDownfallClassEntries = patchedDownfallClassEntries,
+            patchedDownfallMerchantClassEntries = patchedDownfallMerchantClassEntries,
+            patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
+            patchedDownfallBossMechanicPanelClassEntries =
+                patchedDownfallBossMechanicPanelClassEntries,
+            patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor
+        )
     }
 
     @Throws(IOException::class)
@@ -1425,57 +1607,31 @@ internal object SettingsFileService {
         return importedFiles
     }
 
-    private fun resolveReservedComponent(modId: String): String? {
-        return when (ModManager.normalizeModId(modId)) {
-            ModManager.MOD_ID_BASEMOD -> RESERVED_COMPONENT_BASEMOD
-            ModManager.MOD_ID_STSLIB -> RESERVED_COMPONENT_STSLIB
-            "modthespire" -> RESERVED_COMPONENT_MTS
-            else -> null
-        }
-    }
-
     private fun normalizeReservedComponentName(rawComponent: String?): String? {
         val normalized = rawComponent?.trim()?.lowercase(Locale.ROOT) ?: return null
         if (normalized.isEmpty()) {
             return null
         }
         return when (normalized) {
-            RESERVED_COMPONENT_BASEMOD.lowercase(Locale.ROOT),
+            JarImportInspectionService.RESERVED_COMPONENT_BASEMOD.lowercase(Locale.ROOT),
             "basemod.jar",
-            ModManager.MOD_ID_BASEMOD -> RESERVED_COMPONENT_BASEMOD
+            ModManager.MOD_ID_BASEMOD -> JarImportInspectionService.RESERVED_COMPONENT_BASEMOD
 
-            RESERVED_COMPONENT_STSLIB.lowercase(Locale.ROOT),
+            JarImportInspectionService.RESERVED_COMPONENT_STSLIB.lowercase(Locale.ROOT),
             "stslib.jar",
-            ModManager.MOD_ID_STSLIB -> RESERVED_COMPONENT_STSLIB
+            ModManager.MOD_ID_STSLIB -> JarImportInspectionService.RESERVED_COMPONENT_STSLIB
 
-            RESERVED_COMPONENT_MTS.lowercase(Locale.ROOT),
+            JarImportInspectionService.RESERVED_COMPONENT_MTS.lowercase(Locale.ROOT),
             "modthespire.jar",
-            "modthespire" -> RESERVED_COMPONENT_MTS
+            "modthespire" -> JarImportInspectionService.RESERVED_COMPONENT_MTS
+
+            JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT.lowercase(Locale.ROOT),
+            "amethystruntimecompat.jar",
+            ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT ->
+                JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT
 
             else -> rawComponent.trim()
         }
-    }
-
-    private fun isLikelyModTheSpireJar(jarFile: File, displayName: String): Boolean {
-        if (looksLikeModTheSpireName(displayName)) {
-            return true
-        }
-        return try {
-            ZipFile(jarFile).use { zipFile ->
-                zipFile.getEntry(MTS_LOADER_ENTRY) != null
-            }
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    private fun looksLikeModTheSpireName(displayName: String?): Boolean {
-        val normalized = displayName?.trim()?.lowercase(Locale.ROOT) ?: return false
-        if (normalized.isEmpty()) {
-            return false
-        }
-        return (normalized == "modthespire.jar")
-            || (normalized.endsWith(".jar") && normalized.contains("modthespire"))
     }
 
     private fun looksLikeCompressedArchiveName(displayName: String?): Boolean {
@@ -1528,6 +1684,7 @@ internal object SettingsFileService {
         addAssetIfMissing("ModTheSpire.jar", "components/mods/ModTheSpire.jar")
         addAssetIfMissing("BaseMod.jar", "components/mods/BaseMod.jar")
         addAssetIfMissing("StSLib.jar", "components/mods/StSLib.jar")
+        addAssetIfMissing("AmethystRuntimeCompat.jar", "components/mods/AmethystRuntimeCompat.jar")
 
         return sources.values.toList()
     }

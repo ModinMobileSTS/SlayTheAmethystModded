@@ -61,6 +61,22 @@ public abstract class GLTexture implements Disposable {
 		"amethyst.gdx.gpu_resource_diag.texture_stack_min_bytes";
 	private static final long GPU_RESOURCE_DIAG_TEXTURE_STACK_MIN_BYTES =
 		readLongSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_STACK_MIN_BYTES_PROP, 4L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private static final String GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_PROP =
+		"amethyst.gdx.gpu_resource_diag.texture_construct_stacks";
+	private static final boolean GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_PROP, true);
+	private static final String GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT_PROP =
+		"amethyst.gdx.gpu_resource_diag.texture_construct_stack_limit";
+	private static final int GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT_PROP, 16, 1, 256);
+	private static final String GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_REPEAT_INTERVAL_PROP =
+		"amethyst.gdx.gpu_resource_diag.texture_construct_stack_repeat_interval";
+	private static final int GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_REPEAT_INTERVAL =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_REPEAT_INTERVAL_PROP, 25, 1, 10000);
+	private static final String GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIVE_THRESHOLD_PROP =
+		"amethyst.gdx.gpu_resource_diag.texture_construct_stack_live_threshold";
+	private static final int GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIVE_THRESHOLD =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIVE_THRESHOLD_PROP, 3000, 1, 1000000);
 	private static final String TEXTURE_PRESSURE_DOWNSCALE_PROP =
 		"amethyst.gdx.texture_pressure_downscale";
 	private static final boolean TEXTURE_PRESSURE_DOWNSCALE_ENABLED =
@@ -101,7 +117,11 @@ public abstract class GLTexture implements Disposable {
 	private static final AtomicInteger TEXTURES_LIVE = new AtomicInteger();
 	private static final AtomicInteger TEXTURE_BUILD_STACK_UNIQUES = new AtomicInteger();
 	private static final AtomicInteger TEXTURE_BUILD_STACK_SUPPRESSED = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_CONSTRUCT_STACK_UNIQUES = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_CONSTRUCT_STACK_SUPPRESSED = new AtomicInteger();
 	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_BUILD_STACK_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_CONSTRUCT_STACK_COUNTS =
 		new ConcurrentHashMap<String, AtomicInteger>();
 	private static final ConcurrentHashMap<Integer, Long> TEXTURE_HANDLE_ESTIMATED_BYTES =
 		new ConcurrentHashMap<Integer, Long>();
@@ -468,6 +488,7 @@ public abstract class GLTexture implements Disposable {
 				+ " handle=" + handle
 				+ " target=" + target);
 		}
+		logTextureConstructStack(id, className, target, handle, live);
 	}
 
 	private static void onTextureHandleUpdated (long id, int oldHandle, int newHandle, String reason) {
@@ -549,6 +570,50 @@ public abstract class GLTexture implements Disposable {
 		}
 	}
 
+	private static void logTextureConstructStack (long id, String className, int target, int handle, int live) {
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_ENABLED) return;
+		if (live < GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIVE_THRESHOLD) return;
+		String stackKey = captureRelevantTextureConstructStack();
+		if (stackKey == null) return;
+
+		AtomicInteger existing = TEXTURE_CONSTRUCT_STACK_COUNTS.putIfAbsent(stackKey, new AtomicInteger(1));
+		if (existing == null) {
+			int uniqueCount = TEXTURE_CONSTRUCT_STACK_UNIQUES.incrementAndGet();
+			if (uniqueCount <= GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT) {
+				System.out.println("[gdx-diag] GLTexture construct_sample unique=" + uniqueCount
+					+ " live=" + live
+					+ " created=" + TEXTURES_CREATED.get()
+					+ " disposed=" + TEXTURES_DISPOSED.get()
+					+ " class=" + className
+					+ " id=" + id
+					+ " handle=" + handle
+					+ " target=" + target
+					+ " stack=" + stackKey);
+			} else {
+				int suppressed = TEXTURE_CONSTRUCT_STACK_SUPPRESSED.incrementAndGet();
+				if (suppressed == 1 || suppressed % GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_REPEAT_INTERVAL == 0) {
+					System.out.println("[gdx-diag] GLTexture construct_sample_suppressed suppressed=" + suppressed
+						+ " limit=" + GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT
+						+ " live=" + live
+						+ " class=" + className
+						+ " target=" + target);
+				}
+			}
+			return;
+		}
+
+		int repeatCount = existing.incrementAndGet();
+		if (repeatCount == 2 || repeatCount % GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_REPEAT_INTERVAL == 0) {
+			System.out.println("[gdx-diag] GLTexture construct_repeat repeats=" + repeatCount
+				+ " live=" + live
+				+ " class=" + className
+				+ " id=" + id
+				+ " handle=" + handle
+				+ " target=" + target
+				+ " stack=" + stackKey);
+		}
+	}
+
 	private static String captureRelevantTextureUploadStack () {
 		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
 		StringBuilder builder = new StringBuilder(256);
@@ -556,6 +621,29 @@ public abstract class GLTexture implements Disposable {
 		for (int i = 0; i < stack.length; i++) {
 			StackTraceElement element = stack[i];
 			if (!isRelevantTextureUploadFrame(element)) continue;
+			if (appended > 0) {
+				builder.append(" <- ");
+			}
+			builder.append(element.getClassName());
+			builder.append("#");
+			builder.append(element.getMethodName());
+			builder.append(":");
+			builder.append(element.getLineNumber());
+			appended++;
+			if (appended >= GPU_RESOURCE_DIAG_TEXTURE_STACK_DEPTH) {
+				break;
+			}
+		}
+		return appended == 0 ? null : builder.toString();
+	}
+
+	private static String captureRelevantTextureConstructStack () {
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		StringBuilder builder = new StringBuilder(256);
+		int appended = 0;
+		for (int i = 0; i < stack.length; i++) {
+			StackTraceElement element = stack[i];
+			if (!isRelevantTextureConstructFrame(element)) continue;
 			if (appended > 0) {
 				builder.append(" <- ");
 			}
@@ -582,6 +670,21 @@ public abstract class GLTexture implements Disposable {
 		if (className.startsWith("java.lang.reflect.")) return false;
 		if (className.startsWith("sun.reflect.")) return false;
 		if (className.startsWith("jdk.internal.reflect.")) return false;
+		return true;
+	}
+
+	private static boolean isRelevantTextureConstructFrame (StackTraceElement element) {
+		if (element == null) return false;
+		String className = element.getClassName();
+		if (className == null) return false;
+		if (className.equals(Thread.class.getName())) return false;
+		if (className.equals(GLTexture.class.getName())) return false;
+		if (className.equals(Texture.class.getName())) return false;
+		if (className.startsWith("java.lang.reflect.")) return false;
+		if (className.startsWith("sun.reflect.")) return false;
+		if (className.startsWith("jdk.internal.reflect.")) return false;
+		if (className.startsWith("dalvik.system.")) return false;
+		if (className.startsWith("java.lang.Thread")) return false;
 		return true;
 	}
 

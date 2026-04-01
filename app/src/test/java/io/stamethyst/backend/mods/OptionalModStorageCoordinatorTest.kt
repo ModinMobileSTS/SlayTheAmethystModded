@@ -19,6 +19,7 @@ class OptionalModStorageCoordinatorTest {
 
         Files.write(runtimeModsDir.toPath().resolve("BaseMod.jar"), byteArrayOf(1))
         Files.write(runtimeModsDir.toPath().resolve("StSLib.jar"), byteArrayOf(2))
+        Files.write(runtimeModsDir.toPath().resolve("AmethystRuntimeCompat.jar"), byteArrayOf(5))
         val firstOptional = Files.write(runtimeModsDir.toPath().resolve("Alpha.jar"), byteArrayOf(3)).toFile()
         val secondOptional = Files.write(runtimeModsDir.toPath().resolve("Beta.jar"), byteArrayOf(4)).toFile()
 
@@ -43,6 +44,7 @@ class OptionalModStorageCoordinatorTest {
         assertFalse(secondOptional.exists())
         assertTrue(runtimeModsDir.toPath().resolve("BaseMod.jar").toFile().isFile)
         assertTrue(runtimeModsDir.toPath().resolve("StSLib.jar").toFile().isFile)
+        assertTrue(runtimeModsDir.toPath().resolve("AmethystRuntimeCompat.jar").toFile().isFile)
 
         val migratedFirst = libraryDir.toPath().resolve("Alpha.jar").toFile()
         val migratedSecond = libraryDir.toPath().resolve("Beta.jar").toFile()
@@ -66,6 +68,7 @@ class OptionalModStorageCoordinatorTest {
 
         Files.write(runtimeModsDir.toPath().resolve("BaseMod.jar"), byteArrayOf(1))
         Files.write(runtimeModsDir.toPath().resolve("StSLib.jar"), byteArrayOf(2))
+        Files.write(runtimeModsDir.toPath().resolve("AmethystRuntimeCompat.jar"), byteArrayOf(10))
         Files.write(runtimeModsDir.toPath().resolve("stale.jar"), byteArrayOf(9))
         val runtimeAlpha = Files.write(runtimeModsDir.toPath().resolve("Alpha.jar"), byteArrayOf(0)).toFile()
 
@@ -79,6 +82,7 @@ class OptionalModStorageCoordinatorTest {
 
         assertTrue(runtimeModsDir.toPath().resolve("BaseMod.jar").toFile().isFile)
         assertTrue(runtimeModsDir.toPath().resolve("StSLib.jar").toFile().isFile)
+        assertTrue(runtimeModsDir.toPath().resolve("AmethystRuntimeCompat.jar").toFile().isFile)
         assertFalse(runtimeModsDir.toPath().resolve("stale.jar").toFile().exists())
         assertTrue(runtimeModsDir.toPath().resolve("Alpha.jar").toFile().isFile)
         assertTrue(runtimeModsDir.toPath().resolve("Beta.jar").toFile().isFile)

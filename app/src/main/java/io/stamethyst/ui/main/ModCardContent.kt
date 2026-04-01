@@ -2,16 +2,20 @@ package io.stamethyst.ui.main
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +44,8 @@ internal fun ModCardBodyContent(
     modSuggestionText: String? = null,
     suggestionBadgeEnabled: Boolean = true,
     onSuggestionClick: () -> Unit = {},
+    importPatchBadgeEnabled: Boolean = true,
+    onImportPatchClick: () -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
     val resolvedName = resolveModDisplayName(mod, showModFileName = showModFileName)
@@ -76,6 +83,13 @@ internal fun ModCardBodyContent(
                     ModSuggestionIcon(
                         enabled = suggestionBadgeEnabled,
                         onClick = onSuggestionClick
+                    )
+                }
+                if (!mod.importPatchDetails.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    ModImportPatchIcon(
+                        enabled = importPatchBadgeEnabled,
+                        onClick = onImportPatchClick
                     )
                 }
                 if (mod.priorityLoad) {
@@ -146,6 +160,38 @@ private fun ModSuggestionIcon(
             .size(18.dp)
             .clickable(enabled = enabled, onClick = onClick)
     )
+}
+
+@Composable
+private fun ModImportPatchIcon(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val borderColor = if (enabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline
+    }
+    Surface(
+        color = Color.Transparent,
+        contentColor = borderColor,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = Modifier
+            .size(18.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_build),
+                contentDescription = stringResource(R.string.main_mod_patch_badge_content_description),
+                modifier = Modifier.size(10.dp)
+            )
+        }
+    }
 }
 
 @Composable

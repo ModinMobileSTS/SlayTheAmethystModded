@@ -56,6 +56,9 @@ fun LauncherCompatibilityScreen(
         onGoBack = navigator::goBack,
         onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
+        onImportAtlasDownscaleCompatToggled = { enabled ->
+            viewModel.onImportAtlasDownscaleCompatToggled(context, enabled)
+        },
         onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
         onDownfallImportCompatToggled = { enabled -> viewModel.onDownfallImportCompatToggled(context, enabled) },
@@ -92,6 +95,7 @@ private fun LauncherCompatibilityScreenPreview() {
             busy = false,
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
+            importAtlasDownscaleCompatEnabled = false,
             modManifestRootCompatEnabled = true,
             frierenModCompatEnabled = true,
             downfallImportCompatEnabled = true,
@@ -116,6 +120,7 @@ private fun LauncherCompatibilityScreenContent(
     onGoBack: () -> Unit = {},
     onVirtualFboPocToggled: (Boolean) -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
+    onImportAtlasDownscaleCompatToggled: (Boolean) -> Unit = {},
     onModManifestRootCompatToggled: (Boolean) -> Unit = {},
     onFrierenModCompatToggled: (Boolean) -> Unit = {},
     onDownfallImportCompatToggled: (Boolean) -> Unit = {},
@@ -260,6 +265,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.globalAtlasFilterCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onGlobalAtlasFilterCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_import_atlas_downscale_compat_title),
+                    description = stringResource(R.string.compat_import_atlas_downscale_compat_desc),
+                    checked = uiState.importAtlasDownscaleCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onImportAtlasDownscaleCompatToggled
                 )
 
                 CompatibilitySwitchRow(

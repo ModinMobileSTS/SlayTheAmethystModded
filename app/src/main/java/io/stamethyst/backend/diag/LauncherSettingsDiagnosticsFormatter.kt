@@ -185,6 +185,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "globalAtlasFilterCompat" to formatBoolean(
                             CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)
                         ),
+                        "importAtlasDownscaleCompat" to formatBoolean(
+                            CompatibilitySettings.isImportAtlasDownscaleCompatEnabled(context)
+                        ),
                         "modManifestRootCompat" to formatBoolean(
                             CompatibilitySettings.isModManifestRootCompatEnabled(context)
                         ),
