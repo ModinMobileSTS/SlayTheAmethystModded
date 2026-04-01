@@ -75,6 +75,9 @@ class FeedbackScreenViewModel : ViewModel() {
         ),
         DEVELOPER_IS_NOT_CUSTOMER_SUPPORT(
             R.string.feedback_submission_acknowledgement_4
+        ),
+        DESCRIPTION_IS_CLEAR_TO_UNFAMILIAR_DEVELOPERS(
+            R.string.feedback_submission_acknowledgement_5
         )
     }
 
