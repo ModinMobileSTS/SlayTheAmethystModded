@@ -30,6 +30,7 @@ internal class GameSessionCoordinator(
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
         private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
         private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
+        private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L)
     }
 
     @Volatile
@@ -49,6 +50,7 @@ internal class GameSessionCoordinator(
 
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
+    private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
     private val backExitForceRestartRunnable = Runnable {
         if (backExitRequested) {
             forceRestartLauncherAndTerminateProcess()
@@ -130,6 +132,7 @@ internal class GameSessionCoordinator(
 
     fun onDestroy() {
         cancelBackExitForceRestart()
+        cancelForegroundAudioRestoreRetries()
         activityResumed = false
         updateSystemGameState()
         syncRuntimeForegroundState(false)
@@ -153,6 +156,7 @@ internal class GameSessionCoordinator(
     fun onPause() {
         activityResumed = false
         performanceOverlayController?.onPause()
+        cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
         updateSystemGameState()
@@ -161,6 +165,9 @@ internal class GameSessionCoordinator(
     fun onWindowFocusChanged(hasFocus: Boolean) {
         updatePerformanceOverlayVisibility()
         syncFocusStateToNative(hasFocus)
+        if (hasFocus) {
+            scheduleForegroundAudioRestoreRetries()
+        }
     }
 
     fun onSurfaceReady() {
@@ -564,6 +571,7 @@ internal class GameSessionCoordinator(
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1)
         } catch (_: Throwable) {
         }
+        scheduleForegroundAudioRestoreRetries()
     }
 
     private fun applyBackgroundWindowState() {
@@ -578,6 +586,40 @@ internal class GameSessionCoordinator(
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun scheduleForegroundAudioRestoreRetries() {
+        cancelForegroundAudioRestoreRetries()
+        if (!activityResumed || backExitRequested || !jvmLaunchController.runtimeLifecycleReady) {
+            return
+        }
+        for (delayMs in FOREGROUND_AUDIO_RESTORE_DELAYS_MS) {
+            val runnable = Runnable {
+                restoreForegroundAudioIfNeeded()
+            }
+            foregroundAudioRestoreRunnables += runnable
+            renderSurfaceManager.renderView.postDelayed(runnable, delayMs)
+        }
+    }
+
+    private fun cancelForegroundAudioRestoreRetries() {
+        try {
+            for (runnable in foregroundAudioRestoreRunnables) {
+                renderSurfaceManager.renderView.removeCallbacks(runnable)
+            }
+        } catch (_: UninitializedPropertyAccessException) {
+        }
+        foregroundAudioRestoreRunnables.clear()
+    }
+
+    private fun restoreForegroundAudioIfNeeded() {
+        if (!activityResumed || backExitRequested || !jvmLaunchController.runtimeLifecycleReady) {
+            return
+        }
+        try {
+            CallbackBridge.nativeSetAudioMuted(false)
         } catch (_: Throwable) {
         }
     }

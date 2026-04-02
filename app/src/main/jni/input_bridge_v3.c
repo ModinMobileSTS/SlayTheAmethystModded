@@ -60,7 +60,6 @@ typedef void (*POJAV_alGetListenerf_fn)(int param, float* value);
 static POJAV_alcGetCurrentContext_fn pojav_alcGetCurrentContext = NULL;
 static POJAV_alListenerf_fn pojav_alListenerf = NULL;
 static POJAV_alGetListenerf_fn pojav_alGetListenerf = NULL;
-static bool pojav_openal_resolve_attempted = false;
 static bool pojav_openal_resolved = false;
 static bool pojav_openal_no_context_logged = false;
 static bool pojav_audio_force_muted = false;
@@ -71,10 +70,6 @@ static bool resolveOpenalSymbols(void) {
     if (pojav_openal_resolved) {
         return true;
     }
-    if (pojav_openal_resolve_attempted) {
-        return false;
-    }
-    pojav_openal_resolve_attempted = true;
 
     pojav_alcGetCurrentContext = (POJAV_alcGetCurrentContext_fn) dlsym(RTLD_DEFAULT, "alcGetCurrentContext");
     pojav_alListenerf = (POJAV_alListenerf_fn) dlsym(RTLD_DEFAULT, "alListenerf");
