@@ -1576,6 +1576,7 @@ private fun SettingsInputSection(
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
     var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
+    var showBackBehaviorDialog by rememberSaveable { mutableStateOf(false) }
     var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
 
     SettingsActionListItem(
@@ -1587,35 +1588,16 @@ private fun SettingsInputSection(
             showPlayerNameDialog = true
         }
     )
-    Text(
-        text = stringResource(R.string.settings_player_name_desc),
-        style = MaterialTheme.typography.bodySmall
-    )
+//    Text(
+//        text = stringResource(R.string.settings_player_name_desc),
+//        style = MaterialTheme.typography.bodySmall
+//    )
 
-    Text(
-        text = stringResource(R.string.settings_back_behavior_title),
-        style = MaterialTheme.typography.bodyMedium
-    )
-    BackBehaviorOptionRow(
-        behavior = BackBehavior.EXIT_TO_LAUNCHER,
-        selected = uiState.backBehavior == BackBehavior.EXIT_TO_LAUNCHER,
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_back_behavior_title),
+        supportingText = backBehaviorDisplayName(uiState.backBehavior),
         enabled = !uiState.busy,
-        text = stringResource(R.string.settings_back_behavior_exit),
-        onSelect = onBackBehaviorChanged
-    )
-    BackBehaviorOptionRow(
-        behavior = BackBehavior.SEND_ESCAPE,
-        selected = uiState.backBehavior == BackBehavior.SEND_ESCAPE,
-        enabled = !uiState.busy,
-        text = stringResource(R.string.settings_back_behavior_escape),
-        onSelect = onBackBehaviorChanged
-    )
-    BackBehaviorOptionRow(
-        behavior = BackBehavior.NONE,
-        selected = uiState.backBehavior == BackBehavior.NONE,
-        enabled = !uiState.busy,
-        text = stringResource(R.string.settings_back_behavior_none),
-        onSelect = onBackBehaviorChanged
+        onClick = { showBackBehaviorDialog = true }
     )
     Text(
         text = stringResource(R.string.settings_back_behavior_desc),
@@ -1727,6 +1709,37 @@ private fun SettingsInputSection(
             dismissButton = {
                 HapticTextButton(onClick = { showPlayerNameDialog = false }) {
                     Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        )
+    }
+
+    if (showBackBehaviorDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackBehaviorDialog = false },
+            title = { Text(stringResource(R.string.settings_back_behavior_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BackBehavior.entries.forEach { behavior ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.backBehavior == behavior,
+                            enabled = !uiState.busy,
+                            text = backBehaviorDisplayName(behavior),
+                            onSelect = {
+                                onBackBehaviorChanged(behavior)
+                                showBackBehaviorDialog = false
+                            }
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.settings_back_behavior_desc),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showBackBehaviorDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
                 }
             }
         )
@@ -2183,22 +2196,6 @@ private fun virtualResolutionModeDescription(mode: VirtualResolutionMode): Strin
 }
 
 @Composable
-private fun BackBehaviorOptionRow(
-    behavior: BackBehavior,
-    selected: Boolean,
-    enabled: Boolean,
-    text: String,
-    onSelect: (BackBehavior) -> Unit,
-) {
-    SettingsRadioOptionRow(
-        selected = selected,
-        enabled = enabled,
-        text = text,
-        onSelect = { onSelect(behavior) }
-    )
-}
-
-@Composable
 private fun SettingsRadioOptionRow(
     selected: Boolean,
     enabled: Boolean,
@@ -2223,6 +2220,18 @@ private fun SettingsRadioOptionRow(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text = text)
+    }
+}
+
+@Composable
+private fun backBehaviorDisplayName(behavior: BackBehavior): String {
+    return when (behavior) {
+        BackBehavior.EXIT_TO_LAUNCHER ->
+            stringResource(R.string.settings_back_behavior_exit)
+        BackBehavior.SEND_ESCAPE ->
+            stringResource(R.string.settings_back_behavior_escape)
+        BackBehavior.NONE ->
+            stringResource(R.string.settings_back_behavior_none)
     }
 }
 
