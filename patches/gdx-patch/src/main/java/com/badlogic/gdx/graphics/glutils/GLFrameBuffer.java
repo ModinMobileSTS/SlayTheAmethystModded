@@ -104,6 +104,24 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		"amethyst.gdx.fbo_pressure_soft_budget_bytes";
 	private final static long GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES =
 		readLongSystemProperty(GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_PROP, 48L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private final static String GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_PROP =
+		"amethyst.gdx.fbo_pressure_hard_budget_bytes";
+	private final static long GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES =
+		readLongSystemProperty(
+			GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_PROP,
+			96L * 1024L * 1024L,
+			GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES,
+			Long.MAX_VALUE
+		);
+	private final static String GPU_RESOURCE_DIAG_FBO_PRESSURE_MIN_BYTES_PROP =
+		"amethyst.gdx.fbo_pressure_downscale_min_bytes";
+	private final static long GPU_RESOURCE_DIAG_FBO_PRESSURE_MIN_BYTES =
+		readLongSystemProperty(
+			GPU_RESOURCE_DIAG_FBO_PRESSURE_MIN_BYTES_PROP,
+			8L * 1024L * 1024L,
+			0L,
+			Long.MAX_VALUE
+		);
 	private final static AtomicLong NEXT_DEBUG_FRAMEBUFFER_ID = new AtomicLong(1L);
 	private final static AtomicInteger FRAMEBUFFERS_BUILT = new AtomicInteger();
 	private final static AtomicInteger FRAMEBUFFERS_DISPOSED = new AtomicInteger();
@@ -125,6 +143,17 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private static volatile long frameBufferNativeBytesPeak;
 	private static volatile long currentFrameId;
 	private static volatile long lastIdleSweepFrame = -1L;
+
+	private final static class PressureDownscaleDecision {
+		private final int mode;
+		private final String reason;
+
+		private PressureDownscaleDecision (int mode, String reason) {
+			this.mode = mode;
+			this.reason = reason == null ? "unspecified" : reason;
+		}
+	}
+
 	private final long debugFrameBufferId = allocateDebugFrameBufferId();
 	private int debugBuildGeneration = 0;
 	private boolean nativeResourcesAllocated;
@@ -480,19 +509,23 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		if (!GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_ENABLED) return;
 		if (!isLargePressureDownscaleCandidate()) return;
 
-		long projectedFullBytes = FRAMEBUFFERS_NATIVE_BYTES.get()
-			+ estimateFrameBufferBytes(width, height, String.valueOf(format), hasDepth, hasStencil);
+		long requestedBytes = estimateFrameBufferBytes(width, height, String.valueOf(format), hasDepth, hasStencil);
+		if (requestedBytes < GPU_RESOURCE_DIAG_FBO_PRESSURE_MIN_BYTES) return;
+		long projectedFullBytes = FRAMEBUFFERS_NATIVE_BYTES.get() + requestedBytes;
 		if (projectedFullBytes <= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES) return;
-		int pressureMode = classifyPressureDownscaleMode();
-		if (pressureMode == PRESSURE_DOWNSCALE_PROTECT) {
+		String stackKey = captureRelevantFrameBufferBuildStack();
+		PressureDownscaleDecision decision =
+			classifyPressureDownscaleDecision(stackKey, projectedFullBytes, requestedBytes);
+		if (decision.mode == PRESSURE_DOWNSCALE_PROTECT) {
 			System.out.println("[gdx-diag] GLFrameBuffer pressure_downscale_skip id=" + debugFrameBufferId
 				+ " requested=" + width + "x" + height
+				+ " requestedBytes=" + requestedBytes
 				+ " projectedFullBytes=" + projectedFullBytes
 				+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
-				+ " protected=ApplyScreenPostProcessor");
+				+ " protected=" + decision.reason);
 			return;
 		}
-		if (pressureMode != PRESSURE_DOWNSCALE_ALLOW) return;
+		if (decision.mode != PRESSURE_DOWNSCALE_ALLOW) return;
 
 		int downscaledWidth = Math.max(1, (width + 1) / 2);
 		int downscaledHeight = Math.max(1, (height + 1) / 2);
@@ -502,8 +535,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		System.out.println("[gdx-diag] GLFrameBuffer pressure_downscale id=" + debugFrameBufferId
 			+ " requested=" + width + "x" + height
 			+ " allocated=" + allocationWidth + "x" + allocationHeight
+			+ " requestedBytes=" + requestedBytes
 			+ " projectedFullBytes=" + projectedFullBytes
-			+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES);
+			+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
+			+ " reason=" + decision.reason);
 	}
 
 	private boolean isLargePressureDownscaleCandidate () {
@@ -525,22 +560,60 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return (long)width * (long)height >= 1280L * 720L;
 	}
 
-	private int classifyPressureDownscaleMode () {
-		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-		for (int i = 0; i < stack.length; i++) {
-			String className = stack[i].getClassName();
-			if (className == null) continue;
-			if (className.indexOf("basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor") >= 0) {
-				return PRESSURE_DOWNSCALE_PROTECT;
-			}
-			if (className.indexOf("VUPShionMod.util.ShionMaskHelper") >= 0) {
-				return PRESSURE_DOWNSCALE_ALLOW;
-			}
-			if (className.indexOf("basemod.helpers.CardBorderGlowManager") >= 0) {
-				return PRESSURE_DOWNSCALE_ALLOW;
-			}
+	private PressureDownscaleDecision classifyPressureDownscaleDecision (
+		String stackKey,
+		long projectedFullBytes,
+		long requestedBytes
+	) {
+		String protectedReason = resolvePressureDownscaleProtectReason(stackKey);
+		if (protectedReason != null) {
+			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_PROTECT, protectedReason);
 		}
-		return PRESSURE_DOWNSCALE_NONE;
+		if (projectedFullBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES) {
+			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "hard_budget");
+		}
+		if (containsExternalModNamespace(stackKey)) {
+			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "external_stack");
+		}
+		if (containsAnyStackFragment(
+			stackKey,
+			".vfx.",
+			".effect.",
+			".effects.",
+			".postfx",
+			".postprocess",
+			".shader",
+			".mask",
+			".glow",
+			".blur",
+			".outline",
+			".particles.",
+			".cutscene.",
+			".cutscenes."
+		)) {
+			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "effect_stack");
+		}
+		if (requestedBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES / 2L) {
+			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "large_budget_share");
+		}
+		return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_NONE, "below_policy");
+	}
+
+	private String resolvePressureDownscaleProtectReason (String stackKey) {
+		if (containsAnyStackFragment(
+			stackKey,
+			"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline",
+			"basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor"
+		)) {
+			if (containsStackFragment(
+				stackKey,
+				"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline"
+			)) {
+				return "scaled_render_pipeline";
+			}
+			return "ApplyScreenPostProcessor";
+		}
+		return null;
 	}
 
 	private boolean ensureColorTextureAvailable (String reason) {
@@ -1187,5 +1260,46 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		if (className.startsWith("sun.reflect.")) return false;
 		if (className.startsWith("jdk.internal.reflect.")) return false;
 		return true;
+	}
+
+	private static boolean containsStackFragment (String stackKey, String fragment) {
+		return stackKey != null && fragment != null && stackKey.indexOf(fragment) >= 0;
+	}
+
+	private static boolean containsAnyStackFragment (String stackKey, String... fragments) {
+		if (stackKey == null || stackKey.length() == 0 || fragments == null) return false;
+		for (int i = 0; i < fragments.length; i++) {
+			if (containsStackFragment(stackKey, fragments[i])) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean containsExternalModNamespace (String stackKey) {
+		if (stackKey == null || stackKey.length() == 0) return false;
+		String[] frames = stackKey.split(" <- ");
+		for (int i = 0; i < frames.length; i++) {
+			String frame = frames[i];
+			int hashIndex = frame.indexOf('#');
+			if (hashIndex <= 0) continue;
+			String className = frame.substring(0, hashIndex);
+			if (className.startsWith("com.megacrit.cardcrawl.")) continue;
+			if (className.startsWith("basemod.")) continue;
+			if (className.startsWith("com.badlogic.gdx.")) continue;
+			if (className.startsWith("java.")) continue;
+			if (className.startsWith("javax.")) continue;
+			if (className.startsWith("sun.")) continue;
+			if (className.startsWith("jdk.")) continue;
+			if (className.startsWith("kotlin.")) continue;
+			if (className.startsWith("org.lwjgl.")) continue;
+			if (className.startsWith("org.apache.")) continue;
+			if (className.startsWith("de.robojumper.")) continue;
+			if (className.startsWith("com.esotericsoftware.")) continue;
+			if (className.startsWith("io.stamethyst.")) continue;
+			if (className.startsWith("com.evacipated.cardcrawl.modthespire.")) continue;
+			return true;
+		}
+		return false;
 	}
 }
