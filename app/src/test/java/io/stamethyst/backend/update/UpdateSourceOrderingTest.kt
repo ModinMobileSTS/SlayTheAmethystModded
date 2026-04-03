@@ -86,4 +86,31 @@ class UpdateSourceOrderingTest {
             )
         )
     }
+
+    @Test
+    fun oneShotDownloadSelectionSources_keepResolvedSourceFirst() {
+        assertEquals(
+            listOf(
+                UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_PROXY_COM,
+                UpdateSource.GH_LLKK,
+                UpdateSource.OFFICIAL
+            ),
+            UpdateSource.oneShotDownloadSelectionSources(UpdateSource.GH_PROXY_VIP)
+        )
+    }
+
+    @Test
+    fun oneShotDownloadSelectionSources_includeResolvedFallbackSource() {
+        assertEquals(
+            listOf(
+                UpdateSource.GH_PROXY_NET,
+                UpdateSource.GH_PROXY_COM,
+                UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_LLKK,
+                UpdateSource.OFFICIAL
+            ),
+            UpdateSource.oneShotDownloadSelectionSources(UpdateSource.GH_PROXY_NET)
+        )
+    }
 }

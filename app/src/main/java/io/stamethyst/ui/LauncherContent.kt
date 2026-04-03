@@ -32,7 +32,10 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -313,72 +316,185 @@ fun LauncherContent(
                         .padding(horizontal = 16.dp, vertical = 20.dp)
                 )
                 settingsUiState.updatePromptState?.let { promptState ->
-                    AlertDialog(
-                        onDismissRequest = settingsViewModel::dismissUpdatePrompt,
-                        title = { Text(stringResource(R.string.update_dialog_title)) },
-                        text = {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 360.dp)
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.update_dialog_current_version,
-                                        promptState.currentVersion
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(
-                                    text = stringResource(
-                                        R.string.update_dialog_latest_version,
-                                        promptState.latestVersion
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(
-                                    text = stringResource(
-                                        R.string.update_dialog_published_at,
-                                        promptState.publishedAtText
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(
-                                    text = stringResource(
-                                        R.string.update_dialog_download_source,
-                                        promptState.downloadSourceDisplayName
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(
-                                    text = stringResource(R.string.update_dialog_notes_title),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = promptState.notesText,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    settingsViewModel.dismissUpdatePrompt()
-                                    uriHandler.openUri(promptState.downloadUrl)
+                    val quarkDownloadUrl = stringResource(R.string.update_dialog_quark_download_url)
+                    var showDownloadChoiceDialog by remember(promptState) {
+                        mutableStateOf(false)
+                    }
+                    var downloadMenuExpanded by remember(promptState) {
+                        mutableStateOf(false)
+                    }
+                    var selectedDownloadSourceId by remember(promptState) {
+                        mutableStateOf(promptState.defaultDownloadSourceId)
+                    }
+                    val selectedDownloadOption = promptState.downloadOptions.firstOrNull {
+                        it.source.id == selectedDownloadSourceId
+                    } ?: promptState.downloadOptions.firstOrNull()
+                    if (showDownloadChoiceDialog) {
+                        AlertDialog(
+                            onDismissRequest = {
+                                downloadMenuExpanded = false
+                                showDownloadChoiceDialog = false
+                            },
+                            title = {
+                                Text(stringResource(R.string.update_download_choice_dialog_title))
+                            },
+                            text = {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.update_download_choice_dialog_message
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.update_download_choice_dialog_source_label
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        OutlinedButton(
+                                            onClick = { downloadMenuExpanded = true },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(selectedDownloadOption?.label.orEmpty())
+                                                Text(if (downloadMenuExpanded) "▲" else "▼")
+                                            }
+                                        }
+                                        DropdownMenu(
+                                            expanded = downloadMenuExpanded,
+                                            onDismissRequest = { downloadMenuExpanded = false }
+                                        ) {
+                                            promptState.downloadOptions.forEach { option ->
+                                                DropdownMenuItem(
+                                                    text = { Text(option.label) },
+                                                    onClick = {
+                                                        selectedDownloadSourceId = option.source.id
+                                                        downloadMenuExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                            ) {
-                                Text(stringResource(R.string.update_dialog_action_download))
+                            },
+                            confirmButton = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            downloadMenuExpanded = false
+                                            showDownloadChoiceDialog = false
+                                            settingsViewModel.dismissUpdatePrompt()
+                                            uriHandler.openUri(quarkDownloadUrl)
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.update_dialog_action_quark_download))
+                                    }
+                                    TextButton(
+                                        enabled = selectedDownloadOption != null,
+                                        onClick = {
+                                            val targetUrl = selectedDownloadOption?.url
+                                                ?: return@TextButton
+                                            downloadMenuExpanded = false
+                                            showDownloadChoiceDialog = false
+                                            settingsViewModel.dismissUpdatePrompt()
+                                            uriHandler.openUri(targetUrl)
+                                        }
+                                    ) {
+                                        Text(
+                                            stringResource(
+                                                R.string.update_download_choice_dialog_action_direct_download
+                                            )
+                                        )
+                                    }
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = {
+                                        downloadMenuExpanded = false
+                                        showDownloadChoiceDialog = false
+                                    }
+                                ) {
+                                    Text(
+                                        stringResource(
+                                            R.string.update_download_choice_dialog_action_back
+                                        )
+                                    )
+                                }
                             }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = settingsViewModel::dismissUpdatePrompt) {
-                                Text(stringResource(R.string.update_dialog_action_later))
+                        )
+                    } else {
+                        AlertDialog(
+                            onDismissRequest = settingsViewModel::dismissUpdatePrompt,
+                            title = { Text(stringResource(R.string.update_dialog_title)) },
+                            text = {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 360.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.update_dialog_current_version,
+                                            promptState.currentVersion
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.update_dialog_latest_version,
+                                            promptState.latestVersion
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.update_dialog_published_at,
+                                            promptState.publishedAtText
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.update_dialog_download_source,
+                                            promptState.downloadSourceDisplayName
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.update_dialog_notes_title),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = promptState.notesText,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showDownloadChoiceDialog = true }) {
+                                    Text(stringResource(R.string.update_dialog_action_download))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = settingsViewModel::dismissUpdatePrompt) {
+                                    Text(stringResource(R.string.update_dialog_action_later))
+                                }
                             }
-                        }
-                    )
-            }
+                        )
+                    }
+                }
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(
                     onDismissRequest = FeedbackInboxCoordinator::dismissUnreadNotice,

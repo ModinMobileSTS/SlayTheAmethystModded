@@ -126,6 +126,15 @@ enum class UpdateSource(
             return githubResourceFallbackCandidates(preferredUserSource)
         }
 
+        fun oneShotDownloadSelectionSources(primarySource: UpdateSource): List<UpdateSource> {
+            val ordered = LinkedHashSet<UpdateSource>()
+            ordered += primarySource
+            userSelectableSources().forEach { source ->
+                ordered += source
+            }
+            return ordered.toList()
+        }
+
         private fun isMirrorableGithubUrl(targetUrl: String): Boolean {
             val host = runCatching { URL(targetUrl).host.lowercase(Locale.ROOT) }.getOrNull()
                 ?: return false
