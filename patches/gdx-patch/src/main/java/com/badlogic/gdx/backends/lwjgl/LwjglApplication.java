@@ -325,7 +325,15 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldUseScaledRenderPipeline () {
-		return graphics.canvas == null && configuredRenderScale < 0.999f && !scaledRenderPipelineDisabled;
+		if (graphics.canvas != null || scaledRenderPipelineDisabled) return false;
+		if (configuredRenderScale < 0.999f) return true;
+
+		int configuredVirtualWidth = resolveConfiguredVirtualWidth();
+		int configuredVirtualHeight = resolveConfiguredVirtualHeight();
+		if (configuredVirtualWidth <= 0 || configuredVirtualHeight <= 0) return false;
+
+		return configuredVirtualWidth != resolvePhysicalDisplayWidth()
+			|| configuredVirtualHeight != resolvePhysicalDisplayHeight();
 	}
 
 	private ScaledRenderPipeline beginScaledRenderFrame (int screenWidth, int screenHeight) {
@@ -338,7 +346,10 @@ public class LwjglApplication implements Application {
 			scaledRenderPipeline.beginFrame();
 			if (!scaledRenderPipelineLogged) {
 				scaledRenderPipelineLogged = true;
-				System.out.println("[gdx-patch] Internal render scale active: factor=" + configuredRenderScale);
+				System.out.println(
+					"[gdx-patch] Offscreen render pipeline active: renderScale=" + configuredRenderScale
+						+ ", virtual=" + screenWidth + "x" + screenHeight
+						+ ", physical=" + resolvePhysicalDisplayWidth() + "x" + resolvePhysicalDisplayHeight());
 			}
 			return scaledRenderPipeline;
 		} catch (Throwable t) {

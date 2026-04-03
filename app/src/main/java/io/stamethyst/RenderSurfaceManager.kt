@@ -13,6 +13,7 @@ import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.ForegroundResyncScheduler
 import io.stamethyst.backend.render.RenderSurfaceState
 import io.stamethyst.backend.render.VirtualResolutionPolicy
+import io.stamethyst.backend.render.VirtualResolutionMode
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 
@@ -24,6 +25,7 @@ class RenderSurfaceManager(
     private val renderScale: Float,
     private val targetFpsLimit: Int,
     useTextureViewSurface: Boolean,
+    private val virtualResolutionMode: VirtualResolutionMode,
     private val avoidDisplayCutout: Boolean,
     private val cropScreenBottom: Boolean,
     private val onSurfaceReady: () -> Unit,
@@ -43,6 +45,7 @@ class RenderSurfaceManager(
     private var resyncApplyCount = 0
     private var resyncSkipCount = 0
     private var renderRoot: FrameLayout? = null
+    private var lastWindowInsets: WindowInsetsCompat? = null
     private var postBootSurfaceSoftRefreshScheduled = false
     private var postBootSurfaceSoftRefreshCompleted = false
     private var postBootSurfaceSoftRefreshAttempts = 0
@@ -123,8 +126,19 @@ class RenderSurfaceManager(
         renderView.isFocusableInTouchMode = true
         state.rememberPhysicalSize(renderView.width, renderView.height)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            applyRightSideCropInsets(insets)
+            lastWindowInsets = insets
+            applyViewportLayout(insets)
             insets
+        }
+        root.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (left == oldLeft &&
+                top == oldTop &&
+                right == oldRight &&
+                bottom == oldBottom
+            ) {
+                return@addOnLayoutChangeListener
+            }
+            applyViewportLayout()
         }
         ViewCompat.requestApplyInsets(root)
         renderView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
@@ -530,7 +544,8 @@ class RenderSurfaceManager(
     private fun resolveVirtualResolution() = VirtualResolutionPolicy.resolve(
         physicalWidth = resolvePhysicalWidth(),
         physicalHeight = resolvePhysicalHeight(),
-        renderScale = renderScale
+        renderScale = renderScale,
+        mode = virtualResolutionMode
     )
 
     private fun logBufferApply(
@@ -556,32 +571,53 @@ class RenderSurfaceManager(
         renderRoot?.let { ViewCompat.requestApplyInsets(it) }
     }
 
-    private fun applyRightSideCropInsets(insets: WindowInsetsCompat) {
+    private fun applyViewportLayout(insets: WindowInsetsCompat? = lastWindowInsets) {
         if (!::renderView.isInitialized) {
             return
         }
+        val root = renderRoot ?: return
+        val rootWidth = root.width
+        val rootHeight = root.height
+        if (rootWidth <= 0 || rootHeight <= 0) {
+            return
+        }
         val targetRightCropPx = resolveRightSideCropPx(insets)
+        val availableWidth = (rootWidth - targetRightCropPx).coerceAtLeast(1)
+        val availableHeight = rootHeight.coerceAtLeast(1)
+        val viewportSize = VirtualResolutionPolicy.resolveViewportSize(
+            availableWidth = availableWidth,
+            availableHeight = availableHeight,
+            mode = virtualResolutionMode
+        )
+        val remainingHorizontal = (availableWidth - viewportSize.width).coerceAtLeast(0)
+        val remainingVertical = (availableHeight - viewportSize.height).coerceAtLeast(0)
+        val leftMargin = remainingHorizontal / 2
+        val topMargin = remainingVertical / 2
+        val extraRightMargin = remainingHorizontal - leftMargin
+        val bottomMargin = remainingVertical - topMargin
         val params = (renderView.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
+                viewportSize.width,
+                viewportSize.height
             )
-        if (params.leftMargin == 0 &&
-            params.topMargin == 0 &&
-            params.rightMargin == targetRightCropPx &&
-            params.bottomMargin == 0
+        if (params.width == viewportSize.width &&
+            params.height == viewportSize.height &&
+            params.leftMargin == leftMargin &&
+            params.topMargin == topMargin &&
+            params.rightMargin == targetRightCropPx + extraRightMargin &&
+            params.bottomMargin == bottomMargin
         ) {
             return
         }
-        params.width = FrameLayout.LayoutParams.MATCH_PARENT
-        params.height = FrameLayout.LayoutParams.MATCH_PARENT
+        params.width = viewportSize.width
+        params.height = viewportSize.height
         params.gravity = Gravity.TOP or Gravity.START
-        params.leftMargin = 0
-        params.topMargin = 0
-        params.rightMargin = targetRightCropPx
-        params.bottomMargin = 0
+        params.leftMargin = leftMargin
+        params.topMargin = topMargin
+        params.rightMargin = targetRightCropPx + extraRightMargin
+        params.bottomMargin = bottomMargin
         renderView.layoutParams = params
-        requestForegroundResync("right_crop")
+        requestForegroundResync("viewport_layout")
     }
 
     private data class EdgeInsets(
@@ -591,12 +627,13 @@ class RenderSurfaceManager(
         val bottom: Int = 0
     )
 
-    private fun resolveRightSideCropPx(insets: WindowInsetsCompat): Int {
+    private fun resolveRightSideCropPx(insets: WindowInsetsCompat?): Int {
         if (!cropScreenBottom) {
             return 0
         }
-        val gestureInsets = resolveGestureInsets(insets)
-        val cameraInsets = resolveCameraAvoidanceInsets(insets)
+        val safeInsets = insets ?: return 0
+        val gestureInsets = resolveGestureInsets(safeInsets)
+        val cameraInsets = resolveCameraAvoidanceInsets(safeInsets)
         val cameraInset = maxOf(
             cameraInsets.left,
             cameraInsets.top,
@@ -721,6 +758,7 @@ class RenderSurfaceManager(
 
                 "layout",
                 "right_crop",
+                "viewport_layout",
                 "resume",
                 "focus",
                 "legacy_foreground" -> SURFACE_VIEW_STABLE_RESYNC_DEBOUNCE_MS

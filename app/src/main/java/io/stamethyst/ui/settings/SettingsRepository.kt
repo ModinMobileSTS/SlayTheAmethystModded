@@ -11,6 +11,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
@@ -37,6 +38,7 @@ internal object SettingsRepository {
     data class RenderingSnapshot(
         val renderScale: Float,
         val targetFps: Int,
+        val virtualResolutionMode: VirtualResolutionMode,
         val renderSurfaceBackend: RenderSurfaceBackend,
         val rendererSelectionMode: RendererSelectionMode,
         val manualRendererBackend: RendererBackend,
@@ -123,6 +125,7 @@ internal object SettingsRepository {
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),
                 targetFps = LauncherPreferences.readTargetFps(context),
+                virtualResolutionMode = LauncherPreferences.readVirtualResolutionMode(context),
                 renderSurfaceBackend = renderSurfaceBackend,
                 rendererSelectionMode = rendererSelectionMode,
                 manualRendererBackend = manualRendererBackend,

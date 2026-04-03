@@ -33,6 +33,7 @@ import io.stamethyst.backend.render.RendererAvailability
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
 import io.stamethyst.backend.mods.ModJarSupport
@@ -88,13 +89,20 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenFeedback : Effect
     }
 
+    data class UpdateDownloadOptionState(
+        val source: UpdateSource,
+        val label: String,
+        val url: String,
+    )
+
     data class UpdatePromptState(
         val currentVersion: String,
         val latestVersion: String,
         val publishedAtText: String,
         val downloadSourceDisplayName: String,
         val notesText: String,
-        val downloadUrl: String,
+        val downloadOptions: List<UpdateDownloadOptionState>,
+        val defaultDownloadSourceId: String,
     )
 
     data class RendererBackendOptionState(
@@ -111,6 +119,8 @@ class SettingsScreenViewModel : ViewModel() {
         val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
+        val virtualResolutionMode: VirtualResolutionMode =
+            LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
         val rendererSelectionMode: RendererSelectionMode =
             LauncherPreferences.DEFAULT_RENDERER_SELECTION_MODE,
@@ -565,6 +575,18 @@ class SettingsScreenViewModel : ViewModel() {
         downloadResolution: UpdateDownloadResolution?,
     ): UpdatePromptState? {
         val resolvedDownload = downloadResolution ?: return null
+        val downloadOptions = UpdateSource.oneShotDownloadSelectionSources(resolvedDownload.source)
+            .map { source ->
+                UpdateDownloadOptionState(
+                    source = source,
+                    label = if (source == UpdateSource.OFFICIAL) {
+                        host.getString(R.string.update_dialog_download_option_direct)
+                    } else {
+                        source.displayName
+                    },
+                    url = source.buildUrl(release.assetDownloadUrl)
+                )
+            }
         return UpdatePromptState(
             currentVersion = BuildConfig.VERSION_NAME,
             latestVersion = release.normalizedVersion,
@@ -575,7 +597,8 @@ class SettingsScreenViewModel : ViewModel() {
             notesText = release.notesText.ifBlank {
                 host.getString(R.string.update_dialog_notes_empty)
             },
-            downloadUrl = resolvedDownload.resolvedUrl
+            downloadOptions = downloadOptions,
+            defaultDownloadSourceId = resolvedDownload.source.id
         )
     }
 
@@ -907,6 +930,15 @@ class SettingsScreenViewModel : ViewModel() {
         val normalizedTargetFps = LauncherPreferences.normalizeTargetFps(targetFps)
         uiState = uiState.copy(selectedTargetFps = normalizedTargetFps)
         saveTargetFpsSelection(host, normalizedTargetFps)
+        refreshStatus(host)
+    }
+
+    fun onVirtualResolutionModeChanged(host: Activity, mode: VirtualResolutionMode) {
+        if (uiState.busy || uiState.virtualResolutionMode == mode) {
+            return
+        }
+        uiState = uiState.copy(virtualResolutionMode = mode)
+        saveVirtualResolutionModeSelection(host, mode)
         refreshStatus(host)
     }
 
@@ -1591,6 +1623,7 @@ class SettingsScreenViewModel : ViewModel() {
             playerName = snapshot.playerName,
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
+            virtualResolutionMode = rendering.virtualResolutionMode,
             renderSurfaceBackend = rendering.renderSurfaceBackend,
             rendererSelectionMode = rendering.rendererSelectionMode,
             manualRendererBackend = rendering.manualRendererBackend,
@@ -2057,6 +2090,10 @@ class SettingsScreenViewModel : ViewModel() {
         )
         lines += host.getString(R.string.settings_status_target_fps, rendering.targetFps)
         lines += host.getString(
+            R.string.settings_status_virtual_resolution_mode,
+            virtualResolutionModeDisplayName(host, rendering.virtualResolutionMode)
+        )
+        lines += host.getString(
             R.string.settings_status_renderer_selection_mode,
             rendering.rendererSelectionMode.displayName(host)
         )
@@ -2454,6 +2491,22 @@ class SettingsScreenViewModel : ViewModel() {
         )
     }
 
+    private fun virtualResolutionModeDisplayName(
+        host: Activity,
+        mode: VirtualResolutionMode
+    ): String {
+        return when (mode) {
+            VirtualResolutionMode.FULLSCREEN_FILL ->
+                host.getString(R.string.settings_virtual_resolution_mode_fullscreen_fill)
+            VirtualResolutionMode.RESOLUTION_1080P ->
+                host.getString(R.string.settings_virtual_resolution_mode_1080p)
+            VirtualResolutionMode.RATIO_4_3 ->
+                host.getString(R.string.settings_virtual_resolution_mode_4_3)
+            VirtualResolutionMode.RATIO_16_9 ->
+                host.getString(R.string.settings_virtual_resolution_mode_16_9)
+        }
+    }
+
     private fun RendererAvailability.describeUnavailable(host: Activity): String? {
         if (available) {
             return null
@@ -2769,6 +2822,13 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveTargetFpsSelection(host: Activity, targetFps: Int) {
         LauncherPreferences.saveTargetFps(host, targetFps)
+    }
+
+    private fun saveVirtualResolutionModeSelection(
+        host: Activity,
+        mode: VirtualResolutionMode
+    ) {
+        LauncherPreferences.saveVirtualResolutionMode(host, mode)
     }
 
     private fun saveRenderSurfaceBackendSelection(

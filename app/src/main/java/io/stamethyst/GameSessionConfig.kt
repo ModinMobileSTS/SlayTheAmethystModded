@@ -7,6 +7,7 @@ import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RenderSurfaceBackend
@@ -27,6 +28,7 @@ internal data class GameSessionConfig(
     val autoSwitchLeftAfterRightClick: Boolean,
     val requestedRenderSurfaceBackend: RenderSurfaceBackend,
     val rendererDecision: RendererDecision,
+    val virtualResolutionMode: VirtualResolutionMode,
     val avoidDisplayCutout: Boolean,
     val cropScreenBottom: Boolean,
     val sustainedPerformanceModeEnabled: Boolean,
@@ -80,6 +82,7 @@ internal data class GameSessionConfig(
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
                 requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,
                 rendererDecision = rendererDecision,
+                virtualResolutionMode = LauncherConfig.readVirtualResolutionMode(context),
                 avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherConfig.isScreenBottomCropEnabled(context),
                 sustainedPerformanceModeEnabled =

@@ -11,6 +11,7 @@ import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
@@ -70,6 +71,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
     val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED
+    val DEFAULT_VIRTUAL_RESOLUTION_MODE: VirtualResolutionMode
+        get() = LauncherConfig.DEFAULT_VIRTUAL_RESOLUTION_MODE
     val DEFAULT_AVOID_DISPLAY_CUTOUT: Boolean
         get() = LauncherConfig.DEFAULT_AVOID_DISPLAY_CUTOUT
     val DEFAULT_CROP_SCREEN_BOTTOM: Boolean
@@ -238,6 +241,14 @@ object LauncherPreferences {
 
     fun saveCompendiumUpgradeTouchFixEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.saveCompendiumUpgradeTouchFixEnabled(context, enabled)
+    }
+
+    fun readVirtualResolutionMode(context: Context): VirtualResolutionMode {
+        return LauncherConfig.readVirtualResolutionMode(context)
+    }
+
+    fun saveVirtualResolutionMode(context: Context, mode: VirtualResolutionMode) {
+        LauncherConfig.saveVirtualResolutionMode(context, mode)
     }
 
     fun isDisplayCutoutAvoidanceEnabled(context: Context): Boolean {

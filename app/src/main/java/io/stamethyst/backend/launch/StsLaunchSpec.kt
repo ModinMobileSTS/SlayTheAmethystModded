@@ -8,6 +8,7 @@ import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.VirtualResolutionPolicy
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.AWTCanvasView
@@ -200,9 +201,15 @@ object StsLaunchSpec {
             args.add("-Damethyst.renderer.fallback_reason=$it")
         }
         val renderScale = renderScaleOverride ?: LauncherConfig.readRenderScale(context)
+        val virtualResolutionMode = LauncherConfig.readVirtualResolutionMode(context)
         val physicalWidth = Math.max(1, CallbackBridge.physicalWidth)
         val physicalHeight = Math.max(1, CallbackBridge.physicalHeight)
-        val virtualResolution = VirtualResolutionPolicy.resolve(physicalWidth, physicalHeight, renderScale)
+        val virtualResolution = VirtualResolutionPolicy.resolve(
+            physicalWidth = physicalWidth,
+            physicalHeight = physicalHeight,
+            renderScale = renderScale,
+            mode = virtualResolutionMode
+        )
         val virtualWidth = virtualResolution.width
         val virtualHeight = virtualResolution.height
         args.add("-Damethyst.gdx.render_scale=$renderScale")
@@ -213,6 +220,7 @@ object StsLaunchSpec {
         println(
             "StsLaunchSpec: " +
                 "renderScale=$renderScale, " +
+                "virtualMode=${virtualResolutionMode.persistedValue}, " +
                 "effectiveScale=${virtualResolution.effectiveScale}, " +
                 "virtual=${virtualWidth}x${virtualHeight}, " +
                 "glfwstub=${physicalWidth}x${physicalHeight}, " +

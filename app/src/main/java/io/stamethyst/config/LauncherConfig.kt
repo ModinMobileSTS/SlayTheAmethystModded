@@ -14,6 +14,7 @@ import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -68,6 +69,7 @@ object LauncherConfig {
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED =
         "compendium_upgrade_touch_fix_enabled"
+    private const val PREF_KEY_VIRTUAL_RESOLUTION_MODE = "virtual_resolution_mode"
     private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
@@ -151,6 +153,8 @@ object LauncherConfig {
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
     const val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED = true
+    val DEFAULT_VIRTUAL_RESOLUTION_MODE: VirtualResolutionMode =
+        VirtualResolutionMode.FULLSCREEN_FILL
     const val DEFAULT_AVOID_DISPLAY_CUTOUT = false
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
@@ -514,6 +518,20 @@ object LauncherConfig {
     fun saveCompendiumUpgradeTouchFixEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED, enabled)
+        }
+    }
+
+    fun readVirtualResolutionMode(context: Context): VirtualResolutionMode {
+        val stored = prefs(context).getString(
+            PREF_KEY_VIRTUAL_RESOLUTION_MODE,
+            DEFAULT_VIRTUAL_RESOLUTION_MODE.persistedValue
+        )
+        return VirtualResolutionMode.fromPersistedValue(stored) ?: DEFAULT_VIRTUAL_RESOLUTION_MODE
+    }
+
+    fun saveVirtualResolutionMode(context: Context, mode: VirtualResolutionMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_VIRTUAL_RESOLUTION_MODE, mode.persistedValue)
         }
     }
 

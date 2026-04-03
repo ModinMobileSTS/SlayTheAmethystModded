@@ -176,6 +176,7 @@ class StsGameActivity : AppCompatActivity() {
             renderScale = sessionConfig.renderScale,
             targetFpsLimit = sessionConfig.effectiveTargetFps,
             useTextureViewSurface = sessionConfig.useTextureViewSurface,
+            virtualResolutionMode = sessionConfig.virtualResolutionMode,
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             cropScreenBottom = sessionConfig.cropScreenBottom,
             onSurfaceReady = { sessionCoordinator.onSurfaceReady() },

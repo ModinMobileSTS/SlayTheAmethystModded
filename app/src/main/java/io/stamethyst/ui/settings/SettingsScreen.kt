@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherThemeColor
@@ -122,6 +123,9 @@ fun LauncherSettingsScreen(
         onOpenNativeLibraryMarket = { navigator.push(Route.NativeLibraryMarket) },
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
+        onVirtualResolutionModeChanged = { mode ->
+            viewModel.onVirtualResolutionModeChanged(activity, mode)
+        },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
         },
@@ -264,6 +268,7 @@ private fun LauncherSettingsScreenPreview() {
             playerName = "player",
             selectedRenderScale = 1.00f,
             selectedTargetFps = 60,
+            virtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL,
             renderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             themeMode = LauncherThemeMode.FOLLOW_SYSTEM,
             themeColor = LauncherThemeColor.COLORLESS,
@@ -321,6 +326,7 @@ private fun LauncherSettingsScreenContent(
     onOpenNativeLibraryMarket: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
+    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
@@ -432,6 +438,9 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
+                        onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
+                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
+                        onScreenBottomCropChanged = onScreenBottomCropChanged,
                     )
                 }
             }
@@ -449,8 +458,6 @@ private fun LauncherSettingsScreenContent(
                         onMobileHudEnabledChanged = onMobileHudEnabledChanged,
                         onCompendiumUpgradeTouchFixEnabledChanged =
                             onCompendiumUpgradeTouchFixEnabledChanged,
-                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
-                        onScreenBottomCropChanged = onScreenBottomCropChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                     )
@@ -1155,8 +1162,13 @@ private fun SettingsPerformanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
+    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
+    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
+    onScreenBottomCropChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
+    var showTargetFpsDialog by rememberSaveable { mutableStateOf(false) }
+    var showVirtualResolutionModeDialog by rememberSaveable { mutableStateOf(false) }
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
@@ -1194,16 +1206,100 @@ private fun SettingsPerformanceSection(
         modifier = Modifier.fillMaxWidth()
     )
 
-    Text(
-        text = stringResource(R.string.settings_target_fps_title),
-        style = MaterialTheme.typography.bodyMedium
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_target_fps_title),
+        supportingText = stringResource(
+            R.string.settings_target_fps_option,
+            uiState.selectedTargetFps
+        ),
+        enabled = !uiState.busy,
+        onClick = { showTargetFpsDialog = true }
     )
-    uiState.targetFpsOptions.forEach { fps ->
-        TargetFpsOptionRow(
-            fps = fps,
-            selected = uiState.selectedTargetFps == fps,
-            enabled = !uiState.busy,
-            onSelect = onTargetFpsSelected
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_virtual_resolution_mode_title),
+        supportingText = virtualResolutionModeDisplayName(uiState.virtualResolutionMode),
+        enabled = !uiState.busy,
+        onClick = { showVirtualResolutionModeDialog = true }
+    )
+    Text(
+        text = virtualResolutionModeDescription(uiState.virtualResolutionMode),
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    SwitchSettingRow(
+        checked = uiState.avoidDisplayCutout,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_display_cutout_enabled),
+        disabledText = stringResource(R.string.settings_display_cutout_disabled),
+        description = stringResource(R.string.settings_display_cutout_desc),
+        onCheckedChange = onDisplayCutoutAvoidanceChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.cropScreenBottom,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_crop_screen_bottom_enabled),
+        disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
+        description = stringResource(R.string.settings_crop_screen_bottom_desc),
+        onCheckedChange = onScreenBottomCropChanged
+    )
+
+    if (showTargetFpsDialog) {
+        AlertDialog(
+            onDismissRequest = { showTargetFpsDialog = false },
+            title = { Text(stringResource(R.string.settings_target_fps_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    uiState.targetFpsOptions.forEach { fps ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.selectedTargetFps == fps,
+                            enabled = !uiState.busy,
+                            text = stringResource(R.string.settings_target_fps_option, fps),
+                            onSelect = {
+                                onTargetFpsSelected(fps)
+                                showTargetFpsDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showTargetFpsDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+
+    if (showVirtualResolutionModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showVirtualResolutionModeDialog = false },
+            title = { Text(stringResource(R.string.settings_virtual_resolution_mode_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VirtualResolutionMode.entries.forEach { mode ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.virtualResolutionMode == mode,
+                            enabled = !uiState.busy,
+                            text = virtualResolutionModeDisplayName(mode),
+                            onSelect = {
+                                onVirtualResolutionModeChanged(mode)
+                                showVirtualResolutionModeDialog = false
+                            }
+                        )
+                    }
+                    Text(
+                        text = virtualResolutionModeDescription(uiState.virtualResolutionMode),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showVirtualResolutionModeDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
         )
     }
 }
@@ -1476,8 +1572,6 @@ private fun SettingsInputSection(
     onShowModFileNameChanged: (Boolean) -> Unit,
     onMobileHudEnabledChanged: (Boolean) -> Unit,
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
-    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
-    onScreenBottomCropChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
 ) {
@@ -1580,24 +1674,6 @@ private fun SettingsInputSection(
         disabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_disabled),
         description = stringResource(R.string.settings_compendium_upgrade_touch_fix_desc),
         onCheckedChange = onCompendiumUpgradeTouchFixEnabledChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.avoidDisplayCutout,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_display_cutout_enabled),
-        disabledText = stringResource(R.string.settings_display_cutout_disabled),
-        description = stringResource(R.string.settings_display_cutout_desc),
-        onCheckedChange = onDisplayCutoutAvoidanceChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.cropScreenBottom,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_crop_screen_bottom_enabled),
-        disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
-        description = stringResource(R.string.settings_crop_screen_bottom_desc),
-        onCheckedChange = onScreenBottomCropChanged
     )
 
     SwitchSettingRow(
@@ -2079,18 +2155,31 @@ fun SettingsEffectsHandler(
 }
 
 @Composable
-private fun TargetFpsOptionRow(
-    fps: Int,
-    selected: Boolean,
-    enabled: Boolean,
-    onSelect: (Int) -> Unit,
-) {
-    SettingsRadioOptionRow(
-        selected = selected,
-        enabled = enabled,
-        text = stringResource(R.string.settings_target_fps_option, fps),
-        onSelect = { onSelect(fps) }
-    )
+private fun virtualResolutionModeDisplayName(mode: VirtualResolutionMode): String {
+    return when (mode) {
+        VirtualResolutionMode.FULLSCREEN_FILL ->
+            stringResource(R.string.settings_virtual_resolution_mode_fullscreen_fill)
+        VirtualResolutionMode.RESOLUTION_1080P ->
+            stringResource(R.string.settings_virtual_resolution_mode_1080p)
+        VirtualResolutionMode.RATIO_4_3 ->
+            stringResource(R.string.settings_virtual_resolution_mode_4_3)
+        VirtualResolutionMode.RATIO_16_9 ->
+            stringResource(R.string.settings_virtual_resolution_mode_16_9)
+    }
+}
+
+@Composable
+private fun virtualResolutionModeDescription(mode: VirtualResolutionMode): String {
+    return when (mode) {
+        VirtualResolutionMode.FULLSCREEN_FILL ->
+            stringResource(R.string.settings_virtual_resolution_mode_desc_fullscreen_fill)
+        VirtualResolutionMode.RESOLUTION_1080P ->
+            stringResource(R.string.settings_virtual_resolution_mode_desc_1080p)
+        VirtualResolutionMode.RATIO_4_3 ->
+            stringResource(R.string.settings_virtual_resolution_mode_desc_4_3)
+        VirtualResolutionMode.RATIO_16_9 ->
+            stringResource(R.string.settings_virtual_resolution_mode_desc_16_9)
+    }
 }
 
 @Composable

@@ -4,6 +4,7 @@ import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
 import org.junit.Assert.assertEquals
@@ -59,6 +60,7 @@ class GameSessionConfigTest {
                 effectiveSurfaceBackend = effectiveSurfaceBackend,
                 availableBackends = emptyList()
             ),
+            virtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL,
             avoidDisplayCutout = false,
             cropScreenBottom = false,
             sustainedPerformanceModeEnabled = false,
