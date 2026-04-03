@@ -460,25 +460,14 @@ fun LauncherContent(
                                     )
                                     Text(
                                         text = stringResource(
-                                            R.string.update_dialog_published_at,
-                                            promptState.publishedAtText
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Text(
-                                        text = stringResource(
                                             R.string.update_dialog_download_source,
                                             promptState.downloadSourceDisplayName
                                         ),
                                         style = MaterialTheme.typography.bodySmall
                                     )
-                                    Text(
-                                        text = stringResource(R.string.update_dialog_notes_title),
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Text(
-                                        text = promptState.notesText,
-                                        style = MaterialTheme.typography.bodySmall
+                                    SimpleMarkdownCard(
+                                        title = stringResource(R.string.update_dialog_notes_title),
+                                        markdown = promptState.notesText
                                     )
                                 }
                             },

@@ -96,3 +96,4 @@ patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class
 /tmp-feedback-smoke/
 /cloud-function*.zip
 /signing/upload_certificate.pem
+/video_script.md

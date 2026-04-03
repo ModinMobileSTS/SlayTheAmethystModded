@@ -912,6 +912,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="quick_start_missing_jar_howto">How to get it</string>
     <string name="quick_start_missing_jar_step1">1. Copy `desktop-1.0.jar` from the game install directory on your PC</string>
     <string name="quick_start_missing_jar_step2">2. Common path: `SteamLibrary/common/SlayTheSpire/desktop-1.0.jar`</string>
+    <string name="quick_start_missing_jar_download_link">Download link: %1$s</string>
     <string name="quick_start_acknowledge">Got it</string>
     <string name="main_feedback_notice_title">Your feedback has updates</string>
     <string name="main_feedback_notice_single">1 tracked issue has a new update.</string>
