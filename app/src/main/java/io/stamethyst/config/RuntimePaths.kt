@@ -83,6 +83,10 @@ object RuntimePaths {
         File(stsRoot(context), "imported_mod_patch_metadata.json")
 
     @JvmStatic
+    fun optionalModIndexFile(context: Context): File =
+        File(stsRoot(context), "optional_mod_index.json")
+
+    @JvmStatic
     fun optionalModsLibraryMigrationMarker(context: Context): File =
         File(stsRoot(context), OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME)
 

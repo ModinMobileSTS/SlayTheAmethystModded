@@ -52,7 +52,13 @@ object ModManager {
         val storageKey: String,
         val jarFile: File,
         val normalizedModId: String,
-        val rawModId: String
+        val rawModId: String,
+        val name: String,
+        val version: String,
+        val description: String,
+        val dependencies: List<String>,
+        val launchModId: String,
+        val launchValidationError: String
     )
 
     private data class OptionalInstalledModEntry(
@@ -483,33 +489,16 @@ object ModManager {
         val optionalEntries = ArrayList<OptionalInstalledModEntry>()
 
         for (entry in optionalModFiles) {
-            val jarFile = entry.jarFile
-            val modId = entry.normalizedModId
-            var manifestModId = entry.rawModId
-            var name = modId
-            var version = ""
-            var description = ""
-            var dependencies: List<String> = ArrayList()
-            try {
-                val manifest = ModJarSupport.readModManifest(jarFile)
-                manifestModId = defaultIfBlank(manifest.modId, manifestModId)
-                name = defaultIfBlank(manifest.name, manifestModId)
-                version = trimToEmpty(manifest.version)
-                description = trimToEmpty(manifest.description)
-                dependencies = ArrayList(manifest.dependencies)
-            } catch (_: Throwable) {
-                name = modId
-            }
             optionalEntries.add(
                 OptionalInstalledModEntry(
                     storageKey = entry.storageKey,
-                    modId = modId,
-                    manifestModId = manifestModId,
-                    name = name,
-                    version = version,
-                    description = description,
-                    dependencies = ArrayList(dependencies),
-                    jarFile = jarFile,
+                    modId = entry.normalizedModId,
+                    manifestModId = entry.rawModId,
+                    name = entry.name,
+                    version = entry.version,
+                    description = entry.description,
+                    dependencies = ArrayList(entry.dependencies),
+                    jarFile = entry.jarFile,
                     enabled = enabledSelection.contains(entry.storageKey)
                 )
             )
@@ -593,16 +582,19 @@ object ModManager {
             if (!enabledSelection.contains(entry.storageKey)) {
                 return@forEachIndexed
             }
-            val launchModId = MtsLaunchManifestValidator.resolveLaunchModId(entry.jarFile).trim()
+            val launchError = entry.launchValidationError.trim()
+            if (launchError.isNotEmpty()) {
+                throw IOException(launchError)
+            }
+            val launchModId = entry.launchModId.trim()
             if (launchModId.isNotEmpty()) {
-                val manifest = ModJarSupport.readModManifest(entry.jarFile)
                 enabledOptionalEntries.add(
                     OptionalModLaunchEntry(
                         storageKey = entry.storageKey,
                         normalizedModId = entry.normalizedModId,
-                        normalizedManifestModId = normalizeModId(manifest.modId),
+                        normalizedManifestModId = normalizeModId(entry.rawModId),
                         launchModId = launchModId,
-                        dependencies = ArrayList(manifest.dependencies),
+                        dependencies = ArrayList(entry.dependencies),
                         originalIndex = index
                     )
                 )
@@ -700,38 +692,20 @@ object ModManager {
     }
 
     private fun findOptionalModFiles(context: Context): List<OptionalModFileEntry> {
-        OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
-        val result = ArrayList<OptionalModFileEntry>()
-        val modsDir = RuntimePaths.optionalModsLibraryDir(context)
-        val files = modsDir.listFiles() ?: return result
-        val sortedFiles = files
-            .asSequence()
-            .filter { it.isFile }
-            .filter { it.name.lowercase(Locale.ROOT).endsWith(".jar") }
-            .filterNot { isReservedJarName(it.name) }
-            .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
-            .toList()
-
-        sortedFiles.forEach { file ->
-            val rawModId = try {
-                resolveRawModId(file)
-            } catch (_: Throwable) {
-                return@forEach
-            }
-            val normalizedModId = normalizeModId(rawModId)
-            if (normalizedModId.isEmpty() || isRequiredModId(normalizedModId)) {
-                return@forEach
-            }
-            result.add(
-                OptionalModFileEntry(
-                    storageKey = resolveOptionalStorageKey(file),
-                    jarFile = file,
-                    normalizedModId = normalizedModId,
-                    rawModId = rawModId.trim()
-                )
+        return OptionalModMetadataIndex.listOptionalMods(context).map { metadata ->
+            OptionalModFileEntry(
+                storageKey = metadata.storagePath,
+                jarFile = metadata.jarFile,
+                normalizedModId = metadata.normalizedModId,
+                rawModId = metadata.rawModId,
+                name = metadata.name,
+                version = metadata.version,
+                description = metadata.description,
+                dependencies = ArrayList(metadata.dependencies),
+                launchModId = metadata.launchModId,
+                launchValidationError = metadata.launchValidationError
             )
         }
-        return result
     }
 
     private fun isReservedJarName(fileName: String): Boolean {
@@ -792,7 +766,7 @@ object ModManager {
                 BufferedReader(reader).use { buffered ->
                     while (true) {
                         val line = buffered.readLine() ?: break
-                        val token = normalizeSelectionToken(context, line)
+                        val token = line.trim()
                         if (token.isNotEmpty()) {
                             keys.add(token)
                         }
@@ -841,7 +815,7 @@ object ModManager {
                 BufferedReader(reader).use { buffered ->
                     while (true) {
                         val line = buffered.readLine() ?: break
-                        val token = normalizeSelectionToken(context, line)
+                        val token = line.trim()
                         if (token.isNotEmpty()) {
                             keys.add(token)
                         }
