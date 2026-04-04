@@ -144,16 +144,6 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private static volatile long currentFrameId;
 	private static volatile long lastIdleSweepFrame = -1L;
 
-	private final static class PressureDownscaleDecision {
-		private final int mode;
-		private final String reason;
-
-		private PressureDownscaleDecision (int mode, String reason) {
-			this.mode = mode;
-			this.reason = reason == null ? "unspecified" : reason;
-		}
-	}
-
 	private final long debugFrameBufferId = allocateDebugFrameBufferId();
 	private int debugBuildGeneration = 0;
 	private boolean nativeResourcesAllocated;
@@ -514,18 +504,19 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		long projectedFullBytes = FRAMEBUFFERS_NATIVE_BYTES.get() + requestedBytes;
 		if (projectedFullBytes <= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES) return;
 		String stackKey = captureRelevantFrameBufferBuildStack();
-		PressureDownscaleDecision decision =
-			classifyPressureDownscaleDecision(stackKey, projectedFullBytes, requestedBytes);
-		if (decision.mode == PRESSURE_DOWNSCALE_PROTECT) {
+		String protectedReason = resolvePressureDownscaleProtectReason(stackKey);
+		if (protectedReason != null) {
 			System.out.println("[gdx-diag] GLFrameBuffer pressure_downscale_skip id=" + debugFrameBufferId
 				+ " requested=" + width + "x" + height
 				+ " requestedBytes=" + requestedBytes
 				+ " projectedFullBytes=" + projectedFullBytes
 				+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
-				+ " protected=" + decision.reason);
+				+ " protected=" + protectedReason);
 			return;
 		}
-		if (decision.mode != PRESSURE_DOWNSCALE_ALLOW) return;
+		int pressureMode = classifyPressureDownscaleMode(stackKey, projectedFullBytes, requestedBytes);
+		if (pressureMode != PRESSURE_DOWNSCALE_ALLOW) return;
+		String allowReason = resolvePressureDownscaleAllowReason(stackKey, projectedFullBytes, requestedBytes);
 
 		int downscaledWidth = Math.max(1, (width + 1) / 2);
 		int downscaledHeight = Math.max(1, (height + 1) / 2);
@@ -538,7 +529,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			+ " requestedBytes=" + requestedBytes
 			+ " projectedFullBytes=" + projectedFullBytes
 			+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
-			+ " reason=" + decision.reason);
+			+ " reason=" + allowReason);
 	}
 
 	private boolean isLargePressureDownscaleCandidate () {
@@ -560,21 +551,13 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return (long)width * (long)height >= 1280L * 720L;
 	}
 
-	private PressureDownscaleDecision classifyPressureDownscaleDecision (
+	private int classifyPressureDownscaleMode (
 		String stackKey,
 		long projectedFullBytes,
 		long requestedBytes
 	) {
-		String protectedReason = resolvePressureDownscaleProtectReason(stackKey);
-		if (protectedReason != null) {
-			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_PROTECT, protectedReason);
-		}
-		if (projectedFullBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES) {
-			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "hard_budget");
-		}
-		if (containsExternalModNamespace(stackKey)) {
-			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "external_stack");
-		}
+		if (projectedFullBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES) return PRESSURE_DOWNSCALE_ALLOW;
+		if (containsExternalModNamespace(stackKey)) return PRESSURE_DOWNSCALE_ALLOW;
 		if (containsAnyStackFragment(
 			stackKey,
 			".vfx.",
@@ -590,13 +573,9 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			".particles.",
 			".cutscene.",
 			".cutscenes."
-		)) {
-			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "effect_stack");
-		}
-		if (requestedBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES / 2L) {
-			return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_ALLOW, "large_budget_share");
-		}
-		return new PressureDownscaleDecision(PRESSURE_DOWNSCALE_NONE, "below_policy");
+		)) return PRESSURE_DOWNSCALE_ALLOW;
+		if (requestedBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES / 2L) return PRESSURE_DOWNSCALE_ALLOW;
+		return PRESSURE_DOWNSCALE_NONE;
 	}
 
 	private String resolvePressureDownscaleProtectReason (String stackKey) {
@@ -614,6 +593,29 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			return "ApplyScreenPostProcessor";
 		}
 		return null;
+	}
+
+	private String resolvePressureDownscaleAllowReason (String stackKey, long projectedFullBytes, long requestedBytes) {
+		if (projectedFullBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES) return "hard_budget";
+		if (containsExternalModNamespace(stackKey)) return "external_stack";
+		if (containsAnyStackFragment(
+			stackKey,
+			".vfx.",
+			".effect.",
+			".effects.",
+			".postfx",
+			".postprocess",
+			".shader",
+			".mask",
+			".glow",
+			".blur",
+			".outline",
+			".particles.",
+			".cutscene.",
+			".cutscenes."
+		)) return "effect_stack";
+		if (requestedBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES / 2L) return "large_budget_share";
+		return "unspecified";
 	}
 
 	private boolean ensureColorTextureAvailable (String reason) {

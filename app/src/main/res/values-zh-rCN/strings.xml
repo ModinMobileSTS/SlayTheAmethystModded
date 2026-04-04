@@ -64,9 +64,9 @@
     <string name="compat_runtime_texture_compat_title">运行时纹理兼容补丁</string>
     <string name="compat_runtime_texture_compat_desc">用于修复运行时动态创建纹理导致的黑块问题，如果出现材质丢失的问题，可以考虑打开。优点：可继续修复导入期未覆盖的黑块问题。缺点：会增加启动阶段 managed texture 扫描带来的 CPU/GPU 开销，且运行时 Linear/Clamp 兜底可能让部分纹理变糊。默认关闭以优先性能。</string>
     <string name="compat_large_texture_downscale_title">大纹理通用降采样兜底</string>
-    <string name="compat_large_texture_downscale_desc">开启后，运行时会对超大纹理启用通用兜底：外部模组的动画/剧情/事件 atlas 会自动降采样，而其他特别大的纹理在 GPU 内存压力超过软预算后也可能被缩小上传，用于降低 HarmonyOS/Android 兼容层上的 Gpu Leak 强杀。代价是部分资源会更糊一些。默认开启。</string>
+    <string name="compat_large_texture_downscale_desc">开启后，运行时会对超大纹理启用通用缩放：外部模组的大 atlas 页、loose texture、portrait、card art 以及其他运行时加载的大图都可能自动降采样，而特别大的纹理在 GPU 内存压力超过软预算后也会进一步缩小上传，用于降低 HarmonyOS/Android 兼容层上的 Gpu Leak 强杀。代价是部分资源会更糊一些。默认开启。</string>
     <string name="compat_texture_pressure_downscale_divisor_title">大纹理降采样强度</string>
-    <string name="compat_texture_pressure_downscale_divisor_desc">控制隐藏运行时参数 amethyst.gdx.texture_pressure_downscale_divisor。数值越大，外部动画 atlas 的降采样越激进。这个设置只影响运行时上传纹理的尺寸，并在下次启动游戏后生效。</string>
+    <string name="compat_texture_pressure_downscale_divisor_desc">控制隐藏运行时参数 amethyst.gdx.texture_pressure_downscale_divisor。数值越大，模组运行时大图的降采样越激进，包括 atlas 页、loose texture、portrait 和 card art。这个设置只影响运行时上传纹理的尺寸，并在下次启动游戏后生效。</string>
     <string name="compat_texture_pressure_downscale_divisor_value">x%1$d</string>
     <string name="compat_texture_pressure_downscale_divisor_option_desc">2048x2048 的 atlas 页大约会按 %1$dx%2$d 上传。</string>
     <string name="compat_force_linear_mipmap_filter_title">强制线性 mipmap 过滤</string>
