@@ -7,6 +7,7 @@ import io.stamethyst.config.RuntimePaths
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -42,7 +43,8 @@ class ModManagerOptionalModIndexTest {
         assertEquals(1, optionalMods.size)
         assertEquals(optionalJar.absolutePath, optionalMods.single().jarFile.absolutePath)
         assertTrue(optionalMods.single().enabled)
-        assertTrue(optionalMods.single().priorityRoot)
+        assertEquals(0, optionalMods.single().explicitPriority)
+        assertEquals(0, optionalMods.single().effectivePriority)
         assertEquals(
             optionalJar.absolutePath,
             JSONObject(RuntimePaths.optionalModIndexFile(context).readText(StandardCharsets.UTF_8))
@@ -55,7 +57,7 @@ class ModManagerOptionalModIndexTest {
             RuntimePaths.enabledModsConfig(context).readText(StandardCharsets.UTF_8).trim()
         )
         assertEquals(
-            optionalJar.absolutePath,
+            "${optionalJar.absolutePath}\t0",
             RuntimePaths.priorityModsConfig(context).readText(StandardCharsets.UTF_8).trim()
         )
     }
@@ -123,6 +125,57 @@ class ModManagerOptionalModIndexTest {
             listOf("basemod", "stslib", "amethystruntimecompat", "beta"),
             ModManager.resolveLaunchModIds(context)
         )
+    }
+
+    @Test
+    fun resolveLaunchModIds_sortsByPriorityAndPullsDependenciesEarlier() {
+        val roots = TestRoots.create("mod-manager-priority-order")
+        val context = roots.context
+        installRequiredLaunchMods(context)
+        val alphaJar = writeOptionalModJar(
+            file = File(RuntimePaths.optionalModsLibraryDir(context), "Alpha.jar"),
+            modId = "alpha",
+            name = "Alpha",
+            dependencies = listOf("beta"),
+            lastModified = 10_000L
+        )
+        val betaJar = writeOptionalModJar(
+            file = File(RuntimePaths.optionalModsLibraryDir(context), "Beta.jar"),
+            modId = "beta",
+            name = "Beta",
+            lastModified = 11_000L
+        )
+        val gammaJar = writeOptionalModJar(
+            file = File(RuntimePaths.optionalModsLibraryDir(context), "Gamma.jar"),
+            modId = "gamma",
+            name = "Gamma",
+            lastModified = 12_000L
+        )
+
+        RuntimePaths.stsRoot(context).mkdirs()
+        RuntimePaths.enabledModsConfig(context).writeText(
+            listOf(alphaJar.absolutePath, betaJar.absolutePath, gammaJar.absolutePath).joinToString("\n"),
+            StandardCharsets.UTF_8
+        )
+        RuntimePaths.priorityModsConfig(context).writeText(
+            listOf("${gammaJar.absolutePath}\t2", alphaJar.absolutePath).joinToString("\n"),
+            StandardCharsets.UTF_8
+        )
+
+        assertEquals(
+            listOf("basemod", "stslib", "amethystruntimecompat", "beta", "alpha", "gamma"),
+            ModManager.resolveLaunchModIds(context)
+        )
+
+        val optionalModsById = ModManager.listInstalledMods(context)
+            .filterNot { it.required }
+            .associateBy { it.modId }
+        assertEquals(0, optionalModsById.getValue("alpha").explicitPriority)
+        assertEquals(0, optionalModsById.getValue("alpha").effectivePriority)
+        assertNull(optionalModsById.getValue("beta").explicitPriority)
+        assertEquals(0, optionalModsById.getValue("beta").effectivePriority)
+        assertEquals(2, optionalModsById.getValue("gamma").explicitPriority)
+        assertEquals(2, optionalModsById.getValue("gamma").effectivePriority)
     }
 
     private fun installRequiredLaunchMods(context: Context) {

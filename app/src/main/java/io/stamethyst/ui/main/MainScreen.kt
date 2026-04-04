@@ -219,8 +219,8 @@ private fun LauncherMainScreenPreview() {
                     required = true,
                     installed = true,
                     enabled = true,
-                    priorityRoot = false,
-                    priorityLoad = false
+                    explicitPriority = null,
+                    effectivePriority = null
                 ),
                 ModItemUi(
                     modId = "modthespire",
@@ -233,8 +233,8 @@ private fun LauncherMainScreenPreview() {
                     required = true,
                     installed = true,
                     enabled = true,
-                    priorityRoot = false,
-                    priorityLoad = false
+                    explicitPriority = null,
+                    effectivePriority = null
                 ),
                 ModItemUi(
                     modId = "basemod",
@@ -247,8 +247,8 @@ private fun LauncherMainScreenPreview() {
                     required = true,
                     installed = true,
                     enabled = true,
-                    priorityRoot = false,
-                    priorityLoad = false
+                    explicitPriority = null,
+                    effectivePriority = null
                 ),
                 ModItemUi(
                     modId = "stslib",
@@ -261,8 +261,8 @@ private fun LauncherMainScreenPreview() {
                     required = true,
                     installed = true,
                     enabled = true,
-                    priorityRoot = false,
-                    priorityLoad = false
+                    explicitPriority = null,
+                    effectivePriority = null
                 )
             ),
             optionalMods = listOf(
@@ -277,8 +277,8 @@ private fun LauncherMainScreenPreview() {
                     required = false,
                     installed = true,
                     enabled = true,
-                    priorityRoot = true,
-                    priorityLoad = true
+                    explicitPriority = 0,
+                    effectivePriority = 0
                 )
             ),
             controlsEnabled = true,
@@ -993,7 +993,7 @@ private fun ColumnScope.MainContentSwitcher(
                     hostAvailable = actions.isHostAvailable,
                     callbacks = ModFolderSectionCallbacks(
                         onToggleMod = actions.onToggleMod,
-                        onTogglePriorityLoad = actions.onTogglePriorityLoad,
+                        onSetPriority = actions.onSetPriority,
                         onDeleteMod = actions.onDeleteMod,
                         onExportMod = actions.onExportMod,
                         onShareMod = actions.onShareMod,

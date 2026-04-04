@@ -92,9 +92,10 @@ internal fun ModCardBodyContent(
                         onClick = onImportPatchClick
                     )
                 }
-                if (mod.priorityLoad) {
+                val effectivePriority = mod.effectivePriority
+                if (effectivePriority != null) {
                     Spacer(modifier = Modifier.width(6.dp))
-                    PriorityLoadBadge()
+                    PriorityLoadBadge(priority = effectivePriority)
                 }
             }
             Text(
@@ -157,7 +158,7 @@ private fun ModSuggestionIcon(
             MaterialTheme.colorScheme.outline
         },
         modifier = Modifier
-            .size(18.dp)
+            .size(22.dp)
             .clickable(enabled = enabled, onClick = onClick)
     )
 }
@@ -188,21 +189,21 @@ private fun ModImportPatchIcon(
             Icon(
                 painter = painterResource(R.drawable.ic_build),
                 contentDescription = stringResource(R.string.main_mod_patch_badge_content_description),
-                modifier = Modifier.size(10.dp)
+                modifier = Modifier.size(12.dp)
             )
         }
     }
 }
 
 @Composable
-private fun PriorityLoadBadge() {
+private fun PriorityLoadBadge(priority: Int) {
     Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shape = RoundedCornerShape(999.dp)
     ) {
         Text(
-            text = stringResource(R.string.main_mod_priority_badge),
+            text = stringResource(R.string.main_mod_priority_badge_format, priority),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
         )

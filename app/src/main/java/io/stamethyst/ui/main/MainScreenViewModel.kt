@@ -247,8 +247,8 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.onToggleMod(host, mod, enabled)
     }
 
-    fun onTogglePriorityLoad(host: Activity, mod: ModItemUi, enabled: Boolean) {
-        modManagementController.onTogglePriorityLoad(host, mod, enabled)
+    fun onSetPriority(host: Activity, mod: ModItemUi, priority: Int?) {
+        modManagementController.onSetPriority(host, mod, priority)
     }
 
     fun onLaunch(host: Activity) {
@@ -624,8 +624,8 @@ class MainScreenViewModel : ViewModel() {
             required = true,
             installed = installed,
             enabled = installed,
-            priorityRoot = false,
-            priorityLoad = false
+            explicitPriority = null,
+            effectivePriority = null
         )
     }
 

@@ -122,18 +122,29 @@ internal object OptionalModStorageCoordinator {
             if (trimmed.isEmpty()) {
                 return@map line
             }
-            if (!looksLikePathToken(trimmed)) {
+            val separatorIndex = trimmed.indexOf('\t')
+            val rawPathToken = if (separatorIndex >= 0) {
+                trimmed.substring(0, separatorIndex).trim()
+            } else {
+                trimmed
+            }
+            if (!looksLikePathToken(rawPathToken)) {
                 return@map line
             }
-            val normalizedPath = normalizeSelectionPath?.invoke(trimmed)?.trim().orEmpty().ifBlank { trimmed }
-            val targetPath = movedPaths[normalizedPath] ?: return@map if (normalizedPath != trimmed) {
+            val normalizedPath = normalizeSelectionPath?.invoke(rawPathToken)?.trim().orEmpty().ifBlank { rawPathToken }
+            val rewrittenSuffix = if (separatorIndex >= 0) {
+                trimmed.substring(separatorIndex)
+            } else {
+                ""
+            }
+            val targetPath = movedPaths[normalizedPath] ?: return@map if (normalizedPath != rawPathToken) {
                 changed = true
-                normalizedPath
+                normalizedPath + rewrittenSuffix
             } else {
                 line
             }
             changed = true
-            targetPath
+            targetPath + rewrittenSuffix
         }
         if (!changed) {
             return

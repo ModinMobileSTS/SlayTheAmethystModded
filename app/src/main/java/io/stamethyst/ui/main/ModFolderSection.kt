@@ -634,7 +634,7 @@ internal fun ModFolderSection(
                                                     dragEnabled = organizationControlsEnabled && mod.installed,
                                                     callbacks = ModCardCallbacks(
                                                         onToggleMod = callbacks.onToggleMod,
-                                                        onTogglePriorityLoad = callbacks.onTogglePriorityLoad,
+                                                        onSetPriority = callbacks.onSetPriority,
                                                         onDeleteMod = { pendingDeleteMod = it },
                                                         onExportMod = callbacks.onExportMod,
                                                         onShareMod = callbacks.onShareMod,

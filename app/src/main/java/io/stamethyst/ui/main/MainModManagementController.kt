@@ -711,15 +711,8 @@ internal class MainModManagementController(
         hostCallbacks.republish(host)
     }
 
-    fun onTogglePriorityLoad(host: Activity, mod: ModItemUi, enabled: Boolean) {
+    fun onSetPriority(host: Activity, mod: ModItemUi, priority: Int?) {
         if (!hostCallbacks.canEditMainScreenState() || mod.required || !mod.installed) {
-            return
-        }
-        if (!enabled && mod.priorityLoad && !mod.priorityRoot) {
-            emitDialog(
-                title = host.getString(R.string.main_priority_remove_blocked_title),
-                message = host.getString(R.string.main_priority_remove_blocked_message)
-            )
             return
         }
 
@@ -729,44 +722,28 @@ internal class MainModManagementController(
             return
         }
 
-        val beforePriorityState = resolveOptionalModsWithPendingSelection().associate { optionalMod ->
-            optionalMod.storagePath to optionalMod.priorityLoad
-        }
         try {
-            ModManager.setOptionalModPriorityRoot(host, targetKey, enabled)
+            ModManager.setOptionalModPriority(host, targetKey, priority)
             refresh(host, storageAccessible = true)
             val updated = findOptionalModByAnyId(mod.storagePath) ?: findOptionalModByAnyId(targetKey)
-            if (enabled) {
-                val autoMarkedNames = resolveOptionalModsWithPendingSelection()
-                    .filter { optionalMod ->
-                        optionalMod.priorityLoad &&
-                            !beforePriorityState.getOrDefault(optionalMod.storagePath, false) &&
-                            optionalMod.storagePath != mod.storagePath
-                    }
-                    .map { resolveModDisplayName(it) }
-                    .distinct()
+            if (priority != null) {
                 emitSnackbar(
-                    when {
-                        autoMarkedNames.isNotEmpty() ->
-                            host.getString(
-                                R.string.main_priority_enabled_with_dependencies,
-                                resolveModDisplayName(mod),
-                                autoMarkedNames.joinToString(", ")
-                            )
-
-                        else -> host.getString(
-                            R.string.main_priority_enabled,
-                            resolveModDisplayName(mod)
-                        )
-                    }
+                    host.getString(
+                        R.string.main_priority_updated,
+                        resolveModDisplayName(mod),
+                        priority
+                    )
                 )
             } else {
                 emitSnackbar(
-                    if (updated?.priorityLoad == true) {
-                        host.getString(R.string.main_priority_cleared_but_required)
+                    if (updated?.effectivePriority != null) {
+                        host.getString(
+                            R.string.main_priority_cleared_but_required,
+                            updated.effectivePriority
+                        )
                     } else {
                         host.getString(
-                            R.string.main_priority_disabled,
+                            R.string.main_priority_cleared,
                             resolveModDisplayName(mod)
                         )
                     }
@@ -1459,8 +1436,8 @@ internal class MainModManagementController(
                 required = mod.required,
                 installed = mod.installed,
                 enabled = mod.enabled,
-                priorityRoot = mod.priorityRoot,
-                priorityLoad = mod.priorityLoad,
+                explicitPriority = mod.explicitPriority,
+                effectivePriority = mod.effectivePriority,
                 importPatchDetails = importPatchDetails
             )
         }

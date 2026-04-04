@@ -63,7 +63,7 @@ internal data class ModCardDragStartInfo(
 
 internal data class ModCardCallbacks(
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
-    val onTogglePriorityLoad: (ModItemUi, Boolean) -> Unit = { _, _ -> },
+    val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
     val onDeleteMod: (ModItemUi) -> Unit = {},
     val onExportMod: (ModItemUi) -> Unit = {},
     val onShareMod: (ModItemUi) -> Unit = {},
@@ -91,6 +91,7 @@ internal fun ModCard(
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
+    var showPriorityDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDisplayModeWarningDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
@@ -275,9 +276,8 @@ internal fun ModCard(
     ModActionsDialog(
         visible = showActionsDialog,
         controlsEnabled = fileActionsEnabled,
-        priorityLoad = mod.priorityLoad,
         onDismiss = { showActionsDialog = false },
-        onTogglePriorityLoad = { callbacks.onTogglePriorityLoad(mod, !mod.priorityLoad) },
+        onEditPriority = { showPriorityDialog = true },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
         onRename = {
@@ -288,6 +288,23 @@ internal fun ModCard(
             }
         },
         onDelete = { callbacks.onDeleteMod(mod) }
+    )
+
+    ModPriorityDialog(
+        visible = showPriorityDialog,
+        controlsEnabled = fileActionsEnabled,
+        modName = resolveModDisplayName(mod, showModFileName = showModFileName),
+        explicitPriority = mod.explicitPriority,
+        effectivePriority = mod.effectivePriority,
+        onDismiss = { showPriorityDialog = false },
+        onClearPriority = {
+            showPriorityDialog = false
+            callbacks.onSetPriority(mod, null)
+        },
+        onConfirm = { priority ->
+            showPriorityDialog = false
+            callbacks.onSetPriority(mod, priority)
+        }
     )
 
     RenameModFileDisplayModeWarningDialog(

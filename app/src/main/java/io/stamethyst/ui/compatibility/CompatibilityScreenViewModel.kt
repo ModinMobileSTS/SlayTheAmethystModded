@@ -15,7 +15,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val busyMessage: String? = null,
         val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
-        val importAtlasDownscaleCompatEnabled: Boolean = false,
+        val importAtlasDownscaleCompatEnabled: Boolean = true,
         val modManifestRootCompatEnabled: Boolean = true,
         val frierenModCompatEnabled: Boolean = true,
         val downfallImportCompatEnabled: Boolean = true,

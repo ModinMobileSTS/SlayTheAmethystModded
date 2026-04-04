@@ -1,5 +1,6 @@
 package io.stamethyst.ui.main
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,27 +17,32 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import io.stamethyst.R
+import io.stamethyst.backend.mods.ModManager
+import kotlin.math.roundToInt
 
 @Composable
 internal fun ModActionsDialog(
     visible: Boolean,
     controlsEnabled: Boolean,
-    priorityLoad: Boolean,
     onDismiss: () -> Unit,
-    onTogglePriorityLoad: () -> Unit,
+    onEditPriority: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
     onRename: () -> Unit,
@@ -69,17 +75,11 @@ internal fun ModActionsDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     ModActionDialogListItem(
-                        text = stringResource(
-                            if (priorityLoad) {
-                                R.string.main_mod_priority_remove
-                            } else {
-                                R.string.main_mod_priority_add
-                            }
-                        ),
+                        text = stringResource(R.string.main_mod_priority_adjust),
                         enabled = controlsEnabled
                     ) {
                         onDismiss()
-                        onTogglePriorityLoad()
+                        onEditPriority()
                     }
                     ModActionDialogListItem(
                         text = stringResource(R.string.main_mod_export),
@@ -121,6 +121,132 @@ internal fun ModActionsDialog(
             }
         }
     }
+}
+
+@Composable
+internal fun ModPriorityDialog(
+    visible: Boolean,
+    controlsEnabled: Boolean,
+    modName: String,
+    explicitPriority: Int?,
+    effectivePriority: Int?,
+    onDismiss: () -> Unit,
+    onClearPriority: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    if (!visible) {
+        return
+    }
+    val view = LocalView.current
+    val initialPriority = explicitPriority ?: effectivePriority ?: ModManager.OPTIONAL_MOD_PRIORITY_MIN
+    var sliderValue by remember(visible, explicitPriority, effectivePriority) {
+        mutableFloatStateOf(initialPriority.toFloat())
+    }
+    var lastPriorityStep by remember(visible, explicitPriority, effectivePriority) {
+        mutableIntStateOf(initialPriority)
+    }
+    val selectedPriority = sliderValue.roundToInt()
+        .coerceIn(ModManager.OPTIONAL_MOD_PRIORITY_MIN, ModManager.OPTIONAL_MOD_PRIORITY_MAX)
+    val currentStatusText = when {
+        explicitPriority != null && effectivePriority != null && explicitPriority != effectivePriority ->
+            stringResource(
+                R.string.main_mod_priority_dialog_status_explicit_and_effective,
+                explicitPriority,
+                effectivePriority
+            )
+
+        explicitPriority != null ->
+            stringResource(R.string.main_mod_priority_dialog_status_explicit, explicitPriority)
+
+        effectivePriority != null ->
+            stringResource(R.string.main_mod_priority_dialog_status_inherited, effectivePriority)
+
+        else -> stringResource(R.string.main_mod_priority_dialog_status_default)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    R.string.main_mod_priority_dialog_title_format,
+                    modName
+                )
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(R.string.main_mod_priority_dialog_summary),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = currentStatusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = ModManager.OPTIONAL_MOD_PRIORITY_MIN.toString(),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = ModManager.OPTIONAL_MOD_PRIORITY_MAX.toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End
+                    )
+                }
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { value ->
+                        sliderValue = value
+                        val step = value.roundToInt()
+                            .coerceIn(
+                                ModManager.OPTIONAL_MOD_PRIORITY_MIN,
+                                ModManager.OPTIONAL_MOD_PRIORITY_MAX
+                            )
+                        if (step != lastPriorityStep) {
+                            lastPriorityStep = step
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        }
+                    },
+                    valueRange = ModManager.OPTIONAL_MOD_PRIORITY_MIN.toFloat()..
+                        ModManager.OPTIONAL_MOD_PRIORITY_MAX.toFloat(),
+                    steps = (ModManager.OPTIONAL_MOD_PRIORITY_MAX - ModManager.OPTIONAL_MOD_PRIORITY_MIN - 1)
+                        .coerceAtLeast(0),
+                    enabled = controlsEnabled
+                )
+                Text(
+                    text = stringResource(
+                        R.string.main_mod_priority_dialog_selected_format,
+                        selectedPriority
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(selectedPriority) },
+                enabled = controlsEnabled
+            ) {
+                Text(stringResource(R.string.common_action_confirm))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onClearPriority,
+                    enabled = controlsEnabled && explicitPriority != null
+                ) {
+                    Text(text = stringResource(R.string.main_mod_priority_dialog_clear))
+                }
+                PillCancelButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        }
+    )
 }
 
 @Composable

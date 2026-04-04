@@ -113,8 +113,8 @@ class ModFolderUiHelpersTest {
             required = false,
             installed = true,
             enabled = true,
-            priorityRoot = false,
-            priorityLoad = false
+            explicitPriority = null,
+            effectivePriority = null
         )
     }
 }

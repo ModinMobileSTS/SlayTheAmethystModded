@@ -95,7 +95,7 @@ private fun LauncherCompatibilityScreenPreview() {
             busy = false,
             virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
-            importAtlasDownscaleCompatEnabled = false,
+            importAtlasDownscaleCompatEnabled = true,
             modManifestRootCompatEnabled = true,
             frierenModCompatEnabled = true,
             downfallImportCompatEnabled = true,
