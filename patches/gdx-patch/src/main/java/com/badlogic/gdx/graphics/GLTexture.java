@@ -727,6 +727,7 @@ public abstract class GLTexture implements Disposable {
 		boolean externalMod = containsExternalModNamespace(stackKey);
 		boolean modStoragePath = isModStorageTexturePath(sourcePath);
 		boolean modOwnedSource = externalMod || modStoragePath;
+		boolean atlasLike = isAtlasTextureSource(stackKey);
 		boolean portraitLike = isPortraitLikeTextureSource(stackKey, sourcePath);
 		boolean cardArtLike = isCardArtLikeTextureSource(stackKey, sourcePath);
 		boolean artLike = portraitLike || cardArtLike;
@@ -735,6 +736,7 @@ public abstract class GLTexture implements Disposable {
 		boolean hugeTexture = estimatedBytes >= TEXTURE_PRESSURE_DOWNSCALE_HUGE_MIN_BYTES;
 		boolean pressureExceeded = projectedTotalBytes >= TEXTURE_PRESSURE_DOWNSCALE_SOFT_BYTES;
 
+		if (atlasLike) return TEXTURE_PRESSURE_DOWNSCALE_MODE_NONE;
 		if (modOwnedSource && fileBacked && artLike && mediumTexture) {
 			return TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_ART;
 		}
@@ -806,9 +808,19 @@ public abstract class GLTexture implements Disposable {
 	private static boolean isTexturePressureDownscaleExemptStack (String stackKey) {
 		return containsAnyStackFragment(
 			stackKey,
+			"com.badlogic.gdx.graphics.g2d.TextureAtlas",
 			"com.badlogic.gdx.graphics.g2d.PixmapPacker",
 			"com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator",
 			"com.megacrit.cardcrawl.helpers.FontHelper"
+		);
+	}
+
+	private static boolean isAtlasTextureSource (String stackKey) {
+		return containsAnyStackFragment(
+			stackKey,
+			"com.badlogic.gdx.graphics.g2d.TextureAtlas",
+			"com.esotericsoftware.spine",
+			".spine."
 		);
 	}
 

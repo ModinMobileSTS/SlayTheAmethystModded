@@ -30,6 +30,8 @@ internal object ModAtlasOfflineDownscalePatcher {
     private val NUMERIC_TUPLE_LINE_REGEX = Regex(
         "^([ \\t]*[^:]+:\\s*)(-?\\d+(?:\\s*,\\s*-?\\d+)+)(\\s*)$"
     )
+    private val PAGE_HEADER_SCALE_KEYS = hashSetOf("size")
+    private val REGION_BLOCK_SCALE_KEYS = hashSetOf("xy", "size", "bounds", "split", "pad")
 
     private data class AtlasPageSpan(
         val pageNameLine: String,
@@ -51,19 +53,20 @@ internal object ModAtlasOfflineDownscalePatcher {
         var downscaledPageEntries = 0
 
         ZipFile(modJar).use { zipFile ->
-            val entries = zipFile.entries()
-            while (entries.hasMoreElements()) {
-                val entry = entries.nextElement()
-                if (entry.isDirectory) {
-                    continue
-                }
+            val zipIndex = buildZipIndex(zipFile)
+            for (entry in zipIndex.atlasEntries) {
                 val entryName = entry.name
-                if (!entryName.lowercase(Locale.ROOT).endsWith(".atlas")) {
-                    continue
-                }
                 scannedAtlasEntries++
                 val atlasText = JarFileIoUtils.readEntry(zipFile, entry)
-                val plan = buildPatchPlan(zipFile, entryName, atlasText) ?: continue
+                if (!isLikelySpineAtlas(entryName, zipIndex.entriesByNormalizedName.keys)) {
+                    continue
+                }
+                val plan = buildPatchPlan(
+                    zipFile = zipFile,
+                    entriesByNormalizedName = zipIndex.entriesByNormalizedName,
+                    atlasEntryName = entryName,
+                    atlasText = atlasText
+                ) ?: continue
                 replacements[entryName] = plan.patchedAtlasText.toByteArray(StandardCharsets.UTF_8)
                 replacements.putAll(plan.imageReplacements)
                 patchedAtlasEntries++
@@ -104,6 +107,11 @@ internal object ModAtlasOfflineDownscalePatcher {
         val height: Int
     )
 
+    private data class ZipIndex(
+        val entriesByNormalizedName: Map<String, ZipEntry>,
+        val atlasEntries: List<ZipEntry>
+    )
+
     internal fun collectAtlasPageEntryNames(
         atlasEntryName: String,
         atlasText: String
@@ -133,8 +141,26 @@ internal object ModAtlasOfflineDownscalePatcher {
         )
     }
 
+    internal fun isLikelySpineAtlas(atlasEntryName: String, entryNames: Collection<String>): Boolean {
+        val normalizedAtlasEntryName = normalizeZipEntryName(atlasEntryName)
+        val suffixIndex = normalizedAtlasEntryName.lastIndexOf(".atlas")
+        if (suffixIndex <= 0) {
+            return false
+        }
+        val stem = normalizedAtlasEntryName.substring(0, suffixIndex)
+        val normalizedEntryNames = if (entryNames is Set<String>) {
+            entryNames
+        } else {
+            entryNames.mapTo(HashSet()) { normalizeZipEntryName(it) }
+        }
+        return normalizedEntryNames.contains(stem + ".json") ||
+            normalizedEntryNames.contains(stem + ".skel") ||
+            normalizedEntryNames.contains(stem + ".skel.txt")
+    }
+
     private fun buildPatchPlan(
         zipFile: ZipFile,
+        entriesByNormalizedName: Map<String, ZipEntry>,
         atlasEntryName: String,
         atlasText: String
     ): PatchPlan? {
@@ -147,7 +173,7 @@ internal object ModAtlasOfflineDownscalePatcher {
             val page = findNextAtlasPageSpan(lines, index) ?: break
             index = page.endIndexExclusive
             val resolvedEntryName = resolveAtlasPageEntryName(atlasEntryName, page.pageNameLine.trim())
-            val transform = createPageTransform(zipFile, resolvedEntryName) ?: continue
+            val transform = createPageTransform(zipFile, entriesByNormalizedName, resolvedEntryName) ?: continue
             pageTransforms[resolvedEntryName.lowercase(Locale.ROOT)] = transform
         }
 
@@ -192,14 +218,14 @@ internal object ModAtlasOfflineDownscalePatcher {
             index = page.headerStartIndex
 
             while (index < page.headerEndIndexExclusive) {
-                output.add(scaleNumericTupleLine(lines[index], pageScale))
+                output.add(scalePageHeaderLine(lines[index], pageScale))
                 index++
             }
 
             while (index < page.endIndexExclusive) {
                 val line = lines[index]
                 if (isIndentedAtlasLine(line)) {
-                    output.add(scaleNumericTupleLine(line, pageScale))
+                    output.add(scaleRegionLine(line, pageScale))
                 } else {
                     output.add(line)
                 }
@@ -215,6 +241,24 @@ internal object ModAtlasOfflineDownscalePatcher {
         return output.joinToString("\n")
     }
 
+    private fun scalePageHeaderLine(line: String, pageScale: Float?): String {
+        return scaleAtlasPropertyLine(line, pageScale, PAGE_HEADER_SCALE_KEYS)
+    }
+
+    private fun scaleRegionLine(line: String, pageScale: Float?): String {
+        return scaleAtlasPropertyLine(line, pageScale, REGION_BLOCK_SCALE_KEYS)
+    }
+
+    private fun scaleAtlasPropertyLine(
+        line: String,
+        pageScale: Float?,
+        allowedKeys: Set<String>
+    ): String {
+        val key = extractAtlasPropertyKey(line) ?: return line
+        if (!allowedKeys.contains(key)) return line
+        return scaleNumericTupleLine(line, pageScale)
+    }
+
     private fun scaleNumericTupleLine(line: String, pageScale: Float?): String {
         if (pageScale == null) {
             return line
@@ -226,6 +270,14 @@ internal object ModAtlasOfflineDownscalePatcher {
             .map { value -> value.trim().toIntOrNull() ?: return line }
         val scaledValues = tupleValues.map { value -> scaleAtlasInt(value, pageScale) }
         return prefix + scaledValues.joinToString(", ") + match.groupValues[3]
+    }
+
+    private fun extractAtlasPropertyKey(line: String): String? {
+        val colonIndex = line.indexOf(':')
+        if (colonIndex <= 0) {
+            return null
+        }
+        return line.substring(0, colonIndex).trim().lowercase(Locale.ROOT)
     }
 
     private fun findNextAtlasPageSpan(lines: List<String>, startIndex: Int): AtlasPageSpan? {
@@ -285,9 +337,10 @@ internal object ModAtlasOfflineDownscalePatcher {
 
     private fun createPageTransform(
         zipFile: ZipFile,
+        entriesByNormalizedName: Map<String, ZipEntry>,
         entryName: String
     ): PageTransform? {
-        val entry = findEntryExactIgnoreCase(zipFile, entryName) ?: return null
+        val entry = entriesByNormalizedName[normalizeZipEntryName(entryName)] ?: return null
         val imageBytes = JarFileIoUtils.readEntryBytes(zipFile, entry)
         val bounds = decodeBitmapBounds(imageBytes) ?: return null
         if (bounds.width <= MAX_OUTPUT_EDGE_PX && bounds.height <= MAX_OUTPUT_EDGE_PX) {
@@ -402,16 +455,29 @@ internal object ModAtlasOfflineDownscalePatcher {
         }
     }
 
-    private fun findEntryExactIgnoreCase(zipFile: ZipFile, entryName: String): ZipEntry? {
-        val target = entryName.replace('\\', '/').lowercase(Locale.ROOT)
+    private fun buildZipIndex(zipFile: ZipFile): ZipIndex {
+        val entriesByNormalizedName = LinkedHashMap<String, ZipEntry>()
+        val atlasEntries = ArrayList<ZipEntry>()
         val entries = zipFile.entries()
         while (entries.hasMoreElements()) {
             val entry = entries.nextElement()
-            if (entry.name.replace('\\', '/').lowercase(Locale.ROOT) == target) {
-                return entry
+            if (entry.isDirectory) {
+                continue
+            }
+            val normalizedName = normalizeZipEntryName(entry.name)
+            entriesByNormalizedName.putIfAbsent(normalizedName, entry)
+            if (normalizedName.endsWith(".atlas")) {
+                atlasEntries += entry
             }
         }
-        return null
+        return ZipIndex(
+            entriesByNormalizedName = entriesByNormalizedName,
+            atlasEntries = atlasEntries
+        )
+    }
+
+    private fun normalizeZipEntryName(entryName: String): String {
+        return entryName.replace('\\', '/').lowercase(Locale.ROOT)
     }
 
     @Throws(IOException::class)

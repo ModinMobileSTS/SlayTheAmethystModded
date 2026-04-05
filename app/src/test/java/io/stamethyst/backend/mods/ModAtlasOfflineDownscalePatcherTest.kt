@@ -1,6 +1,7 @@
 package io.stamethyst.backend.mods
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,6 +68,9 @@ class ModAtlasOfflineDownscalePatcherTest {
               xy: 864, 555
               size: 860, 551
               orig: 860, 551
+              offset: 0, 0
+              split: 100, 100, 120, 120
+              pad: 20, 20, 24, 24
 
             nyoxide_2.png
             size: 2048, 2048
@@ -78,6 +82,7 @@ class ModAtlasOfflineDownscalePatcherTest {
               xy: 2, 2
               size: 148, 142
               orig: 149, 144
+              offset: 1, 2
 
             nyoxide_3.png
             size: 1024, 2048
@@ -102,10 +107,49 @@ class ModAtlasOfflineDownscalePatcherTest {
         )
 
         assertTrue(rewritten.contains("nyoxide.png\nsize: 512, 512"))
-        assertTrue(rewritten.contains("back\n  rotate: false\n  xy: 216, 139\n  size: 215, 138\n  orig: 215, 138"))
+        assertTrue(
+            rewritten.contains(
+                "back\n  rotate: false\n  xy: 216, 139\n  size: 215, 138\n  orig: 860, 551\n  offset: 0, 0\n  split: 25, 25, 30, 30\n  pad: 5, 5, 6, 6"
+            )
+        )
         assertTrue(rewritten.contains("nyoxide_2.png\nsize: 512, 512"))
-        assertTrue(rewritten.contains("feetR\n  rotate: false\n  xy: 1, 1\n  size: 37, 36\n  orig: 37, 36"))
+        assertTrue(rewritten.contains("feetR\n  rotate: false\n  xy: 1, 1\n  size: 37, 36\n  orig: 149, 144\n  offset: 1, 2"))
         assertTrue(rewritten.contains("nyoxide_3.png\nsize: 512, 1024"))
-        assertTrue(rewritten.contains("head\n  rotate: false\n  xy: 350, 1\n  size: 75, 91\n  orig: 76, 92"))
+        assertTrue(rewritten.contains("head\n  rotate: false\n  xy: 350, 1\n  size: 75, 91\n  orig: 152, 184"))
+        assertFalse(rewritten.contains("orig: 215, 138"))
+        assertFalse(rewritten.contains("offset: 0, 1"))
+    }
+
+    @Test
+    fun isLikelySpineAtlas_requiresSiblingSkeletonData() {
+        val entryNames = listOf(
+            "downfall/menu.atlas",
+            "downfall/menu.png",
+            "duelist/nyoxide.atlas",
+            "duelist/nyoxide.json",
+            "duelist/nyoxide.png",
+            "worm/worm.atlas",
+            "worm/worm.skel",
+            "worm/worm.png"
+        )
+
+        assertFalse(
+            ModAtlasOfflineDownscalePatcher.isLikelySpineAtlas(
+                atlasEntryName = "downfall/menu.atlas",
+                entryNames = entryNames
+            )
+        )
+        assertTrue(
+            ModAtlasOfflineDownscalePatcher.isLikelySpineAtlas(
+                atlasEntryName = "duelist/nyoxide.atlas",
+                entryNames = entryNames
+            )
+        )
+        assertTrue(
+            ModAtlasOfflineDownscalePatcher.isLikelySpineAtlas(
+                atlasEntryName = "worm/worm.atlas",
+                entryNames = entryNames
+            )
+        )
     }
 }

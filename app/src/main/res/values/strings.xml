@@ -50,7 +50,7 @@
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
     <string name="compat_global_atlas_filter_compat_desc">Newly imported mods are patched offline during import: atlas filter lines containing mipmap are rewritten to Linear,Linear. Keeping this enabled gives higher compatibility; if disabled, new imports will not be patched. Example fix: black blocks on the Ring of Fate main menu.</string>
     <string name="compat_import_atlas_downscale_compat_title">Import-time atlas offline pre-downscale</string>
-    <string name="compat_import_atlas_downscale_compat_desc">When enabled, newly imported mods are preprocessed offline: atlas or Spine page images larger than 512px are resampled to 512x512 or smaller, and atlas coordinates are rewritten to match. This lowers runtime memory spikes and helps heavy animation mods stay stable, but affected assets can look noticeably softer. A dialog is shown when preprocessing happens. Default is ON.</string>
+    <string name="compat_import_atlas_downscale_compat_desc">When enabled, newly imported mods are preprocessed offline for likely Spine or skeletal-animation atlases: oversized page images are resampled to 512x512 or smaller, and only packed-page coordinates are rewritten to match. This lowers runtime memory spikes for heavy animation mods while avoiding many UI/background atlas regressions, but affected assets can still look softer. A dialog is shown when preprocessing happens. Default is ON.</string>
     <string name="compat_mod_manifest_root_compat_title">ModTheSpire manifest root compatibility patch</string>
     <string name="compat_mod_manifest_root_compat_desc">During mod import, jars are automatically patched when ModTheSpire.json is incorrectly packaged under an outer folder (for example, Fabricate/ModTheSpire.json): it is rewritten to the jar root. Keeping this enabled gives higher compatibility; if disabled, newly imported mods are not patched. A dialog is shown when auto-fix happens.</string>
     <string name="compat_frieren_mod_compat_title">FrierenMod startup compatibility patch</string>
@@ -370,7 +370,7 @@ Patch rule: rewrite filter lines containing mipmap to Linear,Linear.</string>
 </string>
     <string name="mod_import_atlas_downscale_message_item_detail">  Rewritten atlas files: %1$d, downscaled page images: %2$d</string>
     <string name="mod_import_atlas_downscale_message_rule">
-Patch rule: atlas page images larger than 512px are resampled to 512x512 or smaller, and atlas coordinates are rewritten to match.</string>
+Patch rule: likely Spine atlas page images larger than 512px are resampled to 512x512 or smaller, and only packed-page coordinates are rewritten to match.</string>
     <string name="mod_import_manifest_message_none">No ModTheSpire.json root-path issues were found in this import.</string>
     <string name="mod_import_manifest_message_intro">The following mods had ModTheSpire.json root paths auto-fixed during import:
 </string>
