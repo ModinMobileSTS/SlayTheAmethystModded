@@ -238,7 +238,11 @@ object FeedbackSubmissionService {
             append("- CPU：").append(environment.cpuModel).append('\n')
             append("- CPU 架构：").append(environment.cpuArch).append('\n')
             append("- 内存：").append(formatBytes(environment.availableMemoryBytes)).append(" 可用 / ").append(formatBytes(environment.totalMemoryBytes)).append(" 总量\n")
-            append("- ABI：").append(environment.supportedAbis.joinToString(", ").ifBlank { "unknown" }).append("\n\n")
+            append("- ABI：").append(environment.supportedAbis.joinToString(", ").ifBlank { "unknown" }).append('\n')
+            draft.submissionStatus?.let { status ->
+                append("- 状态：").append(status).append('\n')
+            }
+            append('\n')
             append("## 启用模组快照\n")
             if (enabledMods.isEmpty()) {
                 append("(当前没有启用模组)\n\n")
@@ -342,6 +346,9 @@ object FeedbackSubmissionService {
             put("cpuArch", environment.cpuArch)
             put("availableMemoryBytes", environment.availableMemoryBytes)
             put("totalMemoryBytes", environment.totalMemoryBytes)
+            draft.submissionStatus?.let { status ->
+                put("status", status)
+            }
         })
         root.put(
             "enabledMods",

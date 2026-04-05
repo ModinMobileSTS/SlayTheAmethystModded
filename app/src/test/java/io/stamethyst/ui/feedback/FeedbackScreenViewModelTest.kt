@@ -92,17 +92,20 @@ class FeedbackScreenViewModelTest {
 
     @Test
     fun uiStateAllSubmissionAcknowledgementsChecked_onlyTrueWhenAllChecked() {
-        val allAcknowledgements = FeedbackScreenViewModel.SubmissionAcknowledgement.entries.toSet()
+        val requiredAcknowledgements = FeedbackScreenViewModel.SubmissionAcknowledgement.entries
+            .filter { it.requiredForSubmission }
+            .toSet()
         val incompleteState = FeedbackScreenViewModel.UiState(
-            checkedSubmissionAcknowledgements = allAcknowledgements -
+            checkedSubmissionAcknowledgements = requiredAcknowledgements -
                 FeedbackScreenViewModel.SubmissionAcknowledgement.DEVELOPER_IS_NOT_CUSTOMER_SUPPORT
         )
         val completeState = incompleteState.copy(
-            checkedSubmissionAcknowledgements = allAcknowledgements
+            checkedSubmissionAcknowledgements = requiredAcknowledgements
         )
 
         assertFalse(incompleteState.allSubmissionAcknowledgementsChecked)
         assertTrue(completeState.allSubmissionAcknowledgementsChecked)
+        assertFalse(completeState.hasSubmissionInterceptionAcknowledgementChecked)
     }
 
     @Test
@@ -127,8 +130,28 @@ class FeedbackScreenViewModelTest {
             FeedbackScreenViewModel.SubmissionAcknowledgement.DEVELOPER_IS_NOT_CUSTOMER_SUPPORT,
             true
         )
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement
+                .DESCRIPTION_IS_CLEAR_TO_UNFAMILIAR_DEVELOPERS,
+            true
+        )
 
         assertTrue(viewModel.uiState.allSubmissionAcknowledgementsChecked)
+        assertFalse(viewModel.uiState.hasSubmissionInterceptionAcknowledgementChecked)
+    }
+
+    @Test
+    fun interceptionAcknowledgement_isTrackedWithoutBreakingRequiredChecks() {
+        val requiredAcknowledgements = FeedbackScreenViewModel.SubmissionAcknowledgement.entries
+            .filter { it.requiredForSubmission }
+            .toSet()
+        val uiState = FeedbackScreenViewModel.UiState(
+            checkedSubmissionAcknowledgements = requiredAcknowledgements +
+                FeedbackScreenViewModel.SubmissionAcknowledgement.SHOULD_NOT_CHECK_THIS_BOX
+        )
+
+        assertTrue(uiState.allSubmissionAcknowledgementsChecked)
+        assertTrue(uiState.hasSubmissionInterceptionAcknowledgementChecked)
     }
 
     @Test

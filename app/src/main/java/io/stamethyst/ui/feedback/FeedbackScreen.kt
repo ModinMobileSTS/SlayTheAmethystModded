@@ -40,6 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +67,9 @@ import io.stamethyst.ui.icon.ArrowBack
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
+
+private const val SUBMISSION_ATTENTION_WARNING_CLOSE_DELAY_SECONDS = 5
 
 private data class FeedbackCategoryOption(
     val category: FeedbackCategory,
@@ -125,6 +131,7 @@ fun LauncherFeedbackScreen(
         onAddScreenshots = formViewModel::onAddScreenshots,
         onRemoveScreenshot = formViewModel::onRemoveScreenshot,
         onSubmit = { formViewModel.onSubmit(activity) },
+        onDismissSubmissionAttentionWarning = formViewModel::onDismissSubmissionAttentionWarning,
         onDismissBriefFeedbackConfirmation = formViewModel::onDismissBriefFeedbackConfirmation,
         onSubmitDespiteBriefFeedback = { formViewModel.onSubmitDespiteBriefFeedback(activity) }
     )
@@ -217,6 +224,7 @@ private fun LauncherFeedbackScreenContent(
     onAddScreenshots: () -> Unit = {},
     onRemoveScreenshot: (String) -> Unit = {},
     onSubmit: () -> Unit = {},
+    onDismissSubmissionAttentionWarning: () -> Unit = {},
     onDismissBriefFeedbackConfirmation: () -> Unit = {},
     onSubmitDespiteBriefFeedback: () -> Unit = {}
 ) {
@@ -301,6 +309,42 @@ private fun LauncherFeedbackScreenContent(
                 }
             }
         }
+    }
+
+    if (formUiState.showSubmissionAttentionWarning) {
+        var remainingSeconds by remember { mutableIntStateOf(SUBMISSION_ATTENTION_WARNING_CLOSE_DELAY_SECONDS) }
+        LaunchedEffect(Unit) {
+            while (remainingSeconds > 0) {
+                delay(1_000L)
+                remainingSeconds--
+            }
+        }
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.feedback_submission_attention_warning_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.feedback_submission_attention_warning_message)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = onDismissSubmissionAttentionWarning,
+                    enabled = remainingSeconds == 0
+                ) {
+                    Text(
+                        if (remainingSeconds > 0) {
+                            stringResource(
+                                R.string.feedback_submission_attention_warning_close_countdown,
+                                remainingSeconds
+                            )
+                        } else {
+                            stringResource(R.string.common_action_close)
+                        }
+                    )
+                }
+            }
+        )
     }
 
     if (formUiState.showBriefFeedbackConfirmation) {

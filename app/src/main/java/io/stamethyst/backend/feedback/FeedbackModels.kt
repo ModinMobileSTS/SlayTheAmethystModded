@@ -40,7 +40,8 @@ data class FeedbackSubmissionDraft(
     val gameIssueType: GameIssueType?,
     val suspectedMods: List<FeedbackSelectedMod>,
     val suspectUnknown: Boolean,
-    val screenshots: List<FeedbackScreenshotAttachment>
+    val screenshots: List<FeedbackScreenshotAttachment>,
+    val submissionStatus: Int?
 )
 
 data class FeedbackUploadResult(

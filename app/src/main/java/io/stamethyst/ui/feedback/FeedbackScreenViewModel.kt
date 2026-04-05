@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 internal const val BRIEF_FEEDBACK_WARNING_THRESHOLD = 100
+internal const val FEEDBACK_SUBMISSION_WARNING_STATUS = 0
 
 internal fun calculateDetailedFeedbackLength(
     detail: String,
@@ -62,7 +63,9 @@ class FeedbackScreenViewModel : ViewModel() {
     }
 
     enum class SubmissionAcknowledgement(
-        @param:StringRes val titleResId: Int
+        @param:StringRes val titleResId: Int,
+        val requiredForSubmission: Boolean = true,
+        val interceptsSubmission: Boolean = false
     ) {
         UNCLEAR_DESCRIPTION_DELAYS_RESOLUTION(
             R.string.feedback_submission_acknowledgement_1
@@ -78,6 +81,11 @@ class FeedbackScreenViewModel : ViewModel() {
         ),
         DESCRIPTION_IS_CLEAR_TO_UNFAMILIAR_DEVELOPERS(
             R.string.feedback_submission_acknowledgement_5
+        ),
+        SHOULD_NOT_CHECK_THIS_BOX(
+            R.string.feedback_submission_acknowledgement_6,
+            requiredForSubmission = false,
+            interceptsSubmission = true
         )
     }
 
@@ -122,6 +130,8 @@ class FeedbackScreenViewModel : ViewModel() {
         val emailNotificationsEnabled: Boolean = true,
         val screenshots: List<ScreenshotItem> = emptyList(),
         val checkedSubmissionAcknowledgements: Set<SubmissionAcknowledgement> = emptySet(),
+        val submissionStatus: Int? = null,
+        val showSubmissionAttentionWarning: Boolean = false,
         val showBriefFeedbackConfirmation: Boolean = false
     ) {
         val detailedFeedbackLength: Int
@@ -131,7 +141,12 @@ class FeedbackScreenViewModel : ViewModel() {
             get() = detailedFeedbackLength <= BRIEF_FEEDBACK_WARNING_THRESHOLD
 
         val allSubmissionAcknowledgementsChecked: Boolean
-            get() = checkedSubmissionAcknowledgements.containsAll(SubmissionAcknowledgement.entries)
+            get() = checkedSubmissionAcknowledgements.containsAll(
+                SubmissionAcknowledgement.entries.filter { it.requiredForSubmission }
+            )
+
+        val hasSubmissionInterceptionAcknowledgementChecked: Boolean
+            get() = checkedSubmissionAcknowledgements.any { it.interceptsSubmission }
     }
 
     private data class ScreenshotAttachment(
@@ -187,6 +202,7 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(
             submissionStep = SubmissionStep.CATEGORY_SELECTION,
+            showSubmissionAttentionWarning = false,
             showBriefFeedbackConfirmation = false
         )
     }
@@ -210,6 +226,7 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(
             submissionStep = SubmissionStep.SUBMISSION_CONFIRMATION,
+            showSubmissionAttentionWarning = false,
             showBriefFeedbackConfirmation = false
         )
     }
@@ -220,6 +237,7 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(
             submissionStep = SubmissionStep.FORM,
+            showSubmissionAttentionWarning = false,
             showBriefFeedbackConfirmation = false
         )
     }
@@ -374,6 +392,13 @@ class FeedbackScreenViewModel : ViewModel() {
         uiState = uiState.copy(showBriefFeedbackConfirmation = false)
     }
 
+    fun onDismissSubmissionAttentionWarning() {
+        if (!uiState.showSubmissionAttentionWarning) {
+            return
+        }
+        uiState = uiState.copy(showSubmissionAttentionWarning = false)
+    }
+
     fun onSubmitDespiteBriefFeedback(host: Activity) {
         submitInternal(host, ignoreBriefFeedbackWarning = true)
     }
@@ -393,6 +418,14 @@ class FeedbackScreenViewModel : ViewModel() {
         val acknowledgementValidationError = validateSubmissionAcknowledgements(host)
         if (acknowledgementValidationError != null) {
             LauncherTransientNoticeBus.show(host, acknowledgementValidationError, Toast.LENGTH_LONG)
+            return
+        }
+        if (uiState.hasSubmissionInterceptionAcknowledgementChecked) {
+            uiState = uiState.copy(
+                submissionStatus = FEEDBACK_SUBMISSION_WARNING_STATUS,
+                showSubmissionAttentionWarning = true,
+                showBriefFeedbackConfirmation = false
+            )
             return
         }
         if (!uiState.endpointConfigured) {
@@ -617,7 +650,8 @@ class FeedbackScreenViewModel : ViewModel() {
                     file = attachment.file,
                     displayName = attachment.displayName
                 )
-            }
+            },
+            submissionStatus = uiState.submissionStatus
         )
     }
 

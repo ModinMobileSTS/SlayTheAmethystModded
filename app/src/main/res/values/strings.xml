@@ -791,6 +791,10 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_submission_acknowledgement_3">I confirm that before submitting this feedback, I already tried to fix the problem, but still could not solve it, or only partially located the cause.</string>
     <string name="feedback_submission_acknowledgement_4">I understand that the developer is not customer support and is not obligated to solve problems for me.</string>
     <string name="feedback_submission_acknowledgement_5">I understand that the developer has probably never played the mod that is failing, and my description is clear enough for someone unfamiliar with it to understand.</string>
+    <string name="feedback_submission_acknowledgement_6">I have carefully read all the instructions, and I should not check this checkbox.</string>
+    <string name="feedback_submission_attention_warning_title">Please read all notices carefully.</string>
+    <string name="feedback_submission_attention_warning_message">Every issue takes substantial effort to locate. Confirm the basic notices first so neither side wastes time.</string>
+    <string name="feedback_submission_attention_warning_close_countdown">Close (%1$ds)</string>
     <string name="feedback_submit">Submit feedback</string>
     <string name="feedback_busy_syncing_subscriptions">Syncing tracked issues...</string>
     <string name="feedback_subscriptions_intro">This page lists the issues you already follow. You can check progress, open the conversation, or unfollow them here.</string>
