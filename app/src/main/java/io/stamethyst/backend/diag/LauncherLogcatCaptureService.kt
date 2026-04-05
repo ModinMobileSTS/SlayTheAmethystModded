@@ -5,24 +5,13 @@ import android.content.Intent
 import android.os.IBinder
 import io.stamethyst.config.RuntimePaths
 
-class LogcatCaptureService : Service() {
+class LauncherLogcatCaptureService : Service() {
     companion object {
-        const val ACTION_START_CAPTURE = "io.stamethyst.action.START_LOGCAT_CAPTURE"
-        const val ACTION_STOP_CAPTURE = "io.stamethyst.action.STOP_LOGCAT_CAPTURE"
-        const val ACTION_STOP_AND_CLEAR_CAPTURE = "io.stamethyst.action.STOP_AND_CLEAR_LOGCAT_CAPTURE"
-        const val EXTRA_SESSION_STARTED_AT_MS = "io.stamethyst.extra.SESSION_STARTED_AT_MS"
-
-        internal fun buildSystemLogcatCommandForCapture(): List<String> {
-            return PackageLogcatCaptureWorker.buildSystemLogcatCommandForCapture()
-        }
-
-        internal fun buildPidLogcatCommandForCapture(pid: Int): List<String> {
-            return PackageLogcatCaptureWorker.buildPidLogcatCommandForCapture(pid)
-        }
-
-        internal fun isTrackedProcessName(processName: String, packageName: String): Boolean {
-            return PackageLogcatCaptureWorker.isTrackedPackageProcessName(processName, packageName)
-        }
+        const val ACTION_START_CAPTURE = "io.stamethyst.action.START_LAUNCHER_LOGCAT_CAPTURE"
+        const val ACTION_STOP_CAPTURE = "io.stamethyst.action.STOP_LAUNCHER_LOGCAT_CAPTURE"
+        const val ACTION_STOP_AND_CLEAR_CAPTURE =
+            "io.stamethyst.action.STOP_AND_CLEAR_LAUNCHER_LOGCAT_CAPTURE"
+        private const val STOP_AFTER_NO_TRACKED_PROCESSES_MS = 2_000L
     }
 
     private var captureWorker: PackageLogcatCaptureWorker? = null
@@ -32,8 +21,7 @@ class LogcatCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_CAPTURE -> {
-                val sessionStartedAtMs = intent.getLongExtra(EXTRA_SESSION_STARTED_AT_MS, 0L)
-                ensureCaptureWorker().start(sessionStartedAtMs = sessionStartedAtMs, restartIfRunning = true)
+                ensureCaptureWorker().start(restartIfRunning = false)
                 return START_STICKY
             }
 
@@ -66,14 +54,15 @@ class LogcatCaptureService : Service() {
         return PackageLogcatCaptureWorker(
             applicationContext = applicationContext,
             config = PackageLogcatCaptureConfig(
-                captureLabel = "game logcat capture",
-                appBaseFile = RuntimePaths.logcatAppCaptureLog(applicationContext),
-                systemBaseFile = RuntimePaths.logcatSystemCaptureLog(applicationContext),
-                listCaptureFiles = { RuntimePaths.listLogcatCaptureFiles(applicationContext) },
+                captureLabel = "launcher logcat capture",
+                appBaseFile = RuntimePaths.launcherLogcatAppCaptureLog(applicationContext),
+                systemBaseFile = RuntimePaths.launcherLogcatSystemCaptureLog(applicationContext),
+                listCaptureFiles = { RuntimePaths.listLauncherLogcatCaptureFiles(applicationContext) },
                 trackedProcessMatcher = { processName, packageName ->
-                    isTrackedProcessName(processName, packageName)
+                    processName == packageName
                 },
-                clearCaptureFilesOnStart = true
+                clearCaptureFilesOnStart = false,
+                stopWhenNoTrackedProcessesIdleMs = STOP_AFTER_NO_TRACKED_PROCESSES_MS
             ),
             onCaptureFinished = { stopSelf() }
         ).also { worker ->

@@ -74,6 +74,7 @@ internal object SettingsRepository {
         val lwjglDebugEnabled: Boolean,
         val preloadAllJreLibrariesEnabled: Boolean,
         val logcatCaptureEnabled: Boolean,
+        val launcherLogcatCaptureEnabled: Boolean,
         val jvmLogcatMirrorEnabled: Boolean,
         val gpuResourceDiagEnabled: Boolean,
         val gdxPadCursorDebugEnabled: Boolean,
@@ -161,6 +162,8 @@ internal object SettingsRepository {
                 preloadAllJreLibrariesEnabled =
                     LauncherPreferences.isPreloadAllJreLibrariesEnabled(context),
                 logcatCaptureEnabled = LauncherPreferences.isLogcatCaptureEnabled(context),
+                launcherLogcatCaptureEnabled =
+                    LauncherPreferences.isLauncherLogcatCaptureEnabled(context),
                 jvmLogcatMirrorEnabled = LauncherPreferences.isJvmLogcatMirrorEnabled(context),
                 gpuResourceDiagEnabled = LauncherPreferences.isGpuResourceDiagEnabled(context),
                 gdxPadCursorDebugEnabled = LauncherPreferences.isGdxPadCursorDebugEnabled(context),

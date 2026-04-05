@@ -87,6 +87,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES
     val DEFAULT_LOGCAT_CAPTURE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_LOGCAT_CAPTURE_ENABLED
+    val DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED
     val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED
     val DEFAULT_GPU_RESOURCE_DIAG_ENABLED: Boolean
@@ -307,6 +309,14 @@ object LauncherPreferences {
 
     fun setLogcatCaptureEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setLogcatCaptureEnabled(context, enabled)
+    }
+
+    fun isLauncherLogcatCaptureEnabled(context: Context): Boolean {
+        return LauncherConfig.isLauncherLogcatCaptureEnabled(context)
+    }
+
+    fun setLauncherLogcatCaptureEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setLauncherLogcatCaptureEnabled(context, enabled)
     }
 
     fun isJvmLogcatMirrorEnabled(context: Context): Boolean {

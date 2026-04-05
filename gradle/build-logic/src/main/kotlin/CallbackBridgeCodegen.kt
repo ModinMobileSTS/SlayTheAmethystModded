@@ -178,6 +178,12 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeRecoverAudioOutput",
+            returnType = "boolean",
+            parameters = emptyList(),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeEnableGamepadDirectInput",
             returnType = "boolean",
             parameters = emptyList(),

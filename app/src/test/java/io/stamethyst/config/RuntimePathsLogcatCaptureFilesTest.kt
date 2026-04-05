@@ -14,6 +14,8 @@ class RuntimePathsLogcatCaptureFilesTest {
         assertTrue(RuntimePaths.isLogcatCaptureFileName("logcat_system_capture.log.2"))
         assertTrue(RuntimePaths.isLogcatCaptureFileName("logcat_capture.log"))
         assertTrue(RuntimePaths.isLogcatCaptureFileName("logcat_capture.log.3"))
+        assertTrue(RuntimePaths.isLogcatCaptureFileName("launcher_logcat_app_capture.log"))
+        assertTrue(RuntimePaths.isLogcatCaptureFileName("launcher_logcat_system_capture.log.1"))
         assertFalse(RuntimePaths.isLogcatCaptureFileName("latest.log"))
     }
 
@@ -24,7 +26,10 @@ class RuntimePathsLogcatCaptureFilesTest {
             "logcat_capture.log",
             "logcat_app_capture.log.1",
             "logcat_system_capture.log",
-            "logcat_app_capture.log"
+            "logcat_app_capture.log",
+            "launcher_logcat_system_capture.log",
+            "launcher_logcat_app_capture.log.1",
+            "launcher_logcat_app_capture.log"
         ).sortedWith(RuntimePaths::compareLogcatCaptureFileNames)
 
         assertEquals(
@@ -33,7 +38,10 @@ class RuntimePathsLogcatCaptureFilesTest {
                 "logcat_app_capture.log.1",
                 "logcat_system_capture.log",
                 "logcat_system_capture.log.1",
-                "logcat_capture.log"
+                "logcat_capture.log",
+                "launcher_logcat_app_capture.log",
+                "launcher_logcat_app_capture.log.1",
+                "launcher_logcat_system_capture.log"
             ),
             sorted
         )

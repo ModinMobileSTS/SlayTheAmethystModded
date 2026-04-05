@@ -15,6 +15,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.config.LegacyStsStorageMigration
@@ -24,6 +25,7 @@ import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.main.MainScreenViewModel
+import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.InvalidModImportFailure
 import io.stamethyst.ui.settings.JarImportInspectionService
 import io.stamethyst.ui.settings.SettingsFileService
@@ -90,6 +92,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        syncLauncherLogcatCapture()
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
                 lightScrim = Color.TRANSPARENT,
@@ -150,6 +153,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        syncLauncherLogcatCapture()
         maybeScheduleGameReturnAnalysis()
     }
 
@@ -172,6 +176,14 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun handleIncomingLauncherIntent(incomingIntent: Intent?) {
         mainViewModel.handleIncomingIntent(this, incomingIntent)
+    }
+
+    private fun syncLauncherLogcatCapture() {
+        if (LauncherPreferences.isLauncherLogcatCaptureEnabled(this)) {
+            LauncherLogcatCaptureProcessClient.startCapture(this)
+        } else {
+            LauncherLogcatCaptureProcessClient.stopAndClearCapture(this)
+        }
     }
 
     private fun maybeScheduleGameReturnAnalysis() {

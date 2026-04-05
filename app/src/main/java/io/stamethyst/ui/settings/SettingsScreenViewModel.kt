@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
+import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.nativelib.NativeLibraryMarketAvailability
 import io.stamethyst.backend.nativelib.NativeLibraryMarketCatalogEntry
 import io.stamethyst.backend.nativelib.NativeLibraryMarketInstallProgress
@@ -186,6 +187,8 @@ class SettingsScreenViewModel : ViewModel() {
         val preloadAllJreLibrariesEnabled: Boolean =
             LauncherPreferences.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES,
         val logcatCaptureEnabled: Boolean = LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED,
+        val launcherLogcatCaptureEnabled: Boolean =
+            LauncherPreferences.DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
         val gpuResourceDiagEnabled: Boolean = LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
@@ -1273,6 +1276,20 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onLauncherLogcatCaptureChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(launcherLogcatCaptureEnabled = enabled)
+        saveLauncherLogcatCaptureSelection(host, enabled)
+        if (enabled) {
+            LauncherLogcatCaptureProcessClient.startCapture(host)
+        } else {
+            LauncherLogcatCaptureProcessClient.stopAndClearCapture(host)
+        }
+        refreshStatus(host)
+    }
+
     fun onJvmLogcatMirrorChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -1663,6 +1680,7 @@ class SettingsScreenViewModel : ViewModel() {
             lwjglDebugEnabled = diagnostics.lwjglDebugEnabled,
             preloadAllJreLibrariesEnabled = diagnostics.preloadAllJreLibrariesEnabled,
             logcatCaptureEnabled = diagnostics.logcatCaptureEnabled,
+            launcherLogcatCaptureEnabled = diagnostics.launcherLogcatCaptureEnabled,
             jvmLogcatMirrorEnabled = diagnostics.jvmLogcatMirrorEnabled,
             gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
             gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
@@ -2234,6 +2252,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, diagnostics.logcatCaptureEnabled)
         )
         lines += host.getString(
+            R.string.settings_status_launcher_logcat_capture,
+            toggleStateText(host, diagnostics.launcherLogcatCaptureEnabled)
+        )
+        lines += host.getString(
             R.string.settings_status_jvm_logcat_mirror,
             toggleStateText(host, diagnostics.jvmLogcatMirrorEnabled)
         )
@@ -2721,6 +2743,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveLogcatCaptureSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLogcatCaptureEnabled(host, enabled)
+    }
+
+    private fun saveLauncherLogcatCaptureSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setLauncherLogcatCaptureEnabled(host, enabled)
     }
 
     private fun saveJvmLogcatMirrorSelection(host: Activity, enabled: Boolean) {

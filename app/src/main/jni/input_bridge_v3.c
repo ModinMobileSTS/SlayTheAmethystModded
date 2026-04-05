@@ -54,40 +54,78 @@ static bool isValidScreenSize(int width, int height) {
 }
 
 typedef void* (*POJAV_alcGetCurrentContext_fn)(void);
+typedef void* (*POJAV_alcGetContextsDevice_fn)(void* context);
+typedef char (*POJAV_alcResetDeviceSOFT_fn)(void* device, const int* attrlist);
+typedef void (*POJAV_alcDevicePauseSOFT_fn)(void* device);
+typedef void (*POJAV_alcDeviceResumeSOFT_fn)(void* device);
+typedef void (*POJAV_alcProcessContext_fn)(void* context);
 typedef void (*POJAV_alListenerf_fn)(int param, float value);
 typedef void (*POJAV_alGetListenerf_fn)(int param, float* value);
 
 static POJAV_alcGetCurrentContext_fn pojav_alcGetCurrentContext = NULL;
+static POJAV_alcGetContextsDevice_fn pojav_alcGetContextsDevice = NULL;
+static POJAV_alcResetDeviceSOFT_fn pojav_alcResetDeviceSOFT = NULL;
+static POJAV_alcDevicePauseSOFT_fn pojav_alcDevicePauseSOFT = NULL;
+static POJAV_alcDeviceResumeSOFT_fn pojav_alcDeviceResumeSOFT = NULL;
+static POJAV_alcProcessContext_fn pojav_alcProcessContext = NULL;
 static POJAV_alListenerf_fn pojav_alListenerf = NULL;
 static POJAV_alGetListenerf_fn pojav_alGetListenerf = NULL;
+static void* pojav_openal_handle = NULL;
 static bool pojav_openal_resolved = false;
 static bool pojav_openal_no_context_logged = false;
 static bool pojav_audio_force_muted = false;
 static float pojav_saved_listener_gain = 1.0f;
 static bool pojav_saved_listener_gain_valid = false;
 
+static void resolveOpenalSymbolsFromHandle(void* handle) {
+    if (handle == NULL) {
+        return;
+    }
+    if (pojav_alcGetCurrentContext == NULL) {
+        pojav_alcGetCurrentContext = (POJAV_alcGetCurrentContext_fn) dlsym(handle, "alcGetCurrentContext");
+    }
+    if (pojav_alcGetContextsDevice == NULL) {
+        pojav_alcGetContextsDevice = (POJAV_alcGetContextsDevice_fn) dlsym(handle, "alcGetContextsDevice");
+    }
+    if (pojav_alcResetDeviceSOFT == NULL) {
+        pojav_alcResetDeviceSOFT = (POJAV_alcResetDeviceSOFT_fn) dlsym(handle, "alcResetDeviceSOFT");
+    }
+    if (pojav_alcDevicePauseSOFT == NULL) {
+        pojav_alcDevicePauseSOFT = (POJAV_alcDevicePauseSOFT_fn) dlsym(handle, "alcDevicePauseSOFT");
+    }
+    if (pojav_alcDeviceResumeSOFT == NULL) {
+        pojav_alcDeviceResumeSOFT = (POJAV_alcDeviceResumeSOFT_fn) dlsym(handle, "alcDeviceResumeSOFT");
+    }
+    if (pojav_alcProcessContext == NULL) {
+        pojav_alcProcessContext = (POJAV_alcProcessContext_fn) dlsym(handle, "alcProcessContext");
+    }
+    if (pojav_alListenerf == NULL) {
+        pojav_alListenerf = (POJAV_alListenerf_fn) dlsym(handle, "alListenerf");
+    }
+    if (pojav_alGetListenerf == NULL) {
+        pojav_alGetListenerf = (POJAV_alGetListenerf_fn) dlsym(handle, "alGetListenerf");
+    }
+}
+
 static bool resolveOpenalSymbols(void) {
     if (pojav_openal_resolved) {
         return true;
     }
 
-    pojav_alcGetCurrentContext = (POJAV_alcGetCurrentContext_fn) dlsym(RTLD_DEFAULT, "alcGetCurrentContext");
-    pojav_alListenerf = (POJAV_alListenerf_fn) dlsym(RTLD_DEFAULT, "alListenerf");
-    pojav_alGetListenerf = (POJAV_alGetListenerf_fn) dlsym(RTLD_DEFAULT, "alGetListenerf");
+    resolveOpenalSymbolsFromHandle(RTLD_DEFAULT);
 
-    if (pojav_alcGetCurrentContext == NULL || pojav_alListenerf == NULL) {
-        void* handle = dlopen("libopenal.so", RTLD_NOW | RTLD_GLOBAL);
-        if (handle != NULL) {
-            if (pojav_alcGetCurrentContext == NULL) {
-                pojav_alcGetCurrentContext = (POJAV_alcGetCurrentContext_fn) dlsym(handle, "alcGetCurrentContext");
-            }
-            if (pojav_alListenerf == NULL) {
-                pojav_alListenerf = (POJAV_alListenerf_fn) dlsym(handle, "alListenerf");
-            }
-            if (pojav_alGetListenerf == NULL) {
-                pojav_alGetListenerf = (POJAV_alGetListenerf_fn) dlsym(handle, "alGetListenerf");
-            }
+    if (pojav_alcGetCurrentContext == NULL ||
+        pojav_alcGetContextsDevice == NULL ||
+        pojav_alcResetDeviceSOFT == NULL ||
+        pojav_alcDevicePauseSOFT == NULL ||
+        pojav_alcDeviceResumeSOFT == NULL ||
+        pojav_alcProcessContext == NULL ||
+        pojav_alListenerf == NULL ||
+        pojav_alGetListenerf == NULL) {
+        if (pojav_openal_handle == NULL) {
+            pojav_openal_handle = dlopen("libopenal.so", RTLD_NOW | RTLD_GLOBAL);
         }
+        resolveOpenalSymbolsFromHandle(pojav_openal_handle);
     }
 
     if (pojav_alcGetCurrentContext == NULL || pojav_alListenerf == NULL) {
@@ -697,6 +735,53 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
     pojav_alListenerf(AL_GAIN, pojav_saved_listener_gain_valid ? pojav_saved_listener_gain : 1.0f);
     pojav_audio_force_muted = false;
     ;
+}
+
+JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudioOutput(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    if (!resolveOpenalSymbols()) {
+        return JNI_FALSE;
+    }
+
+    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetContextsDevice == NULL) {
+        return JNI_FALSE;
+    }
+
+    void* currentContext = pojav_alcGetCurrentContext();
+    if (currentContext == NULL) {
+        return JNI_FALSE;
+    }
+
+    void* device = pojav_alcGetContextsDevice(currentContext);
+    if (device == NULL) {
+        return JNI_FALSE;
+    }
+
+    if (pojav_alcDevicePauseSOFT != NULL) {
+        pojav_alcDevicePauseSOFT(device);
+    }
+
+    bool hadResetFunction = false;
+    bool resetSucceeded = false;
+    if (pojav_alcResetDeviceSOFT != NULL) {
+        hadResetFunction = true;
+        resetSucceeded = pojav_alcResetDeviceSOFT(device, NULL) != 0;
+    }
+
+    if (pojav_alcDeviceResumeSOFT != NULL) {
+        pojav_alcDeviceResumeSOFT(device);
+    }
+    if (pojav_alcProcessContext != NULL) {
+        pojav_alcProcessContext(currentContext);
+    }
+
+    if (resetSucceeded) {
+        pojav_openal_no_context_logged = false;
+        return JNI_TRUE;
+    }
+    return hadResetFunction ? JNI_FALSE : JNI_TRUE;
 }
 
 const static JNINativeMethod critical_fcns[] = {

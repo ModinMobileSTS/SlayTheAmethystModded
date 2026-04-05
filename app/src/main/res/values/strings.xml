@@ -494,9 +494,12 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_unplayable_mods_dialog_message">This sheet tracks mods that are currently unplayable and their fix status. You can directly edit the sheet to add unplayable mod details and help us finish compatibility fixes faster.</string>
     <string name="settings_unplayable_mods_dialog_open">Go to sheet</string>
     <string name="settings_unplayable_mods_sheet_url">https://docs.qq.com/sheet/DS0xtV2FsVUVUSXhr?u=3f6b432cd4f7498b8388829a3a5e1555</string>
-    <string name="settings_logcat_capture_enabled">Logcat diagnostics capture: Enabled</string>
-    <string name="settings_logcat_capture_disabled">Logcat diagnostics capture: Disabled</string>
-    <string name="settings_logcat_capture_desc">Capture system logcat during game sessions and include it in exported diagnostics archives. Disabled by default.</string>
+    <string name="settings_logcat_capture_enabled">Game logcat diagnostics capture: Enabled</string>
+    <string name="settings_logcat_capture_disabled">Game logcat diagnostics capture: Disabled</string>
+    <string name="settings_logcat_capture_desc">Capture system logcat during game sessions after launch and include it in exported diagnostics archives. Enabled by default.</string>
+    <string name="settings_launcher_logcat_capture_enabled">Launcher logcat diagnostics capture: Enabled</string>
+    <string name="settings_launcher_logcat_capture_disabled">Launcher logcat diagnostics capture: Disabled</string>
+    <string name="settings_launcher_logcat_capture_desc">Capture launcher-related logcat while the launcher process is alive and include it in exported diagnostics archives. Enabled by default.</string>
     <string name="common_action_confirm">OK</string>
     <string name="common_action_close">Close</string>
     <string name="common_action_acknowledge">Got it</string>
@@ -985,7 +988,8 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_status_mod_name_from_file">Mod card name from file: %1$s</string>
     <string name="settings_status_lwjgl_debug">LWJGL Debug: %1$s</string>
     <string name="settings_status_preload_all_jre">Preload all JRE libraries: %1$s</string>
-    <string name="settings_status_logcat_capture">Logcat diagnostics capture: %1$s</string>
+    <string name="settings_status_logcat_capture">Game logcat diagnostics capture: %1$s</string>
+    <string name="settings_status_launcher_logcat_capture">Launcher logcat diagnostics capture: %1$s</string>
     <string name="settings_status_jvm_logcat_mirror">JVM logcat mirror: %1$s</string>
     <string name="settings_status_gpu_resource_diag">GPU resource diagnostics: %1$s</string>
     <string name="settings_status_gdx_pad_cursor_debug">GDX pad cursor debug log: %1$s</string>

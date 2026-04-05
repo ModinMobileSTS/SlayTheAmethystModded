@@ -14,6 +14,7 @@ import android.window.OnBackInvokedDispatcher
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.backend.audio.GameAudioController
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -55,6 +56,7 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var renderSurfaceManager: RenderSurfaceManager
     private lateinit var inputHandler: GameInputHandler
     private lateinit var sessionCoordinator: GameSessionCoordinator
+    private lateinit var gameAudioController: GameAudioController
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
     private var bootOverlayKeepScreenOn = false
     private val launchGuardToken: String = UUID.randomUUID().toString()
@@ -86,6 +88,9 @@ class StsGameActivity : AppCompatActivity() {
     override fun onDestroy() {
         unregisterSystemBackInvokedCallback()
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
+        if (::gameAudioController.isInitialized) {
+            gameAudioController.onDestroy()
+        }
         if (::inputHandler.isInitialized) {
             inputHandler.onDestroy()
         }
@@ -110,6 +115,7 @@ class StsGameActivity : AppCompatActivity() {
         )
         renderSurfaceManager.applyImmersiveMode()
         inputHandler.resetGamepadState()
+        gameAudioController.onResume()
         renderSurfaceManager.onForegroundChanged(true)
         sessionCoordinator.onResume()
     }
@@ -117,6 +123,7 @@ class StsGameActivity : AppCompatActivity() {
     override fun onPause() {
         inputHandler.resetGamepadState()
         inputHandler.hideSoftKeyboard()
+        gameAudioController.onPause()
         sessionCoordinator.onPause()
         renderSurfaceManager.onForegroundChanged(false)
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
@@ -191,6 +198,15 @@ class StsGameActivity : AppCompatActivity() {
             config = sessionConfig,
             renderSurfaceManager = renderSurfaceManager,
             inputHandler = inputHandler
+        )
+        gameAudioController = GameAudioController(
+            activity = this,
+            onAudioFocusGrantedChanged = { granted ->
+                sessionCoordinator.onPlatformAudioFocusChanged(granted)
+            },
+            onAudioOutputRouteChanged = {
+                sessionCoordinator.onAudioOutputRouteChanged()
+            }
         )
     }
 

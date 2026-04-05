@@ -162,6 +162,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "diag.logcatCaptureEnabled" to formatBoolean(
                             LauncherConfig.isLogcatCaptureEnabled(context)
                         ),
+                        "diag.launcherLogcatCaptureEnabled" to formatBoolean(
+                            LauncherConfig.isLauncherLogcatCaptureEnabled(context)
+                        ),
                         "diag.jvmLogcatMirrorEnabled" to formatBoolean(
                             LauncherConfig.isJvmLogcatMirrorEnabled(context)
                         ),

@@ -163,6 +163,13 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/logcat/${logcatFile.name}"
                 )
             }
+            RuntimePaths.listLauncherLogcatCaptureFiles(context).forEach { logcatFile ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    logcatFile,
+                    "sts/logcat/${logcatFile.name}"
+                )
+            }
 
             val histogramFiles = collectHistogramFiles(context)
             writeTextEntry(

@@ -104,6 +104,7 @@ object LauncherConfig {
     private const val PREF_KEY_LWJGL_DEBUG = "lwjgl_debug"
     private const val PREF_KEY_PRELOAD_ALL_JRE_LIBRARIES = "preload_all_jre_libraries"
     private const val PREF_KEY_LOGCAT_CAPTURE_ENABLED = "logcat_capture_enabled"
+    private const val PREF_KEY_LAUNCHER_LOGCAT_CAPTURE_ENABLED = "launcher_logcat_capture_enabled"
     private const val PREF_KEY_JVM_LOGCAT_MIRROR_ENABLED = "jvm_logcat_mirror_enabled"
     private const val PREF_KEY_GPU_RESOURCE_DIAG_ENABLED = "gpu_resource_diag_enabled"
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
@@ -161,7 +162,8 @@ object LauncherConfig {
     const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
     const val DEFAULT_PRELOAD_ALL_JRE_LIBRARIES = false
-    const val DEFAULT_LOGCAT_CAPTURE_ENABLED = false
+    const val DEFAULT_LOGCAT_CAPTURE_ENABLED = true
+    const val DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED = true
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
     const val DEFAULT_GPU_RESOURCE_DIAG_ENABLED = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
@@ -881,6 +883,19 @@ object LauncherConfig {
     fun setLogcatCaptureEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_LOGCAT_CAPTURE_ENABLED, enabled)
+        }
+    }
+
+    fun isLauncherLogcatCaptureEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_LAUNCHER_LOGCAT_CAPTURE_ENABLED,
+            DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED
+        )
+    }
+
+    fun setLauncherLogcatCaptureEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LAUNCHER_LOGCAT_CAPTURE_ENABLED, enabled)
         }
     }
 

@@ -172,6 +172,9 @@ fun LauncherSettingsScreen(
             enabled -> viewModel.onPreloadAllJreLibrariesChanged(activity, enabled)
         },
         onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
+        onLauncherLogcatCaptureChanged = { enabled ->
+            viewModel.onLauncherLogcatCaptureChanged(activity, enabled)
+        },
         onJvmLogcatMirrorChanged = { enabled -> viewModel.onJvmLogcatMirrorChanged(activity, enabled) },
         onGpuResourceDiagChanged = { enabled -> viewModel.onGpuResourceDiagChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
@@ -243,6 +246,9 @@ fun LauncherDeveloperSettingsScreen(
             viewModel.onPreloadAllJreLibrariesChanged(activity, enabled)
         },
         onLogcatCaptureChanged = { enabled -> viewModel.onLogcatCaptureChanged(activity, enabled) },
+        onLauncherLogcatCaptureChanged = { enabled ->
+            viewModel.onLauncherLogcatCaptureChanged(activity, enabled)
+        },
         onJvmLogcatMirrorChanged = { enabled ->
             viewModel.onJvmLogcatMirrorChanged(activity, enabled)
         },
@@ -291,7 +297,8 @@ private fun LauncherSettingsScreenPreview() {
             sustainedPerformanceModeEnabled = true,
             lwjglDebugEnabled = false,
             preloadAllJreLibrariesEnabled = false,
-            logcatCaptureEnabled = false,
+            logcatCaptureEnabled = true,
+            launcherLogcatCaptureEnabled = true,
             jvmLogcatMirrorEnabled = false,
             gpuResourceDiagEnabled = false,
             gdxPadCursorDebugEnabled = false,
@@ -349,6 +356,7 @@ private fun LauncherSettingsScreenContent(
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onPreloadAllJreLibrariesChanged: (Boolean) -> Unit = {},
     onLogcatCaptureChanged: (Boolean) -> Unit = {},
+    onLauncherLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
@@ -1057,6 +1065,7 @@ private fun LauncherDeveloperSettingsScreenContent(
     onLwjglDebugChanged: (Boolean) -> Unit = {},
     onPreloadAllJreLibrariesChanged: (Boolean) -> Unit = {},
     onLogcatCaptureChanged: (Boolean) -> Unit = {},
+    onLauncherLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
@@ -1133,6 +1142,7 @@ private fun LauncherDeveloperSettingsScreenContent(
                         onLwjglDebugChanged = onLwjglDebugChanged,
                         onPreloadAllJreLibrariesChanged = onPreloadAllJreLibrariesChanged,
                         onLogcatCaptureChanged = onLogcatCaptureChanged,
+                        onLauncherLogcatCaptureChanged = onLauncherLogcatCaptureChanged,
                         onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
                         onGpuResourceDiagChanged = onGpuResourceDiagChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
@@ -1834,6 +1844,7 @@ private fun SettingsStatusSection(
     onLwjglDebugChanged: (Boolean) -> Unit,
     onPreloadAllJreLibrariesChanged: (Boolean) -> Unit,
     onLogcatCaptureChanged: (Boolean) -> Unit,
+    onLauncherLogcatCaptureChanged: (Boolean) -> Unit,
     onJvmLogcatMirrorChanged: (Boolean) -> Unit,
     onGpuResourceDiagChanged: (Boolean) -> Unit,
     onGdxPadCursorDebugChanged: (Boolean) -> Unit,
@@ -1881,6 +1892,14 @@ private fun SettingsStatusSection(
         disabledText = stringResource(R.string.settings_logcat_capture_disabled),
         description = stringResource(R.string.settings_logcat_capture_desc),
         onCheckedChange = onLogcatCaptureChanged
+    )
+    SwitchSettingRow(
+        checked = uiState.launcherLogcatCaptureEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_launcher_logcat_capture_enabled),
+        disabledText = stringResource(R.string.settings_launcher_logcat_capture_disabled),
+        description = stringResource(R.string.settings_launcher_logcat_capture_desc),
+        onCheckedChange = onLauncherLogcatCaptureChanged
     )
     SwitchSettingRow(
         checked = uiState.jvmLogcatMirrorEnabled,

@@ -3,6 +3,7 @@ package io.stamethyst
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.TextView
+import io.stamethyst.backend.audio.ForegroundAudioPolicy
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
@@ -30,7 +31,7 @@ internal class GameSessionCoordinator(
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
         private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
         private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
-        private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L)
+        private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
     }
 
     @Volatile
@@ -50,7 +51,9 @@ internal class GameSessionCoordinator(
 
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
+    private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
+    private val foregroundAudioPolicy = ForegroundAudioPolicy()
     private val backExitForceRestartRunnable = Runnable {
         if (backExitRequested) {
             forceRestartLauncherAndTerminateProcess()
@@ -134,6 +137,9 @@ internal class GameSessionCoordinator(
         cancelBackExitForceRestart()
         cancelForegroundAudioRestoreRetries()
         activityResumed = false
+        pendingAudioDeviceRecovery = false
+        foregroundAudioPolicy.markActivityResumed(false)
+        foregroundAudioPolicy.markAudioFocusGranted(false)
         updateSystemGameState()
         syncRuntimeForegroundState(false)
         bootOverlayController.onDestroy()
@@ -144,6 +150,7 @@ internal class GameSessionCoordinator(
 
     fun onResume() {
         activityResumed = true
+        foregroundAudioPolicy.markActivityResumed(true)
         performanceOverlayController?.onResume()
         syncRuntimeForegroundState(true)
         applyForegroundWindowState()
@@ -155,11 +162,28 @@ internal class GameSessionCoordinator(
 
     fun onPause() {
         activityResumed = false
+        foregroundAudioPolicy.markActivityResumed(false)
         performanceOverlayController?.onPause()
         cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
         updateSystemGameState()
+    }
+
+    fun onPlatformAudioFocusChanged(granted: Boolean) {
+        foregroundAudioPolicy.markAudioFocusGranted(granted)
+        if (!granted) {
+            cancelForegroundAudioRestoreRetries()
+            setRuntimeAudioMuted(true)
+            return
+        }
+        pendingAudioDeviceRecovery = true
+        requestForegroundAudioRecovery(forceMuteFirst = true)
+    }
+
+    fun onAudioOutputRouteChanged() {
+        pendingAudioDeviceRecovery = true
+        requestForegroundAudioRecovery(forceMuteFirst = true)
     }
 
     fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -564,14 +588,18 @@ internal class GameSessionCoordinator(
         }
         try {
             CallbackBridge.nativeSetInputReady(true)
-            CallbackBridge.nativeSetAudioMuted(false)
+            CallbackBridge.nativeSetAudioMuted(!shouldAllowForegroundAudio() || pendingAudioDeviceRecovery)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 1)
         } catch (_: Throwable) {
         }
-        scheduleForegroundAudioRestoreRetries()
+        if (shouldAllowForegroundAudio()) {
+            scheduleForegroundAudioRestoreRetries()
+        } else {
+            cancelForegroundAudioRestoreRetries()
+        }
     }
 
     private fun applyBackgroundWindowState() {
@@ -581,7 +609,7 @@ internal class GameSessionCoordinator(
         }
         try {
             CallbackBridge.nativeSetInputReady(false)
-            CallbackBridge.nativeSetAudioMuted(true)
+            setRuntimeAudioMuted(true)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0)
@@ -592,7 +620,7 @@ internal class GameSessionCoordinator(
 
     private fun scheduleForegroundAudioRestoreRetries() {
         cancelForegroundAudioRestoreRetries()
-        if (!activityResumed || backExitRequested || !jvmLaunchController.runtimeLifecycleReady) {
+        if (!shouldAllowForegroundAudio()) {
             return
         }
         for (delayMs in FOREGROUND_AUDIO_RESTORE_DELAYS_MS) {
@@ -615,13 +643,13 @@ internal class GameSessionCoordinator(
     }
 
     private fun restoreForegroundAudioIfNeeded() {
-        if (!activityResumed || backExitRequested || !jvmLaunchController.runtimeLifecycleReady) {
+        if (!shouldAllowForegroundAudio()) {
             return
         }
-        try {
-            CallbackBridge.nativeSetAudioMuted(false)
-        } catch (_: Throwable) {
+        if (pendingAudioDeviceRecovery && recoverRuntimeAudioOutput()) {
+            pendingAudioDeviceRecovery = false
         }
+        setRuntimeAudioMuted(false)
     }
 
     private fun syncRuntimeForegroundState(foreground: Boolean) {
@@ -695,6 +723,46 @@ internal class GameSessionCoordinator(
         try {
             DisplayConfigSync.saveTargetFpsLimit(activity, config.requestedTargetFps)
         } catch (_: Throwable) {
+        }
+    }
+
+    private fun shouldAllowForegroundAudio(): Boolean {
+        return foregroundAudioPolicy.shouldRestoreForegroundAudio(
+            runtimeLifecycleReady = jvmLaunchController.runtimeLifecycleReady,
+            backExitRequested = backExitRequested
+        )
+    }
+
+    private fun requestForegroundAudioRecovery(forceMuteFirst: Boolean) {
+        if (!shouldAllowForegroundAudio()) {
+            return
+        }
+        cancelForegroundAudioRestoreRetries()
+        if (forceMuteFirst) {
+            setRuntimeAudioMuted(true)
+        }
+        restoreForegroundAudioIfNeeded()
+        scheduleForegroundAudioRestoreRetries()
+    }
+
+    private fun setRuntimeAudioMuted(muted: Boolean) {
+        if (!jvmLaunchController.runtimeLifecycleReady) {
+            return
+        }
+        try {
+            CallbackBridge.nativeSetAudioMuted(muted)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun recoverRuntimeAudioOutput(): Boolean {
+        if (!jvmLaunchController.runtimeLifecycleReady) {
+            return false
+        }
+        return try {
+            CallbackBridge.nativeRecoverAudioOutput()
+        } catch (_: Throwable) {
+            false
         }
     }
 }

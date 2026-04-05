@@ -65,6 +65,11 @@
             android:exported="false"
             android:process=":logcat" />
 
+        <service
+            android:name="io.stamethyst.backend.diag.LauncherLogcatCaptureService"
+            android:exported="false"
+            android:process=":logcat" />
+
         <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"
             android:exported="false"
