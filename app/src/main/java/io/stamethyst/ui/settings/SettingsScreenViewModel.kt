@@ -37,6 +37,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
+import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.update.LauncherUpdateService
@@ -1482,7 +1483,9 @@ class SettingsScreenViewModel : ViewModel() {
         uris: List<Uri>,
         onCompleted: (() -> Unit)? = null,
         replaceExistingDuplicates: Boolean = false,
-        skipDuplicateCheck: Boolean = false
+        skipDuplicateCheck: Boolean = false,
+        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null,
+        skipAtlasDownscalePrompt: Boolean = false
     ) {
         setBusy(
             busy = true,
@@ -1501,10 +1504,30 @@ class SettingsScreenViewModel : ViewModel() {
                         return@execute
                     }
                 }
+                if (!skipAtlasDownscalePrompt) {
+                    val downscaleCandidates = SettingsFileService.findImportAtlasDownscaleCandidates(
+                        host,
+                        uris
+                    )
+                    if (downscaleCandidates.isNotEmpty()) {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            showAtlasDownscaleConfirmDialog(
+                                host = host,
+                                uris = uris,
+                                candidates = downscaleCandidates,
+                                replaceExistingDuplicates = replaceExistingDuplicates,
+                                onCompleted = onCompleted
+                            )
+                        }
+                        return@execute
+                    }
+                }
                 val batchResult = SettingsFileService.importModJars(
                     host = host,
                     uris = uris,
-                    replaceExistingDuplicates = replaceExistingDuplicates
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
                 )
                 val importedCount = batchResult.importedCount
                 val failedCount = batchResult.failedCount
@@ -1756,6 +1779,45 @@ class SettingsScreenViewModel : ViewModel() {
             )
             .setPositiveButton(android.R.string.ok, null)
             .show()
+    }
+
+    private fun showAtlasDownscaleConfirmDialog(
+        host: Activity,
+        uris: List<Uri>,
+        candidates: List<ModImportAtlasDownscalePreview>,
+        replaceExistingDuplicates: Boolean,
+        onCompleted: (() -> Unit)? = null
+    ) {
+        AtlasDownscaleImportDialog.show(
+            host = host,
+            previews = candidates,
+            onApply = { strategy ->
+                startModJarImport(
+                    host = host,
+                    uris = uris,
+                    onCompleted = onCompleted,
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    skipDuplicateCheck = true,
+                    importAtlasDownscaleStrategy = strategy,
+                    skipAtlasDownscalePrompt = true
+                )
+            },
+            onSkip = {
+                startModJarImport(
+                    host = host,
+                    uris = uris,
+                    onCompleted = onCompleted,
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    skipDuplicateCheck = true,
+                    importAtlasDownscaleStrategy = null,
+                    skipAtlasDownscalePrompt = true
+                )
+            },
+            onCancel = {
+                showToast(host, UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
+                onCompleted?.invoke()
+            }
+        )
     }
 
     private fun showAtlasDownscaleSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
@@ -2278,10 +2340,6 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_global_atlas_filter_compat,
             toggleStateText(host, compatibility.globalAtlasFilterCompatEnabled)
-        )
-        lines += host.getString(
-            R.string.settings_status_import_atlas_downscale_compat,
-            toggleStateText(host, compatibility.importAtlasDownscaleCompatEnabled)
         )
         lines += host.getString(
             R.string.settings_status_mod_manifest_root_compat,

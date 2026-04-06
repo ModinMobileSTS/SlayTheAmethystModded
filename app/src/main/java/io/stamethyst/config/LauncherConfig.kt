@@ -82,8 +82,6 @@ object LauncherConfig {
         "jvm_string_deduplication_enabled"
     private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
-    private const val PREF_KEY_IMPORT_ATLAS_DOWNSCALE_COMPAT =
-        "compat_import_atlas_downscale_compat"
     private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
     private const val PREF_KEY_FRIEREN_MOD_COMPAT = "compat_frieren_mod_compat"
     private const val PREF_KEY_DOWNFALL_IMPORT_COMPAT = "compat_downfall_import_compat"
@@ -182,7 +180,6 @@ object LauncherConfig {
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
-    const val DEFAULT_IMPORT_ATLAS_DOWNSCALE_COMPAT_ENABLED = true
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = true
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = true
 
@@ -690,19 +687,6 @@ object LauncherConfig {
     fun setGlobalAtlasFilterCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT, enabled)
-        }
-    }
-
-    fun isImportAtlasDownscaleCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_IMPORT_ATLAS_DOWNSCALE_COMPAT,
-            DEFAULT_IMPORT_ATLAS_DOWNSCALE_COMPAT_ENABLED
-        )
-    }
-
-    fun setImportAtlasDownscaleCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_IMPORT_ATLAS_DOWNSCALE_COMPAT, enabled)
         }
     }
 

@@ -25,13 +25,68 @@ internal data class AtlasOfflineDownscaleResult(
         get() = downscaledPageEntries > 0
 }
 
+internal enum class AtlasOfflineDownscaleMode {
+    PERCENTAGE,
+    MAX_EDGE
+}
+
+internal data class AtlasOfflineDownscaleStrategy(
+    val mode: AtlasOfflineDownscaleMode,
+    val value: Int
+) {
+    companion object {
+        private val PERCENTAGE_OPTIONS = intArrayOf(25, 50, 75)
+        private val MAX_EDGE_OPTIONS = intArrayOf(512, 1024, 2048)
+        const val CANDIDATE_PREVIEW_MAX_EDGE_PX = 512
+        const val DEFAULT_PERCENTAGE = 75
+        const val DEFAULT_MAX_EDGE_PX = 1024
+
+        fun percentage(percent: Int): AtlasOfflineDownscaleStrategy {
+            return AtlasOfflineDownscaleStrategy(
+                mode = AtlasOfflineDownscaleMode.PERCENTAGE,
+                value = normalizeValue(AtlasOfflineDownscaleMode.PERCENTAGE, percent)
+            )
+        }
+
+        fun maxEdge(maxEdgePx: Int): AtlasOfflineDownscaleStrategy {
+            return AtlasOfflineDownscaleStrategy(
+                mode = AtlasOfflineDownscaleMode.MAX_EDGE,
+                value = normalizeValue(AtlasOfflineDownscaleMode.MAX_EDGE, maxEdgePx)
+            )
+        }
+
+        fun previewCandidates(): AtlasOfflineDownscaleStrategy {
+            return maxEdge(CANDIDATE_PREVIEW_MAX_EDGE_PX)
+        }
+
+        fun percentageOptions(): IntArray {
+            return PERCENTAGE_OPTIONS.copyOf()
+        }
+
+        fun maxEdgeOptions(): IntArray {
+            return MAX_EDGE_OPTIONS.copyOf()
+        }
+
+        private fun normalizeValue(mode: AtlasOfflineDownscaleMode, rawValue: Int): Int {
+            val options = when (mode) {
+                AtlasOfflineDownscaleMode.PERCENTAGE -> PERCENTAGE_OPTIONS
+                AtlasOfflineDownscaleMode.MAX_EDGE -> MAX_EDGE_OPTIONS
+            }
+            return options.minByOrNull { option ->
+                kotlin.math.abs(option - rawValue)
+            } ?: options.first()
+        }
+    }
+}
+
 internal object ModAtlasOfflineDownscalePatcher {
-    private const val MAX_OUTPUT_EDGE_PX = 512
+    const val DEFAULT_MAX_OUTPUT_EDGE_PX = 512
     private val NUMERIC_TUPLE_LINE_REGEX = Regex(
         "^([ \\t]*[^:]+:\\s*)(-?\\d+(?:\\s*,\\s*-?\\d+)+)(\\s*)$"
     )
     private val PAGE_HEADER_SCALE_KEYS = hashSetOf("size")
-    private val REGION_BLOCK_SCALE_KEYS = hashSetOf("xy", "size", "bounds", "split", "pad")
+    private val REGION_BLOCK_SCALE_KEYS =
+        hashSetOf("xy", "size", "bounds", "split", "pad", "orig", "offset")
 
     private data class AtlasPageSpan(
         val pageNameLine: String,
@@ -42,7 +97,56 @@ internal object ModAtlasOfflineDownscalePatcher {
     )
 
     @Throws(IOException::class)
-    fun patchOversizedAtlasPagesInPlace(modJar: File): AtlasOfflineDownscaleResult {
+    fun inspectOversizedAtlasPages(
+        modJar: File,
+        strategy: AtlasOfflineDownscaleStrategy =
+            AtlasOfflineDownscaleStrategy.maxEdge(DEFAULT_MAX_OUTPUT_EDGE_PX)
+    ): AtlasOfflineDownscaleResult {
+        if (!modJar.isFile) {
+            throw IOException("Mod jar not found: ${modJar.absolutePath}")
+        }
+
+        var scannedAtlasEntries = 0
+        var patchedAtlasEntries = 0
+        var downscaledPageEntries = 0
+
+        ZipFile(modJar).use { zipFile ->
+            val zipIndex = buildZipIndex(zipFile)
+            for (entry in zipIndex.atlasEntries) {
+                val entryName = entry.name
+                scannedAtlasEntries++
+                val atlasText = JarFileIoUtils.readEntry(zipFile, entry)
+                if (!isLikelySpineAtlas(entryName, zipIndex.entriesByNormalizedName.keys)) {
+                    continue
+                }
+                val pageScales = collectPageScales(
+                    zipFile = zipFile,
+                    entriesByNormalizedName = zipIndex.entriesByNormalizedName,
+                    atlasEntryName = entryName,
+                    atlasText = atlasText,
+                    strategy = strategy
+                )
+                if (pageScales.isEmpty()) {
+                    continue
+                }
+                patchedAtlasEntries++
+                downscaledPageEntries += pageScales.size
+            }
+        }
+
+        return AtlasOfflineDownscaleResult(
+            scannedAtlasEntries = scannedAtlasEntries,
+            patchedAtlasEntries = patchedAtlasEntries,
+            downscaledPageEntries = downscaledPageEntries
+        )
+    }
+
+    @Throws(IOException::class)
+    fun patchOversizedAtlasPagesInPlace(
+        modJar: File,
+        strategy: AtlasOfflineDownscaleStrategy =
+            AtlasOfflineDownscaleStrategy.maxEdge(DEFAULT_MAX_OUTPUT_EDGE_PX)
+    ): AtlasOfflineDownscaleResult {
         if (!modJar.isFile) {
             throw IOException("Mod jar not found: ${modJar.absolutePath}")
         }
@@ -65,7 +169,8 @@ internal object ModAtlasOfflineDownscalePatcher {
                     zipFile = zipFile,
                     entriesByNormalizedName = zipIndex.entriesByNormalizedName,
                     atlasEntryName = entryName,
-                    atlasText = atlasText
+                    atlasText = atlasText,
+                    strategy = strategy
                 ) ?: continue
                 replacements[entryName] = plan.patchedAtlasText.toByteArray(StandardCharsets.UTF_8)
                 replacements.putAll(plan.imageReplacements)
@@ -162,8 +267,20 @@ internal object ModAtlasOfflineDownscalePatcher {
         zipFile: ZipFile,
         entriesByNormalizedName: Map<String, ZipEntry>,
         atlasEntryName: String,
-        atlasText: String
+        atlasText: String,
+        strategy: AtlasOfflineDownscaleStrategy
     ): PatchPlan? {
+        val pageScales = collectPageScales(
+            zipFile = zipFile,
+            entriesByNormalizedName = entriesByNormalizedName,
+            atlasEntryName = atlasEntryName,
+            atlasText = atlasText,
+            strategy = strategy
+        )
+        if (pageScales.isEmpty()) {
+            return null
+        }
+
         val pageTransforms = LinkedHashMap<String, PageTransform>()
         val normalizedText = atlasText.replace("\r\n", "\n").replace('\r', '\n')
         val lines = normalizedText.split('\n')
@@ -173,7 +290,15 @@ internal object ModAtlasOfflineDownscalePatcher {
             val page = findNextAtlasPageSpan(lines, index) ?: break
             index = page.endIndexExclusive
             val resolvedEntryName = resolveAtlasPageEntryName(atlasEntryName, page.pageNameLine.trim())
-            val transform = createPageTransform(zipFile, entriesByNormalizedName, resolvedEntryName) ?: continue
+            if (!pageScales.containsKey(resolvedEntryName.lowercase(Locale.ROOT))) {
+                continue
+            }
+            val transform = createPageTransform(
+                zipFile,
+                entriesByNormalizedName,
+                resolvedEntryName,
+                strategy
+            ) ?: continue
             pageTransforms[resolvedEntryName.lowercase(Locale.ROOT)] = transform
         }
 
@@ -193,6 +318,35 @@ internal object ModAtlasOfflineDownscalePatcher {
             },
             downscaledPageEntries = pageTransforms.size
         )
+    }
+
+    private fun collectPageScales(
+        zipFile: ZipFile,
+        entriesByNormalizedName: Map<String, ZipEntry>,
+        atlasEntryName: String,
+        atlasText: String,
+        strategy: AtlasOfflineDownscaleStrategy
+    ): Map<String, Float> {
+        val pageScales = LinkedHashMap<String, Float>()
+        val normalizedText = atlasText.replace("\r\n", "\n").replace('\r', '\n')
+        val lines = normalizedText.split('\n')
+        var index = 0
+
+        while (true) {
+            val page = findNextAtlasPageSpan(lines, index) ?: break
+            index = page.endIndexExclusive
+            val resolvedEntryName = resolveAtlasPageEntryName(atlasEntryName, page.pageNameLine.trim())
+            val pageScale = inspectPageScale(
+                zipFile,
+                entriesByNormalizedName,
+                resolvedEntryName,
+                strategy
+            )
+                ?: continue
+            pageScales[resolvedEntryName.lowercase(Locale.ROOT)] = pageScale
+        }
+
+        return pageScales
     }
 
     private fun patchAtlasText(
@@ -338,22 +492,13 @@ internal object ModAtlasOfflineDownscalePatcher {
     private fun createPageTransform(
         zipFile: ZipFile,
         entriesByNormalizedName: Map<String, ZipEntry>,
-        entryName: String
+        entryName: String,
+        strategy: AtlasOfflineDownscaleStrategy
     ): PageTransform? {
         val entry = entriesByNormalizedName[normalizeZipEntryName(entryName)] ?: return null
         val imageBytes = JarFileIoUtils.readEntryBytes(zipFile, entry)
         val bounds = decodeBitmapBounds(imageBytes) ?: return null
-        if (bounds.width <= MAX_OUTPUT_EDGE_PX && bounds.height <= MAX_OUTPUT_EDGE_PX) {
-            return null
-        }
-
-        val scale = minOf(
-            MAX_OUTPUT_EDGE_PX.toFloat() / bounds.width.toFloat(),
-            MAX_OUTPUT_EDGE_PX.toFloat() / bounds.height.toFloat()
-        )
-        if (scale >= 1.0f) {
-            return null
-        }
+        val scale = computeDownscaleScale(bounds, strategy) ?: return null
 
         val targetWidth = (bounds.width.toFloat() * scale).roundToInt().coerceAtLeast(1)
         val targetHeight = (bounds.height.toFloat() * scale).roundToInt().coerceAtLeast(1)
@@ -374,6 +519,18 @@ internal object ModAtlasOfflineDownscalePatcher {
         )
     }
 
+    private fun inspectPageScale(
+        zipFile: ZipFile,
+        entriesByNormalizedName: Map<String, ZipEntry>,
+        entryName: String,
+        strategy: AtlasOfflineDownscaleStrategy
+    ): Float? {
+        val entry = entriesByNormalizedName[normalizeZipEntryName(entryName)] ?: return null
+        val imageBytes = JarFileIoUtils.readEntryBytes(zipFile, entry)
+        val bounds = decodeBitmapBounds(imageBytes) ?: return null
+        return computeDownscaleScale(bounds, strategy)
+    }
+
     private fun decodeBitmapBounds(imageBytes: ByteArray): BitmapBounds? {
         val options = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
@@ -386,6 +543,33 @@ internal object ModAtlasOfflineDownscalePatcher {
             return null
         }
         return BitmapBounds(width, height)
+    }
+
+    private fun computeDownscaleScale(
+        bounds: BitmapBounds,
+        strategy: AtlasOfflineDownscaleStrategy
+    ): Float? {
+        return when (strategy.mode) {
+            AtlasOfflineDownscaleMode.PERCENTAGE -> {
+                if (bounds.width <= AtlasOfflineDownscaleStrategy.CANDIDATE_PREVIEW_MAX_EDGE_PX &&
+                    bounds.height <= AtlasOfflineDownscaleStrategy.CANDIDATE_PREVIEW_MAX_EDGE_PX
+                ) {
+                    return null
+                }
+                (strategy.value.toFloat() / 100f).takeIf { it < 1.0f }
+            }
+
+            AtlasOfflineDownscaleMode.MAX_EDGE -> {
+                if (bounds.width <= strategy.value && bounds.height <= strategy.value) {
+                    return null
+                }
+                val scale = minOf(
+                    strategy.value.toFloat() / bounds.width.toFloat(),
+                    strategy.value.toFloat() / bounds.height.toFloat()
+                )
+                scale.takeIf { it < 1.0f }
+            }
+        }
     }
 
     private fun downscaleImageBytes(

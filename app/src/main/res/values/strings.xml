@@ -50,7 +50,13 @@
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
     <string name="compat_global_atlas_filter_compat_desc">Newly imported mods are patched offline during import: atlas filter lines containing mipmap are rewritten to Linear,Linear. Keeping this enabled gives higher compatibility; if disabled, new imports will not be patched. Example fix: black blocks on the Ring of Fate main menu.</string>
     <string name="compat_import_atlas_downscale_compat_title">Import-time atlas offline pre-downscale</string>
-    <string name="compat_import_atlas_downscale_compat_desc">When enabled, newly imported mods are preprocessed offline for likely Spine or skeletal-animation atlases: oversized page images are resampled to 512x512 or smaller, and only packed-page coordinates are rewritten to match. This lowers runtime memory spikes for heavy animation mods while avoiding many UI/background atlas regressions, but affected assets can still look softer. A dialog is shown when preprocessing happens. Default is ON.</string>
+    <string name="compat_import_atlas_downscale_compat_desc">When enabled, newly imported mods are preprocessed offline for likely Spine or skeletal-animation atlases: oversized page images are resampled according to the selected level, and the related atlas coordinate fields are rewritten to match. This lowers runtime memory spikes for heavy animation mods while avoiding many UI/background atlas regressions, but affected assets can still look softer. A dialog is shown when preprocessing happens. Default is ON.</string>
+    <string name="compat_import_atlas_downscale_level_title">Offline pre-downscale level</string>
+    <string name="compat_import_atlas_downscale_level_desc">Controls the target max edge used by import-time atlas offline pre-downscale. Smaller targets are more aggressive and save more memory, but they also blur close-up character art more. This only affects newly imported mods.</string>
+    <string name="compat_import_atlas_downscale_level_value_aggressive">Aggressive (max edge %1$dpx)</string>
+    <string name="compat_import_atlas_downscale_level_value_balanced">Balanced (max edge %1$dpx)</string>
+    <string name="compat_import_atlas_downscale_level_value_conservative">Conservative (max edge %1$dpx)</string>
+    <string name="compat_import_atlas_downscale_level_option_desc">A 4096x4096 atlas page would be resampled to about %1$dx%2$d.</string>
     <string name="compat_mod_manifest_root_compat_title">ModTheSpire manifest root compatibility patch</string>
     <string name="compat_mod_manifest_root_compat_desc">During mod import, jars are automatically patched when ModTheSpire.json is incorrectly packaged under an outer folder (for example, Fabricate/ModTheSpire.json): it is rewritten to the jar root. Keeping this enabled gives higher compatibility; if disabled, newly imported mods are not patched. A dialog is shown when auto-fix happens.</string>
     <string name="compat_frieren_mod_compat_title">FrierenMod startup compatibility patch</string>
@@ -316,6 +322,9 @@
     <string name="mod_import_dialog_duplicate_replace_existing">Replace existing</string>
     <string name="mod_import_dialog_duplicate_keep_both">Keep both</string>
     <string name="mod_import_cancelled">Import cancelled</string>
+    <string name="mod_import_dialog_atlas_downscale_confirm_title">Offline atlas pre-downscale detected</string>
+    <string name="mod_import_dialog_atlas_downscale_confirm_apply">Import with selected strategy</string>
+    <string name="mod_import_dialog_atlas_downscale_confirm_skip">Import without downscale</string>
     <string name="mod_import_dialog_atlas_patched_title">Atlas patched offline</string>
     <string name="mod_import_dialog_atlas_downscale_title">Atlas preprocessed offline</string>
     <string name="mod_import_dialog_manifest_root_patched_title">ModID structure auto-fixed</string>
@@ -370,7 +379,25 @@ Patch rule: rewrite filter lines containing mipmap to Linear,Linear.</string>
 </string>
     <string name="mod_import_atlas_downscale_message_item_detail">  Rewritten atlas files: %1$d, downscaled page images: %2$d</string>
     <string name="mod_import_atlas_downscale_message_rule">
-Patch rule: likely Spine atlas page images larger than 512px are resampled to 512x512 or smaller, and only packed-page coordinates are rewritten to match.</string>
+Patch rule: eligible page images in likely Spine atlases are resampled according to the selected offline pre-downscale strategy, and the related atlas coordinate fields are rewritten to match.</string>
+    <string name="mod_import_atlas_downscale_confirm_message_intro">The following mods would trigger offline atlas pre-downscaling during import:
+</string>
+    <string name="mod_import_atlas_downscale_confirm_message_item_detail">  Candidate atlas files: %1$d, candidate page images: %2$d</string>
+    <string name="mod_import_atlas_downscale_confirm_message_pros">Pros:
+- lowers runtime memory spikes for heavy animation mods
+- reduces the chance of GPU-memory pressure crashes or kills on the compatibility layer</string>
+    <string name="mod_import_atlas_downscale_confirm_message_cons">Cons:
+- large character art and close-up details can become noticeably blurrier
+- this choice only affects this import; already imported copies are not restored automatically</string>
+    <string name="mod_import_atlas_downscale_confirm_message_outro">Pick a strategy below before importing. The exact number of affected page images depends on the selected strategy and level.</string>
+    <string name="mod_import_atlas_downscale_confirm_strategy_title">Downscale strategy</string>
+    <string name="mod_import_atlas_downscale_confirm_level_title">Strategy level</string>
+    <string name="mod_import_atlas_downscale_strategy_percentage">Downscale by percentage</string>
+    <string name="mod_import_atlas_downscale_strategy_max_edge">Downscale by max resolution</string>
+    <string name="mod_import_atlas_downscale_level_percent_label">%1$d%% of original size</string>
+    <string name="mod_import_atlas_downscale_level_percent_desc">Candidate atlas pages larger than %2$dpx are resampled to %1$d%% of their original size.</string>
+    <string name="mod_import_atlas_downscale_level_max_edge_label">Max edge %1$dpx</string>
+    <string name="mod_import_atlas_downscale_level_max_edge_desc">Only candidate atlas pages larger than %1$dpx are changed, and each changed page is capped to %1$dpx on its longest edge.</string>
     <string name="mod_import_manifest_message_none">No ModTheSpire.json root-path issues were found in this import.</string>
     <string name="mod_import_manifest_message_intro">The following mods had ModTheSpire.json root paths auto-fixed during import:
 </string>
@@ -1001,6 +1028,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_status_virtual_fbo_poc">Virtual FBO PoC: %1$s</string>
     <string name="settings_status_global_atlas_filter_compat">Global atlas filter compat: %1$s</string>
     <string name="settings_status_import_atlas_downscale_compat">Import atlas pre-downscale: %1$s</string>
+    <string name="settings_status_import_atlas_downscale_level">Import atlas pre-downscale level: max edge %1$dpx</string>
     <string name="settings_status_mod_manifest_root_compat">Mod manifest root compat: %1$s</string>
     <string name="settings_status_runtime_texture_compat">Runtime texture compat: %1$s</string>
     <string name="settings_status_texture_pressure_downscale_divisor">Texture pressure downscale divisor: x%1$d</string>

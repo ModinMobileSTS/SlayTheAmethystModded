@@ -109,15 +109,19 @@ class ModAtlasOfflineDownscalePatcherTest {
         assertTrue(rewritten.contains("nyoxide.png\nsize: 512, 512"))
         assertTrue(
             rewritten.contains(
-                "back\n  rotate: false\n  xy: 216, 139\n  size: 215, 138\n  orig: 860, 551\n  offset: 0, 0\n  split: 25, 25, 30, 30\n  pad: 5, 5, 6, 6"
+                "back\n  rotate: false\n  xy: 216, 139\n  size: 215, 138\n  orig: 215, 138\n  offset: 0, 0\n  split: 25, 25, 30, 30\n  pad: 5, 5, 6, 6"
             )
         )
         assertTrue(rewritten.contains("nyoxide_2.png\nsize: 512, 512"))
-        assertTrue(rewritten.contains("feetR\n  rotate: false\n  xy: 1, 1\n  size: 37, 36\n  orig: 149, 144\n  offset: 1, 2"))
+        assertTrue(
+            rewritten.contains(
+                "feetR\n  rotate: false\n  xy: 1, 1\n  size: 37, 36\n  orig: 37, 36\n  offset: 1, 1"
+            )
+        )
         assertTrue(rewritten.contains("nyoxide_3.png\nsize: 512, 1024"))
-        assertTrue(rewritten.contains("head\n  rotate: false\n  xy: 350, 1\n  size: 75, 91\n  orig: 152, 184"))
-        assertFalse(rewritten.contains("orig: 215, 138"))
-        assertFalse(rewritten.contains("offset: 0, 1"))
+        assertTrue(rewritten.contains("head\n  rotate: false\n  xy: 350, 1\n  size: 75, 91\n  orig: 76, 92"))
+        assertFalse(rewritten.contains("orig: 860, 551"))
+        assertFalse(rewritten.contains("offset: 1, 2"))
     }
 
     @Test

@@ -21,6 +21,7 @@ import io.stamethyst.backend.mods.DownfallImportCompatPatcher
 import io.stamethyst.backend.mods.FrierenModCompatPatcher
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
+import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
@@ -121,6 +122,16 @@ internal data class ModImportIdentityPreview(
     val displayModId: String,
     val displayName: String
 )
+
+internal data class ModImportAtlasDownscalePreview(
+    val modId: String,
+    val modName: String,
+    val downscaledAtlasEntries: Int,
+    val downscaledAtlasPageEntries: Int
+) {
+    val willDownscale: Boolean
+        get() = downscaledAtlasPageEntries > 0
+}
 
 internal data class DuplicateModImportConflict(
     val normalizedModId: String,
@@ -367,7 +378,8 @@ internal object SettingsFileService {
     fun importModJar(
         host: Activity,
         uri: Uri,
-        replaceExistingDuplicates: Boolean = false
+        replaceExistingDuplicates: Boolean = false,
+        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null
     ): ModImportResult {
         OptionalModStorageCoordinator.ensureOptionalModLibraryReady(host)
         val modsDir = RuntimePaths.optionalModsLibraryDir(host)
@@ -415,9 +427,10 @@ internal object SettingsFileService {
             }
             var downscaledAtlasEntries = 0
             var downscaledAtlasPageEntries = 0
-            if (CompatibilitySettings.isImportAtlasDownscaleCompatEnabled(host)) {
+            if (importAtlasDownscaleStrategy != null) {
                 val patchResult = ModAtlasOfflineDownscalePatcher.patchOversizedAtlasPagesInPlace(
-                    tempFile
+                    tempFile,
+                    importAtlasDownscaleStrategy
                 )
                 downscaledAtlasEntries = patchResult.patchedAtlasEntries
                 downscaledAtlasPageEntries = patchResult.downscaledPageEntries
@@ -521,7 +534,8 @@ internal object SettingsFileService {
     fun importModJars(
         host: Activity,
         uris: Collection<Uri>,
-        replaceExistingDuplicates: Boolean = false
+        replaceExistingDuplicates: Boolean = false,
+        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null
     ): ModBatchImportResult {
         var imported = 0
         val errors = ArrayList<String>()
@@ -540,7 +554,8 @@ internal object SettingsFileService {
                 val result = importModJar(
                     host = host,
                     uri = uri,
-                    replaceExistingDuplicates = replaceExistingDuplicates
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
                 )
                 imported++
                 if (result.hasCompatibilityPatches) {
@@ -605,6 +620,32 @@ internal object SettingsFileService {
             invalidModJars = invalidModJars,
             patchedResults = patchedMods.values.toList()
         )
+    }
+
+    fun findImportAtlasDownscaleCandidates(
+        host: Activity,
+        uris: Collection<Uri>
+    ): List<ModImportAtlasDownscalePreview> {
+        val mergedByModId = LinkedHashMap<String, ModImportAtlasDownscalePreview>()
+        for (uri in uris) {
+            val preview = inspectImportAtlasDownscaleCandidate(
+                host,
+                uri
+            ) ?: continue
+            val existing = mergedByModId[preview.modId]
+            if (existing == null) {
+                mergedByModId[preview.modId] = preview
+            } else {
+                mergedByModId[preview.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else preview.modName,
+                    downscaledAtlasEntries =
+                        existing.downscaledAtlasEntries + preview.downscaledAtlasEntries,
+                    downscaledAtlasPageEntries =
+                        existing.downscaledAtlasPageEntries + preview.downscaledAtlasPageEntries
+                )
+            }
+        }
+        return mergedByModId.values.toList()
     }
 
     fun findDuplicateModImportConflicts(
@@ -941,6 +982,43 @@ internal object SettingsFileService {
                 append('\n')
             }
             append(context.getString(R.string.mod_import_atlas_downscale_message_rule))
+        }.trimEnd()
+    }
+
+    fun buildAtlasDownscaleImportConfirmationMessage(
+        context: Context,
+        previews: Collection<ModImportAtlasDownscalePreview>
+    ): String {
+        if (previews.none { it.willDownscale }) {
+            return context.getString(R.string.mod_import_atlas_downscale_message_none)
+        }
+        return buildString {
+            append(context.getString(R.string.mod_import_atlas_downscale_confirm_message_intro))
+            previews.filter { it.willDownscale }.forEach { preview ->
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        preview.modName.ifBlank { preview.modId },
+                        preview.modId
+                    )
+                )
+                append('\n')
+                append(
+                    context.getString(
+                        R.string.mod_import_atlas_downscale_confirm_message_item_detail,
+                        preview.downscaledAtlasEntries,
+                        preview.downscaledAtlasPageEntries
+                    )
+                )
+                append('\n')
+            }
+            append('\n')
+            append(context.getString(R.string.mod_import_atlas_downscale_confirm_message_pros))
+            append('\n')
+            append(context.getString(R.string.mod_import_atlas_downscale_confirm_message_cons))
+            append('\n')
+            append(context.getString(R.string.mod_import_atlas_downscale_confirm_message_outro))
         }.trimEnd()
     }
 
@@ -1308,6 +1386,53 @@ internal object SettingsFileService {
                 normalizedModId = normalizedModId,
                 displayModId = manifest.modId.trim().ifBlank { normalizedModId },
                 displayName = preparedDisplayName.ifBlank { "$normalizedModId.jar" }
+            )
+        } catch (_: Throwable) {
+            null
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+        }
+    }
+
+    private fun inspectImportAtlasDownscaleCandidate(
+        host: Activity,
+        uri: Uri
+    ): ModImportAtlasDownscalePreview? {
+        val displayName = resolveDisplayName(host, uri)
+        if (isLikelyCompressedArchive(host, uri, displayName)) {
+            return null
+        }
+        val scratchDir = File(host.cacheDir, "mod-import-preview")
+        if (!scratchDir.exists() && !scratchDir.mkdirs()) {
+            throw IOException("Failed to create preview directory: ${scratchDir.absolutePath}")
+        }
+        val tempFile = File(scratchDir, ".preview-downscale-${System.nanoTime()}.jar")
+        return try {
+            val preparedDisplayName = JarImportInspectionService.prepareImportedJar(host, uri, tempFile)
+            val inspection = JarImportInspectionService.inspectPreparedModJar(
+                host,
+                tempFile,
+                preparedDisplayName
+            )
+            val manifest = inspection.manifest ?: return null
+            val modId = inspection.normalizedModId.ifBlank { return null }
+            if (inspection.reservedComponent != null) {
+                return null
+            }
+            val patchResult = ModAtlasOfflineDownscalePatcher.inspectOversizedAtlasPages(
+                tempFile,
+                AtlasOfflineDownscaleStrategy.previewCandidates()
+            )
+            if (!patchResult.hasPatchedChanges) {
+                return null
+            }
+            ModImportAtlasDownscalePreview(
+                modId = modId,
+                modName = manifest.name.trim().ifBlank { modId },
+                downscaledAtlasEntries = patchResult.patchedAtlasEntries,
+                downscaledAtlasPageEntries = patchResult.downscaledPageEntries
             )
         } catch (_: Throwable) {
             null

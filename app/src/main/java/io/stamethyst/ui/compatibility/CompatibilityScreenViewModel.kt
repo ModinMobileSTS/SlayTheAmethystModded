@@ -15,7 +15,6 @@ class CompatibilityScreenViewModel : ViewModel() {
         val busyMessage: String? = null,
         val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
-        val importAtlasDownscaleCompatEnabled: Boolean = true,
         val modManifestRootCompatEnabled: Boolean = true,
         val frierenModCompatEnabled: Boolean = true,
         val downfallImportCompatEnabled: Boolean = true,
@@ -39,8 +38,6 @@ class CompatibilityScreenViewModel : ViewModel() {
             busyMessage = null,
             virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
-            importAtlasDownscaleCompatEnabled =
-                CompatibilitySettings.isImportAtlasDownscaleCompatEnabled(host),
             modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host),
             frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
             downfallImportCompatEnabled = CompatibilitySettings.isDownfallImportCompatEnabled(host),
@@ -78,14 +75,6 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setModManifestRootCompatEnabled(host, enabled)
         uiState = uiState.copy(modManifestRootCompatEnabled = enabled)
-    }
-
-    fun onImportAtlasDownscaleCompatToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setImportAtlasDownscaleCompatEnabled(host, enabled)
-        uiState = uiState.copy(importAtlasDownscaleCompatEnabled = enabled)
     }
 
     fun onFrierenModCompatToggled(host: Context, enabled: Boolean) {

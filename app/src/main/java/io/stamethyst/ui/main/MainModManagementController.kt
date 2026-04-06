@@ -9,6 +9,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import io.stamethyst.R
 import io.stamethyst.backend.file_interactive.SafFileExporter
+import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
@@ -19,8 +20,10 @@ import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.VupShionPatchedDialog
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.AtlasDownscaleImportDialog
 import io.stamethyst.ui.settings.DuplicateModImportConflict
 import io.stamethyst.ui.settings.InvalidModImportFailure
+import io.stamethyst.ui.settings.ModImportAtlasDownscalePreview
 import io.stamethyst.ui.settings.ModImportResult
 import io.stamethyst.ui.settings.SettingsFileService
 import java.io.File
@@ -808,7 +811,9 @@ internal class MainModManagementController(
         host: Activity,
         uris: List<Uri>,
         replaceExistingDuplicates: Boolean = false,
-        skipDuplicateCheck: Boolean = false
+        skipDuplicateCheck: Boolean = false,
+        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null,
+        skipAtlasDownscalePrompt: Boolean = false
     ) {
         setBusyText(
             busy = true,
@@ -827,10 +832,29 @@ internal class MainModManagementController(
                         return@execute
                     }
                 }
+                if (!skipAtlasDownscalePrompt) {
+                    val downscaleCandidates = SettingsFileService.findImportAtlasDownscaleCandidates(
+                        host,
+                        uris
+                    )
+                    if (downscaleCandidates.isNotEmpty()) {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            showAtlasDownscaleConfirmDialog(
+                                host = host,
+                                uris = uris,
+                                candidates = downscaleCandidates,
+                                replaceExistingDuplicates = replaceExistingDuplicates
+                            )
+                        }
+                        return@execute
+                    }
+                }
                 val batchResult = SettingsFileService.importModJars(
                     host = host,
                     uris = uris,
-                    replaceExistingDuplicates = replaceExistingDuplicates
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
                 )
                 val importedCount = batchResult.importedCount
                 val failedCount = batchResult.failedCount
@@ -988,6 +1012,41 @@ internal class MainModManagementController(
             )
             .setPositiveButton(android.R.string.ok, null)
             .show()
+    }
+
+    private fun showAtlasDownscaleConfirmDialog(
+        host: Activity,
+        uris: List<Uri>,
+        candidates: List<ModImportAtlasDownscalePreview>,
+        replaceExistingDuplicates: Boolean
+    ) {
+        AtlasDownscaleImportDialog.show(
+            host = host,
+            previews = candidates,
+            onApply = { strategy ->
+                startModJarImport(
+                    host = host,
+                    uris = uris,
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    skipDuplicateCheck = true,
+                    importAtlasDownscaleStrategy = strategy,
+                    skipAtlasDownscalePrompt = true
+                )
+            },
+            onSkip = {
+                startModJarImport(
+                    host = host,
+                    uris = uris,
+                    replaceExistingDuplicates = replaceExistingDuplicates,
+                    skipDuplicateCheck = true,
+                    importAtlasDownscaleStrategy = null,
+                    skipAtlasDownscalePrompt = true
+                )
+            },
+            onCancel = {
+                emitSnackbar(host.getString(R.string.mod_import_cancelled))
+            }
+        )
     }
 
     private fun showAtlasDownscaleSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
