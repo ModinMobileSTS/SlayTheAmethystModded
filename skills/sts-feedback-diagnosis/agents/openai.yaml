@@ -1,0 +1,4 @@
+interface:
+  display_name: "STS Feedback Diagnosis"
+  short_description: "Analyze STS feedback bundles and diagnose root cause"
+  default_prompt: "Use $sts-feedback-diagnosis to inspect an STS feedback report zip, prioritize user feedback and latest.log, and decide whether the issue is in the launcher, a mod, or the device."
