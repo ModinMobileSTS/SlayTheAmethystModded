@@ -5,10 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
@@ -26,7 +24,7 @@ internal class GameAudioController(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val audioManager = activity.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private var activityResumed = false
-    private var lastAudioFocusGranted = true
+    private var lastAudioActive = false
     private var audioDeviceCallbackRegistered = false
     private var noisyReceiverRegistered = false
 
@@ -34,29 +32,6 @@ internal class GameAudioController(
         if (activityResumed) {
             onAudioOutputRouteChanged()
         }
-    }
-
-    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_GAIN -> dispatchAudioFocusGranted(true)
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> dispatchAudioFocusGranted(false)
-        }
-    }
-
-    private val audioFocusRequest = audioManager?.let {
-        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            .setAcceptsDelayedFocusGain(true)
-            .setWillPauseWhenDucked(true)
-            .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
-            .build()
     }
 
     private val noisyReceiver = object : BroadcastReceiver() {
@@ -84,36 +59,18 @@ internal class GameAudioController(
     fun onResume() {
         activityResumed = true
         registerRouteCallbacks()
-        dispatchAudioFocusGranted(requestAudioFocus())
+        dispatchAudioActive(true)
     }
 
     fun onPause() {
         activityResumed = false
         mainHandler.removeCallbacks(routeChangeRunnable)
         unregisterRouteCallbacks()
-        abandonAudioFocus()
-        dispatchAudioFocusGranted(false)
+        dispatchAudioActive(false)
     }
 
     fun onDestroy() {
         onPause()
-    }
-
-    private fun requestAudioFocus(): Boolean {
-        val manager = audioManager ?: return true
-        val request = audioFocusRequest ?: return true
-        return when (manager.requestAudioFocus(request)) {
-            AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> true
-            AudioManager.AUDIOFOCUS_REQUEST_DELAYED,
-            AudioManager.AUDIOFOCUS_REQUEST_FAILED -> false
-            else -> false
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        val manager = audioManager ?: return
-        val request = audioFocusRequest ?: return
-        manager.abandonAudioFocusRequest(request)
     }
 
     private fun registerRouteCallbacks() {
@@ -163,16 +120,16 @@ internal class GameAudioController(
         mainHandler.postDelayed(routeChangeRunnable, OUTPUT_ROUTE_CHANGE_DEBOUNCE_MS)
     }
 
-    private fun dispatchAudioFocusGranted(granted: Boolean) {
-        if (!activityResumed && granted) {
+    private fun dispatchAudioActive(active: Boolean) {
+        if (!activityResumed && active) {
             return
         }
-        val effectiveGranted = activityResumed && granted
-        if (lastAudioFocusGranted == effectiveGranted) {
+        val effectiveActive = activityResumed && active
+        if (lastAudioActive == effectiveActive) {
             return
         }
-        lastAudioFocusGranted = effectiveGranted
-        onAudioFocusGrantedChanged(effectiveGranted)
+        lastAudioActive = effectiveActive
+        onAudioFocusGrantedChanged(effectiveActive)
     }
 
     private fun containsSink(devices: Array<out AudioDeviceInfo>): Boolean {

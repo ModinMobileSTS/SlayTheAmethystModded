@@ -6,8 +6,8 @@ import org.junit.Test
 
 class ForegroundAudioPolicyTest {
     @Test
-    fun shouldRestoreForegroundAudio_requiresResumeAndFocusAndRuntimeReady() {
-        val policy = ForegroundAudioPolicy(initialAudioFocusGranted = false)
+    fun shouldRestoreForegroundAudio_requiresResumeAndRuntimeReady() {
+        val policy = ForegroundAudioPolicy()
 
         assertFalse(
             policy.shouldRestoreForegroundAudio(
@@ -17,14 +17,6 @@ class ForegroundAudioPolicyTest {
         )
 
         policy.markActivityResumed(true)
-        assertFalse(
-            policy.shouldRestoreForegroundAudio(
-                runtimeLifecycleReady = true,
-                backExitRequested = false
-            )
-        )
-
-        policy.markAudioFocusGranted(true)
         assertTrue(
             policy.shouldRestoreForegroundAudio(
                 runtimeLifecycleReady = true,

@@ -139,7 +139,6 @@ internal class GameSessionCoordinator(
         activityResumed = false
         pendingAudioDeviceRecovery = false
         foregroundAudioPolicy.markActivityResumed(false)
-        foregroundAudioPolicy.markAudioFocusGranted(false)
         updateSystemGameState()
         syncRuntimeForegroundState(false)
         bootOverlayController.onDestroy()
@@ -171,7 +170,6 @@ internal class GameSessionCoordinator(
     }
 
     fun onPlatformAudioFocusChanged(granted: Boolean) {
-        foregroundAudioPolicy.markAudioFocusGranted(granted)
         if (!granted) {
             cancelForegroundAudioRestoreRetries()
             setRuntimeAudioMuted(true)
