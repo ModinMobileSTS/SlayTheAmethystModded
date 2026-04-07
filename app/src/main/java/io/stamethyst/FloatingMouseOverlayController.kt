@@ -1,9 +1,6 @@
 package io.stamethyst
 
 import android.util.Log
-import android.text.Editable
-import android.text.InputType
-import android.text.Selection
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -11,18 +8,12 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.inputmethod.BaseInputConnection
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
-import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import net.kdt.pojavlaunch.AWTInputBridge
@@ -107,7 +98,7 @@ internal class FloatingMouseOverlayController(
     private var touchPressedButton = -1
     private var floatingMouseButton: FrameLayout? = null
     private var floatingMouseMainIcon: ImageView? = null
-    private var imeProxyView: View? = null
+    private var imeController: FloatingMouseImeController? = null
     private var floatingMouseExpandedMenu: LinearLayout? = null
     private var floatingMouseCollapseButton: TextView? = null
     private var floatingMouseWheelView: VirtualMouseWheelView? = null
@@ -139,14 +130,34 @@ internal class FloatingMouseOverlayController(
         val viewConfiguration = ViewConfiguration.get(activity)
         floatingMouseTouchSlop = viewConfiguration.scaledTouchSlop
 
-        val imeView = GameImeProxyView(activity).apply {
-            alpha = 0f
-        }
-        host.addView(
-            imeView,
-            FrameLayout.LayoutParams(1, 1, Gravity.TOP or Gravity.START)
+        val controller = FloatingMouseImeController(
+            activity = activity,
+            requestRenderViewFocus = requestRenderViewFocus,
+            debugLogger = ::logImeState,
+            callbacks = object : FloatingMouseImeController.InputCallbacks {
+                override fun onCommitText(text: CharSequence?, source: String): Boolean {
+                    return sendSoftKeyboardText(text, source)
+                }
+
+                override fun onDeleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                    return handleDeleteSurroundingText(beforeLength, afterLength)
+                }
+
+                override fun onSendKeyEvent(event: KeyEvent): Boolean {
+                    return dispatchSoftKeyboardKeyEvent(event)
+                }
+
+                override fun onPerformEditorAction(actionCode: Int): Boolean {
+                    return handlePerformEditorAction(actionCode)
+                }
+
+                override fun onKeyboardVisibilityChanged(visible: Boolean) {
+                    handleKeyboardVisibilityChanged(visible)
+                }
+            }
         )
-        imeProxyView = imeView
+        controller.attachToHost(host)
+        imeController = controller
 
         val expandedMenu = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -296,10 +307,7 @@ internal class FloatingMouseOverlayController(
         flushPendingSoftKeyReleases()
         releaseActiveToggleSoftKeys()
         hideFloatingMouseExpandedMenu()
-        val inputView = imeProxyView ?: return
-        val imm = activity.getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        imm.hideSoftInputFromWindow(inputView.windowToken, 0)
-        requestRenderViewFocus.invoke()
+        imeController?.requestHide(reason = "overlay_hide", refocusRenderView = true)
     }
 
     private fun detachViews() {
@@ -309,16 +317,14 @@ internal class FloatingMouseOverlayController(
         floatingMouseCollapseButton?.let { collapse ->
             (collapse.parent as? FrameLayout)?.removeView(collapse)
         }
-        imeProxyView?.let { ime ->
-            (ime.parent as? FrameLayout)?.removeView(ime)
-        }
+        imeController?.detach()
         floatingMouseExpandedMenu?.let { menu ->
             (menu.parent as? FrameLayout)?.removeView(menu)
         }
         floatingMouseButton = null
         floatingMouseCollapseButton = null
         floatingMouseMainIcon = null
-        imeProxyView = null
+        imeController = null
         floatingMouseExpandedMenu = null
         floatingMouseWheelView = null
         floatingMouseLockButton = null
@@ -504,13 +510,7 @@ internal class FloatingMouseOverlayController(
 
     private fun showSoftKeyboard() {
         hideFloatingMouseExpandedMenu()
-        val inputView = imeProxyView ?: return
-        val imm = activity.getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        inputView.requestFocus()
-        imm.restartInput(inputView)
-        inputView.post {
-            imm.showSoftInput(inputView, InputMethodManager.SHOW_IMPLICIT)
-        }
+        imeController?.requestShow(reason = "floating_menu_keyboard")
     }
 
     private fun populateFloatingMouseExpandedMenu(menu: LinearLayout) {
@@ -909,8 +909,7 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun isSoftKeyboardVisible(): Boolean {
-        val anchorView = imeProxyView ?: floatingMouseButton ?: return false
-        return ViewCompat.getRootWindowInsets(anchorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        return imeController?.isVisible() == true
     }
 
     private fun dispatchVirtualMouseScroll(verticalOffset: Double) {
@@ -1182,8 +1181,8 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun scheduleSoftKeyRelease(androidKeyCode: Int, target: SoftKeyboardTarget) {
-        val inputView = imeProxyView
-        if (inputView == null) {
+        val controller = imeController
+        if (controller == null) {
             logIme(
                 "scheduleSoftKeyRelease fallback immediate " +
                     "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target"
@@ -1203,7 +1202,15 @@ internal class FloatingMouseOverlayController(
             dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
         }
         pendingSoftKeyReleaseRunnables[androidKeyCode] = releaseRunnable
-        inputView.postDelayed(releaseRunnable, SOFT_KEY_MIN_PRESS_MS)
+        if (!controller.postOnEditor(releaseRunnable, delayMs = SOFT_KEY_MIN_PRESS_MS)) {
+            pendingSoftKeyReleaseRunnables.remove(androidKeyCode)
+            logIme(
+                "scheduleSoftKeyRelease fallback no_editor " +
+                    "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target"
+            )
+            releaseRunnable.run()
+            return
+        }
         logIme(
             "scheduleSoftKeyRelease queued " +
                 "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target delayMs=$SOFT_KEY_MIN_PRESS_MS"
@@ -1212,7 +1219,7 @@ internal class FloatingMouseOverlayController(
 
     private fun flushPendingSoftKeyRelease(androidKeyCode: Int) {
         val releaseRunnable = pendingSoftKeyReleaseRunnables.remove(androidKeyCode) ?: return
-        imeProxyView?.removeCallbacks(releaseRunnable)
+        imeController?.removeEditorCallback(releaseRunnable)
         logIme("flushPendingSoftKeyRelease android=${KeyEvent.keyCodeToString(androidKeyCode)}")
         releaseRunnable.run()
     }
@@ -1346,8 +1353,41 @@ internal class FloatingMouseOverlayController(
         return handled
     }
 
+    private fun handleDeleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+        logIme("handleDeleteSurroundingText before=$beforeLength after=$afterLength")
+        repeat(beforeLength.coerceAtLeast(0)) {
+            sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+        }
+        repeat(afterLength.coerceAtLeast(0)) {
+            sendSyntheticSoftKey(KeyEvent.KEYCODE_FORWARD_DEL)
+        }
+        if (beforeLength <= 0 && afterLength <= 0) {
+            sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+        }
+        return true
+    }
+
+    private fun handlePerformEditorAction(actionCode: Int): Boolean {
+        logIme("handlePerformEditorAction actionCode=$actionCode")
+        sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
+        return true
+    }
+
+    private fun handleKeyboardVisibilityChanged(visible: Boolean) {
+        logIme("handleKeyboardVisibilityChanged visible=$visible")
+        if (visible) {
+            return
+        }
+        flushPendingSoftKeyReleases()
+        releaseActiveToggleSoftKeys()
+    }
+
     private fun logIme(message: String) {
         Log.d(IME_LOG_TAG, message)
+    }
+
+    private fun logImeState(message: String) {
+        Log.i(IME_LOG_TAG, message)
     }
 
     private fun describeAction(action: Int): String {
@@ -1639,96 +1679,6 @@ internal class FloatingMouseOverlayController(
         private fun maxThumbTravel(): Float {
             val availableHeight = height - paddingTop - paddingBottom - thumbView.height
             return (availableHeight / 2f).coerceAtLeast(0f)
-        }
-    }
-
-    private inner class GameImeProxyView(context: android.content.Context) : View(context) {
-        init {
-            isFocusable = true
-            isFocusableInTouchMode = true
-            importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-        }
-
-        override fun onCheckIsTextEditor(): Boolean {
-            return true
-        }
-
-        override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-            outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-            return object : BaseInputConnection(this, false) {
-                // Mirror committed text locally so IMEs keep delete/backspace enabled.
-                private val editable = Editable.Factory.getInstance().newEditable("").also {
-                    Selection.setSelection(it, 0)
-                }
-
-                override fun getEditable(): Editable {
-                    logIme("getEditable state=${describeEditableState(editable)}")
-                    return editable
-                }
-
-                override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                    val result = super.commitText(text, newCursorPosition)
-                    logIme(
-                        "InputConnection.commitText text=${describeText(text)} " +
-                            "cursor=$newCursorPosition result=$result state=${describeEditableState(editable)}"
-                    )
-                    sendSoftKeyboardText(text, "commit_text")
-                    return true
-                }
-
-                override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                    // Keep composition internal to IME and only forward committed text.
-                    val result = super.setComposingText(text, newCursorPosition)
-                    logIme(
-                        "InputConnection.setComposingText text=${describeText(text)} " +
-                            "cursor=$newCursorPosition result=$result state=${describeEditableState(editable)}"
-                    )
-                    return result
-                }
-
-                override fun finishComposingText(): Boolean {
-                    val result = super.finishComposingText()
-                    logIme("InputConnection.finishComposingText result=$result state=${describeEditableState(editable)}")
-                    return result
-                }
-
-                override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                    val beforeState = describeEditableState(editable)
-                    val result = super.deleteSurroundingText(beforeLength, afterLength)
-                    logIme(
-                        "InputConnection.deleteSurroundingText before=$beforeLength after=$afterLength " +
-                            "result=$result stateBefore=$beforeState stateAfter=${describeEditableState(editable)}"
-                    )
-                    repeat(beforeLength.coerceAtLeast(0)) {
-                        sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
-                    }
-                    repeat(afterLength.coerceAtLeast(0)) {
-                        sendSyntheticSoftKey(KeyEvent.KEYCODE_FORWARD_DEL)
-                    }
-                    if (beforeLength <= 0 && afterLength <= 0) {
-                        sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
-                    }
-                    return true
-                }
-
-                override fun sendKeyEvent(event: KeyEvent): Boolean {
-                    logIme("InputConnection.sendKeyEvent event=${describeKeyEvent(event)} state=${describeEditableState(editable)}")
-                    return dispatchSoftKeyboardKeyEvent(event)
-                }
-
-                override fun performEditorAction(actionCode: Int): Boolean {
-                    logIme("InputConnection.performEditorAction actionCode=$actionCode")
-                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
-                    return true
-                }
-
-                private fun describeEditableState(value: Editable): String {
-                    return "text=${describeText(value)} sel=${Selection.getSelectionStart(value)}..${Selection.getSelectionEnd(value)}"
-                }
-            }
         }
     }
 }
