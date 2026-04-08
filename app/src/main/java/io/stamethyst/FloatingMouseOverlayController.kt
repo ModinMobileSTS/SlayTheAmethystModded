@@ -310,6 +310,10 @@ internal class FloatingMouseOverlayController(
         imeController?.requestHide(reason = "overlay_hide", refocusRenderView = true)
     }
 
+    fun isSoftKeyboardSessionActive(): Boolean {
+        return imeController?.shouldHoldRenderSurfaceStable() == true
+    }
+
     private fun detachViews() {
         floatingMouseButton?.let { button ->
             (button.parent as? FrameLayout)?.removeView(button)

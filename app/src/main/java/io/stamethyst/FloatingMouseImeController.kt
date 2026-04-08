@@ -2,6 +2,7 @@ package io.stamethyst
 
 import android.content.Context
 import android.graphics.Color
+import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
@@ -47,7 +48,12 @@ internal class FloatingMouseImeController(
     private var editorView: GameImeEditor? = null
     private var pendingVerifyRunnable: Runnable? = null
     private var pendingShowReadyRunnable: Runnable? = null
+    private var pendingUnexpectedHideRecoveryRunnable: Runnable? = null
     private var lastKeyboardVisible = false
+    private var keepKeyboardVisibleRequested = false
+    private var lastExplicitShowRequestAtMs = 0L
+    private var lastInputInteractionAtMs = 0L
+    private var unexpectedHideRecoveryAttempts = 0
 
     fun attachToHost(host: FrameLayout) {
         detach()
@@ -56,9 +62,11 @@ internal class FloatingMouseImeController(
             context = activity,
             debugLogger = debugLogger,
             callbacks = callbacks,
-            windowFocusChangedCallback = ::onEditorWindowFocusChanged
+            windowFocusChangedCallback = ::onEditorWindowFocusChanged,
+            inputInteractionCallback = ::noteInputInteraction
         ).apply {
-            alpha = HIDDEN_EDITOR_ALPHA
+            // Keep the editor fully opaque to system focus heuristics while still visually invisible.
+            alpha = EDITOR_HOST_ALPHA
             setTextColor(Color.TRANSPARENT)
             highlightColor = Color.TRANSPARENT
             setBackgroundColor(Color.TRANSPARENT)
@@ -98,6 +106,7 @@ internal class FloatingMouseImeController(
     fun detach() {
         cancelPendingVerify()
         cancelPendingShowReady()
+        cancelPendingUnexpectedHideRecovery()
         editorView?.let { editor ->
             ViewCompat.setOnApplyWindowInsetsListener(editor, null)
             (editor.parent as? FrameLayout)?.removeView(editor)
@@ -105,10 +114,17 @@ internal class FloatingMouseImeController(
         editorView = null
         hostView = null
         lastKeyboardVisible = false
+        keepKeyboardVisibleRequested = false
+        lastExplicitShowRequestAtMs = 0L
+        lastInputInteractionAtMs = 0L
+        unexpectedHideRecoveryAttempts = 0
         sessionState = SoftKeyboardSessionMachine.State()
     }
 
     fun requestShow(reason: String) {
+        keepKeyboardVisibleRequested = true
+        lastExplicitShowRequestAtMs = SystemClock.uptimeMillis()
+        cancelPendingUnexpectedHideRecovery()
         debugLogger(
             "requestShow reason=$reason " +
                 snapshotState()
@@ -125,6 +141,9 @@ internal class FloatingMouseImeController(
         reason: String,
         refocusRenderView: Boolean = true
     ) {
+        keepKeyboardVisibleRequested = false
+        unexpectedHideRecoveryAttempts = 0
+        cancelPendingUnexpectedHideRecovery()
         debugLogger(
             "requestHide reason=$reason " +
                 snapshotState()
@@ -138,6 +157,13 @@ internal class FloatingMouseImeController(
     }
 
     fun isVisible(): Boolean = isKeyboardVisible()
+
+    fun shouldHoldRenderSurfaceStable(): Boolean {
+        return keepKeyboardVisibleRequested ||
+            sessionState.pendingShow ||
+            lastKeyboardVisible ||
+            pendingUnexpectedHideRecoveryRunnable != null
+    }
 
     fun postOnEditor(
         runnable: Runnable,
@@ -220,6 +246,7 @@ internal class FloatingMouseImeController(
         val editor = editorView ?: return
         val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
         cancelPendingShowReady()
+        cancelPendingUnexpectedHideRecovery()
         windowInsetsController(editor).hide(WindowInsetsCompat.Type.ime())
         val hideAccepted = imm.hideSoftInputFromWindow(editor.windowToken, 0)
         editor.clearFocus()
@@ -379,6 +406,37 @@ internal class FloatingMouseImeController(
         pendingShowReadyRunnable = null
     }
 
+    private fun scheduleUnexpectedHideRecovery(trigger: String) {
+        if (!shouldAttemptUnexpectedHideRecovery()) {
+            return
+        }
+        val editor = editorView ?: return
+        cancelPendingUnexpectedHideRecovery()
+        val runnable = Runnable {
+            pendingUnexpectedHideRecoveryRunnable = null
+            if (!shouldAttemptUnexpectedHideRecovery()) {
+                return@Runnable
+            }
+            unexpectedHideRecoveryAttempts++
+            debugLogger(
+                "unexpectedHideRecovery trigger=$trigger attempt=$unexpectedHideRecoveryAttempts " +
+                    snapshotState(editor = editor)
+            )
+            requestShow(reason = "unexpected_hide_recovery:$trigger")
+        }
+        pendingUnexpectedHideRecoveryRunnable = runnable
+        editor.postDelayed(runnable, UNEXPECTED_HIDE_RECOVERY_DELAY_MS)
+    }
+
+    private fun cancelPendingUnexpectedHideRecovery() {
+        val editor = editorView
+        val runnable = pendingUnexpectedHideRecoveryRunnable
+        if (editor != null && runnable != null) {
+            editor.removeCallbacks(runnable)
+        }
+        pendingUnexpectedHideRecoveryRunnable = null
+    }
+
     private fun syncVisibilitySnapshot(source: String) {
         val visible = isKeyboardVisible()
         sessionState = sessionMachine.onVisibilityChanged(sessionState, visible)
@@ -393,6 +451,10 @@ internal class FloatingMouseImeController(
         if (visible) {
             cancelPendingVerify()
             cancelPendingShowReady()
+            cancelPendingUnexpectedHideRecovery()
+            unexpectedHideRecoveryAttempts = 0
+        } else {
+            scheduleUnexpectedHideRecovery(trigger = "visibility:$source")
         }
         callbacks.onKeyboardVisibilityChanged(visible)
     }
@@ -417,6 +479,9 @@ internal class FloatingMouseImeController(
                 reason = "editor_focus"
             )
         }
+        if (hasFocus) {
+            scheduleUnexpectedHideRecovery(trigger = "editor_focus")
+        }
     }
 
     private fun onEditorWindowFocusChanged(hasWindowFocus: Boolean) {
@@ -432,6 +497,34 @@ internal class FloatingMouseImeController(
                 reason = "window_focus"
             )
         }
+        if (hasWindowFocus) {
+            scheduleUnexpectedHideRecovery(trigger = "window_focus")
+        }
+    }
+
+    private fun shouldAttemptUnexpectedHideRecovery(nowMs: Long = SystemClock.uptimeMillis()): Boolean {
+        if (!keepKeyboardVisibleRequested ||
+            sessionState.pendingShow ||
+            lastKeyboardVisible ||
+            activity.isFinishing ||
+            activity.isDestroyed ||
+            !hasActivityWindowFocus() ||
+            unexpectedHideRecoveryAttempts >= MAX_UNEXPECTED_HIDE_RECOVERY_ATTEMPTS
+        ) {
+            return false
+        }
+
+        val recentShowRequest = nowMs - lastExplicitShowRequestAtMs
+        if (recentShowRequest in 0..UNEXPECTED_HIDE_RECOVERY_AFTER_SHOW_WINDOW_MS) {
+            return true
+        }
+
+        val recentInputInteraction = nowMs - lastInputInteractionAtMs
+        return recentInputInteraction in 0..UNEXPECTED_HIDE_RECOVERY_AFTER_INPUT_WINDOW_MS
+    }
+
+    private fun noteInputInteraction() {
+        lastInputInteractionAtMs = SystemClock.uptimeMillis()
     }
 
     private fun snapshotState(
@@ -463,7 +556,8 @@ internal class FloatingMouseImeController(
         context: Context,
         private val debugLogger: (String) -> Unit,
         private val callbacks: InputCallbacks,
-        private val windowFocusChangedCallback: (Boolean) -> Unit
+        private val windowFocusChangedCallback: (Boolean) -> Unit,
+        private val inputInteractionCallback: () -> Unit
     ) : AppCompatEditText(context) {
         init {
             inputType = DEFAULT_INPUT_TYPE
@@ -517,6 +611,7 @@ internal class FloatingMouseImeController(
                         "InputConnection.commitText text=${describeText(text)} " +
                             "cursor=$newCursorPosition result=$result"
                     )
+                    inputInteractionCallback.invoke()
                     callbacks.onCommitText(text, source = "commit_text")
                     return true
                 }
@@ -548,6 +643,7 @@ internal class FloatingMouseImeController(
                         "InputConnection.deleteSurroundingText before=$beforeLength " +
                             "after=$afterLength result=$result"
                     )
+                    inputInteractionCallback.invoke()
                     callbacks.onDeleteSurroundingText(beforeLength, afterLength)
                     return true
                 }
@@ -556,11 +652,13 @@ internal class FloatingMouseImeController(
                     debugLogger(
                         "InputConnection.sendKeyEvent event=${describeKeyEvent(event)}"
                     )
+                    inputInteractionCallback.invoke()
                     return callbacks.onSendKeyEvent(event)
                 }
 
                 override fun performEditorAction(actionCode: Int): Boolean {
                     debugLogger("InputConnection.performEditorAction actionCode=$actionCode")
+                    inputInteractionCallback.invoke()
                     return callbacks.onPerformEditorAction(actionCode)
                 }
             }
@@ -614,10 +712,14 @@ internal class FloatingMouseImeController(
     }
 
     companion object {
-        private const val HIDDEN_EDITOR_ALPHA = 0.01f
+        private const val EDITOR_HOST_ALPHA = 1f
         private const val HIDDEN_EDITOR_SIZE_PX = 1
         private const val SHOW_READY_RECHECK_DELAY_MS = 16L
         private const val SHOW_READY_MAX_CHECKS = 8
+        private const val UNEXPECTED_HIDE_RECOVERY_DELAY_MS = 96L
+        private const val UNEXPECTED_HIDE_RECOVERY_AFTER_SHOW_WINDOW_MS = 1_500L
+        private const val UNEXPECTED_HIDE_RECOVERY_AFTER_INPUT_WINDOW_MS = 900L
+        private const val MAX_UNEXPECTED_HIDE_RECOVERY_ATTEMPTS = 1
         private const val DEFAULT_INPUT_TYPE = InputType.TYPE_CLASS_TEXT or
             InputType.TYPE_TEXT_FLAG_MULTI_LINE or
             InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS

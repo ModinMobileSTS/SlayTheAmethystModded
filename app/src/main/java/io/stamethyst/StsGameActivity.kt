@@ -186,6 +186,7 @@ class StsGameActivity : AppCompatActivity() {
             virtualResolutionMode = sessionConfig.virtualResolutionMode,
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             cropScreenBottom = sessionConfig.cropScreenBottom,
+            isSoftKeyboardSessionActive = { inputHandler.isSoftKeyboardSessionActive() },
             onSurfaceReady = { sessionCoordinator.onSurfaceReady() },
             onSurfaceDestroyed = { },
             onTextureFrameUpdate = { timestampNs ->

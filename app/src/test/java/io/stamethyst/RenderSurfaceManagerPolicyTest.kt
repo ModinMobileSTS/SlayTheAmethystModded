@@ -81,4 +81,48 @@ class RenderSurfaceManagerPolicyTest {
             )
         )
     }
+
+    @Test
+    fun resolvePostBootSurfaceSoftRefreshBlocker_prioritizesImeActivity() {
+        assertEquals(
+            "ime_active",
+            RenderSurfaceManager.resolvePostBootSurfaceSoftRefreshBlocker(
+                inForeground = true,
+                hasWindowFocus = true,
+                hasCurrentSurface = true,
+                softKeyboardSessionActive = true
+            )
+        )
+    }
+
+    @Test
+    fun resolvePostBootSurfaceSoftRefreshBlocker_reportsForegroundAndSurfaceReadiness() {
+        assertEquals(
+            "not_ready_foreground",
+            RenderSurfaceManager.resolvePostBootSurfaceSoftRefreshBlocker(
+                inForeground = false,
+                hasWindowFocus = true,
+                hasCurrentSurface = true,
+                softKeyboardSessionActive = false
+            )
+        )
+        assertEquals(
+            "surface_unavailable",
+            RenderSurfaceManager.resolvePostBootSurfaceSoftRefreshBlocker(
+                inForeground = true,
+                hasWindowFocus = true,
+                hasCurrentSurface = false,
+                softKeyboardSessionActive = false
+            )
+        )
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolvePostBootSurfaceSoftRefreshBlocker(
+                inForeground = true,
+                hasWindowFocus = true,
+                hasCurrentSurface = true,
+                softKeyboardSessionActive = false
+            )
+        )
+    }
 }

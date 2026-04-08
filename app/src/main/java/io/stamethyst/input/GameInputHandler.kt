@@ -70,6 +70,10 @@ class GameInputHandler(
         floatingMouseController?.hideSoftKeyboard()
     }
 
+    fun isSoftKeyboardSessionActive(): Boolean {
+        return floatingMouseController?.isSoftKeyboardSessionActive() == true
+    }
+
     // ==================== Touch Input ====================
 
     @SuppressLint("ClickableViewAccessibility")

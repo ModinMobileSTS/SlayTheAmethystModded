@@ -28,6 +28,7 @@ class RenderSurfaceManager(
     private val virtualResolutionMode: VirtualResolutionMode,
     private val avoidDisplayCutout: Boolean,
     private val cropScreenBottom: Boolean,
+    private val isSoftKeyboardSessionActive: () -> Boolean,
     private val onSurfaceReady: () -> Unit,
     private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
@@ -49,6 +50,7 @@ class RenderSurfaceManager(
     private var postBootSurfaceSoftRefreshScheduled = false
     private var postBootSurfaceSoftRefreshCompleted = false
     private var postBootSurfaceSoftRefreshAttempts = 0
+    private var postBootSurfaceSoftRefreshDeferrals = 0
     private var postBootSurfaceSoftRefreshInFlight = false
 
     private val foregroundResyncRunnable = Runnable {
@@ -427,14 +429,17 @@ class RenderSurfaceManager(
         ) {
             return
         }
-        if (!state.isForeground || !state.hasWindowFocus) {
-            retryPostBootSurfaceSoftRefresh("not_ready_foreground")
+        val blocker = resolvePostBootSurfaceSoftRefreshBlocker(
+            inForeground = state.isForeground,
+            hasWindowFocus = state.hasWindowFocus,
+            hasCurrentSurface = renderHost.currentSurface != null,
+            softKeyboardSessionActive = isSoftKeyboardSessionActive.invoke()
+        )
+        if (blocker != null) {
+            retryPostBootSurfaceSoftRefresh(blocker)
             return
         }
-        if (renderHost.currentSurface == null) {
-            retryPostBootSurfaceSoftRefresh("surface_unavailable")
-            return
-        }
+        postBootSurfaceSoftRefreshDeferrals = 0
         postBootSurfaceSoftRefreshAttempts++
         postBootSurfaceSoftRefreshInFlight = true
         println(
@@ -466,14 +471,15 @@ class RenderSurfaceManager(
 
     private fun retryPostBootSurfaceSoftRefresh(reason: String) {
         if (postBootSurfaceSoftRefreshCompleted ||
-            postBootSurfaceSoftRefreshAttempts >= MAX_POST_BOOT_SURFACE_SOFT_REFRESH_ATTEMPTS
+            postBootSurfaceSoftRefreshDeferrals >= MAX_POST_BOOT_SURFACE_SOFT_REFRESH_ATTEMPTS
         ) {
             println(
                 "RenderSurfaceRefresh: backend=SurfaceView action=aborted " +
-                    "attempts=$postBootSurfaceSoftRefreshAttempts reason=$reason"
+                    "attempts=$postBootSurfaceSoftRefreshAttempts deferrals=$postBootSurfaceSoftRefreshDeferrals reason=$reason"
             )
             return
         }
+        postBootSurfaceSoftRefreshDeferrals++
         postBootSurfaceSoftRefreshScheduled = true
         renderView.removeCallbacks(postBootSurfaceSoftRefreshRunnable)
         renderView.postDelayed(
@@ -482,7 +488,7 @@ class RenderSurfaceManager(
         )
         println(
             "RenderSurfaceRefresh: backend=SurfaceView action=retry " +
-                "attempt=$postBootSurfaceSoftRefreshAttempts reason=$reason " +
+                "attempt=$postBootSurfaceSoftRefreshAttempts deferral=$postBootSurfaceSoftRefreshDeferrals reason=$reason " +
                 "delayMs=$POST_BOOT_SURFACE_SOFT_REFRESH_RETRY_DELAY_MS"
         )
     }
@@ -782,6 +788,24 @@ class RenderSurfaceManager(
                 return false
             }
             return reason == "resume" || reason == "focus" || reason == "legacy_foreground"
+        }
+
+        internal fun resolvePostBootSurfaceSoftRefreshBlocker(
+            inForeground: Boolean,
+            hasWindowFocus: Boolean,
+            hasCurrentSurface: Boolean,
+            softKeyboardSessionActive: Boolean
+        ): String? {
+            if (!inForeground || !hasWindowFocus) {
+                return "not_ready_foreground"
+            }
+            if (!hasCurrentSurface) {
+                return "surface_unavailable"
+            }
+            if (softKeyboardSessionActive) {
+                return "ime_active"
+            }
+            return null
         }
     }
 }
