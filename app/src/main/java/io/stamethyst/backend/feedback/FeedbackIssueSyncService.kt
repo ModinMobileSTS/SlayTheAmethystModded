@@ -44,8 +44,6 @@ object FeedbackIssueSyncService {
         requireValidIssueNumber(issueNumber)
         val now = System.currentTimeMillis()
         val normalizedIssueUrl = issueUrl?.trim().orEmpty().ifEmpty { buildIssueUrl(issueNumber) }
-        val existingSubscriptions = FeedbackIssueLocalStore.loadSubscriptions(context)
-        val existingSubscription = existingSubscriptions.firstOrNull { it.issueNumber == issueNumber }
         val existingCache = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber)
         val cache = (existingCache ?: FeedbackIssueThreadCache(
             issueNumber = issueNumber,
@@ -63,43 +61,47 @@ object FeedbackIssueSyncService {
             updatedAtMs = maxOf(existingCache?.updatedAtMs ?: 0L, now)
         )
         FeedbackIssueLocalStore.saveIssueCache(context, cache)
-        val subscription = FeedbackIssueSubscription(
-            issueNumber = issueNumber,
-            issueUrl = cache.issueUrl,
-            title = cache.title,
-            state = cache.state,
-            unread = false,
-            lastSyncedAtMs = now,
-            lastViewedAtMs = maxOf(existingSubscription?.lastViewedAtMs ?: 0L, cache.lastEventAtMs),
-            updatedAtMs = cache.updatedAtMs
-        )
-        FeedbackIssueLocalStore.saveSubscriptions(
-            context,
-            mergeSubscription(existingSubscriptions, subscription)
-        )
-        return subscription
+        var savedSubscription: FeedbackIssueSubscription? = null
+        FeedbackIssueLocalStore.updateSubscriptions(context) { current ->
+            val existingSubscription = current.firstOrNull { it.issueNumber == issueNumber }
+            val subscription = FeedbackIssueSubscription(
+                issueNumber = issueNumber,
+                issueUrl = cache.issueUrl,
+                title = cache.title,
+                state = cache.state,
+                unread = false,
+                lastSyncedAtMs = now,
+                lastViewedAtMs = maxOf(existingSubscription?.lastViewedAtMs ?: 0L, cache.lastEventAtMs),
+                updatedAtMs = cache.updatedAtMs
+            )
+            savedSubscription = subscription
+            mergeSubscription(current, subscription)
+        }
+        return checkNotNull(savedSubscription)
     }
 
     fun subscribeToIssue(context: Context, issueNumber: Long): FeedbackIssueSubscription {
         requireValidIssueNumber(issueNumber)
         val remote = fetchRemoteIssue(context, issueNumber)
-        val subscription = FeedbackIssueSubscription(
-            issueNumber = issueNumber,
-            issueUrl = remote.issueUrl,
-            title = remote.title,
-            state = remote.state,
-            unread = false,
-            lastSyncedAtMs = System.currentTimeMillis(),
-            lastViewedAtMs = remote.lastEventAtMs,
-            updatedAtMs = remote.updatedAtMs
-        )
-        val updated = mergeSubscription(
-            FeedbackIssueLocalStore.loadSubscriptions(context),
-            subscription
-        )
         FeedbackIssueLocalStore.saveIssueCache(context, remote)
-        FeedbackIssueLocalStore.saveSubscriptions(context, updated)
-        return subscription
+        val now = System.currentTimeMillis()
+        var savedSubscription: FeedbackIssueSubscription? = null
+        FeedbackIssueLocalStore.updateSubscriptions(context) { current ->
+            val existing = current.firstOrNull { it.issueNumber == issueNumber }
+            val subscription = FeedbackIssueSubscription(
+                issueNumber = issueNumber,
+                issueUrl = remote.issueUrl,
+                title = remote.title,
+                state = remote.state,
+                unread = false,
+                lastSyncedAtMs = now,
+                lastViewedAtMs = maxOf(existing?.lastViewedAtMs ?: 0L, remote.lastEventAtMs),
+                updatedAtMs = remote.updatedAtMs
+            )
+            savedSubscription = subscription
+            mergeSubscription(current, subscription)
+        }
+        return checkNotNull(savedSubscription)
     }
 
     fun listIssues(
@@ -134,8 +136,8 @@ object FeedbackIssueSyncService {
     }
 
     fun syncAllSubscriptions(context: Context): FeedbackSyncResult {
-        val existing = FeedbackIssueLocalStore.loadSubscriptions(context)
-        if (existing.isEmpty()) {
+        val initialSubscriptions = FeedbackIssueLocalStore.loadSubscriptions(context)
+        if (initialSubscriptions.isEmpty()) {
             return FeedbackSyncResult(
                 subscriptions = emptyList(),
                 unreadIssueNumbers = emptyList(),
@@ -144,20 +146,15 @@ object FeedbackIssueSyncService {
         }
 
         val syncedAtMs = System.currentTimeMillis()
-        val updatedSubscriptions = ArrayList<FeedbackIssueSubscription>(existing.size)
-        existing.forEach { subscription ->
+        val remoteByIssueNumber = LinkedHashMap<Long, FeedbackIssueThreadCache>(initialSubscriptions.size)
+        initialSubscriptions.forEach { subscription ->
             val remote = fetchRemoteIssue(context, subscription.issueNumber)
             FeedbackIssueLocalStore.saveIssueCache(context, remote)
-            updatedSubscriptions += subscription.copy(
-                issueUrl = remote.issueUrl,
-                title = remote.title,
-                state = remote.state,
-                unread = remote.lastEventAtMs > subscription.lastViewedAtMs,
-                lastSyncedAtMs = syncedAtMs,
-                updatedAtMs = remote.updatedAtMs
-            )
+            remoteByIssueNumber[subscription.issueNumber] = remote
         }
-        FeedbackIssueLocalStore.saveSubscriptions(context, updatedSubscriptions)
+        val updatedSubscriptions = FeedbackIssueLocalStore.updateSubscriptions(context) { current ->
+            mergeSyncedSubscriptions(current, remoteByIssueNumber, syncedAtMs)
+        }
         return FeedbackSyncResult(
             subscriptions = updatedSubscriptions,
             unreadIssueNumbers = updatedSubscriptions.filter { it.unread }.map { it.issueNumber },
@@ -170,40 +167,47 @@ object FeedbackIssueSyncService {
         issueNumber: Long,
         markViewed: Boolean
     ): FeedbackIssueThreadCache {
-        val subscriptions = FeedbackIssueLocalStore.loadSubscriptions(context)
-        val current = subscriptions.firstOrNull { it.issueNumber == issueNumber }
+        FeedbackIssueLocalStore.loadSubscriptions(context)
+            .firstOrNull { it.issueNumber == issueNumber }
             ?: throw IOException("未找到对应的反馈订阅。")
         val remote = fetchRemoteIssue(context, issueNumber)
         FeedbackIssueLocalStore.saveIssueCache(context, remote)
-        val nextViewedAt = if (markViewed) remote.lastEventAtMs else current.lastViewedAtMs
-        val next = current.copy(
-            issueUrl = remote.issueUrl,
-            title = remote.title,
-            state = remote.state,
-            unread = if (markViewed) false else remote.lastEventAtMs > current.lastViewedAtMs,
-            lastSyncedAtMs = System.currentTimeMillis(),
-            lastViewedAtMs = nextViewedAt,
-            updatedAtMs = remote.updatedAtMs
-        )
-        FeedbackIssueLocalStore.saveSubscriptions(context, mergeSubscription(subscriptions, next))
+        val syncedAtMs = System.currentTimeMillis()
+        FeedbackIssueLocalStore.updateSubscriptions(context) { subscriptions ->
+            val latest = subscriptions.firstOrNull { it.issueNumber == issueNumber }
+                ?: return@updateSubscriptions subscriptions
+            mergeSubscription(
+                subscriptions,
+                latest.withRemoteState(
+                    remote = remote,
+                    syncedAtMs = syncedAtMs,
+                    markViewed = markViewed
+                )
+            )
+        }
         return remote
     }
 
     fun markIssueViewed(context: Context, issueNumber: Long) {
-        val subscriptions = FeedbackIssueLocalStore.loadSubscriptions(context)
-        val subscription = subscriptions.firstOrNull { it.issueNumber == issueNumber } ?: return
         val cache = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber)
-        val updated = subscription.copy(
-            unread = false,
-            lastViewedAtMs = cache?.lastEventAtMs ?: subscription.updatedAtMs
-        )
-        FeedbackIssueLocalStore.saveSubscriptions(context, mergeSubscription(subscriptions, updated))
+        FeedbackIssueLocalStore.updateSubscriptions(context) { subscriptions ->
+            val subscription = subscriptions.firstOrNull { it.issueNumber == issueNumber }
+                ?: return@updateSubscriptions subscriptions
+            val updated = subscription.copy(
+                unread = false,
+                lastViewedAtMs = maxOf(
+                    subscription.lastViewedAtMs,
+                    cache?.lastEventAtMs ?: subscription.updatedAtMs
+                )
+            )
+            mergeSubscription(subscriptions, updated)
+        }
     }
 
     fun unsubscribe(context: Context, issueNumber: Long) {
-        val updated = FeedbackIssueLocalStore.loadSubscriptions(context)
-            .filterNot { it.issueNumber == issueNumber }
-        FeedbackIssueLocalStore.saveSubscriptions(context, updated)
+        FeedbackIssueLocalStore.updateSubscriptions(context) { current ->
+            current.filterNot { it.issueNumber == issueNumber }
+        }
         FeedbackIssueLocalStore.deleteIssueCache(context, issueNumber)
     }
 
@@ -559,5 +563,40 @@ object FeedbackIssueSyncService {
         val messageText: String,
         val playerName: String,
         val attachments: List<FeedbackThreadAttachment>
+    )
+}
+
+internal fun mergeSyncedSubscriptions(
+    current: List<FeedbackIssueSubscription>,
+    remoteByIssueNumber: Map<Long, FeedbackIssueThreadCache>,
+    syncedAtMs: Long
+): List<FeedbackIssueSubscription> {
+    return current.map { subscription ->
+        val remote = remoteByIssueNumber[subscription.issueNumber] ?: return@map subscription
+        subscription.withRemoteState(remote = remote, syncedAtMs = syncedAtMs)
+    }.sortedWith(
+        compareByDescending<FeedbackIssueSubscription> { it.unread }
+            .thenByDescending { it.updatedAtMs }
+    )
+}
+
+internal fun FeedbackIssueSubscription.withRemoteState(
+    remote: FeedbackIssueThreadCache,
+    syncedAtMs: Long,
+    markViewed: Boolean = false
+): FeedbackIssueSubscription {
+    val nextViewedAtMs = if (markViewed) {
+        maxOf(lastViewedAtMs, remote.lastEventAtMs)
+    } else {
+        lastViewedAtMs
+    }
+    return copy(
+        issueUrl = remote.issueUrl,
+        title = remote.title,
+        state = remote.state,
+        unread = remote.lastEventAtMs > nextViewedAtMs,
+        lastSyncedAtMs = syncedAtMs,
+        lastViewedAtMs = nextViewedAtMs,
+        updatedAtMs = remote.updatedAtMs
     )
 }

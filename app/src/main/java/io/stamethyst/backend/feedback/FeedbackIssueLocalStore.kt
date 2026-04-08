@@ -2,6 +2,8 @@ package io.stamethyst.backend.feedback
 
 import android.content.Context
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,59 +13,34 @@ object FeedbackIssueLocalStore {
     private const val ROOT_DIR_NAME = "feedback"
     private const val SUBSCRIPTIONS_FILE_NAME = "subscriptions.json"
     private const val ISSUES_DIR_NAME = "issues"
+    private val subscriptionsLock = Any()
 
     fun loadSubscriptions(context: Context): List<FeedbackIssueSubscription> {
-        val file = subscriptionsFile(context)
-        val root = readJsonObject(file) ?: return emptyList()
-        val array = root.optJSONArray("subscriptions") ?: JSONArray()
-        val items = ArrayList<FeedbackIssueSubscription>(array.length())
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            items += FeedbackIssueSubscription(
-                issueNumber = item.optLong("issueNumber"),
-                issueUrl = item.optString("issueUrl").trim(),
-                title = item.optString("title").trim(),
-                state = item.optString("state").trim().ifEmpty { "open" },
-                unread = item.optBoolean("unread", false),
-                lastSyncedAtMs = item.optLong("lastSyncedAtMs"),
-                lastViewedAtMs = item.optLong("lastViewedAtMs"),
-                updatedAtMs = item.optLong("updatedAtMs")
-            )
+        synchronized(subscriptionsLock) {
+            return loadSubscriptionsLocked(subscriptionsFile(context))
         }
-        return items
-            .filter { it.issueNumber > 0L && it.issueUrl.isNotBlank() }
-            .sortedWith(
-                compareByDescending<FeedbackIssueSubscription> { it.unread }
-                    .thenByDescending { it.updatedAtMs }
-            )
     }
 
     fun saveSubscriptions(
         context: Context,
         subscriptions: List<FeedbackIssueSubscription>
     ) {
-        val root = JSONObject().apply {
-            put(
-                "subscriptions",
-                JSONArray().apply {
-                    subscriptions.forEach { subscription ->
-                        put(
-                            JSONObject().apply {
-                                put("issueNumber", subscription.issueNumber)
-                                put("issueUrl", subscription.issueUrl)
-                                put("title", subscription.title)
-                                put("state", subscription.state)
-                                put("unread", subscription.unread)
-                                put("lastSyncedAtMs", subscription.lastSyncedAtMs)
-                                put("lastViewedAtMs", subscription.lastViewedAtMs)
-                                put("updatedAtMs", subscription.updatedAtMs)
-                            }
-                        )
-                    }
-                }
-            )
+        synchronized(subscriptionsLock) {
+            writeSubscriptionsLocked(subscriptionsFile(context), subscriptions)
         }
-        writeJsonObject(subscriptionsFile(context), root)
+    }
+
+    fun updateSubscriptions(
+        context: Context,
+        transform: (List<FeedbackIssueSubscription>) -> List<FeedbackIssueSubscription>
+    ): List<FeedbackIssueSubscription> {
+        synchronized(subscriptionsLock) {
+            val file = subscriptionsFile(context)
+            val current = loadSubscriptionsLocked(file)
+            val updated = normalizeSubscriptions(transform(current))
+            writeSubscriptionsLocked(file, updated)
+            return updated
+        }
     }
 
     fun loadIssueCache(
@@ -198,6 +175,66 @@ object FeedbackIssueLocalStore {
         return dir
     }
 
+    private fun loadSubscriptionsLocked(file: File): List<FeedbackIssueSubscription> {
+        val root = readJsonObject(file) ?: return emptyList()
+        val array = root.optJSONArray("subscriptions") ?: JSONArray()
+        val items = ArrayList<FeedbackIssueSubscription>(array.length())
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            items += FeedbackIssueSubscription(
+                issueNumber = item.optLong("issueNumber"),
+                issueUrl = item.optString("issueUrl").trim(),
+                title = item.optString("title").trim(),
+                state = item.optString("state").trim().ifEmpty { "open" },
+                unread = item.optBoolean("unread", false),
+                lastSyncedAtMs = item.optLong("lastSyncedAtMs"),
+                lastViewedAtMs = item.optLong("lastViewedAtMs"),
+                updatedAtMs = item.optLong("updatedAtMs")
+            )
+        }
+        return normalizeSubscriptions(items)
+    }
+
+    private fun writeSubscriptionsLocked(
+        file: File,
+        subscriptions: List<FeedbackIssueSubscription>
+    ) {
+        val normalized = normalizeSubscriptions(subscriptions)
+        val root = JSONObject().apply {
+            put(
+                "subscriptions",
+                JSONArray().apply {
+                    normalized.forEach { subscription ->
+                        put(
+                            JSONObject().apply {
+                                put("issueNumber", subscription.issueNumber)
+                                put("issueUrl", subscription.issueUrl)
+                                put("title", subscription.title)
+                                put("state", subscription.state)
+                                put("unread", subscription.unread)
+                                put("lastSyncedAtMs", subscription.lastSyncedAtMs)
+                                put("lastViewedAtMs", subscription.lastViewedAtMs)
+                                put("updatedAtMs", subscription.updatedAtMs)
+                            }
+                        )
+                    }
+                }
+            )
+        }
+        writeJsonObject(file, root)
+    }
+
+    private fun normalizeSubscriptions(
+        subscriptions: List<FeedbackIssueSubscription>
+    ): List<FeedbackIssueSubscription> {
+        return subscriptions
+            .filter { it.issueNumber > 0L && it.issueUrl.isNotBlank() }
+            .sortedWith(
+                compareByDescending<FeedbackIssueSubscription> { it.unread }
+                    .thenByDescending { it.updatedAtMs }
+            )
+    }
+
     private fun readJsonObject(file: File): JSONObject? {
         if (!file.isFile) {
             return null
@@ -219,6 +256,26 @@ object FeedbackIssueLocalStore {
         if (parent != null && !parent.exists()) {
             parent.mkdirs()
         }
-        file.writeText(value.toString(2), StandardCharsets.UTF_8)
+        val tempFile = File(
+            parent ?: throw IOException("JSON target file has no parent directory"),
+            ".${file.name}.${System.nanoTime()}.tmp"
+        )
+        try {
+            FileOutputStream(tempFile, false).use { output ->
+                output.write(value.toString(2).toByteArray(StandardCharsets.UTF_8))
+                output.write('\n'.code)
+                output.fd.sync()
+            }
+            if (file.exists() && !file.delete()) {
+                throw IOException("Failed to replace JSON file: ${file.absolutePath}")
+            }
+            if (!tempFile.renameTo(file)) {
+                throw IOException("Failed to move JSON file into place: ${file.absolutePath}")
+            }
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+        }
     }
 }
