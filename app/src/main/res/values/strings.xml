@@ -464,6 +464,14 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="update_mirror_desc">Update checks, APK download links, and native library market downloads all use this selected source.</string>
     <string name="update_manual_check_title">Check for updates now</string>
     <string name="update_manual_check_running">Checking for updates...</string>
+    <string name="update_history_title">View release history</string>
+    <string name="update_history_loading">Loading release history...</string>
+    <string name="update_history_load_failed">Failed to load release history: %1$s</string>
+    <string name="update_history_dialog_title">Release history</string>
+    <string name="update_history_dialog_source">Source: %1$s</string>
+    <string name="update_history_dialog_empty">No historical releases were returned.</string>
+    <string name="update_history_dialog_entry_title">Version %1$s</string>
+    <string name="update_history_dialog_published_at">Published at: %1$s</string>
     <string name="update_current_version">Current version: %1$s</string>
     <string name="update_status_title">Latest check</string>
     <string name="update_status_not_checked">No update check has run yet.</string>

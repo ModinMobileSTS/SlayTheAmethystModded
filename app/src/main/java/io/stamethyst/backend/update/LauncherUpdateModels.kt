@@ -159,8 +159,23 @@ data class UpdateReleaseInfo(
     val publishedAtRaw: String?,
     val publishedAtDisplayText: String,
     val notesText: String,
+    val releasePageUrl: String = "",
     val assetName: String,
     val assetDownloadUrl: String,
+)
+
+data class UpdateReleaseHistoryEntry(
+    val rawTagName: String,
+    val normalizedVersion: String,
+    val publishedAtRaw: String?,
+    val publishedAtDisplayText: String,
+    val notesText: String,
+    val releasePageUrl: String = "",
+)
+
+data class UpdateReleaseHistoryResult(
+    val metadataSource: UpdateSource,
+    val entries: List<UpdateReleaseHistoryEntry>,
 )
 
 data class UpdateDownloadResolution(

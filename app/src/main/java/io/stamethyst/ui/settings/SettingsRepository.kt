@@ -12,6 +12,7 @@ import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
@@ -187,10 +188,8 @@ internal object SettingsRepository {
     fun loadUpdateStateSnapshot(context: Context): UpdateStateSnapshot {
         return UpdateStateSnapshot(
             autoCheckUpdatesEnabled = LauncherPreferences.isAutoCheckUpdatesEnabled(context),
-            preferredUpdateMirror = UpdateSource.normalizePreferredUserSource(
-                LauncherPreferences.readPreferredUpdateMirrorId(context)
-            ),
-            availableUpdateMirrors = UpdateSource.userSelectableSources(),
+            preferredUpdateMirror = UpdateMirrorManager.current(context),
+            availableUpdateMirrors = UpdateMirrorManager.selectableSources(),
             currentVersionText = BuildConfig.VERSION_NAME,
             statusSummary = buildUpdateStatusSummary(context)
         )
@@ -254,7 +253,7 @@ internal object SettingsRepository {
     }
 
     private fun resolveUpdateSourceDisplayName(sourceId: String?): String? {
-        return UpdateSource.fromPersistedValue(sourceId)?.displayName
+        return UpdateMirrorManager.displayNameOf(sourceId)
     }
 
     private fun formatUpdateCheckTime(timestampMs: Long): String {

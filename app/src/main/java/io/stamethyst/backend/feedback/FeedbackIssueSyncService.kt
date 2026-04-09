@@ -3,8 +3,8 @@ package io.stamethyst.backend.feedback
 import android.content.Context
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.update.GithubMirrorFallback
+import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
-import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -122,9 +122,7 @@ object FeedbackIssueSyncService {
             lastError = error
         }
 
-        val preferred = UpdateSource.normalizePreferredUserSource(
-            LauncherPreferences.readPreferredUpdateMirrorId(context)
-        )
+        val preferred = UpdateMirrorManager.current(context)
         try {
             return GithubMirrorFallback.run(preferred) { source ->
                 fetchIssuePageFromSource(source, page, pageSize)
@@ -219,9 +217,7 @@ object FeedbackIssueSyncService {
         context: Context,
         issueNumber: Long
     ): FeedbackIssueThreadCache {
-        val preferred = UpdateSource.normalizePreferredUserSource(
-            LauncherPreferences.readPreferredUpdateMirrorId(context)
-        )
+        val preferred = UpdateMirrorManager.current(context)
         return try {
             GithubMirrorFallback.run(preferred) { source ->
                 fetchRemoteIssueFromSource(source, issueNumber)

@@ -87,6 +87,7 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
@@ -187,6 +188,8 @@ fun LauncherSettingsScreen(
             viewModel.onPreferredUpdateMirrorChanged(activity, source)
         },
         onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
+        onOpenReleaseHistory = { viewModel.onOpenReleaseHistory(activity) },
+        onDismissReleaseHistoryDialog = viewModel::dismissReleaseHistoryDialog,
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onOpenMobileGluesSettings = viewModel::onOpenMobileGluesSettings,
         onOpenDeveloperSettings = { navigator.push(Route.DeveloperSettings) },
@@ -365,6 +368,8 @@ private fun LauncherSettingsScreenContent(
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
     onManualCheckUpdates: () -> Unit = {},
+    onOpenReleaseHistory: () -> Unit = {},
+    onDismissReleaseHistoryDialog: () -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
     onOpenDeveloperSettings: () -> Unit = {},
@@ -478,7 +483,9 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onAutoCheckUpdatesChanged = onAutoCheckUpdatesChanged,
                         onPreferredUpdateMirrorChanged = onPreferredUpdateMirrorChanged,
-                        onManualCheckUpdates = onManualCheckUpdates
+                        onManualCheckUpdates = onManualCheckUpdates,
+                        onOpenReleaseHistory = onOpenReleaseHistory,
+                        onDismissReleaseHistoryDialog = onDismissReleaseHistoryDialog
                     )
                 }
             }
@@ -639,9 +646,12 @@ private fun SettingsUpdateSection(
     onAutoCheckUpdatesChanged: (Boolean) -> Unit,
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit,
     onManualCheckUpdates: () -> Unit,
+    onOpenReleaseHistory: () -> Unit,
+    onDismissReleaseHistoryDialog: () -> Unit,
 ) {
     var showMirrorDialog by rememberSaveable { mutableStateOf(false) }
-    val controlsEnabled = !uiState.busy && !uiState.updateCheckInProgress
+    val controlsEnabled =
+        !uiState.busy && !uiState.updateCheckInProgress && !uiState.releaseHistoryLoading
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SwitchSettingRow(
@@ -664,7 +674,7 @@ private fun SettingsUpdateSection(
             style = MaterialTheme.typography.bodySmall
         )
 
-        if (uiState.updateCheckInProgress) {
+        if (uiState.updateCheckInProgress || uiState.releaseHistoryLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
@@ -678,6 +688,17 @@ private fun SettingsUpdateSection(
             ),
             enabled = controlsEnabled,
             onClick = onManualCheckUpdates
+        )
+        SettingsActionListItem(
+            title = stringResource(
+                if (uiState.releaseHistoryLoading) {
+                    R.string.update_history_loading
+                } else {
+                    R.string.update_history_title
+                }
+            ),
+            enabled = controlsEnabled,
+            onClick = onOpenReleaseHistory
         )
 
         Text(
@@ -727,6 +748,78 @@ private fun SettingsUpdateSection(
                 }
             }
         )
+    }
+
+    uiState.releaseHistoryDialogState?.let { dialogState ->
+        AlertDialog(
+            onDismissRequest = onDismissReleaseHistoryDialog,
+            title = { Text(stringResource(R.string.update_history_dialog_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.update_history_dialog_source,
+                            dialogState.metadataSourceDisplayName
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (dialogState.entries.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.update_history_dialog_empty),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        dialogState.entries.forEach { entry ->
+                            UpdateHistoryEntryCard(entry = entry)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = onDismissReleaseHistoryDialog) {
+                    Text(stringResource(R.string.common_action_close))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun UpdateHistoryEntryCard(
+    entry: SettingsScreenViewModel.UpdateHistoryEntryState,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.update_history_dialog_entry_title, entry.version),
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = stringResource(
+                    R.string.update_history_dialog_published_at,
+                    entry.publishedAtText
+                ),
+                style = MaterialTheme.typography.bodySmall
+            )
+            SimpleMarkdownCard(
+                title = stringResource(R.string.update_dialog_notes_title),
+                markdown = entry.notesText
+            )
+        }
     }
 }
 
@@ -1754,6 +1847,7 @@ private fun SettingsInputSection(
             }
         )
     }
+
 }
 
 @Composable

@@ -44,6 +44,9 @@ import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.LauncherUpdateUiReducer
 import io.stamethyst.backend.update.UpdateCheckExecutionResult
 import io.stamethyst.backend.update.UpdateDownloadResolution
+import io.stamethyst.backend.update.UpdateMirrorManager
+import io.stamethyst.backend.update.UpdateReleaseHistoryEntry
+import io.stamethyst.backend.update.UpdateReleaseHistoryResult
 import io.stamethyst.backend.update.UpdateReleaseInfo
 import io.stamethyst.backend.update.UpdateUiMessage
 import io.stamethyst.backend.update.GithubMirrorFallback
@@ -105,6 +108,17 @@ class SettingsScreenViewModel : ViewModel() {
         val notesText: String,
         val downloadOptions: List<UpdateDownloadOptionState>,
         val defaultDownloadSourceId: String,
+    )
+
+    data class UpdateHistoryEntryState(
+        val version: String,
+        val publishedAtText: String,
+        val notesText: String,
+    )
+
+    data class UpdateHistoryDialogState(
+        val metadataSourceDisplayName: String,
+        val entries: List<UpdateHistoryEntryState>,
     )
 
     data class RendererBackendOptionState(
@@ -200,11 +214,13 @@ class SettingsScreenViewModel : ViewModel() {
         val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList(),
         val autoCheckUpdatesEnabled: Boolean = LauncherPreferences.DEFAULT_AUTO_CHECK_UPDATES_ENABLED,
         val preferredUpdateMirror: UpdateSource = UpdateSource.DEFAULT_PREFERRED_USER_SOURCE,
-        val availableUpdateMirrors: List<UpdateSource> = UpdateSource.userSelectableSources(),
+        val availableUpdateMirrors: List<UpdateSource> = UpdateMirrorManager.selectableSources(),
         val currentVersionText: String = BuildConfig.VERSION_NAME,
         val updateStatusSummary: String = "",
         val updateCheckInProgress: Boolean = false,
         val updatePromptState: UpdatePromptState? = null,
+        val releaseHistoryLoading: Boolean = false,
+        val releaseHistoryDialogState: UpdateHistoryDialogState? = null,
         val nativeLibraryMarketPackages: List<NativeLibraryMarketPackageState> = emptyList(),
         val nativeLibraryMarketLoading: Boolean = false,
         val nativeLibraryMarketErrorText: String? = null,
@@ -290,7 +306,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (!source.userSelectable) {
             return
         }
-        LauncherPreferences.savePreferredUpdateMirrorId(host, source.id)
+        UpdateMirrorManager.saveCurrent(host, source)
         nativeLibraryMarketCatalog = emptyList()
         uiState = uiState.copy(
             nativeLibraryMarketPackages = emptyList(),
@@ -300,7 +316,7 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun onManualCheckUpdates(host: Activity) {
-        if (uiState.updateCheckInProgress || uiState.busy) {
+        if (uiState.updateCheckInProgress || uiState.releaseHistoryLoading || uiState.busy) {
             return
         }
         runUpdateCheck(host, userInitiated = true)
@@ -309,6 +325,43 @@ class SettingsScreenViewModel : ViewModel() {
     fun dismissUpdatePrompt() {
         if (uiState.updatePromptState != null) {
             uiState = uiState.copy(updatePromptState = null)
+        }
+    }
+
+    fun onOpenReleaseHistory(host: Activity) {
+        if (uiState.busy || uiState.updateCheckInProgress || uiState.releaseHistoryLoading) {
+            return
+        }
+        uiState = uiState.copy(releaseHistoryLoading = true)
+        val preferredSource = resolveSelectedMirrorSource(host)
+        executor.execute {
+            try {
+                val result = LauncherUpdateService.fetchReleaseHistory(preferredSource)
+                host.runOnUiThread {
+                    uiState = uiState.copy(
+                        releaseHistoryLoading = false,
+                        releaseHistoryDialogState = buildUpdateHistoryDialogState(host, result)
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    uiState = uiState.copy(releaseHistoryLoading = false)
+                    showToast(
+                        host,
+                        host.getString(
+                            R.string.update_history_load_failed,
+                            GithubMirrorFallback.summarize(error)
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissReleaseHistoryDialog() {
+        if (uiState.releaseHistoryDialogState != null) {
+            uiState = uiState.copy(releaseHistoryDialogState = null)
         }
     }
 
@@ -606,16 +659,43 @@ class SettingsScreenViewModel : ViewModel() {
         )
     }
 
-    private fun resolveSelectedMirrorSource(host: Activity): UpdateSource {
-        return UpdateSource.normalizePreferredUserSource(
-            LauncherPreferences.readPreferredUpdateMirrorId(host)
+    private fun buildUpdateHistoryDialogState(
+        host: Activity,
+        result: UpdateReleaseHistoryResult,
+    ): UpdateHistoryDialogState {
+        return UpdateHistoryDialogState(
+            metadataSourceDisplayName = result.metadataSource.displayName,
+            entries = result.entries.map { entry ->
+                buildUpdateHistoryEntryState(host, entry)
+            }
         )
+    }
+
+    private fun buildUpdateHistoryEntryState(
+        host: Activity,
+        entry: UpdateReleaseHistoryEntry,
+    ): UpdateHistoryEntryState {
+        return UpdateHistoryEntryState(
+            version = entry.normalizedVersion,
+            publishedAtText = entry.publishedAtDisplayText.ifBlank {
+                host.getString(R.string.update_unknown_date)
+            },
+            notesText = entry.notesText.ifBlank {
+                host.getString(R.string.update_dialog_notes_empty)
+            }
+        )
+    }
+
+    private fun resolveSelectedMirrorSource(host: Activity): UpdateSource {
+        return UpdateMirrorManager.current(host)
     }
 
     private fun syncStoredUpdateState(
         host: Activity,
         updateCheckInProgress: Boolean = uiState.updateCheckInProgress,
         updatePromptState: UpdatePromptState? = uiState.updatePromptState,
+        releaseHistoryLoading: Boolean = uiState.releaseHistoryLoading,
+        releaseHistoryDialogState: UpdateHistoryDialogState? = uiState.releaseHistoryDialogState,
     ) {
         val snapshot = SettingsRepository.loadUpdateStateSnapshot(host)
         uiState = uiState.copy(
@@ -625,7 +705,9 @@ class SettingsScreenViewModel : ViewModel() {
             currentVersionText = snapshot.currentVersionText,
             updateStatusSummary = snapshot.statusSummary,
             updateCheckInProgress = updateCheckInProgress,
-            updatePromptState = updatePromptState
+            updatePromptState = updatePromptState,
+            releaseHistoryLoading = releaseHistoryLoading,
+            releaseHistoryDialogState = releaseHistoryDialogState
         )
     }
 

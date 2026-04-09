@@ -13,6 +13,9 @@ import org.json.JSONTokener
 object LauncherUpdateService {
     private const val LATEST_RELEASE_API_URL =
         "https://api.github.com/repos/ModinMobileSTS/SlayTheAmethystModded/releases/latest"
+    private const val RELEASE_HISTORY_API_URL =
+        "https://api.github.com/repos/ModinMobileSTS/SlayTheAmethystModded/releases"
+    private const val DEFAULT_RELEASE_HISTORY_LIMIT = 10
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 12_000
     private const val USER_AGENT = "SlayTheAmethyst-LauncherUpdate"
@@ -75,12 +78,28 @@ object LauncherUpdateService {
         )
     }
 
+    fun fetchReleaseHistory(
+        preferredUserSource: UpdateSource,
+        limit: Int = DEFAULT_RELEASE_HISTORY_LIMIT,
+    ): UpdateReleaseHistoryResult {
+        val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
+        val normalizedLimit = limit.coerceIn(1, 20)
+        val metadataResult = GithubMirrorFallback.run(normalizedPreferredSource) { source ->
+            val requestUrl = source.buildUrl("$RELEASE_HISTORY_API_URL?per_page=$normalizedLimit")
+            val responseText = requestText(requestUrl)
+            parseReleaseHistory(responseText, normalizedLimit)
+                .takeIf { it.isNotEmpty() }
+                ?: throw IOException("Release history is empty.")
+        }
+        return UpdateReleaseHistoryResult(
+            metadataSource = metadataResult.source,
+            entries = metadataResult.value
+        )
+    }
+
     internal fun parseLatestRelease(responseText: String): UpdateReleaseInfo? {
         val root = parseJsonObject(responseText) ?: return null
-        val rawTagName = root.optString("tag_name").trim()
-        if (rawTagName.isEmpty()) {
-            return null
-        }
+        val summary = parseReleaseSummary(root) ?: return null
         val assets = root.optJSONArray("assets") ?: JSONArray()
         val asset = findFirstApkAsset(assets) ?: return null
         val assetName = asset.optString("name").trim()
@@ -89,16 +108,40 @@ object LauncherUpdateService {
             return null
         }
         return UpdateReleaseInfo(
-            rawTagName = rawTagName,
-            normalizedVersion = LauncherUpdateVersioning.normalizeVersionTag(rawTagName),
-            publishedAtRaw = root.optString("published_at").trim().ifEmpty { null },
-            publishedAtDisplayText = LauncherUpdateVersioning.formatPublishedAt(
-                root.optString("published_at").trim().ifEmpty { null }
-            ),
-            notesText = LauncherUpdateVersioning.normalizeReleaseNotesText(root.optString("body")),
+            rawTagName = summary.rawTagName,
+            normalizedVersion = summary.normalizedVersion,
+            publishedAtRaw = summary.publishedAtRaw,
+            publishedAtDisplayText = summary.publishedAtDisplayText,
+            notesText = summary.notesText,
+            releasePageUrl = summary.releasePageUrl,
             assetName = assetName,
             assetDownloadUrl = assetDownloadUrl
         )
+    }
+
+    internal fun parseReleaseHistory(
+        responseText: String,
+        limit: Int = DEFAULT_RELEASE_HISTORY_LIMIT,
+    ): List<UpdateReleaseHistoryEntry> {
+        val releases = parseJsonArray(responseText) ?: return emptyList()
+        val entries = ArrayList<UpdateReleaseHistoryEntry>()
+        val maxEntries = limit.coerceAtLeast(1)
+        for (index in 0 until releases.length()) {
+            if (entries.size >= maxEntries) {
+                break
+            }
+            val release = releases.optJSONObject(index) ?: continue
+            val summary = parseReleaseSummary(release) ?: continue
+            entries += UpdateReleaseHistoryEntry(
+                rawTagName = summary.rawTagName,
+                normalizedVersion = summary.normalizedVersion,
+                publishedAtRaw = summary.publishedAtRaw,
+                publishedAtDisplayText = summary.publishedAtDisplayText,
+                notesText = summary.notesText,
+                releasePageUrl = summary.releasePageUrl
+            )
+        }
+        return entries
     }
 
     internal fun resolveDownloadResolution(
@@ -203,6 +246,41 @@ object LauncherUpdateService {
             val parsed = JSONTokener(responseText).nextValue()
             parsed as? JSONObject
         }.getOrNull()
+    }
+
+    private fun parseJsonArray(responseText: String): JSONArray? {
+        return runCatching {
+            val parsed = JSONTokener(responseText).nextValue()
+            parsed as? JSONArray
+        }.getOrNull()
+    }
+
+    private data class ParsedReleaseSummary(
+        val rawTagName: String,
+        val normalizedVersion: String,
+        val publishedAtRaw: String?,
+        val publishedAtDisplayText: String,
+        val notesText: String,
+        val releasePageUrl: String,
+    )
+
+    private fun parseReleaseSummary(root: JSONObject): ParsedReleaseSummary? {
+        if (root.optBoolean("draft") || root.optBoolean("prerelease")) {
+            return null
+        }
+        val rawTagName = root.optString("tag_name").trim()
+        if (rawTagName.isEmpty()) {
+            return null
+        }
+        val publishedAtRaw = root.optString("published_at").trim().ifEmpty { null }
+        return ParsedReleaseSummary(
+            rawTagName = rawTagName,
+            normalizedVersion = LauncherUpdateVersioning.normalizeVersionTag(rawTagName),
+            publishedAtRaw = publishedAtRaw,
+            publishedAtDisplayText = LauncherUpdateVersioning.formatPublishedAt(publishedAtRaw),
+            notesText = LauncherUpdateVersioning.normalizeReleaseNotesText(root.optString("body")),
+            releasePageUrl = root.optString("html_url").trim()
+        )
     }
 
     private fun findFirstApkAsset(assets: JSONArray): JSONObject? {

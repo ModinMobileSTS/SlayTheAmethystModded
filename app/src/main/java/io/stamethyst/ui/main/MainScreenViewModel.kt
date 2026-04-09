@@ -37,7 +37,7 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModSuggestionService
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
-import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.StsExternalStorageAccess
@@ -189,9 +189,7 @@ class MainScreenViewModel : ViewModel() {
             uiState = uiState.copy(modSuggestions = currentModSuggestions)
         }
 
-        val selectedSource = UpdateSource.normalizePreferredUserSource(
-            LauncherPreferences.readPreferredUpdateMirrorId(host)
-        )
+        val selectedSource = UpdateMirrorManager.current(host)
         val syncSignature = "${ModSuggestionService.currentLocaleKey(host)}|${selectedSource.id}"
         if (modSuggestionSyncInProgress || lastSuccessfulModSuggestionSyncSignature == syncSignature) {
             return
