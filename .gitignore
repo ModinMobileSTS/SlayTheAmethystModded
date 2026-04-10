@@ -97,3 +97,14 @@ patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class
 /cloud-function*.zip
 /signing/upload_certificate.pem
 /video_script.md
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/AmethystRuntimeCompat.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/AmethystRuntimeCompatPatches$GuardedNumIsModifiedPatch.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/AmethystRuntimeCompatPatches$GuardedNumValuePatch.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/AmethystRuntimeCompatPatches$SummonMagicNumberBaseValuePatch.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/AmethystRuntimeCompatPatches$TributeMagicNumberBaseValuePatch.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/AmethystRuntimeCompatPatches.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/CompatRuntimeState$FieldAccess.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/CompatRuntimeState$GuardedDynamicSnapshot.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/CompatRuntimeState$GuardedReflectionAccess.class
+/mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/CompatRuntimeState.class
+/mods/amethyst-runtime-compat/bin/main/ModTheSpire.json

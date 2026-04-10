@@ -47,6 +47,7 @@ import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.JvmLogShareService
+import java.io.File
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.ExecutorService
@@ -78,6 +79,13 @@ class MainScreenViewModel : ViewModel() {
         val summaryText: String,
         val reportText: String,
         val isOutOfMemory: Boolean
+    )
+
+    private data class ImportedStsJarFingerprint(
+        val absolutePath: String,
+        val exists: Boolean,
+        val length: Long,
+        val lastModified: Long
     )
 
     data class UiState(
@@ -122,9 +130,13 @@ class MainScreenViewModel : ViewModel() {
     private val suggestionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val diagnosticsExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
     private var modSuggestionSyncInProgress = false
     private var lastSuccessfulModSuggestionSyncSignature: String? = null
+    private var validatedImportedStsJarFingerprint: ImportedStsJarFingerprint? = null
+    private var validatedImportedStsJarState: Boolean? = null
+    private var validatingImportedStsJarFingerprint: ImportedStsJarFingerprint? = null
     @Volatile
     private var launchInFlight = false
 
@@ -163,21 +175,17 @@ class MainScreenViewModel : ViewModel() {
     fun refresh(host: Activity) {
         clearLaunchInFlightState()
         val storageIssue = detectStorageIssue(host)
-        val hasJar = hasValidImportedStsJar(host)
-        val hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar")
-        val hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD)
-        val hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB)
-        val hasRuntimeCompat = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT)
+        val dependencyAvailability = resolveDependencyAvailability(host)
         currentModSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
 
         modManagementController.refresh(host, storageAccessible = storageIssue == null)
         publishUiState(
             host = host,
-            hasJar = hasJar,
-            hasMts = hasMts,
-            hasBaseMod = hasBaseMod,
-            hasStsLib = hasStsLib,
-            hasRuntimeCompat = hasRuntimeCompat,
+            hasJar = dependencyAvailability.hasJar,
+            hasMts = dependencyAvailability.hasMts,
+            hasBaseMod = dependencyAvailability.hasBaseMod,
+            hasStsLib = dependencyAvailability.hasStsLib,
+            hasRuntimeCompat = dependencyAvailability.hasRuntimeCompat,
             storageIssue = storageIssue
         )
     }
@@ -395,8 +403,105 @@ class MainScreenViewModel : ViewModel() {
         return resolveControlsEnabled(uiState.busy, uiState.busyOperation, uiState.storageIssue != null)
     }
 
-    private fun hasValidImportedStsJar(host: Activity): Boolean {
-        return StsJarValidator.isValid(RuntimePaths.importedStsJar(host))
+    private data class DependencyAvailabilitySnapshot(
+        val hasJar: Boolean,
+        val hasMts: Boolean,
+        val hasBaseMod: Boolean,
+        val hasStsLib: Boolean,
+        val hasRuntimeCompat: Boolean
+    )
+
+    private fun resolveDependencyAvailability(host: Activity): DependencyAvailabilitySnapshot {
+        val importedStsJarFingerprint = buildImportedStsJarFingerprint(host)
+        val hasJar = resolveImportedStsJarStateForUi(importedStsJarFingerprint)
+        if (importedStsJarFingerprint.exists) {
+            ensureImportedStsJarValidation(host, importedStsJarFingerprint)
+        } else {
+            cacheImportedStsJarValidation(importedStsJarFingerprint, false)
+        }
+        return DependencyAvailabilitySnapshot(
+            hasJar = hasJar,
+            hasMts = RuntimePaths.importedMtsJar(host).exists() ||
+                hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
+            hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
+            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB),
+            hasRuntimeCompat = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT)
+        )
+    }
+
+    private fun buildImportedStsJarFingerprint(host: Activity): ImportedStsJarFingerprint {
+        val jarFile = RuntimePaths.importedStsJar(host)
+        return buildImportedStsJarFingerprint(jarFile)
+    }
+
+    private fun buildImportedStsJarFingerprint(jarFile: File): ImportedStsJarFingerprint {
+        val exists = jarFile.isFile
+        return ImportedStsJarFingerprint(
+            absolutePath = jarFile.absolutePath,
+            exists = exists,
+            length = if (exists) jarFile.length() else -1L,
+            lastModified = if (exists) jarFile.lastModified() else -1L
+        )
+    }
+
+    private fun resolveImportedStsJarStateForUi(
+        importedStsJarFingerprint: ImportedStsJarFingerprint
+    ): Boolean {
+        if (!importedStsJarFingerprint.exists) {
+            return false
+        }
+        val validatedState = validatedImportedStsJarState
+        if (validatedImportedStsJarFingerprint == importedStsJarFingerprint && validatedState != null) {
+            return validatedState
+        }
+        val currentDisplayedState = uiState.dependencyMods
+            .firstOrNull { it.storagePath == "__dependency__/desktop-1.0.jar" }
+            ?.installed
+        return currentDisplayedState ?: true
+    }
+
+    private fun ensureImportedStsJarValidation(
+        host: Activity,
+        importedStsJarFingerprint: ImportedStsJarFingerprint
+    ) {
+        if (validatedImportedStsJarFingerprint == importedStsJarFingerprint) {
+            return
+        }
+        if (validatingImportedStsJarFingerprint == importedStsJarFingerprint) {
+            return
+        }
+        validatingImportedStsJarFingerprint = importedStsJarFingerprint
+        importedStsJarValidationExecutor.execute {
+            val isValid = StsJarValidator.isValid(File(importedStsJarFingerprint.absolutePath))
+            host.runOnUiThread {
+                if (validatingImportedStsJarFingerprint == importedStsJarFingerprint) {
+                    validatingImportedStsJarFingerprint = null
+                }
+                cacheImportedStsJarValidation(importedStsJarFingerprint, isValid)
+                if (host.isFinishing || host.isDestroyed) {
+                    return@runOnUiThread
+                }
+                val currentFingerprint = buildImportedStsJarFingerprint(host)
+                if (currentFingerprint != importedStsJarFingerprint) {
+                    republish(host)
+                    return@runOnUiThread
+                }
+                val currentDisplayedState = uiState.dependencyMods
+                    .firstOrNull { it.storagePath == "__dependency__/desktop-1.0.jar" }
+                    ?.installed
+                if (uiState.initializing || currentDisplayedState != isValid) {
+                    republish(host)
+                }
+            }
+        }
+    }
+
+    private fun cacheImportedStsJarValidation(
+        importedStsJarFingerprint: ImportedStsJarFingerprint,
+        isValid: Boolean
+    ) {
+        validatedImportedStsJarFingerprint = importedStsJarFingerprint
+        validatedImportedStsJarState = isValid
     }
 
     fun handleGameProcessExitAnalysis(
@@ -1159,13 +1264,14 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun republish(host: Activity) {
+        val dependencyAvailability = resolveDependencyAvailability(host)
         publishUiState(
             host = host,
-            hasJar = hasValidImportedStsJar(host),
-            hasMts = RuntimePaths.importedMtsJar(host).exists() || hasBundledAsset(host, "components/mods/ModTheSpire.jar"),
-            hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
-            hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB),
-            hasRuntimeCompat = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT),
+            hasJar = dependencyAvailability.hasJar,
+            hasMts = dependencyAvailability.hasMts,
+            hasBaseMod = dependencyAvailability.hasBaseMod,
+            hasStsLib = dependencyAvailability.hasStsLib,
+            hasRuntimeCompat = dependencyAvailability.hasRuntimeCompat,
             storageIssue = detectStorageIssue(host)
         )
     }
@@ -1307,6 +1413,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        importedStsJarValidationExecutor.shutdownNow()
         launchExecutor.shutdownNow()
         diagnosticsExecutor.shutdownNow()
         suggestionExecutor.shutdownNow()
