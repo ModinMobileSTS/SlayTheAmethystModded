@@ -185,6 +185,7 @@ class SettingsScreenViewModel : ViewModel() {
         val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
+        val touchMouseNewInteraction: Boolean = LauncherPreferences.DEFAULT_TOUCH_MOUSE_NEW_INTERACTION,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
@@ -1303,6 +1304,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onTouchMouseNewInteractionChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(touchMouseNewInteraction = enabled)
+        saveTouchMouseNewInteractionSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onLongPressMouseShowsKeyboardChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -1784,6 +1794,7 @@ class SettingsScreenViewModel : ViewModel() {
             backBehavior = input.backBehavior,
             manualDismissBootOverlay = input.manualDismissBootOverlay,
             showFloatingMouseWindow = input.showFloatingMouseWindow,
+            touchMouseNewInteraction = input.touchMouseNewInteraction,
             longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
             showModFileName = input.showModFileName,
@@ -2390,9 +2401,15 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, input.showFloatingMouseWindow)
         )
         lines += host.getString(
-            R.string.status_touch_mouse_long_press_keyboard_format,
-            toggleStateText(host, input.longPressMouseShowsKeyboard)
+            R.string.status_touch_mouse_interaction_format,
+            touchMouseInteractionLabel(host, input.touchMouseNewInteraction)
         )
+        if (!input.touchMouseNewInteraction) {
+            lines += host.getString(
+                R.string.status_touch_mouse_long_press_keyboard_format,
+                toggleStateText(host, input.longPressMouseShowsKeyboard)
+            )
+        }
         lines += host.getString(
             R.string.settings_status_auto_switch_left_after_right_click,
             toggleStateText(host, input.autoSwitchLeftAfterRightClick)
@@ -2671,6 +2688,16 @@ class SettingsScreenViewModel : ViewModel() {
         )
     }
 
+    private fun touchMouseInteractionLabel(host: Activity, useNewInteraction: Boolean): String {
+        return host.getString(
+            if (useNewInteraction) {
+                R.string.settings_touch_mouse_interaction_mode_new
+            } else {
+                R.string.settings_touch_mouse_interaction_mode_legacy
+            }
+        )
+    }
+
     private fun virtualResolutionModeDisplayName(
         host: Activity,
         mode: VirtualResolutionMode
@@ -2861,6 +2888,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
+    }
+
+    private fun saveTouchMouseNewInteractionSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveTouchMouseNewInteraction(host, enabled)
     }
 
     private fun saveLongPressMouseShowsKeyboardSelection(host: Activity, enabled: Boolean) {

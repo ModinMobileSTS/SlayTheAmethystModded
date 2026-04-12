@@ -36,6 +36,7 @@ class GameInputHandler(
     fun initFloatingMouseControls(
         host: FrameLayout,
         autoSwitchLeftAfterRightClick: Boolean,
+        touchMouseNewInteraction: Boolean,
         longPressMouseShowsKeyboard: Boolean
     ) {
         floatingMouseController = FloatingMouseOverlayController(
@@ -43,6 +44,7 @@ class GameInputHandler(
             isNativeInputDispatchReady = isInputDispatchReady,
             requestRenderViewFocus = requestRenderViewFocus,
             autoSwitchBackToLeftAfterRightClick = autoSwitchLeftAfterRightClick,
+            touchMouseNewInteraction = touchMouseNewInteraction,
             longPressMouseShowsKeyboard = longPressMouseShowsKeyboard
         ).also { controller ->
             controller.attachToHost(host)

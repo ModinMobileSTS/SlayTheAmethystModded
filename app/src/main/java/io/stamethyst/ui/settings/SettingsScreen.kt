@@ -152,6 +152,7 @@ fun LauncherSettingsScreen(
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
+        onTouchMouseNewInteractionChanged = { enabled -> viewModel.onTouchMouseNewInteractionChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
@@ -290,6 +291,7 @@ private fun LauncherSettingsScreenPreview() {
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
+            touchMouseNewInteraction = true,
             longPressMouseShowsKeyboard = true,
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
@@ -349,6 +351,7 @@ private fun LauncherSettingsScreenContent(
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
+    onTouchMouseNewInteractionChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
@@ -465,6 +468,7 @@ private fun LauncherSettingsScreenContent(
                         onPlayerNameChanged = onPlayerNameChanged,
                         onBackBehaviorChanged = onBackBehaviorChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
+                        onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
@@ -1688,6 +1692,7 @@ private fun SettingsInputSection(
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
+    onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
@@ -1741,13 +1746,24 @@ private fun SettingsInputSection(
     )
 
     SwitchSettingRow(
-        checked = uiState.longPressMouseShowsKeyboard,
+        checked = uiState.touchMouseNewInteraction,
         enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_enabled),
-        disabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_disabled),
-        description = stringResource(R.string.settings_touch_mouse_long_press_keyboard_desc),
-        onCheckedChange = onLongPressMouseShowsKeyboardChanged
+        enabledText = stringResource(R.string.settings_touch_mouse_interaction_new),
+        disabledText = stringResource(R.string.settings_touch_mouse_interaction_legacy),
+        description = stringResource(R.string.settings_touch_mouse_interaction_desc),
+        onCheckedChange = onTouchMouseNewInteractionChanged
     )
+
+    if (!uiState.touchMouseNewInteraction) {
+        SwitchSettingRow(
+            checked = uiState.longPressMouseShowsKeyboard,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_enabled),
+            disabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_disabled),
+            description = stringResource(R.string.settings_touch_mouse_long_press_keyboard_desc),
+            onCheckedChange = onLongPressMouseShowsKeyboardChanged
+        )
+    }
 
     SwitchSettingRow(
         checked = uiState.autoSwitchLeftAfterRightClick,

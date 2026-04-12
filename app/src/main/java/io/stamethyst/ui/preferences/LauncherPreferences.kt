@@ -61,6 +61,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_THEME_COLOR
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+    val DEFAULT_TOUCH_MOUSE_NEW_INTERACTION: Boolean
+        get() = LauncherConfig.DEFAULT_TOUCH_MOUSE_NEW_INTERACTION
     val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
         get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
@@ -147,6 +149,14 @@ object LauncherPreferences {
 
     fun saveShowFloatingMouseWindow(context: Context, enabled: Boolean) {
         LauncherConfig.saveShowFloatingMouseWindow(context, enabled)
+    }
+
+    fun readTouchMouseNewInteraction(context: Context): Boolean {
+        return LauncherConfig.readTouchMouseNewInteraction(context)
+    }
+
+    fun saveTouchMouseNewInteraction(context: Context, enabled: Boolean) {
+        LauncherConfig.saveTouchMouseNewInteraction(context, enabled)
     }
 
     fun readLongPressMouseShowsKeyboard(context: Context): Boolean {

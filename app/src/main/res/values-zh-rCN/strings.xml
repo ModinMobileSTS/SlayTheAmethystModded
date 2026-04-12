@@ -94,6 +94,12 @@
     <string name="settings_touch_mouse_floating_window_hidden">鼠标悬浮窗：隐藏</string>
     <string name="settings_touch_mouse_floating_window_desc">控制游戏内鼠标悬浮窗是否显示。</string>
     <string name="status_floating_touch_mouse_window_format">鼠标悬浮窗：%1$s</string>
+    <string name="settings_touch_mouse_interaction_new">鼠标悬浮窗交互：新版</string>
+    <string name="settings_touch_mouse_interaction_legacy">鼠标悬浮窗交互：旧版</string>
+    <string name="settings_touch_mouse_interaction_mode_new">新版</string>
+    <string name="settings_touch_mouse_interaction_mode_legacy">旧版</string>
+    <string name="settings_touch_mouse_interaction_desc">新版：点击鼠标悬浮窗直接展开快捷菜单，并在悬浮窗上方显示左右键切换按钮；旧版：点击切换左右键，长按展开快捷菜单。</string>
+    <string name="status_touch_mouse_interaction_format">鼠标悬浮窗交互：%1$s</string>
     <string name="settings_touch_mouse_long_press_keyboard_enabled">长按鼠标打开快捷菜单：启用</string>
     <string name="settings_touch_mouse_long_press_keyboard_disabled">长按鼠标打开快捷菜单：禁用</string>
     <string name="settings_touch_mouse_long_press_keyboard_desc">控制长按鼠标按钮时是否展开悬浮快捷菜单，可发送 Ctrl、Shift、Tab、Alt、切换锁定、滚轮，或打开软键盘。</string>

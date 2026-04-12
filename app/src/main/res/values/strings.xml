@@ -94,6 +94,12 @@
     <string name="settings_touch_mouse_floating_window_hidden">Touch mouse floating window: Hidden</string>
     <string name="settings_touch_mouse_floating_window_desc">Controls whether the touch mouse floating window is shown in game.</string>
     <string name="status_floating_touch_mouse_window_format">Floating touch mouse window: %1$s</string>
+    <string name="settings_touch_mouse_interaction_new">Touch mouse floating interaction: New</string>
+    <string name="settings_touch_mouse_interaction_legacy">Touch mouse floating interaction: Legacy</string>
+    <string name="settings_touch_mouse_interaction_mode_new">New</string>
+    <string name="settings_touch_mouse_interaction_mode_legacy">Legacy</string>
+    <string name="settings_touch_mouse_interaction_desc">New: tapping the touch mouse bubble opens the shortcut menu and shows a left/right click toggle button above it. Legacy: tapping switches between left and right click, while long-press opens the shortcut menu.</string>
+    <string name="status_touch_mouse_interaction_format">Touch mouse floating interaction: %1$s</string>
     <string name="settings_touch_mouse_long_press_keyboard_enabled">Long-press touch mouse shortcut menu: Enabled</string>
     <string name="settings_touch_mouse_long_press_keyboard_disabled">Long-press touch mouse shortcut menu: Disabled</string>
     <string name="settings_touch_mouse_long_press_keyboard_desc">Controls whether long-pressing the touch mouse button opens the floating shortcut menu, which can send Ctrl/Shift/Tab/Alt, toggle click lock, scroll the wheel, or open the soft keyboard.</string>
