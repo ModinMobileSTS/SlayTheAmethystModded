@@ -3,6 +3,7 @@ package io.stamethyst.ui.settings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsFileServiceDuplicateImportConflictTest {
@@ -120,5 +121,90 @@ class SettingsFileServiceDuplicateImportConflictTest {
 
         assertEquals(0, result.failedCount)
         assertNull(result.firstError)
+    }
+
+    @Test
+    fun buildDuplicateModImportReusePlan_prefersExistingFileNameAndFolder() {
+        val plan = SettingsFileService.buildDuplicateModImportReusePlan(
+            existingSources = listOf(
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/z-last.jar",
+                    fileName = "z-last.jar",
+                    assignedFolderId = null
+                ),
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/a-first.jar",
+                    fileName = "a-first.jar",
+                    assignedFolderId = "folder-a"
+                ),
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/b-second.jar",
+                    fileName = "b-second.jar",
+                    assignedFolderId = "folder-b"
+                )
+            ),
+            options = DuplicateModImportReplaceOptions(
+                moveToPreviousFolder = true,
+                renameToPreviousFileName = true
+            )
+        )
+
+        assertEquals("a-first.jar", plan.targetFileName)
+        assertEquals("folder-a", plan.assignedFolderId)
+        assertEquals(
+            listOf("/mods/a-first.jar", "/mods/b-second.jar", "/mods/z-last.jar"),
+            plan.sourceStoragePaths
+        )
+    }
+
+    @Test
+    fun buildDuplicateModImportReusePlan_skipsDisabledBehaviorsIndependently() {
+        val plan = SettingsFileService.buildDuplicateModImportReusePlan(
+            existingSources = listOf(
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/a-first.jar",
+                    fileName = "a-first.jar",
+                    assignedFolderId = null
+                ),
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/b-second.jar",
+                    fileName = "b-second.jar",
+                    assignedFolderId = "folder-b"
+                )
+            ),
+            options = DuplicateModImportReplaceOptions(
+                moveToPreviousFolder = true,
+                renameToPreviousFileName = false
+            )
+        )
+
+        assertNull(plan.targetFileName)
+        assertEquals("folder-b", plan.assignedFolderId)
+        assertTrue(plan.sourceStoragePaths.isNotEmpty())
+    }
+
+    @Test
+    fun buildDuplicateModImportReusePlan_ignoresEphemeralImportTempNames() {
+        val plan = SettingsFileService.buildDuplicateModImportReusePlan(
+            existingSources = listOf(
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/.import-213000.tmp.jar",
+                    fileName = ".import-213000.tmp.jar",
+                    assignedFolderId = null
+                ),
+                ExistingDuplicateModImportSource(
+                    storagePath = "/mods/real-old-name.jar",
+                    fileName = "real-old-name.jar",
+                    assignedFolderId = "folder-a"
+                )
+            ),
+            options = DuplicateModImportReplaceOptions(
+                moveToPreviousFolder = true,
+                renameToPreviousFileName = true
+            )
+        )
+
+        assertEquals("real-old-name.jar", plan.targetFileName)
+        assertEquals("folder-a", plan.assignedFolderId)
     }
 }

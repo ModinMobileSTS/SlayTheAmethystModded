@@ -48,6 +48,7 @@ class GameSessionConfigTest {
             showFloatingMouseWindow = false,
             showGamePerformanceOverlay = false,
             mirrorJvmLogsToLogcat = false,
+            touchMouseNewInteraction = false,
             longPressMouseShowsKeyboard = false,
             autoSwitchLeftAfterRightClick = false,
             requestedRenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,

@@ -52,6 +52,11 @@ internal class MainFolderStateStore {
         loaded = true
     }
 
+    fun reload(host: Activity) {
+        load(host)
+        loaded = true
+    }
+
     fun persist(host: Activity) {
         val foldersArray = JSONArray()
         modFolders.forEach { folder ->

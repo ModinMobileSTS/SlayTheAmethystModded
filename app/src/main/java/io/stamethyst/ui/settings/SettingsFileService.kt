@@ -30,6 +30,10 @@ import io.stamethyst.backend.mods.VupShionModCompatPatcher
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.main.MainFolderStateStore
+import io.stamethyst.ui.main.resolveAssignedFolderId
+import io.stamethyst.ui.main.resolveModStoragePathCandidates
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -138,6 +142,23 @@ internal data class DuplicateModImportConflict(
     val displayModId: String,
     val importingDisplayNames: List<String>,
     val existingDisplayNames: List<String>
+)
+
+internal data class DuplicateModImportReplaceOptions(
+    val moveToPreviousFolder: Boolean = false,
+    val renameToPreviousFileName: Boolean = false
+)
+
+internal data class ExistingDuplicateModImportSource(
+    val storagePath: String,
+    val fileName: String,
+    val assignedFolderId: String? = null
+)
+
+internal data class DuplicateModImportReusePlan(
+    val targetFileName: String? = null,
+    val assignedFolderId: String? = null,
+    val sourceStoragePaths: List<String> = emptyList()
 )
 
 private data class SaveArchiveScanResult(
@@ -379,6 +400,7 @@ internal object SettingsFileService {
         host: Activity,
         uri: Uri,
         replaceExistingDuplicates: Boolean = false,
+        duplicateReplaceOptions: DuplicateModImportReplaceOptions = DuplicateModImportReplaceOptions(),
         importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null
     ): ModImportResult {
         OptionalModStorageCoordinator.ensureOptionalModLibraryReady(host)
@@ -416,6 +438,18 @@ internal object SettingsFileService {
                 MtsLaunchManifestValidator.resolveLaunchModId(tempFile).trim()
             } catch (_: Throwable) {
                 ""
+            }
+            val duplicateReusePlan = if (replaceExistingDuplicates) {
+                buildDuplicateModImportReusePlan(
+                    existingSources = resolveExistingDuplicateModImportSources(
+                        host = host,
+                        normalizedModId = modId,
+                        excludedStoragePath = tempFile.absolutePath
+                    ),
+                    options = duplicateReplaceOptions
+                )
+            } else {
+                DuplicateModImportReusePlan()
             }
 
             var patchedAtlasEntries = 0
@@ -471,9 +505,22 @@ internal object SettingsFileService {
                     excludedPath = tempFile.absolutePath
                 )
             }
-            val requestedFileName = if (displayName.isNotBlank()) displayName else "$modId.jar"
+            val requestedFileName = duplicateReusePlan.targetFileName
+                ?.takeIf { it.isNotBlank() }
+                ?: if (displayName.isNotBlank()) displayName else "$modId.jar"
             val targetFile = ModManager.resolveStorageFileForImportedMod(host, requestedFileName)
             moveFileReplacing(tempFile, targetFile)
+            if (!duplicateReusePlan.assignedFolderId.isNullOrBlank()) {
+                runCatching {
+                    applyDuplicateModImportFolderReuse(
+                        host = host,
+                        normalizedModId = modId,
+                        sourceStoragePaths = duplicateReusePlan.sourceStoragePaths,
+                        targetStoragePath = targetFile.absolutePath,
+                        assignedFolderId = duplicateReusePlan.assignedFolderId
+                    )
+                }
+            }
             val modName = manifest.name.trim().ifBlank { modId }
             val result = ModImportResult(
                 modId = modId,
@@ -535,6 +582,7 @@ internal object SettingsFileService {
         host: Activity,
         uris: Collection<Uri>,
         replaceExistingDuplicates: Boolean = false,
+        duplicateReplaceOptions: DuplicateModImportReplaceOptions = DuplicateModImportReplaceOptions(),
         importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null
     ): ModBatchImportResult {
         var imported = 0
@@ -555,6 +603,7 @@ internal object SettingsFileService {
                     host = host,
                     uri = uri,
                     replaceExistingDuplicates = replaceExistingDuplicates,
+                    duplicateReplaceOptions = duplicateReplaceOptions,
                     importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
                 )
                 imported++
@@ -718,6 +767,65 @@ internal object SettingsFileService {
                 { it.normalizedModId },
                 { it.displayModId.lowercase(Locale.ROOT) }
             )
+        )
+    }
+
+    internal fun buildDuplicateModImportReusePlan(
+        existingSources: Collection<ExistingDuplicateModImportSource>,
+        options: DuplicateModImportReplaceOptions
+    ): DuplicateModImportReusePlan {
+        if (existingSources.isEmpty()) {
+            return DuplicateModImportReusePlan()
+        }
+        if (!options.moveToPreviousFolder && !options.renameToPreviousFileName) {
+            return DuplicateModImportReusePlan()
+        }
+
+        val normalizedSources = existingSources
+            .asSequence()
+            .mapNotNull { source ->
+                val storagePath = source.storagePath.trim()
+                if (storagePath.isEmpty()) {
+                    return@mapNotNull null
+                }
+                val fileName = source.fileName.trim().ifBlank { File(storagePath).name.trim() }
+                if (fileName.isEmpty()) {
+                    return@mapNotNull null
+                }
+                ExistingDuplicateModImportSource(
+                    storagePath = storagePath,
+                    fileName = fileName,
+                    assignedFolderId = source.assignedFolderId?.trim()?.ifEmpty { null }
+                )
+            }
+            .distinctBy { it.storagePath }
+            .sortedWith(
+                compareBy<ExistingDuplicateModImportSource>(
+                    { isEphemeralImportFileName(it.fileName) },
+                    { it.fileName.lowercase(Locale.ROOT) },
+                    { it.fileName },
+                    { it.storagePath }
+                )
+            )
+            .toList()
+        if (normalizedSources.isEmpty()) {
+            return DuplicateModImportReusePlan()
+        }
+
+        val renameSource = normalizedSources.firstOrNull()
+        val folderSource = normalizedSources.firstOrNull { !it.assignedFolderId.isNullOrBlank() }
+        return DuplicateModImportReusePlan(
+            targetFileName = if (options.renameToPreviousFileName) {
+                renameSource?.fileName
+            } else {
+                null
+            },
+            assignedFolderId = if (options.moveToPreviousFolder) {
+                folderSource?.assignedFolderId
+            } else {
+                null
+            },
+            sourceStoragePaths = normalizedSources.map { it.storagePath }
         )
     }
 
@@ -1356,6 +1464,105 @@ internal object SettingsFileService {
         return existingByModId
     }
 
+    private fun resolveExistingDuplicateModImportSources(
+        host: Activity,
+        normalizedModId: String,
+        excludedStoragePath: String? = null
+    ): List<ExistingDuplicateModImportSource> {
+        val targetModId = ModManager.normalizeModId(normalizedModId)
+        if (targetModId.isEmpty()) {
+            return emptyList()
+        }
+        val excludedPath = excludedStoragePath?.trim().orEmpty()
+        val folderStateStore = MainFolderStateStore().apply { ensureLoaded(host) }
+        val validFolderIds = folderStateStore.folders.map { it.id }.toHashSet()
+        return ModManager.listInstalledMods(host)
+            .asSequence()
+            .filterNot { it.required }
+            .mapNotNull { mod ->
+                val candidateModId = ModManager.normalizeModId(mod.modId).ifBlank {
+                    ModManager.normalizeModId(mod.manifestModId)
+                }
+                if (candidateModId != targetModId || !mod.jarFile.isFile) {
+                    return@mapNotNull null
+                }
+                val storagePath = mod.jarFile.absolutePath.trim()
+                if (storagePath.isEmpty()) {
+                    return@mapNotNull null
+                }
+                if (excludedPath.isNotEmpty() && storagePath == excludedPath) {
+                    return@mapNotNull null
+                }
+                if (isEphemeralImportFileName(mod.jarFile.name)) {
+                    return@mapNotNull null
+                }
+                val folderId = resolveAssignedFolderId(
+                    mod = mod.toModItemUi(storagePath),
+                    folderAssignments = folderStateStore.assignments,
+                    validFolderIds = validFolderIds
+                )
+                ExistingDuplicateModImportSource(
+                    storagePath = storagePath,
+                    fileName = mod.jarFile.name,
+                    assignedFolderId = folderId
+                )
+            }
+            .sortedWith(
+                compareBy<ExistingDuplicateModImportSource>(
+                    { it.fileName.lowercase(Locale.ROOT) },
+                    { it.fileName },
+                    { it.storagePath }
+                )
+            )
+            .toList()
+    }
+
+    private fun applyDuplicateModImportFolderReuse(
+        host: Activity,
+        normalizedModId: String,
+        sourceStoragePaths: Collection<String>,
+        targetStoragePath: String,
+        assignedFolderId: String
+    ) {
+        val targetPath = targetStoragePath.trim()
+        val folderId = assignedFolderId.trim()
+        if (targetPath.isEmpty() || folderId.isEmpty()) {
+            return
+        }
+        val folderStateStore = MainFolderStateStore().apply { ensureLoaded(host) }
+        if (folderStateStore.folders.none { it.id == folderId }) {
+            return
+        }
+
+        var changed = false
+        sourceStoragePaths.forEach { sourcePath ->
+            resolveModStoragePathCandidates(sourcePath).forEach { candidate ->
+                if (folderStateStore.assignments.remove(candidate) != null) {
+                    changed = true
+                }
+            }
+        }
+        val normalizedKey = ModManager.normalizeModId(normalizedModId)
+        if (normalizedKey.isNotEmpty() && folderStateStore.assignments.remove(normalizedKey) != null) {
+            changed = true
+        }
+        if (folderStateStore.assignments[targetPath] != folderId) {
+            folderStateStore.assignments[targetPath] = folderId
+            changed = true
+        }
+        if (changed) {
+            folderStateStore.persist(host)
+        }
+    }
+
+    private fun isEphemeralImportFileName(fileName: String?): Boolean {
+        val normalized = fileName?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        if (normalized.isEmpty()) {
+            return false
+        }
+        return normalized.startsWith(".import-") && normalized.endsWith(".tmp.jar")
+    }
+
     private fun inspectImportableModJarIdentity(
         host: Activity,
         uri: Uri
@@ -1394,6 +1601,23 @@ internal object SettingsFileService {
                 tempFile.delete()
             }
         }
+    }
+
+    private fun ModManager.InstalledMod.toModItemUi(storagePath: String): ModItemUi {
+        return ModItemUi(
+            modId = modId,
+            manifestModId = manifestModId,
+            storagePath = storagePath,
+            name = name,
+            version = version,
+            description = description,
+            dependencies = dependencies,
+            required = required,
+            installed = installed,
+            enabled = enabled,
+            explicitPriority = explicitPriority,
+            effectivePriority = effectivePriority
+        )
     }
 
     private fun inspectImportAtlasDownscaleCandidate(

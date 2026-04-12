@@ -64,7 +64,6 @@ import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
-import io.stamethyst.ui.VupShionPatchedDialog
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -1588,161 +1587,40 @@ class SettingsScreenViewModel : ViewModel() {
         uris: List<Uri>,
         onCompleted: (() -> Unit)? = null,
         replaceExistingDuplicates: Boolean = false,
+        duplicateReplaceOptions: DuplicateModImportReplaceOptions = DuplicateModImportReplaceOptions(),
         skipDuplicateCheck: Boolean = false,
         importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null,
         skipAtlasDownscalePrompt: Boolean = false
     ) {
-        setBusy(
-            busy = true,
-            message = UiText.StringResource(R.string.mod_import_busy_message),
-            operation = UiBusyOperation.MOD_IMPORT
+        ModImportFlowCoordinator.startModJarImport(
+            host = host,
+            executor = executor,
+            uris = uris,
+            callbacks = ModImportFlowCoordinator.Callbacks(
+                setBusy = { busy, message, operation, progressPercent ->
+                    setBusy(
+                        busy = busy,
+                        message = message,
+                        operation = operation,
+                        progressPercent = progressPercent
+                    )
+                },
+                showNotice = { message, duration ->
+                    showToast(host, message, duration)
+                },
+                onImportApplied = {
+                    refreshStatus(host)
+                },
+                onFlowFinished = {
+                    onCompleted?.invoke()
+                }
+            ),
+            replaceExistingDuplicates = replaceExistingDuplicates,
+            duplicateReplaceOptions = duplicateReplaceOptions,
+            skipDuplicateCheck = skipDuplicateCheck,
+            importAtlasDownscaleStrategy = importAtlasDownscaleStrategy,
+            skipAtlasDownscalePrompt = skipAtlasDownscalePrompt
         )
-        executor.execute {
-            try {
-                if (!skipDuplicateCheck) {
-                    val duplicateConflicts = SettingsFileService.findDuplicateModImportConflicts(host, uris)
-                    if (duplicateConflicts.isNotEmpty()) {
-                        host.runOnUiThread {
-                            setBusy(false, null)
-                            showDuplicateModImportDialog(host, uris, duplicateConflicts, onCompleted)
-                        }
-                        return@execute
-                    }
-                }
-                if (!skipAtlasDownscalePrompt) {
-                    val downscaleCandidates = SettingsFileService.findImportAtlasDownscaleCandidates(
-                        host,
-                        uris
-                    )
-                    if (downscaleCandidates.isNotEmpty()) {
-                        host.runOnUiThread {
-                            setBusy(false, null)
-                            showAtlasDownscaleConfirmDialog(
-                                host = host,
-                                uris = uris,
-                                candidates = downscaleCandidates,
-                                replaceExistingDuplicates = replaceExistingDuplicates,
-                                onCompleted = onCompleted
-                            )
-                        }
-                        return@execute
-                    }
-                }
-                val batchResult = SettingsFileService.importModJars(
-                    host = host,
-                    uris = uris,
-                    replaceExistingDuplicates = replaceExistingDuplicates,
-                    importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
-                )
-                val importedCount = batchResult.importedCount
-                val failedCount = batchResult.failedCount
-                val blockedCount = batchResult.blockedCount
-                val compressedArchiveCount = batchResult.compressedArchiveCount
-                val firstError = batchResult.firstError
-                val blockedList = batchResult.blockedComponents
-                val compressedArchiveList = batchResult.compressedArchives
-                val invalidModJars = batchResult.invalidModJars
-                val patchedResults = batchResult.patchedResults
-                host.runOnUiThread {
-                    setBusy(false, null)
-                    if (blockedList.isNotEmpty()) {
-                        AlertDialog.Builder(host)
-                            .setTitle(R.string.mod_import_dialog_reserved_title)
-                            .setMessage(
-                                SettingsFileService.buildReservedModImportMessage(
-                                    context = host,
-                                    blockedComponents = blockedList
-                                )
-                            )
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
-                    }
-                    if (invalidModJars.isNotEmpty()) {
-                        showInvalidModImportDialog(host, invalidModJars)
-                    }
-                    if (compressedArchiveList.isNotEmpty()) {
-                        showCompressedArchiveWarningDialog(host, compressedArchiveList)
-                    }
-                    if (patchedResults.isNotEmpty()) {
-                        showAtlasPatchSummaryDialog(host, patchedResults)
-                        showAtlasDownscaleSummaryDialog(host, patchedResults)
-                        showManifestRootPatchSummaryDialog(host, patchedResults)
-                        showFrierenPatchSummaryDialog(host, patchedResults)
-                        showDownfallPatchSummaryDialog(host, patchedResults)
-                        showVupShionPatchSummaryDialog(host, patchedResults)
-                    }
-                    when {
-                        importedCount > 0 && failedCount == 0 -> {
-                            showToast(
-                                host,
-                                UiText.StringResource(R.string.mod_import_result_success, importedCount),
-                                Toast.LENGTH_SHORT
-                            )
-                        }
-
-                        importedCount > 0 -> {
-                            showToast(
-                                host,
-                                UiText.StringResource(
-                                    R.string.mod_import_result_partial,
-                                    importedCount,
-                                    failedCount,
-                                    resolveErrorMessage(host, firstError)
-                                ),
-                                Toast.LENGTH_LONG
-                            )
-                        }
-
-                        failedCount > 0 && invalidModJars.isEmpty() -> {
-                            showToast(
-                                host,
-                                UiText.StringResource(
-                                    R.string.mod_import_result_failed,
-                                    resolveErrorMessage(host, firstError)
-                                ),
-                                Toast.LENGTH_LONG
-                            )
-                        }
-
-                        blockedCount > 0 -> {
-                            showToast(
-                                host,
-                                UiText.StringResource(
-                                    R.string.mod_import_result_blocked_builtin,
-                                    blockedCount
-                                ),
-                                Toast.LENGTH_SHORT
-                            )
-                        }
-
-                        compressedArchiveCount > 0 -> {
-                            showToast(
-                                host,
-                                UiText.StringResource(R.string.mod_import_result_archive_detected),
-                                Toast.LENGTH_SHORT
-                            )
-                        }
-                    }
-                    refreshStatus(host)
-                    onCompleted?.invoke()
-//                todo host.notifyMainDataChanged()
-                }
-            } catch (error: Throwable) {
-                host.runOnUiThread {
-                    setBusy(false, null)
-                    showToast(
-                        host,
-                        UiText.StringResource(
-                            R.string.mod_import_result_failed,
-                            resolveThrowableMessage(host, error)
-                        ),
-                        Toast.LENGTH_LONG
-                    )
-                    refreshStatus(host)
-                    onCompleted?.invoke()
-                }
-            }
-        }
     }
 
     private fun applySnapshot(
@@ -1817,198 +1695,6 @@ class SettingsScreenViewModel : ViewModel() {
             touchscreenEnabled = input.touchscreenEnabled,
             gameplayFontScale = input.fontScale
         )
-    }
-
-    private fun showInvalidModImportDialog(
-        host: Activity,
-        invalidModJars: List<InvalidModImportFailure>
-    ) {
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_invalid_title)
-            .setMessage(
-                SettingsFileService.buildInvalidModImportMessage(
-                    context = host,
-                    failures = invalidModJars
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showDuplicateModImportDialog(
-        host: Activity,
-        uris: List<Uri>,
-        duplicateConflicts: List<DuplicateModImportConflict>,
-        onCompleted: (() -> Unit)? = null
-    ) {
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_duplicate_title)
-            .setMessage(
-                SettingsFileService.buildDuplicateModImportMessage(
-                    context = host,
-                    conflicts = duplicateConflicts
-                )
-            )
-            .setNegativeButton(R.string.mod_import_dialog_duplicate_cancel) { _, _ ->
-                showToast(host, UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
-                onCompleted?.invoke()
-            }
-            .setNeutralButton(R.string.mod_import_dialog_duplicate_replace_existing) { _, _ ->
-                startModJarImport(
-                    host = host,
-                    uris = uris,
-                    onCompleted = onCompleted,
-                    replaceExistingDuplicates = true,
-                    skipDuplicateCheck = true
-                )
-            }
-            .setPositiveButton(R.string.mod_import_dialog_duplicate_keep_both) { _, _ ->
-                startModJarImport(host, uris, onCompleted, skipDuplicateCheck = true)
-            }
-            .setOnCancelListener {
-                showToast(host, UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
-                onCompleted?.invoke()
-            }
-            .show()
-    }
-
-    private fun showAtlasPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
-        if (patchedResults.none { it.wasAtlasPatched }) {
-            return
-        }
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_atlas_patched_title)
-            .setMessage(
-                SettingsFileService.buildAtlasPatchImportSummaryMessage(
-                    context = host,
-                    patchedResults = patchedResults
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showAtlasDownscaleConfirmDialog(
-        host: Activity,
-        uris: List<Uri>,
-        candidates: List<ModImportAtlasDownscalePreview>,
-        replaceExistingDuplicates: Boolean,
-        onCompleted: (() -> Unit)? = null
-    ) {
-        AtlasDownscaleImportDialog.show(
-            host = host,
-            previews = candidates,
-            onApply = { strategy ->
-                startModJarImport(
-                    host = host,
-                    uris = uris,
-                    onCompleted = onCompleted,
-                    replaceExistingDuplicates = replaceExistingDuplicates,
-                    skipDuplicateCheck = true,
-                    importAtlasDownscaleStrategy = strategy,
-                    skipAtlasDownscalePrompt = true
-                )
-            },
-            onSkip = {
-                startModJarImport(
-                    host = host,
-                    uris = uris,
-                    onCompleted = onCompleted,
-                    replaceExistingDuplicates = replaceExistingDuplicates,
-                    skipDuplicateCheck = true,
-                    importAtlasDownscaleStrategy = null,
-                    skipAtlasDownscalePrompt = true
-                )
-            },
-            onCancel = {
-                showToast(host, UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
-                onCompleted?.invoke()
-            }
-        )
-    }
-
-    private fun showAtlasDownscaleSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
-        if (patchedResults.none { it.wasAtlasDownscaled }) {
-            return
-        }
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_atlas_downscale_title)
-            .setMessage(
-                SettingsFileService.buildAtlasDownscaleImportSummaryMessage(
-                    context = host,
-                    patchedResults = patchedResults
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showManifestRootPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
-        if (patchedResults.none { it.wasManifestRootPatched }) {
-            return
-        }
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_manifest_root_patched_title)
-            .setMessage(
-                SettingsFileService.buildManifestRootPatchImportSummaryMessage(
-                    context = host,
-                    patchedResults = patchedResults
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showFrierenPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
-        if (patchedResults.none { it.wasFrierenAntiPiratePatched }) {
-            return
-        }
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_frieren_patched_title)
-            .setMessage(
-                SettingsFileService.buildFrierenPatchImportSummaryMessage(
-                    context = host,
-                    patchedResults = patchedResults
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showDownfallPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
-        if (patchedResults.none { it.wasDownfallPatched }) {
-            return
-        }
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_downfall_patched_title)
-            .setMessage(
-                SettingsFileService.buildDownfallPatchImportSummaryMessage(
-                    context = host,
-                    patchedResults = patchedResults
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showVupShionPatchSummaryDialog(host: Activity, patchedResults: List<ModImportResult>) {
-        if (patchedResults.none { it.wasVupShionPatched }) {
-            return
-        }
-        VupShionPatchedDialog.show(host)
-    }
-
-    private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {
-        AlertDialog.Builder(host)
-            .setTitle(R.string.mod_import_dialog_archive_title)
-            .setMessage(
-                SettingsFileService.buildCompressedArchiveImportMessage(
-                    context = host,
-                    archiveDisplayNames = archiveDisplayNames
-                )
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
     }
 
     private fun prewarmMtsClasspathAfterImport(host: Activity): String? {
