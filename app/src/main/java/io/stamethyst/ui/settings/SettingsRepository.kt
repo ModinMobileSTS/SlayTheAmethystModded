@@ -65,7 +65,8 @@ internal object SettingsRepository {
         val compendiumUpgradeTouchFixEnabled: Boolean,
         val avoidDisplayCutout: Boolean,
         val cropScreenBottom: Boolean,
-        val touchscreenEnabled: Boolean
+        val touchscreenEnabled: Boolean,
+        val fontScale: Float
     )
 
     data class DiagnosticsSnapshot(
@@ -151,7 +152,8 @@ internal object SettingsRepository {
                     LauncherPreferences.readCompendiumUpgradeTouchFixEnabled(context),
                 avoidDisplayCutout = LauncherPreferences.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
-                touchscreenEnabled = GameplaySettingsService.readTouchscreenEnabled(context)
+                touchscreenEnabled = GameplaySettingsService.readTouchscreenEnabled(context),
+                fontScale = GameplaySettingsService.readFontScale(context)
             ),
             diagnostics = DiagnosticsSnapshot(
                 showGamePerformanceOverlay = LauncherPreferences.isGamePerformanceOverlayEnabled(context),

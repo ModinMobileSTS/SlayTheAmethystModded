@@ -209,6 +209,7 @@ class SettingsScreenViewModel : ViewModel() {
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
+        val gameplayFontScale: Float = GameplaySettingsService.DEFAULT_FONT_SCALE,
         val statusText: String = "",
         val logPathText: String = "",
         val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList(),
@@ -1474,6 +1475,18 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onGameplayFontScaleChanged(host: Activity, value: Float) {
+        if (uiState.busy) {
+            return
+        }
+        val normalized = GameplaySettingsService.normalizeFontScale(value)
+        if (!saveGameplayFontScaleSelection(host, normalized)) {
+            return
+        }
+        uiState = uiState.copy(gameplayFontScale = normalized)
+        refreshStatus(host)
+    }
+
     fun onOpenCompatibility() {
         if (uiState.busy) {
             return
@@ -1790,7 +1803,8 @@ class SettingsScreenViewModel : ViewModel() {
             gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
             gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
             glBridgeSwapHeartbeatDebugEnabled = diagnostics.glBridgeSwapHeartbeatDebugEnabled,
-            touchscreenEnabled = input.touchscreenEnabled
+            touchscreenEnabled = input.touchscreenEnabled,
+            gameplayFontScale = input.fontScale
         )
     }
 
@@ -2330,6 +2344,10 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_touchscreen,
             toggleStateText(host, input.touchscreenEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_gameplay_font_scale,
+            GameplaySettingsService.formatFontScale(input.fontScale)
         )
         lines += host.getString(
             R.string.settings_status_mobile_hud,
@@ -3042,6 +3060,23 @@ class SettingsScreenViewModel : ViewModel() {
                 host,
                 UiText.StringResource(
                     R.string.settings_touchscreen_save_failed,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
+                Toast.LENGTH_SHORT
+            )
+            false
+        }
+    }
+
+    private fun saveGameplayFontScaleSelection(host: Activity, value: Float): Boolean {
+        return try {
+            GameplaySettingsService.saveFontScale(host, value)
+            true
+        } catch (error: IOException) {
+            showToast(
+                host,
+                UiText.StringResource(
+                    R.string.settings_gameplay_font_scale_save_failed,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_SHORT

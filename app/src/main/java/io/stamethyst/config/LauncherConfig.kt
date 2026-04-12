@@ -188,10 +188,17 @@ object LauncherConfig {
     const val MAX_RENDER_SCALE = 1.00f
 
     const val DEFAULT_TOUCHSCREEN_ENABLED = true
+    private const val DEFAULT_BIGGER_TEXT_ENABLED = true
+    const val DEFAULT_GAMEPLAY_FONT_SCALE = 1.50f
+    const val MIN_GAMEPLAY_FONT_SCALE = 1.00f
+    const val MAX_GAMEPLAY_FONT_SCALE = 2.00f
+    const val GAMEPLAY_FONT_SCALE_STEP = 0.05f
     const val DEFAULT_PLAYER_NAME = "player"
 
     private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
+    private const val GAMEPLAY_SETTINGS_KEY_BIGGER_TEXT = "Bigger Text"
     private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
+    private const val GAMEPLAY_SETTINGS_KEY_FONT_SCALE = "Amethyst Font Scale"
     private const val GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH =
         "components/default_saves/preferences/STSGameplaySettings"
     private const val PLAYER_SETTINGS_FILE_NAME = "STSPlayer"
@@ -495,15 +502,13 @@ object LauncherConfig {
     }
 
     fun readMobileHudEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_MOBILE_HUD_ENABLED,
-            DEFAULT_MOBILE_HUD_ENABLED
-        )
+        // Keep the mobile HUD disabled even if an older build persisted it as enabled.
+        return false
     }
 
     fun saveMobileHudEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_MOBILE_HUD_ENABLED, enabled)
+            putBoolean(PREF_KEY_MOBILE_HUD_ENABLED, false)
         }
     }
 
@@ -1155,6 +1160,52 @@ object LauncherConfig {
         )
     }
 
+    fun readGameplayFontScale(context: Context): Float {
+        val file = File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME)
+        val customValue = readGameplaySettingsString(file, GAMEPLAY_SETTINGS_KEY_FONT_SCALE)
+        if (customValue != null) {
+            return normalizeGameplayFontScale(parseFloatLike(customValue, DEFAULT_GAMEPLAY_FONT_SCALE))
+        }
+        val biggerTextEnabled =
+            readGameplaySettingsBoolean(file, GAMEPLAY_SETTINGS_KEY_BIGGER_TEXT)
+                ?: DEFAULT_BIGGER_TEXT_ENABLED
+        return if (biggerTextEnabled) {
+            DEFAULT_GAMEPLAY_FONT_SCALE
+        } else {
+            MIN_GAMEPLAY_FONT_SCALE
+        }
+    }
+
+    @Throws(IOException::class)
+    fun saveGameplayFontScale(context: Context, value: Float): String {
+        val normalized = normalizeGameplayFontScale(value)
+        val formatted = formatGameplayFontScale(normalized)
+        writeGameplaySettingsValues(
+            context,
+            File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME),
+            linkedMapOf(
+                GAMEPLAY_SETTINGS_KEY_FONT_SCALE to formatted,
+                GAMEPLAY_SETTINGS_KEY_BIGGER_TEXT to if (normalized > MIN_GAMEPLAY_FONT_SCALE) {
+                    "true"
+                } else {
+                    "false"
+                }
+            )
+        )
+        return formatted
+    }
+
+    fun normalizeGameplayFontScale(value: Float): Float {
+        val stepped =
+            (((value - MIN_GAMEPLAY_FONT_SCALE) / GAMEPLAY_FONT_SCALE_STEP).roundToInt() *
+                GAMEPLAY_FONT_SCALE_STEP) + MIN_GAMEPLAY_FONT_SCALE
+        return stepped.coerceIn(MIN_GAMEPLAY_FONT_SCALE, MAX_GAMEPLAY_FONT_SCALE)
+    }
+
+    fun formatGameplayFontScale(value: Float): String {
+        return String.format(Locale.US, "%.2f", normalizeGameplayFontScale(value))
+    }
+
     fun normalizePlayerName(name: String): String {
         val sanitized = sanitizeSingleLineText(name)
         return sanitized.ifEmpty { DEFAULT_PLAYER_NAME }
@@ -1215,6 +1266,14 @@ object LauncherConfig {
     }
 
     private fun writeGameplaySettingsValue(context: Context, file: File, key: String, value: String) {
+        writeGameplaySettingsValues(context, file, linkedMapOf(key to value))
+    }
+
+    private fun writeGameplaySettingsValues(
+        context: Context,
+        file: File,
+        values: Map<String, String>
+    ) {
         val parent = file.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
@@ -1223,7 +1282,9 @@ object LauncherConfig {
             readBundledGameplaySettingsDefaults(context),
             readJsonObject(file)
         )
-        root.put(key, value)
+        values.forEach { (key, value) ->
+            root.put(key, value)
+        }
         FileOutputStream(file, false).use { out ->
             out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
             out.write('\n'.code)
@@ -1237,6 +1298,14 @@ object LauncherConfig {
             return null
         }
         return parseBooleanLike(objectValue.opt(key), DEFAULT_TOUCHSCREEN_ENABLED)
+    }
+
+    private fun readGameplaySettingsString(file: File, key: String): String? {
+        val objectValue = readJsonObject(file) ?: return null
+        if (!objectValue.has(key)) {
+            return null
+        }
+        return objectValue.opt(key)?.toString()?.let(::sanitizeSingleLineText)
     }
 
     private fun readBundledGameplaySettingsDefaults(context: Context): JSONObject? {
@@ -1355,6 +1424,14 @@ object LauncherConfig {
             }
 
             else -> fallback
+        }
+    }
+
+    private fun parseFloatLike(value: String, fallback: Float): Float {
+        return try {
+            value.trim().replace(',', '.').toFloat()
+        } catch (_: Throwable) {
+            fallback
         }
     }
 

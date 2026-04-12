@@ -155,10 +155,6 @@ fun LauncherSettingsScreen(
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
-        onMobileHudEnabledChanged = { enabled -> viewModel.onMobileHudEnabledChanged(activity, enabled) },
-        onCompendiumUpgradeTouchFixEnabledChanged = { enabled ->
-            viewModel.onCompendiumUpgradeTouchFixEnabledChanged(activity, enabled)
-        },
         onDisplayCutoutAvoidanceChanged = { enabled ->
             viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
         },
@@ -181,6 +177,7 @@ fun LauncherSettingsScreen(
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
+        onGameplayFontScaleChanged = { value -> viewModel.onGameplayFontScaleChanged(activity, value) },
         onAutoCheckUpdatesChanged = { enabled ->
             viewModel.onAutoCheckUpdatesChanged(activity, enabled)
         },
@@ -225,6 +222,9 @@ fun LauncherDeveloperSettingsScreen(
         },
         onSustainedPerformanceModeChanged = { enabled ->
             viewModel.onSustainedPerformanceModeChanged(activity, enabled)
+        },
+        onCompendiumUpgradeTouchFixEnabledChanged = { enabled ->
+            viewModel.onCompendiumUpgradeTouchFixEnabledChanged(activity, enabled)
         },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
@@ -307,6 +307,7 @@ private fun LauncherSettingsScreenPreview() {
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenEnabled = true,
+            gameplayFontScale = 1.50f,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK\nAmethystRuntimeCompat.jar: OK",
             logPathText = "/example/path/to/logs",
             targetFpsOptions = listOf(24, 30, 60, 120, 240),
@@ -351,8 +352,6 @@ private fun LauncherSettingsScreenContent(
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
-    onMobileHudEnabledChanged: (Boolean) -> Unit = {},
-    onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
     onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
@@ -365,6 +364,7 @@ private fun LauncherSettingsScreenContent(
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
+    onGameplayFontScaleChanged: (Float) -> Unit = {},
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
     onManualCheckUpdates: () -> Unit = {},
@@ -468,11 +468,9 @@ private fun LauncherSettingsScreenContent(
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
-                        onMobileHudEnabledChanged = onMobileHudEnabledChanged,
-                        onCompendiumUpgradeTouchFixEnabledChanged =
-                            onCompendiumUpgradeTouchFixEnabledChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
+                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
                     )
                 }
             }
@@ -1147,6 +1145,7 @@ private fun LauncherDeveloperSettingsScreenContent(
     onGoBack: () -> Unit = {},
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
+    onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
@@ -1200,6 +1199,8 @@ private fun LauncherDeveloperSettingsScreenContent(
                         uiState = uiState,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
+                        onCompendiumUpgradeTouchFixEnabledChanged =
+                            onCompendiumUpgradeTouchFixEnabledChanged,
                     )
                 }
             }
@@ -1412,6 +1413,7 @@ private fun SettingsDeveloperRuntimeSection(
     uiState: SettingsScreenViewModel.UiState,
     onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onSustainedPerformanceModeChanged: (Boolean) -> Unit,
+    onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
 ) {
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -1445,6 +1447,15 @@ private fun SettingsDeveloperRuntimeSection(
         disabledText = stringResource(R.string.settings_boot_overlay_manual_disabled),
         description = stringResource(R.string.settings_boot_overlay_manual_desc),
         onCheckedChange = onManualDismissBootOverlayChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.compendiumUpgradeTouchFixEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
+        disabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_disabled),
+        description = stringResource(R.string.settings_compendium_upgrade_touch_fix_desc),
+        onCheckedChange = onCompendiumUpgradeTouchFixEnabledChanged
     )
 
     if (showGameModeDialog) {
@@ -1664,6 +1675,13 @@ private fun heapSliderToStep(value: Float, min: Int, step: Int): Int {
     return ((value - min.toFloat()) / safeStep.toFloat()).roundToInt()
 }
 
+private fun gameplayFontScaleToStep(value: Float): Int {
+    return (
+        (GameplaySettingsService.normalizeFontScale(value) - GameplaySettingsService.MIN_FONT_SCALE) /
+            GameplaySettingsService.FONT_SCALE_STEP
+        ).roundToInt()
+}
+
 @Composable
 private fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
@@ -1673,14 +1691,20 @@ private fun SettingsInputSection(
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
-    onMobileHudEnabledChanged: (Boolean) -> Unit,
-    onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
+    onGameplayFontScaleChanged: (Float) -> Unit,
 ) {
+    val view = LocalView.current
     var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
     var showBackBehaviorDialog by rememberSaveable { mutableStateOf(false) }
     var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
+    var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
+        mutableFloatStateOf(uiState.gameplayFontScale)
+    }
+    var lastGameplayFontScaleStep by remember(uiState.gameplayFontScale) {
+        mutableIntStateOf(gameplayFontScaleToStep(uiState.gameplayFontScale))
+    }
 
     SettingsActionListItem(
         title = stringResource(R.string.settings_player_name_title),
@@ -1743,23 +1767,14 @@ private fun SettingsInputSection(
         onCheckedChange = onShowModFileNameChanged
     )
 
-    SwitchSettingRow(
-        checked = uiState.mobileHudEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_mobile_hud_enabled),
-        disabledText = stringResource(R.string.settings_mobile_hud_disabled),
-        description = stringResource(R.string.settings_mobile_hud_desc),
-        onCheckedChange = onMobileHudEnabledChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.compendiumUpgradeTouchFixEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
-        disabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_disabled),
-        description = stringResource(R.string.settings_compendium_upgrade_touch_fix_desc),
-        onCheckedChange = onCompendiumUpgradeTouchFixEnabledChanged
-    )
+//    SwitchSettingRow(
+//        checked = uiState.mobileHudEnabled,
+//        enabled = !uiState.busy,
+//        enabledText = stringResource(R.string.settings_mobile_hud_enabled),
+//        disabledText = stringResource(R.string.settings_mobile_hud_disabled),
+//        description = stringResource(R.string.settings_mobile_hud_desc),
+//        onCheckedChange = onMobileHudEnabledChanged
+//    )
 
     SwitchSettingRow(
         checked = uiState.showGamePerformanceOverlay,
@@ -1777,6 +1792,42 @@ private fun SettingsInputSection(
         disabledText = stringResource(R.string.settings_touchscreen_disabled),
         description = stringResource(R.string.settings_touchscreen_desc),
         onCheckedChange = onTouchscreenEnabledChanged
+    )
+
+    Text(
+        text = stringResource(R.string.settings_gameplay_font_scale_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Text(
+        text = stringResource(
+            R.string.settings_gameplay_font_scale_value,
+            GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue)
+        ),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Text(
+        text = stringResource(R.string.settings_gameplay_font_scale_desc),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Slider(
+        value = gameplayFontScaleSliderValue,
+        onValueChange = { value ->
+            val normalized = GameplaySettingsService.normalizeFontScale(value)
+            gameplayFontScaleSliderValue = normalized
+            val step = gameplayFontScaleToStep(normalized)
+            if (step != lastGameplayFontScaleStep) {
+                lastGameplayFontScaleStep = step
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        },
+        onValueChangeFinished = { onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
+        valueRange = GameplaySettingsService.MIN_FONT_SCALE..GameplaySettingsService.MAX_FONT_SCALE,
+        steps = (
+            (GameplaySettingsService.MAX_FONT_SCALE - GameplaySettingsService.MIN_FONT_SCALE) /
+                GameplaySettingsService.FONT_SCALE_STEP
+            ).roundToInt() - 1,
+        enabled = !uiState.busy,
+        modifier = Modifier.fillMaxWidth()
     )
 
     if (showPlayerNameDialog) {

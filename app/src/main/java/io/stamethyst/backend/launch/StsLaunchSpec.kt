@@ -156,6 +156,12 @@ object StsLaunchSpec {
                 if (LauncherConfig.readTouchscreenEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.font_scale=" +
+                LauncherConfig.formatGameplayFontScale(
+                    LauncherConfig.readGameplayFontScale(context)
+                )
+        )
+        args.add(
             "-Damethyst.mobile_hud_enabled=" +
                 if (LauncherConfig.readMobileHudEnabled(context)) "true" else "false"
         )

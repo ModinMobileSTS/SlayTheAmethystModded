@@ -84,6 +84,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "touchscreenEnabled" to formatBoolean(
                             LauncherConfig.readTouchscreenEnabled(context)
                         ),
+                        "gameplayFontScale" to LauncherConfig.formatGameplayFontScale(
+                            LauncherConfig.readGameplayFontScale(context)
+                        ),
                         "mobileHudEnabled" to formatBoolean(
                             LauncherConfig.readMobileHudEnabled(context)
                         ),

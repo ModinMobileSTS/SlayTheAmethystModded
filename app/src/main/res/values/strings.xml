@@ -710,6 +710,9 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_touchscreen_enabled">Touchscreen input: Enabled</string>
     <string name="settings_touchscreen_disabled">Touchscreen input: Disabled</string>
     <string name="settings_touchscreen_desc">Controls whether the native touch adaptation mode is used. When disabled, the mouse cursor is shown and the desktop UI is used.</string>
+    <string name="settings_gameplay_font_scale_title">Text size</string>
+    <string name="settings_gameplay_font_scale_value">%1$sx</string>
+    <string name="settings_gameplay_font_scale_desc">Controls the text size multiplier for MTS launches. Takes effect the next time the game launches.</string>
     <string name="settings_status_loading">Loading status...</string>
     <string name="settings_lwjgl_debug_enabled">LWJGL Debug: Enabled</string>
     <string name="settings_lwjgl_debug_disabled">LWJGL Debug: Disabled</string>
@@ -974,6 +977,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_target_fps_option">%1$d FPS</string>
     <string name="settings_player_name_save_failed">Failed to save player name: %1$s</string>
     <string name="settings_touchscreen_save_failed">Failed to save touchscreen setting: %1$s</string>
+    <string name="settings_gameplay_font_scale_save_failed">Failed to save text size: %1$s</string>
     <string name="settings_mobileglues_save_failed">Failed to save MobileGlues settings: %1$s</string>
     <string name="settings_mobileglues_apply_preset_failed">Failed to apply MobileGlues preset: %1$s</string>
     <string name="settings_mobileglues_reset_failed">Failed to reset MobileGlues settings: %1$s</string>
@@ -1014,6 +1018,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_status_string_dedup">String Deduplication: %1$s</string>
     <string name="settings_status_back_behavior">Back behavior: %1$s</string>
     <string name="settings_status_touchscreen">Touchscreen input: %1$s</string>
+    <string name="settings_status_gameplay_font_scale">Text size: %1$sx</string>
     <string name="settings_status_mobile_hud">Mobile HUD: %1$s</string>
     <string name="settings_status_compendium_touch_fix">Compendium upgrade touch fix: %1$s</string>
     <string name="settings_status_avoid_display_cutout">Avoid display cutout: %1$s</string>

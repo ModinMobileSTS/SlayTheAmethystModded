@@ -12,8 +12,13 @@ import java.util.WeakHashMap;
 public final class CompatRuntimeState {
     private static final String RUNTIME_COMPAT_DEBUG_PROP =
         "amethyst.runtime_compat.debug";
+    private static final String FONT_SCALE_PROP = "amethyst.font_scale";
+    private static final float DEFAULT_TEXT_SCALE = 1.0f;
+    private static final float BIG_TEXT_SCALE = 1.2f;
     private static final boolean RUNTIME_COMPAT_DEBUG_ENABLED =
         readBooleanSystemProperty(RUNTIME_COMPAT_DEBUG_PROP, false);
+    private static final float CONFIGURED_FONT_SCALE =
+        readFloatSystemProperty(FONT_SCALE_PROP, Float.NaN);
     private static final GuardedReflectionAccess UNSUPPORTED_GUARDED_ACCESS =
         new GuardedReflectionAccess(null, null, null, null);
     private static final Map<Class<?>, GuardedReflectionAccess> GUARDED_ACCESS_BY_CLASS =
@@ -42,7 +47,11 @@ public final class CompatRuntimeState {
             startupConfigurationLogged = true;
             System.out.println(
                 "[amethyst-runtime-compat] init version=1.0.16 guardedDynamicCache=true "
-                    + "duelistBaseValueShortcuts=true"
+                    + "duelistBaseValueShortcuts=true "
+                    + "fontScale="
+                    + (hasConfiguredFontScale()
+                    ? Float.toString(CONFIGURED_FONT_SCALE)
+                    : "<default>")
             );
             System.out.println(
                 "[amethyst-runtime-compat] guarded dynamic cache active: "
@@ -98,6 +107,17 @@ public final class CompatRuntimeState {
         }
         logGuardedDynamicCacheOnce(card, source, resolved);
         return resolved;
+    }
+
+    public static float remapPrepFontSize(float requestedSize, boolean bigTextMode) {
+        if (!hasConfiguredFontScale()) {
+            return requestedSize;
+        }
+        float baselineScale = bigTextMode ? BIG_TEXT_SCALE : DEFAULT_TEXT_SCALE;
+        if (baselineScale <= 0.0f) {
+            return requestedSize;
+        }
+        return requestedSize * (CONFIGURED_FONT_SCALE / baselineScale);
     }
 
     public static Integer getDuelistBaseTributes(AbstractCard card) {
@@ -417,6 +437,26 @@ public final class CompatRuntimeState {
             return true;
         }
         return defaultValue;
+    }
+
+    private static boolean hasConfiguredFontScale() {
+        return !Float.isNaN(CONFIGURED_FONT_SCALE) && CONFIGURED_FONT_SCALE > 0.0f;
+    }
+
+    private static float readFloatSystemProperty(String key, float defaultValue) {
+        String configured = System.getProperty(key);
+        if (configured == null) {
+            return defaultValue;
+        }
+        configured = configured.trim();
+        if (configured.length() == 0) {
+            return defaultValue;
+        }
+        try {
+            return Float.parseFloat(configured);
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
     }
 
     private static final class GuardedReflectionAccess {
