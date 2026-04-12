@@ -527,6 +527,9 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_author_icon_design_label">Icon design:</string>
     <string name="settings_author_contributor_raw_filter_name">Raw filter</string>
     <string name="settings_author_contributor_raw_filter_url">https://example.com/</string>
+    <string name="settings_author_friend_links_label">Friend links</string>
+    <string name="settings_author_friend_links_intro">Tower 2 mobile mod loader by wsdx233. Check it out here:</string>
+    <string name="settings_author_friend_links_wsdx233_url">https://space.bilibili.com/116375500</string>
     <string name="settings_author_special_thanks_label">Special thanks:</string>
     <string name="settings_author_special_thanks_item_1">1. Technical ideas from the Amethyst-android project.</string>
     <string name="settings_author_special_thanks_item_2">2. Design ideas from this project predecessor (mobile build).</string>

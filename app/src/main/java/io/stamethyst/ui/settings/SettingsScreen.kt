@@ -2177,18 +2177,12 @@ private fun SettingsStatusSection(
 @Composable
 private fun SettingsAuthorInfoSection() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(R.string.settings_author_repo_label),
-            style = MaterialTheme.typography.bodyMedium
-        )
+        SettingsAuthorSectionTitle(text = stringResource(R.string.settings_author_repo_label))
         SettingsExternalLinkText(
             text = stringResource(R.string.settings_author_repo_url),
             url = stringResource(R.string.settings_author_repo_url),
         )
-        Text(
-            text = stringResource(R.string.settings_author_contributors_label),
-            style = MaterialTheme.typography.bodyMedium
-        )
+        SettingsAuthorSectionTitle(text = stringResource(R.string.settings_author_contributors_label))
         SettingsExternalLinkText(
             text = stringResource(R.string.settings_author_contributor_ketal_name),
             url = stringResource(R.string.settings_author_contributor_ketal_url),
@@ -2201,19 +2195,21 @@ private fun SettingsAuthorInfoSection() {
             text = stringResource(R.string.settings_author_contributor_freude916_name),
             url = stringResource(R.string.settings_author_contributor_freude916_url),
         )
-        Text(
-            text = stringResource(R.string.settings_author_icon_design_label),
-            style = MaterialTheme.typography.bodySmall
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        SettingsExternalLinkText(
+        SettingsInlineLinkRow(
+            label = stringResource(R.string.settings_author_icon_design_label),
             text = stringResource(R.string.settings_author_contributor_raw_filter_name),
             url = stringResource(R.string.settings_author_contributor_raw_filter_url),
         )
+        SettingsAuthorSectionTitle(text = stringResource(R.string.settings_author_friend_links_label))
         Text(
-            text = stringResource(R.string.settings_author_special_thanks_label),
+            text = stringResource(R.string.settings_author_friend_links_intro),
             style = MaterialTheme.typography.bodySmall
         )
+        SettingsExternalLinkText(
+            text = stringResource(R.string.settings_author_friend_links_wsdx233_url),
+            url = stringResource(R.string.settings_author_friend_links_wsdx233_url),
+        )
+        SettingsAuthorSectionTitle(text = stringResource(R.string.settings_author_special_thanks_label))
         Text(
             text = stringResource(R.string.settings_author_special_thanks_item_1),
             style = MaterialTheme.typography.bodySmall
@@ -2242,6 +2238,35 @@ private fun SettingsAuthorInfoSection() {
         Text(
             text = stringResource(R.string.settings_author_follow_notice),
             style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun SettingsAuthorSectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
+
+@Composable
+private fun SettingsInlineLinkRow(
+    label: String,
+    text: String,
+    url: String,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall
+        )
+        SettingsExternalLinkText(
+            text = text,
+            url = url,
         )
     }
 }
