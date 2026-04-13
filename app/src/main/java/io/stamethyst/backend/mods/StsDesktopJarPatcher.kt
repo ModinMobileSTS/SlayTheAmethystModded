@@ -118,6 +118,13 @@ internal object StsDesktopJarPatcher {
                                         originalBytes
                                     )
                                 )
+                            } else if (name == STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS) {
+                                val originalBytes = JarFileIoUtils.readAll(zipIn)
+                                zipOut.write(
+                                    StsFreeTypeGlyphFallbackPatcher.patchFreeTypeBitmapFontDataClass(
+                                        originalBytes
+                                    )
+                                )
                             } else if (patchBytes != null &&
                                 StsUiTouchCompatPatcher.isMethodMergeClassEntry(name)
                             ) {
@@ -151,6 +158,13 @@ internal object StsDesktopJarPatcher {
                                     )
                                 )
                             }
+                        }
+
+                        if (!seenNames.contains(STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS)) {
+                            throw IOException(
+                                "desktop-1.0.jar is missing required class: " +
+                                    STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS
+                            )
                         }
 
                         for ((name, data) in patchEntries) {
@@ -240,6 +254,7 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
+            STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS == entryName ||
             STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
             STS_PATCH_COLOR_TAB_BAR_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX) ||
@@ -278,6 +293,12 @@ internal object StsDesktopJarPatcher {
                     ?: return false
                 val shaderProgramBytes = JarFileIoUtils.readEntryBytes(zipFile, shaderProgramEntry)
                 if (!StsShaderPrecisionCompatPatcher.isPatchedShaderProgramClass(shaderProgramBytes)) {
+                    return false
+                }
+                val fontDataEntry = zipFile.getEntry(STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS)
+                    ?: return false
+                val fontDataBytes = JarFileIoUtils.readEntryBytes(zipFile, fontDataEntry)
+                if (!StsFreeTypeGlyphFallbackPatcher.isPatchedFreeTypeBitmapFontDataClass(fontDataBytes)) {
                     return false
                 }
                 true

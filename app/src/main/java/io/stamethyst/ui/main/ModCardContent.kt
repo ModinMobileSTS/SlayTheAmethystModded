@@ -42,6 +42,7 @@ internal fun ModCardBodyContent(
     actionsEnabled: Boolean,
     onActionsClick: () -> Unit,
     modSuggestionText: String? = null,
+    suggestionUnread: Boolean = false,
     suggestionBadgeEnabled: Boolean = true,
     onSuggestionClick: () -> Unit = {},
     importPatchBadgeEnabled: Boolean = true,
@@ -82,6 +83,7 @@ internal fun ModCardBodyContent(
                     Spacer(modifier = Modifier.width(4.dp))
                     ModSuggestionIcon(
                         enabled = suggestionBadgeEnabled,
+                        unread = suggestionUnread,
                         onClick = onSuggestionClick
                     )
                 }
@@ -147,13 +149,14 @@ internal fun ModCardBodyContent(
 @Composable
 private fun ModSuggestionIcon(
     enabled: Boolean,
+    unread: Boolean,
     onClick: () -> Unit,
 ) {
     Icon(
         painter = painterResource(R.drawable.ic_error_outline),
         contentDescription = null,
         tint = if (enabled) {
-            MaterialTheme.colorScheme.primary
+            if (unread) SuggestionUnreadColor else MaterialTheme.colorScheme.primary
         } else {
             MaterialTheme.colorScheme.outline
         },
@@ -162,6 +165,8 @@ private fun ModSuggestionIcon(
             .clickable(enabled = enabled, onClick = onClick)
     )
 }
+
+private val SuggestionUnreadColor = Color(0xFFD2A72E)
 
 @Composable
 private fun ModImportPatchIcon(

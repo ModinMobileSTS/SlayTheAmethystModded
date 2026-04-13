@@ -240,6 +240,12 @@
     <string name="main_get_new_mods_dialog_close">Close</string>
     <string name="main_import_mods">Import mods</string>
     <string name="main_launch_game">Launch game</string>
+    <string name="main_launch_unread_suggestions_title">Some mod notices have not been read</string>
+    <string name="main_launch_unread_suggestions_message_intro">These enabled mods still have unread notices:</string>
+    <string name="main_launch_unread_suggestions_message_more_format">%1$d more enabled mods are not shown here.</string>
+    <string name="main_launch_unread_suggestions_message_outro">It is recommended to open the circled exclamation mark on each mod card and read the notice first. You can cancel this launch, or continue anyway.</string>
+    <string name="main_launch_unread_suggestions_cancel">Cancel launch</string>
+    <string name="main_launch_unread_suggestions_continue">Launch anyway</string>
     <string name="main_launch_game_already_running">The game process is still running. Return to that session or wait for it to exit before starting again.</string>
     <string name="main_launch_game_cleanup_busy">Killing leftover game process...</string>
     <string name="main_launch_game_cleanup_failed">The previous game process did not exit fully. Please wait a moment and try again.</string>

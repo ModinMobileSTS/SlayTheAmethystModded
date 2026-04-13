@@ -240,6 +240,12 @@
     <string name="main_get_new_mods_dialog_close">关闭</string>
     <string name="main_import_mods">导入模组</string>
     <string name="main_launch_game">启动游戏</string>
+    <string name="main_launch_unread_suggestions_title">有模组建议尚未阅读</string>
+    <string name="main_launch_unread_suggestions_message_intro">以下已启用模组带有未阅读的提示：</string>
+    <string name="main_launch_unread_suggestions_message_more_format">另有 %1$d 个已启用模组未在此列出。</string>
+    <string name="main_launch_unread_suggestions_message_outro">建议先点开模组卡片右侧的圆圈感叹号查看注意事项。你可以取消本次启动，或忽略这些提示继续启动游戏。</string>
+    <string name="main_launch_unread_suggestions_cancel">取消启动</string>
+    <string name="main_launch_unread_suggestions_continue">仍要启动</string>
     <string name="main_launch_game_already_running">检测到游戏进程仍在运行，请先返回当前游戏会话或等待其退出后再重新启动。</string>
     <string name="main_launch_game_cleanup_busy">正在杀死残余游戏进程…</string>
     <string name="main_launch_game_cleanup_failed">未能完全杀死上一轮游戏进程，请稍后再试。</string>

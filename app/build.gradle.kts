@@ -183,7 +183,7 @@ android {
         outputs.all {
             @Suppress("DEPRECATION")
             if (this is com.android.build.gradle.api.ApkVariantOutput) {
-                outputFileName = "SlayTheAmethyst-dev-$appVersionName.apk"
+                outputFileName = "SlayTheAmethyst-stable-$appVersionName.apk"
             }
         }
     }
@@ -199,12 +199,14 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(platform(libs.okhttpBom))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.haze)
     implementation(libs.haze.materials)
+    implementation(libs.okhttp)
     implementation(libs.reorderable)
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
@@ -214,8 +216,10 @@ dependencies {
     implementation(libs.bytedance.bytehook)
     implementation(libs.ow2.asm)
     implementation(libs.ow2.asm.tree)
+    testImplementation(platform(libs.okhttpBom))
     testImplementation("org.json:json:20240303")
     testImplementation(libs.junit4)
+    testImplementation(libs.mockwebserver3)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

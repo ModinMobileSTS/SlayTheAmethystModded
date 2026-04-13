@@ -76,6 +76,7 @@ internal data class ModCardCallbacks(
 internal fun ModCard(
     mod: ModItemUi,
     suggestionText: String? = null,
+    suggestionRead: Boolean = true,
     isExpanded: Boolean,
     isDraggedInOverlay: Boolean,
     showModFileName: Boolean,
@@ -84,6 +85,7 @@ internal fun ModCard(
     selectionEnabled: Boolean,
     fileActionsEnabled: Boolean,
     dragEnabled: Boolean,
+    onSuggestionRead: () -> Unit = {},
     callbacks: ModCardCallbacks
 ) {
     val context = LocalContext.current
@@ -193,8 +195,12 @@ internal fun ModCard(
                 }
             },
             modSuggestionText = suggestionText,
+            suggestionUnread = !suggestionRead,
             suggestionBadgeEnabled = true,
-            onSuggestionClick = { showSuggestionDialog = true },
+            onSuggestionClick = {
+                onSuggestionRead()
+                showSuggestionDialog = true
+            },
             importPatchBadgeEnabled = true,
             onImportPatchClick = { showImportPatchDialog = true },
             headerTrailing = {

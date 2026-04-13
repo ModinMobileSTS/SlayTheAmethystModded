@@ -2,17 +2,16 @@ package io.stamethyst.backend.feedback
 
 import android.content.Context
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Locale
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -21,7 +20,6 @@ object FeedbackIssueSyncService {
     private const val GITHUB_API_BASE = "https://api.github.com"
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 18_000
-    private const val RELAY_READ_TIMEOUT_MS = 60_000
     private const val USER_AGENT = "SlayTheAmethyst-FeedbackSync"
     private const val DEFAULT_ISSUE_PAGE_SIZE = 20
     private val proxyCommentRegex =
@@ -115,22 +113,15 @@ object FeedbackIssueSyncService {
         if (pageSize <= 0) {
             throw IOException("议题分页大小不正确。")
         }
-        var lastError: Throwable? = null
-        try {
-            return fetchIssuePageFromRelay(page, pageSize)
-        } catch (error: Throwable) {
-            lastError = error
-        }
-
+        val client = createGithubClient(context)
         val preferred = UpdateMirrorManager.current(context)
         try {
             return GithubMirrorFallback.run(preferred) { source ->
-                fetchIssuePageFromSource(source, page, pageSize)
+                fetchIssuePageFromSource(client, source, page, pageSize)
             }.value
         } catch (error: Throwable) {
-            lastError = error
+            throw buildWrappedIOException("无法加载议题列表：", error)
         }
-        throw buildWrappedIOException("无法加载议题列表：", lastError)
     }
 
     fun syncAllSubscriptions(context: Context): FeedbackSyncResult {
@@ -145,8 +136,9 @@ object FeedbackIssueSyncService {
 
         val syncedAtMs = System.currentTimeMillis()
         val remoteByIssueNumber = LinkedHashMap<Long, FeedbackIssueThreadCache>(initialSubscriptions.size)
+        val client = createGithubClient(context)
         initialSubscriptions.forEach { subscription ->
-            val remote = fetchRemoteIssue(context, subscription.issueNumber)
+            val remote = fetchRemoteIssue(context, subscription.issueNumber, client)
             FeedbackIssueLocalStore.saveIssueCache(context, remote)
             remoteByIssueNumber[subscription.issueNumber] = remote
         }
@@ -215,12 +207,13 @@ object FeedbackIssueSyncService {
 
     private fun fetchRemoteIssue(
         context: Context,
-        issueNumber: Long
+        issueNumber: Long,
+        client: OkHttpClient = createGithubClient(context),
     ): FeedbackIssueThreadCache {
         val preferred = UpdateMirrorManager.current(context)
         return try {
             GithubMirrorFallback.run(preferred) { source ->
-                fetchRemoteIssueFromSource(source, issueNumber)
+                fetchRemoteIssueFromSource(client, source, issueNumber)
             }.value
         } catch (error: Throwable) {
             throw buildWrappedIOException("无法同步 Issue #$issueNumber：", error)
@@ -228,11 +221,13 @@ object FeedbackIssueSyncService {
     }
 
     private fun fetchIssuePageFromSource(
+        client: OkHttpClient,
         source: UpdateSource,
         page: Int,
         pageSize: Int
     ): FeedbackIssueBrowsePage {
         val issues = requestJsonArray(
+            client,
             source.buildUrl(
                 "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues" +
                     "?state=all&sort=updated&direction=desc&per_page=$pageSize&page=$page"
@@ -273,44 +268,13 @@ object FeedbackIssueSyncService {
         )
     }
 
-    private fun fetchIssuePageFromRelay(
-        page: Int,
-        pageSize: Int
-    ): FeedbackIssueBrowsePage {
-        val endpoint = BuildConfig.FEEDBACK_BASE_URL.trim().trimEnd('/') +
-            "/api/feedback-issues/browse?page=$page&per_page=$pageSize"
-        val response = requestJsonObject(endpoint, relay = true)
-        val issuesArray = response.optJSONArray("issues") ?: JSONArray()
-        val items = ArrayList<FeedbackIssueBrowseItem>(issuesArray.length())
-        for (index in 0 until issuesArray.length()) {
-            val item = issuesArray.optJSONObject(index) ?: continue
-            val issueNumber = item.optLong("issueNumber")
-            if (issueNumber <= 0L) {
-                continue
-            }
-            items += FeedbackIssueBrowseItem(
-                issueNumber = issueNumber,
-                issueUrl = item.optString("issueUrl").trim().ifEmpty { buildIssueUrl(issueNumber) },
-                title = item.optString("title").trim(),
-                bodyPreview = item.optString("bodyPreview"),
-                state = item.optString("state").trim().ifEmpty { "open" },
-                commentCount = item.optInt("commentCount"),
-                authorLabel = item.optString("authorLabel").trim().ifEmpty { "Unknown" },
-                updatedAtMs = item.optLong("updatedAtMs")
-            )
-        }
-        return FeedbackIssueBrowsePage(
-            issues = items,
-            nextPage = response.optInt("nextPage").takeIf { it > page } ?: (page + 1),
-            hasMore = response.optBoolean("hasMore", false)
-        )
-    }
-
     private fun fetchRemoteIssueFromSource(
+        client: OkHttpClient,
         source: UpdateSource,
         issueNumber: Long
     ): FeedbackIssueThreadCache {
         val issue = requestJsonObject(
+            client,
             source.buildUrl(
                 "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues/$issueNumber"
             )
@@ -319,11 +283,13 @@ object FeedbackIssueSyncService {
             throw IOException("链接指向的是 Pull Request，不是 Issue。")
         }
         val comments = requestJsonArray(
+            client,
             source.buildUrl(
                 "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues/$issueNumber/comments?per_page=100"
             )
         )
         val events = requestJsonArray(
+            client,
             source.buildUrl(
                 "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues/$issueNumber/events?per_page=100"
             )
@@ -416,56 +382,41 @@ object FeedbackIssueSyncService {
         )
     }
 
-    private fun requestJsonObject(requestUrl: String, relay: Boolean = false): JSONObject {
-        val text = requestText(requestUrl, relay = relay)
+    private fun createGithubClient(context: Context): OkHttpClient {
+        return GithubAcceleratedHttp.createClient(
+            context = context,
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            followRedirects = true,
+        )
+    }
+
+    private fun requestJsonObject(client: OkHttpClient, requestUrl: String): JSONObject {
+        val text = requestText(client, requestUrl)
         val parsed = JSONTokener(text).nextValue()
         return parsed as? JSONObject ?: throw IOException("Invalid JSON object response.")
     }
 
-    private fun requestJsonArray(requestUrl: String): JSONArray {
-        val text = requestText(requestUrl)
+    private fun requestJsonArray(client: OkHttpClient, requestUrl: String): JSONArray {
+        val text = requestText(client, requestUrl)
         val parsed = JSONTokener(text).nextValue()
         return parsed as? JSONArray ?: throw IOException("Invalid JSON array response.")
     }
 
-    private fun requestText(requestUrl: String, relay: Boolean = false): String {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = if (relay) RELAY_READ_TIMEOUT_MS else READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", USER_AGENT)
-            if (relay) {
-                val apiKey = BuildConfig.FEEDBACK_API_KEY.trim()
-                if (apiKey.isNotEmpty()) {
-                    setRequestProperty("X-Feedback-Key", apiKey)
-                }
+    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorText = response.body.bytes().toString(StandardCharsets.UTF_8)
+                throw IOException("HTTP ${response.code} ${errorText.trim()}".trim())
             }
-        }
-        try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                val errorText = connection.errorStream?.use { input ->
-                    input.readBytes().toString(StandardCharsets.UTF_8)
-                }.orEmpty()
-                throw IOException("HTTP $responseCode ${errorText.trim()}".trim())
-            }
-            BufferedInputStream(connection.inputStream).use { input ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                val output = ByteArrayOutputStream()
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) {
-                        break
-                    }
-                    output.write(buffer, 0, read)
-                }
-                return output.toString(StandardCharsets.UTF_8.name())
-            }
-        } finally {
-            connection.disconnect()
+            return response.body.bytes().toString(StandardCharsets.UTF_8)
         }
     }
 

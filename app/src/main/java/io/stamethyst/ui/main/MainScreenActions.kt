@@ -18,6 +18,7 @@ internal data class MainScreenActions(
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
+    val onMarkModSuggestionRead: (ModItemUi, String) -> Unit = { _, _ -> },
     val onSetFolderSelected: (String, Boolean) -> Unit = { _, _ -> },
     val onSetUnassignedSelected: (Boolean) -> Unit = {},
     val onToggleFolderCollapsed: (String) -> Unit = {},
@@ -34,6 +35,8 @@ internal data class MainScreenActions(
     val onRetryStorageCheck: () -> Unit = {},
     val onDismissCrashRecovery: () -> Unit = {},
     val onRetryLaunchAfterCrash: () -> Unit = {},
+    val onConfirmLaunchWithUnreadSuggestions: () -> Unit = {},
+    val onCancelLaunchWithUnreadSuggestions: () -> Unit = {},
     val onCopyCrashReport: () -> Unit = {},
     val onShareCrashRecoveryReport: () -> Unit = {},
     val onCloseApp: () -> Unit = {},
@@ -66,6 +69,9 @@ internal fun rememberMainScreenActions(
                 onSetPriority = { mod, priority ->
                     viewModel.onSetPriority(activity, mod, priority)
                 },
+                onMarkModSuggestionRead = { mod, suggestionText ->
+                    viewModel.markModSuggestionRead(activity, mod, suggestionText)
+                },
                 onSetFolderSelected = { folderId, selected -> viewModel.setFolderSelected(activity, folderId, selected) },
                 onSetUnassignedSelected = { selected -> viewModel.setUnassignedSelected(activity, selected) },
                 onToggleFolderCollapsed = { folderId -> viewModel.toggleFolderCollapsed(activity, folderId) },
@@ -82,6 +88,12 @@ internal fun rememberMainScreenActions(
                 onRetryStorageCheck = { viewModel.refresh(activity) },
                 onDismissCrashRecovery = { viewModel.dismissCrashRecovery() },
                 onRetryLaunchAfterCrash = { viewModel.retryLaunchAfterCrash(activity) },
+                onConfirmLaunchWithUnreadSuggestions = {
+                    viewModel.confirmLaunchWithUnreadSuggestions(activity)
+                },
+                onCancelLaunchWithUnreadSuggestions = {
+                    viewModel.cancelLaunchWithUnreadSuggestions()
+                },
                 onCopyCrashReport = { viewModel.copyCrashRecoveryReport(activity) },
                 onShareCrashRecoveryReport = { viewModel.shareCrashRecoveryReport(activity) },
                 onCloseApp = { activity.finishAffinity() },

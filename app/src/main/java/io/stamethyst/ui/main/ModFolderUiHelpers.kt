@@ -3,6 +3,7 @@ package io.stamethyst.ui.main
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
 import java.io.File
+import java.security.MessageDigest
 
 internal fun resolveAssignedFolderId(
     mod: ModItemUi,
@@ -122,6 +123,37 @@ internal fun resolveModSuggestionText(
     return null
 }
 
+internal fun resolveModSuggestionReadKey(mod: ModItemUi, suggestionText: String): String? {
+    val normalizedSuggestion = suggestionText.trim()
+    if (normalizedSuggestion.isEmpty()) {
+        return null
+    }
+    val suggestionIdentity = resolveModSuggestionIdentity(mod) ?: return null
+    return "$suggestionIdentity|${sha256Hex(normalizedSuggestion)}"
+}
+
+internal fun collectEnabledUnreadSuggestionModDisplayNames(
+    mods: List<ModItemUi>,
+    suggestions: Map<String, String>,
+    readSuggestionKeys: Set<String>,
+    showModFileName: Boolean = false
+): List<String> {
+    if (mods.isEmpty() || suggestions.isEmpty()) {
+        return emptyList()
+    }
+    return mods.mapNotNull { mod ->
+        if (!mod.enabled) {
+            return@mapNotNull null
+        }
+        val suggestionText = resolveModSuggestionText(mod, suggestions) ?: return@mapNotNull null
+        val readKey = resolveModSuggestionReadKey(mod, suggestionText)
+        if (readKey != null && readSuggestionKeys.contains(readKey)) {
+            return@mapNotNull null
+        }
+        resolveModDisplayName(mod, showModFileName = showModFileName)
+    }
+}
+
 internal fun resolveModFileNameWithoutJar(storagePath: String): String? {
     val path = storagePath.trim()
     if (path.isEmpty()) {
@@ -171,6 +203,40 @@ private fun resolveSiblingOptionalModStorageCandidates(storagePath: String): Lis
     candidates.remove(normalizedPath)
     return candidates.toList()
 }
+
+private fun resolveModSuggestionIdentity(mod: ModItemUi): String? {
+    val normalizedManifest = normalizeModId(mod.manifestModId)
+    if (normalizedManifest.isNotEmpty()) {
+        return "manifest:$normalizedManifest"
+    }
+
+    val normalizedModId = normalizeModId(mod.modId)
+    if (normalizedModId.isNotEmpty()) {
+        return "mod:$normalizedModId"
+    }
+
+    val normalizedStoragePath = mod.storagePath.trim().replace('\\', '/')
+    if (normalizedStoragePath.isNotEmpty()) {
+        return "path:$normalizedStoragePath"
+    }
+    return null
+}
+
+private fun sha256Hex(value: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+    val chars = CharArray(digest.size * 2)
+    digest.forEachIndexed { index, byte ->
+        val unsigned = byte.toInt() and 0xff
+        chars[index * 2] = HEX_DIGITS[unsigned ushr 4]
+        chars[index * 2 + 1] = HEX_DIGITS[unsigned and 0x0f]
+    }
+    return String(chars)
+}
+
+private val HEX_DIGITS = charArrayOf(
+    '0', '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+)
 
 private fun resolvePackageAndRelativePath(normalizedPath: String): Pair<String, String>? {
     val externalPackageMarker = "/Android/data/"

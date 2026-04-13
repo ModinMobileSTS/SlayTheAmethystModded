@@ -1,11 +1,11 @@
 package io.stamethyst.backend.update
 
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
+import android.content.Context
+import io.stamethyst.backend.github.GithubAcceleratedHttp
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.charset.StandardCharsets
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -21,13 +21,15 @@ object LauncherUpdateService {
     private const val USER_AGENT = "SlayTheAmethyst-LauncherUpdate"
 
     fun checkForUpdates(
+        context: Context,
         currentVersion: String,
         preferredUserSource: UpdateSource,
     ): UpdateCheckExecutionResult {
+        val client = createGithubClient(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
         val metadataResult = try {
             GithubMirrorFallback.run(normalizedPreferredSource) { source ->
-                val responseText = requestText(source.buildUrl(LATEST_RELEASE_API_URL))
+                val responseText = requestText(client, source.buildUrl(LATEST_RELEASE_API_URL))
                 parseLatestRelease(responseText)
                     ?: throw IOException("Invalid release payload.")
             }
@@ -56,6 +58,7 @@ object LauncherUpdateService {
 
         val downloadResolution = try {
             resolveDownloadResolution(
+                client = client,
                 release = release,
                 preferredUserSource = normalizedPreferredSource,
                 metadataSource = metadataSource
@@ -79,14 +82,16 @@ object LauncherUpdateService {
     }
 
     fun fetchReleaseHistory(
+        context: Context,
         preferredUserSource: UpdateSource,
         limit: Int = DEFAULT_RELEASE_HISTORY_LIMIT,
     ): UpdateReleaseHistoryResult {
+        val client = createGithubClient(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
         val normalizedLimit = limit.coerceIn(1, 20)
         val metadataResult = GithubMirrorFallback.run(normalizedPreferredSource) { source ->
             val requestUrl = source.buildUrl("$RELEASE_HISTORY_API_URL?per_page=$normalizedLimit")
-            val responseText = requestText(requestUrl)
+            val responseText = requestText(client, requestUrl)
             parseReleaseHistory(responseText, normalizedLimit)
                 .takeIf { it.isNotEmpty() }
                 ?: throw IOException("Release history is empty.")
@@ -145,6 +150,7 @@ object LauncherUpdateService {
     }
 
     internal fun resolveDownloadResolution(
+        client: OkHttpClient,
         release: UpdateReleaseInfo,
         preferredUserSource: UpdateSource,
         metadataSource: UpdateSource,
@@ -156,7 +162,7 @@ object LauncherUpdateService {
             )
         ) { source ->
             val candidateUrl = source.buildUrl(release.assetDownloadUrl)
-            if (!isDownloadCandidateReachable(candidateUrl)) {
+            if (!isDownloadCandidateReachable(client, candidateUrl)) {
                 throw IOException("Unreachable APK download link.")
             }
             UpdateDownloadResolution(
@@ -166,78 +172,66 @@ object LauncherUpdateService {
         }.value
     }
 
-    private fun requestText(requestUrl: String): String {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", USER_AGENT)
-        }
-        try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                throw IOException("HTTP $responseCode")
+    private fun createGithubClient(context: Context): OkHttpClient {
+        return GithubAcceleratedHttp.createClient(
+            context = context,
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            followRedirects = true,
+        )
+    }
+
+    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
             }
-            BufferedInputStream(connection.inputStream).use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) {
-                        break
-                    }
-                    output.write(buffer, 0, read)
-                }
-                return output.toString(StandardCharsets.UTF_8.name())
-            }
-        } finally {
-            connection.disconnect()
+            return response.body.bytes().toString(StandardCharsets.UTF_8)
         }
     }
 
-    private fun isDownloadCandidateReachable(requestUrl: String): Boolean {
-        return requestProbe(requestUrl, "HEAD") || requestRangeProbe(requestUrl)
+    private fun isDownloadCandidateReachable(client: OkHttpClient, requestUrl: String): Boolean {
+        return requestProbe(client, requestUrl, "HEAD") || requestRangeProbe(client, requestUrl)
     }
 
-    private fun requestProbe(requestUrl: String, method: String): Boolean {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("User-Agent", USER_AGENT)
+    private fun requestProbe(client: OkHttpClient, requestUrl: String, method: String): Boolean {
+        val requestBuilder = Request.Builder()
+            .url(requestUrl)
+            .header("User-Agent", USER_AGENT)
+        val request = if (method.equals("HEAD", ignoreCase = true)) {
+            requestBuilder.head().build()
+        } else {
+            requestBuilder.method(method, null).build()
         }
         return try {
-            val responseCode = connection.responseCode
-            responseCode in 200..299
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
         } catch (_: Throwable) {
             false
-        } finally {
-            connection.disconnect()
         }
     }
 
-    private fun requestRangeProbe(requestUrl: String): Boolean {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("User-Agent", USER_AGENT)
-            setRequestProperty("Range", "bytes=0-0")
-        }
+    private fun requestRangeProbe(client: OkHttpClient, requestUrl: String): Boolean {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("User-Agent", USER_AGENT)
+            .header("Range", "bytes=0-0")
+            .build()
         return try {
-            val responseCode = connection.responseCode
-            responseCode in 200..299 || responseCode == HttpURLConnection.HTTP_PARTIAL
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful || response.code == 206
+            }
         } catch (_: Throwable) {
             false
-        } finally {
-            connection.disconnect()
         }
     }
 

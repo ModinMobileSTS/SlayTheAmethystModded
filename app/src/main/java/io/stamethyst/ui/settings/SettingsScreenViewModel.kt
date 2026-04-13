@@ -337,7 +337,7 @@ class SettingsScreenViewModel : ViewModel() {
         val preferredSource = resolveSelectedMirrorSource(host)
         executor.execute {
             try {
-                val result = LauncherUpdateService.fetchReleaseHistory(preferredSource)
+                val result = LauncherUpdateService.fetchReleaseHistory(host, preferredSource)
                 host.runOnUiThread {
                     uiState = uiState.copy(
                         releaseHistoryLoading = false,
@@ -544,6 +544,7 @@ class SettingsScreenViewModel : ViewModel() {
         val preferredSource = resolveSelectedMirrorSource(host)
         executor.execute {
             val result = LauncherUpdateService.checkForUpdates(
+                context = host,
                 currentVersion = BuildConfig.VERSION_NAME,
                 preferredUserSource = preferredSource
             )

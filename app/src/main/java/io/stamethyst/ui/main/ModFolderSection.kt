@@ -355,12 +355,14 @@ internal fun ModFolderSection(
                     DependencyFolderListItem(
                         mods = dependencyMods,
                         modSuggestions = uiState.modSuggestions,
+                        readModSuggestionKeys = uiState.readModSuggestionKeys,
                         collapsed = dependencyFolderCollapsed,
                         forceCollapsed = dragCoordinator.shouldCollapseFolders,
                         showModFileName = showModFileName,
                         interactionState = interactionState,
                         collapseEnabled = uiState.controlsEnabled,
-                        onToggleCollapsed = callbacks.onToggleDependencyFolderCollapsed
+                        onToggleCollapsed = callbacks.onToggleDependencyFolderCollapsed,
+                        onMarkModSuggestionRead = callbacks.onMarkModSuggestionRead
                     )
                 }
             }
@@ -622,9 +624,15 @@ internal fun ModFolderSection(
                                     } else {
                                         bodyMods.forEach { mod ->
                                             key(mod.storagePath) {
+                                                val suggestionText = resolveModSuggestionText(mod, uiState.modSuggestions)
+                                                val suggestionReadKey = suggestionText?.let {
+                                                    resolveModSuggestionReadKey(mod, it)
+                                                }
                                                 ModCard(
                                                     mod = mod,
-                                                    suggestionText = resolveModSuggestionText(mod, uiState.modSuggestions),
+                                                    suggestionText = suggestionText,
+                                                    suggestionRead = suggestionReadKey == null ||
+                                                        uiState.readModSuggestionKeys.contains(suggestionReadKey),
                                                     isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                                                     isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                                     showModFileName = showModFileName,
@@ -632,6 +640,11 @@ internal fun ModFolderSection(
                                                     selectionEnabled = organizationControlsEnabled && mod.installed,
                                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
                                                     dragEnabled = organizationControlsEnabled && mod.installed,
+                                                    onSuggestionRead = {
+                                                        if (!suggestionText.isNullOrBlank()) {
+                                                            callbacks.onMarkModSuggestionRead(mod, suggestionText)
+                                                        }
+                                                    },
                                                     callbacks = ModCardCallbacks(
                                                         onToggleMod = callbacks.onToggleMod,
                                                         onSetPriority = callbacks.onSetPriority,
@@ -674,12 +687,14 @@ internal fun ModFolderSection(
 private fun DependencyFolderListItem(
     mods: List<ModItemUi>,
     modSuggestions: Map<String, String>,
+    readModSuggestionKeys: Set<String>,
     collapsed: Boolean,
     forceCollapsed: Boolean,
     showModFileName: Boolean,
     interactionState: ModFolderSectionInteractionState,
     collapseEnabled: Boolean,
-    onToggleCollapsed: () -> Unit
+    onToggleCollapsed: () -> Unit,
+    onMarkModSuggestionRead: (ModItemUi, String) -> Unit
 ) {
     val effectiveCollapsed = if (forceCollapsed) true else collapsed
     val readyCount = mods.count { it.enabled }
@@ -751,9 +766,15 @@ private fun DependencyFolderListItem(
             Column(modifier = Modifier.fillMaxWidth()) {
                 mods.forEach { mod ->
                     key(mod.storagePath) {
+                        val suggestionText = resolveModSuggestionText(mod, modSuggestions)
+                        val suggestionReadKey = suggestionText?.let {
+                            resolveModSuggestionReadKey(mod, it)
+                        }
                         ModCard(
                             mod = mod,
-                            suggestionText = resolveModSuggestionText(mod, modSuggestions),
+                            suggestionText = suggestionText,
+                            suggestionRead = suggestionReadKey == null ||
+                                readModSuggestionKeys.contains(suggestionReadKey),
                             isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                             isDraggedInOverlay = false,
                             showModFileName = showModFileName,
@@ -762,6 +783,11 @@ private fun DependencyFolderListItem(
                             selectionEnabled = false,
                             fileActionsEnabled = false,
                             dragEnabled = false,
+                            onSuggestionRead = {
+                                if (!suggestionText.isNullOrBlank()) {
+                                    onMarkModSuggestionRead(mod, suggestionText)
+                                }
+                            },
                             callbacks = ModCardCallbacks()
                         )
                     }

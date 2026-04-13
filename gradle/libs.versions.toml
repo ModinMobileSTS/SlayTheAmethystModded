@@ -16,6 +16,7 @@ junit4 = "4.13.2"
 log4j = "2.17.0"
 asm = "9.7.1"
 haze = "1.7.1"
+okhttp = "5.3.2"
 
 [libraries]
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
@@ -36,6 +37,9 @@ kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 haze-materials = { module = "dev.chrisbanes.haze:haze-materials", version.ref = "haze" }
+okhttpBom = { module = "com.squareup.okhttp3:okhttp-bom", version.ref = "okhttp" }
+okhttp = { module = "com.squareup.okhttp3:okhttp" }
+mockwebserver3 = { module = "com.squareup.okhttp3:mockwebserver3" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }
 log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
 log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "log4j" }

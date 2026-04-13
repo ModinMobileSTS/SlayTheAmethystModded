@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -305,9 +306,40 @@ private fun LauncherMainScreenContent(
     val showInitializing = uiState.initializing
     val hazeState = rememberHazeState()
     val crashRecovery = uiState.crashRecovery
+    val pendingLaunchUnreadSuggestionModNames = uiState.pendingLaunchUnreadSuggestionModNames
 
     if (crashRecovery != null) {
         BackHandler(onBack = actions.onDismissCrashRecovery)
+    }
+
+    if (pendingLaunchUnreadSuggestionModNames.isNotEmpty()) {
+        val unreadMessage = buildUnreadSuggestionLaunchWarningMessage(
+            pendingLaunchUnreadSuggestionModNames
+        )
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = actions.onCancelLaunchWithUnreadSuggestions,
+            title = { Text(text = stringResource(R.string.main_launch_unread_suggestions_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(text = unreadMessage)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = actions.onConfirmLaunchWithUnreadSuggestions) {
+                    Text(text = stringResource(R.string.main_launch_unread_suggestions_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = actions.onCancelLaunchWithUnreadSuggestions) {
+                    Text(text = stringResource(R.string.main_launch_unread_suggestions_cancel))
+                }
+            }
+        )
     }
 
     FolderNameDialog(
@@ -393,6 +425,30 @@ private fun LauncherMainScreenContent(
             }
         }
     }
+}
+
+@Composable
+private fun buildUnreadSuggestionLaunchWarningMessage(modNames: List<String>): String {
+    val visibleNames = modNames.take(5)
+    val hiddenCount = (modNames.size - visibleNames.size).coerceAtLeast(0)
+    return buildString {
+        append(stringResource(R.string.main_launch_unread_suggestions_message_intro))
+        append("\n\n")
+        visibleNames.forEach { modName ->
+            append("- ").append(modName).append('\n')
+        }
+        if (hiddenCount > 0) {
+            append(
+                stringResource(
+                    R.string.main_launch_unread_suggestions_message_more_format,
+                    hiddenCount
+                )
+            )
+            append('\n')
+        }
+        append('\n')
+        append(stringResource(R.string.main_launch_unread_suggestions_message_outro))
+    }.trimEnd()
 }
 
 @Composable
@@ -1000,6 +1056,7 @@ private fun ColumnScope.MainContentSwitcher(
                         onRenameModFile = actions.onRenameModFile,
                         onRenameFolder = actions.onRenameFolder,
                         onDeleteFolder = actions.onDeleteFolder,
+                        onMarkModSuggestionRead = actions.onMarkModSuggestionRead,
                         onSetFolderSelected = actions.onSetFolderSelected,
                         onSetUnassignedSelected = actions.onSetUnassignedSelected,
                         onToggleFolderCollapsed = actions.onToggleFolderCollapsed,

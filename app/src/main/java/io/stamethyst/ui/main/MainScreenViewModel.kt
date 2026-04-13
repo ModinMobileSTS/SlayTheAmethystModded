@@ -103,6 +103,8 @@ class MainScreenViewModel : ViewModel() {
         val launchInFlight: Boolean = false,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val modSuggestions: Map<String, String> = emptyMap(),
+        val readModSuggestionKeys: Set<String> = emptySet(),
+        val pendingLaunchUnreadSuggestionModNames: List<String> = emptyList(),
         val modFolders: List<ModFolder> = emptyList(),
         val folderAssignments: Map<String, String> = emptyMap(),
         val folderCollapsed: Map<String, Boolean> = emptyMap(),
@@ -132,6 +134,8 @@ class MainScreenViewModel : ViewModel() {
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
+    private var currentReadModSuggestionKeys: Set<String> = emptySet()
+    private var pendingLaunchUnreadSuggestionModNames: List<String> = emptyList()
     private var modSuggestionSyncInProgress = false
     private var lastSuccessfulModSuggestionSyncSignature: String? = null
     private var validatedImportedStsJarFingerprint: ImportedStsJarFingerprint? = null
@@ -177,6 +181,7 @@ class MainScreenViewModel : ViewModel() {
         val storageIssue = detectStorageIssue(host)
         val dependencyAvailability = resolveDependencyAvailability(host)
         currentModSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
+        currentReadModSuggestionKeys = ModSuggestionReadStateStore.loadReadKeys(host)
 
         modManagementController.refresh(host, storageAccessible = storageIssue == null)
         publishUiState(
@@ -261,8 +266,35 @@ class MainScreenViewModel : ViewModel() {
         if (!tryBeginLaunchRequest()) {
             return
         }
+        val unreadSuggestionModNames = collectEnabledUnreadSuggestionModDisplayNames(
+            mods = modManagementController.currentOptionalMods(),
+            suggestions = currentModSuggestions,
+            readSuggestionKeys = currentReadModSuggestionKeys
+        )
+        if (unreadSuggestionModNames.isNotEmpty()) {
+            pendingLaunchUnreadSuggestionModNames = unreadSuggestionModNames
+            uiState = uiState.copy(pendingLaunchUnreadSuggestionModNames = unreadSuggestionModNames)
+            return
+        }
         dismissCrashRecovery()
         beginLaunchFlow(host, StsLaunchSpec.LAUNCH_MODE_MTS, forceJvmCrash = false)
+    }
+
+    fun confirmLaunchWithUnreadSuggestions(host: Activity) {
+        if (pendingLaunchUnreadSuggestionModNames.isEmpty()) {
+            return
+        }
+        if (!launchInFlight && !tryBeginLaunchRequest()) {
+            return
+        }
+        clearPendingLaunchUnreadSuggestionDialog()
+        dismissCrashRecovery()
+        beginLaunchFlow(host, StsLaunchSpec.LAUNCH_MODE_MTS, forceJvmCrash = false)
+    }
+
+    fun cancelLaunchWithUnreadSuggestions() {
+        clearPendingLaunchUnreadSuggestionDialog()
+        clearLaunchInFlightState()
     }
 
     fun dismissCrashRecovery() {
@@ -496,12 +528,32 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
+    fun markModSuggestionRead(host: Activity, mod: ModItemUi, suggestionText: String) {
+        val readKey = resolveModSuggestionReadKey(mod, suggestionText) ?: return
+        val stored = ModSuggestionReadStateStore.markRead(host, readKey)
+        if (!stored && currentReadModSuggestionKeys.contains(readKey)) {
+            return
+        }
+        currentReadModSuggestionKeys = currentReadModSuggestionKeys + readKey
+        uiState = uiState.copy(readModSuggestionKeys = currentReadModSuggestionKeys)
+    }
+
     private fun cacheImportedStsJarValidation(
         importedStsJarFingerprint: ImportedStsJarFingerprint,
         isValid: Boolean
     ) {
         validatedImportedStsJarFingerprint = importedStsJarFingerprint
         validatedImportedStsJarState = isValid
+    }
+
+    private fun clearPendingLaunchUnreadSuggestionDialog() {
+        if (pendingLaunchUnreadSuggestionModNames.isEmpty() &&
+            uiState.pendingLaunchUnreadSuggestionModNames.isEmpty()
+        ) {
+            return
+        }
+        pendingLaunchUnreadSuggestionModNames = emptyList()
+        uiState = uiState.copy(pendingLaunchUnreadSuggestionModNames = emptyList())
     }
 
     fun handleGameProcessExitAnalysis(
@@ -1313,6 +1365,8 @@ class MainScreenViewModel : ViewModel() {
             launchInFlight = launchInFlight,
             showModFileName = LauncherPreferences.readShowModFileName(host),
             modSuggestions = currentModSuggestions,
+            readModSuggestionKeys = currentReadModSuggestionKeys,
+            pendingLaunchUnreadSuggestionModNames = pendingLaunchUnreadSuggestionModNames,
             modFolders = snapshot.modFolders,
             folderAssignments = snapshot.folderAssignments,
             folderCollapsed = snapshot.folderCollapsed,
