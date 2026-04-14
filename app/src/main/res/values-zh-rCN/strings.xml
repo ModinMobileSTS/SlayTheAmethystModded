@@ -81,6 +81,8 @@
     <string name="compat_force_linear_mipmap_filter_desc">开启后会在运行时把依赖 mipmap 的最小过滤降级为 Linear，以规避部分 mod 因 mip 链不完整导致的黑块；修复案例为命运之戒模组人物变为黑块。</string>
     <string name="compat_non_renderable_fbo_format_compat_title">不可渲染的 FBO 格式修复</string>
     <string name="compat_non_renderable_fbo_format_compat_desc">开启后会把 GLES 下不可作为颜色附件的 FrameBuffer 格式（Alpha/Intensity/LuminanceAlpha）自动升级为 RGBA8888，以避免“frame buffer couldn\'t be constructed: incomplete attachment”这类启动崩溃。关闭后更接近模组原始行为，但可能再次触发启动崩溃。如果你的 Haberdashery 遗物展示模组出现问题，可以考虑启用此项。</string>
+    <string name="compat_fbo_manager_title">全局 FBO 管理</string>
+    <string name="compat_fbo_manager_desc">开启后，运行时会在整个模组栈范围内跟踪活跃 FrameBuffer 的 owner，并在总 FBO 占用持续超过预算时，全局回收较旧、非关键的 native FBO 分配；包装对象本身会保留，并在下次真正访问时懒重建。它会和 FBO 空闲回收、FBO 压力降分辨率一起工作，用来阻止“对象还活着，但离屏缓冲 native 资源一直累积”这类问题。代价是后续再次使用这些缓冲时可能出现一次短暂重建卡顿；如果你要对比某些特殊后处理回归，可临时关闭。这个开关会在下次启动游戏后生效，默认开启。</string>
     <string name="compat_fbo_idle_reclaim_title">FBO 空闲回收</string>
     <string name="compat_fbo_idle_reclaim_desc">开启后，长时间未使用的大型 FrameBuffer 会释放 native 资源，并在下次真正使用时懒重建。这样可以降低地图遮罩、后处理等常驻缓冲带来的 GPU 内存压力，但缓冲重新建立时可能会带来一次轻微卡顿。这是运行时兼容开关，下次启动游戏后生效。</string>
     <string name="compat_fbo_pressure_downscale_title">FBO 压力降分辨率</string>

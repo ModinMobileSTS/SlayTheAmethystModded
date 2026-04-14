@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.TextView
 import io.stamethyst.backend.audio.ForegroundAudioPolicy
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
@@ -271,6 +272,17 @@ internal class GameSessionCoordinator(
 
         val runtimeRoot = RuntimePaths.runtimeRoot(activity)
         val javaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot) ?: File(runtimeRoot, "jre")
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_launch_begin",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "renderScale" to config.renderScale,
+                "rendererBackend" to config.rendererDecision.effectiveBackend.rendererId(),
+                "rendererSurface" to config.rendererDecision.effectiveSurfaceBackend.persistedValue,
+                "useTextureViewSurface" to config.useTextureViewSurface
+            )
+        )
 
         syncRuntimeForegroundState(true)
         jvmLaunchController.start(
@@ -299,6 +311,20 @@ internal class GameSessionCoordinator(
         } else {
             null
         }
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_jvm_exit",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "exitCode" to exitCode,
+                "bootInteractiveSignalSeen" to jvmLaunchController.bootInteractiveSignalSeen,
+                "backExitRequested" to backExitRequested,
+                "heapPressureWarning" to (heapPressureNotice != null),
+                "peakJvmHeapUsedBytes" to heapPressureNotice?.peakHeapUsedBytes,
+                "peakJvmHeapMaxBytes" to heapPressureNotice?.peakHeapMaxBytes,
+                "suggestedJvmHeapMb" to heapPressureNotice?.suggestedHeapMaxMb
+            )
+        )
         if (backExitRequested) {
             cancelBackExitForceRestart()
             activity.runOnUiThread {
@@ -362,6 +388,15 @@ internal class GameSessionCoordinator(
         if (crashReturnTriggered) {
             return
         }
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_jvm_launch_failed",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "errorClass" to throwable.javaClass.name,
+                "errorMessage" to throwable.message
+            )
+        )
         if (backExitRequested) {
             cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
@@ -388,6 +423,14 @@ internal class GameSessionCoordinator(
         if (crashReturnTriggered) {
             return
         }
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_launch_failure_signaled",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "detail" to detail
+            )
+        )
         if (backExitRequested) {
             cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
@@ -407,6 +450,14 @@ internal class GameSessionCoordinator(
         if (backExitRequested || !tryMarkCrashReturnTriggered()) {
             return
         }
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_runtime_crash_detected",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "detail" to detail
+            )
+        )
         activity.runOnUiThread {
             launchCrashReturn(
                 code = -1,
@@ -421,6 +472,11 @@ internal class GameSessionCoordinator(
         if (backExitRequested) {
             return
         }
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_back_exit_requested",
+            mapOf("launchMode" to config.launchMode)
+        )
         backExitRequested = true
         backExitLauncherShown = false
         updateSystemGameState()

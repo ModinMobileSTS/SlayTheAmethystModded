@@ -19,6 +19,7 @@ package com.badlogic.gdx.graphics;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -117,6 +118,7 @@ public abstract class GLTexture implements Disposable {
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_ART_PRESSURE = 3;
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_PRESSURE = 4;
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_GENERIC_PRESSURE = 5;
+	private static final int TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT = 4;
 	private static final int GL_TEXTURE_2D_ENUM = 0x0DE1;
 	private static final int GL_TEXTURE_BINDING_2D_ENUM = 0x8069;
 	private static final int GL_TEXTURE_CUBE_MAP_ENUM = 0x8513;
@@ -136,6 +138,24 @@ public abstract class GLTexture implements Disposable {
 		new ConcurrentHashMap<String, AtomicInteger>();
 	private static final ConcurrentHashMap<Integer, Long> TEXTURE_HANDLE_ESTIMATED_BYTES =
 		new ConcurrentHashMap<Integer, Long>();
+	private static final ConcurrentHashMap<Integer, String> TEXTURE_HANDLE_LIVE_GROUPS =
+		new ConcurrentHashMap<Integer, String>();
+	private static final ConcurrentHashMap<Integer, String> TEXTURE_HANDLE_LIVE_SAMPLES =
+		new ConcurrentHashMap<Integer, String>();
+	private static final ConcurrentHashMap<Integer, String> TEXTURE_HANDLE_LIVE_OWNER_KEYS =
+		new ConcurrentHashMap<Integer, String>();
+	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_LIVE_SOURCE_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_LIVE_SOURCE_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, String> TEXTURE_LIVE_SOURCE_SAMPLES =
+		new ConcurrentHashMap<String, String>();
+	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_LIVE_OWNER_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_LIVE_OWNER_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, String> TEXTURE_LIVE_OWNER_SAMPLES =
+		new ConcurrentHashMap<String, String>();
 	private static final AtomicLong TEXTURE_NATIVE_ESTIMATED_BYTES = new AtomicLong();
 	private static boolean forceLinearMipmapFilterLogPrinted;
 	private static volatile int textureLivePeak;
@@ -325,14 +345,104 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	public static String getDebugStatusSummary () {
-		if (!GPU_RESOURCE_DIAG_ENABLED) return "texturesDiag=disabled";
-		return "texturesLive=" + TEXTURES_LIVE.get()
+		return "texturesDiag=" + (GPU_RESOURCE_DIAG_ENABLED ? "enabled" : "disabled")
+			+ " texturesLive=" + TEXTURES_LIVE.get()
 			+ " texturesPeak=" + textureLivePeak
 			+ " texturesCreated=" + TEXTURES_CREATED.get()
 			+ " texturesDisposed=" + TEXTURES_DISPOSED.get()
 			+ " textureHandleUpdates=" + TEXTURE_HANDLE_UPDATES.get()
 			+ " textureBytes=" + TEXTURE_NATIVE_ESTIMATED_BYTES.get()
 			+ " textureBytesPeak=" + textureNativeEstimatedBytesPeak;
+	}
+
+	public static String getLiveSourceSummary () {
+		return buildLiveTextureSummary(
+			"textureLiveTop=",
+			TEXTURE_LIVE_SOURCE_BYTES,
+			TEXTURE_LIVE_SOURCE_COUNTS,
+			TEXTURE_LIVE_SOURCE_SAMPLES
+		);
+	}
+
+	public static String getLiveOwnerSummary () {
+		return buildLiveTextureSummary(
+			"textureOwnerTop=",
+			TEXTURE_LIVE_OWNER_BYTES,
+			TEXTURE_LIVE_OWNER_COUNTS,
+			TEXTURE_LIVE_OWNER_SAMPLES
+		);
+	}
+
+	private static String buildLiveTextureSummary (
+		String label,
+		ConcurrentHashMap<String, AtomicLong> bytesByKey,
+		ConcurrentHashMap<String, AtomicInteger> countsByKey,
+		ConcurrentHashMap<String, String> samplesByKey
+	) {
+		String[] topGroups = new String[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		String[] topSamples = new String[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		long[] topBytes = new long[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		int[] topCounts = new int[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		int topSize = 0;
+		int totalGroups = 0;
+		for (Map.Entry<String, AtomicLong> entry : bytesByKey.entrySet()) {
+			AtomicLong bytesRef = entry.getValue();
+			if (bytesRef == null) continue;
+			long bytes = bytesRef.get();
+			if (bytes <= 0L) continue;
+			String groupKey = entry.getKey();
+			AtomicInteger countRef = countsByKey.get(groupKey);
+			int count = countRef == null ? 0 : countRef.get();
+			if (count <= 0) continue;
+			totalGroups++;
+			int insertAt = -1;
+			for (int i = 0; i < topSize; i++) {
+				if (ranksBeforeLiveTextureSummary(bytes, count, groupKey, topBytes[i], topCounts[i], topGroups[i])) {
+					insertAt = i;
+					break;
+				}
+			}
+			if (insertAt < 0 && topSize < TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT) {
+				insertAt = topSize;
+			}
+			if (insertAt < 0) continue;
+			int moveEnd = topSize < TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT ? topSize : TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT - 1;
+			for (int i = moveEnd; i > insertAt; i--) {
+				topGroups[i] = topGroups[i - 1];
+				topSamples[i] = topSamples[i - 1];
+				topBytes[i] = topBytes[i - 1];
+				topCounts[i] = topCounts[i - 1];
+			}
+			topGroups[insertAt] = groupKey;
+			topSamples[insertAt] = samplesByKey.get(groupKey);
+			topBytes[insertAt] = bytes;
+			topCounts[insertAt] = count;
+			if (topSize < TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT) {
+				topSize++;
+			}
+		}
+		if (topSize == 0) return label + "none";
+		StringBuilder builder = new StringBuilder(256);
+		builder.append(label);
+		for (int i = 0; i < topSize; i++) {
+			if (i > 0) builder.append("|");
+			builder.append(topGroups[i])
+				.append(":")
+				.append(toSummaryMegabytes(topBytes[i]))
+				.append("m/")
+				.append(topCounts[i]);
+			if (topSamples[i] != null && topSamples[i].length() > 0) {
+				builder.append("@").append(topSamples[i]);
+			}
+		}
+		if (totalGroups > TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT) {
+			builder.append("|...");
+		}
+		return builder.toString();
+	}
+
+	public static long getEstimatedNativeBytes () {
+		return TEXTURE_NATIVE_ESTIMATED_BYTES.get();
 	}
 
 	@Override
@@ -416,7 +526,15 @@ public abstract class GLTexture implements Disposable {
 				pixmap.getPixels()
 			);
 		}
-		recordTextureNativeBytes(target, pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat(), data.useMipMaps());
+		recordTextureNativeBytes(
+			target,
+			pixmap.getWidth(),
+			pixmap.getHeight(),
+			pixmap.getFormat(),
+			data.useMipMaps(),
+			sourcePath,
+			stackKey
+		);
 		if (disposePixmap) {
 			pixmap.dispose();
 		}
@@ -497,13 +615,17 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static void onTextureConstructed (long id, String className, int target, int handle) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
-		TEXTURES_CREATED.incrementAndGet();
+		int created = TEXTURES_CREATED.incrementAndGet();
 		int live = TEXTURES_LIVE.incrementAndGet();
+		boolean newPeak = false;
 		if (live > textureLivePeak) {
 			textureLivePeak = live;
+			newPeak = true;
+		}
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (newPeak) {
 			System.out.println("[gdx-diag] GLTexture peak_live=" + live
-				+ " created=" + TEXTURES_CREATED.get()
+				+ " created=" + created
 				+ " disposed=" + TEXTURES_DISPOSED.get()
 				+ " class=" + className
 				+ " id=" + id
@@ -514,8 +636,9 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static void onTextureHandleUpdated (long id, int oldHandle, int newHandle, String reason) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L || oldHandle == newHandle) return;
+		if (oldHandle == newHandle) return;
 		TEXTURE_HANDLE_UPDATES.incrementAndGet();
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLTexture handle_update id=" + id
 			+ " old=" + oldHandle
 			+ " new=" + newHandle
@@ -524,13 +647,13 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static void onTextureDeleted (long id, int handle, String reason) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		TEXTURES_DISPOSED.incrementAndGet();
 		int live = TEXTURES_LIVE.decrementAndGet();
 		if (live < 0) {
 			TEXTURES_LIVE.set(0);
 			live = 0;
 		}
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLTexture dispose id=" + id
 			+ " handle=" + handle
 			+ " reason=" + reason
@@ -538,11 +661,11 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static void onTextureHandleRestored (long id, int handle, String reason) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		int live = TEXTURES_LIVE.incrementAndGet();
 		if (live > textureLivePeak) {
 			textureLivePeak = live;
 		}
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLTexture restore id=" + id
 			+ " handle=" + handle
 			+ " reason=" + reason
@@ -841,6 +964,147 @@ public abstract class GLTexture implements Disposable {
 		return normalized.length() == 0 ? null : normalized;
 	}
 
+	private static String classifyLiveTextureSourceGroup (String sourcePath, String stackKey) {
+		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
+		if (normalizedSourcePath != null) {
+			String archiveGroup = extractLiveTextureArchiveGroup(normalizedSourcePath);
+			if (archiveGroup != null) return archiveGroup;
+			String pathGroup = extractLiveTexturePathGroup(normalizedSourcePath);
+			if (pathGroup != null) return pathGroup;
+		}
+		String namespaceGroup = extractExternalNamespaceGroup(stackKey);
+		return namespaceGroup == null ? "unknown" : namespaceGroup;
+	}
+
+	private static String extractLiveTextureArchiveGroup (String normalizedSourcePath) {
+		int bangIndex = normalizedSourcePath.indexOf("!/");
+		if (bangIndex < 0) return null;
+		String archivePath = normalizedSourcePath.substring(0, bangIndex);
+		int slashIndex = archivePath.lastIndexOf('/');
+		String archiveName = slashIndex >= 0 ? archivePath.substring(slashIndex + 1) : archivePath;
+		return archiveName.length() == 0 ? null : archiveName;
+	}
+
+	private static String extractLiveTexturePathGroup (String normalizedSourcePath) {
+		int start = 0;
+		if (normalizedSourcePath.length() >= 3
+			&& normalizedSourcePath.charAt(1) == ':'
+			&& normalizedSourcePath.charAt(2) == '/') {
+			start = 3;
+		}
+		while (start < normalizedSourcePath.length() && normalizedSourcePath.charAt(start) == '/') {
+			start++;
+		}
+		if (start >= normalizedSourcePath.length()) return null;
+		int end = normalizedSourcePath.indexOf('/', start);
+		String firstSegment =
+			end >= 0 ? normalizedSourcePath.substring(start, end) : normalizedSourcePath.substring(start);
+		if (firstSegment.length() == 0) return null;
+		if ("android_asset".equals(firstSegment) && end >= 0 && end + 1 < normalizedSourcePath.length()) {
+			int secondEnd = normalizedSourcePath.indexOf('/', end + 1);
+			String secondSegment =
+				secondEnd >= 0
+					? normalizedSourcePath.substring(end + 1, secondEnd)
+					: normalizedSourcePath.substring(end + 1);
+			if (secondSegment.length() > 0) return secondSegment;
+		}
+		return firstSegment;
+	}
+
+	private static String extractExternalNamespaceGroup (String stackKey) {
+		if (stackKey == null || stackKey.length() == 0) return null;
+		String[] frames = stackKey.split(" <- ");
+		for (int i = 0; i < frames.length; i++) {
+			String frame = frames[i];
+			int hashIndex = frame.indexOf('#');
+			if (hashIndex <= 0) continue;
+			String className = frame.substring(0, hashIndex);
+			if (className.startsWith("com.megacrit.cardcrawl.")) continue;
+			if (className.startsWith("basemod.")) continue;
+			if (className.startsWith("com.badlogic.gdx.")) continue;
+			if (className.startsWith("java.")) continue;
+			if (className.startsWith("javax.")) continue;
+			if (className.startsWith("sun.")) continue;
+			if (className.startsWith("jdk.")) continue;
+			if (className.startsWith("kotlin.")) continue;
+			if (className.startsWith("org.lwjgl.")) continue;
+			if (className.startsWith("org.apache.")) continue;
+			if (className.startsWith("de.robojumper.")) continue;
+			if (className.startsWith("com.esotericsoftware.")) continue;
+			if (className.startsWith("io.stamethyst.")) continue;
+			int packageSeparator = className.indexOf('.');
+			if (packageSeparator > 0) {
+				return className.substring(0, packageSeparator).toLowerCase();
+			}
+			return className.toLowerCase();
+		}
+		return null;
+	}
+
+	private static String summarizeLiveTextureSampleSource (String sourcePath, String stackKey, String groupKey) {
+		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
+		if (normalizedSourcePath != null) {
+			return abbreviateLiveTextureSource(normalizedSourcePath);
+		}
+		String namespaceGroup = extractExternalNamespaceGroup(stackKey);
+		return namespaceGroup == null ? groupKey : namespaceGroup;
+	}
+
+	private static String abbreviateLiveTextureSource (String normalizedSourcePath) {
+		if (normalizedSourcePath == null || normalizedSourcePath.length() == 0) return null;
+		if (normalizedSourcePath.length() <= 72) return normalizedSourcePath;
+		int lastSlash = normalizedSourcePath.lastIndexOf('/');
+		if (lastSlash >= 0 && lastSlash + 1 < normalizedSourcePath.length()) {
+			String fileName = normalizedSourcePath.substring(lastSlash + 1);
+			int parentSlash = normalizedSourcePath.lastIndexOf('/', lastSlash - 1);
+			if (parentSlash >= 0 && parentSlash + 1 < lastSlash) {
+				String parentName = normalizedSourcePath.substring(parentSlash + 1, lastSlash);
+				String condensed = parentName + "/" + fileName;
+				if (condensed.length() <= 72) return condensed;
+			}
+			if (fileName.length() <= 72) return fileName;
+		}
+		return normalizedSourcePath.substring(normalizedSourcePath.length() - 72);
+	}
+
+	private static String classifyLiveTextureOwnerKey (String groupKey, String sourcePath, String stackKey) {
+		String safeGroupKey = groupKey == null || groupKey.length() == 0 ? "unknown" : groupKey;
+		if (isDownfallTextureAttribution(safeGroupKey, sourcePath, stackKey)) {
+			return "downfall<-" + safeGroupKey;
+		}
+		if (containsAnyStackFragment(
+			stackKey,
+			"com.evacipated.cardcrawl.mod.stslib.",
+			"stslib."
+		)) {
+			return "stslib<-" + safeGroupKey;
+		}
+		if (containsAnyStackFragment(
+			stackKey,
+			"com.evacipated.cardcrawl.modthespire."
+		)) {
+			return "modthespire<-" + safeGroupKey;
+		}
+		if (extractExternalNamespaceGroup(stackKey) != null) {
+			return "othermod<-" + safeGroupKey;
+		}
+		if (containsAnyStackFragment(stackKey, "basemod.")) {
+			return "basemod<-" + safeGroupKey;
+		}
+		return "core<-" + safeGroupKey;
+	}
+
+	private static boolean isDownfallTextureAttribution (String groupKey, String sourcePath, String stackKey) {
+		if ("downfallresources".equals(groupKey)) {
+			return true;
+		}
+		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
+		if (containsAnyPathFragment(normalizedSourcePath, "downfallresources/")) {
+			return true;
+		}
+		return containsAnyStackFragment(stackKey, "downfall.", "downfall/");
+	}
+
 	private static boolean containsPathFragment (String sourcePath, String fragment) {
 		return sourcePath != null && fragment != null && sourcePath.indexOf(fragment) >= 0;
 	}
@@ -907,29 +1171,22 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static boolean containsExternalModNamespace (String stackKey) {
-		if (stackKey == null || stackKey.length() == 0) return false;
-		String[] frames = stackKey.split(" <- ");
-		for (int i = 0; i < frames.length; i++) {
-			String frame = frames[i];
-			int hashIndex = frame.indexOf('#');
-			if (hashIndex <= 0) continue;
-			String className = frame.substring(0, hashIndex);
-			if (className.startsWith("com.megacrit.cardcrawl.")) continue;
-			if (className.startsWith("basemod.")) continue;
-			if (className.startsWith("com.badlogic.gdx.")) continue;
-			if (className.startsWith("java.")) continue;
-			if (className.startsWith("javax.")) continue;
-			if (className.startsWith("sun.")) continue;
-			if (className.startsWith("jdk.")) continue;
-			if (className.startsWith("kotlin.")) continue;
-			if (className.startsWith("org.lwjgl.")) continue;
-			if (className.startsWith("org.apache.")) continue;
-			if (className.startsWith("de.robojumper.")) continue;
-			if (className.startsWith("com.esotericsoftware.")) continue;
-			if (className.startsWith("io.stamethyst.")) continue;
-			return true;
-		}
-		return false;
+		return extractExternalNamespaceGroup(stackKey) != null;
+	}
+
+	private static boolean ranksBeforeLiveTextureSummary (
+		long candidateBytes,
+		int candidateCount,
+		String candidateGroup,
+		long existingBytes,
+		int existingCount,
+		String existingGroup
+	) {
+		if (candidateBytes != existingBytes) return candidateBytes > existingBytes;
+		if (candidateCount != existingCount) return candidateCount > existingCount;
+		if (existingGroup == null) return true;
+		if (candidateGroup == null) return false;
+		return candidateGroup.compareTo(existingGroup) < 0;
 	}
 
 	private static String texturePressureDownscaleModeName (int mode) {
@@ -946,7 +1203,9 @@ public abstract class GLTexture implements Disposable {
 		int width,
 		int height,
 		Pixmap.Format format,
-		boolean useMipMaps
+		boolean useMipMaps,
+		String sourcePath,
+		String stackKey
 	) {
 		int handle = getCurrentTextureBinding(target);
 		if (handle == 0) return;
@@ -954,6 +1213,7 @@ public abstract class GLTexture implements Disposable {
 		if (useMipMaps) {
 			estimatedBytes = Math.max(estimatedBytes, (estimatedBytes * 4L) / 3L);
 		}
+		updateLiveTextureSourceAttribution(handle, estimatedBytes, sourcePath, stackKey);
 		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.put(handle, estimatedBytes);
 		long delta = estimatedBytes - (previousBytes == null ? 0L : previousBytes.longValue());
 		if (delta == 0L) return;
@@ -970,11 +1230,186 @@ public abstract class GLTexture implements Disposable {
 	private static void forgetTrackedTextureBytes (int handle) {
 		if (handle == 0) return;
 		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.remove(handle);
+		String previousGroup = TEXTURE_HANDLE_LIVE_GROUPS.remove(handle);
+		String previousSample = TEXTURE_HANDLE_LIVE_SAMPLES.remove(handle);
+		String previousOwnerKey = TEXTURE_HANDLE_LIVE_OWNER_KEYS.remove(handle);
+		if (previousGroup != null) {
+			adjustLiveTextureAggregate(
+				previousGroup,
+				previousSample,
+				-(previousBytes == null ? 0L : previousBytes.longValue()),
+				-1
+			);
+		}
+		if (previousOwnerKey != null) {
+			adjustLiveTextureOwnerAggregate(
+				previousOwnerKey,
+				previousSample,
+				-(previousBytes == null ? 0L : previousBytes.longValue()),
+				-1
+			);
+		}
 		if (previousBytes == null) return;
 		long liveBytes = TEXTURE_NATIVE_ESTIMATED_BYTES.addAndGet(-previousBytes.longValue());
 		if (liveBytes < 0L) {
 			TEXTURE_NATIVE_ESTIMATED_BYTES.set(0L);
 		}
+	}
+
+	private static void updateLiveTextureSourceAttribution (
+		int handle,
+		long estimatedBytes,
+		String sourcePath,
+		String stackKey
+	) {
+		String groupKey = classifyLiveTextureSourceGroup(sourcePath, stackKey);
+		String sampleSource = summarizeLiveTextureSampleSource(sourcePath, stackKey, groupKey);
+		String ownerKey = classifyLiveTextureOwnerKey(groupKey, sourcePath, stackKey);
+		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(handle);
+		String previousGroup = TEXTURE_HANDLE_LIVE_GROUPS.put(handle, groupKey);
+		String previousSample = TEXTURE_HANDLE_LIVE_SAMPLES.put(handle, sampleSource);
+		String previousOwnerKey = TEXTURE_HANDLE_LIVE_OWNER_KEYS.put(handle, ownerKey);
+		long safePreviousBytes = previousBytes == null ? 0L : previousBytes.longValue();
+		if (previousGroup != null && groupKey.equals(previousGroup)) {
+			adjustLiveTextureAggregate(
+				groupKey,
+				sampleSource,
+				estimatedBytes - safePreviousBytes,
+				0
+			);
+		} else {
+			if (previousGroup != null) {
+				adjustLiveTextureAggregate(
+					previousGroup,
+					previousSample,
+					-safePreviousBytes,
+					-1
+				);
+			}
+			adjustLiveTextureAggregate(
+				groupKey,
+				sampleSource,
+				estimatedBytes,
+				1
+			);
+		}
+		if (previousOwnerKey != null && ownerKey.equals(previousOwnerKey)) {
+			adjustLiveTextureOwnerAggregate(
+				ownerKey,
+				sampleSource,
+				estimatedBytes - safePreviousBytes,
+				0
+			);
+			return;
+		}
+		if (previousOwnerKey != null) {
+			adjustLiveTextureOwnerAggregate(
+				previousOwnerKey,
+				previousSample,
+				-safePreviousBytes,
+				-1
+			);
+		}
+		adjustLiveTextureOwnerAggregate(ownerKey, sampleSource, estimatedBytes, 1);
+	}
+
+	private static void adjustLiveTextureAggregate (
+		String groupKey,
+		String sampleSource,
+		long byteDelta,
+		int countDelta
+	) {
+		String safeGroupKey = groupKey == null || groupKey.length() == 0 ? "unknown" : groupKey;
+		AtomicLong bytesRef = TEXTURE_LIVE_SOURCE_BYTES.get(safeGroupKey);
+		if (bytesRef == null) {
+			if (byteDelta <= 0L && countDelta <= 0) return;
+			AtomicLong created = new AtomicLong();
+			AtomicLong existing = TEXTURE_LIVE_SOURCE_BYTES.putIfAbsent(safeGroupKey, created);
+			bytesRef = existing == null ? created : existing;
+		}
+		AtomicInteger countRef = TEXTURE_LIVE_SOURCE_COUNTS.get(safeGroupKey);
+		if (countRef == null) {
+			if (byteDelta <= 0L && countDelta <= 0) return;
+			AtomicInteger created = new AtomicInteger();
+			AtomicInteger existing = TEXTURE_LIVE_SOURCE_COUNTS.putIfAbsent(safeGroupKey, created);
+			countRef = existing == null ? created : existing;
+		}
+		if (sampleSource != null && sampleSource.length() > 0) {
+			TEXTURE_LIVE_SOURCE_SAMPLES.put(safeGroupKey, sampleSource);
+		}
+		long bytes = bytesRef.get();
+		if (byteDelta != 0L) {
+			bytes = bytesRef.addAndGet(byteDelta);
+			if (bytes < 0L) {
+				bytesRef.set(0L);
+				bytes = 0L;
+			}
+		}
+		int count = countRef.get();
+		if (countDelta != 0) {
+			count = countRef.addAndGet(countDelta);
+			if (count < 0) {
+				countRef.set(0);
+				count = 0;
+			}
+		}
+		if (bytes == 0L || count == 0) {
+			TEXTURE_LIVE_SOURCE_BYTES.remove(safeGroupKey, bytesRef);
+			TEXTURE_LIVE_SOURCE_COUNTS.remove(safeGroupKey, countRef);
+			TEXTURE_LIVE_SOURCE_SAMPLES.remove(safeGroupKey);
+		}
+	}
+
+	private static void adjustLiveTextureOwnerAggregate (
+		String ownerKey,
+		String sampleSource,
+		long byteDelta,
+		int countDelta
+	) {
+		String safeOwnerKey = ownerKey == null || ownerKey.length() == 0 ? "core<-unknown" : ownerKey;
+		AtomicLong bytesRef = TEXTURE_LIVE_OWNER_BYTES.get(safeOwnerKey);
+		if (bytesRef == null) {
+			if (byteDelta <= 0L && countDelta <= 0) return;
+			AtomicLong created = new AtomicLong();
+			AtomicLong existing = TEXTURE_LIVE_OWNER_BYTES.putIfAbsent(safeOwnerKey, created);
+			bytesRef = existing == null ? created : existing;
+		}
+		AtomicInteger countRef = TEXTURE_LIVE_OWNER_COUNTS.get(safeOwnerKey);
+		if (countRef == null) {
+			if (byteDelta <= 0L && countDelta <= 0) return;
+			AtomicInteger created = new AtomicInteger();
+			AtomicInteger existing = TEXTURE_LIVE_OWNER_COUNTS.putIfAbsent(safeOwnerKey, created);
+			countRef = existing == null ? created : existing;
+		}
+		if (sampleSource != null && sampleSource.length() > 0) {
+			TEXTURE_LIVE_OWNER_SAMPLES.put(safeOwnerKey, sampleSource);
+		}
+		long bytes = bytesRef.get();
+		if (byteDelta != 0L) {
+			bytes = bytesRef.addAndGet(byteDelta);
+			if (bytes < 0L) {
+				bytesRef.set(0L);
+				bytes = 0L;
+			}
+		}
+		int count = countRef.get();
+		if (countDelta != 0) {
+			count = countRef.addAndGet(countDelta);
+			if (count < 0) {
+				countRef.set(0);
+				count = 0;
+			}
+		}
+		if (bytes == 0L || count == 0) {
+			TEXTURE_LIVE_OWNER_BYTES.remove(safeOwnerKey, bytesRef);
+			TEXTURE_LIVE_OWNER_COUNTS.remove(safeOwnerKey, countRef);
+			TEXTURE_LIVE_OWNER_SAMPLES.remove(safeOwnerKey);
+		}
+	}
+
+	private static long toSummaryMegabytes (long bytes) {
+		if (bytes <= 0L) return 0L;
+		return (bytes + (1024L * 1024L) - 1L) / (1024L * 1024L);
 	}
 
 	private static int getCurrentTextureBinding (int target) {

@@ -18,12 +18,15 @@ public final class RuntimeMemoryDiagnostics {
     private static final String MENU_DIAG_VERBOSE_PROP = "amethyst.runtime_compat.menu_diag_verbose";
     private static final String MENU_DIAG_HOTSPOTS_PROP = "amethyst.runtime_compat.menu_diag_hotspots";
     private static final String GPU_RESOURCE_DIAG_PROP = "amethyst.gdx.gpu_resource_diag";
+    private static final String FBO_MANAGER_PROP = "amethyst.gdx.fbo_manager";
     private static final boolean MENU_DIAG_ENABLED =
         readBooleanSystemProperty(MENU_DIAG_PROP, true);
     private static final boolean MENU_DIAG_VERBOSE_ENABLED =
         readBooleanSystemProperty(MENU_DIAG_VERBOSE_PROP, false);
     private static final boolean GPU_RESOURCE_DIAG_ENABLED =
         readBooleanSystemProperty(GPU_RESOURCE_DIAG_PROP, false);
+    private static final boolean FBO_MANAGER_ENABLED =
+        readBooleanSystemProperty(FBO_MANAGER_PROP, true);
     private static final boolean MENU_DIAG_HOTSPOTS_ENABLED =
         readBooleanSystemProperty(MENU_DIAG_HOTSPOTS_PROP, GPU_RESOURCE_DIAG_ENABLED);
     private static long mainMenuConstructorStartNs = -1L;
@@ -40,6 +43,7 @@ public final class RuntimeMemoryDiagnostics {
     private static Method glTextureLiveSourceSummaryMethod;
     private static Method glTextureLiveOwnerSummaryMethod;
     private static Method glFrameBufferSummaryMethod;
+    private static Method glFrameBufferLiveOwnerSummaryMethod;
     private static final ThreadLocal<CharacterRecreateTrace> characterRecreateTrace =
         new ThreadLocal<CharacterRecreateTrace>();
     private static final ThreadLocal<Boolean> characterRecreateShortcutLogged =
@@ -58,6 +62,7 @@ public final class RuntimeMemoryDiagnostics {
         System.out.println(
             "[amethyst-runtime-diag] init"
                 + " previewReuseEnabled=" + MainMenuPreviewStrategy.isEnabled()
+                + " fboManagerEnabled=" + FBO_MANAGER_ENABLED
                 + " summaryLogs=" + MENU_DIAG_ENABLED
                 + " verboseLogs=" + MENU_DIAG_VERBOSE_ENABLED
                 + " hotspotLogs=" + MENU_DIAG_HOTSPOTS_ENABLED
@@ -491,6 +496,7 @@ public final class RuntimeMemoryDiagnostics {
         if (includeTextureHotspots && MENU_DIAG_HOTSPOTS_ENABLED) {
             builder.append(" gpuTopSources={").append(getTextureLiveSourceSummary()).append("}");
             builder.append(" gpuTopOwners={").append(getTextureLiveOwnerSummary()).append("}");
+            builder.append(" gpuTopFboOwners={").append(getFrameBufferLiveOwnerSummary()).append("}");
         }
         System.out.println(builder.toString());
     }
@@ -595,6 +601,14 @@ public final class RuntimeMemoryDiagnostics {
         );
     }
 
+    private static String getFrameBufferLiveOwnerSummary() {
+        ensureGpuSummaryMethods();
+        return stripSummaryLabel(
+            invokeSummary(glFrameBufferLiveOwnerSummaryMethod, "frameBufferOwnerTop=unavailable"),
+            "frameBufferOwnerTop="
+        );
+    }
+
     private static String stripSummaryLabel(String summary, String prefix) {
         if (summary == null) {
             return "unavailable";
@@ -621,13 +635,16 @@ public final class RuntimeMemoryDiagnostics {
             try {
                 Class<?> frameBufferClass = Class.forName("com.badlogic.gdx.graphics.glutils.GLFrameBuffer");
                 glFrameBufferSummaryMethod = frameBufferClass.getMethod("getDebugStatusSummary");
+                glFrameBufferLiveOwnerSummaryMethod = frameBufferClass.getMethod("getLiveOwnerSummary");
             } catch (Throwable ignored) {
                 glFrameBufferSummaryMethod = null;
+                glFrameBufferLiveOwnerSummaryMethod = null;
             }
             if ((glTextureSummaryMethod == null
                     || glTextureLiveSourceSummaryMethod == null
                     || glTextureLiveOwnerSummaryMethod == null
-                    || glFrameBufferSummaryMethod == null)
+                    || glFrameBufferSummaryMethod == null
+                    || glFrameBufferLiveOwnerSummaryMethod == null)
                 && !gpuSummaryLookupFailureLogged) {
                 gpuSummaryLookupFailureLogged = true;
                 System.out.println(
@@ -636,6 +653,7 @@ public final class RuntimeMemoryDiagnostics {
                         + " textureLiveSourceMethod=" + (glTextureLiveSourceSummaryMethod != null)
                         + " textureLiveOwnerMethod=" + (glTextureLiveOwnerSummaryMethod != null)
                         + " frameBufferMethod=" + (glFrameBufferSummaryMethod != null)
+                        + " frameBufferLiveOwnerMethod=" + (glFrameBufferLiveOwnerSummaryMethod != null)
                 );
             }
         }

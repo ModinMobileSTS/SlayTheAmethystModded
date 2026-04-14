@@ -224,6 +224,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "nonRenderableFboFormatCompat" to formatBoolean(
                             CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)
                         ),
+                        "fboManagerCompat" to formatBoolean(
+                            CompatibilitySettings.isFboManagerCompatEnabled(context)
+                        ),
                         "fboIdleReclaimCompat" to formatBoolean(
                             CompatibilitySettings.isFboIdleReclaimCompatEnabled(context)
                         ),

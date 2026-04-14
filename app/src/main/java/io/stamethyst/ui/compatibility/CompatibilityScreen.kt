@@ -77,6 +77,9 @@ fun LauncherCompatibilityScreen(
         onNonRenderableFboFormatCompatToggled = { enabled ->
             viewModel.onNonRenderableFboFormatCompatToggled(context, enabled)
         },
+        onFboManagerCompatToggled = { enabled ->
+            viewModel.onFboManagerCompatToggled(context, enabled)
+        },
         onFboIdleReclaimCompatToggled = { enabled ->
             viewModel.onFboIdleReclaimCompatToggled(context, enabled)
         },
@@ -106,6 +109,7 @@ private fun LauncherCompatibilityScreenPreview() {
             texturePressureDownscaleDivisor = 2,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,
+            fboManagerCompatEnabled = true,
             fboIdleReclaimCompatEnabled = true,
             fboPressureDownscaleCompatEnabled = true
         )
@@ -131,6 +135,7 @@ private fun LauncherCompatibilityScreenContent(
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
+    onFboManagerCompatToggled: (Boolean) -> Unit = {},
     onFboIdleReclaimCompatToggled: (Boolean) -> Unit = {},
     onFboPressureDownscaleCompatToggled: (Boolean) -> Unit = {},
 ) {
@@ -244,6 +249,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.nonRenderableFboFormatCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onNonRenderableFboFormatCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_fbo_manager_title),
+                    description = stringResource(R.string.compat_fbo_manager_desc),
+                    checked = uiState.fboManagerCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onFboManagerCompatToggled
                 )
 
                 CompatibilitySwitchRow(

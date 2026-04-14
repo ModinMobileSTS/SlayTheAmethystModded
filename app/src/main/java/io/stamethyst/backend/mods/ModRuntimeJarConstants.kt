@@ -115,6 +115,8 @@ internal const val STS_PATCH_GL_TEXTURE_CLASS =
     "com/badlogic/gdx/graphics/GLTexture.class"
 internal const val STS_PATCH_GL_FRAMEBUFFER_CLASS =
     "com/badlogic/gdx/graphics/glutils/GLFrameBuffer.class"
+internal const val STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS =
+    "com/badlogic/gdx/graphics/glutils/FrameBufferOwnerSummary.class"
 internal const val STS_PATCH_SHADER_PROGRAM_CLASS =
     "com/badlogic/gdx/graphics/glutils/ShaderProgram.class"
 internal const val STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS =
@@ -161,6 +163,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS,
         STS_PATCH_GL_TEXTURE_CLASS,
         STS_PATCH_GL_FRAMEBUFFER_CLASS,
+        STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS,
         STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS,
         STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS,
         STS_PATCH_COLOR_TAB_BAR_CLASS,

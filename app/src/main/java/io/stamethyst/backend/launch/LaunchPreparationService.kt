@@ -2,6 +2,7 @@ package io.stamethyst.backend.launch
 
 import android.content.Context
 import io.stamethyst.R
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.ComponentInstaller
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
@@ -9,6 +10,7 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import java.io.File
 import java.io.IOException
 import kotlin.math.roundToInt
 
@@ -29,6 +31,11 @@ object LaunchPreparationService {
     @JvmStatic
     @Throws(IOException::class)
     fun prepare(context: Context, launchMode: String, progressCallback: StartupProgressCallback?) {
+        MemoryDiagnosticsLogger.logEvent(
+            context,
+            "launch_preparation_started",
+            mapOf("launchMode" to launchMode)
+        )
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -98,7 +105,15 @@ object LaunchPreparationService {
                 99,
                 context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
             )
-            ModManager.resolveLaunchModIds(context)
+            val launchModIds = ModManager.resolveLaunchModIds(context)
+            MemoryDiagnosticsLogger.logModSnapshot(
+                context = context,
+                event = "launch_preparation_resolved_launch_mods",
+                launchMode = launchMode,
+                enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context),
+                runtimeModFiles = RuntimePaths.modsDir(context).listFiles().orEmpty().filter(File::isFile),
+                launchModIds = launchModIds
+            )
         }
 
         throwIfInterrupted()
@@ -106,6 +121,11 @@ object LaunchPreparationService {
             progressCallback,
             100,
             context.progressText(R.string.startup_progress_launch_preparation_complete)
+        )
+        MemoryDiagnosticsLogger.logEvent(
+            context,
+            "launch_preparation_completed",
+            mapOf("launchMode" to launchMode)
         )
     }
 

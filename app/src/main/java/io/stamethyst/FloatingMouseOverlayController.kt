@@ -56,9 +56,7 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MENU_ANIM_OFFSET_DP = 10
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
         private const val FLOATING_MENU_ANCHOR_GAP_DP = 8
-        private const val FLOATING_COLLAPSE_BUTTON_GAP_DP = 8
-        private const val FLOATING_AUX_BUTTON_VERTICAL_NUDGE_DP = 4
-        private const val FLOATING_MODE_BUTTON_EXTRA_NUDGE_DP = 14
+        private const val FLOATING_AUX_BUTTON_GAP_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
@@ -1023,8 +1021,7 @@ internal class FloatingMouseOverlayController(
         val preferredTop =
             buttonParams.topMargin +
                 button.height +
-                dpToPx(FLOATING_COLLAPSE_BUTTON_GAP_DP) -
-                dpToPx(FLOATING_AUX_BUTTON_VERTICAL_NUDGE_DP)
+                dpToPx(FLOATING_AUX_BUTTON_GAP_DP)
         collapseParams.topMargin = preferredTop.coerceIn(0, maxTop)
         collapseButton.layoutParams = collapseParams
     }
@@ -1049,9 +1046,7 @@ internal class FloatingMouseOverlayController(
         val preferredTop =
             buttonParams.topMargin -
                 modeHeight -
-                dpToPx(FLOATING_COLLAPSE_BUTTON_GAP_DP) -
-                dpToPx(FLOATING_AUX_BUTTON_VERTICAL_NUDGE_DP) -
-                dpToPx(FLOATING_MODE_BUTTON_EXTRA_NUDGE_DP)
+                dpToPx(FLOATING_AUX_BUTTON_GAP_DP)
         modeParams.topMargin = preferredTop.coerceIn(0, maxTop)
         modeButton.layoutParams = modeParams
     }

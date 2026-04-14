@@ -26,6 +26,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val texturePressureDownscaleDivisor: Int = 2,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
+        val fboManagerCompatEnabled: Boolean = true,
         val fboIdleReclaimCompatEnabled: Boolean = true,
         val fboPressureDownscaleCompatEnabled: Boolean = true
     )
@@ -50,6 +51,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
+            fboManagerCompatEnabled = CompatibilitySettings.isFboManagerCompatEnabled(host),
             fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
             fboPressureDownscaleCompatEnabled = CompatibilitySettings.isFboPressureDownscaleCompatEnabled(host)
         )
@@ -157,6 +159,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setNonRenderableFboFormatCompatEnabled(host, enabled)
         uiState = uiState.copy(nonRenderableFboFormatCompatEnabled = enabled)
+    }
+
+    fun onFboManagerCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setFboManagerCompatEnabled(host, enabled)
+        uiState = uiState.copy(fboManagerCompatEnabled = enabled)
     }
 
     fun onFboIdleReclaimCompatToggled(host: Context, enabled: Boolean) {

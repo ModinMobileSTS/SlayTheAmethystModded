@@ -135,6 +135,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isFboManagerCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isFboManagerCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setFboManagerCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setFboManagerCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isFboIdleReclaimCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isFboIdleReclaimCompatEnabled(context)
     }

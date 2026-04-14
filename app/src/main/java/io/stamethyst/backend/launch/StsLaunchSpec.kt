@@ -283,6 +283,10 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.gdx.fbo_manager=" +
+                if (CompatibilitySettings.isFboManagerCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
             "-Damethyst.gdx.fbo_idle_reclaim=" +
                 if (CompatibilitySettings.isFboIdleReclaimCompatEnabled(context)) "true" else "false"
         )

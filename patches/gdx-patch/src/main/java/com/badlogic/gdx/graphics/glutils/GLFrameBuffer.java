@@ -19,7 +19,11 @@ package com.badlogic.gdx.graphics.glutils;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -93,6 +97,39 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		"amethyst.gdx.fbo_idle_reclaim_min_bytes";
 	private final static long GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES =
 		readLongSystemProperty(GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES_PROP, 6L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private final static String GPU_RESOURCE_DIAG_FBO_MANAGER_PROP = "amethyst.gdx.fbo_manager";
+	private final static boolean GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_MANAGER_PROP, true);
+	private final static String GPU_RESOURCE_DIAG_FBO_MANAGER_SWEEP_INTERVAL_PROP =
+		"amethyst.gdx.fbo_manager_sweep_interval_frames";
+	private final static int GPU_RESOURCE_DIAG_FBO_MANAGER_SWEEP_INTERVAL =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_MANAGER_SWEEP_INTERVAL_PROP, 45, 1, 3600);
+	private final static String GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_PROP =
+		"amethyst.gdx.fbo_manager_soft_budget_bytes";
+	private final static long GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_BYTES =
+		readLongSystemProperty(
+			GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_PROP,
+			48L * 1024L * 1024L,
+			0L,
+			Long.MAX_VALUE
+		);
+	private final static String GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_IDLE_FRAMES_PROP =
+		"amethyst.gdx.fbo_manager_pressure_idle_frames";
+	private final static int GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_IDLE_FRAMES =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_IDLE_FRAMES_PROP, 45, 1, 36000);
+	private final static String GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_MIN_BYTES_PROP =
+		"amethyst.gdx.fbo_manager_pressure_min_bytes";
+	private final static long GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_MIN_BYTES =
+		readLongSystemProperty(
+			GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_MIN_BYTES_PROP,
+			1024L * 1024L,
+			0L,
+			Long.MAX_VALUE
+		);
+	private final static String GPU_RESOURCE_DIAG_FBO_MANAGER_MAX_RECLAIMS_PROP =
+		"amethyst.gdx.fbo_manager_max_reclaims_per_sweep";
+	private final static int GPU_RESOURCE_DIAG_FBO_MANAGER_MAX_RECLAIMS =
+		readIntSystemProperty(GPU_RESOURCE_DIAG_FBO_MANAGER_MAX_RECLAIMS_PROP, 24, 1, 256);
 	private final static String GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_PROP =
 		"amethyst.gdx.fbo_pressure_downscale";
 	private final static boolean GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_ENABLED =
@@ -130,19 +167,30 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static AtomicInteger FRAMEBUFFERS_IDLE_RECLAIMED = new AtomicInteger();
 	private final static AtomicInteger FRAMEBUFFERS_REBUILT = new AtomicInteger();
 	private final static AtomicInteger FRAMEBUFFER_IDLE_SWEEPS = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFER_MANAGER_SWEEPS = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFER_MANAGER_PRESSURE_SWEEPS = new AtomicInteger();
+	private final static AtomicInteger FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMS = new AtomicInteger();
 	private final static AtomicInteger FRAMEBUFFER_BUILD_STACK_UNIQUES = new AtomicInteger();
 	private final static AtomicInteger FRAMEBUFFER_BUILD_STACK_SUPPRESSED = new AtomicInteger();
 	private final static AtomicLong FRAMEBUFFERS_NATIVE_BYTES = new AtomicLong();
+	private final static AtomicLong FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMED_BYTES = new AtomicLong();
 	private final static ConcurrentHashMap<String, AtomicInteger> FRAMEBUFFER_BUILD_STACK_COUNTS =
 		new ConcurrentHashMap<String, AtomicInteger>();
+	private final static ConcurrentHashMap<String, AtomicLong> FRAMEBUFFER_LIVE_OWNER_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private final static ConcurrentHashMap<String, AtomicInteger> FRAMEBUFFER_LIVE_OWNER_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private final static ConcurrentHashMap<String, String> FRAMEBUFFER_LIVE_OWNER_SAMPLES =
+		new ConcurrentHashMap<String, String>();
 	private final static ConcurrentHashMap<GLTexture, GLFrameBuffer<?>> FRAMEBUFFER_TEXTURE_OWNERS =
 		new ConcurrentHashMap<GLTexture, GLFrameBuffer<?>>();
+	private final static int FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT = 4;
 	private static boolean fboFallbackLogged = false;
 	private static boolean nonRenderableFormatFallbackLogged = false;
 	private static volatile int frameBufferLivePeak;
 	private static volatile long frameBufferNativeBytesPeak;
 	private static volatile long currentFrameId;
-	private static volatile long lastIdleSweepFrame = -1L;
+	private static volatile long lastFrameBufferSweepFrame = -1L;
 
 	private final long debugFrameBufferId = allocateDebugFrameBufferId();
 	private int debugBuildGeneration = 0;
@@ -154,6 +202,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private int allocationWidth;
 	private int allocationHeight;
 	private boolean pressureDownscaled;
+	private String debugOwnerKey;
+	private String debugOwnerSample;
+	private String debugBuildStackKey;
+	private String lastUseReason;
 
 	/** the color buffer texture **/
 	protected T colorTexture;
@@ -322,7 +374,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		}
 
 		buildInProgress = true;
-		updateAllocationPlan();
+		String buildStackKey = captureRelevantFrameBufferBuildStack();
+		updateAllocationPlan(buildStackKey);
 		GL20 gl = Gdx.gl20;
 		int previousFramebufferHandle = getCurrentFramebufferBinding(gl);
 		boolean createdColorTexture = false;
@@ -420,7 +473,12 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 								+ Integer.toHexString(originalError) + " -> complete"
 								+ " (recovery glError=0x" + Integer.toHexString(recoveredError) + ")");
 						}
-						recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "unknown_status_recovered");
+						recordFrameBufferBuild(
+							colorTextureWidth,
+							colorTextureHeight,
+							"unknown_status_recovered",
+							buildStackKey
+						);
 						gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 						return;
 					}
@@ -433,7 +491,12 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 								+ Integer.toHexString(result) + "), recovery glError=0x"
 								+ Integer.toHexString(recoveredError));
 						}
-						recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "unknown_status_bypass");
+						recordFrameBufferBuild(
+							colorTextureWidth,
+							colorTextureHeight,
+							"unknown_status_bypass",
+							buildStackKey
+						);
 						gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 						return;
 					}
@@ -465,7 +528,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 					throw new IllegalStateException("frame buffer couldn't be constructed: unsupported combination of formats");
 				throw new IllegalStateException("frame buffer couldn't be constructed: unknown error " + result);
 			}
-			recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "build");
+			recordFrameBufferBuild(colorTextureWidth, colorTextureHeight, "build", buildStackKey);
 		} finally {
 			buildInProgress = false;
 			gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
@@ -492,7 +555,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return gl.glCheckFramebufferStatus(GL20.GL_FRAMEBUFFER);
 	}
 
-	private void updateAllocationPlan () {
+	private void updateAllocationPlan (String stackKey) {
 		allocationWidth = width;
 		allocationHeight = height;
 		pressureDownscaled = false;
@@ -503,7 +566,6 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		if (requestedBytes < GPU_RESOURCE_DIAG_FBO_PRESSURE_MIN_BYTES) return;
 		long projectedFullBytes = FRAMEBUFFERS_NATIVE_BYTES.get() + requestedBytes;
 		if (projectedFullBytes <= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES) return;
-		String stackKey = captureRelevantFrameBufferBuildStack();
 		String protectedReason = resolvePressureDownscaleProtectReason(stackKey);
 		if (protectedReason != null) {
 			System.out.println("[gdx-diag] GLFrameBuffer pressure_downscale_skip id=" + debugFrameBufferId
@@ -511,7 +573,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 				+ " requestedBytes=" + requestedBytes
 				+ " projectedFullBytes=" + projectedFullBytes
 				+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
-				+ " protected=" + protectedReason);
+				+ " protected=" + protectedReason
+				+ formatStackDetail(stackKey));
 			return;
 		}
 		int pressureMode = classifyPressureDownscaleMode(stackKey, projectedFullBytes, requestedBytes);
@@ -529,7 +592,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			+ " requestedBytes=" + requestedBytes
 			+ " projectedFullBytes=" + projectedFullBytes
 			+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES
-			+ " reason=" + allowReason);
+			+ " reason=" + allowReason
+			+ formatStackDetail(stackKey));
 	}
 
 	private boolean isLargePressureDownscaleCandidate () {
@@ -771,6 +835,12 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		nativeResourcesAllocated = false;
 		estimatedNativeBytes = 0L;
 		if (hadNativeResources) {
+			adjustLiveFrameBufferOwnerAggregate(
+				getFrameBufferOwnerKey(),
+				getFrameBufferOwnerSample(),
+				releasedBytes,
+				-1
+			);
 			onFrameBufferNativeReleased(debugFrameBufferId, releasedFramebufferHandle, releasedColorTextureHandle, releasedBytes, reason);
 		}
 		return released;
@@ -790,26 +860,46 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			frameId = 0L;
 		}
 		lastUsedFrame = frameId;
+		lastUseReason = reason == null || reason.length() == 0 ? "unknown" : reason;
 	}
 
 	private boolean isEligibleForIdleReclaim () {
 		return nativeResourcesAllocated && estimatedNativeBytes >= GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_MIN_BYTES;
 	}
 
+	private long getIdleFrames (long frameId) {
+		long idleFrames = frameId - lastUsedFrame;
+		return idleFrames < 0L ? 0L : idleFrames;
+	}
+
 	private boolean reclaimIfIdle (long frameId) {
 		if (!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED) return false;
 		if (disposed || buildInProgress || !isEligibleForIdleReclaim()) return false;
 		if (framebufferHandle == 0) return false;
-		long idleFrames = frameId - lastUsedFrame;
+		long idleFrames = getIdleFrames(frameId);
 		if (idleFrames < GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_FRAMES) return false;
 		long reclaimedBytes = estimatedNativeBytes;
 		if (!releaseNativeResources("idle_reclaim", false, true)) return false;
 		int reclaimed = FRAMEBUFFERS_IDLE_RECLAIMED.incrementAndGet();
 		System.out.println("[gdx-diag] GLFrameBuffer idle_reclaim id=" + debugFrameBufferId
+			+ " owner=" + getFrameBufferOwnerKey()
 			+ " idleFrames=" + idleFrames
 			+ " bytes=" + reclaimedBytes
 			+ " reclaimed=" + reclaimed);
 		return true;
+	}
+
+	private boolean isEligibleForPressureReclaim (long frameId, int currentlyBoundFramebuffer) {
+		if (!GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) return false;
+		if (disposed || buildInProgress || !nativeResourcesAllocated) return false;
+		if (framebufferHandle == 0 || framebufferHandle == currentlyBoundFramebuffer) return false;
+		if (estimatedNativeBytes < GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_MIN_BYTES) return false;
+		if (getIdleFrames(frameId) < GPU_RESOURCE_DIAG_FBO_MANAGER_PRESSURE_IDLE_FRAMES) return false;
+		return resolveManagerProtectReason() == null;
+	}
+
+	private String resolveManagerProtectReason () {
+		return resolveFrameBufferManagerProtectReason(debugBuildStackKey);
 	}
 
 	private static boolean isUnknownFramebufferStatus (int status) {
@@ -983,23 +1073,53 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	public static void reclaimIdleFrameBuffers (Application app, long frameId) {
-		if (!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED || Gdx.gl20 == null) return;
+		if ((!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED && !GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) || Gdx.gl20 == null) return;
 		if (app == null || frameId < 0L) return;
-		if (lastIdleSweepFrame >= 0L
-			&& frameId - lastIdleSweepFrame < GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL) {
+		int sweepInterval = resolveFrameBufferSweepInterval();
+		if (sweepInterval <= 0) return;
+		if (lastFrameBufferSweepFrame >= 0L
+			&& frameId - lastFrameBufferSweepFrame < sweepInterval) {
 			return;
 		}
-		lastIdleSweepFrame = frameId;
+		lastFrameBufferSweepFrame = frameId;
+		if (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) {
+			FRAMEBUFFER_MANAGER_SWEEPS.incrementAndGet();
+		}
 
 		Array<GLFrameBuffer> bufferArray = buffers.get(app);
 		if (bufferArray == null || bufferArray.size == 0) return;
 
 		int reclaimed = 0;
-		for (int i = 0; i < bufferArray.size; i++) {
-			if (bufferArray.get(i).reclaimIfIdle(frameId)) {
-				reclaimed++;
+		if (GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED) {
+			for (int i = 0; i < bufferArray.size; i++) {
+				if (bufferArray.get(i).reclaimIfIdle(frameId)) {
+					reclaimed++;
+				}
 			}
 		}
+
+		FrameBufferPressureSweepResult pressureResult = null;
+		if (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED
+			&& FRAMEBUFFERS_NATIVE_BYTES.get() > GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_BYTES) {
+			pressureResult = reclaimPressureFrameBuffers(bufferArray, frameId);
+		}
+
+		if (pressureResult != null) {
+			System.out.println("[gdx-diag] GLFrameBuffer manager_pressure_sweep frame=" + frameId
+				+ " sweep=" + pressureResult.sweepIndex
+				+ " idleReclaimed=" + reclaimed
+				+ " candidates=" + pressureResult.candidateCount
+				+ " reclaimed=" + pressureResult.reclaimedCount
+				+ " reclaimedBytes=" + pressureResult.reclaimedBytes
+				+ " beforeBytes=" + pressureResult.bytesBefore
+				+ " afterBytes=" + pressureResult.bytesAfter
+				+ " budgetBytes=" + GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_BYTES
+				+ " topOwnersBefore=" + pressureResult.topOwnersBefore
+				+ " topOwnersAfter=" + pressureResult.topOwnersAfter
+				+ " stalled=" + pressureResult.stalled);
+			return;
+		}
+
 		if (reclaimed > 0) {
 			int sweeps = FRAMEBUFFER_IDLE_SWEEPS.incrementAndGet();
 			System.out.println("[gdx-diag] GLFrameBuffer idle_sweep frame=" + frameId
@@ -1025,8 +1145,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	public static String getDebugStatusSummary () {
-		if (!GPU_RESOURCE_DIAG_ENABLED) return "frameBuffersDiag=disabled";
-		return "frameBuffersLive=" + FRAMEBUFFERS_LIVE.get()
+		return "frameBuffersDiag=" + (GPU_RESOURCE_DIAG_ENABLED ? "enabled" : "disabled")
+			+ " frameBuffersLive=" + FRAMEBUFFERS_LIVE.get()
 			+ " frameBuffersPeak=" + frameBufferLivePeak
 			+ " frameBuffersNative=" + FRAMEBUFFERS_NATIVE_LIVE.get()
 			+ " frameBufferBytes=" + FRAMEBUFFERS_NATIVE_BYTES.get()
@@ -1034,16 +1154,326 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			+ " frameBuffersBuilt=" + FRAMEBUFFERS_BUILT.get()
 			+ " frameBuffersRebuilt=" + FRAMEBUFFERS_REBUILT.get()
 			+ " frameBuffersReclaimed=" + FRAMEBUFFERS_IDLE_RECLAIMED.get()
+			+ " frameBufferManager=" + (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED ? "enabled" : "disabled")
+			+ " frameBufferManagerSweeps=" + FRAMEBUFFER_MANAGER_SWEEPS.get()
+			+ " frameBufferPressureSweeps=" + FRAMEBUFFER_MANAGER_PRESSURE_SWEEPS.get()
+			+ " frameBufferPressureReclaims=" + FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMS.get()
+			+ " frameBufferPressureBytes=" + FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMED_BYTES.get()
 			+ " frameBuffersDisposed=" + FRAMEBUFFERS_DISPOSED.get();
+	}
+
+	public static String getLiveOwnerSummary () {
+		return buildFrameBufferOwnerSummary(
+			"frameBufferOwnerTop=",
+			FRAMEBUFFER_LIVE_OWNER_BYTES,
+			FRAMEBUFFER_LIVE_OWNER_COUNTS,
+			FRAMEBUFFER_LIVE_OWNER_SAMPLES
+		);
 	}
 
 	public static long getEstimatedNativeBytes () {
 		return FRAMEBUFFERS_NATIVE_BYTES.get();
 	}
 
-	private void recordFrameBufferBuild (int colorTextureWidth, int colorTextureHeight, String reason) {
+	private static int resolveFrameBufferSweepInterval () {
+		int interval = Integer.MAX_VALUE;
+		if (GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED) {
+			interval = Math.min(interval, GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL);
+		}
+		if (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) {
+			interval = Math.min(interval, GPU_RESOURCE_DIAG_FBO_MANAGER_SWEEP_INTERVAL);
+		}
+		return interval == Integer.MAX_VALUE ? -1 : interval;
+	}
+
+	private static FrameBufferPressureSweepResult reclaimPressureFrameBuffers (Array<GLFrameBuffer> bufferArray, long frameId) {
+		long bytesBefore = FRAMEBUFFERS_NATIVE_BYTES.get();
+		int sweepIndex = FRAMEBUFFER_MANAGER_PRESSURE_SWEEPS.incrementAndGet();
+		String topOwnersBefore = stripFrameBufferOwnerSummaryLabel(getLiveOwnerSummary());
+		int currentlyBoundFramebuffer = getCurrentFramebufferBinding(Gdx.gl20);
+		List<GLFrameBuffer> candidates = new ArrayList<GLFrameBuffer>(bufferArray.size);
+		for (int i = 0; i < bufferArray.size; i++) {
+			GLFrameBuffer candidate = bufferArray.get(i);
+			if (candidate != null && candidate.isEligibleForPressureReclaim(frameId, currentlyBoundFramebuffer)) {
+				candidates.add(candidate);
+			}
+		}
+		if (candidates.isEmpty()) {
+			return new FrameBufferPressureSweepResult(
+				sweepIndex,
+				bytesBefore,
+				bytesBefore,
+				0,
+				0L,
+				0,
+				topOwnersBefore,
+				topOwnersBefore,
+				true
+			);
+		}
+
+		Collections.sort(candidates, new Comparator<GLFrameBuffer>() {
+			@Override
+			public int compare (GLFrameBuffer left, GLFrameBuffer right) {
+				return comparePressureCandidates(left, right, frameId);
+			}
+		});
+
+		int reclaimedCount = 0;
+		long reclaimedBytes = 0L;
+		for (int i = 0; i < candidates.size(); i++) {
+			if (FRAMEBUFFERS_NATIVE_BYTES.get() <= GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_BYTES) break;
+			if (reclaimedCount >= GPU_RESOURCE_DIAG_FBO_MANAGER_MAX_RECLAIMS) break;
+			GLFrameBuffer candidate = candidates.get(i);
+			if (!candidate.isEligibleForPressureReclaim(frameId, currentlyBoundFramebuffer)) continue;
+			long candidateBytes = candidate.estimatedNativeBytes;
+			if (candidateBytes <= 0L) continue;
+			if (!candidate.releaseNativeResources("manager_pressure", false, true)) continue;
+			reclaimedCount++;
+			reclaimedBytes += candidateBytes;
+			FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMS.incrementAndGet();
+			FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMED_BYTES.addAndGet(candidateBytes);
+		}
+		long bytesAfter = FRAMEBUFFERS_NATIVE_BYTES.get();
+		String topOwnersAfter = stripFrameBufferOwnerSummaryLabel(getLiveOwnerSummary());
+		return new FrameBufferPressureSweepResult(
+			sweepIndex,
+			bytesBefore,
+			bytesAfter,
+			reclaimedCount,
+			reclaimedBytes,
+			candidates.size(),
+			topOwnersBefore,
+			topOwnersAfter,
+			bytesAfter > GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_BYTES
+		);
+	}
+
+	private static int comparePressureCandidates (GLFrameBuffer left, GLFrameBuffer right, long frameId) {
+		long leftIdleFrames = left.getIdleFrames(frameId);
+		long rightIdleFrames = right.getIdleFrames(frameId);
+		if (leftIdleFrames != rightIdleFrames) {
+			return leftIdleFrames > rightIdleFrames ? -1 : 1;
+		}
+		if (left.estimatedNativeBytes != right.estimatedNativeBytes) {
+			return left.estimatedNativeBytes > right.estimatedNativeBytes ? -1 : 1;
+		}
+		if (left.debugFrameBufferId == right.debugFrameBufferId) return 0;
+		return left.debugFrameBufferId < right.debugFrameBufferId ? -1 : 1;
+	}
+
+	private void rememberFrameBufferOwner (String buildStackKey) {
+		if (buildStackKey != null && buildStackKey.length() > 0
+			&& (debugBuildStackKey == null || debugBuildStackKey.length() == 0)) {
+			debugBuildStackKey = buildStackKey;
+		}
+		String effectiveStackKey = buildStackKey;
+		if (effectiveStackKey == null || effectiveStackKey.length() == 0) {
+			effectiveStackKey = debugBuildStackKey;
+		}
+		if (debugOwnerKey == null || debugOwnerKey.length() == 0) {
+			debugOwnerKey = classifyFrameBufferOwnerKey(effectiveStackKey);
+		}
+		if ((debugOwnerSample == null || debugOwnerSample.length() == 0) && effectiveStackKey != null) {
+			debugOwnerSample = summarizeFrameBufferOwnerSample(effectiveStackKey);
+		}
+	}
+
+	private String getFrameBufferOwnerKey () {
+		return debugOwnerKey == null || debugOwnerKey.length() == 0 ? "core<-unknown" : debugOwnerKey;
+	}
+
+	private String getFrameBufferOwnerSample () {
+		return debugOwnerSample == null ? "" : debugOwnerSample;
+	}
+
+	private static void adjustLiveFrameBufferOwnerAggregate (
+		String ownerKey,
+		String ownerSample,
+		long bytes,
+		int deltaCount
+	) {
+		if (bytes <= 0L || deltaCount == 0) return;
+		String safeOwnerKey = ownerKey == null || ownerKey.length() == 0 ? "core<-unknown" : ownerKey;
+		AtomicLong bytesRef = FRAMEBUFFER_LIVE_OWNER_BYTES.get(safeOwnerKey);
+		if (bytesRef == null) {
+			AtomicLong created = new AtomicLong();
+			AtomicLong existing = FRAMEBUFFER_LIVE_OWNER_BYTES.putIfAbsent(safeOwnerKey, created);
+			bytesRef = existing == null ? created : existing;
+		}
+		long nextBytes = bytesRef.addAndGet(deltaCount > 0 ? bytes : -bytes);
+		if (nextBytes < 0L) {
+			bytesRef.set(0L);
+			nextBytes = 0L;
+		}
+
+		AtomicInteger countRef = FRAMEBUFFER_LIVE_OWNER_COUNTS.get(safeOwnerKey);
+		if (countRef == null) {
+			AtomicInteger created = new AtomicInteger();
+			AtomicInteger existing = FRAMEBUFFER_LIVE_OWNER_COUNTS.putIfAbsent(safeOwnerKey, created);
+			countRef = existing == null ? created : existing;
+		}
+		int nextCount = countRef.addAndGet(deltaCount);
+		if (nextCount < 0) {
+			countRef.set(0);
+			nextCount = 0;
+		}
+
+		if (ownerSample != null && ownerSample.length() > 0) {
+			FRAMEBUFFER_LIVE_OWNER_SAMPLES.put(safeOwnerKey, ownerSample);
+		}
+		if (nextBytes == 0L && nextCount == 0) {
+			FRAMEBUFFER_LIVE_OWNER_BYTES.remove(safeOwnerKey);
+			FRAMEBUFFER_LIVE_OWNER_COUNTS.remove(safeOwnerKey);
+			FRAMEBUFFER_LIVE_OWNER_SAMPLES.remove(safeOwnerKey);
+		}
+	}
+
+	private static String buildFrameBufferOwnerSummary (
+		String label,
+		ConcurrentHashMap<String, AtomicLong> bytesByKey,
+		ConcurrentHashMap<String, AtomicInteger> countsByKey,
+		ConcurrentHashMap<String, String> samplesByKey
+	) {
+		String[] topGroups = new String[FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT];
+		String[] topSamples = new String[FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT];
+		long[] topBytes = new long[FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT];
+		int[] topCounts = new int[FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT];
+		int topSize = 0;
+		int totalGroups = 0;
+		for (Map.Entry<String, AtomicLong> entry : bytesByKey.entrySet()) {
+			AtomicLong bytesRef = entry.getValue();
+			if (bytesRef == null) continue;
+			long liveBytes = bytesRef.get();
+			if (liveBytes <= 0L) continue;
+			String groupKey = entry.getKey();
+			AtomicInteger countRef = countsByKey.get(groupKey);
+			int count = countRef == null ? 0 : countRef.get();
+			if (count <= 0) continue;
+			totalGroups++;
+			int insertAt = -1;
+			for (int i = 0; i < topSize; i++) {
+				if (ranksBeforeFrameBufferOwnerSummary(
+					liveBytes,
+					count,
+					groupKey,
+					topBytes[i],
+					topCounts[i],
+					topGroups[i]
+				)) {
+					insertAt = i;
+					break;
+				}
+			}
+			if (insertAt < 0 && topSize < FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT) {
+				insertAt = topSize;
+			}
+			if (insertAt < 0) continue;
+			int moveEnd =
+				topSize < FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT
+					? topSize
+					: FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT - 1;
+			for (int i = moveEnd; i > insertAt; i--) {
+				topGroups[i] = topGroups[i - 1];
+				topSamples[i] = topSamples[i - 1];
+				topBytes[i] = topBytes[i - 1];
+				topCounts[i] = topCounts[i - 1];
+			}
+			topGroups[insertAt] = groupKey;
+			topSamples[insertAt] = samplesByKey.get(groupKey);
+			topBytes[insertAt] = liveBytes;
+			topCounts[insertAt] = count;
+			if (topSize < FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT) {
+				topSize++;
+			}
+		}
+		if (topSize == 0) return label + "none";
+
+		StringBuilder builder = new StringBuilder(192);
+		builder.append(label);
+		for (int i = 0; i < topSize; i++) {
+			if (i > 0) builder.append("|");
+			builder.append(topGroups[i])
+				.append(":")
+				.append(toSummaryMegabytes(topBytes[i]))
+				.append("m/")
+				.append(topCounts[i]);
+			if (topSamples[i] != null && topSamples[i].length() > 0) {
+				builder.append("@").append(topSamples[i]);
+			}
+		}
+		if (totalGroups > FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT) {
+			builder.append("|...");
+		}
+		return builder.toString();
+	}
+
+	private static boolean ranksBeforeFrameBufferOwnerSummary (
+		long bytes,
+		int count,
+		String groupKey,
+		long existingBytes,
+		int existingCount,
+		String existingGroupKey
+	) {
+		if (bytes != existingBytes) {
+			return bytes > existingBytes;
+		}
+		if (count != existingCount) {
+			return count > existingCount;
+		}
+		if (groupKey == null) return false;
+		if (existingGroupKey == null) return true;
+		return groupKey.compareTo(existingGroupKey) < 0;
+	}
+
+	private static long toSummaryMegabytes (long bytes) {
+		if (bytes <= 0L) return 0L;
+		return bytes / (1024L * 1024L);
+	}
+
+	private static String stripFrameBufferOwnerSummaryLabel (String summary) {
+		if (summary == null) return "none";
+		return summary.startsWith("frameBufferOwnerTop=")
+			? summary.substring("frameBufferOwnerTop=".length())
+			: summary;
+	}
+
+	private static String resolveFrameBufferManagerProtectReason (String stackKey) {
+		return FrameBufferOwnerSummary.resolveManagerProtectReason(stackKey);
+	}
+
+	static String classifyOwnerKeyForStack (String stackKey) {
+		return FrameBufferOwnerSummary.classifyOwnerKey(stackKey);
+	}
+
+	static String summarizeOwnerSampleForStack (String stackKey) {
+		return FrameBufferOwnerSummary.summarizeOwnerSample(stackKey);
+	}
+
+	private static String classifyFrameBufferOwnerKey (String stackKey) {
+		return FrameBufferOwnerSummary.classifyOwnerKey(stackKey);
+	}
+
+	private static String summarizeFrameBufferOwnerSample (String stackKey) {
+		return FrameBufferOwnerSummary.summarizeOwnerSample(stackKey);
+	}
+
+	private void recordFrameBufferBuild (
+		int colorTextureWidth,
+		int colorTextureHeight,
+		String reason,
+		String buildStackKey
+	) {
 		nativeResourcesAllocated = true;
 		estimatedNativeBytes = estimateFrameBufferBytes(colorTextureWidth, colorTextureHeight, String.valueOf(format), hasDepth, hasStencil);
+		rememberFrameBufferOwner(buildStackKey);
+		adjustLiveFrameBufferOwnerAggregate(
+			getFrameBufferOwnerKey(),
+			getFrameBufferOwnerSample(),
+			estimatedNativeBytes,
+			1
+		);
 		markUsed(reason);
 		debugBuildGeneration++;
 		onFrameBufferBuilt(
@@ -1057,12 +1487,13 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			hasDepth,
 			hasStencil,
 			String.valueOf(format),
-			reason
+			reason,
+			buildStackKey
 		);
 	}
 
 	private static long allocateDebugFrameBufferId () {
-		return GPU_RESOURCE_DIAG_ENABLED ? NEXT_DEBUG_FRAMEBUFFER_ID.getAndIncrement() : 0L;
+		return NEXT_DEBUG_FRAMEBUFFER_ID.getAndIncrement();
 	}
 
 	private static void onFrameBufferBuilt (
@@ -1076,9 +1507,9 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		boolean hasDepth,
 		boolean hasStencil,
 		String format,
-		String reason
+		String reason,
+		String buildStackKey
 	) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		int built = FRAMEBUFFERS_BUILT.incrementAndGet();
 		int live = FRAMEBUFFERS_LIVE.get();
 		if (buildGeneration == 1) {
@@ -1096,6 +1527,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		if (nativeBytes > frameBufferNativeBytesPeak) {
 			frameBufferNativeBytesPeak = nativeBytes;
 		}
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLFrameBuffer build id=" + id
 			+ " generation=" + buildGeneration
 			+ " reason=" + reason
@@ -1110,7 +1542,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			+ " liveFrameBuffers=" + live
 			+ " nativeFrameBuffers=" + nativeLive
 			+ " nativeBytes=" + nativeBytes);
-		logFrameBufferBuildStack(id, buildGeneration, width, height, format, hasDepth, hasStencil);
+		logFrameBufferBuildStack(id, buildGeneration, width, height, format, hasDepth, hasStencil, buildStackKey);
 	}
 
 	private static void onFrameBufferNativeReleased (
@@ -1120,7 +1552,6 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		long releasedBytes,
 		String reason
 	) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		int nativeLive = FRAMEBUFFERS_NATIVE_LIVE.decrementAndGet();
 		if (nativeLive < 0) {
 			FRAMEBUFFERS_NATIVE_LIVE.set(0);
@@ -1131,6 +1562,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			FRAMEBUFFERS_NATIVE_BYTES.set(0L);
 			nativeBytes = 0L;
 		}
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLFrameBuffer native_release id=" + id
 			+ " fb=" + framebufferHandle
 			+ " colorTex=" + colorTextureHandle
@@ -1141,13 +1573,13 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	private static void onFrameBufferDisposed (long id, int framebufferHandle, int colorTextureHandle, String reason) {
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		int disposed = FRAMEBUFFERS_DISPOSED.incrementAndGet();
 		int live = FRAMEBUFFERS_LIVE.decrementAndGet();
 		if (live < 0) {
 			FRAMEBUFFERS_LIVE.set(0);
 			live = 0;
 		}
+		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLFrameBuffer dispose id=" + id
 			+ " fb=" + framebufferHandle
 			+ " colorTex=" + colorTextureHandle
@@ -1191,10 +1623,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		int height,
 		String format,
 		boolean hasDepth,
-		boolean hasStencil
+		boolean hasStencil,
+		String stackKey
 	) {
 		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_FBO_STACKS_ENABLED || id == 0L || buildGeneration != 1) return;
-		String stackKey = captureRelevantFrameBufferBuildStack();
 		if (stackKey == null) return;
 		AtomicInteger existing = FRAMEBUFFER_BUILD_STACK_COUNTS.putIfAbsent(stackKey, new AtomicInteger(1));
 		if (existing == null) {
@@ -1268,6 +1700,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return stackKey != null && fragment != null && stackKey.indexOf(fragment) >= 0;
 	}
 
+	private static String formatStackDetail (String stackKey) {
+		return stackKey == null || stackKey.length() == 0 ? "" : " stack=" + stackKey;
+	}
+
 	private static boolean containsAnyStackFragment (String stackKey, String... fragments) {
 		if (stackKey == null || stackKey.length() == 0 || fragments == null) return false;
 		for (int i = 0; i < fragments.length; i++) {
@@ -1303,5 +1739,39 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			return true;
 		}
 		return false;
+	}
+
+	private static final class FrameBufferPressureSweepResult {
+		private final int sweepIndex;
+		private final long bytesBefore;
+		private final long bytesAfter;
+		private final int reclaimedCount;
+		private final long reclaimedBytes;
+		private final int candidateCount;
+		private final String topOwnersBefore;
+		private final String topOwnersAfter;
+		private final boolean stalled;
+
+		private FrameBufferPressureSweepResult (
+			int sweepIndex,
+			long bytesBefore,
+			long bytesAfter,
+			int reclaimedCount,
+			long reclaimedBytes,
+			int candidateCount,
+			String topOwnersBefore,
+			String topOwnersAfter,
+			boolean stalled
+		) {
+			this.sweepIndex = sweepIndex;
+			this.bytesBefore = bytesBefore;
+			this.bytesAfter = bytesAfter;
+			this.reclaimedCount = reclaimedCount;
+			this.reclaimedBytes = reclaimedBytes;
+			this.candidateCount = candidateCount;
+			this.topOwnersBefore = topOwnersBefore;
+			this.topOwnersAfter = topOwnersAfter;
+			this.stalled = stalled;
+		}
 	}
 }

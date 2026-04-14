@@ -156,6 +156,13 @@ internal object DiagnosticsArchiveBuilder {
                 RuntimePaths.jvmSignalDump(context),
                 "sts/jvm_logs/${RuntimePaths.jvmSignalDump(context).name}"
             )
+            RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { memoryLogFile ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    memoryLogFile,
+                    "sts/jvm_logs/${memoryLogFile.name}"
+                )
+            }
             RuntimePaths.listLogcatCaptureFiles(context).forEach { logcatFile ->
                 exportedCount += writeOptionalFile(
                     zipOutput,

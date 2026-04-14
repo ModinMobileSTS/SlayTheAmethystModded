@@ -6,5 +6,6 @@ import com.evacipated.cardcrawl.modthespire.lib.SpireInitializer;
 public class AmethystRuntimeCompat {
     public static void initialize() {
         CompatRuntimeState.logStartupConfiguration();
+        RuntimeMemoryDiagnostics.logStartupConfiguration();
     }
 }

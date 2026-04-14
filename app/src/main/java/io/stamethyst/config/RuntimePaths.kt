@@ -13,6 +13,7 @@ object RuntimePaths {
     private const val LATEST_LOG_FILE_NAME = "latest.log"
     private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
+    private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
@@ -149,6 +150,10 @@ object RuntimePaths {
     fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)
 
     @JvmStatic
+    fun memoryDiagnosticsLog(context: Context): File =
+        File(jvmLogsDir(context), MEMORY_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
     fun jvmGcLog(context: Context): File = File(stsRoot(context), JVM_GC_LOG_FILE_NAME)
 
     @JvmStatic
@@ -211,6 +216,23 @@ object RuntimePaths {
         listLogcatCaptureFiles(context).forEach { files.putIfAbsent(it.name, it) }
         listLauncherLogcatCaptureFiles(context).forEach { files.putIfAbsent(it.name, it) }
         return files.values.toList()
+    }
+
+    @JvmStatic
+    fun listMemoryDiagnosticsFiles(context: Context): List<File> {
+        val directory = jvmLogsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(memoryDiagnosticsLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isMemoryDiagnosticsFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareMemoryDiagnosticsFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(memoryDiagnosticsLog(context)) }
     }
 
     @JvmStatic
@@ -490,6 +512,11 @@ object RuntimePaths {
         return logcatCaptureBaseName(name, ALL_LOGCAT_CAPTURE_FILE_NAMES) != null
     }
 
+    internal fun isMemoryDiagnosticsFileName(name: String): Boolean {
+        return name == MEMORY_DIAGNOSTICS_LOG_FILE_NAME ||
+            name.startsWith("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.")
+    }
+
     internal fun compareLogcatCaptureFileNames(left: String, right: String): Int {
         val leftBaseName = logcatCaptureBaseName(left, ALL_LOGCAT_CAPTURE_FILE_NAMES)
         val rightBaseName = logcatCaptureBaseName(right, ALL_LOGCAT_CAPTURE_FILE_NAMES)
@@ -505,6 +532,15 @@ object RuntimePaths {
             return byRotationIndex
         }
 
+        return left.compareTo(right)
+    }
+
+    internal fun compareMemoryDiagnosticsFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForMemoryDiagnosticsFile(left)
+            .compareTo(rotationIndexForMemoryDiagnosticsFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
         return left.compareTo(right)
     }
 
@@ -555,6 +591,18 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$baseName.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForMemoryDiagnosticsFile(name: String): Int {
+        if (!isMemoryDiagnosticsFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == MEMORY_DIAGNOSTICS_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

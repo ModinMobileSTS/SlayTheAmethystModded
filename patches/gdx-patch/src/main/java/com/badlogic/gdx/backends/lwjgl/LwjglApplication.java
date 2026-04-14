@@ -1701,9 +1701,19 @@ public class LwjglApplication implements Application {
 	}
 
 	private static void logGpuResourceSummary (String reason) {
-		System.out.println("[gdx-diag] GpuResources summary reason=" + reason + " "
+		Runtime runtime = Runtime.getRuntime();
+		long usedBytes = runtime.totalMemory() - runtime.freeMemory();
+		System.out.println("[gdx-diag] GpuResources summary reason=" + reason
+			+ " heapUsedMb=" + toMegabytes(usedBytes)
+			+ " heapCommittedMb=" + toMegabytes(runtime.totalMemory())
+			+ " heapMaxMb=" + toMegabytes(runtime.maxMemory()) + " "
 			+ GLTexture.getDebugStatusSummary() + " "
 			+ GLFrameBuffer.getDebugStatusSummary());
+	}
+
+	private static long toMegabytes (long bytes) {
+		if (bytes <= 0L) return 0L;
+		return bytes / (1024L * 1024L);
 	}
 
 	public boolean executeRunnables () {

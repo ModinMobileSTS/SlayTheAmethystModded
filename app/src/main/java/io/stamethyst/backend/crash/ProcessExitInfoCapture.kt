@@ -48,6 +48,22 @@ object ProcessExitInfoCapture {
     }
 
     @JvmStatic
+    fun peekLatestMemoryPressureExitInfo(context: Context): ProcessExitSummary? {
+        return peekLatestMemoryPressureExitInfo(context, launchedAfterTimestampMs = 0L)
+    }
+
+    @JvmStatic
+    fun peekLatestMemoryPressureExitInfo(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ProcessExitSummary? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return null
+        }
+        return peekLatestMemoryPressureExitInfoApi30(context, launchedAfterTimestampMs)
+    }
+
+    @JvmStatic
     fun markLatestInterestingProcessExitInfoHandled(context: Context) {
         markLatestInterestingProcessExitInfoHandled(context, launchedAfterTimestampMs = 0L)
     }
@@ -120,7 +136,24 @@ object ProcessExitInfoCapture {
         context: Context,
         launchedAfterTimestampMs: Long
     ): ProcessExitSummary? {
-        val latest = resolveLatestInterestingExitInfo(context, launchedAfterTimestampMs) ?: return null
+        val latest = resolveLatestExitInfo(
+            context = context,
+            launchedAfterTimestampMs = launchedAfterTimestampMs,
+            matcher = ::isInterestingExitReason
+        ) ?: return null
+        return buildSummary(latest)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun peekLatestMemoryPressureExitInfoApi30(
+        context: Context,
+        launchedAfterTimestampMs: Long
+    ): ProcessExitSummary? {
+        val latest = resolveLatestExitInfo(
+            context = context,
+            launchedAfterTimestampMs = launchedAfterTimestampMs,
+            matcher = ::isMemoryPressureExitReason
+        ) ?: return null
         return buildSummary(latest)
     }
 
@@ -162,6 +195,19 @@ object ProcessExitInfoCapture {
         context: Context,
         launchedAfterTimestampMs: Long
     ): ApplicationExitInfo? {
+        return resolveLatestExitInfo(
+            context = context,
+            launchedAfterTimestampMs = launchedAfterTimestampMs,
+            matcher = ::isInterestingExitReason
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun resolveLatestExitInfo(
+        context: Context,
+        launchedAfterTimestampMs: Long,
+        matcher: (ApplicationExitInfo) -> Boolean
+    ): ApplicationExitInfo? {
         val manager = context.getSystemService(ActivityManager::class.java) ?: return null
         val reasons = try {
             manager.getHistoricalProcessExitReasons(context.packageName, 0, 24)
@@ -176,7 +222,7 @@ object ProcessExitInfoCapture {
             .asSequence()
             .sortedByDescending { it.timestamp }
             .firstOrNull { exitInfo ->
-                isInterestingExitReason(exitInfo) &&
+                matcher(exitInfo) &&
                     exitInfo.timestamp >= launchedAfterTimestampMs &&
                     exitInfo.processName == gameProcessName
             }
@@ -282,6 +328,15 @@ object ProcessExitInfoCapture {
             ApplicationExitInfo.REASON_CRASH_NATIVE,
             ApplicationExitInfo.REASON_ANR,
             ApplicationExitInfo.REASON_SIGNALED -> true
+            else -> false
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun isMemoryPressureExitReason(exitInfo: ApplicationExitInfo): Boolean {
+        return when (exitInfo.reason) {
+            ApplicationExitInfo.REASON_LOW_MEMORY,
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> true
             else -> false
         }
     }

@@ -3,6 +3,7 @@ package io.stamethyst.backend.mods
 import android.content.Context
 import android.system.ErrnoException
 import android.system.Os
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -40,9 +41,25 @@ internal object OptionalModStorageCoordinator {
     @Throws(IOException::class)
     fun syncEnabledOptionalModsToRuntime(context: Context) {
         ensureOptionalModLibraryReady(context)
+        val enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context)
+        val runtimeModsDir = RuntimePaths.modsDir(context)
+        MemoryDiagnosticsLogger.logModSnapshot(
+            context = context,
+            event = "runtime_optional_mod_sync_started",
+            launchMode = "mts",
+            enabledLibraryFiles = enabledLibraryFiles,
+            runtimeModFiles = listOptionalJarFiles(runtimeModsDir)
+        )
         syncRuntimeOptionalMods(
-            runtimeModsDir = RuntimePaths.modsDir(context),
-            enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context)
+            runtimeModsDir = runtimeModsDir,
+            enabledLibraryFiles = enabledLibraryFiles
+        )
+        MemoryDiagnosticsLogger.logModSnapshot(
+            context = context,
+            event = "runtime_optional_mod_sync_completed",
+            launchMode = "mts",
+            enabledLibraryFiles = enabledLibraryFiles,
+            runtimeModFiles = listOptionalJarFiles(runtimeModsDir)
         )
     }
 

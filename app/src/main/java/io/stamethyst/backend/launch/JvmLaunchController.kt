@@ -7,6 +7,7 @@ import io.stamethyst.BootOverlayController
 import io.stamethyst.R
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.RendererBackend
@@ -21,6 +22,7 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.util.ArrayList
+import kotlin.math.roundToInt
 
 /**
  * Manages JVM launch lifecycle: preparation, argument building, and thread management.
@@ -127,6 +129,9 @@ class JvmLaunchController(
     @Volatile
     private var lastLatestLogLine = ""
 
+    @Volatile
+    private var lastLoggedHeapPressureBucket = -1
+
     private var latestLogLogcatMirrorOffset = 0L
     private var latestLogLogcatMirrorRemainder = ""
     private var bootBridgeEventOffset = 0L
@@ -147,9 +152,21 @@ class JvmLaunchController(
         lastBootPhaseProgress = 8
         lastBootPhaseMessage = activity.progressText(R.string.boot_overlay_status_starting_jvm)
         lastLatestLogLine = ""
+        lastLoggedHeapPressureBucket = -1
 
         latestLogRuntimeCrashDetected = false
         onProgressUpdate(8, activity.progressText(R.string.boot_overlay_status_starting_jvm))
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "jvm_launch_controller_start",
+            mapOf(
+                "launchMode" to launchMode,
+                "renderScale" to renderScale,
+                "rendererBackend" to rendererDecision.effectiveBackend.rendererId(),
+                "rendererSurface" to rendererDecision.effectiveSurfaceBackend.persistedValue,
+                "mirrorJvmLogsToLogcat" to mirrorJvmLogsToLogcat
+            )
+        )
 
         val launchThread = Thread({
             try {
@@ -281,6 +298,17 @@ class JvmLaunchController(
                         forceJvmCrash
                     )
                 )
+                MemoryDiagnosticsLogger.logEvent(
+                    activity,
+                    "jvm_launch_args_ready",
+                    mapOf(
+                        "launchMode" to launchMode,
+                        "javaHome" to resolvedJavaHome.absolutePath,
+                        "argCount" to launchArgs.size,
+                        "rendererBackend" to rendererDecision.effectiveBackend.rendererId(),
+                        "rendererFallback" to rendererDecision.fallbackSummary()
+                    )
+                )
                 Log.i(
                     LOGCAT_TAG,
                     "Renderer selection mode=${rendererDecision.selectionMode.persistedValue}, " +
@@ -317,6 +345,7 @@ class JvmLaunchController(
                 stopRuntimeHeapSnapshotMonitor()
                 stopBootBridgeEventMonitor()
                 jvmLaunchThread = null
+                lastLoggedHeapPressureBucket = -1
             }
         }, "STS-JVM-Thread")
 
@@ -345,6 +374,7 @@ class JvmLaunchController(
         peakRuntimeMemorySnapshot = null
         jvmLaunchStartedElapsedMs = 0L
         bootInteractiveSignalSeen = false
+        lastLoggedHeapPressureBucket = -1
     }
 
     @Throws(LaunchCancelledException::class)
@@ -810,6 +840,7 @@ class JvmLaunchController(
         val previousPeak = peakRuntimeMemorySnapshot
         if (previousPeak == null || shouldReplacePeakSnapshot(previousPeak, snapshot)) {
             peakRuntimeMemorySnapshot = snapshot
+            maybeLogRuntimeHeapPressure(snapshot)
         }
     }
 
@@ -857,6 +888,34 @@ class JvmLaunchController(
         if (safeMessage.isNotEmpty()) {
             lastBootPhaseMessage = safeMessage
         }
+    }
+
+    private fun maybeLogRuntimeHeapPressure(snapshot: JvmRuntimeMemorySnapshot) {
+        if (snapshot.heapMaxBytes <= 0L) {
+            return
+        }
+        val usageRatio = snapshot.heapUsedBytes.toDouble() / snapshot.heapMaxBytes.toDouble()
+        val bucket = when {
+            usageRatio >= 0.95 -> 95
+            usageRatio >= 0.90 -> 90
+            usageRatio >= 0.80 -> 80
+            usageRatio >= 0.70 -> 70
+            else -> -1
+        }
+        if (bucket < 0 || bucket <= lastLoggedHeapPressureBucket) {
+            return
+        }
+        lastLoggedHeapPressureBucket = bucket
+        MemoryDiagnosticsLogger.logJvmHeapSnapshot(
+            activity,
+            "jvm_heap_pressure_bucket_reached",
+            snapshot,
+            mapOf(
+                "launchMode" to launchMode,
+                "usagePercentBucket" to bucket,
+                "usagePercent" to (usageRatio * 100.0).roundToInt()
+            )
+        )
     }
 
     private fun enforceLatestLogCap(logFile: File) {

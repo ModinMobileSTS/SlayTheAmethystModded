@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.audio.GameAudioController
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -72,6 +73,11 @@ class StsGameActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         launchGuardAcquired = GameProcessLaunchGuard.tryAcquire(launchGuardToken)
         if (!launchGuardAcquired) {
+            MemoryDiagnosticsLogger.logEvent(
+                this,
+                "game_activity_launch_guard_rejected",
+                mapOf("sessionToken" to launchGuardToken)
+            )
             finish()
             return
         }
@@ -79,6 +85,11 @@ class StsGameActivity : AppCompatActivity() {
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
+        MemoryDiagnosticsLogger.logEvent(
+            this,
+            "game_activity_created",
+            buildMemoryEventExtras()
+        )
         initControllers()
         renderSurfaceManager.applyImmersiveMode()
         initViews()
@@ -86,6 +97,11 @@ class StsGameActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        MemoryDiagnosticsLogger.logEvent(
+            this,
+            "game_activity_destroyed",
+            buildMemoryEventExtras()
+        )
         unregisterSystemBackInvokedCallback()
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
         if (::gameAudioController.isInitialized) {
@@ -109,6 +125,11 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        MemoryDiagnosticsLogger.logEvent(
+            this,
+            "game_activity_resumed",
+            buildMemoryEventExtras()
+        )
         DisplayPerformanceController.applySustainedPerformanceMode(
             this,
             sessionConfig.sustainedPerformanceModeEnabled
@@ -121,6 +142,11 @@ class StsGameActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        MemoryDiagnosticsLogger.logEvent(
+            this,
+            "game_activity_paused",
+            buildMemoryEventExtras()
+        )
         inputHandler.resetGamepadState()
         inputHandler.hideSoftKeyboard()
         gameAudioController.onPause()
@@ -130,6 +156,15 @@ class StsGameActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onStop() {
+        MemoryDiagnosticsLogger.logEvent(
+            this,
+            "game_activity_stopped",
+            buildMemoryEventExtras()
+        )
+        super.onStop()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         renderSurfaceManager.onWindowFocusChanged(hasFocus)
@@ -137,6 +172,25 @@ class StsGameActivity : AppCompatActivity() {
             renderSurfaceManager.applyImmersiveMode()
         }
         sessionCoordinator.onWindowFocusChanged(hasFocus)
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        MemoryDiagnosticsLogger.logLowMemory(
+            this,
+            "game_activity",
+            buildMemoryEventExtras()
+        )
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        MemoryDiagnosticsLogger.logTrimMemory(
+            this,
+            "game_activity",
+            level,
+            buildMemoryEventExtras()
+        )
     }
 
     private fun initControllers() {
@@ -305,5 +359,19 @@ class StsGameActivity : AppCompatActivity() {
         } catch (_: Throwable) {
         }
         onBackInvokedCallback = null
+    }
+
+    private fun buildMemoryEventExtras(): Map<String, Any?> {
+        val launchMode = if (::sessionConfig.isInitialized) {
+            sessionConfig.launchMode
+        } else {
+            intent?.getStringExtra(EXTRA_LAUNCH_MODE)
+        }
+        return linkedMapOf(
+            "sessionToken" to launchGuardToken,
+            "launchMode" to launchMode,
+            "manualDismissBootOverlay" to intent?.getBooleanExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, false),
+            "forceJvmCrash" to intent?.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false)
+        )
     }
 }

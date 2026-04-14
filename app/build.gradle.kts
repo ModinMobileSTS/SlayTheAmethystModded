@@ -753,6 +753,22 @@ val stsPullLogs by tasks.registering {
             .sortedDescending()
     }
 
+    fun listMemoryDiagnosticsNames(paths: DeviceStsPaths): List<String> {
+        fun rotationIndex(name: String): Int {
+            return when {
+                name == "memory_diagnostics.log" -> 0
+                name.startsWith("memory_diagnostics.log.") ->
+                    name.substringAfter("memory_diagnostics.log.")
+                        .toIntOrNull()
+                        ?: Int.MAX_VALUE
+                else -> Int.MAX_VALUE
+            }
+        }
+        return listRemoteFileNames(paths, "jvm_logs")
+            .filter { it == "memory_diagnostics.log" || it.startsWith("memory_diagnostics.log.") }
+            .sortedWith(compareBy(::rotationIndex).thenBy { it })
+    }
+
     fun listHistogramNames(paths: DeviceStsPaths): List<String> {
         return listRemoteFileNames(paths, "jvm_histograms")
             .filter { it.endsWith(".txt", ignoreCase = true) }
@@ -979,6 +995,26 @@ val stsPullLogs by tasks.registering {
             }
             logger.lifecycle("Pulling shared JVM log: $name")
             readRemoteFile(deviceStsPaths, "jvm_logs/$name")?.let { content ->
+                pulledEntries.add(
+                    PulledEntry(
+                        entryName = "sts/jvm_logs/$name",
+                        content = content
+                    )
+                )
+                exportedCount++
+            }
+        }
+
+        val memoryDiagnosticNames = listMemoryDiagnosticsNames(deviceStsPaths)
+        memoryDiagnosticNames.forEach { name ->
+            if (!remoteFileExists(deviceStsPaths, "jvm_logs/$name")) {
+                return@forEach
+            }
+            logger.lifecycle("Pulling memory diagnostics log: $name")
+            readRemoteFile(deviceStsPaths, "jvm_logs/$name")?.let { content ->
+                if (content.isEmpty()) {
+                    return@let
+                }
                 pulledEntries.add(
                     PulledEntry(
                         entryName = "sts/jvm_logs/$name",

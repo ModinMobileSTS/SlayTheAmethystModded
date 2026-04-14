@@ -254,6 +254,7 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
+            STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS == entryName ||
             STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
             STS_PATCH_COLOR_TAB_BAR_CLASS == entryName ||

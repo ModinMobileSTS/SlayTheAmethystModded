@@ -99,6 +99,7 @@ object LauncherConfig {
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
+    private const val PREF_KEY_FBO_MANAGER_COMPAT = "compat_fbo_manager"
     private const val PREF_KEY_FBO_IDLE_RECLAIM_COMPAT = "compat_fbo_idle_reclaim"
     private const val PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT =
         "compat_fbo_pressure_downscale"
@@ -185,6 +186,7 @@ object LauncherConfig {
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
+    const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = true
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = true
 
@@ -841,6 +843,19 @@ object LauncherConfig {
     fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT, enabled)
+        }
+    }
+
+    fun isFboManagerCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_FBO_MANAGER_COMPAT,
+            DEFAULT_FBO_MANAGER_COMPAT_ENABLED
+        )
+    }
+
+    fun setFboManagerCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_FBO_MANAGER_COMPAT, enabled)
         }
     }
 
