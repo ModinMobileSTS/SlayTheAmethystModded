@@ -56,7 +56,8 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MENU_ANIM_OFFSET_DP = 10
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
         private const val FLOATING_MENU_ANCHOR_GAP_DP = 8
-        private const val FLOATING_AUX_BUTTON_GAP_DP = 8
+        private const val FLOATING_MODE_BUTTON_BORDER_GAP_DP = 5
+        private const val FLOATING_COLLAPSE_BUTTON_BORDER_GAP_DP = 10
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
@@ -455,7 +456,9 @@ internal class FloatingMouseOverlayController(
     private fun handleFloatingMouseTap(button: View) {
         button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         if (touchMouseNewInteraction) {
-            if (!floatingMouseMenuExpanded) {
+            if (floatingMouseMenuExpanded) {
+                hideFloatingMouseExpandedMenu()
+            } else {
                 showFloatingMouseExpandedMenu()
             }
             return
@@ -998,7 +1001,7 @@ internal class FloatingMouseOverlayController(
         menuParams.topMargin = preferredTop.coerceIn(0, maxTop)
         menu.layoutParams = menuParams
         updateFloatingMouseCollapseButtonPosition(host, button)
-        updateFloatingMouseModeButtonPosition(host, button)
+        updateFloatingMouseModeButtonPosition(host, button, menu)
     }
 
     private fun updateFloatingMouseCollapseButtonPosition(host: FrameLayout, button: View) {
@@ -1021,12 +1024,16 @@ internal class FloatingMouseOverlayController(
         val preferredTop =
             buttonParams.topMargin +
                 button.height +
-                dpToPx(FLOATING_AUX_BUTTON_GAP_DP)
+                dpToPx(FLOATING_COLLAPSE_BUTTON_BORDER_GAP_DP)
         collapseParams.topMargin = preferredTop.coerceIn(0, maxTop)
         collapseButton.layoutParams = collapseParams
     }
 
-    private fun updateFloatingMouseModeButtonPosition(host: FrameLayout, button: View) {
+    private fun updateFloatingMouseModeButtonPosition(
+        host: FrameLayout,
+        button: View,
+        menu: View,
+    ) {
         val modeButton = floatingMouseModeButton ?: return
         if (modeButton.visibility != View.VISIBLE) {
             return
@@ -1038,15 +1045,17 @@ internal class FloatingMouseOverlayController(
         val modeWidth = modeButton.measuredWidth
         val modeHeight = modeButton.measuredHeight
         val buttonParams = button.layoutParams as? FrameLayout.LayoutParams ?: return
+        val menuParams = menu.layoutParams as? FrameLayout.LayoutParams ?: return
         val modeParams = modeButton.layoutParams as? FrameLayout.LayoutParams ?: return
         val maxLeft = (host.width - modeWidth).coerceAtLeast(0)
         val centeredLeft = buttonParams.leftMargin + (button.width - modeWidth) / 2
         modeParams.leftMargin = centeredLeft.coerceIn(0, maxLeft)
         val maxTop = (host.height - modeHeight).coerceAtLeast(0)
+        val resolvedMenuTop = menuParams.topMargin
         val preferredTop =
-            buttonParams.topMargin -
+            resolvedMenuTop -
                 modeHeight -
-                dpToPx(FLOATING_AUX_BUTTON_GAP_DP)
+                dpToPx(FLOATING_MODE_BUTTON_BORDER_GAP_DP)
         modeParams.topMargin = preferredTop.coerceIn(0, maxTop)
         modeButton.layoutParams = modeParams
     }
