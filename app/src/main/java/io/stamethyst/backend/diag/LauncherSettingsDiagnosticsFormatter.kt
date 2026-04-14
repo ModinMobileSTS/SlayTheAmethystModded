@@ -209,6 +209,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "runtimeTextureCompat" to formatBoolean(
                             CompatibilitySettings.isRuntimeTextureCompatEnabled(context)
                         ),
+                        "mainMenuPreviewReuseCompat" to formatBoolean(
+                            CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(context)
+                        ),
                         "largeTextureDownscaleCompat" to formatBoolean(
                             CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)
                         ),

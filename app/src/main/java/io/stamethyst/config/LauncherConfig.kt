@@ -90,6 +90,8 @@ object LauncherConfig {
     private const val PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT =
         "compat_fragment_shader_precision_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
+    private const val PREF_KEY_MAIN_MENU_PREVIEW_REUSE_COMPAT =
+        "compat_main_menu_preview_reuse"
     private const val PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT =
         "compat_large_texture_downscale"
     private const val PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR =
@@ -178,6 +180,7 @@ object LauncherConfig {
     const val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED = false
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
+    const val DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED = true
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = true
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
@@ -770,6 +773,19 @@ object LauncherConfig {
     fun setRuntimeTextureCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_RUNTIME_TEXTURE_COMPAT, enabled)
+        }
+    }
+
+    fun isMainMenuPreviewReuseCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_MAIN_MENU_PREVIEW_REUSE_COMPAT,
+            DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED
+        )
+    }
+
+    fun setMainMenuPreviewReuseCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_MAIN_MENU_PREVIEW_REUSE_COMPAT, enabled)
         }
     }
 

@@ -259,6 +259,14 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isRuntimeTextureCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.runtime_compat.main_menu_preview_reuse=" +
+                if (CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
             "-Damethyst.gdx.texture_pressure_downscale=" +
                 if (CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)) "true" else "false"
         )

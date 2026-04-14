@@ -85,6 +85,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isMainMenuPreviewReuseCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isMainMenuPreviewReuseCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setMainMenuPreviewReuseCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setMainMenuPreviewReuseCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isLargeTextureDownscaleCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isLargeTextureDownscaleCompatEnabled(context)
     }

@@ -69,6 +69,8 @@
     <string name="compat_fragment_shader_precision_compat_desc">开启后，在 GLES/ANGLE 路径下运行的 fragment shader 会自动补上缺失的默认 precision 声明，用于减少 “no default precision defined for variable” 这类编译错误。这是运行时兼容开关，下次启动游戏后生效。</string>
     <string name="compat_runtime_texture_compat_title">运行时纹理兼容补丁</string>
     <string name="compat_runtime_texture_compat_desc">用于修复运行时动态创建纹理导致的黑块问题，如果出现材质丢失的问题，可以考虑打开。优点：可继续修复导入期未覆盖的黑块问题。缺点：会增加启动阶段 managed texture 扫描带来的 CPU/GPU 开销，且运行时 Linear/Clamp 兜底可能让部分纹理变糊。默认关闭以优先性能。</string>
+    <string name="compat_main_menu_preview_reuse_title">主菜单角色预览复用</string>
+    <string name="compat_main_menu_preview_reuse_desc">开启后，主菜单角色预览在安全情况下会复用已存在的角色实例，并缓存 modded 角色选项用到的按钮/立绘纹理，避免每次回到主菜单都重复重建和重复加载。这能降低回主菜单时的抖动，也让相关诊断日志更容易看。若你要排查角色选择页的兼容性回归，可临时关闭，让行为更接近原始模组栈。这个开关会在下次启动游戏后生效。</string>
     <string name="compat_large_texture_downscale_title">大纹理通用降采样兜底</string>
     <string name="compat_large_texture_downscale_desc">开启后，运行时会对超大纹理启用通用缩放：外部模组的大 atlas 页、loose texture、portrait、card art 以及其他运行时加载的大图都可能自动降采样，而特别大的纹理在 GPU 内存压力超过软预算后也会进一步缩小上传，用于降低 HarmonyOS/Android 兼容层上的 Gpu Leak 强杀。代价是部分资源会更糊一些。默认开启。</string>
     <string name="compat_texture_pressure_downscale_divisor_title">大纹理降采样强度</string>

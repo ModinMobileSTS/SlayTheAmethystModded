@@ -64,6 +64,9 @@ fun LauncherCompatibilityScreen(
             viewModel.onFragmentShaderPrecisionCompatToggled(context, enabled)
         },
         onRuntimeTextureCompatToggled = { enabled -> viewModel.onRuntimeTextureCompatToggled(context, enabled) },
+        onMainMenuPreviewReuseCompatToggled = { enabled ->
+            viewModel.onMainMenuPreviewReuseCompatToggled(context, enabled)
+        },
         onLargeTextureDownscaleCompatToggled = { enabled ->
             viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
         },
@@ -98,6 +101,7 @@ private fun LauncherCompatibilityScreenPreview() {
             vupShionModCompatEnabled = true,
             fragmentShaderPrecisionCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
+            mainMenuPreviewReuseCompatEnabled = true,
             largeTextureDownscaleCompatEnabled = true,
             texturePressureDownscaleDivisor = 2,
             forceLinearMipmapFilterEnabled = true,
@@ -122,6 +126,7 @@ private fun LauncherCompatibilityScreenContent(
     onVupShionModCompatToggled: (Boolean) -> Unit = {},
     onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
+    onMainMenuPreviewReuseCompatToggled: (Boolean) -> Unit = {},
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
@@ -187,6 +192,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.runtimeTextureCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onRuntimeTextureCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_main_menu_preview_reuse_title),
+                    description = stringResource(R.string.compat_main_menu_preview_reuse_desc),
+                    checked = uiState.mainMenuPreviewReuseCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onMainMenuPreviewReuseCompatToggled
                 )
 
                 CompatibilitySwitchRow(

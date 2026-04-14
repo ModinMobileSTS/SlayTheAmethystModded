@@ -21,6 +21,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val vupShionModCompatEnabled: Boolean = true,
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
+        val mainMenuPreviewReuseCompatEnabled: Boolean = true,
         val largeTextureDownscaleCompatEnabled: Boolean = true,
         val texturePressureDownscaleDivisor: Int = 2,
         val forceLinearMipmapFilterEnabled: Boolean = true,
@@ -44,6 +45,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             vupShionModCompatEnabled = CompatibilitySettings.isVupShionModCompatEnabled(host),
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
+            mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
@@ -115,6 +117,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setRuntimeTextureCompatEnabled(host, enabled)
         uiState = uiState.copy(runtimeTextureCompatEnabled = enabled)
+    }
+
+    fun onMainMenuPreviewReuseCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setMainMenuPreviewReuseCompatEnabled(host, enabled)
+        uiState = uiState.copy(mainMenuPreviewReuseCompatEnabled = enabled)
     }
 
     fun onLargeTextureDownscaleCompatToggled(host: Context, enabled: Boolean) {
