@@ -78,6 +78,27 @@ internal data class ExperimentalGithubDirectAccessRuntime(
 internal object GithubAcceleratedHttp {
     private val runtimeCache = ConcurrentHashMap<String, ExperimentalGithubDirectAccessRuntime>()
 
+    fun createClientPair(
+        context: Context,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        followRedirects: Boolean = true,
+    ): GithubRequestClients {
+        return GithubRequestClients(
+            plainClient = createPlainClient(
+                connectTimeoutMs = connectTimeoutMs,
+                readTimeoutMs = readTimeoutMs,
+                followRedirects = followRedirects,
+            ),
+            acceleratedClient = createClient(
+                context = context,
+                connectTimeoutMs = connectTimeoutMs,
+                readTimeoutMs = readTimeoutMs,
+                followRedirects = followRedirects,
+            ),
+        )
+    }
+
     fun createClient(
         context: Context,
         connectTimeoutMs: Int,
@@ -88,7 +109,11 @@ internal object GithubAcceleratedHttp {
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createExperimentalGithubDirectAccessRuntime(filesDir)
         }
-        return OkHttpClient.Builder()
+        return createPlainClient(
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
+            followRedirects = followRedirects,
+        ).newBuilder()
             .connectTimeout(connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .readTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .writeTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
@@ -102,6 +127,29 @@ internal object GithubAcceleratedHttp {
     internal fun clearRuntimeCacheForTests() {
         runtimeCache.clear()
     }
+}
+
+internal data class GithubRequestClients(
+    val plainClient: OkHttpClient,
+    val acceleratedClient: OkHttpClient,
+) {
+    fun pick(useAcceleration: Boolean): OkHttpClient {
+        return if (useAcceleration) acceleratedClient else plainClient
+    }
+}
+
+internal fun createPlainClient(
+    connectTimeoutMs: Int,
+    readTimeoutMs: Int,
+    followRedirects: Boolean = true,
+): OkHttpClient {
+    return OkHttpClient.Builder()
+        .connectTimeout(connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        .readTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        .writeTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        .followRedirects(followRedirects)
+        .followSslRedirects(followRedirects)
+        .build()
 }
 
 internal fun createExperimentalGithubDirectAccessRuntime(

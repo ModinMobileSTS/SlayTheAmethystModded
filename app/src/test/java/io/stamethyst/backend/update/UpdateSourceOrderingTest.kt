@@ -7,6 +7,11 @@ import org.junit.Test
 
 class UpdateSourceOrderingTest {
     @Test
+    fun defaultPreferredSource_isAcceleratedDirect() {
+        assertEquals(UpdateSource.ACCELERATED_DIRECT, UpdateSource.DEFAULT_PREFERRED_USER_SOURCE)
+    }
+
+    @Test
     fun metadataCandidates_keepPreferredSourceFirstEvenWhenItWasDownloadOnly() {
         assertEquals(
             listOf(
@@ -17,6 +22,21 @@ class UpdateSourceOrderingTest {
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_COM)
+        )
+    }
+
+    @Test
+    fun metadataCandidates_acceleratedDirectUsesWattFirstThenMirrorsThenOfficial() {
+        assertEquals(
+            listOf(
+                UpdateSource.ACCELERATED_DIRECT,
+                UpdateSource.GH_PROXY_COM,
+                UpdateSource.GH_PROXY_VIP,
+                UpdateSource.GH_LLKK,
+                UpdateSource.GH_PROXY_NET,
+                UpdateSource.OFFICIAL
+            ),
+            UpdateSource.metadataCandidates(UpdateSource.ACCELERATED_DIRECT)
         )
     }
 
@@ -94,6 +114,7 @@ class UpdateSourceOrderingTest {
                 UpdateSource.GH_PROXY_VIP,
                 UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_LLKK,
+                UpdateSource.ACCELERATED_DIRECT,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.oneShotDownloadSelectionSources(UpdateSource.GH_PROXY_VIP)
@@ -108,6 +129,7 @@ class UpdateSourceOrderingTest {
                 UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_PROXY_VIP,
                 UpdateSource.GH_LLKK,
+                UpdateSource.ACCELERATED_DIRECT,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.oneShotDownloadSelectionSources(UpdateSource.GH_PROXY_NET)

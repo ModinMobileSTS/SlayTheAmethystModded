@@ -1,19 +1,18 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
+import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
 import java.util.Locale
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONTokener
 
@@ -72,8 +71,17 @@ object ModSuggestionService {
         val localeKey = currentLocaleKey(context)
         val cacheFile = RuntimePaths.modSuggestionCacheFile(context, localeKey)
         val existingRawJson = readCacheFile(cacheFile)
+        val clients = GithubAcceleratedHttp.createClientPair(
+            context = context,
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            followRedirects = true,
+        )
         val fetchedRawJson = GithubMirrorFallback.run(source) { candidate ->
-            requestText(candidate.buildUrl(resolveSuggestionUrl(localeKey)))
+            requestText(
+                clients.pick(candidate.usesGithubAcceleration),
+                candidate.buildUrl(resolveSuggestionUrl(localeKey))
+            )
         }.value
         val contentChanged = hasContentChanged(existingRawJson, fetchedRawJson)
         if (contentChanged) {
@@ -178,35 +186,18 @@ object ModSuggestionService {
     }
 
     @Throws(IOException::class)
-    private fun requestText(requestUrl: String): String {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", USER_AGENT)
-        }
-        try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                throw IOException("HTTP $responseCode")
+    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("Accept", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
             }
-            BufferedInputStream(connection.inputStream).use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) {
-                        break
-                    }
-                    output.write(buffer, 0, read)
-                }
-                return output.toString(StandardCharsets.UTF_8.name())
-            }
-        } finally {
-            connection.disconnect()
+            return response.body.bytes().toString(StandardCharsets.UTF_8)
         }
     }
 }

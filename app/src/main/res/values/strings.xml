@@ -482,7 +482,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="update_auto_check_disabled">Auto-check updates: Disabled</string>
     <string name="update_auto_check_desc">When enabled, the launcher checks for the latest release on startup. If no update is found, it stays silent.</string>
     <string name="update_mirror_title">Mirror source</string>
-    <string name="update_mirror_desc">Update checks, APK download links, and native library market downloads all use this selected source.</string>
+    <string name="update_mirror_desc">Update checks, feedback issue browsing, mod suggestions, and other GitHub-backed downloads all use this selected source or direct-access strategy.</string>
     <string name="update_manual_check_title">Check for updates now</string>
     <string name="update_manual_check_running">Checking for updates...</string>
     <string name="update_history_title">View release history</string>

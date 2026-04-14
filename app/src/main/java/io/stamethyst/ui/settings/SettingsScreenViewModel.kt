@@ -383,7 +383,7 @@ class SettingsScreenViewModel : ViewModel() {
         )
         executor.execute {
             try {
-                val catalog = NativeLibraryMarketService.fetchCatalog(mirrorSource)
+                val catalog = NativeLibraryMarketService.fetchCatalog(host, mirrorSource)
                 nativeLibraryMarketCatalog = catalog
                 val packageStates = NativeLibraryMarketService.resolvePackageStates(host, catalog)
                 host.runOnUiThread {

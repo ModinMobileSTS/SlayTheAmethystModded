@@ -84,6 +84,10 @@ class LauncherUpdateServiceParsingTest {
             "https://github.com/example/release.apk",
             UpdateSource.OFFICIAL.buildUrl("https://github.com/example/release.apk")
         )
+        assertEquals(
+            "https://github.com/example/release.apk",
+            UpdateSource.ACCELERATED_DIRECT.buildUrl("https://github.com/example/release.apk")
+        )
     }
 
     @Test

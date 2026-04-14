@@ -3,23 +3,22 @@ package io.stamethyst.backend.nativelib
 import android.content.Context
 import android.content.res.AssetManager
 import io.stamethyst.backend.fs.FileTreeCleaner
+import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONTokener
 
@@ -68,9 +67,23 @@ object NativeLibraryMarketService {
     private const val DOWNLOAD_PROGRESS_REPORT_INTERVAL_NS = 200_000_000L
     private const val DOWNLOAD_PROGRESS_REPORT_STEP_BYTES = 64L * 1024L
 
-    fun fetchCatalog(source: UpdateSource): List<NativeLibraryMarketCatalogEntry> {
+    fun fetchCatalog(
+        context: Context,
+        source: UpdateSource,
+    ): List<NativeLibraryMarketCatalogEntry> {
+        val clients = GithubAcceleratedHttp.createClientPair(
+            context = context,
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            followRedirects = true,
+        )
         return GithubMirrorFallback.run(source) { candidate ->
-            parseCatalog(requestText(candidate.buildUrl(METADATA_URL)))
+            parseCatalog(
+                requestText(
+                    clients.pick(candidate.usesGithubAcceleration),
+                    candidate.buildUrl(METADATA_URL)
+                )
+            )
         }.value
     }
 
@@ -144,6 +157,12 @@ object NativeLibraryMarketService {
         )
         prepareCleanDirectory(stagingDir)
         try {
+            val clients = GithubAcceleratedHttp.createClientPair(
+                context = context,
+                connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                readTimeoutMs = READ_TIMEOUT_MS,
+                followRedirects = true,
+            )
             val downloadedArtifactsDir = File(stagingDir, "downloads")
             prepareCleanDirectory(downloadedArtifactsDir)
             val expandedLibrariesDir = File(stagingDir, "expanded")
@@ -159,8 +178,9 @@ object NativeLibraryMarketService {
                         buildDownloadedArtifactFileName(downloadIndex, file.fileName)
                     )
                     downloadFile(
-                        requestUrl,
-                        downloadedFile,
+                        client = clients.pick(candidate.usesGithubAcceleration),
+                        requestUrl = requestUrl,
+                        targetFile = downloadedFile,
                         fileName = file.fileName,
                         fileIndex = downloadIndex,
                         fileCount = entry.files.size,
@@ -613,40 +633,24 @@ object NativeLibraryMarketService {
     }
 
     @Throws(IOException::class)
-    private fun requestText(requestUrl: String): String {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", USER_AGENT)
-        }
-        try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                throw IOException("HTTP $responseCode")
+    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("Accept", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
             }
-            BufferedInputStream(connection.inputStream).use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) {
-                        break
-                    }
-                    output.write(buffer, 0, read)
-                }
-                return output.toString(StandardCharsets.UTF_8.name())
-            }
-        } finally {
-            connection.disconnect()
+            return response.body.bytes().toString(StandardCharsets.UTF_8)
         }
     }
 
     @Throws(IOException::class)
     private fun downloadFile(
+        client: OkHttpClient,
         requestUrl: String,
         targetFile: File,
         fileName: String,
@@ -654,20 +658,16 @@ object NativeLibraryMarketService {
         fileCount: Int,
         progressCallback: ((NativeLibraryMarketInstallProgress) -> Unit)?
     ) {
-        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            instanceFollowRedirects = true
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("User-Agent", USER_AGENT)
-        }
-        try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                throw IOException("HTTP $responseCode")
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("User-Agent", USER_AGENT)
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
             }
-            val totalBytes = connection.contentLengthLong.takeIf { it > 0L }
+            val totalBytes = response.body.contentLength().takeIf { it > 0L }
             val parent = targetFile.parentFile
             if (parent != null && !parent.exists() && !parent.mkdirs()) {
                 throw IOException("Failed to create directory: ${parent.absolutePath}")
@@ -676,7 +676,7 @@ object NativeLibraryMarketService {
                 parent ?: targetFile.parentFile ?: targetFile.absoluteFile.parentFile ?: targetFile.parentFile,
                 "${targetFile.name}.part"
             )
-            BufferedInputStream(connection.inputStream).use { input ->
+            response.body.byteStream().use { input ->
                 FileOutputStream(tempFile, false).use { output ->
                     try {
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -741,8 +741,6 @@ object NativeLibraryMarketService {
             targetFile.setReadable(true, false)
             targetFile.setWritable(true, true)
             targetFile.setExecutable(true, false)
-        } finally {
-            connection.disconnect()
         }
     }
 

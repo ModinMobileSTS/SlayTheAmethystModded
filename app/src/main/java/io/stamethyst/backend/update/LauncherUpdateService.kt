@@ -2,6 +2,7 @@ package io.stamethyst.backend.update
 
 import android.content.Context
 import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.GithubRequestClients
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import okhttp3.OkHttpClient
@@ -25,11 +26,14 @@ object LauncherUpdateService {
         currentVersion: String,
         preferredUserSource: UpdateSource,
     ): UpdateCheckExecutionResult {
-        val client = createGithubClient(context)
+        val clients = createGithubClients(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
         val metadataResult = try {
             GithubMirrorFallback.run(normalizedPreferredSource) { source ->
-                val responseText = requestText(client, source.buildUrl(LATEST_RELEASE_API_URL))
+                val responseText = requestText(
+                    clients.pick(source.usesGithubAcceleration),
+                    source.buildUrl(LATEST_RELEASE_API_URL)
+                )
                 parseLatestRelease(responseText)
                     ?: throw IOException("Invalid release payload.")
             }
@@ -58,7 +62,7 @@ object LauncherUpdateService {
 
         val downloadResolution = try {
             resolveDownloadResolution(
-                client = client,
+                clients = clients,
                 release = release,
                 preferredUserSource = normalizedPreferredSource,
                 metadataSource = metadataSource
@@ -86,12 +90,15 @@ object LauncherUpdateService {
         preferredUserSource: UpdateSource,
         limit: Int = DEFAULT_RELEASE_HISTORY_LIMIT,
     ): UpdateReleaseHistoryResult {
-        val client = createGithubClient(context)
+        val clients = createGithubClients(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
         val normalizedLimit = limit.coerceIn(1, 20)
         val metadataResult = GithubMirrorFallback.run(normalizedPreferredSource) { source ->
             val requestUrl = source.buildUrl("$RELEASE_HISTORY_API_URL?per_page=$normalizedLimit")
-            val responseText = requestText(client, requestUrl)
+            val responseText = requestText(
+                clients.pick(source.usesGithubAcceleration),
+                requestUrl
+            )
             parseReleaseHistory(responseText, normalizedLimit)
                 .takeIf { it.isNotEmpty() }
                 ?: throw IOException("Release history is empty.")
@@ -150,7 +157,7 @@ object LauncherUpdateService {
     }
 
     internal fun resolveDownloadResolution(
-        client: OkHttpClient,
+        clients: GithubRequestClients,
         release: UpdateReleaseInfo,
         preferredUserSource: UpdateSource,
         metadataSource: UpdateSource,
@@ -162,7 +169,7 @@ object LauncherUpdateService {
             )
         ) { source ->
             val candidateUrl = source.buildUrl(release.assetDownloadUrl)
-            if (!isDownloadCandidateReachable(client, candidateUrl)) {
+            if (!isDownloadCandidateReachable(clients.pick(source.usesGithubAcceleration), candidateUrl)) {
                 throw IOException("Unreachable APK download link.")
             }
             UpdateDownloadResolution(
@@ -172,8 +179,8 @@ object LauncherUpdateService {
         }.value
     }
 
-    private fun createGithubClient(context: Context): OkHttpClient {
-        return GithubAcceleratedHttp.createClient(
+    private fun createGithubClients(context: Context): GithubRequestClients {
+        return GithubAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

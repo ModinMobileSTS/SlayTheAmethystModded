@@ -3,6 +3,7 @@ package io.stamethyst.backend.feedback
 import android.content.Context
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
@@ -113,11 +114,16 @@ object FeedbackIssueSyncService {
         if (pageSize <= 0) {
             throw IOException("议题分页大小不正确。")
         }
-        val client = createGithubClient(context)
+        val clients = createGithubClients(context)
         val preferred = UpdateMirrorManager.current(context)
         try {
             return GithubMirrorFallback.run(preferred) { source ->
-                fetchIssuePageFromSource(client, source, page, pageSize)
+                fetchIssuePageFromSource(
+                    clients.pick(source.usesGithubAcceleration),
+                    source,
+                    page,
+                    pageSize
+                )
             }.value
         } catch (error: Throwable) {
             throw buildWrappedIOException("无法加载议题列表：", error)
@@ -136,9 +142,9 @@ object FeedbackIssueSyncService {
 
         val syncedAtMs = System.currentTimeMillis()
         val remoteByIssueNumber = LinkedHashMap<Long, FeedbackIssueThreadCache>(initialSubscriptions.size)
-        val client = createGithubClient(context)
+        val clients = createGithubClients(context)
         initialSubscriptions.forEach { subscription ->
-            val remote = fetchRemoteIssue(context, subscription.issueNumber, client)
+            val remote = fetchRemoteIssue(context, subscription.issueNumber, clients)
             FeedbackIssueLocalStore.saveIssueCache(context, remote)
             remoteByIssueNumber[subscription.issueNumber] = remote
         }
@@ -208,12 +214,16 @@ object FeedbackIssueSyncService {
     private fun fetchRemoteIssue(
         context: Context,
         issueNumber: Long,
-        client: OkHttpClient = createGithubClient(context),
+        clients: GithubRequestClients = createGithubClients(context),
     ): FeedbackIssueThreadCache {
         val preferred = UpdateMirrorManager.current(context)
         return try {
             GithubMirrorFallback.run(preferred) { source ->
-                fetchRemoteIssueFromSource(client, source, issueNumber)
+                fetchRemoteIssueFromSource(
+                    clients.pick(source.usesGithubAcceleration),
+                    source,
+                    issueNumber
+                )
             }.value
         } catch (error: Throwable) {
             throw buildWrappedIOException("无法同步 Issue #$issueNumber：", error)
@@ -382,8 +392,8 @@ object FeedbackIssueSyncService {
         )
     }
 
-    private fun createGithubClient(context: Context): OkHttpClient {
-        return GithubAcceleratedHttp.createClient(
+    private fun createGithubClients(context: Context): GithubRequestClients {
+        return GithubAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

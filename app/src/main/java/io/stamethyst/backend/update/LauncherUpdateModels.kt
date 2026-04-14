@@ -14,6 +14,7 @@ enum class UpdateSource(
     val supportsMetadataCheck: Boolean,
     val supportsDownloadProxy: Boolean,
     val userSelectable: Boolean,
+    val usesGithubAcceleration: Boolean = false,
 ) {
     GH_PROXY_COM(
         id = "gh_proxy_com",
@@ -47,6 +48,15 @@ enum class UpdateSource(
         supportsDownloadProxy = true,
         userSelectable = false
     ),
+    ACCELERATED_DIRECT(
+        id = "accelerated_direct",
+        displayName = "加速直连",
+        proxyPrefix = null,
+        supportsMetadataCheck = true,
+        supportsDownloadProxy = true,
+        userSelectable = true,
+        usesGithubAcceleration = true
+    ),
     OFFICIAL(
         id = "official",
         displayName = "GitHub",
@@ -72,7 +82,7 @@ enum class UpdateSource(
     }
 
     companion object {
-        val DEFAULT_PREFERRED_USER_SOURCE: UpdateSource = GH_PROXY_COM
+        val DEFAULT_PREFERRED_USER_SOURCE: UpdateSource = ACCELERATED_DIRECT
         private val mirrorableGithubHosts = setOf(
             "github.com",
             "api.github.com",
@@ -105,7 +115,11 @@ enum class UpdateSource(
             val ordered = LinkedHashSet<UpdateSource>()
             ordered += preferred
             entries.forEach { source ->
-                if (source != preferred && source != OFFICIAL) {
+                if (
+                    source != preferred &&
+                    source != OFFICIAL &&
+                    source != ACCELERATED_DIRECT
+                ) {
                     ordered += source
                 }
             }
