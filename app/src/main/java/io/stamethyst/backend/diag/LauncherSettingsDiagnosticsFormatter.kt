@@ -185,9 +185,6 @@ internal object LauncherSettingsDiagnosticsFormatter {
                 LauncherSettingsDiagnosticsSection(
                     title = "Compatibility",
                     entries = listOf(
-                        "virtualFboPoc" to formatBoolean(
-                            CompatibilitySettings.isVirtualFboPocEnabled(context)
-                        ),
                         "globalAtlasFilterCompat" to formatBoolean(
                             CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)
                         ),

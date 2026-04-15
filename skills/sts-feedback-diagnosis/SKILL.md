@@ -70,7 +70,6 @@ description: Analyze SlayTheAmethyst feedback report bundles such as `sts-feedba
 - `launcher_settings.txt` is a resolved snapshot, not raw preferences. Use it to reason about actual runtime settings.
 - `mobileHudEnabled=true` can break some mod UIs. Project strings explicitly call out Loadout console display issues.
 - Compatibility toggles already encode known symptom areas:
-  - `virtualFboPoc`: framebuffer-construction or render-crash workaround
   - `runtimeTextureCompat`: runtime-created textures going black
   - `largeTextureDownscaleCompat`: GPU pressure mitigation at the cost of sharpness
   - `nonRenderableFboFormatCompat`: incomplete-attachment or FBO startup crashes

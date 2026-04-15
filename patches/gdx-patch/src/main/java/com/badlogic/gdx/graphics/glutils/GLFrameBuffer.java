@@ -136,7 +136,6 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_PRESSURE_DOWNSCALE_PROP, true);
 	private final static int PRESSURE_DOWNSCALE_NONE = 0;
 	private final static int PRESSURE_DOWNSCALE_ALLOW = 1;
-	private final static int PRESSURE_DOWNSCALE_PROTECT = 2;
 	private final static String GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_PROP =
 		"amethyst.gdx.fbo_pressure_soft_budget_bytes";
 	private final static long GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES =
@@ -190,7 +189,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private static volatile int frameBufferLivePeak;
 	private static volatile long frameBufferNativeBytesPeak;
 	private static volatile long currentFrameId;
-	private static volatile long lastFrameBufferSweepFrame = -1L;
+	private static volatile long lastFrameBufferIdleSweepFrame = -1L;
+	private static volatile long lastFrameBufferManagerSweepFrame = -1L;
 
 	private final long debugFrameBufferId = allocateDebugFrameBufferId();
 	private int debugBuildGeneration = 0;
@@ -1079,14 +1079,18 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	public static void reclaimIdleFrameBuffers (Application app, long frameId) {
 		if ((!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED && !GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) || Gdx.gl20 == null) return;
 		if (app == null || frameId < 0L) return;
-		int sweepInterval = resolveFrameBufferSweepInterval();
-		if (sweepInterval <= 0) return;
-		if (lastFrameBufferSweepFrame >= 0L
-			&& frameId - lastFrameBufferSweepFrame < sweepInterval) {
-			return;
+		boolean idleSweepDue =
+			GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED
+				&& shouldRunFrameBufferSweep(frameId, lastFrameBufferIdleSweepFrame, GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL);
+		boolean managerSweepDue =
+			GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED
+				&& shouldRunFrameBufferSweep(frameId, lastFrameBufferManagerSweepFrame, GPU_RESOURCE_DIAG_FBO_MANAGER_SWEEP_INTERVAL);
+		if (!idleSweepDue && !managerSweepDue) return;
+		if (idleSweepDue) {
+			lastFrameBufferIdleSweepFrame = frameId;
 		}
-		lastFrameBufferSweepFrame = frameId;
-		if (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) {
+		if (managerSweepDue) {
+			lastFrameBufferManagerSweepFrame = frameId;
 			FRAMEBUFFER_MANAGER_SWEEPS.incrementAndGet();
 		}
 
@@ -1094,7 +1098,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		if (bufferArray == null || bufferArray.size == 0) return;
 
 		int reclaimed = 0;
-		if (GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED) {
+		if (idleSweepDue) {
 			for (int i = 0; i < bufferArray.size; i++) {
 				if (bufferArray.get(i).reclaimIfIdle(frameId)) {
 					reclaimed++;
@@ -1103,7 +1107,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		}
 
 		FrameBufferPressureSweepResult pressureResult = null;
-		if (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED
+		if (managerSweepDue
 			&& FRAMEBUFFERS_NATIVE_BYTES.get() > GPU_RESOURCE_DIAG_FBO_MANAGER_SOFT_BUDGET_BYTES) {
 			pressureResult = reclaimPressureFrameBuffers(bufferArray, frameId);
 		}
@@ -1179,15 +1183,9 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return FRAMEBUFFERS_NATIVE_BYTES.get();
 	}
 
-	private static int resolveFrameBufferSweepInterval () {
-		int interval = Integer.MAX_VALUE;
-		if (GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED) {
-			interval = Math.min(interval, GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_SWEEP_INTERVAL);
-		}
-		if (GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) {
-			interval = Math.min(interval, GPU_RESOURCE_DIAG_FBO_MANAGER_SWEEP_INTERVAL);
-		}
-		return interval == Integer.MAX_VALUE ? -1 : interval;
+	private static boolean shouldRunFrameBufferSweep (long frameId, long lastSweepFrame, int sweepInterval) {
+		if (sweepInterval <= 0) return false;
+		return lastSweepFrame < 0L || frameId - lastSweepFrame >= sweepInterval;
 	}
 
 	private static FrameBufferPressureSweepResult reclaimPressureFrameBuffers (Array<GLFrameBuffer> bufferArray, long frameId) {

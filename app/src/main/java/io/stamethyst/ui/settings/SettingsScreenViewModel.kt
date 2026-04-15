@@ -2138,10 +2138,6 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, diagnostics.glBridgeSwapHeartbeatDebugEnabled)
         )
         lines += host.getString(
-            R.string.settings_status_virtual_fbo_poc,
-            toggleStateText(host, compatibility.virtualFboPocEnabled)
-        )
-        lines += host.getString(
             R.string.settings_status_global_atlas_filter_compat,
             toggleStateText(host, compatibility.globalAtlasFilterCompatEnabled)
         )

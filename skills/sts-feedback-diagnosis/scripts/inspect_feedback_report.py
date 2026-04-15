@@ -51,7 +51,6 @@ SELECTED_SETTINGS = (
     "JvmAndDiagnostics.jvm.heapMaxMb",
     "JvmAndDiagnostics.diag.logcatCaptureEnabled",
     "JvmAndDiagnostics.diag.launcherLogcatCaptureEnabled",
-    "Compatibility.virtualFboPoc",
     "Compatibility.runtimeTextureCompat",
     "Compatibility.largeTextureDownscaleCompat",
     "Compatibility.nonRenderableFboFormatCompat",

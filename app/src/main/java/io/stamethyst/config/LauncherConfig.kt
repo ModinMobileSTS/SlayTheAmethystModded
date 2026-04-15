@@ -81,7 +81,6 @@ object LauncherConfig {
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
     private const val PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED =
         "jvm_string_deduplication_enabled"
-    private const val PREF_KEY_VIRTUAL_FBO_POC = "compat_virtual_fbo_poc"
     private const val PREF_KEY_GLOBAL_ATLAS_FILTER_COMPAT = "compat_global_atlas_filter_compat"
     private const val PREF_KEY_MOD_MANIFEST_ROOT_COMPAT = "compat_mod_manifest_root_compat"
     private const val PREF_KEY_FRIEREN_MOD_COMPAT = "compat_frieren_mod_compat"
@@ -695,16 +694,6 @@ object LauncherConfig {
     fun setJvmStringDeduplicationEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED, enabled)
-        }
-    }
-
-    fun isVirtualFboPocEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(PREF_KEY_VIRTUAL_FBO_POC, false)
-    }
-
-    fun setVirtualFboPocEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_VIRTUAL_FBO_POC, enabled)
         }
     }
 

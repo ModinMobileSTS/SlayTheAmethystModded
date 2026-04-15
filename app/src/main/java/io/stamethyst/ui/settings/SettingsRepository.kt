@@ -85,7 +85,6 @@ internal object SettingsRepository {
     )
 
     data class CompatibilitySnapshot(
-        val virtualFboPocEnabled: Boolean,
         val globalAtlasFilterCompatEnabled: Boolean,
         val modManifestRootCompatEnabled: Boolean,
         val runtimeTextureCompatEnabled: Boolean,
@@ -175,7 +174,6 @@ internal object SettingsRepository {
                     LauncherPreferences.isGlBridgeSwapHeartbeatDebugEnabled(context)
             ),
             compatibility = CompatibilitySnapshot(
-                virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(context),
                 globalAtlasFilterCompatEnabled =
                     CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context),
                 modManifestRootCompatEnabled =

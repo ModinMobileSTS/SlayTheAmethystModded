@@ -45,8 +45,6 @@
     <string name="compat_runtime_section_desc">These switches do not modify already imported mod jars. Changes apply to later launches/runtime behavior, so no mod re-import is needed. Some options take effect on the next game launch.</string>
     <string name="compat_import_patch_section_title">Import-time mod patching</string>
     <string name="compat_import_patch_section_desc">These switches only affect mods imported from now on. Existing jars are not retroactively rewritten, so re-import the relevant mod if you want the patch to apply.</string>
-    <string name="compat_virtual_fbo_poc_title">Virtual FBO</string>
-    <string name="compat_virtual_fbo_poc_desc">Enables GLFrameBuffer Virtual FBO experimental path (amethyst.gdx.virtual_fbo_poc). Used to avoid unknown framebuffer status crashes, but it affects post-processing and can cause some render-skip issues. If you hit rendering-related crashes, consider enabling this option.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
     <string name="compat_global_atlas_filter_compat_desc">Newly imported mods are patched offline during import: atlas filter lines containing mipmap are rewritten to Linear,Linear. Keeping this enabled gives higher compatibility; if disabled, new imports will not be patched. Example fix: black blocks on the Ring of Fate main menu.</string>
     <string name="compat_import_atlas_downscale_compat_title">Import-time atlas offline pre-downscale</string>
@@ -1064,7 +1062,6 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="settings_status_gpu_resource_diag">GPU resource diagnostics: %1$s</string>
     <string name="settings_status_gdx_pad_cursor_debug">GDX pad cursor debug log: %1$s</string>
     <string name="settings_status_glbridge_swap_heartbeat">GLBridge swap heartbeat log: %1$s</string>
-    <string name="settings_status_virtual_fbo_poc">Virtual FBO PoC: %1$s</string>
     <string name="settings_status_global_atlas_filter_compat">Global atlas filter compat: %1$s</string>
     <string name="settings_status_import_atlas_downscale_compat">Import atlas pre-downscale: %1$s</string>
     <string name="settings_status_import_atlas_downscale_level">Import atlas pre-downscale level: max edge %1$dpx</string>

@@ -123,7 +123,6 @@ The `launcher_` prefixed files are launcher-side capture files. Use them when th
 
 - Project strings explicitly warn that `mobileHudEnabled=true` can make some mod UIs render incorrectly, including Loadout console issues.
 - Compatibility descriptions already map toggles to symptom families:
-  - `virtualFboPoc`: render crash or framebuffer status issues
   - `runtimeTextureCompat`: black textures or missing textures
   - `largeTextureDownscaleCompat`: texture/GPU pressure mitigation
   - `nonRenderableFboFormatCompat`: incomplete attachment / FBO startup crash

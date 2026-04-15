@@ -5,16 +5,6 @@ import io.stamethyst.config.LauncherConfig
 
 object CompatibilitySettings {
     @JvmStatic
-    fun isVirtualFboPocEnabled(context: Context): Boolean {
-        return LauncherConfig.isVirtualFboPocEnabled(context)
-    }
-
-    @JvmStatic
-    fun setVirtualFboPocEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setVirtualFboPocEnabled(context, enabled)
-    }
-
-    @JvmStatic
     fun isGlobalAtlasFilterCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isGlobalAtlasFilterCompatEnabled(context)
     }

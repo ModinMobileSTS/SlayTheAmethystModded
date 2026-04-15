@@ -54,7 +54,6 @@ fun LauncherCompatibilityScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onVirtualFboPocToggled = { enabled -> viewModel.onVirtualFboPocToggled(context, enabled) },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
         onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
@@ -99,7 +98,6 @@ private fun LauncherCompatibilityScreenPreview() {
     LauncherCompatibilityScreenContent(
         uiState = CompatibilityScreenViewModel.UiState(
             busy = false,
-            virtualFboPocEnabled = false,
             globalAtlasFilterCompatEnabled = true,
             modManifestRootCompatEnabled = true,
             frierenModCompatEnabled = true,
@@ -126,7 +124,6 @@ private fun LauncherCompatibilityScreenContent(
     modifier: Modifier = Modifier,
     uiState: CompatibilityScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onVirtualFboPocToggled: (Boolean) -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
     onModManifestRootCompatToggled: (Boolean) -> Unit = {},
     onFrierenModCompatToggled: (Boolean) -> Unit = {},
@@ -180,14 +177,6 @@ private fun LauncherCompatibilityScreenContent(
                 title = stringResource(R.string.compat_runtime_section_title),
                 description = stringResource(R.string.compat_runtime_section_desc)
             ) {
-                CompatibilitySwitchRow(
-                    title = stringResource(R.string.compat_virtual_fbo_poc_title),
-                    description = stringResource(R.string.compat_virtual_fbo_poc_desc),
-                    checked = uiState.virtualFboPocEnabled,
-                    enabled = !uiState.busy,
-                    onCheckedChange = onVirtualFboPocToggled
-                )
-
                 CompatibilitySwitchRow(
                     title = stringResource(R.string.compat_fragment_shader_precision_compat_title),
                     description = stringResource(R.string.compat_fragment_shader_precision_compat_desc),

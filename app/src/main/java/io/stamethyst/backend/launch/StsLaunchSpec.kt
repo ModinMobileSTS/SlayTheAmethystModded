@@ -247,10 +247,6 @@ object StsLaunchSpec {
         args.add("-Dawt.toolkit=net.java.openjdk.cacio.ctc.CTCToolkit")
         args.add("-Djava.awt.graphicsenv=net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment")
         args.add(
-            "-Damethyst.gdx.virtual_fbo_poc=" +
-                if (CompatibilitySettings.isVirtualFboPocEnabled(context)) "true" else "false"
-        )
-        args.add(
             "-Damethyst.gdx.global_atlas_filter_compat=" +
                 if (CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) "true" else "false"
         )

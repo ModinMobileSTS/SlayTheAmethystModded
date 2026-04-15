@@ -13,7 +13,6 @@ class CompatibilityScreenViewModel : ViewModel() {
     data class UiState(
         val busy: Boolean = false,
         val busyMessage: String? = null,
-        val virtualFboPocEnabled: Boolean = false,
         val globalAtlasFilterCompatEnabled: Boolean = true,
         val modManifestRootCompatEnabled: Boolean = true,
         val frierenModCompatEnabled: Boolean = true,
@@ -39,7 +38,6 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             busy = false,
             busyMessage = null,
-            virtualFboPocEnabled = CompatibilitySettings.isVirtualFboPocEnabled(host),
             globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
             modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host),
             frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
@@ -57,14 +55,6 @@ class CompatibilityScreenViewModel : ViewModel() {
             fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
             fboPressureDownscaleCompatEnabled = CompatibilitySettings.isFboPressureDownscaleCompatEnabled(host)
         )
-    }
-
-    fun onVirtualFboPocToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setVirtualFboPocEnabled(host, enabled)
-        uiState = uiState.copy(virtualFboPocEnabled = enabled)
     }
 
     fun onGlobalAtlasFilterCompatToggled(host: Context, enabled: Boolean) {
