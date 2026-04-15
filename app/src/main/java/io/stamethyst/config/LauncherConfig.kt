@@ -94,6 +94,8 @@ object LauncherConfig {
         "compat_main_menu_preview_reuse"
     private const val PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT =
         "compat_large_texture_downscale"
+    private const val PREF_KEY_TEXTURE_RESIDENCY_MANAGER_COMPAT =
+        "compat_texture_residency_manager"
     private const val PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR =
         "compat_texture_pressure_downscale_divisor"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
@@ -183,6 +185,7 @@ object LauncherConfig {
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
     const val DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED = true
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = true
+    const val DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
@@ -801,6 +804,19 @@ object LauncherConfig {
     fun setLargeTextureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT, enabled)
+        }
+    }
+
+    fun isTextureResidencyManagerCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_TEXTURE_RESIDENCY_MANAGER_COMPAT,
+            DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED
+        )
+    }
+
+    fun setTextureResidencyManagerCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_TEXTURE_RESIDENCY_MANAGER_COMPAT, enabled)
         }
     }
 

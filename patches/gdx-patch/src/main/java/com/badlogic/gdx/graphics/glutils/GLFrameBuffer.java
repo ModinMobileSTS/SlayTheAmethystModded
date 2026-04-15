@@ -1072,6 +1072,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		}
 	}
 
+	public static boolean isFrameBufferTexture (GLTexture texture) {
+		return texture != null && FRAMEBUFFER_TEXTURE_OWNERS.containsKey(texture);
+	}
+
 	public static void reclaimIdleFrameBuffers (Application app, long frameId) {
 		if ((!GPU_RESOURCE_DIAG_FBO_IDLE_RECLAIM_ENABLED && !GPU_RESOURCE_DIAG_FBO_MANAGER_ENABLED) || Gdx.gl20 == null) return;
 		if (app == null || frameId < 0L) return;

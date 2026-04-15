@@ -113,8 +113,14 @@ internal const val STS_PATCH_SINGLE_CARD_VIEW_POPUP_PREFIX =
     "com/megacrit/cardcrawl/screens/SingleCardViewPopup"
 internal const val STS_PATCH_GL_TEXTURE_CLASS =
     "com/badlogic/gdx/graphics/GLTexture.class"
+internal const val STS_PATCH_GL_TEXTURE_INNER_PREFIX =
+    "com/badlogic/gdx/graphics/GLTexture$"
+internal const val STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS =
+    "com/badlogic/gdx/graphics/TextureOwnerSummary.class"
 internal const val STS_PATCH_GL_FRAMEBUFFER_CLASS =
     "com/badlogic/gdx/graphics/glutils/GLFrameBuffer.class"
+internal const val STS_PATCH_GL_FRAMEBUFFER_INNER_PREFIX =
+    "com/badlogic/gdx/graphics/glutils/GLFrameBuffer$"
 internal const val STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS =
     "com/badlogic/gdx/graphics/glutils/FrameBufferOwnerSummary.class"
 internal const val STS_PATCH_SHADER_PROGRAM_CLASS =
@@ -162,6 +168,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_SEED_PANEL_CLASS,
         STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS,
         STS_PATCH_GL_TEXTURE_CLASS,
+        STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS,
         STS_PATCH_GL_FRAMEBUFFER_CLASS,
         STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS,
         STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS,

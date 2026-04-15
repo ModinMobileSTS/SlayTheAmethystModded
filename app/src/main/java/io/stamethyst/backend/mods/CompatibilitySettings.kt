@@ -105,6 +105,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isTextureResidencyManagerCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isTextureResidencyManagerCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setTextureResidencyManagerCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setTextureResidencyManagerCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun readTexturePressureDownscaleDivisor(context: Context): Int {
         return LauncherConfig.readTexturePressureDownscaleDivisor(context)
     }

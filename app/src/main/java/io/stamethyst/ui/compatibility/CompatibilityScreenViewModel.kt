@@ -23,6 +23,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
         val largeTextureDownscaleCompatEnabled: Boolean = true,
+        val textureResidencyManagerCompatEnabled: Boolean = false,
         val texturePressureDownscaleDivisor: Int = 2,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
@@ -48,6 +49,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
+            textureResidencyManagerCompatEnabled = CompatibilitySettings.isTextureResidencyManagerCompatEnabled(host),
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
@@ -135,6 +137,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setLargeTextureDownscaleCompatEnabled(host, enabled)
         uiState = uiState.copy(largeTextureDownscaleCompatEnabled = enabled)
+    }
+
+    fun onTextureResidencyManagerCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setTextureResidencyManagerCompatEnabled(host, enabled)
+        uiState = uiState.copy(textureResidencyManagerCompatEnabled = enabled)
     }
 
     fun onTexturePressureDownscaleDivisorChanged(host: Context, divisor: Int) {

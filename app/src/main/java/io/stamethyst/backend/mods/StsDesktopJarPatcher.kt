@@ -253,7 +253,10 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_SEED_PANEL_CLASS == entryName ||
             STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
+            entryName.startsWith(STS_PATCH_GL_TEXTURE_INNER_PREFIX) ||
+            STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_GL_FRAMEBUFFER_CLASS == entryName ||
+            entryName.startsWith(STS_PATCH_GL_FRAMEBUFFER_INNER_PREFIX) ||
             STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS == entryName ||
             STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
@@ -267,10 +270,9 @@ internal object StsDesktopJarPatcher {
     private fun isStsPatched(stsJar: File, patchEntries: Map<String, ByteArray>): Boolean {
         return try {
             ZipFile(stsJar).use { zipFile ->
-                for (className in REQUIRED_STS_PATCH_CLASSES) {
+                for ((className, expected) in patchEntries) {
                     val entry = zipFile.getEntry(className)
-                    val expected = patchEntries[className]
-                    if (entry == null || expected == null) {
+                    if (entry == null) {
                         return false
                     }
                     val actual = JarFileIoUtils.readEntryBytes(zipFile, entry)

@@ -271,6 +271,14 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.gdx.texture_residency_manager=" +
+                if (CompatibilitySettings.isTextureResidencyManagerCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
             "-Damethyst.gdx.texture_pressure_downscale_divisor=" +
                 CompatibilitySettings.readTexturePressureDownscaleDivisor(context)
         )

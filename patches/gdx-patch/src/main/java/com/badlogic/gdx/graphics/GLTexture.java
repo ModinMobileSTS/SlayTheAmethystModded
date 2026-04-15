@@ -19,11 +19,18 @@ package com.badlogic.gdx.graphics;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.badlogic.gdx.Application;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Pixmap.Blending;
@@ -33,6 +40,7 @@ import com.badlogic.gdx.graphics.TextureData.TextureDataType;
 import com.badlogic.gdx.graphics.glutils.FileTextureData;
 import com.badlogic.gdx.graphics.glutils.GLFrameBuffer;
 import com.badlogic.gdx.graphics.glutils.MipMapGenerator;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Disposable;
 
 /** Class representing an OpenGL texture by it's target and handle. Keeps track of its state like the TextureFilter and
@@ -118,6 +126,42 @@ public abstract class GLTexture implements Disposable {
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_ART_PRESSURE = 3;
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_EXTERNAL_PRESSURE = 4;
 	private static final int TEXTURE_PRESSURE_DOWNSCALE_MODE_GENERIC_PRESSURE = 5;
+	private static final String TEXTURE_RESIDENCY_MANAGER_PROP =
+		"amethyst.gdx.texture_residency_manager";
+	private static final boolean TEXTURE_RESIDENCY_MANAGER_ENABLED =
+		readBooleanSystemProperty(TEXTURE_RESIDENCY_MANAGER_PROP, false);
+	private static final String TEXTURE_RESIDENCY_SWEEP_INTERVAL_PROP =
+		"amethyst.gdx.texture_residency_sweep_interval_frames";
+	private static final int TEXTURE_RESIDENCY_SWEEP_INTERVAL =
+		readIntSystemProperty(TEXTURE_RESIDENCY_SWEEP_INTERVAL_PROP, 90, 1, 3600);
+	private static final String TEXTURE_RESIDENCY_IDLE_FRAMES_PROP =
+		"amethyst.gdx.texture_residency_idle_frames";
+	private static final int TEXTURE_RESIDENCY_IDLE_FRAMES =
+		readIntSystemProperty(TEXTURE_RESIDENCY_IDLE_FRAMES_PROP, 300, 1, 72000);
+	private static final String TEXTURE_RESIDENCY_MIN_BYTES_PROP =
+		"amethyst.gdx.texture_residency_min_bytes";
+	private static final long TEXTURE_RESIDENCY_MIN_BYTES =
+		readLongSystemProperty(TEXTURE_RESIDENCY_MIN_BYTES_PROP, 2L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private static final String TEXTURE_RESIDENCY_SOFT_BUDGET_PROP =
+		"amethyst.gdx.texture_residency_soft_budget_bytes";
+	private static final long TEXTURE_RESIDENCY_SOFT_BUDGET_BYTES =
+		readLongSystemProperty(TEXTURE_RESIDENCY_SOFT_BUDGET_PROP, 320L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private static final String TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES_PROP =
+		"amethyst.gdx.texture_residency_pressure_idle_frames";
+	private static final int TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES =
+		readIntSystemProperty(TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES_PROP, 120, 1, 72000);
+	private static final String TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES_PROP =
+		"amethyst.gdx.texture_residency_pressure_min_bytes";
+	private static final long TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES =
+		readLongSystemProperty(TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES_PROP, 2L * 1024L * 1024L, 0L, Long.MAX_VALUE);
+	private static final String TEXTURE_RESIDENCY_MAX_RECLAIMS_PROP =
+		"amethyst.gdx.texture_residency_max_reclaims_per_sweep";
+	private static final int TEXTURE_RESIDENCY_MAX_RECLAIMS =
+		readIntSystemProperty(TEXTURE_RESIDENCY_MAX_RECLAIMS_PROP, 32, 1, 512);
+	private static final String TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES_PROP =
+		"amethyst.gdx.texture_residency_restore_grace_frames";
+	private static final int TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES =
+		readIntSystemProperty(TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES_PROP, 180, 1, 72000);
 	private static final int TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT = 4;
 	private static final int GL_TEXTURE_2D_ENUM = 0x0DE1;
 	private static final int GL_TEXTURE_BINDING_2D_ENUM = 0x8069;
@@ -132,6 +176,15 @@ public abstract class GLTexture implements Disposable {
 	private static final AtomicInteger TEXTURE_BUILD_STACK_SUPPRESSED = new AtomicInteger();
 	private static final AtomicInteger TEXTURE_CONSTRUCT_STACK_UNIQUES = new AtomicInteger();
 	private static final AtomicInteger TEXTURE_CONSTRUCT_STACK_SUPPRESSED = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_IDLE_SWEEPS = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_MANAGER_SWEEPS = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_PRESSURE_SWEEPS = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_IDLE_RECLAIMS = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_PRESSURE_RECLAIMS = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_RESTORES = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RESIDENCY_RESTORE_FAILURES = new AtomicInteger();
+	private static final AtomicLong TEXTURE_RESIDENCY_RECLAIMED_BYTES = new AtomicLong();
+	private static final AtomicLong TEXTURE_RESIDENCY_RESTORED_BYTES = new AtomicLong();
 	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_BUILD_STACK_COUNTS =
 		new ConcurrentHashMap<String, AtomicInteger>();
 	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_CONSTRUCT_STACK_COUNTS =
@@ -143,6 +196,8 @@ public abstract class GLTexture implements Disposable {
 	private static final ConcurrentHashMap<Integer, String> TEXTURE_HANDLE_LIVE_SAMPLES =
 		new ConcurrentHashMap<Integer, String>();
 	private static final ConcurrentHashMap<Integer, String> TEXTURE_HANDLE_LIVE_OWNER_KEYS =
+		new ConcurrentHashMap<Integer, String>();
+	private static final ConcurrentHashMap<Integer, String> TEXTURE_HANDLE_LIVE_OWNER_SAMPLES =
 		new ConcurrentHashMap<Integer, String>();
 	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_LIVE_SOURCE_BYTES =
 		new ConcurrentHashMap<String, AtomicLong>();
@@ -156,10 +211,42 @@ public abstract class GLTexture implements Disposable {
 		new ConcurrentHashMap<String, AtomicInteger>();
 	private static final ConcurrentHashMap<String, String> TEXTURE_LIVE_OWNER_SAMPLES =
 		new ConcurrentHashMap<String, String>();
+	private static final AtomicInteger TEXTURE_UPLOAD_EVENTS = new AtomicInteger();
+	private static final AtomicInteger TEXTURE_RELEASE_EVENTS = new AtomicInteger();
+	private static final AtomicLong TEXTURE_UPLOAD_TOTAL_BYTES = new AtomicLong();
+	private static final AtomicLong TEXTURE_RELEASE_TOTAL_BYTES = new AtomicLong();
+	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_UPLOAD_SOURCE_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_UPLOAD_SOURCE_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, String> TEXTURE_UPLOAD_SOURCE_SAMPLES =
+		new ConcurrentHashMap<String, String>();
+	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_UPLOAD_OWNER_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_UPLOAD_OWNER_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, String> TEXTURE_UPLOAD_OWNER_SAMPLES =
+		new ConcurrentHashMap<String, String>();
+	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_RELEASE_SOURCE_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_RELEASE_SOURCE_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, String> TEXTURE_RELEASE_SOURCE_SAMPLES =
+		new ConcurrentHashMap<String, String>();
+	private static final ConcurrentHashMap<String, AtomicLong> TEXTURE_RELEASE_OWNER_BYTES =
+		new ConcurrentHashMap<String, AtomicLong>();
+	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_RELEASE_OWNER_COUNTS =
+		new ConcurrentHashMap<String, AtomicInteger>();
+	private static final ConcurrentHashMap<String, String> TEXTURE_RELEASE_OWNER_SAMPLES =
+		new ConcurrentHashMap<String, String>();
+	private static final ConcurrentHashMap<String, TextureDebugWindowSnapshot> TEXTURE_DEBUG_WINDOWS =
+		new ConcurrentHashMap<String, TextureDebugWindowSnapshot>();
 	private static final AtomicLong TEXTURE_NATIVE_ESTIMATED_BYTES = new AtomicLong();
 	private static boolean forceLinearMipmapFilterLogPrinted;
 	private static volatile int textureLivePeak;
 	private static volatile long textureNativeEstimatedBytesPeak;
+	private static volatile long currentFrameId = -1L;
+	private static volatile long lastTextureResidencySweepFrame = -1L;
 
 	public final int glTarget;
 	protected int glHandle;
@@ -169,6 +256,19 @@ public abstract class GLTexture implements Disposable {
 	protected TextureFilter magFilter = TextureFilter.Nearest;
 	protected TextureWrap uWrap = TextureWrap.ClampToEdge;
 	protected TextureWrap vWrap = TextureWrap.ClampToEdge;
+	private long lastAccessFrame;
+	private long lastRestoreFrame = -1L;
+	private long lastReclaimFrame = -1L;
+	private String lastUseReason = "construct";
+	private String residencyLastKnownSourceSample;
+	private String residencyLastKnownOwnerKey;
+	private String residencyLastKnownOwnerSample;
+	private long residencyLastKnownBytes;
+	private int residencyReleaseCount;
+	private int residencyRestoreCount;
+	private int residencyRestoreFailureCount;
+	private boolean handleReclaimPending;
+	private boolean permanentlyDisposed;
 
 	public abstract int getWidth ();
 
@@ -185,6 +285,7 @@ public abstract class GLTexture implements Disposable {
 		this.glHandle = glHandle;
 		this.debugTextureId = allocateDebugTextureId();
 		this.debugTrackedHandle = glHandle;
+		this.lastAccessFrame = currentFrameId >= 0L ? currentFrameId : 0L;
 		onTextureConstructed(debugTextureId, getClass().getName(), glTarget, glHandle);
 	}
 
@@ -194,12 +295,14 @@ public abstract class GLTexture implements Disposable {
 
 	public void bind () {
 		notifyBeforeTextureAccess("bind");
+		ensureHandleAvailableForUse("bind");
 		syncDebugHandle("bind");
 		Gdx.gl.glBindTexture(glTarget, glHandle);
 	}
 
 	public void bind (int unit) {
 		notifyBeforeTextureAccess("bind_unit");
+		ensureHandleAvailableForUse("bind_unit");
 		syncDebugHandle("bind_unit");
 		Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0 + unit);
 		Gdx.gl.glBindTexture(glTarget, glHandle);
@@ -223,6 +326,7 @@ public abstract class GLTexture implements Disposable {
 
 	public int getTextureObjectHandle () {
 		notifyBeforeTextureAccess("get_handle");
+		ensureHandleAvailableForUse("get_handle");
 		syncDebugHandle("get_handle");
 		return glHandle;
 	}
@@ -313,14 +417,18 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	protected void delete () {
+		permanentlyDisposed = true;
+		handleReclaimPending = false;
 		releaseHandle("delete", true);
 	}
 
 	public final int releaseHandleForReuse (String reason) {
+		handleReclaimPending = true;
 		return releaseHandle(reason, true);
 	}
 
 	public final int invalidateHandleForReuse (String reason) {
+		handleReclaimPending = true;
 		return releaseHandle(reason, false);
 	}
 
@@ -336,6 +444,8 @@ public abstract class GLTexture implements Disposable {
 		} else {
 			onTextureHandleUpdated(debugTextureId, oldHandle, newHandle, reason);
 		}
+		handleReclaimPending = false;
+		lastRestoreFrame = currentFrameId >= 0L ? currentFrameId : lastRestoreFrame;
 	}
 
 	private void syncDebugHandle (String reason) {
@@ -346,13 +456,31 @@ public abstract class GLTexture implements Disposable {
 
 	public static String getDebugStatusSummary () {
 		return "texturesDiag=" + (GPU_RESOURCE_DIAG_ENABLED ? "enabled" : "disabled")
+			+ " textureAttribution=enabled"
+			+ " textureWindows=enabled"
+			+ " textureStackSamples="
+			+ (GPU_RESOURCE_DIAG_ENABLED && GPU_RESOURCE_DIAG_TEXTURE_STACKS_ENABLED ? "enabled" : "disabled")
 			+ " texturesLive=" + TEXTURES_LIVE.get()
 			+ " texturesPeak=" + textureLivePeak
 			+ " texturesCreated=" + TEXTURES_CREATED.get()
 			+ " texturesDisposed=" + TEXTURES_DISPOSED.get()
+			+ " textureUploads=" + TEXTURE_UPLOAD_EVENTS.get()
+			+ " textureUploadBytes=" + TEXTURE_UPLOAD_TOTAL_BYTES.get()
+			+ " textureReleases=" + TEXTURE_RELEASE_EVENTS.get()
+			+ " textureReleaseBytes=" + TEXTURE_RELEASE_TOTAL_BYTES.get()
 			+ " textureHandleUpdates=" + TEXTURE_HANDLE_UPDATES.get()
 			+ " textureBytes=" + TEXTURE_NATIVE_ESTIMATED_BYTES.get()
-			+ " textureBytesPeak=" + textureNativeEstimatedBytesPeak;
+			+ " textureBytesPeak=" + textureNativeEstimatedBytesPeak
+			+ " textureResidencyManager=" + (TEXTURE_RESIDENCY_MANAGER_ENABLED ? "enabled" : "disabled")
+			+ " textureResidencyRestores=" + TEXTURE_RESIDENCY_RESTORES.get()
+			+ " textureResidencyRestoreFailures=" + TEXTURE_RESIDENCY_RESTORE_FAILURES.get()
+			+ " textureResidencyIdleSweeps=" + TEXTURE_RESIDENCY_IDLE_SWEEPS.get()
+			+ " textureResidencyIdleReclaims=" + TEXTURE_RESIDENCY_IDLE_RECLAIMS.get()
+			+ " textureResidencyManagerSweeps=" + TEXTURE_RESIDENCY_MANAGER_SWEEPS.get()
+			+ " textureResidencyPressureSweeps=" + TEXTURE_RESIDENCY_PRESSURE_SWEEPS.get()
+			+ " textureResidencyPressureReclaims=" + TEXTURE_RESIDENCY_PRESSURE_RECLAIMS.get()
+			+ " textureResidencyReclaimedBytes=" + TEXTURE_RESIDENCY_RECLAIMED_BYTES.get()
+			+ " textureResidencyRestoredBytes=" + TEXTURE_RESIDENCY_RESTORED_BYTES.get();
 	}
 
 	public static String getLiveSourceSummary () {
@@ -371,6 +499,56 @@ public abstract class GLTexture implements Disposable {
 			TEXTURE_LIVE_OWNER_COUNTS,
 			TEXTURE_LIVE_OWNER_SAMPLES
 		);
+	}
+
+	public static String getUploadSourceSummary () {
+		return buildLiveTextureSummary(
+			"textureUploadTop=",
+			TEXTURE_UPLOAD_SOURCE_BYTES,
+			TEXTURE_UPLOAD_SOURCE_COUNTS,
+			TEXTURE_UPLOAD_SOURCE_SAMPLES
+		);
+	}
+
+	public static String getUploadOwnerSummary () {
+		return buildLiveTextureSummary(
+			"textureUploadOwnerTop=",
+			TEXTURE_UPLOAD_OWNER_BYTES,
+			TEXTURE_UPLOAD_OWNER_COUNTS,
+			TEXTURE_UPLOAD_OWNER_SAMPLES
+		);
+	}
+
+	public static String getReleaseSourceSummary () {
+		return buildLiveTextureSummary(
+			"textureReleaseTop=",
+			TEXTURE_RELEASE_SOURCE_BYTES,
+			TEXTURE_RELEASE_SOURCE_COUNTS,
+			TEXTURE_RELEASE_SOURCE_SAMPLES
+		);
+	}
+
+	public static String getReleaseOwnerSummary () {
+		return buildLiveTextureSummary(
+			"textureReleaseOwnerTop=",
+			TEXTURE_RELEASE_OWNER_BYTES,
+			TEXTURE_RELEASE_OWNER_COUNTS,
+			TEXTURE_RELEASE_OWNER_SAMPLES
+		);
+	}
+
+	public static void beginDebugWindow (String label) {
+		String normalizedLabel = normalizeDebugWindowLabel(label);
+		if (normalizedLabel == null) return;
+		TEXTURE_DEBUG_WINDOWS.put(normalizedLabel, captureDebugWindowSnapshot());
+	}
+
+	public static String finishDebugWindow (String label) {
+		String normalizedLabel = normalizeDebugWindowLabel(label);
+		if (normalizedLabel == null) return "unavailable";
+		TextureDebugWindowSnapshot startSnapshot = TEXTURE_DEBUG_WINDOWS.remove(normalizedLabel);
+		if (startSnapshot == null) return "missing";
+		return buildDebugWindowSummary(startSnapshot, captureDebugWindowSnapshot());
 	}
 
 	private static String buildLiveTextureSummary (
@@ -445,6 +623,65 @@ public abstract class GLTexture implements Disposable {
 		return TEXTURE_NATIVE_ESTIMATED_BYTES.get();
 	}
 
+	public static void noteFrameRendered (long frameId) {
+		if (frameId >= 0L) {
+			currentFrameId = frameId;
+		}
+	}
+
+	public static void reclaimIdleTextures (Application app, long frameId) {
+		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED || Gdx.gl == null) return;
+		if (app == null || frameId < 0L) return;
+		noteFrameRendered(frameId);
+		if (lastTextureResidencySweepFrame >= 0L
+			&& frameId - lastTextureResidencySweepFrame < TEXTURE_RESIDENCY_SWEEP_INTERVAL) {
+			return;
+		}
+		lastTextureResidencySweepFrame = frameId;
+		TEXTURE_RESIDENCY_MANAGER_SWEEPS.incrementAndGet();
+
+		Array<Texture> managedTextures = getManagedTextures(app);
+		if (managedTextures == null || managedTextures.size == 0) return;
+
+		int idleReclaimed = 0;
+		for (int i = 0; i < managedTextures.size; i++) {
+			GLTexture texture = managedTextures.get(i);
+			if (texture != null && texture.reclaimIfIdle(frameId)) {
+				idleReclaimed++;
+			}
+		}
+
+		TexturePressureSweepResult pressureResult = null;
+		if (TEXTURE_NATIVE_ESTIMATED_BYTES.get() > TEXTURE_RESIDENCY_SOFT_BUDGET_BYTES) {
+			pressureResult = reclaimPressureTextures(managedTextures, frameId);
+		}
+
+		if (pressureResult != null) {
+			System.out.println("[gdx-diag] GLTexture manager_pressure_sweep frame=" + frameId
+				+ " sweep=" + pressureResult.sweepIndex
+				+ " idleReclaimed=" + idleReclaimed
+				+ " candidates=" + pressureResult.candidateCount
+				+ " reclaimed=" + pressureResult.reclaimedCount
+				+ " reclaimedBytes=" + pressureResult.reclaimedBytes
+				+ " beforeBytes=" + pressureResult.bytesBefore
+				+ " afterBytes=" + pressureResult.bytesAfter
+				+ " budgetBytes=" + TEXTURE_RESIDENCY_SOFT_BUDGET_BYTES
+				+ " topOwnersBefore=" + pressureResult.topOwnersBefore
+				+ " topOwnersAfter=" + pressureResult.topOwnersAfter
+				+ " stalled=" + pressureResult.stalled);
+			return;
+		}
+
+		if (idleReclaimed > 0) {
+			int sweeps = TEXTURE_RESIDENCY_IDLE_SWEEPS.incrementAndGet();
+			System.out.println("[gdx-diag] GLTexture idle_sweep frame=" + frameId
+				+ " reclaimed=" + idleReclaimed
+				+ " sweeps=" + sweeps
+				+ " liveBytes=" + TEXTURE_NATIVE_ESTIMATED_BYTES.get()
+				+ " restores=" + TEXTURE_RESIDENCY_RESTORES.get());
+		}
+	}
+
 	@Override
 	public void dispose () {
 		delete();
@@ -452,19 +689,309 @@ public abstract class GLTexture implements Disposable {
 
 	private void notifyBeforeTextureAccess (String reason) {
 		GLFrameBuffer.onExternalTextureAccess(this, reason);
+		lastAccessFrame = currentFrameId >= 0L ? currentFrameId : lastAccessFrame;
+		lastUseReason = reason == null || reason.length() == 0 ? "unknown" : reason;
 	}
 
 	private int releaseHandle (String reason, boolean deleteGlHandle) {
 		if (glHandle == 0) return 0;
 		int deletedHandle = glHandle;
+		captureResidencySnapshot(deletedHandle);
 		forgetTrackedTextureBytes(deletedHandle);
 		if (deleteGlHandle) {
 			Gdx.gl.glDeleteTexture(glHandle);
 		}
 		glHandle = 0;
 		debugTrackedHandle = 0;
+		lastReclaimFrame = currentFrameId >= 0L ? currentFrameId : lastReclaimFrame;
 		onTextureDeleted(debugTextureId, deletedHandle, reason);
 		return deletedHandle;
+	}
+
+	private void ensureHandleAvailableForUse (String reason) {
+		if (glHandle != 0 || !handleReclaimPending || permanentlyDisposed) return;
+		if (!(this instanceof Texture)) return;
+		Texture texture = (Texture)this;
+		TextureData data = safeGetTextureData(texture);
+		if (!isResidencyReloadableTexture(texture, data)) return;
+
+		int newHandle = 0;
+		try {
+			newHandle = Gdx.gl.glGenTexture();
+			if (newHandle == 0) return;
+			restoreHandleForReuse(newHandle, "texture_residency_restore_" + reason);
+			texture.load(data);
+			lastAccessFrame = currentFrameId >= 0L ? currentFrameId : lastAccessFrame;
+			lastUseReason = reason == null || reason.length() == 0 ? "restore" : reason;
+			long restoredBytes = refreshResidencyTrackedBytesFromHandle();
+			if (restoredBytes <= 0L) {
+				restoredBytes = estimateTextureBytes(data.getWidth(), data.getHeight(), data.getFormat());
+				if (data.useMipMaps()) {
+					restoredBytes = Math.max(restoredBytes, (restoredBytes * 4L) / 3L);
+				}
+			}
+			residencyRestoreCount++;
+			TEXTURE_RESIDENCY_RESTORES.incrementAndGet();
+			TEXTURE_RESIDENCY_RESTORED_BYTES.addAndGet(Math.max(0L, restoredBytes));
+			System.out.println("[gdx-diag] GLTexture residency_restore id=" + debugTextureId
+				+ " handle=" + glHandle
+				+ " reason=" + (reason == null ? "unknown" : reason)
+				+ " owner=" + getResidencyOwnerKeyForLog()
+				+ " source=" + getResidencySourceSampleForLog()
+				+ " bytes=" + Math.max(0L, restoredBytes)
+				+ " restores=" + residencyRestoreCount
+				+ " releases=" + residencyReleaseCount);
+		} catch (Throwable t) {
+			residencyRestoreFailureCount++;
+			TEXTURE_RESIDENCY_RESTORE_FAILURES.incrementAndGet();
+			if (glHandle != 0) {
+				releaseHandle("texture_residency_restore_failed", true);
+			} else if (newHandle != 0) {
+				try {
+					Gdx.gl.glDeleteTexture(newHandle);
+				} catch (Throwable ignored) {
+				}
+			}
+			handleReclaimPending = true;
+			if (residencyRestoreFailureCount <= 3 || (residencyRestoreFailureCount % 10) == 0) {
+				System.out.println("[gdx-diag] GLTexture residency_restore_failed id=" + debugTextureId
+					+ " reason=" + (reason == null ? "unknown" : reason)
+					+ " owner=" + getResidencyOwnerKeyForLog()
+					+ " source=" + getResidencySourceSampleForLog()
+					+ " failures=" + residencyRestoreFailureCount
+					+ " error=" + t);
+			}
+		}
+	}
+
+	private boolean reclaimIfIdle (long frameId) {
+		String protectReason = resolveTextureResidencyProtectReason(frameId, TEXTURE_RESIDENCY_IDLE_FRAMES, TEXTURE_RESIDENCY_MIN_BYTES);
+		if (protectReason != null) return false;
+		long reclaimedBytes = captureTrackedHandleBytes();
+		if (releaseHandleForReuse("texture_idle_reclaim") == 0) return false;
+		residencyReleaseCount++;
+		TEXTURE_RESIDENCY_IDLE_RECLAIMS.incrementAndGet();
+		TEXTURE_RESIDENCY_RECLAIMED_BYTES.addAndGet(reclaimedBytes);
+		System.out.println("[gdx-diag] GLTexture idle_reclaim id=" + debugTextureId
+			+ " owner=" + getResidencyOwnerKeyForLog()
+			+ " source=" + getResidencySourceSampleForLog()
+			+ " idleFrames=" + getIdleFrames(frameId)
+			+ " bytes=" + reclaimedBytes
+			+ " lastUse=" + getLastUseReasonForLog()
+			+ " releases=" + residencyReleaseCount);
+		return true;
+	}
+
+	private boolean reclaimForManagerPressure (long frameId) {
+		String protectReason = resolveTextureResidencyProtectReason(
+			frameId,
+			TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES,
+			TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES
+		);
+		if (protectReason != null) return false;
+		long reclaimedBytes = captureTrackedHandleBytes();
+		if (releaseHandleForReuse("texture_manager_pressure") == 0) return false;
+		residencyReleaseCount++;
+		TEXTURE_RESIDENCY_PRESSURE_RECLAIMS.incrementAndGet();
+		TEXTURE_RESIDENCY_RECLAIMED_BYTES.addAndGet(reclaimedBytes);
+		return true;
+	}
+
+	private String resolveTextureResidencyProtectReason (long frameId, long minIdleFrames, long minBytes) {
+		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED) return "disabled";
+		if (permanentlyDisposed) return "disposed";
+		if (!(this instanceof Texture)) return "not_texture";
+		if (!isManaged()) return "not_managed";
+		if (glHandle == 0) return "missing_handle";
+		if (glTarget != GL_TEXTURE_2D_ENUM) return "unsupported_target";
+		Texture texture = (Texture)this;
+		TextureData data = safeGetTextureData(texture);
+		if (!isResidencyReloadableTexture(texture, data)) return "not_reloadable";
+		if (GLFrameBuffer.isFrameBufferTexture(this)) return "framebuffer_owner";
+		if (captureTrackedHandleBytes() < minBytes) return "below_min_bytes";
+		if (getCurrentTextureBinding(glTarget) == glHandle) return "currently_bound";
+		if (getIdleFrames(frameId) < minIdleFrames) return "recently_used";
+		if (lastRestoreFrame >= 0L && frameId - lastRestoreFrame < TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES) {
+			return "recently_restored";
+		}
+		return null;
+	}
+
+	private long getIdleFrames (long frameId) {
+		long idleFrames = frameId - lastAccessFrame;
+		return idleFrames < 0L ? 0L : idleFrames;
+	}
+
+	private long captureTrackedHandleBytes () {
+		if (glHandle == 0) return Math.max(0L, residencyLastKnownBytes);
+		Long trackedBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(glHandle);
+		long bytes = trackedBytes == null ? 0L : trackedBytes.longValue();
+		if (bytes > 0L) {
+			residencyLastKnownBytes = bytes;
+		}
+		return bytes > 0L ? bytes : Math.max(0L, residencyLastKnownBytes);
+	}
+
+	private long refreshResidencyTrackedBytesFromHandle () {
+		long trackedBytes = captureTrackedHandleBytes();
+		if (trackedBytes > 0L) {
+			return trackedBytes;
+		}
+		return Math.max(0L, residencyLastKnownBytes);
+	}
+
+	private void captureResidencySnapshot (int handle) {
+		if (handle == 0) return;
+		Long trackedBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(handle);
+		if (trackedBytes != null && trackedBytes.longValue() > 0L) {
+			residencyLastKnownBytes = trackedBytes.longValue();
+		}
+		String sourceSample = TEXTURE_HANDLE_LIVE_SAMPLES.get(handle);
+		if (sourceSample != null && sourceSample.length() > 0) {
+			residencyLastKnownSourceSample = sourceSample;
+		}
+		String ownerKey = TEXTURE_HANDLE_LIVE_OWNER_KEYS.get(handle);
+		if (ownerKey != null && ownerKey.length() > 0) {
+			residencyLastKnownOwnerKey = ownerKey;
+		}
+		String ownerSample = TEXTURE_HANDLE_LIVE_OWNER_SAMPLES.get(handle);
+		if (ownerSample != null && ownerSample.length() > 0) {
+			residencyLastKnownOwnerSample = ownerSample;
+		}
+	}
+
+	private String getLastUseReasonForLog () {
+		return lastUseReason == null || lastUseReason.length() == 0 ? "unknown" : lastUseReason;
+	}
+
+	private String getResidencySourceSampleForLog () {
+		return residencyLastKnownSourceSample == null || residencyLastKnownSourceSample.length() == 0
+			? "unknown"
+			: residencyLastKnownSourceSample;
+	}
+
+	private String getResidencyOwnerKeyForLog () {
+		return residencyLastKnownOwnerKey == null || residencyLastKnownOwnerKey.length() == 0
+			? "core<-unknown"
+			: residencyLastKnownOwnerKey;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Array<Texture> getManagedTextures (Application app) {
+		if (app == null) return null;
+		try {
+			Field managedField = Texture.class.getDeclaredField("managedTextures");
+			managedField.setAccessible(true);
+			Object managedObj = managedField.get(null);
+			if (!(managedObj instanceof Map<?, ?>)) return null;
+			Object textures = ((Map<?, ?>)managedObj).get(app);
+			if (textures instanceof Array<?>) {
+				return (Array<Texture>)textures;
+			}
+		} catch (Throwable ignored) {
+		}
+		return null;
+	}
+
+	private static TexturePressureSweepResult reclaimPressureTextures (Array<Texture> managedTextures, long frameId) {
+		long bytesBefore = TEXTURE_NATIVE_ESTIMATED_BYTES.get();
+		int sweepIndex = TEXTURE_RESIDENCY_PRESSURE_SWEEPS.incrementAndGet();
+		String topOwnersBefore = stripLiveTextureSummaryLabel(getLiveOwnerSummary(), "textureOwnerTop=");
+		List<GLTexture> candidates = new ArrayList<GLTexture>(managedTextures.size);
+		for (int i = 0; i < managedTextures.size; i++) {
+			GLTexture texture = managedTextures.get(i);
+			if (texture != null
+				&& texture.resolveTextureResidencyProtectReason(
+					frameId,
+					TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES,
+					TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES
+				) == null) {
+				candidates.add(texture);
+			}
+		}
+		if (candidates.isEmpty()) {
+			return new TexturePressureSweepResult(
+				sweepIndex,
+				bytesBefore,
+				bytesBefore,
+				0,
+				0L,
+				0,
+				topOwnersBefore,
+				topOwnersBefore,
+				true
+			);
+		}
+
+		Collections.sort(candidates, new Comparator<GLTexture>() {
+			@Override
+			public int compare (GLTexture left, GLTexture right) {
+				return comparePressureCandidates(left, right, frameId);
+			}
+		});
+
+		int reclaimedCount = 0;
+		long reclaimedBytes = 0L;
+		for (int i = 0; i < candidates.size(); i++) {
+			if (TEXTURE_NATIVE_ESTIMATED_BYTES.get() <= TEXTURE_RESIDENCY_SOFT_BUDGET_BYTES) break;
+			if (reclaimedCount >= TEXTURE_RESIDENCY_MAX_RECLAIMS) break;
+			GLTexture candidate = candidates.get(i);
+			if (!candidate.reclaimForManagerPressure(frameId)) continue;
+			reclaimedCount++;
+			reclaimedBytes += Math.max(0L, candidate.residencyLastKnownBytes);
+		}
+		long bytesAfter = TEXTURE_NATIVE_ESTIMATED_BYTES.get();
+		String topOwnersAfter = stripLiveTextureSummaryLabel(getLiveOwnerSummary(), "textureOwnerTop=");
+		return new TexturePressureSweepResult(
+			sweepIndex,
+			bytesBefore,
+			bytesAfter,
+			reclaimedCount,
+			reclaimedBytes,
+			candidates.size(),
+			topOwnersBefore,
+			topOwnersAfter,
+			bytesAfter > TEXTURE_RESIDENCY_SOFT_BUDGET_BYTES
+		);
+	}
+
+	private static int comparePressureCandidates (GLTexture left, GLTexture right, long frameId) {
+		long leftBytes = left.captureTrackedHandleBytes();
+		long rightBytes = right.captureTrackedHandleBytes();
+		if (leftBytes != rightBytes) return leftBytes > rightBytes ? -1 : 1;
+		long leftIdleFrames = left.getIdleFrames(frameId);
+		long rightIdleFrames = right.getIdleFrames(frameId);
+		if (leftIdleFrames != rightIdleFrames) return leftIdleFrames > rightIdleFrames ? -1 : 1;
+		if (left.residencyRestoreCount != right.residencyRestoreCount) {
+			return left.residencyRestoreCount < right.residencyRestoreCount ? -1 : 1;
+		}
+		return left.getResidencyOwnerKeyForLog().compareTo(right.getResidencyOwnerKeyForLog());
+	}
+
+	private static TextureData safeGetTextureData (Texture texture) {
+		if (texture == null) return null;
+		try {
+			return texture.getTextureData();
+		} catch (Throwable ignored) {
+			return null;
+		}
+	}
+
+	private static boolean isResidencyReloadableTexture (Texture texture, TextureData data) {
+		if (texture == null || data == null) return false;
+		if (!texture.isManaged()) return false;
+		if (!data.isManaged()) return false;
+		if (!(data instanceof FileTextureData)) return false;
+		TextureDataType dataType = data.getType();
+		return dataType != null && dataType != TextureDataType.Custom;
+	}
+
+	private static String stripLiveTextureSummaryLabel (String summary, String label) {
+		if (summary == null || summary.length() == 0) return "none";
+		if (label != null && summary.startsWith(label)) {
+			return summary.substring(label.length());
+		}
+		return summary;
 	}
 
 	protected static void uploadImageData (int target, TextureData data) {
@@ -482,7 +1009,18 @@ public abstract class GLTexture implements Disposable {
 		}
 		final TextureDataType type = data.getType();
 		if (type == TextureDataType.Custom) {
+			String stackKey = captureTextureUploadStackIfNeeded();
+			String sourcePath = resolveTextureSourcePath(data);
 			data.consumeCustomData(target);
+			recordTextureNativeBytes(
+				target,
+				data.getWidth(),
+				data.getHeight(),
+				data.getFormat(),
+				data.useMipMaps(),
+				sourcePath,
+				stackKey
+			);
 			return;
 		}
 		String stackKey = captureTextureUploadStackIfNeeded();
@@ -966,13 +1504,18 @@ public abstract class GLTexture implements Disposable {
 
 	private static String classifyLiveTextureSourceGroup (String sourcePath, String stackKey) {
 		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
+		String namespaceGroup = TextureOwnerSummary.extractExternalNamespaceGroup(stackKey);
 		if (normalizedSourcePath != null) {
 			String archiveGroup = extractLiveTextureArchiveGroup(normalizedSourcePath);
 			if (archiveGroup != null) return archiveGroup;
 			String pathGroup = extractLiveTexturePathGroup(normalizedSourcePath);
-			if (pathGroup != null) return pathGroup;
+			if (pathGroup != null) {
+				if (isGenericTexturePathGroup(pathGroup) && namespaceGroup != null) {
+					return namespaceGroup;
+				}
+				return pathGroup;
+			}
 		}
-		String namespaceGroup = extractExternalNamespaceGroup(stackKey);
 		return namespaceGroup == null ? "unknown" : namespaceGroup;
 	}
 
@@ -1011,34 +1554,25 @@ public abstract class GLTexture implements Disposable {
 		return firstSegment;
 	}
 
-	private static String extractExternalNamespaceGroup (String stackKey) {
-		if (stackKey == null || stackKey.length() == 0) return null;
-		String[] frames = stackKey.split(" <- ");
-		for (int i = 0; i < frames.length; i++) {
-			String frame = frames[i];
-			int hashIndex = frame.indexOf('#');
-			if (hashIndex <= 0) continue;
-			String className = frame.substring(0, hashIndex);
-			if (className.startsWith("com.megacrit.cardcrawl.")) continue;
-			if (className.startsWith("basemod.")) continue;
-			if (className.startsWith("com.badlogic.gdx.")) continue;
-			if (className.startsWith("java.")) continue;
-			if (className.startsWith("javax.")) continue;
-			if (className.startsWith("sun.")) continue;
-			if (className.startsWith("jdk.")) continue;
-			if (className.startsWith("kotlin.")) continue;
-			if (className.startsWith("org.lwjgl.")) continue;
-			if (className.startsWith("org.apache.")) continue;
-			if (className.startsWith("de.robojumper.")) continue;
-			if (className.startsWith("com.esotericsoftware.")) continue;
-			if (className.startsWith("io.stamethyst.")) continue;
-			int packageSeparator = className.indexOf('.');
-			if (packageSeparator > 0) {
-				return className.substring(0, packageSeparator).toLowerCase();
-			}
-			return className.toLowerCase();
-		}
-		return null;
+	private static boolean isGenericTexturePathGroup (String pathGroup) {
+		if (pathGroup == null || pathGroup.length() == 0) return false;
+		return "images".equals(pathGroup)
+			|| "image".equals(pathGroup)
+			|| "img".equals(pathGroup)
+			|| "textures".equals(pathGroup)
+			|| "texture".equals(pathGroup)
+			|| "characters".equals(pathGroup)
+			|| "character".equals(pathGroup)
+			|| "cards".equals(pathGroup)
+			|| "card".equals(pathGroup)
+			|| "powers".equals(pathGroup)
+			|| "power".equals(pathGroup)
+			|| "ui".equals(pathGroup)
+			|| "vfx".equals(pathGroup)
+			|| "effects".equals(pathGroup)
+			|| "scenes".equals(pathGroup)
+			|| "scene".equals(pathGroup)
+			|| "charselect".equals(pathGroup);
 	}
 
 	private static String summarizeLiveTextureSampleSource (String sourcePath, String stackKey, String groupKey) {
@@ -1046,7 +1580,7 @@ public abstract class GLTexture implements Disposable {
 		if (normalizedSourcePath != null) {
 			return abbreviateLiveTextureSource(normalizedSourcePath);
 		}
-		String namespaceGroup = extractExternalNamespaceGroup(stackKey);
+		String namespaceGroup = TextureOwnerSummary.extractExternalNamespaceGroup(stackKey);
 		return namespaceGroup == null ? groupKey : namespaceGroup;
 	}
 
@@ -1068,41 +1602,7 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static String classifyLiveTextureOwnerKey (String groupKey, String sourcePath, String stackKey) {
-		String safeGroupKey = groupKey == null || groupKey.length() == 0 ? "unknown" : groupKey;
-		if (isDownfallTextureAttribution(safeGroupKey, sourcePath, stackKey)) {
-			return "downfall<-" + safeGroupKey;
-		}
-		if (containsAnyStackFragment(
-			stackKey,
-			"com.evacipated.cardcrawl.mod.stslib.",
-			"stslib."
-		)) {
-			return "stslib<-" + safeGroupKey;
-		}
-		if (containsAnyStackFragment(
-			stackKey,
-			"com.evacipated.cardcrawl.modthespire."
-		)) {
-			return "modthespire<-" + safeGroupKey;
-		}
-		if (extractExternalNamespaceGroup(stackKey) != null) {
-			return "othermod<-" + safeGroupKey;
-		}
-		if (containsAnyStackFragment(stackKey, "basemod.")) {
-			return "basemod<-" + safeGroupKey;
-		}
-		return "core<-" + safeGroupKey;
-	}
-
-	private static boolean isDownfallTextureAttribution (String groupKey, String sourcePath, String stackKey) {
-		if ("downfallresources".equals(groupKey)) {
-			return true;
-		}
-		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
-		if (containsAnyPathFragment(normalizedSourcePath, "downfallresources/")) {
-			return true;
-		}
-		return containsAnyStackFragment(stackKey, "downfall.", "downfall/");
+		return TextureOwnerSummary.classifyOwnerKey(groupKey, sourcePath, stackKey);
 	}
 
 	private static boolean containsPathFragment (String sourcePath, String fragment) {
@@ -1171,7 +1671,7 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static boolean containsExternalModNamespace (String stackKey) {
-		return extractExternalNamespaceGroup(stackKey) != null;
+		return TextureOwnerSummary.extractExternalNamespaceGroup(stackKey) != null;
 	}
 
 	private static boolean ranksBeforeLiveTextureSummary (
@@ -1213,8 +1713,12 @@ public abstract class GLTexture implements Disposable {
 		if (useMipMaps) {
 			estimatedBytes = Math.max(estimatedBytes, (estimatedBytes * 4L) / 3L);
 		}
-		updateLiveTextureSourceAttribution(handle, estimatedBytes, sourcePath, stackKey);
+		TextureAttribution attribution = resolveTextureAttribution(sourcePath, stackKey);
+		recordTextureUploadActivity(attribution, estimatedBytes);
+		updateLiveTextureSourceAttribution(handle, estimatedBytes, attribution);
 		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.put(handle, estimatedBytes);
+		TEXTURE_UPLOAD_EVENTS.incrementAndGet();
+		TEXTURE_UPLOAD_TOTAL_BYTES.addAndGet(estimatedBytes);
 		long delta = estimatedBytes - (previousBytes == null ? 0L : previousBytes.longValue());
 		if (delta == 0L) return;
 		long liveBytes = TEXTURE_NATIVE_ESTIMATED_BYTES.addAndGet(delta);
@@ -1233,6 +1737,7 @@ public abstract class GLTexture implements Disposable {
 		String previousGroup = TEXTURE_HANDLE_LIVE_GROUPS.remove(handle);
 		String previousSample = TEXTURE_HANDLE_LIVE_SAMPLES.remove(handle);
 		String previousOwnerKey = TEXTURE_HANDLE_LIVE_OWNER_KEYS.remove(handle);
+		String previousOwnerSample = TEXTURE_HANDLE_LIVE_OWNER_SAMPLES.remove(handle);
 		if (previousGroup != null) {
 			adjustLiveTextureAggregate(
 				previousGroup,
@@ -1244,12 +1749,21 @@ public abstract class GLTexture implements Disposable {
 		if (previousOwnerKey != null) {
 			adjustLiveTextureOwnerAggregate(
 				previousOwnerKey,
-				previousSample,
+				previousOwnerSample,
 				-(previousBytes == null ? 0L : previousBytes.longValue()),
 				-1
 			);
 		}
 		if (previousBytes == null) return;
+		TEXTURE_RELEASE_EVENTS.incrementAndGet();
+		TEXTURE_RELEASE_TOTAL_BYTES.addAndGet(previousBytes.longValue());
+		recordTextureReleaseActivity(
+			previousGroup,
+			previousSample,
+			previousOwnerKey,
+			previousOwnerSample,
+			previousBytes.longValue()
+		);
 		long liveBytes = TEXTURE_NATIVE_ESTIMATED_BYTES.addAndGet(-previousBytes.longValue());
 		if (liveBytes < 0L) {
 			TEXTURE_NATIVE_ESTIMATED_BYTES.set(0L);
@@ -1259,16 +1773,18 @@ public abstract class GLTexture implements Disposable {
 	private static void updateLiveTextureSourceAttribution (
 		int handle,
 		long estimatedBytes,
-		String sourcePath,
-		String stackKey
+		TextureAttribution attribution
 	) {
-		String groupKey = classifyLiveTextureSourceGroup(sourcePath, stackKey);
-		String sampleSource = summarizeLiveTextureSampleSource(sourcePath, stackKey, groupKey);
-		String ownerKey = classifyLiveTextureOwnerKey(groupKey, sourcePath, stackKey);
+		if (attribution == null) return;
+		String groupKey = attribution.groupKey;
+		String sampleSource = attribution.sourceSample;
+		String ownerKey = attribution.ownerKey;
+		String ownerSample = attribution.ownerSample;
 		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(handle);
 		String previousGroup = TEXTURE_HANDLE_LIVE_GROUPS.put(handle, groupKey);
 		String previousSample = TEXTURE_HANDLE_LIVE_SAMPLES.put(handle, sampleSource);
 		String previousOwnerKey = TEXTURE_HANDLE_LIVE_OWNER_KEYS.put(handle, ownerKey);
+		String previousOwnerSample = TEXTURE_HANDLE_LIVE_OWNER_SAMPLES.put(handle, ownerSample);
 		long safePreviousBytes = previousBytes == null ? 0L : previousBytes.longValue();
 		if (previousGroup != null && groupKey.equals(previousGroup)) {
 			adjustLiveTextureAggregate(
@@ -1296,7 +1812,7 @@ public abstract class GLTexture implements Disposable {
 		if (previousOwnerKey != null && ownerKey.equals(previousOwnerKey)) {
 			adjustLiveTextureOwnerAggregate(
 				ownerKey,
-				sampleSource,
+				ownerSample,
 				estimatedBytes - safePreviousBytes,
 				0
 			);
@@ -1305,12 +1821,12 @@ public abstract class GLTexture implements Disposable {
 		if (previousOwnerKey != null) {
 			adjustLiveTextureOwnerAggregate(
 				previousOwnerKey,
-				previousSample,
+				previousOwnerSample,
 				-safePreviousBytes,
 				-1
 			);
 		}
-		adjustLiveTextureOwnerAggregate(ownerKey, sampleSource, estimatedBytes, 1);
+		adjustLiveTextureOwnerAggregate(ownerKey, ownerSample, estimatedBytes, 1);
 	}
 
 	private static void adjustLiveTextureAggregate (
@@ -1319,70 +1835,117 @@ public abstract class GLTexture implements Disposable {
 		long byteDelta,
 		int countDelta
 	) {
-		String safeGroupKey = groupKey == null || groupKey.length() == 0 ? "unknown" : groupKey;
-		AtomicLong bytesRef = TEXTURE_LIVE_SOURCE_BYTES.get(safeGroupKey);
-		if (bytesRef == null) {
-			if (byteDelta <= 0L && countDelta <= 0) return;
-			AtomicLong created = new AtomicLong();
-			AtomicLong existing = TEXTURE_LIVE_SOURCE_BYTES.putIfAbsent(safeGroupKey, created);
-			bytesRef = existing == null ? created : existing;
-		}
-		AtomicInteger countRef = TEXTURE_LIVE_SOURCE_COUNTS.get(safeGroupKey);
-		if (countRef == null) {
-			if (byteDelta <= 0L && countDelta <= 0) return;
-			AtomicInteger created = new AtomicInteger();
-			AtomicInteger existing = TEXTURE_LIVE_SOURCE_COUNTS.putIfAbsent(safeGroupKey, created);
-			countRef = existing == null ? created : existing;
-		}
-		if (sampleSource != null && sampleSource.length() > 0) {
-			TEXTURE_LIVE_SOURCE_SAMPLES.put(safeGroupKey, sampleSource);
-		}
-		long bytes = bytesRef.get();
-		if (byteDelta != 0L) {
-			bytes = bytesRef.addAndGet(byteDelta);
-			if (bytes < 0L) {
-				bytesRef.set(0L);
-				bytes = 0L;
-			}
-		}
-		int count = countRef.get();
-		if (countDelta != 0) {
-			count = countRef.addAndGet(countDelta);
-			if (count < 0) {
-				countRef.set(0);
-				count = 0;
-			}
-		}
-		if (bytes == 0L || count == 0) {
-			TEXTURE_LIVE_SOURCE_BYTES.remove(safeGroupKey, bytesRef);
-			TEXTURE_LIVE_SOURCE_COUNTS.remove(safeGroupKey, countRef);
-			TEXTURE_LIVE_SOURCE_SAMPLES.remove(safeGroupKey);
-		}
+		adjustTextureAggregate(
+			TEXTURE_LIVE_SOURCE_BYTES,
+			TEXTURE_LIVE_SOURCE_COUNTS,
+			TEXTURE_LIVE_SOURCE_SAMPLES,
+			"unknown",
+			groupKey,
+			sampleSource,
+			byteDelta,
+			countDelta
+		);
 	}
 
 	private static void adjustLiveTextureOwnerAggregate (
 		String ownerKey,
-		String sampleSource,
+		String ownerSample,
 		long byteDelta,
 		int countDelta
 	) {
-		String safeOwnerKey = ownerKey == null || ownerKey.length() == 0 ? "core<-unknown" : ownerKey;
-		AtomicLong bytesRef = TEXTURE_LIVE_OWNER_BYTES.get(safeOwnerKey);
+		adjustTextureAggregate(
+			TEXTURE_LIVE_OWNER_BYTES,
+			TEXTURE_LIVE_OWNER_COUNTS,
+			TEXTURE_LIVE_OWNER_SAMPLES,
+			"core<-unknown",
+			ownerKey,
+			ownerSample,
+			byteDelta,
+			countDelta
+		);
+	}
+
+	private static void recordTextureUploadActivity (TextureAttribution attribution, long estimatedBytes) {
+		if (attribution == null || estimatedBytes <= 0L) return;
+		adjustTextureAggregate(
+			TEXTURE_UPLOAD_SOURCE_BYTES,
+			TEXTURE_UPLOAD_SOURCE_COUNTS,
+			TEXTURE_UPLOAD_SOURCE_SAMPLES,
+			"unknown",
+			attribution.groupKey,
+			attribution.sourceSample,
+			estimatedBytes,
+			1
+		);
+		adjustTextureAggregate(
+			TEXTURE_UPLOAD_OWNER_BYTES,
+			TEXTURE_UPLOAD_OWNER_COUNTS,
+			TEXTURE_UPLOAD_OWNER_SAMPLES,
+			"core<-unknown",
+			attribution.ownerKey,
+			attribution.ownerSample,
+			estimatedBytes,
+			1
+		);
+	}
+
+	private static void recordTextureReleaseActivity (
+		String groupKey,
+		String sourceSample,
+		String ownerKey,
+		String ownerSample,
+		long releasedBytes
+	) {
+		if (releasedBytes <= 0L) return;
+		adjustTextureAggregate(
+			TEXTURE_RELEASE_SOURCE_BYTES,
+			TEXTURE_RELEASE_SOURCE_COUNTS,
+			TEXTURE_RELEASE_SOURCE_SAMPLES,
+			"unknown",
+			groupKey,
+			sourceSample,
+			releasedBytes,
+			1
+		);
+		adjustTextureAggregate(
+			TEXTURE_RELEASE_OWNER_BYTES,
+			TEXTURE_RELEASE_OWNER_COUNTS,
+			TEXTURE_RELEASE_OWNER_SAMPLES,
+			"core<-unknown",
+			ownerKey,
+			ownerSample,
+			releasedBytes,
+			1
+		);
+	}
+
+	private static void adjustTextureAggregate (
+		ConcurrentHashMap<String, AtomicLong> bytesByKey,
+		ConcurrentHashMap<String, AtomicInteger> countsByKey,
+		ConcurrentHashMap<String, String> samplesByKey,
+		String fallbackKey,
+		String key,
+		String sample,
+		long byteDelta,
+		int countDelta
+	) {
+		String safeKey = key == null || key.length() == 0 ? fallbackKey : key;
+		AtomicLong bytesRef = bytesByKey.get(safeKey);
 		if (bytesRef == null) {
 			if (byteDelta <= 0L && countDelta <= 0) return;
 			AtomicLong created = new AtomicLong();
-			AtomicLong existing = TEXTURE_LIVE_OWNER_BYTES.putIfAbsent(safeOwnerKey, created);
+			AtomicLong existing = bytesByKey.putIfAbsent(safeKey, created);
 			bytesRef = existing == null ? created : existing;
 		}
-		AtomicInteger countRef = TEXTURE_LIVE_OWNER_COUNTS.get(safeOwnerKey);
+		AtomicInteger countRef = countsByKey.get(safeKey);
 		if (countRef == null) {
 			if (byteDelta <= 0L && countDelta <= 0) return;
 			AtomicInteger created = new AtomicInteger();
-			AtomicInteger existing = TEXTURE_LIVE_OWNER_COUNTS.putIfAbsent(safeOwnerKey, created);
+			AtomicInteger existing = countsByKey.putIfAbsent(safeKey, created);
 			countRef = existing == null ? created : existing;
 		}
-		if (sampleSource != null && sampleSource.length() > 0) {
-			TEXTURE_LIVE_OWNER_SAMPLES.put(safeOwnerKey, sampleSource);
+		if (sample != null && sample.length() > 0) {
+			samplesByKey.put(safeKey, sample);
 		}
 		long bytes = bytesRef.get();
 		if (byteDelta != 0L) {
@@ -1401,10 +1964,260 @@ public abstract class GLTexture implements Disposable {
 			}
 		}
 		if (bytes == 0L || count == 0) {
-			TEXTURE_LIVE_OWNER_BYTES.remove(safeOwnerKey, bytesRef);
-			TEXTURE_LIVE_OWNER_COUNTS.remove(safeOwnerKey, countRef);
-			TEXTURE_LIVE_OWNER_SAMPLES.remove(safeOwnerKey);
+			bytesByKey.remove(safeKey, bytesRef);
+			countsByKey.remove(safeKey, countRef);
+			samplesByKey.remove(safeKey);
 		}
+	}
+
+	private static TextureAttribution resolveTextureAttribution (String sourcePath, String stackKey) {
+		String groupKey = classifyLiveTextureSourceGroup(sourcePath, stackKey);
+		String sourceSample = summarizeLiveTextureSampleSource(sourcePath, stackKey, groupKey);
+		String ownerKey = classifyLiveTextureOwnerKey(groupKey, sourcePath, stackKey);
+		String ownerSample = TextureOwnerSummary.summarizeOwnerSample(stackKey, sourceSample);
+		return new TextureAttribution(groupKey, sourceSample, ownerKey, ownerSample);
+	}
+
+	private static String normalizeDebugWindowLabel (String label) {
+		if (label == null) return null;
+		String normalized = label.trim();
+		return normalized.length() == 0 ? null : normalized;
+	}
+
+	private static TextureDebugWindowSnapshot captureDebugWindowSnapshot () {
+		return new TextureDebugWindowSnapshot(
+			TEXTURES_LIVE.get(),
+			TEXTURES_CREATED.get(),
+			TEXTURES_DISPOSED.get(),
+			TEXTURE_UPLOAD_EVENTS.get(),
+			TEXTURE_RELEASE_EVENTS.get(),
+			TEXTURE_HANDLE_UPDATES.get(),
+			TEXTURE_NATIVE_ESTIMATED_BYTES.get(),
+			TEXTURE_UPLOAD_TOTAL_BYTES.get(),
+			TEXTURE_RELEASE_TOTAL_BYTES.get(),
+			snapshotLongMap(TEXTURE_LIVE_SOURCE_BYTES),
+			snapshotIntMap(TEXTURE_LIVE_SOURCE_COUNTS),
+			snapshotStringMap(TEXTURE_LIVE_SOURCE_SAMPLES),
+			snapshotLongMap(TEXTURE_LIVE_OWNER_BYTES),
+			snapshotIntMap(TEXTURE_LIVE_OWNER_COUNTS),
+			snapshotStringMap(TEXTURE_LIVE_OWNER_SAMPLES),
+			snapshotLongMap(TEXTURE_UPLOAD_SOURCE_BYTES),
+			snapshotIntMap(TEXTURE_UPLOAD_SOURCE_COUNTS),
+			snapshotStringMap(TEXTURE_UPLOAD_SOURCE_SAMPLES),
+			snapshotLongMap(TEXTURE_UPLOAD_OWNER_BYTES),
+			snapshotIntMap(TEXTURE_UPLOAD_OWNER_COUNTS),
+			snapshotStringMap(TEXTURE_UPLOAD_OWNER_SAMPLES),
+			snapshotLongMap(TEXTURE_RELEASE_SOURCE_BYTES),
+			snapshotIntMap(TEXTURE_RELEASE_SOURCE_COUNTS),
+			snapshotStringMap(TEXTURE_RELEASE_SOURCE_SAMPLES),
+			snapshotLongMap(TEXTURE_RELEASE_OWNER_BYTES),
+			snapshotIntMap(TEXTURE_RELEASE_OWNER_COUNTS),
+			snapshotStringMap(TEXTURE_RELEASE_OWNER_SAMPLES)
+		);
+	}
+
+	private static Map<String, Long> snapshotLongMap (ConcurrentHashMap<String, AtomicLong> source) {
+		HashMap<String, Long> snapshot = new HashMap<String, Long>();
+		for (Map.Entry<String, AtomicLong> entry : source.entrySet()) {
+			AtomicLong value = entry.getValue();
+			if (value == null) continue;
+			long bytes = value.get();
+			if (bytes <= 0L) continue;
+			snapshot.put(entry.getKey(), Long.valueOf(bytes));
+		}
+		return snapshot;
+	}
+
+	private static Map<String, Integer> snapshotIntMap (ConcurrentHashMap<String, AtomicInteger> source) {
+		HashMap<String, Integer> snapshot = new HashMap<String, Integer>();
+		for (Map.Entry<String, AtomicInteger> entry : source.entrySet()) {
+			AtomicInteger value = entry.getValue();
+			if (value == null) continue;
+			int count = value.get();
+			if (count <= 0) continue;
+			snapshot.put(entry.getKey(), Integer.valueOf(count));
+		}
+		return snapshot;
+	}
+
+	private static Map<String, String> snapshotStringMap (ConcurrentHashMap<String, String> source) {
+		return new HashMap<String, String>(source);
+	}
+
+	private static String buildDebugWindowSummary (
+		TextureDebugWindowSnapshot startSnapshot,
+		TextureDebugWindowSnapshot endSnapshot
+	) {
+		if (startSnapshot == null || endSnapshot == null) return "unavailable";
+		StringBuilder builder = new StringBuilder(512);
+		builder.append("live=").append(formatSignedInt(endSnapshot.liveTextures - startSnapshot.liveTextures));
+		builder.append(",bytes=").append(formatSignedMegabytes(endSnapshot.liveBytes - startSnapshot.liveBytes)).append("m");
+		builder.append(",created=").append(formatSignedInt(endSnapshot.createdTextures - startSnapshot.createdTextures));
+		builder.append(",disposed=").append(formatSignedInt(endSnapshot.disposedTextures - startSnapshot.disposedTextures));
+		builder.append(",uploads=").append(formatSignedInt(endSnapshot.uploadEvents - startSnapshot.uploadEvents));
+		builder.append(",uploadBytes=").append(formatSignedMegabytes(endSnapshot.uploadBytes - startSnapshot.uploadBytes)).append("m");
+		builder.append(",releases=").append(formatSignedInt(endSnapshot.releaseEvents - startSnapshot.releaseEvents));
+		builder.append(",releaseBytes=").append(formatSignedMegabytes(endSnapshot.releaseBytes - startSnapshot.releaseBytes)).append("m");
+		builder.append(",handleUpdates=").append(formatSignedInt(endSnapshot.handleUpdates - startSnapshot.handleUpdates));
+
+		String liveSources = buildDeltaAggregateSummary(
+			startSnapshot.liveSourceBytes,
+			startSnapshot.liveSourceCounts,
+			endSnapshot.liveSourceBytes,
+			endSnapshot.liveSourceCounts,
+			endSnapshot.liveSourceSamples
+		);
+		String liveOwners = buildDeltaAggregateSummary(
+			startSnapshot.liveOwnerBytes,
+			startSnapshot.liveOwnerCounts,
+			endSnapshot.liveOwnerBytes,
+			endSnapshot.liveOwnerCounts,
+			endSnapshot.liveOwnerSamples
+		);
+		String uploadSources = buildDeltaAggregateSummary(
+			startSnapshot.uploadSourceBytes,
+			startSnapshot.uploadSourceCounts,
+			endSnapshot.uploadSourceBytes,
+			endSnapshot.uploadSourceCounts,
+			endSnapshot.uploadSourceSamples
+		);
+		String uploadOwners = buildDeltaAggregateSummary(
+			startSnapshot.uploadOwnerBytes,
+			startSnapshot.uploadOwnerCounts,
+			endSnapshot.uploadOwnerBytes,
+			endSnapshot.uploadOwnerCounts,
+			endSnapshot.uploadOwnerSamples
+		);
+		String releaseSources = buildDeltaAggregateSummary(
+			startSnapshot.releaseSourceBytes,
+			startSnapshot.releaseSourceCounts,
+			endSnapshot.releaseSourceBytes,
+			endSnapshot.releaseSourceCounts,
+			endSnapshot.releaseSourceSamples
+		);
+		String releaseOwners = buildDeltaAggregateSummary(
+			startSnapshot.releaseOwnerBytes,
+			startSnapshot.releaseOwnerCounts,
+			endSnapshot.releaseOwnerBytes,
+			endSnapshot.releaseOwnerCounts,
+			endSnapshot.releaseOwnerSamples
+		);
+
+		if (!"none".equals(liveSources)) {
+			builder.append(",liveSources=").append(liveSources);
+		}
+		if (!"none".equals(liveOwners)) {
+			builder.append(",liveOwners=").append(liveOwners);
+		}
+		if (!"none".equals(uploadSources)) {
+			builder.append(",uploadSources=").append(uploadSources);
+		}
+		if (!"none".equals(uploadOwners)) {
+			builder.append(",uploadOwners=").append(uploadOwners);
+		}
+		if (!"none".equals(releaseSources)) {
+			builder.append(",releaseSources=").append(releaseSources);
+		}
+		if (!"none".equals(releaseOwners)) {
+			builder.append(",releaseOwners=").append(releaseOwners);
+		}
+		return builder.toString();
+	}
+
+	private static String buildDeltaAggregateSummary (
+		Map<String, Long> startBytes,
+		Map<String, Integer> startCounts,
+		Map<String, Long> endBytes,
+		Map<String, Integer> endCounts,
+		Map<String, String> endSamples
+	) {
+		String[] topKeys = new String[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		String[] topSamples = new String[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		long[] topBytes = new long[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		int[] topCounts = new int[TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT];
+		int topSize = 0;
+		int totalGroups = 0;
+		for (Map.Entry<String, Long> entry : endBytes.entrySet()) {
+			String key = entry.getKey();
+			long endByteValue = entry.getValue() == null ? 0L : entry.getValue().longValue();
+			long startByteValue = 0L;
+			if (startBytes != null) {
+				Long startValue = startBytes.get(key);
+				startByteValue = startValue == null ? 0L : startValue.longValue();
+			}
+			long byteDelta = endByteValue - startByteValue;
+			int endCountValue = 0;
+			Integer endCountRef = endCounts == null ? null : endCounts.get(key);
+			if (endCountRef != null) {
+				endCountValue = endCountRef.intValue();
+			}
+			int startCountValue = 0;
+			Integer startCountRef = startCounts == null ? null : startCounts.get(key);
+			if (startCountRef != null) {
+				startCountValue = startCountRef.intValue();
+			}
+			int countDelta = endCountValue - startCountValue;
+			if (byteDelta <= 0L && countDelta <= 0) continue;
+			totalGroups++;
+			int insertAt = -1;
+			for (int i = 0; i < topSize; i++) {
+				if (ranksBeforeLiveTextureSummary(byteDelta, countDelta, key, topBytes[i], topCounts[i], topKeys[i])) {
+					insertAt = i;
+					break;
+				}
+			}
+			if (insertAt < 0 && topSize < TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT) {
+				insertAt = topSize;
+			}
+			if (insertAt < 0) continue;
+			int moveEnd = topSize < TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT ? topSize : TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT - 1;
+			for (int i = moveEnd; i > insertAt; i--) {
+				topKeys[i] = topKeys[i - 1];
+				topSamples[i] = topSamples[i - 1];
+				topBytes[i] = topBytes[i - 1];
+				topCounts[i] = topCounts[i - 1];
+			}
+			topKeys[insertAt] = key;
+			topSamples[insertAt] = endSamples == null ? null : endSamples.get(key);
+			topBytes[insertAt] = byteDelta;
+			topCounts[insertAt] = countDelta;
+			if (topSize < TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT) {
+				topSize++;
+			}
+		}
+		if (topSize == 0) return "none";
+		StringBuilder builder = new StringBuilder(192);
+		for (int i = 0; i < topSize; i++) {
+			if (i > 0) builder.append("|");
+			builder.append(topKeys[i])
+				.append(":")
+				.append(toSummaryMegabytes(topBytes[i]))
+				.append("m/")
+				.append(topCounts[i]);
+			if (topSamples[i] != null && topSamples[i].length() > 0) {
+				builder.append("@").append(topSamples[i]);
+			}
+		}
+		if (totalGroups > TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT) {
+			builder.append("|...");
+		}
+		return builder.toString();
+	}
+
+	private static String formatSignedInt (int value) {
+		return value > 0 ? "+" + value : String.valueOf(value);
+	}
+
+	private static long toSignedSummaryMegabytes (long bytes) {
+		if (bytes == 0L) return 0L;
+		long absoluteBytes = bytes < 0L ? -bytes : bytes;
+		long summaryMegabytes = toSummaryMegabytes(absoluteBytes);
+		return bytes < 0L ? -summaryMegabytes : summaryMegabytes;
+	}
+
+	private static String formatSignedMegabytes (long bytes) {
+		long summaryMegabytes = toSignedSummaryMegabytes(bytes);
+		return summaryMegabytes > 0L ? "+" + summaryMegabytes : String.valueOf(summaryMegabytes);
 	}
 
 	private static long toSummaryMegabytes (long bytes) {
@@ -1494,6 +2307,142 @@ public abstract class GLTexture implements Disposable {
 			return parsed;
 		} catch (Throwable ignored) {
 			return defaultValue;
+		}
+	}
+
+	private static final class TextureAttribution {
+		private final String groupKey;
+		private final String sourceSample;
+		private final String ownerKey;
+		private final String ownerSample;
+
+		private TextureAttribution (String groupKey, String sourceSample, String ownerKey, String ownerSample) {
+			this.groupKey = groupKey;
+			this.sourceSample = sourceSample;
+			this.ownerKey = ownerKey;
+			this.ownerSample = ownerSample;
+		}
+	}
+
+	private static final class TextureDebugWindowSnapshot {
+		private final int liveTextures;
+		private final int createdTextures;
+		private final int disposedTextures;
+		private final int uploadEvents;
+		private final int releaseEvents;
+		private final int handleUpdates;
+		private final long liveBytes;
+		private final long uploadBytes;
+		private final long releaseBytes;
+		private final Map<String, Long> liveSourceBytes;
+		private final Map<String, Integer> liveSourceCounts;
+		private final Map<String, String> liveSourceSamples;
+		private final Map<String, Long> liveOwnerBytes;
+		private final Map<String, Integer> liveOwnerCounts;
+		private final Map<String, String> liveOwnerSamples;
+		private final Map<String, Long> uploadSourceBytes;
+		private final Map<String, Integer> uploadSourceCounts;
+		private final Map<String, String> uploadSourceSamples;
+		private final Map<String, Long> uploadOwnerBytes;
+		private final Map<String, Integer> uploadOwnerCounts;
+		private final Map<String, String> uploadOwnerSamples;
+		private final Map<String, Long> releaseSourceBytes;
+		private final Map<String, Integer> releaseSourceCounts;
+		private final Map<String, String> releaseSourceSamples;
+		private final Map<String, Long> releaseOwnerBytes;
+		private final Map<String, Integer> releaseOwnerCounts;
+		private final Map<String, String> releaseOwnerSamples;
+
+		private TextureDebugWindowSnapshot (
+			int liveTextures,
+			int createdTextures,
+			int disposedTextures,
+			int uploadEvents,
+			int releaseEvents,
+			int handleUpdates,
+			long liveBytes,
+			long uploadBytes,
+			long releaseBytes,
+			Map<String, Long> liveSourceBytes,
+			Map<String, Integer> liveSourceCounts,
+			Map<String, String> liveSourceSamples,
+			Map<String, Long> liveOwnerBytes,
+			Map<String, Integer> liveOwnerCounts,
+			Map<String, String> liveOwnerSamples,
+			Map<String, Long> uploadSourceBytes,
+			Map<String, Integer> uploadSourceCounts,
+			Map<String, String> uploadSourceSamples,
+			Map<String, Long> uploadOwnerBytes,
+			Map<String, Integer> uploadOwnerCounts,
+			Map<String, String> uploadOwnerSamples,
+			Map<String, Long> releaseSourceBytes,
+			Map<String, Integer> releaseSourceCounts,
+			Map<String, String> releaseSourceSamples,
+			Map<String, Long> releaseOwnerBytes,
+			Map<String, Integer> releaseOwnerCounts,
+			Map<String, String> releaseOwnerSamples
+		) {
+			this.liveTextures = liveTextures;
+			this.createdTextures = createdTextures;
+			this.disposedTextures = disposedTextures;
+			this.uploadEvents = uploadEvents;
+			this.releaseEvents = releaseEvents;
+			this.handleUpdates = handleUpdates;
+			this.liveBytes = liveBytes;
+			this.uploadBytes = uploadBytes;
+			this.releaseBytes = releaseBytes;
+			this.liveSourceBytes = liveSourceBytes;
+			this.liveSourceCounts = liveSourceCounts;
+			this.liveSourceSamples = liveSourceSamples;
+			this.liveOwnerBytes = liveOwnerBytes;
+			this.liveOwnerCounts = liveOwnerCounts;
+			this.liveOwnerSamples = liveOwnerSamples;
+			this.uploadSourceBytes = uploadSourceBytes;
+			this.uploadSourceCounts = uploadSourceCounts;
+			this.uploadSourceSamples = uploadSourceSamples;
+			this.uploadOwnerBytes = uploadOwnerBytes;
+			this.uploadOwnerCounts = uploadOwnerCounts;
+			this.uploadOwnerSamples = uploadOwnerSamples;
+			this.releaseSourceBytes = releaseSourceBytes;
+			this.releaseSourceCounts = releaseSourceCounts;
+			this.releaseSourceSamples = releaseSourceSamples;
+			this.releaseOwnerBytes = releaseOwnerBytes;
+			this.releaseOwnerCounts = releaseOwnerCounts;
+			this.releaseOwnerSamples = releaseOwnerSamples;
+		}
+	}
+
+	private static final class TexturePressureSweepResult {
+		private final int sweepIndex;
+		private final long bytesBefore;
+		private final long bytesAfter;
+		private final int reclaimedCount;
+		private final long reclaimedBytes;
+		private final int candidateCount;
+		private final String topOwnersBefore;
+		private final String topOwnersAfter;
+		private final boolean stalled;
+
+		private TexturePressureSweepResult (
+			int sweepIndex,
+			long bytesBefore,
+			long bytesAfter,
+			int reclaimedCount,
+			long reclaimedBytes,
+			int candidateCount,
+			String topOwnersBefore,
+			String topOwnersAfter,
+			boolean stalled
+		) {
+			this.sweepIndex = sweepIndex;
+			this.bytesBefore = bytesBefore;
+			this.bytesAfter = bytesAfter;
+			this.reclaimedCount = reclaimedCount;
+			this.reclaimedBytes = reclaimedBytes;
+			this.candidateCount = candidateCount;
+			this.topOwnersBefore = topOwnersBefore;
+			this.topOwnersAfter = topOwnersAfter;
+			this.stalled = stalled;
 		}
 	}
 

@@ -70,6 +70,9 @@ fun LauncherCompatibilityScreen(
         onLargeTextureDownscaleCompatToggled = { enabled ->
             viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
         },
+        onTextureResidencyManagerCompatToggled = { enabled ->
+            viewModel.onTextureResidencyManagerCompatToggled(context, enabled)
+        },
         onTexturePressureDownscaleDivisorChanged = { divisor ->
             viewModel.onTexturePressureDownscaleDivisorChanged(context, divisor)
         },
@@ -106,6 +109,7 @@ private fun LauncherCompatibilityScreenPreview() {
             runtimeTextureCompatEnabled = false,
             mainMenuPreviewReuseCompatEnabled = true,
             largeTextureDownscaleCompatEnabled = true,
+            textureResidencyManagerCompatEnabled = false,
             texturePressureDownscaleDivisor = 2,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,
@@ -132,6 +136,7 @@ private fun LauncherCompatibilityScreenContent(
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onMainMenuPreviewReuseCompatToggled: (Boolean) -> Unit = {},
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
+    onTextureResidencyManagerCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -213,6 +218,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.largeTextureDownscaleCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onLargeTextureDownscaleCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_texture_residency_manager_title),
+                    description = stringResource(R.string.compat_texture_residency_manager_desc),
+                    checked = uiState.textureResidencyManagerCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onTextureResidencyManagerCompatToggled
                 )
 
                 SettingsDropdownField(

@@ -1631,6 +1631,7 @@ public class LwjglApplication implements Application {
 				ensureDisplayContextCurrent("render");
 				graphics.updateTime();
 				graphics.frameId++;
+				GLTexture.noteFrameRendered(graphics.frameId);
 				GLFrameBuffer.noteFrameRendered(graphics.frameId);
 				if ((graphics.frameId % 600) == 0) {
 					boolean isCurrent = false;
@@ -1658,6 +1659,7 @@ public class LwjglApplication implements Application {
 				} finally {
 					finishScaledRenderFrame(scaledRender, physicalWidth, physicalHeight);
 				}
+				GLTexture.reclaimIdleTextures(Gdx.app, graphics.frameId);
 				GLFrameBuffer.reclaimIdleFrameBuffers(Gdx.app, graphics.frameId);
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;
 				if (forceDefaultFbo || Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {

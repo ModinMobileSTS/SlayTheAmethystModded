@@ -14,6 +14,9 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 
 public final class RuntimeMemoryDiagnostics {
+    private static final String MENU_TEXTURE_WINDOW_LABEL = "menu_cycle";
+    private static final String MODDED_OPTIONS_TEXTURE_WINDOW_LABEL = "modded_options_build";
+    private static final String CHARACTER_RECREATE_TEXTURE_WINDOW_PREFIX = "recreate_character";
     private static final String MENU_DIAG_PROP = "amethyst.runtime_compat.menu_diag";
     private static final String MENU_DIAG_VERBOSE_PROP = "amethyst.runtime_compat.menu_diag_verbose";
     private static final String MENU_DIAG_HOTSPOTS_PROP = "amethyst.runtime_compat.menu_diag_hotspots";
@@ -28,7 +31,7 @@ public final class RuntimeMemoryDiagnostics {
     private static final boolean FBO_MANAGER_ENABLED =
         readBooleanSystemProperty(FBO_MANAGER_PROP, true);
     private static final boolean MENU_DIAG_HOTSPOTS_ENABLED =
-        readBooleanSystemProperty(MENU_DIAG_HOTSPOTS_PROP, GPU_RESOURCE_DIAG_ENABLED);
+        readBooleanSystemProperty(MENU_DIAG_HOTSPOTS_PROP, MENU_DIAG_ENABLED);
     private static long mainMenuConstructorStartNs = -1L;
     private static long characterSelectInitializeStartNs = -1L;
     private static CardCrawlGame.GameMode lastMode;
@@ -42,6 +45,12 @@ public final class RuntimeMemoryDiagnostics {
     private static Method glTextureSummaryMethod;
     private static Method glTextureLiveSourceSummaryMethod;
     private static Method glTextureLiveOwnerSummaryMethod;
+    private static Method glTextureUploadSourceSummaryMethod;
+    private static Method glTextureUploadOwnerSummaryMethod;
+    private static Method glTextureReleaseSourceSummaryMethod;
+    private static Method glTextureReleaseOwnerSummaryMethod;
+    private static Method glTextureBeginDebugWindowMethod;
+    private static Method glTextureFinishDebugWindowMethod;
     private static Method glFrameBufferSummaryMethod;
     private static Method glFrameBufferLiveOwnerSummaryMethod;
     private static final ThreadLocal<CharacterRecreateTrace> characterRecreateTrace =
@@ -66,7 +75,7 @@ public final class RuntimeMemoryDiagnostics {
                 + " summaryLogs=" + MENU_DIAG_ENABLED
                 + " verboseLogs=" + MENU_DIAG_VERBOSE_ENABLED
                 + " hotspotLogs=" + MENU_DIAG_HOTSPOTS_ENABLED
-                + " gpuDiag=" + GPU_RESOURCE_DIAG_ENABLED
+                + " gpuDiagTrace=" + GPU_RESOURCE_DIAG_ENABLED
         );
     }
 
@@ -77,6 +86,7 @@ public final class RuntimeMemoryDiagnostics {
     public static void onMainMenuConstructorBegin(boolean screenState) {
         MainMenuPreviewStrategy.onMainMenuConstructorBegin();
         mainMenuConstructorStartNs = shouldTrackDurations() ? System.nanoTime() : -1L;
+        beginTextureDebugWindow(MENU_TEXTURE_WINDOW_LABEL);
         logSummaryOrVerbose(
             "menu_cycle_begin",
             "ctorArg=" + screenState + " previewReuseEnabled=" + MainMenuPreviewStrategy.isEnabled(),
@@ -92,6 +102,7 @@ public final class RuntimeMemoryDiagnostics {
         builder.append("ctorArg=").append(screenState);
         builder.append(" durationMs=").append(consumeMainMenuConstructorDurationMs());
         appendPreviewSummary(builder, snapshot);
+        appendTextureDebugWindowSummary(builder, MENU_TEXTURE_WINDOW_LABEL);
         logSummaryOrVerbose(
             "menu_cycle_end",
             builder.toString(),
@@ -120,6 +131,7 @@ public final class RuntimeMemoryDiagnostics {
 
     public static ArrayList<CharacterOption> buildModdedCharacterOptions() {
         long startedAtNs = shouldTrackDurations() ? System.nanoTime() : -1L;
+        beginTextureDebugWindow(MODDED_OPTIONS_TEXTURE_WINDOW_LABEL);
         ArrayList<CharacterOption> options = MainMenuPreviewStrategy.buildModdedCharacterOptions();
         MainMenuPreviewStrategy.Snapshot snapshot = MainMenuPreviewStrategy.snapshot();
         StringBuilder builder = new StringBuilder(256);
@@ -131,6 +143,7 @@ public final class RuntimeMemoryDiagnostics {
         builder.append(" textureCacheHits=").append(snapshot.moddedCharacterTextureCacheHits);
         builder.append(" textureCacheMisses=").append(snapshot.moddedCharacterTextureCacheMisses);
         builder.append(" textureCacheSize=").append(snapshot.cachedCharacterOptionTextureCount);
+        appendTextureDebugWindowSummary(builder, MODDED_OPTIONS_TEXTURE_WINDOW_LABEL);
         logSummaryOrVerbose("modded_options_build", builder.toString(), null, null, true);
         return options;
     }
@@ -269,19 +282,36 @@ public final class RuntimeMemoryDiagnostics {
         CharacterManager characterManager,
         AbstractPlayer.PlayerClass playerClass
     ) {
-        if (!MENU_DIAG_VERBOSE_ENABLED || characterManager == null || playerClass == null) {
+        if (characterManager == null || playerClass == null) {
+            return;
+        }
+        String phase = MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass);
+        boolean summaryEvent = shouldLogCharacterRecreateSummary(phase);
+        if (!MENU_DIAG_VERBOSE_ENABLED && !summaryEvent) {
             return;
         }
         AbstractPlayer existing = characterManager.getCharacter(playerClass);
+        long startedAtNs = System.nanoTime();
+        String textureWindowLabel = buildCharacterRecreateTextureWindowLabel(
+            playerClass,
+            phase,
+            startedAtNs
+        );
         CharacterRecreateTrace trace = new CharacterRecreateTrace(
             playerClass,
             existing,
             existing != null && existing == AbstractDungeon.player,
-            System.nanoTime(),
-            MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass)
+            startedAtNs,
+            phase,
+            textureWindowLabel,
+            summaryEvent
         );
         characterRecreateTrace.set(trace);
         characterRecreateShortcutLogged.remove();
+        beginTextureDebugWindow(textureWindowLabel);
+        if (!MENU_DIAG_VERBOSE_ENABLED) {
+            return;
+        }
         StringBuilder builder = new StringBuilder(256);
         builder.append("targetClass=").append(safePlayerClassName(playerClass));
         builder.append(" phase=").append(trace.phase);
@@ -297,20 +327,28 @@ public final class RuntimeMemoryDiagnostics {
         AbstractPlayer reusedPlayer,
         String reason
     ) {
-        if (!MENU_DIAG_VERBOSE_ENABLED) {
-            characterRecreateTrace.remove();
-            characterRecreateShortcutLogged.remove();
-            return;
-        }
         CharacterRecreateTrace trace = characterRecreateTrace.get();
-        if (trace == null) {
+        if (trace == null && MENU_DIAG_VERBOSE_ENABLED) {
             trace = new CharacterRecreateTrace(
                 playerClass,
                 reusedPlayer,
                 reusedPlayer != null && reusedPlayer == AbstractDungeon.player,
                 System.nanoTime(),
-                MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass)
+                MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass),
+                buildCharacterRecreateTextureWindowLabel(
+                    playerClass,
+                    MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass),
+                    System.nanoTime()
+                ),
+                shouldLogCharacterRecreateSummary(
+                    MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass)
+                )
             );
+        }
+        if (!MENU_DIAG_VERBOSE_ENABLED && trace == null) {
+            characterRecreateTrace.remove();
+            characterRecreateShortcutLogged.remove();
+            return;
         }
         characterRecreateShortcutLogged.set(Boolean.TRUE);
         logCharacterRecreateEnd(characterManager, trace, reusedPlayer, true, reason);
@@ -321,11 +359,6 @@ public final class RuntimeMemoryDiagnostics {
         AbstractPlayer.PlayerClass playerClass,
         AbstractPlayer result
     ) {
-        if (!MENU_DIAG_VERBOSE_ENABLED) {
-            characterRecreateTrace.remove();
-            characterRecreateShortcutLogged.remove();
-            return;
-        }
         if (Boolean.TRUE.equals(characterRecreateShortcutLogged.get())) {
             characterRecreateShortcutLogged.remove();
             characterRecreateTrace.remove();
@@ -334,13 +367,23 @@ public final class RuntimeMemoryDiagnostics {
         characterRecreateShortcutLogged.remove();
         CharacterRecreateTrace trace = characterRecreateTrace.get();
         if (trace == null) {
+            String phase = MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass);
+            boolean summaryEvent = shouldLogCharacterRecreateSummary(phase);
+            if (!MENU_DIAG_VERBOSE_ENABLED && !summaryEvent) {
+                characterRecreateTrace.remove();
+                return;
+            }
+            long startedAtNs = System.nanoTime();
             trace = new CharacterRecreateTrace(
                 playerClass,
                 characterManager == null ? null : characterManager.getCharacter(playerClass),
                 false,
-                System.nanoTime(),
-                MainMenuPreviewStrategy.describeCharacterRecreatePhase(playerClass)
+                startedAtNs,
+                phase,
+                buildCharacterRecreateTextureWindowLabel(playerClass, phase, startedAtNs),
+                summaryEvent
             );
+            beginTextureDebugWindow(trace.textureWindowLabel);
         }
         logCharacterRecreateEnd(characterManager, trace, result, false, "new_instance");
     }
@@ -392,6 +435,34 @@ public final class RuntimeMemoryDiagnostics {
         builder.append("}");
     }
 
+    private static void beginTextureDebugWindow(String label) {
+        ensureGpuSummaryMethods();
+        if (glTextureBeginDebugWindowMethod == null || label == null || label.length() == 0) {
+            return;
+        }
+        invokeVoid(glTextureBeginDebugWindowMethod, label);
+    }
+
+    private static void appendTextureDebugWindowSummary(StringBuilder builder, String label) {
+        String summary = finishTextureDebugWindowSummary(label);
+        if (summary == null) {
+            return;
+        }
+        builder.append(" textureWindow={").append(summary).append("}");
+    }
+
+    private static String finishTextureDebugWindowSummary(String label) {
+        ensureGpuSummaryMethods();
+        if (glTextureFinishDebugWindowMethod == null || label == null || label.length() == 0) {
+            return null;
+        }
+        String summary = invokeSummary(glTextureFinishDebugWindowMethod, "unavailable", label);
+        if (summary == null || summary.length() == 0 || "missing".equals(summary) || "unavailable".equals(summary)) {
+            return null;
+        }
+        return summary;
+    }
+
     private static String orNone(String value) {
         return value == null || value.length() == 0 ? "none" : value;
     }
@@ -404,27 +475,58 @@ public final class RuntimeMemoryDiagnostics {
         String reason
     ) {
         try {
+            if (trace == null) {
+                return;
+            }
             AbstractPlayer masterPlayer =
                 characterManager == null || trace.playerClass == null
                     ? null
                     : characterManager.getCharacter(trace.playerClass);
-            StringBuilder builder = new StringBuilder(320);
+            StringBuilder builder = new StringBuilder(MENU_DIAG_VERBOSE_ENABLED ? 384 : 256);
             builder.append("targetClass=").append(safePlayerClassName(trace.playerClass));
             builder.append(" phase=").append(trace.phase);
             builder.append(" durationMs=").append(toDurationMs(trace.startedAtNs));
             builder.append(" reusedShortcut=").append(reusedShortcut);
             builder.append(" reason=").append(reason);
+            builder.append(" resultMatchesExisting=").append(result != null && result == trace.existingPlayer);
+            builder.append(" resultMatchesMaster=").append(result != null && result == masterPlayer);
+            appendTextureDebugWindowSummary(builder, trace.textureWindowLabel);
+            if (!MENU_DIAG_VERBOSE_ENABLED) {
+                if (!trace.summaryEvent) {
+                    return;
+                }
+                logSummaryOrVerbose("recreate_character_summary", builder.toString(), null, null, false);
+                return;
+            }
             builder.append(" existingWasDungeonPlayer=").append(trace.existingWasDungeonPlayer);
             appendCharacterRef(builder, "existingPlayer", trace.existingPlayer);
             appendCharacterRef(builder, "resultPlayer", result);
             appendCharacterRef(builder, "masterPlayer", masterPlayer);
             appendCharacterRef(builder, "dungeonPlayer", AbstractDungeon.player);
-            builder.append(" resultMatchesExisting=").append(result != null && result == trace.existingPlayer);
-            builder.append(" resultMatchesMaster=").append(result != null && result == masterPlayer);
             logVerbose("recreate_character_end", builder.toString(), null, null, false);
         } finally {
+            if (trace != null && trace.textureWindowLabel != null) {
+                finishTextureDebugWindowSummary(trace.textureWindowLabel);
+            }
             characterRecreateTrace.remove();
         }
+    }
+
+    private static boolean shouldLogCharacterRecreateSummary(String phase) {
+        return MENU_DIAG_ENABLED && "main_menu_modded_selected".equals(phase);
+    }
+
+    private static String buildCharacterRecreateTextureWindowLabel(
+        AbstractPlayer.PlayerClass playerClass,
+        String phase,
+        long startedAtNs
+    ) {
+        StringBuilder builder = new StringBuilder(96);
+        builder.append(CHARACTER_RECREATE_TEXTURE_WINDOW_PREFIX);
+        builder.append(":").append(safePlayerClassName(playerClass));
+        builder.append(":").append(phase == null ? "unknown" : phase);
+        builder.append(":").append(startedAtNs);
+        return builder.toString();
     }
 
     private static void logSummaryOrVerbose(
@@ -496,6 +598,10 @@ public final class RuntimeMemoryDiagnostics {
         if (includeTextureHotspots && MENU_DIAG_HOTSPOTS_ENABLED) {
             builder.append(" gpuTopSources={").append(getTextureLiveSourceSummary()).append("}");
             builder.append(" gpuTopOwners={").append(getTextureLiveOwnerSummary()).append("}");
+            builder.append(" gpuTopUploads={").append(getTextureUploadSourceSummary()).append("}");
+            builder.append(" gpuTopUploadOwners={").append(getTextureUploadOwnerSummary()).append("}");
+            builder.append(" gpuTopReleases={").append(getTextureReleaseSourceSummary()).append("}");
+            builder.append(" gpuTopReleaseOwners={").append(getTextureReleaseOwnerSummary()).append("}");
             builder.append(" gpuTopFboOwners={").append(getFrameBufferLiveOwnerSummary()).append("}");
         }
         System.out.println(builder.toString());
@@ -601,6 +707,38 @@ public final class RuntimeMemoryDiagnostics {
         );
     }
 
+    private static String getTextureUploadSourceSummary() {
+        ensureGpuSummaryMethods();
+        return stripSummaryLabel(
+            invokeSummary(glTextureUploadSourceSummaryMethod, "textureUploadTop=unavailable"),
+            "textureUploadTop="
+        );
+    }
+
+    private static String getTextureUploadOwnerSummary() {
+        ensureGpuSummaryMethods();
+        return stripSummaryLabel(
+            invokeSummary(glTextureUploadOwnerSummaryMethod, "textureUploadOwnerTop=unavailable"),
+            "textureUploadOwnerTop="
+        );
+    }
+
+    private static String getTextureReleaseSourceSummary() {
+        ensureGpuSummaryMethods();
+        return stripSummaryLabel(
+            invokeSummary(glTextureReleaseSourceSummaryMethod, "textureReleaseTop=unavailable"),
+            "textureReleaseTop="
+        );
+    }
+
+    private static String getTextureReleaseOwnerSummary() {
+        ensureGpuSummaryMethods();
+        return stripSummaryLabel(
+            invokeSummary(glTextureReleaseOwnerSummaryMethod, "textureReleaseOwnerTop=unavailable"),
+            "textureReleaseOwnerTop="
+        );
+    }
+
     private static String getFrameBufferLiveOwnerSummary() {
         ensureGpuSummaryMethods();
         return stripSummaryLabel(
@@ -627,10 +765,22 @@ public final class RuntimeMemoryDiagnostics {
                 glTextureSummaryMethod = textureClass.getMethod("getDebugStatusSummary");
                 glTextureLiveSourceSummaryMethod = textureClass.getMethod("getLiveSourceSummary");
                 glTextureLiveOwnerSummaryMethod = textureClass.getMethod("getLiveOwnerSummary");
+                glTextureUploadSourceSummaryMethod = textureClass.getMethod("getUploadSourceSummary");
+                glTextureUploadOwnerSummaryMethod = textureClass.getMethod("getUploadOwnerSummary");
+                glTextureReleaseSourceSummaryMethod = textureClass.getMethod("getReleaseSourceSummary");
+                glTextureReleaseOwnerSummaryMethod = textureClass.getMethod("getReleaseOwnerSummary");
+                glTextureBeginDebugWindowMethod = textureClass.getMethod("beginDebugWindow", String.class);
+                glTextureFinishDebugWindowMethod = textureClass.getMethod("finishDebugWindow", String.class);
             } catch (Throwable ignored) {
                 glTextureSummaryMethod = null;
                 glTextureLiveSourceSummaryMethod = null;
                 glTextureLiveOwnerSummaryMethod = null;
+                glTextureUploadSourceSummaryMethod = null;
+                glTextureUploadOwnerSummaryMethod = null;
+                glTextureReleaseSourceSummaryMethod = null;
+                glTextureReleaseOwnerSummaryMethod = null;
+                glTextureBeginDebugWindowMethod = null;
+                glTextureFinishDebugWindowMethod = null;
             }
             try {
                 Class<?> frameBufferClass = Class.forName("com.badlogic.gdx.graphics.glutils.GLFrameBuffer");
@@ -643,6 +793,12 @@ public final class RuntimeMemoryDiagnostics {
             if ((glTextureSummaryMethod == null
                     || glTextureLiveSourceSummaryMethod == null
                     || glTextureLiveOwnerSummaryMethod == null
+                    || glTextureUploadSourceSummaryMethod == null
+                    || glTextureUploadOwnerSummaryMethod == null
+                    || glTextureReleaseSourceSummaryMethod == null
+                    || glTextureReleaseOwnerSummaryMethod == null
+                    || glTextureBeginDebugWindowMethod == null
+                    || glTextureFinishDebugWindowMethod == null
                     || glFrameBufferSummaryMethod == null
                     || glFrameBufferLiveOwnerSummaryMethod == null)
                 && !gpuSummaryLookupFailureLogged) {
@@ -652,6 +808,12 @@ public final class RuntimeMemoryDiagnostics {
                         + " textureMethod=" + (glTextureSummaryMethod != null)
                         + " textureLiveSourceMethod=" + (glTextureLiveSourceSummaryMethod != null)
                         + " textureLiveOwnerMethod=" + (glTextureLiveOwnerSummaryMethod != null)
+                        + " textureUploadSourceMethod=" + (glTextureUploadSourceSummaryMethod != null)
+                        + " textureUploadOwnerMethod=" + (glTextureUploadOwnerSummaryMethod != null)
+                        + " textureReleaseSourceMethod=" + (glTextureReleaseSourceSummaryMethod != null)
+                        + " textureReleaseOwnerMethod=" + (glTextureReleaseOwnerSummaryMethod != null)
+                        + " textureBeginWindowMethod=" + (glTextureBeginDebugWindowMethod != null)
+                        + " textureFinishWindowMethod=" + (glTextureFinishDebugWindowMethod != null)
                         + " frameBufferMethod=" + (glFrameBufferSummaryMethod != null)
                         + " frameBufferLiveOwnerMethod=" + (glFrameBufferLiveOwnerSummaryMethod != null)
                 );
@@ -660,11 +822,15 @@ public final class RuntimeMemoryDiagnostics {
     }
 
     private static String invokeSummary(Method method, String fallback) {
+        return invokeSummary(method, fallback, new Object[0]);
+    }
+
+    private static String invokeSummary(Method method, String fallback, Object... args) {
         if (method == null) {
             return fallback;
         }
         try {
-            Object result = method.invoke(null);
+            Object result = method.invoke(null, args);
             return result instanceof String ? (String) result : fallback;
         } catch (Throwable error) {
             synchronized (RuntimeMemoryDiagnostics.class) {
@@ -677,6 +843,25 @@ public final class RuntimeMemoryDiagnostics {
                 }
             }
             return fallback;
+        }
+    }
+
+    private static void invokeVoid(Method method, Object... args) {
+        if (method == null) {
+            return;
+        }
+        try {
+            method.invoke(null, args);
+        } catch (Throwable error) {
+            synchronized (RuntimeMemoryDiagnostics.class) {
+                if (!gpuSummaryInvokeFailureLogged) {
+                    gpuSummaryInvokeFailureLogged = true;
+                    System.out.println(
+                        "[amethyst-runtime-diag] gpu_summary_invoke_failed reason="
+                            + error.getClass().getSimpleName()
+                    );
+                }
+            }
         }
     }
 
@@ -723,19 +908,25 @@ public final class RuntimeMemoryDiagnostics {
         private final boolean existingWasDungeonPlayer;
         private final long startedAtNs;
         private final String phase;
+        private final String textureWindowLabel;
+        private final boolean summaryEvent;
 
         private CharacterRecreateTrace(
             AbstractPlayer.PlayerClass playerClass,
             AbstractPlayer existingPlayer,
             boolean existingWasDungeonPlayer,
             long startedAtNs,
-            String phase
+            String phase,
+            String textureWindowLabel,
+            boolean summaryEvent
         ) {
             this.playerClass = playerClass;
             this.existingPlayer = existingPlayer;
             this.existingWasDungeonPlayer = existingWasDungeonPlayer;
             this.startedAtNs = startedAtNs;
             this.phase = phase;
+            this.textureWindowLabel = textureWindowLabel;
+            this.summaryEvent = summaryEvent;
         }
     }
 }
