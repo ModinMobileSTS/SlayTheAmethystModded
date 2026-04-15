@@ -1,23 +1,58 @@
 package com.badlogic.gdx.graphics.glutils;
 
 final class FrameBufferOwnerSummary {
+	private static final String SCALED_RENDER_PIPELINE_FRAGMENT =
+		"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline";
+	private static final String APPLY_SCREEN_POST_PROCESSOR_FRAGMENT =
+		"basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor";
+	private static final String[] EFFECT_STACK_FRAGMENTS = {
+		".vfx.",
+		".effect.",
+		".effects.",
+		".postfx",
+		".postprocess",
+		".shader",
+		".mask",
+		".glow",
+		".blur",
+		".outline",
+		".particles.",
+		".cutscene.",
+		".cutscenes."
+	};
+
 	private FrameBufferOwnerSummary () {
 	}
 
 	static String resolveManagerProtectReason (String stackKey) {
-		if (containsStackFragment(
-			stackKey,
-			"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline"
-		)) {
+		if (containsStackFragment(stackKey, SCALED_RENDER_PIPELINE_FRAGMENT)) {
 			return "scaled_render_pipeline";
 		}
-		if (containsStackFragment(
-			stackKey,
-			"basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor"
-		)) {
+		if (containsStackFragment(stackKey, APPLY_SCREEN_POST_PROCESSOR_FRAGMENT)) {
 			return "ApplyScreenPostProcessor";
 		}
 		return null;
+	}
+
+	static String resolvePressureDownscaleProtectReason (String stackKey) {
+		return resolveManagerProtectReason(stackKey);
+	}
+
+	static boolean isExternalModStack (String stackKey) {
+		if (stackKey == null || stackKey.length() == 0) return false;
+		String[] frames = stackKey.split(" <- ");
+		for (int i = 0; i < frames.length; i++) {
+			String className = extractFrameClassName(frames[i]);
+			String ownerKey = classifyExternalOwnerKey(className);
+			if (ownerKey == null) continue;
+			if (ownerKey.startsWith("basemod<-") || ownerKey.startsWith("modthespire<-")) continue;
+			return true;
+		}
+		return false;
+	}
+
+	static boolean isEffectLikeStack (String stackKey) {
+		return containsAnyStackFragment(stackKey, EFFECT_STACK_FRAGMENTS);
 	}
 
 	static String classifyOwnerKey (String stackKey) {
@@ -116,6 +151,16 @@ final class FrameBufferOwnerSummary {
 
 	private static boolean containsStackFragment (String stackKey, String fragment) {
 		return stackKey != null && fragment != null && stackKey.indexOf(fragment) >= 0;
+	}
+
+	private static boolean containsAnyStackFragment (String stackKey, String[] fragments) {
+		if (stackKey == null || stackKey.length() == 0 || fragments == null) return false;
+		for (int i = 0; i < fragments.length; i++) {
+			if (containsStackFragment(stackKey, fragments[i])) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static String extractFrameClassName (String frame) {

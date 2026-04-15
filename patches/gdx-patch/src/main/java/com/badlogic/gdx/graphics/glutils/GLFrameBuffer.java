@@ -621,63 +621,20 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		long requestedBytes
 	) {
 		if (projectedFullBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES) return PRESSURE_DOWNSCALE_ALLOW;
-		if (containsExternalModNamespace(stackKey)) return PRESSURE_DOWNSCALE_ALLOW;
-		if (containsAnyStackFragment(
-			stackKey,
-			".vfx.",
-			".effect.",
-			".effects.",
-			".postfx",
-			".postprocess",
-			".shader",
-			".mask",
-			".glow",
-			".blur",
-			".outline",
-			".particles.",
-			".cutscene.",
-			".cutscenes."
-		)) return PRESSURE_DOWNSCALE_ALLOW;
+		if (FrameBufferOwnerSummary.isExternalModStack(stackKey)) return PRESSURE_DOWNSCALE_ALLOW;
+		if (FrameBufferOwnerSummary.isEffectLikeStack(stackKey)) return PRESSURE_DOWNSCALE_ALLOW;
 		if (requestedBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES / 2L) return PRESSURE_DOWNSCALE_ALLOW;
 		return PRESSURE_DOWNSCALE_NONE;
 	}
 
 	private String resolvePressureDownscaleProtectReason (String stackKey) {
-		if (containsAnyStackFragment(
-			stackKey,
-			"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline",
-			"basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor"
-		)) {
-			if (containsStackFragment(
-				stackKey,
-				"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline"
-			)) {
-				return "scaled_render_pipeline";
-			}
-			return "ApplyScreenPostProcessor";
-		}
-		return null;
+		return FrameBufferOwnerSummary.resolvePressureDownscaleProtectReason(stackKey);
 	}
 
 	private String resolvePressureDownscaleAllowReason (String stackKey, long projectedFullBytes, long requestedBytes) {
 		if (projectedFullBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_HARD_BUDGET_BYTES) return "hard_budget";
-		if (containsExternalModNamespace(stackKey)) return "external_stack";
-		if (containsAnyStackFragment(
-			stackKey,
-			".vfx.",
-			".effect.",
-			".effects.",
-			".postfx",
-			".postprocess",
-			".shader",
-			".mask",
-			".glow",
-			".blur",
-			".outline",
-			".particles.",
-			".cutscene.",
-			".cutscenes."
-		)) return "effect_stack";
+		if (FrameBufferOwnerSummary.isExternalModStack(stackKey)) return "external_stack";
+		if (FrameBufferOwnerSummary.isEffectLikeStack(stackKey)) return "effect_stack";
 		if (requestedBytes >= GPU_RESOURCE_DIAG_FBO_PRESSURE_SOFT_BUDGET_BYTES / 2L) return "large_budget_share";
 		return "unspecified";
 	}
@@ -1698,49 +1655,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return true;
 	}
 
-	private static boolean containsStackFragment (String stackKey, String fragment) {
-		return stackKey != null && fragment != null && stackKey.indexOf(fragment) >= 0;
-	}
-
 	private static String formatStackDetail (String stackKey) {
 		return stackKey == null || stackKey.length() == 0 ? "" : " stack=" + stackKey;
-	}
-
-	private static boolean containsAnyStackFragment (String stackKey, String... fragments) {
-		if (stackKey == null || stackKey.length() == 0 || fragments == null) return false;
-		for (int i = 0; i < fragments.length; i++) {
-			if (containsStackFragment(stackKey, fragments[i])) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean containsExternalModNamespace (String stackKey) {
-		if (stackKey == null || stackKey.length() == 0) return false;
-		String[] frames = stackKey.split(" <- ");
-		for (int i = 0; i < frames.length; i++) {
-			String frame = frames[i];
-			int hashIndex = frame.indexOf('#');
-			if (hashIndex <= 0) continue;
-			String className = frame.substring(0, hashIndex);
-			if (className.startsWith("com.megacrit.cardcrawl.")) continue;
-			if (className.startsWith("basemod.")) continue;
-			if (className.startsWith("com.badlogic.gdx.")) continue;
-			if (className.startsWith("java.")) continue;
-			if (className.startsWith("javax.")) continue;
-			if (className.startsWith("sun.")) continue;
-			if (className.startsWith("jdk.")) continue;
-			if (className.startsWith("kotlin.")) continue;
-			if (className.startsWith("org.lwjgl.")) continue;
-			if (className.startsWith("org.apache.")) continue;
-			if (className.startsWith("de.robojumper.")) continue;
-			if (className.startsWith("com.esotericsoftware.")) continue;
-			if (className.startsWith("io.stamethyst.")) continue;
-			if (className.startsWith("com.evacipated.cardcrawl.modthespire.")) continue;
-			return true;
-		}
-		return false;
 	}
 
 	private static final class FrameBufferPressureSweepResult {
