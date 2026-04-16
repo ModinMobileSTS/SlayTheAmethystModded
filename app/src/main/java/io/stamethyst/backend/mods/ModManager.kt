@@ -22,6 +22,7 @@ object ModManager {
     const val MOD_ID_BASEMOD = "basemod"
     const val MOD_ID_STSLIB = "stslib"
     const val MOD_ID_AMETHYST_RUNTIME_COMPAT = "amethystruntimecompat"
+    const val MOD_ID_RAM_SAVER = "ramsaver"
     const val OPTIONAL_MOD_PRIORITY_MIN = 0
     const val OPTIONAL_MOD_PRIORITY_MAX = 10
     private const val UNSET_OPTIONAL_MOD_PRIORITY_SORT_VALUE = OPTIONAL_MOD_PRIORITY_MAX + 1
@@ -548,6 +549,21 @@ object ModManager {
     }
 
     @JvmStatic
+    fun isRamSaverEnabled(context: Context): Boolean {
+        val optionalModFiles = findOptionalModFiles(context)
+        if (optionalModFiles.isEmpty()) {
+            return false
+        }
+
+        val rawSelection = readEnabledOptionalModKeysSafely(context)
+        val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
+        maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
+        return optionalModFiles.any { entry ->
+            enabledSelection.contains(entry.storageKey) && isRamSaverOptionalMod(entry)
+        }
+    }
+
+    @JvmStatic
     @Throws(IOException::class)
     fun resolveLaunchModIds(context: Context): List<String> {
         val baseModId = resolveRequiredLaunchModId(
@@ -702,6 +718,26 @@ object ModManager {
                 launchValidationError = metadata.launchValidationError
             )
         }
+    }
+
+    private fun isRamSaverOptionalMod(entry: OptionalModFileEntry): Boolean {
+        return normalizeModId(entry.normalizedModId) == MOD_ID_RAM_SAVER ||
+            normalizeModId(entry.rawModId) == MOD_ID_RAM_SAVER ||
+            entry.launchModId.trim().equals(MOD_ID_RAM_SAVER, ignoreCase = true) ||
+            looksLikeRamSaverName(entry.name) ||
+            looksLikeRamSaverName(entry.jarFile.name)
+    }
+
+    private fun looksLikeRamSaverName(value: String?): Boolean {
+        val normalized = value
+            .orEmpty()
+            .trim()
+            .lowercase(Locale.ROOT)
+            .removeSuffix(".jar")
+            .replace(" ", "")
+            .replace("_", "")
+            .replace("-", "")
+        return normalized == "ramsaver"
     }
 
     private fun isReservedJarName(fileName: String): Boolean {

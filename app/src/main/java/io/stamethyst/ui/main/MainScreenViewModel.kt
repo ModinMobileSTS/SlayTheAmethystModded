@@ -33,6 +33,7 @@ import io.stamethyst.backend.launch.LauncherReturnAction
 import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
 import io.stamethyst.backend.launch.StsLaunchSpec
+import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModSuggestionService
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
@@ -908,6 +909,33 @@ class MainScreenViewModel : ViewModel() {
             return
         }
 
+        if (shouldShowRamSaverResidencyLaunchWarning(host, launchMode)) {
+            showRamSaverResidencyLaunchDialog(
+                host = host,
+                launchMode = launchMode,
+                backBehavior = backBehavior,
+                manualDismissBootOverlay = manualDismissBootOverlay,
+                forceJvmCrash = forceJvmCrash
+            )
+            return
+        }
+
+        launchGameActivity(
+            host = host,
+            launchMode = launchMode,
+            backBehavior = backBehavior,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            forceJvmCrash = forceJvmCrash
+        )
+    }
+
+    private fun launchGameActivity(
+        host: Activity,
+        launchMode: String,
+        backBehavior: BackBehavior,
+        manualDismissBootOverlay: Boolean,
+        forceJvmCrash: Boolean
+    ) {
         val launchStartedAtMs = GameLaunchReturnTracker.markGameLaunchStarted(host)
         if (LauncherPreferences.isLogcatCaptureEnabled(host)) {
             LogcatCaptureProcessClient.startCapture(host, launchStartedAtMs)
@@ -938,6 +966,57 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
+    private fun shouldShowRamSaverResidencyLaunchWarning(
+        host: Activity,
+        launchMode: String
+    ): Boolean {
+        if (!StsLaunchSpec.isMtsLaunchMode(launchMode)) {
+            return false
+        }
+        if (!CompatibilitySettings.isTextureResidencyManagerCompatEnabled(host)) {
+            return false
+        }
+        return modManagementController.currentOptionalMods().any(::isEnabledRamSaverMod)
+    }
+
+    private fun showRamSaverResidencyLaunchDialog(
+        host: Activity,
+        launchMode: String,
+        backBehavior: BackBehavior,
+        manualDismissBootOverlay: Boolean,
+        forceJvmCrash: Boolean
+    ) {
+        var proceed = false
+        val dialog = AlertDialog.Builder(host)
+            .setTitle(R.string.main_ram_saver_texture_residency_title)
+            .setMessage(host.getString(R.string.main_ram_saver_texture_residency_message))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.main_ram_saver_texture_residency_continue, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                proceed = true
+                dialog.dismiss()
+                launchGameActivity(
+                    host = host,
+                    launchMode = launchMode,
+                    backBehavior = backBehavior,
+                    manualDismissBootOverlay = manualDismissBootOverlay,
+                    forceJvmCrash = forceJvmCrash
+                )
+            }
+        }
+        dialog.setOnDismissListener {
+            if (!proceed) {
+                clearLaunchInFlightState()
+            }
+        }
+        dialog.show()
+    }
+
     private fun notifyResidualGameProcessCleanupFailed(host: Activity) {
         clearLaunchInFlightState()
         refresh(host)
@@ -960,6 +1039,32 @@ class MainScreenViewModel : ViewModel() {
             .setPositiveButton(android.R.string.ok, null)
             .show()
         return true
+    }
+
+    private fun isEnabledRamSaverMod(mod: ModItemUi): Boolean {
+        if (!mod.enabled || mod.required) {
+            return false
+        }
+        return isRamSaverModId(mod.modId) ||
+            isRamSaverModId(mod.manifestModId) ||
+            looksLikeRamSaverName(mod.name) ||
+            looksLikeRamSaverName(resolveModFileName(mod.storagePath))
+    }
+
+    private fun isRamSaverModId(value: String?): Boolean {
+        return ModManager.normalizeModId(value) == ModManager.MOD_ID_RAM_SAVER
+    }
+
+    private fun looksLikeRamSaverName(value: String?): Boolean {
+        val normalized = value
+            .orEmpty()
+            .trim()
+            .lowercase(Locale.ROOT)
+            .removeSuffix(".jar")
+            .replace(" ", "")
+            .replace("_", "")
+            .replace("-", "")
+        return normalized == "ramsaver"
     }
 
     private fun showDuplicateModIdDialog(host: Activity, duplicateGroups: Map<String, List<ModItemUi>>) {

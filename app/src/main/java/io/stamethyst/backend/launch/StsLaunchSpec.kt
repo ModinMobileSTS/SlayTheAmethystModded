@@ -65,6 +65,7 @@ object StsLaunchSpec {
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
+        val ramSaverEnabled = isMtsLaunchMode(launchMode) && ModManager.isRamSaverEnabled(context)
         if (!stsHome.exists()) {
             stsHome.mkdirs()
         }
@@ -273,6 +274,10 @@ object StsLaunchSpec {
                 } else {
                     "false"
                 }
+        )
+        args.add(
+            "-Damethyst.gdx.texture_residency_skip_for_ramsaver=" +
+                if (ramSaverEnabled) "true" else "false"
         )
         args.add(
             "-Damethyst.gdx.texture_pressure_downscale_divisor=" +

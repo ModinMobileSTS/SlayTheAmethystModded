@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -130,6 +131,10 @@ public abstract class GLTexture implements Disposable {
 		"amethyst.gdx.texture_residency_manager";
 	private static final boolean TEXTURE_RESIDENCY_MANAGER_ENABLED =
 		readBooleanSystemProperty(TEXTURE_RESIDENCY_MANAGER_PROP, false);
+	private static final String TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER_PROP =
+		"amethyst.gdx.texture_residency_skip_for_ramsaver";
+	private static final boolean TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER =
+		readBooleanSystemProperty(TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER_PROP, false);
 	private static final String TEXTURE_RESIDENCY_SWEEP_INTERVAL_PROP =
 		"amethyst.gdx.texture_residency_sweep_interval_frames";
 	private static final int TEXTURE_RESIDENCY_SWEEP_INTERVAL =
@@ -193,6 +198,7 @@ public abstract class GLTexture implements Disposable {
 	private static final AtomicInteger TEXTURE_RESIDENCY_RESTORE_FAILURES = new AtomicInteger();
 	private static final AtomicLong TEXTURE_RESIDENCY_RECLAIMED_BYTES = new AtomicLong();
 	private static final AtomicLong TEXTURE_RESIDENCY_RESTORED_BYTES = new AtomicLong();
+	private static final AtomicBoolean TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER_LOGGED = new AtomicBoolean();
 	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_BUILD_STACK_COUNTS =
 		new ConcurrentHashMap<String, AtomicInteger>();
 	private static final ConcurrentHashMap<String, AtomicInteger> TEXTURE_CONSTRUCT_STACK_COUNTS =
@@ -641,6 +647,10 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	public static void reclaimIdleTextures (Application app, long frameId) {
+		if (TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) {
+			logTextureResidencySkipForRamSaverIfNeeded();
+			return;
+		}
 		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED || Gdx.gl == null) return;
 		if (app == null || frameId < 0L) return;
 		noteFrameRendered(frameId);
@@ -820,6 +830,10 @@ public abstract class GLTexture implements Disposable {
 		long minBytes,
 		boolean managerPressure
 	) {
+		if (TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) {
+			logTextureResidencySkipForRamSaverIfNeeded();
+			return "disabled_for_ramsaver";
+		}
 		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED) return "disabled";
 		if (permanentlyDisposed) return "disposed";
 		if (!(this instanceof Texture)) return "not_texture";
@@ -1056,6 +1070,12 @@ public abstract class GLTexture implements Disposable {
 		} catch (Throwable ignored) {
 			return null;
 		}
+	}
+
+	private static void logTextureResidencySkipForRamSaverIfNeeded () {
+		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED || !TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) return;
+		if (!TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER_LOGGED.compareAndSet(false, true)) return;
+		System.out.println("[gdx-diag] GLTexture texture_residency_disabled reason=ram_saver_mod");
 	}
 
 	private static boolean isResidencyReloadableTexture (Texture texture, TextureData data) {

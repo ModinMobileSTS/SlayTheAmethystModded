@@ -637,6 +637,9 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="main_mts_validation_reason">Reason: %1$s</string>
     <string name="main_mts_validation_footer_1">Check whether these mods have a ModTheSpire.json that matches the expected ModTheSpire format.</string>
     <string name="main_mts_validation_footer_2">If these jars were unpacked and repacked from archives, import the original jars again instead.</string>
+    <string name="main_ram_saver_texture_residency_title">RAM Saver compatibility fallback</string>
+    <string name="main_ram_saver_texture_residency_message">An enabled Ram Saver mod was detected while Global texture residency manager is on.\n\nTo avoid texture lifecycle conflicts, this launch will automatically skip texture residency reclaim and leave Ram Saver to manage those textures.</string>
+    <string name="main_ram_saver_texture_residency_continue">Continue launch</string>
     <string name="main_folder_default_name_format">Folder %1$d</string>
     <string name="main_unassigned_default_name">Uncategorized</string>
     <string name="settings_title">Settings</string>
