@@ -957,6 +957,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_validation_submission_acknowledgements">Check all pre-submission confirmation items first.</string>
     <string name="feedback_submission_notice_title">Feedback submitted</string>
     <string name="feedback_submission_notice_issue_followed">Feedback submitted. GitHub Issue #%1$d was created and automatically added to Tracked issues.\n\nYou can follow it later from Settings -> Feedback -> Tracked issues. When there are updates, the launcher home screen will also show a notification.</string>
+    <string name="feedback_submission_notice_issue_followed_with_replacement">Feedback submitted. GitHub Issue #%1$d was created and automatically added to Tracked issues.\n\nTracked issues are limited to 10 entries, so the oldest tracked issue, Issue #%2$d, was removed automatically.</string>
     <string name="feedback_submission_notice_issue_created">Feedback submitted. GitHub Issue #%1$d was created.\n\nYou can follow it later from Settings -> Feedback -> Tracked issues.</string>
     <string name="feedback_submission_notice_issue_generic">Feedback submitted. The Issue has been created.</string>
     <string name="feedback_submission_notice_request_received">Feedback submitted. The cloud function has received the request.</string>
@@ -970,6 +971,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="feedback_filter_closed">Resolved only</string>
     <string name="feedback_busy_following_issue">Following issue...</string>
     <string name="feedback_follow_success">Now following Issue #%1$d. You can continue tracking it from Tracked issues.</string>
+    <string name="feedback_follow_success_with_replacement">Now following Issue #%1$d. Tracked issues are limited to 10 entries, so the oldest tracked issue, Issue #%2$d, was removed automatically.</string>
     <string name="feedback_follow_failed">Failed to follow issue: %1$s</string>
     <string name="feedback_busy_loading_issues">Loading issue list...</string>
     <string name="feedback_issue_browser_load_failed">Failed to load issue list: %1$s</string>

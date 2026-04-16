@@ -98,13 +98,25 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         executor.execute {
             runCatching {
                 FeedbackIssueSyncService.subscribeToIssue(host, issueNumber)
-            }.onSuccess { subscription ->
+            }.onSuccess { result ->
                 FeedbackInboxCoordinator.refreshFromStorage(host)
                 host.runOnUiThread {
                     setBusy(false, null)
+                    val displacedIssueNumber = result.displacedSubscriptions.firstOrNull()?.issueNumber
                     LauncherTransientNoticeBus.show(
                         host,
-                        host.getString(R.string.feedback_follow_success, subscription.issueNumber),
+                        if (displacedIssueNumber != null) {
+                            host.getString(
+                                R.string.feedback_follow_success_with_replacement,
+                                result.subscription.issueNumber,
+                                displacedIssueNumber
+                            )
+                        } else {
+                            host.getString(
+                                R.string.feedback_follow_success,
+                                result.subscription.issueNumber
+                            )
+                        },
                         Toast.LENGTH_LONG
                     )
                 }

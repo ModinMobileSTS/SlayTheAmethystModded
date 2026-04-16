@@ -23,10 +23,11 @@ object FeedbackIssueSyncService {
     private const val READ_TIMEOUT_MS = 18_000
     private const val USER_AGENT = "SlayTheAmethyst-FeedbackSync"
     private const val DEFAULT_ISSUE_PAGE_SIZE = 20
+    internal const val MAX_TRACKED_SUBSCRIPTIONS = 10
     private val proxyCommentRegex =
         Regex("""<!--\s*sts-feedback-proxy:(\{.*?\})\s*-->""", setOf(RegexOption.DOT_MATCHES_ALL))
 
-    fun subscribeToIssue(context: Context, issueNumberText: String): FeedbackIssueSubscription {
+    fun subscribeToIssue(context: Context, issueNumberText: String): FeedbackSubscriptionChangeResult {
         val issueNumber = issueNumberText.trim().toLongOrNull()
             ?: throw IOException("Issue 编号格式不正确。")
         return subscribeToIssue(context, issueNumber)
@@ -39,7 +40,7 @@ object FeedbackIssueSyncService {
         title: String,
         issueBody: String,
         state: String = "open"
-    ): FeedbackIssueSubscription {
+    ): FeedbackSubscriptionChangeResult {
         requireValidIssueNumber(issueNumber)
         val now = System.currentTimeMillis()
         val normalizedIssueUrl = issueUrl?.trim().orEmpty().ifEmpty { buildIssueUrl(issueNumber) }
@@ -60,7 +61,7 @@ object FeedbackIssueSyncService {
             updatedAtMs = maxOf(existingCache?.updatedAtMs ?: 0L, now)
         )
         FeedbackIssueLocalStore.saveIssueCache(context, cache)
-        var savedSubscription: FeedbackIssueSubscription? = null
+        var changeResult: FeedbackSubscriptionChangeResult? = null
         FeedbackIssueLocalStore.updateSubscriptions(context) { current ->
             val existingSubscription = current.firstOrNull { it.issueNumber == issueNumber }
             val subscription = FeedbackIssueSubscription(
@@ -69,22 +70,31 @@ object FeedbackIssueSyncService {
                 title = cache.title,
                 state = cache.state,
                 unread = false,
+                followedAtMs = existingSubscription?.followedAtMs ?: now,
                 lastSyncedAtMs = now,
                 lastViewedAtMs = maxOf(existingSubscription?.lastViewedAtMs ?: 0L, cache.lastEventAtMs),
                 updatedAtMs = cache.updatedAtMs
             )
-            savedSubscription = subscription
-            mergeSubscription(current, subscription)
+            val upsertResult = upsertSubscriptionWithLimit(current, subscription)
+            changeResult = FeedbackSubscriptionChangeResult(
+                subscription = subscription,
+                displacedSubscriptions = upsertResult.displacedSubscriptions
+            )
+            upsertResult.subscriptions
         }
-        return checkNotNull(savedSubscription)
+        val saved = checkNotNull(changeResult)
+        saved.displacedSubscriptions.forEach { displaced ->
+            FeedbackIssueLocalStore.deleteIssueCache(context, displaced.issueNumber)
+        }
+        return saved
     }
 
-    fun subscribeToIssue(context: Context, issueNumber: Long): FeedbackIssueSubscription {
+    fun subscribeToIssue(context: Context, issueNumber: Long): FeedbackSubscriptionChangeResult {
         requireValidIssueNumber(issueNumber)
-        val remote = fetchRemoteIssue(context, issueNumber)
+        val remote = fetchIssueSummary(context, issueNumber)
         FeedbackIssueLocalStore.saveIssueCache(context, remote)
         val now = System.currentTimeMillis()
-        var savedSubscription: FeedbackIssueSubscription? = null
+        var changeResult: FeedbackSubscriptionChangeResult? = null
         FeedbackIssueLocalStore.updateSubscriptions(context) { current ->
             val existing = current.firstOrNull { it.issueNumber == issueNumber }
             val subscription = FeedbackIssueSubscription(
@@ -93,14 +103,23 @@ object FeedbackIssueSyncService {
                 title = remote.title,
                 state = remote.state,
                 unread = false,
+                followedAtMs = existing?.followedAtMs ?: now,
                 lastSyncedAtMs = now,
                 lastViewedAtMs = maxOf(existing?.lastViewedAtMs ?: 0L, remote.lastEventAtMs),
                 updatedAtMs = remote.updatedAtMs
             )
-            savedSubscription = subscription
-            mergeSubscription(current, subscription)
+            val upsertResult = upsertSubscriptionWithLimit(current, subscription)
+            changeResult = FeedbackSubscriptionChangeResult(
+                subscription = subscription,
+                displacedSubscriptions = upsertResult.displacedSubscriptions
+            )
+            upsertResult.subscriptions
         }
-        return checkNotNull(savedSubscription)
+        val saved = checkNotNull(changeResult)
+        saved.displacedSubscriptions.forEach { displaced ->
+            FeedbackIssueLocalStore.deleteIssueCache(context, displaced.issueNumber)
+        }
+        return saved
     }
 
     fun listIssues(
@@ -144,7 +163,12 @@ object FeedbackIssueSyncService {
         val remoteByIssueNumber = LinkedHashMap<Long, FeedbackIssueThreadCache>(initialSubscriptions.size)
         val clients = createGithubClients(context)
         initialSubscriptions.forEach { subscription ->
-            val remote = fetchRemoteIssue(context, subscription.issueNumber, clients)
+            val remote = fetchIssueSummary(
+                context = context,
+                issueNumber = subscription.issueNumber,
+                clients = clients,
+                existingCache = FeedbackIssueLocalStore.loadIssueCache(context, subscription.issueNumber)
+            )
             FeedbackIssueLocalStore.saveIssueCache(context, remote)
             remoteByIssueNumber[subscription.issueNumber] = remote
         }
@@ -216,13 +240,44 @@ object FeedbackIssueSyncService {
         issueNumber: Long,
         clients: GithubRequestClients = createGithubClients(context),
     ): FeedbackIssueThreadCache {
+        return fetchIssueDetails(context, issueNumber, clients)
+    }
+
+    private fun fetchIssueSummary(
+        context: Context,
+        issueNumber: Long,
+        clients: GithubRequestClients = createGithubClients(context),
+        existingCache: FeedbackIssueThreadCache? = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber),
+    ): FeedbackIssueThreadCache {
         val preferred = UpdateMirrorManager.current(context)
         return try {
             GithubMirrorFallback.run(preferred) { source ->
-                fetchRemoteIssueFromSource(
+                fetchIssueSummaryFromSource(
                     clients.pick(source.usesGithubAcceleration),
                     source,
-                    issueNumber
+                    issueNumber,
+                    existingCache
+                )
+            }.value
+        } catch (error: Throwable) {
+            throw buildWrappedIOException("无法同步 Issue #$issueNumber：", error)
+        }
+    }
+
+    private fun fetchIssueDetails(
+        context: Context,
+        issueNumber: Long,
+        clients: GithubRequestClients = createGithubClients(context),
+        existingCache: FeedbackIssueThreadCache? = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber),
+    ): FeedbackIssueThreadCache {
+        val preferred = UpdateMirrorManager.current(context)
+        return try {
+            GithubMirrorFallback.run(preferred) { source ->
+                fetchIssueDetailsFromSource(
+                    clients.pick(source.usesGithubAcceleration),
+                    source,
+                    issueNumber,
+                    existingCache
                 )
             }.value
         } catch (error: Throwable) {
@@ -278,10 +333,11 @@ object FeedbackIssueSyncService {
         )
     }
 
-    private fun fetchRemoteIssueFromSource(
+    private fun fetchIssueSummaryFromSource(
         client: OkHttpClient,
         source: UpdateSource,
-        issueNumber: Long
+        issueNumber: Long,
+        existingCache: FeedbackIssueThreadCache?
     ): FeedbackIssueThreadCache {
         val issue = requestJsonObject(
             client,
@@ -292,6 +348,21 @@ object FeedbackIssueSyncService {
         if (issue.has("pull_request")) {
             throw IOException("链接指向的是 Pull Request，不是 Issue。")
         }
+        return buildIssueSummaryCache(issue, existingCache)
+    }
+
+    private fun fetchIssueDetailsFromSource(
+        client: OkHttpClient,
+        source: UpdateSource,
+        issueNumber: Long,
+        existingCache: FeedbackIssueThreadCache?
+    ): FeedbackIssueThreadCache {
+        val summaryCache = existingCache ?: fetchIssueSummaryFromSource(
+            client = client,
+            source = source,
+            issueNumber = issueNumber,
+            existingCache = null
+        )
         val comments = requestJsonArray(
             client,
             source.buildUrl(
@@ -304,16 +375,36 @@ object FeedbackIssueSyncService {
                 "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues/$issueNumber/events?per_page=100"
             )
         )
-        return buildThreadCache(issue, comments, events)
+        return buildThreadCache(summaryCache, comments, events)
+    }
+
+    private fun buildIssueSummaryCache(
+        issue: JSONObject,
+        existingCache: FeedbackIssueThreadCache?
+    ): FeedbackIssueThreadCache {
+        val issueNumber = issue.optLong("number")
+        return FeedbackIssueThreadCache(
+            issueNumber = issueNumber,
+            issueUrl = issue.optString("html_url").trim().ifEmpty { buildIssueUrl(issueNumber) },
+            title = issue.optString("title").trim(),
+            state = issue.optString("state").trim().ifEmpty { "open" },
+            body = issue.optString("body"),
+            updatedAtMs = maxOf(
+                parseInstantToMillis(issue.optString("updated_at")),
+                parseInstantToMillis(issue.optString("created_at"))
+            ),
+            events = existingCache?.events.orEmpty().sortedWith(
+                compareBy<FeedbackThreadEvent> { it.createdAtMs }
+                    .thenBy { it.id }
+            )
+        )
     }
 
     private fun buildThreadCache(
-        issue: JSONObject,
+        issue: FeedbackIssueThreadCache,
         comments: JSONArray,
         events: JSONArray
     ): FeedbackIssueThreadCache {
-        val issueNumber = issue.optLong("number")
-        val issueUrl = issue.optString("html_url").trim().ifEmpty { buildIssueUrl(issueNumber) }
         val parsedEvents = ArrayList<FeedbackThreadEvent>()
         for (index in 0 until comments.length()) {
             val item = comments.optJSONObject(index) ?: continue
@@ -373,17 +464,21 @@ object FeedbackIssueSyncService {
                 state = if (eventName == "closed") "closed" else "open"
             )
         }
+        val latestState = parsedEvents
+            .asReversed()
+            .firstOrNull { !it.state.isNullOrBlank() }
+            ?.state
+            ?: issue.state
         val updatedAtMs = maxOf(
-            parseInstantToMillis(issue.optString("updated_at")),
-            parseInstantToMillis(issue.optString("created_at")),
+            issue.updatedAtMs,
             parsedEvents.maxOfOrNull { it.createdAtMs } ?: 0L
         )
         return FeedbackIssueThreadCache(
-            issueNumber = issueNumber,
-            issueUrl = issueUrl,
-            title = issue.optString("title").trim(),
-            state = issue.optString("state").trim().ifEmpty { "open" },
-            body = issue.optString("body"),
+            issueNumber = issue.issueNumber,
+            issueUrl = issue.issueUrl,
+            title = issue.title,
+            state = latestState,
+            body = issue.body,
             updatedAtMs = updatedAtMs,
             events = parsedEvents.sortedWith(
                 compareBy<FeedbackThreadEvent> { it.createdAtMs }
@@ -466,7 +561,13 @@ object FeedbackIssueSyncService {
     ): List<FeedbackIssueSubscription> {
         val items = subscriptions.filterNot { it.issueNumber == target.issueNumber }.toMutableList()
         items += target
-        return items.sortedWith(
+        return sortSubscriptions(items)
+    }
+
+    private fun sortSubscriptions(
+        subscriptions: List<FeedbackIssueSubscription>
+    ): List<FeedbackIssueSubscription> {
+        return subscriptions.sortedWith(
             compareByDescending<FeedbackIssueSubscription> { it.unread }
                 .thenByDescending { it.updatedAtMs }
         )
@@ -534,6 +635,37 @@ internal fun mergeSyncedSubscriptions(
     }.sortedWith(
         compareByDescending<FeedbackIssueSubscription> { it.unread }
             .thenByDescending { it.updatedAtMs }
+    )
+}
+
+internal data class FeedbackSubscriptionUpsertResult(
+    val subscriptions: List<FeedbackIssueSubscription>,
+    val displacedSubscriptions: List<FeedbackIssueSubscription> = emptyList()
+)
+
+internal fun upsertSubscriptionWithLimit(
+    current: List<FeedbackIssueSubscription>,
+    target: FeedbackIssueSubscription,
+    maxTrackedSubscriptions: Int = FeedbackIssueSyncService.MAX_TRACKED_SUBSCRIPTIONS
+): FeedbackSubscriptionUpsertResult {
+    val items = current.filterNot { it.issueNumber == target.issueNumber }.toMutableList()
+    val displacedSubscriptions = ArrayList<FeedbackIssueSubscription>()
+    while (items.size >= maxTrackedSubscriptions) {
+        val oldestFollowed = items.minWithOrNull(
+            compareBy<FeedbackIssueSubscription> { followed ->
+                followed.followedAtMs.takeIf { it > 0L } ?: Long.MIN_VALUE
+            }.thenBy { it.issueNumber }
+        ) ?: break
+        items.removeAll { it.issueNumber == oldestFollowed.issueNumber }
+        displacedSubscriptions += oldestFollowed
+    }
+    items += target
+    return FeedbackSubscriptionUpsertResult(
+        subscriptions = items.sortedWith(
+            compareByDescending<FeedbackIssueSubscription> { it.unread }
+                .thenByDescending { it.updatedAtMs }
+        ),
+        displacedSubscriptions = displacedSubscriptions
     )
 }
 

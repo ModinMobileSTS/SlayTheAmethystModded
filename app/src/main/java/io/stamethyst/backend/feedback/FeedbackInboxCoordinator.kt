@@ -3,20 +3,15 @@ package io.stamethyst.backend.feedback
 import android.content.Context
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 object FeedbackInboxCoordinator {
-    private const val POLL_INTERVAL_SECONDS = 10L
-
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val poller: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val _uiState = MutableStateFlow(FeedbackInboxUiState())
     @Volatile
-    private var pollingStarted = false
+    private var startupSyncStarted = false
 
     val uiState: StateFlow<FeedbackInboxUiState> = _uiState.asStateFlow()
 
@@ -24,19 +19,12 @@ object FeedbackInboxCoordinator {
         refreshFromStorage(context.applicationContext)
     }
 
-    fun startPolling(context: Context) {
-        if (pollingStarted) {
+    fun syncOnLauncherStart(context: Context) {
+        if (startupSyncStarted) {
             return
         }
-        pollingStarted = true
-        val appContext = context.applicationContext
-        runSync(appContext, announceUnread = true)
-        poller.scheduleWithFixedDelay(
-            { runSync(appContext, announceUnread = true) },
-            POLL_INTERVAL_SECONDS,
-            POLL_INTERVAL_SECONDS,
-            TimeUnit.SECONDS
-        )
+        startupSyncStarted = true
+        runSync(context = context.applicationContext, announceUnread = true)
     }
 
     fun runManualSync(

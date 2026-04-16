@@ -110,7 +110,7 @@ fun LauncherContent(
     ) {
         LaunchedEffect(activity) {
             FeedbackInboxCoordinator.bind(activity.applicationContext)
-            FeedbackInboxCoordinator.startPolling(activity.applicationContext)
+            FeedbackInboxCoordinator.syncOnLauncherStart(activity.applicationContext)
         }
         LaunchedEffect(activity, transientNoticeHostState) {
             LauncherTransientNoticeBus.requests.collect { request ->

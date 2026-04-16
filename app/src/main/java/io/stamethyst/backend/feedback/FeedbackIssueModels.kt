@@ -43,7 +43,7 @@ data class FeedbackIssueThreadCache(
         get() = state.equals("closed", ignoreCase = true)
 
     val lastEventAtMs: Long
-        get() = events.maxOfOrNull { it.createdAtMs } ?: updatedAtMs
+        get() = maxOf(updatedAtMs, events.maxOfOrNull { it.createdAtMs } ?: 0L)
 }
 
 data class FeedbackIssueSubscription(
@@ -52,6 +52,7 @@ data class FeedbackIssueSubscription(
     val title: String,
     val state: String,
     val unread: Boolean,
+    val followedAtMs: Long,
     val lastSyncedAtMs: Long,
     val lastViewedAtMs: Long,
     val updatedAtMs: Long
@@ -59,6 +60,11 @@ data class FeedbackIssueSubscription(
     val isClosed: Boolean
         get() = state.equals("closed", ignoreCase = true)
 }
+
+data class FeedbackSubscriptionChangeResult(
+    val subscription: FeedbackIssueSubscription,
+    val displacedSubscriptions: List<FeedbackIssueSubscription> = emptyList()
+)
 
 data class FeedbackIssueBrowseItem(
     val issueNumber: Long,

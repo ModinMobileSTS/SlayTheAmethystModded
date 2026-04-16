@@ -14,6 +14,7 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.feedback.FeedbackCategory
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
+import io.stamethyst.backend.feedback.FeedbackSubscriptionChangeResult
 import io.stamethyst.backend.feedback.FeedbackIssueSyncService
 import io.stamethyst.backend.feedback.FeedbackScreenshotAttachment
 import io.stamethyst.backend.feedback.FeedbackSelectedMod
@@ -447,11 +448,11 @@ class FeedbackScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val result = FeedbackSubmissionService.submit(host, draft)
-                val autoSubscribed = runCatching {
+                val autoSubscription = runCatching {
                     autoSubscribeCreatedIssue(host, draft, result)
-                }.getOrDefault(false)
+                }.getOrNull()
                 host.runOnUiThread {
-                    val notice = buildSubmissionNotice(host, result, autoSubscribed)
+                    val notice = buildSubmissionNotice(host, result, autoSubscription)
                     applySubmissionSuccess()
                     _effects.tryEmit(Effect.SubmissionCompleted(notice))
                 }
@@ -670,10 +671,10 @@ class FeedbackScreenViewModel : ViewModel() {
         host: Activity,
         draft: FeedbackSubmissionDraft,
         result: FeedbackUploadResult
-    ): Boolean {
-        val issueNumber = resolveCreatedIssueNumber(result) ?: return false
+    ): FeedbackSubscriptionChangeResult? {
+        val issueNumber = resolveCreatedIssueNumber(result) ?: return null
         val issueUrl = result.issueUrl ?: FeedbackIssueSyncService.buildIssueUrl(issueNumber)
-        FeedbackIssueSyncService.saveLocalSubscription(
+        val changeResult = FeedbackIssueSyncService.saveLocalSubscription(
             context = host,
             issueNumber = issueNumber,
             issueUrl = issueUrl,
@@ -681,16 +682,24 @@ class FeedbackScreenViewModel : ViewModel() {
             issueBody = buildSubmittedIssueBodyPreview(host, draft)
         )
         FeedbackInboxCoordinator.refreshFromStorage(host)
-        return true
+        return changeResult
     }
 
     private fun buildSubmissionNotice(
         host: Activity,
         result: FeedbackUploadResult,
-        autoSubscribed: Boolean
+        autoSubscription: FeedbackSubscriptionChangeResult?
     ): FeedbackSubmissionNotice {
+        val displacedIssueNumber = autoSubscription?.displacedSubscriptions?.firstOrNull()?.issueNumber
         val message = when {
-            result.issueNumber != null && autoSubscribed -> {
+            result.issueNumber != null && displacedIssueNumber != null -> {
+                host.getString(
+                    R.string.feedback_submission_notice_issue_followed_with_replacement,
+                    result.issueNumber,
+                    displacedIssueNumber
+                )
+            }
+            result.issueNumber != null && autoSubscription != null -> {
                 host.getString(
                     R.string.feedback_submission_notice_issue_followed,
                     result.issueNumber

@@ -187,6 +187,9 @@ object FeedbackIssueLocalStore {
                 title = item.optString("title").trim(),
                 state = item.optString("state").trim().ifEmpty { "open" },
                 unread = item.optBoolean("unread", false),
+                followedAtMs = item.optLong("followedAtMs").takeIf { it > 0L }
+                    ?: item.optLong("lastSyncedAtMs").takeIf { it > 0L }
+                    ?: item.optLong("updatedAtMs"),
                 lastSyncedAtMs = item.optLong("lastSyncedAtMs"),
                 lastViewedAtMs = item.optLong("lastViewedAtMs"),
                 updatedAtMs = item.optLong("updatedAtMs")
@@ -212,6 +215,7 @@ object FeedbackIssueLocalStore {
                                 put("title", subscription.title)
                                 put("state", subscription.state)
                                 put("unread", subscription.unread)
+                                put("followedAtMs", subscription.followedAtMs)
                                 put("lastSyncedAtMs", subscription.lastSyncedAtMs)
                                 put("lastViewedAtMs", subscription.lastViewedAtMs)
                                 put("updatedAtMs", subscription.updatedAtMs)
