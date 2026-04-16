@@ -162,6 +162,14 @@ public abstract class GLTexture implements Disposable {
 		"amethyst.gdx.texture_residency_restore_grace_frames";
 	private static final int TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES =
 		readIntSystemProperty(TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES_PROP, 180, 1, 72000);
+	// Use wall-clock floors so high target FPS does not collapse protection windows into sub-second churn.
+	private static final long TEXTURE_RESIDENCY_IDLE_MIN_MILLIS_FLOOR = 5000L;
+	private static final long TEXTURE_RESIDENCY_PRESSURE_IDLE_MIN_MILLIS_FLOOR = 3000L;
+	private static final long TEXTURE_RESIDENCY_RESTORE_GRACE_MIN_MILLIS_FLOOR = 5000L;
+	private static final long TEXTURE_RESIDENCY_RESTORE_GRACE_NANOS = minimumDurationNanos(
+		TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES,
+		TEXTURE_RESIDENCY_RESTORE_GRACE_MIN_MILLIS_FLOOR
+	);
 	private static final int TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT = 4;
 	private static final int GL_TEXTURE_2D_ENUM = 0x0DE1;
 	private static final int GL_TEXTURE_BINDING_2D_ENUM = 0x8069;
@@ -257,8 +265,9 @@ public abstract class GLTexture implements Disposable {
 	protected TextureWrap uWrap = TextureWrap.ClampToEdge;
 	protected TextureWrap vWrap = TextureWrap.ClampToEdge;
 	private long lastAccessFrame;
+	private long lastAccessTimeNanos;
 	private long lastRestoreFrame = -1L;
-	private long lastReclaimFrame = -1L;
+	private long lastRestoreTimeNanos = -1L;
 	private String lastUseReason = "construct";
 	private String residencyLastKnownSourceSample;
 	private String residencyLastKnownOwnerKey;
@@ -286,6 +295,7 @@ public abstract class GLTexture implements Disposable {
 		this.debugTextureId = allocateDebugTextureId();
 		this.debugTrackedHandle = glHandle;
 		this.lastAccessFrame = currentFrameId >= 0L ? currentFrameId : 0L;
+		this.lastAccessTimeNanos = nowMonotonicNanos();
 		onTextureConstructed(debugTextureId, getClass().getName(), glTarget, glHandle);
 	}
 
@@ -446,6 +456,7 @@ public abstract class GLTexture implements Disposable {
 		}
 		handleReclaimPending = false;
 		lastRestoreFrame = currentFrameId >= 0L ? currentFrameId : lastRestoreFrame;
+		lastRestoreTimeNanos = nowMonotonicNanos();
 	}
 
 	private void syncDebugHandle (String reason) {
@@ -690,6 +701,7 @@ public abstract class GLTexture implements Disposable {
 	private void notifyBeforeTextureAccess (String reason) {
 		GLFrameBuffer.onExternalTextureAccess(this, reason);
 		lastAccessFrame = currentFrameId >= 0L ? currentFrameId : lastAccessFrame;
+		lastAccessTimeNanos = nowMonotonicNanos();
 		lastUseReason = reason == null || reason.length() == 0 ? "unknown" : reason;
 	}
 
@@ -703,7 +715,6 @@ public abstract class GLTexture implements Disposable {
 		}
 		glHandle = 0;
 		debugTrackedHandle = 0;
-		lastReclaimFrame = currentFrameId >= 0L ? currentFrameId : lastReclaimFrame;
 		onTextureDeleted(debugTextureId, deletedHandle, reason);
 		return deletedHandle;
 	}
@@ -722,6 +733,7 @@ public abstract class GLTexture implements Disposable {
 			restoreHandleForReuse(newHandle, "texture_residency_restore_" + reason);
 			texture.load(data);
 			lastAccessFrame = currentFrameId >= 0L ? currentFrameId : lastAccessFrame;
+			lastAccessTimeNanos = nowMonotonicNanos();
 			lastUseReason = reason == null || reason.length() == 0 ? "restore" : reason;
 			long restoredBytes = refreshResidencyTrackedBytesFromHandle();
 			if (restoredBytes <= 0L) {
@@ -786,7 +798,8 @@ public abstract class GLTexture implements Disposable {
 		String protectReason = resolveTextureResidencyProtectReason(
 			frameId,
 			TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES,
-			TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES
+			TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES,
+			true
 		);
 		if (protectReason != null) return false;
 		long reclaimedBytes = captureTrackedHandleBytes();
@@ -798,6 +811,15 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private String resolveTextureResidencyProtectReason (long frameId, long minIdleFrames, long minBytes) {
+		return resolveTextureResidencyProtectReason(frameId, minIdleFrames, minBytes, false);
+	}
+
+	private String resolveTextureResidencyProtectReason (
+		long frameId,
+		long minIdleFrames,
+		long minBytes,
+		boolean managerPressure
+	) {
 		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED) return "disabled";
 		if (permanentlyDisposed) return "disposed";
 		if (!(this instanceof Texture)) return "not_texture";
@@ -808,10 +830,12 @@ public abstract class GLTexture implements Disposable {
 		TextureData data = safeGetTextureData(texture);
 		if (!isResidencyReloadableTexture(texture, data)) return "not_reloadable";
 		if (GLFrameBuffer.isFrameBufferTexture(this)) return "framebuffer_owner";
+		if (managerPressure && isPressureProtectedHotTexture(data)) return "protected_hot_texture";
 		if (captureTrackedHandleBytes() < minBytes) return "below_min_bytes";
 		if (getCurrentTextureBinding(glTarget) == glHandle) return "currently_bound";
-		if (getIdleFrames(frameId) < minIdleFrames) return "recently_used";
-		if (lastRestoreFrame >= 0L && frameId - lastRestoreFrame < TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES) {
+		long requiredIdleNanos = minimumIdleDurationNanos(managerPressure, minIdleFrames);
+		if (getIdleDurationNanos() < requiredIdleNanos) return "recently_used";
+		if (lastRestoreFrame >= 0L && getRestoreAgeNanos() < TEXTURE_RESIDENCY_RESTORE_GRACE_NANOS) {
 			return "recently_restored";
 		}
 		return null;
@@ -820,6 +844,43 @@ public abstract class GLTexture implements Disposable {
 	private long getIdleFrames (long frameId) {
 		long idleFrames = frameId - lastAccessFrame;
 		return idleFrames < 0L ? 0L : idleFrames;
+	}
+
+	private long getIdleDurationNanos () {
+		if (lastAccessTimeNanos <= 0L) return Long.MAX_VALUE;
+		return elapsedSince(lastAccessTimeNanos);
+	}
+
+	private long getRestoreAgeNanos () {
+		if (lastRestoreTimeNanos <= 0L) return Long.MAX_VALUE;
+		return elapsedSince(lastRestoreTimeNanos);
+	}
+
+	private boolean isPressureProtectedHotTexture (TextureData data) {
+		String ownerKey = getResidencyOwnerKeyForLog();
+		if ("core<-cardui".equals(ownerKey) || "core<-cards".equals(ownerKey)) {
+			return true;
+		}
+		if (!ownerKey.startsWith("core<-")) {
+			return false;
+		}
+		String sourcePath = resolveTextureSourcePath(data);
+		String groupKey = classifyLiveTextureSourceGroup(sourcePath, null);
+		if ("cardui".equals(groupKey) || "cards".equals(groupKey)) {
+			return true;
+		}
+		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
+		return containsAnyPathFragment(
+			normalizedSourcePath,
+			"cardui/",
+			"/cardui/",
+			"cards/",
+			"/cards/",
+			"cardsbeta/",
+			"/cardsbeta/",
+			"cards_beta/",
+			"/cards_beta/"
+		);
 	}
 
 	private long captureTrackedHandleBytes () {
@@ -904,7 +965,8 @@ public abstract class GLTexture implements Disposable {
 				&& texture.resolveTextureResidencyProtectReason(
 					frameId,
 					TEXTURE_RESIDENCY_PRESSURE_IDLE_FRAMES,
-					TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES
+					TEXTURE_RESIDENCY_PRESSURE_MIN_BYTES,
+					true
 				) == null) {
 				candidates.add(texture);
 			}
@@ -956,6 +1018,12 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private static int comparePressureCandidates (GLTexture left, GLTexture right, long frameId) {
+		int leftTier = left.getPressureOwnerTier();
+		int rightTier = right.getPressureOwnerTier();
+		if (leftTier != rightTier) return leftTier < rightTier ? -1 : 1;
+		long leftIdleNanos = left.getIdleDurationNanos();
+		long rightIdleNanos = right.getIdleDurationNanos();
+		if (leftIdleNanos != rightIdleNanos) return leftIdleNanos > rightIdleNanos ? -1 : 1;
 		long leftBytes = left.captureTrackedHandleBytes();
 		long rightBytes = right.captureTrackedHandleBytes();
 		if (leftBytes != rightBytes) return leftBytes > rightBytes ? -1 : 1;
@@ -966,6 +1034,19 @@ public abstract class GLTexture implements Disposable {
 			return left.residencyRestoreCount < right.residencyRestoreCount ? -1 : 1;
 		}
 		return left.getResidencyOwnerKeyForLog().compareTo(right.getResidencyOwnerKeyForLog());
+	}
+
+	private int getPressureOwnerTier () {
+		String ownerKey = getResidencyOwnerKeyForLog();
+		if (ownerKey.startsWith("external<-") || ownerKey.startsWith("downfall<-")) {
+			return 0;
+		}
+		if (ownerKey.startsWith("basemod<-")
+			|| ownerKey.startsWith("modthespire<-")
+			|| ownerKey.startsWith("stslib<-")) {
+			return 1;
+		}
+		return 2;
 	}
 
 	private static TextureData safeGetTextureData (Texture texture) {
@@ -1573,6 +1654,36 @@ public abstract class GLTexture implements Disposable {
 			|| "scenes".equals(pathGroup)
 			|| "scene".equals(pathGroup)
 			|| "charselect".equals(pathGroup);
+	}
+
+	private static long minimumIdleDurationNanos (boolean managerPressure, long minIdleFrames) {
+		long floorMillis = managerPressure
+			? TEXTURE_RESIDENCY_PRESSURE_IDLE_MIN_MILLIS_FLOOR
+			: TEXTURE_RESIDENCY_IDLE_MIN_MILLIS_FLOOR;
+		return minimumDurationNanos(minIdleFrames, floorMillis);
+	}
+
+	private static long minimumDurationNanos (long frameCount, long floorMillis) {
+		long frameMillis = framesToMillisAtSixtyFps(frameCount);
+		long requiredMillis = Math.max(floorMillis, frameMillis);
+		if (requiredMillis <= 0L) return 0L;
+		if (requiredMillis >= Long.MAX_VALUE / 1000000L) return Long.MAX_VALUE;
+		return requiredMillis * 1000000L;
+	}
+
+	private static long framesToMillisAtSixtyFps (long frameCount) {
+		if (frameCount <= 0L) return 0L;
+		if (frameCount >= Long.MAX_VALUE / 1000L) return Long.MAX_VALUE;
+		return (frameCount * 1000L + 59L) / 60L;
+	}
+
+	private static long nowMonotonicNanos () {
+		return System.nanoTime();
+	}
+
+	private static long elapsedSince (long startTimeNanos) {
+		long elapsed = nowMonotonicNanos() - startTimeNanos;
+		return elapsed < 0L ? 0L : elapsed;
 	}
 
 	private static String summarizeLiveTextureSampleSource (String sourcePath, String stackKey, String groupKey) {
