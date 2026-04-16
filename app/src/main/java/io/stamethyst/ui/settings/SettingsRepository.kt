@@ -60,6 +60,7 @@ internal object SettingsRepository {
         val showFloatingMouseWindow: Boolean,
         val touchMouseNewInteraction: Boolean,
         val longPressMouseShowsKeyboard: Boolean,
+        val builtInSoftKeyboardEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
         val showModFileName: Boolean,
         val mobileHudEnabled: Boolean,
@@ -146,6 +147,8 @@ internal object SettingsRepository {
                 showFloatingMouseWindow = LauncherPreferences.readShowFloatingMouseWindow(context),
                 touchMouseNewInteraction = LauncherPreferences.readTouchMouseNewInteraction(context),
                 longPressMouseShowsKeyboard = LauncherPreferences.readLongPressMouseShowsKeyboard(context),
+                builtInSoftKeyboardEnabled =
+                    LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherPreferences.readAutoSwitchLeftAfterRightClick(context),
                 showModFileName = LauncherPreferences.readShowModFileName(context),
                 mobileHudEnabled = LauncherPreferences.readMobileHudEnabled(context),

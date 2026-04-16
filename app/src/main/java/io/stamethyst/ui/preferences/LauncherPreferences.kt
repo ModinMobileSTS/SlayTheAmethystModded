@@ -65,6 +65,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_TOUCH_MOUSE_NEW_INTERACTION
     val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
         get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
+    val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     val DEFAULT_SHOW_MOD_FILE_NAME: Boolean
@@ -165,6 +167,14 @@ object LauncherPreferences {
 
     fun saveLongPressMouseShowsKeyboard(context: Context, enabled: Boolean) {
         LauncherConfig.saveLongPressMouseShowsKeyboard(context, enabled)
+    }
+
+    fun isBuiltInSoftKeyboardEnabled(context: Context): Boolean {
+        return LauncherConfig.isBuiltInSoftKeyboardEnabled(context)
+    }
+
+    fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setBuiltInSoftKeyboardEnabled(context, enabled)
     }
 
     fun readAutoSwitchLeftAfterRightClick(context: Context): Boolean {

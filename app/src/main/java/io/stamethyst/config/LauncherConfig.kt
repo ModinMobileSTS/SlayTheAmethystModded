@@ -43,6 +43,8 @@ object LauncherConfig {
     private const val PREF_KEY_TOUCH_MOUSE_NEW_INTERACTION = "touch_mouse_new_interaction"
     private const val PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD =
         "long_press_mouse_shows_keyboard"
+    private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
+        "built_in_soft_keyboard_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_RENDERER_SELECTION_MODE = "renderer_selection_mode"
@@ -154,6 +156,7 @@ object LauncherConfig {
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     const val DEFAULT_TOUCH_MOUSE_NEW_INTERACTION = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
+    const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
@@ -184,7 +187,7 @@ object LauncherConfig {
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
     const val DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED = true
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = true
-    const val DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = false
+    const val DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = true
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
@@ -317,6 +320,19 @@ object LauncherConfig {
     fun saveLongPressMouseShowsKeyboard(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_LONG_PRESS_MOUSE_SHOWS_KEYBOARD, enabled)
+        }
+    }
+
+    fun isBuiltInSoftKeyboardEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED,
+            DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
+        )
+    }
+
+    fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED, enabled)
         }
     }
 

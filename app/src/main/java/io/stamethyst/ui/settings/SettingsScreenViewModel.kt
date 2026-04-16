@@ -186,6 +186,8 @@ class SettingsScreenViewModel : ViewModel() {
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val touchMouseNewInteraction: Boolean = LauncherPreferences.DEFAULT_TOUCH_MOUSE_NEW_INTERACTION,
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
+        val builtInSoftKeyboardEnabled: Boolean =
+            LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
@@ -1322,6 +1324,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onBuiltInSoftKeyboardChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(builtInSoftKeyboardEnabled = enabled)
+        saveBuiltInSoftKeyboardSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onAutoSwitchLeftAfterRightClickChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -1675,6 +1686,7 @@ class SettingsScreenViewModel : ViewModel() {
             showFloatingMouseWindow = input.showFloatingMouseWindow,
             touchMouseNewInteraction = input.touchMouseNewInteraction,
             longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
+            builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
             showModFileName = input.showModFileName,
             mobileHudEnabled = input.mobileHudEnabled,
@@ -2097,6 +2109,10 @@ class SettingsScreenViewModel : ViewModel() {
                 toggleStateText(host, input.longPressMouseShowsKeyboard)
             )
         }
+        lines += host.getString(
+            R.string.status_built_in_soft_keyboard_format,
+            toggleStateText(host, input.builtInSoftKeyboardEnabled)
+        )
         lines += host.getString(
             R.string.settings_status_auto_switch_left_after_right_click,
             toggleStateText(host, input.autoSwitchLeftAfterRightClick)
@@ -2579,6 +2595,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveLongPressMouseShowsKeyboardSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveLongPressMouseShowsKeyboard(host, enabled)
+    }
+
+    private fun saveBuiltInSoftKeyboardSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setBuiltInSoftKeyboardEnabled(host, enabled)
     }
 
     private fun saveAutoSwitchLeftAfterRightClickSelection(host: Activity, enabled: Boolean) {

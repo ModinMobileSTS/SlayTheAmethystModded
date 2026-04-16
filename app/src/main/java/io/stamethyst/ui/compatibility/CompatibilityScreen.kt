@@ -107,7 +107,7 @@ private fun LauncherCompatibilityScreenPreview() {
             runtimeTextureCompatEnabled = false,
             mainMenuPreviewReuseCompatEnabled = true,
             largeTextureDownscaleCompatEnabled = true,
-            textureResidencyManagerCompatEnabled = false,
+            textureResidencyManagerCompatEnabled = true,
             texturePressureDownscaleDivisor = 2,
             forceLinearMipmapFilterEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,

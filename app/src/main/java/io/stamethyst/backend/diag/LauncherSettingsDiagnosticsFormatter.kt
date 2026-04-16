@@ -78,6 +78,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "longPressMouseShowsKeyboard" to formatBoolean(
                             LauncherConfig.readLongPressMouseShowsKeyboard(context)
                         ),
+                        "builtInSoftKeyboardEnabled" to formatBoolean(
+                            LauncherConfig.isBuiltInSoftKeyboardEnabled(context)
+                        ),
                         "autoSwitchLeftAfterRightClick" to formatBoolean(
                             LauncherConfig.readAutoSwitchLeftAfterRightClick(context)
                         ),

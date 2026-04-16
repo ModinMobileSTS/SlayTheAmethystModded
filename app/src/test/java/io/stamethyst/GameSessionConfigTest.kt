@@ -50,6 +50,7 @@ class GameSessionConfigTest {
             mirrorJvmLogsToLogcat = false,
             touchMouseNewInteraction = false,
             longPressMouseShowsKeyboard = false,
+            builtInSoftKeyboardEnabled = true,
             autoSwitchLeftAfterRightClick = false,
             requestedRenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             rendererDecision = RendererDecision(

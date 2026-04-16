@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -29,6 +30,7 @@ internal class FloatingMouseOverlayController(
     private val autoSwitchBackToLeftAfterRightClick: Boolean,
     private val touchMouseNewInteraction: Boolean,
     private val longPressMouseShowsKeyboard: Boolean,
+    private val builtInSoftKeyboardEnabled: Boolean,
 ) {
     private enum class TouchMouseMode {
         LEFT,
@@ -56,14 +58,14 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MENU_ANIM_OFFSET_DP = 10
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
         private const val FLOATING_MENU_ANCHOR_GAP_DP = 8
-        private const val FLOATING_MODE_BUTTON_BORDER_GAP_DP = 5
-        private const val FLOATING_COLLAPSE_BUTTON_BORDER_GAP_DP = 10
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
         private const val SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP = 12f
         private const val SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP = 46
         private const val SPECIAL_KEYS_BUTTON_SPACING_DP = 6
+        private const val SPECIAL_KEYS_GRID_ROWS = 3
+        private const val SPECIAL_KEYS_GRID_COLUMNS = 3
         private const val VIRTUAL_WHEEL_TRACK_WIDTH_DP = 42
         private const val VIRTUAL_WHEEL_TRACK_HEIGHT_DP = 88
         private const val VIRTUAL_WHEEL_TRACK_PADDING_VERTICAL_DP = 10
@@ -101,8 +103,8 @@ internal class FloatingMouseOverlayController(
     private var floatingMouseButton: FrameLayout? = null
     private var floatingMouseMainIcon: ImageView? = null
     private var imeController: FloatingMouseImeController? = null
+    private var builtInKeyboardController: InGameSoftKeyboardOverlayController? = null
     private var floatingMouseExpandedMenu: LinearLayout? = null
-    private var floatingMouseCollapseButton: TextView? = null
     private var floatingMouseModeButton: TextView? = null
     private var floatingMouseWheelView: VirtualMouseWheelView? = null
     private var floatingMouseLockButton: TextView? = null
@@ -162,6 +164,37 @@ internal class FloatingMouseOverlayController(
         controller.attachToHost(host)
         imeController = controller
 
+        val builtInController = InGameSoftKeyboardOverlayController(
+            activity = activity,
+            requestRenderViewFocus = requestRenderViewFocus,
+            callbacks = object : InGameSoftKeyboardOverlayController.Callbacks {
+                override fun onCommitText(text: CharSequence): Boolean {
+                    return sendSoftKeyboardText(text, source = "builtin_keyboard")
+                }
+
+                override fun onBackspace(): Boolean {
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_DEL)
+                    return true
+                }
+
+                override fun onEnter(): Boolean {
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
+                    return true
+                }
+
+                override fun onTab(): Boolean {
+                    sendSyntheticSoftKey(KeyEvent.KEYCODE_TAB)
+                    return true
+                }
+
+                override fun onVisibilityChanged(visible: Boolean) {
+                    handleKeyboardVisibilityChanged(visible)
+                }
+            }
+        )
+        builtInController.attachToHost(host)
+        builtInKeyboardController = builtInController
+
         val expandedMenu = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -194,40 +227,6 @@ internal class FloatingMouseOverlayController(
         )
         floatingMouseExpandedMenu = expandedMenu
         populateFloatingMouseExpandedMenu(expandedMenu)
-
-        val modeButton = createFloatingMouseModeButton().apply {
-            visibility = View.GONE
-            alpha = 0f
-        }
-        host.addView(
-            modeButton,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                dpToPx(SPECIAL_KEYS_BUTTON_HEIGHT_DP),
-                Gravity.TOP or Gravity.START
-            ).apply {
-                leftMargin = 0
-                topMargin = 0
-            }
-        )
-        floatingMouseModeButton = modeButton
-
-        val collapseButton = createFloatingMouseCollapseButton().apply {
-            visibility = View.GONE
-            alpha = 0f
-        }
-        host.addView(
-            collapseButton,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                dpToPx(SPECIAL_KEYS_BUTTON_HEIGHT_DP),
-                Gravity.TOP or Gravity.START
-            ).apply {
-                leftMargin = 0
-                topMargin = 0
-            }
-        )
-        floatingMouseCollapseButton = collapseButton
 
         val buttonSize = dpToPx(56)
         val iconSize = dpToPx(30)
@@ -276,12 +275,9 @@ internal class FloatingMouseOverlayController(
 
     fun updateVisibility(shouldShow: Boolean) {
         val button = floatingMouseButton ?: return
-        val modeButton = floatingMouseModeButton
         button.visibility = if (shouldShow) View.VISIBLE else View.GONE
         if (!shouldShow) {
-            modeButton?.visibility = View.GONE
-            modeButton?.alpha = 0f
-            modeButton?.translationY = 0f
+            hideSoftKeyboard()
         }
         if (shouldShow) {
             button.animate().cancel()
@@ -290,9 +286,7 @@ internal class FloatingMouseOverlayController(
             } else {
                 FLOATING_MOUSE_IDLE_ALPHA
             }
-            if (floatingMouseMenuExpanded && touchMouseNewInteraction) {
-                modeButton?.visibility = View.VISIBLE
-                modeButton?.alpha = 1f
+            if (floatingMouseMenuExpanded) {
                 updateFloatingMouseExpandedMenuPosition()
             }
         } else {
@@ -335,35 +329,39 @@ internal class FloatingMouseOverlayController(
     }
 
     fun hideSoftKeyboard() {
+        val hadKeyboardSession =
+            builtInKeyboardController?.isVisible() == true ||
+                imeController?.isVisible() == true ||
+                imeController?.shouldHoldRenderSurfaceStable() == true
         flushPendingSoftKeyReleases()
         releaseActiveToggleSoftKeys()
         hideFloatingMouseExpandedMenu()
-        imeController?.requestHide(reason = "overlay_hide", refocusRenderView = true)
+        builtInKeyboardController?.hide(refocusRenderView = false)
+        imeController?.requestHide(reason = "overlay_hide", refocusRenderView = false)
+        if (hadKeyboardSession) {
+            requestRenderViewFocus.invoke()
+        }
     }
 
     fun isSoftKeyboardSessionActive(): Boolean {
-        return imeController?.shouldHoldRenderSurfaceStable() == true
+        return builtInKeyboardController?.isVisible() == true ||
+            imeController?.shouldHoldRenderSurfaceStable() == true
     }
 
     private fun detachViews() {
         floatingMouseButton?.let { button ->
             (button.parent as? FrameLayout)?.removeView(button)
         }
-        floatingMouseCollapseButton?.let { collapse ->
-            (collapse.parent as? FrameLayout)?.removeView(collapse)
-        }
-        floatingMouseModeButton?.let { mode ->
-            (mode.parent as? FrameLayout)?.removeView(mode)
-        }
         imeController?.detach()
+        builtInKeyboardController?.detach()
         floatingMouseExpandedMenu?.let { menu ->
             (menu.parent as? FrameLayout)?.removeView(menu)
         }
         floatingMouseButton = null
-        floatingMouseCollapseButton = null
         floatingMouseModeButton = null
         floatingMouseMainIcon = null
         imeController = null
+        builtInKeyboardController = null
         floatingMouseExpandedMenu = null
         floatingMouseWheelView = null
         floatingMouseLockButton = null
@@ -558,52 +556,82 @@ internal class FloatingMouseOverlayController(
 
     private fun showSoftKeyboard() {
         hideFloatingMouseExpandedMenu()
-        imeController?.requestShow(reason = "floating_menu_keyboard")
+        if (builtInSoftKeyboardEnabled) {
+            imeController?.requestHide(
+                reason = "floating_menu_keyboard_builtin",
+                refocusRenderView = false
+            )
+            builtInKeyboardController?.show()
+        } else {
+            builtInKeyboardController?.hide(refocusRenderView = false)
+            imeController?.requestShow(reason = "floating_menu_keyboard")
+        }
     }
 
     private fun populateFloatingMouseExpandedMenu(menu: LinearLayout) {
         toggleSpecialKeyButtons.clear()
+        floatingMouseModeButton = null
+        floatingMouseLockButton = null
+        floatingMouseWheelView = null
         menu.removeAllViews()
-        val buttonColumn = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
+        val grid = GridLayout(activity).apply {
+            rowCount = SPECIAL_KEYS_GRID_ROWS
+            columnCount = SPECIAL_KEYS_GRID_COLUMNS
+            useDefaultMargins = false
+            alignmentMode = GridLayout.ALIGN_BOUNDS
         }
-        val firstRow = listOf(
-            SpecialKeySpec("Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, toggleable = true),
-            SpecialKeySpec("Shift", KeyEvent.KEYCODE_SHIFT_LEFT, toggleable = true),
-            SpecialKeySpec("Tab", KeyEvent.KEYCODE_TAB)
-        )
-        addFloatingMouseExpandedMenuRow(buttonColumn, firstRow.map(::createFloatingMouseTextButton))
-        addFloatingMouseExpandedMenuRow(
-            buttonColumn,
-            listOf(
-                createFloatingMouseTextButton(SpecialKeySpec("Alt", KeyEvent.KEYCODE_ALT_LEFT, toggleable = true)),
-                createFloatingMouseLockButton(),
-                createFloatingMouseKeyboardButton()
-            ),
-            addTopMargin = true
-        )
 
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseTextButton(SpecialKeySpec("Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, toggleable = true)),
+            row = 0,
+            column = 0
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseTextButton(SpecialKeySpec("Shift", KeyEvent.KEYCODE_SHIFT_LEFT, toggleable = true)),
+            row = 0,
+            column = 1
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseTextButton(SpecialKeySpec("Tab", KeyEvent.KEYCODE_TAB)),
+            row = 0,
+            column = 2
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseTextButton(SpecialKeySpec("Alt", KeyEvent.KEYCODE_ALT_LEFT, toggleable = true)),
+            row = 1,
+            column = 0
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseLockButton(),
+            row = 1,
+            column = 1
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseWheelPanel(),
+            row = 1,
+            column = 2,
+            rowSpan = 2
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseModeButton(),
+            row = 2,
+            column = 0
+        )
+        addFloatingMouseExpandedMenuGridItem(
+            grid = grid,
+            item = createFloatingMouseKeyboardButton(),
+            row = 2,
+            column = 1
+        )
         menu.addView(
-            LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(
-                    buttonColumn,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                )
-                addView(
-                    createFloatingMouseWheelPanel(),
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        leftMargin = dpToPx(SPECIAL_KEYS_BUTTON_SPACING_DP)
-                    }
-                )
-            },
+            grid,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -695,6 +723,7 @@ internal class FloatingMouseOverlayController(
             performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             toggleTouchMouseMode()
         }.apply {
+            floatingMouseModeButton = this
             updateFloatingMouseModeButtonUi()
         }
     }
@@ -724,13 +753,6 @@ internal class FloatingMouseOverlayController(
         }
     }
 
-    private fun createFloatingMouseCollapseButton(): TextView {
-        return createFloatingMouseTextActionButton(activity.getString(R.string.touch_mouse_floating_menu_collapse)) {
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            hideFloatingMouseExpandedMenu()
-        }
-    }
-
     private fun createFloatingMouseKeyboardButton(): FrameLayout {
         val iconSize = dpToPx(20)
         return FrameLayout(activity).apply {
@@ -755,36 +777,27 @@ internal class FloatingMouseOverlayController(
         }
     }
 
-    private fun addFloatingMouseExpandedMenuRow(
-        menu: LinearLayout,
-        buttons: List<View>,
-        addTopMargin: Boolean = false,
+    private fun addFloatingMouseExpandedMenuGridItem(
+        grid: GridLayout,
+        item: View,
+        row: Int,
+        column: Int,
+        rowSpan: Int = 1,
     ) {
         val spacing = dpToPx(SPECIAL_KEYS_BUTTON_SPACING_DP)
-        val row = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        buttons.forEachIndexed { index, button ->
-            row.addView(
-                button,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    dpToPx(SPECIAL_KEYS_BUTTON_HEIGHT_DP)
-                ).apply {
-                    if (index > 0) {
-                        leftMargin = spacing
-                    }
-                }
-            )
-        }
-        menu.addView(
-            row,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+        val buttonHeight = dpToPx(SPECIAL_KEYS_BUTTON_HEIGHT_DP)
+        grid.addView(
+            item,
+            GridLayout.LayoutParams(
+                GridLayout.spec(row, rowSpan),
+                GridLayout.spec(column, 1)
             ).apply {
-                if (addTopMargin) {
+                width = GridLayout.LayoutParams.WRAP_CONTENT
+                height = buttonHeight * rowSpan + spacing * (rowSpan - 1)
+                if (column > 0) {
+                    leftMargin = spacing
+                }
+                if (row > 0) {
                     topMargin = spacing
                 }
             }
@@ -838,8 +851,6 @@ internal class FloatingMouseOverlayController(
             return
         }
         val menu = floatingMouseExpandedMenu ?: return
-        val collapseButton = floatingMouseCollapseButton ?: return
-        val modeButton = floatingMouseModeButton
         if (floatingMouseMenuExpanded) {
             return
         }
@@ -847,28 +858,14 @@ internal class FloatingMouseOverlayController(
         clearIdleRunnable()
         highlightFloatingMouse()
         menu.animate().cancel()
-        collapseButton.animate().cancel()
-        modeButton?.animate()?.cancel()
         menu.visibility = View.VISIBLE
-        collapseButton.visibility = View.VISIBLE
-        if (touchMouseNewInteraction) {
-            modeButton?.visibility = View.VISIBLE
-        }
         updateFloatingMouseExpandedMenuPosition()
         menu.alpha = 0f
         menu.scaleX = 0.92f
         menu.scaleY = 0.92f
         menu.translationY = dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat()
-        collapseButton.alpha = 0f
-        collapseButton.translationY = -dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat()
-        if (touchMouseNewInteraction) {
-            modeButton?.alpha = 0f
-            modeButton?.translationY = dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat()
-        }
         menu.bringToFront()
         floatingMouseButton?.bringToFront()
-        collapseButton.bringToFront()
-        modeButton?.bringToFront()
         menu.animate()
             .alpha(1f)
             .scaleX(1f)
@@ -876,48 +873,23 @@ internal class FloatingMouseOverlayController(
             .translationY(0f)
             .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
             .start()
-        collapseButton.animate()
-            .alpha(1f)
-            .translationY(0f)
-            .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
-            .start()
-        if (touchMouseNewInteraction) {
-            modeButton?.animate()
-                ?.alpha(1f)
-                ?.translationY(0f)
-                ?.setDuration(FLOATING_MENU_ANIM_DURATION_MS)
-                ?.start()
-        }
     }
 
     private fun hideFloatingMouseExpandedMenu(animate: Boolean = true) {
         floatingMouseWheelView?.resetToCenter()
         val menu = floatingMouseExpandedMenu
-        val collapseButton = floatingMouseCollapseButton
-        val modeButton = floatingMouseModeButton
         floatingMouseMenuExpanded = false
-        if (menu == null || collapseButton == null) {
-            modeButton?.visibility = View.GONE
-            modeButton?.alpha = 0f
-            modeButton?.translationY = 0f
+        if (menu == null) {
             scheduleFloatingMouseIdle()
             return
         }
         menu.animate().cancel()
-        collapseButton.animate().cancel()
-        modeButton?.animate()?.cancel()
         if (!animate || menu.visibility != View.VISIBLE) {
             menu.visibility = View.GONE
-            collapseButton.visibility = View.GONE
-            modeButton?.visibility = View.GONE
             menu.alpha = 1f
             menu.scaleX = 1f
             menu.scaleY = 1f
             menu.translationY = 0f
-            collapseButton.alpha = 1f
-            collapseButton.translationY = 0f
-            modeButton?.alpha = 0f
-            modeButton?.translationY = 0f
             scheduleFloatingMouseIdle()
             return
         }
@@ -936,43 +908,13 @@ internal class FloatingMouseOverlayController(
                 scheduleFloatingMouseIdle()
             }
             .start()
-        collapseButton.animate()
-            .alpha(0f)
-            .translationY(-dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat())
-            .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
-            .withEndAction {
-                collapseButton.visibility = View.GONE
-                collapseButton.alpha = 1f
-                collapseButton.translationY = 0f
-            }
-            .start()
-        if (touchMouseNewInteraction) {
-            modeButton?.let { activeModeButton ->
-                activeModeButton.animate()
-                    .alpha(0f)
-                    .translationY(dpToPx(FLOATING_MENU_ANIM_OFFSET_DP).toFloat())
-                    .setDuration(FLOATING_MENU_ANIM_DURATION_MS)
-                    .withEndAction {
-                        activeModeButton.visibility = View.GONE
-                        activeModeButton.alpha = 0f
-                        activeModeButton.translationY = 0f
-                    }
-                    .start()
-            }
-        }
     }
 
     private fun updateFloatingMouseExpandedMenuPosition() {
         val host = hostView ?: return
         val menu = floatingMouseExpandedMenu ?: return
         val button = floatingMouseButton ?: return
-        val collapseButton = floatingMouseCollapseButton
-        val modeButton = floatingMouseModeButton
-        if (!floatingMouseMenuExpanded &&
-            menu.visibility != View.VISIBLE &&
-            collapseButton?.visibility != View.VISIBLE &&
-            modeButton?.visibility != View.VISIBLE
-        ) {
+        if (!floatingMouseMenuExpanded && menu.visibility != View.VISIBLE) {
             return
         }
         if (host.width == 0 || host.height == 0 || button.width == 0 || button.height == 0) {
@@ -1000,68 +942,11 @@ internal class FloatingMouseOverlayController(
         val preferredTop = buttonParams.topMargin + (button.height - menuHeight) / 2
         menuParams.topMargin = preferredTop.coerceIn(0, maxTop)
         menu.layoutParams = menuParams
-        updateFloatingMouseCollapseButtonPosition(host, button)
-        updateFloatingMouseModeButtonPosition(host, button, menu)
-    }
-
-    private fun updateFloatingMouseCollapseButtonPosition(host: FrameLayout, button: View) {
-        val collapseButton = floatingMouseCollapseButton ?: return
-        if (!floatingMouseMenuExpanded && collapseButton.visibility != View.VISIBLE) {
-            return
-        }
-        collapseButton.measure(
-            View.MeasureSpec.makeMeasureSpec(host.width, View.MeasureSpec.AT_MOST),
-            View.MeasureSpec.makeMeasureSpec(host.height, View.MeasureSpec.AT_MOST)
-        )
-        val collapseWidth = collapseButton.measuredWidth
-        val collapseHeight = collapseButton.measuredHeight
-        val buttonParams = button.layoutParams as? FrameLayout.LayoutParams ?: return
-        val collapseParams = collapseButton.layoutParams as? FrameLayout.LayoutParams ?: return
-        val maxLeft = (host.width - collapseWidth).coerceAtLeast(0)
-        val centeredLeft = buttonParams.leftMargin + (button.width - collapseWidth) / 2
-        collapseParams.leftMargin = centeredLeft.coerceIn(0, maxLeft)
-        val maxTop = (host.height - collapseHeight).coerceAtLeast(0)
-        val preferredTop =
-            buttonParams.topMargin +
-                button.height +
-                dpToPx(FLOATING_COLLAPSE_BUTTON_BORDER_GAP_DP)
-        collapseParams.topMargin = preferredTop.coerceIn(0, maxTop)
-        collapseButton.layoutParams = collapseParams
-    }
-
-    private fun updateFloatingMouseModeButtonPosition(
-        host: FrameLayout,
-        button: View,
-        menu: View,
-    ) {
-        val modeButton = floatingMouseModeButton ?: return
-        if (modeButton.visibility != View.VISIBLE) {
-            return
-        }
-        modeButton.measure(
-            View.MeasureSpec.makeMeasureSpec(host.width, View.MeasureSpec.AT_MOST),
-            View.MeasureSpec.makeMeasureSpec(host.height, View.MeasureSpec.AT_MOST)
-        )
-        val modeWidth = modeButton.measuredWidth
-        val modeHeight = modeButton.measuredHeight
-        val buttonParams = button.layoutParams as? FrameLayout.LayoutParams ?: return
-        val menuParams = menu.layoutParams as? FrameLayout.LayoutParams ?: return
-        val modeParams = modeButton.layoutParams as? FrameLayout.LayoutParams ?: return
-        val maxLeft = (host.width - modeWidth).coerceAtLeast(0)
-        val centeredLeft = buttonParams.leftMargin + (button.width - modeWidth) / 2
-        modeParams.leftMargin = centeredLeft.coerceIn(0, maxLeft)
-        val maxTop = (host.height - modeHeight).coerceAtLeast(0)
-        val resolvedMenuTop = menuParams.topMargin
-        val preferredTop =
-            resolvedMenuTop -
-                modeHeight -
-                dpToPx(FLOATING_MODE_BUTTON_BORDER_GAP_DP)
-        modeParams.topMargin = preferredTop.coerceIn(0, maxTop)
-        modeButton.layoutParams = modeParams
     }
 
     private fun isSoftKeyboardVisible(): Boolean {
-        return imeController?.isVisible() == true
+        return builtInKeyboardController?.isVisible() == true ||
+            imeController?.isVisible() == true
     }
 
     private fun dispatchVirtualMouseScroll(verticalOffset: Double) {

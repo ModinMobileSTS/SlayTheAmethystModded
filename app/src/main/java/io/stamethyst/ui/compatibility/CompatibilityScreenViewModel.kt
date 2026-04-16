@@ -22,7 +22,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
         val largeTextureDownscaleCompatEnabled: Boolean = true,
-        val textureResidencyManagerCompatEnabled: Boolean = false,
+        val textureResidencyManagerCompatEnabled: Boolean = true,
         val texturePressureDownscaleDivisor: Int = 2,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,

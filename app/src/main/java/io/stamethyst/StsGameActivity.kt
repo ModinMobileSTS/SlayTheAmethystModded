@@ -278,7 +278,8 @@ class StsGameActivity : AppCompatActivity() {
             host = host,
             autoSwitchLeftAfterRightClick = sessionConfig.autoSwitchLeftAfterRightClick,
             touchMouseNewInteraction = sessionConfig.touchMouseNewInteraction,
-            longPressMouseShowsKeyboard = sessionConfig.longPressMouseShowsKeyboard
+            longPressMouseShowsKeyboard = sessionConfig.longPressMouseShowsKeyboard,
+            builtInSoftKeyboardEnabled = sessionConfig.builtInSoftKeyboardEnabled
         )
         sessionCoordinator.refreshSessionUiVisibility()
 

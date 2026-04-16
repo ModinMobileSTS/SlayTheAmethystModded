@@ -154,6 +154,9 @@ fun LauncherSettingsScreen(
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onTouchMouseNewInteractionChanged = { enabled -> viewModel.onTouchMouseNewInteractionChanged(activity, enabled) },
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
+        onBuiltInSoftKeyboardChanged = { enabled ->
+            viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
+        },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
         onDisplayCutoutAvoidanceChanged = { enabled ->
@@ -293,6 +296,7 @@ private fun LauncherSettingsScreenPreview() {
             showFloatingMouseWindow = true,
             touchMouseNewInteraction = true,
             longPressMouseShowsKeyboard = true,
+            builtInSoftKeyboardEnabled = true,
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
             mobileHudEnabled = false,
@@ -353,6 +357,7 @@ private fun LauncherSettingsScreenContent(
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onTouchMouseNewInteractionChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
+    onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
@@ -470,6 +475,7 @@ private fun LauncherSettingsScreenContent(
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
                         onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
+                        onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
@@ -1694,6 +1700,7 @@ private fun SettingsInputSection(
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
+    onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -1764,6 +1771,15 @@ private fun SettingsInputSection(
             onCheckedChange = onLongPressMouseShowsKeyboardChanged
         )
     }
+
+    SwitchSettingRow(
+        checked = uiState.builtInSoftKeyboardEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
+        disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
+        description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
+        onCheckedChange = onBuiltInSoftKeyboardChanged
+    )
 
     SwitchSettingRow(
         checked = uiState.autoSwitchLeftAfterRightClick,

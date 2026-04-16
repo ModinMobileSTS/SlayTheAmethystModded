@@ -37,7 +37,8 @@ class GameInputHandler(
         host: FrameLayout,
         autoSwitchLeftAfterRightClick: Boolean,
         touchMouseNewInteraction: Boolean,
-        longPressMouseShowsKeyboard: Boolean
+        longPressMouseShowsKeyboard: Boolean,
+        builtInSoftKeyboardEnabled: Boolean
     ) {
         floatingMouseController = FloatingMouseOverlayController(
             activity = activity,
@@ -45,7 +46,8 @@ class GameInputHandler(
             requestRenderViewFocus = requestRenderViewFocus,
             autoSwitchBackToLeftAfterRightClick = autoSwitchLeftAfterRightClick,
             touchMouseNewInteraction = touchMouseNewInteraction,
-            longPressMouseShowsKeyboard = longPressMouseShowsKeyboard
+            longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
+            builtInSoftKeyboardEnabled = builtInSoftKeyboardEnabled
         ).also { controller ->
             controller.attachToHost(host)
         }
