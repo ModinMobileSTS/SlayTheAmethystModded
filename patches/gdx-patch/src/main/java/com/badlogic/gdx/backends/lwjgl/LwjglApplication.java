@@ -511,7 +511,9 @@ public class LwjglApplication implements Application {
 			frameActive = false;
 			clearScaledRenderBackBufferOverride();
 			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
-			FrameBuffer.unbind();
+			// Pair the begin() above with end(...) so BaseMod's nested-FBO bookkeeping
+			// clears its per-framebuffer bound state instead of warning every frame.
+			frameBuffer.end(0, 0, screenWidth, screenHeight);
 			Gdx.gl20.glColorMask(true, true, true, true);
 			Gdx.gl20.glDisable(GL20.GL_DEPTH_TEST);
 			Gdx.gl20.glDisable(GL20.GL_CULL_FACE);
@@ -537,7 +539,7 @@ public class LwjglApplication implements Application {
 			frameActive = false;
 			clearScaledRenderBackBufferOverride();
 			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
-			FrameBuffer.unbind();
+			frameBuffer.end();
 		}
 
 		void dispose () {
