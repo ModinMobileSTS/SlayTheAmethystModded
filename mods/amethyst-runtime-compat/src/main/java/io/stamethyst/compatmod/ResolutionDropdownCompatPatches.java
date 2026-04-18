@@ -1,5 +1,6 @@
 package io.stamethyst.compatmod;
 
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.evacipated.cardcrawl.modthespire.lib.SpireReturn;
 import com.megacrit.cardcrawl.core.Settings;
@@ -29,14 +30,46 @@ public final class ResolutionDropdownCompatPatches {
         return labels;
     }
 
+    private static void clampDropdownToAvailableRows(DropdownMenu dropdown) {
+        if (dropdown == null || dropdown.rows == null || dropdown.rows.isEmpty()) {
+            return;
+        }
+        int maxIndex = dropdown.rows.size() - 1;
+        int selectedIndex = dropdown.getSelectedIndex();
+        if (selectedIndex < 0) {
+            dropdown.setSelectedIndex(0);
+        } else if (selectedIndex > maxIndex) {
+            dropdown.setSelectedIndex(maxIndex);
+        }
+        if (dropdown.topVisibleRowIndex < 0) {
+            dropdown.topVisibleRowIndex = 0;
+        } else if (dropdown.topVisibleRowIndex > maxIndex) {
+            dropdown.topVisibleRowIndex = maxIndex;
+        }
+    }
+
+    private static void normalizeResolutionDropdownState(OptionsPanel panel) {
+        if (panel == null) {
+            return;
+        }
+        if (!hasResolutionOptions() || !hasDropdownRows(panel.resoDropdown)) {
+            ensureResolutionDropdownPlaceholder(panel);
+            return;
+        }
+        clampDropdownToAvailableRows(panel.resoDropdown);
+    }
+
     // Android can surface no desktop-compatible resolutions; show a placeholder instead of crashing.
     private static void ensureResolutionDropdownPlaceholder(OptionsPanel panel) {
         if (panel == null) {
             return;
         }
-        if (hasDropdownRows(panel.resoDropdown)) {
+        if (hasDropdownRows(panel.resoDropdown) && (hasResolutionOptions() || panel.resoDropdown.rows.size() == 1)) {
             panel.resoDropdown.setSelectedIndex(0);
             panel.resoDropdown.topVisibleRowIndex = 0;
+            if (!hasResolutionOptions()) {
+                Settings.displayIndex = 0;
+            }
             return;
         }
         panel.resoDropdown = new DropdownMenu(
@@ -118,6 +151,41 @@ public final class ResolutionDropdownCompatPatches {
                 return SpireReturn.Continue();
             }
             return SpireReturn.Return(null);
+        }
+    }
+
+    @SpirePatch2(
+        clz = OptionsPanel.class,
+        method = "render",
+        paramtypez = {SpriteBatch.class}
+    )
+    public static class OptionsPanelRenderPatch {
+        public static void Prefix(OptionsPanel __instance) {
+            normalizeResolutionDropdownState(__instance);
+        }
+    }
+
+    @SpirePatch2(
+        clz = DropdownMenu.class,
+        method = "visibleRowCount",
+        paramtypez = {}
+    )
+    public static class DropdownMenuVisibleRowCountPatch {
+        public static int Postfix(int __result, DropdownMenu __instance) {
+            if (__instance == null || __instance.rows == null || __instance.rows.isEmpty()) {
+                return 0;
+            }
+            int maxIndex = __instance.rows.size() - 1;
+            if (__instance.topVisibleRowIndex < 0) {
+                __instance.topVisibleRowIndex = 0;
+            } else if (__instance.topVisibleRowIndex > maxIndex) {
+                __instance.topVisibleRowIndex = maxIndex;
+            }
+            int remainingRows = __instance.rows.size() - __instance.topVisibleRowIndex;
+            if (remainingRows <= 0) {
+                return 0;
+            }
+            return Math.min(__result, remainingRows);
         }
     }
 }

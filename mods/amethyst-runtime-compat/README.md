@@ -8,7 +8,7 @@ This mod carries runtime-side compatibility fixes that are safer to ship as ModT
 Adjusts `FontHelper.prepFont` so launcher-configured text scaling is applied consistently during MTS launches.
 
 2. `ResolutionDropdownCompatPatches`
-Guards the in-game settings resolution dropdown on Android-compatible runtimes. When no desktop-compatible resolution list can be built, the dropdown is replaced with a single `N/A` entry and resolution changes become a no-op instead of crashing.
+Guards the in-game settings resolution dropdown on Android-compatible runtimes. When no desktop-compatible resolution list can be built, the dropdown is replaced with a single `N/A` entry and resolution changes become a no-op instead of crashing. The patch also normalizes stale dropdown selection and scroll-window state during settings rendering so toggling graphics options cannot leave the placeholder dropdown pointing past its only row and crash inside `DropdownMenu.layoutRowsBelow`. Type: crash fix implemented by `ResolutionDropdownCompatPatches`.
 
 3. `DuelistCompatPatches`
 Short-circuits a few Duelist dynamic/base-value lookups so they reuse current card state instead of going through slower or less stable reflection-heavy paths.
