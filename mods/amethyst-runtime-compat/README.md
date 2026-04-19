@@ -25,6 +25,9 @@ Intercepts `ImageMaster.loadImage` for Frieren slot-library textures and reuses 
 7. `DownfallMainMenuAtlasCompatPatches`
 Intercepts `downfall.patches.MainMenuColorPatch.setMainMenuBG(TitleBackground)` and reuses a singleton Downfall main-menu `TextureAtlas` instead of constructing a fresh atlas on every menu rebuild. This targets the repeated `title.atlas` / `title.jpg` GPU-memory leak seen when bouncing back to the main menu. Type: compatibility workaround for a third-party texture leak.
 
+8. `HinaCharacterRenderCompatPatches`
+Downsizes Blue Archive Hina's offscreen 3D character render target from its desktop-style supersampled framebuffer to a mobile-safe framebuffer and replaces the original mipmap generation path with linear filtering during the final blit. This addresses the symptom where Hina's in-run 3D model renders as a blank character on Android-compatible runtimes after the oversized framebuffer is pressure-downscaled or the desktop mipmap path misbehaves. Type: compatibility workaround for third-party mobile rendering assumptions implemented by `HinaCharacterRenderCompatPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:
