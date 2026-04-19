@@ -101,6 +101,8 @@ object LauncherConfig {
     private const val PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR =
         "compat_texture_pressure_downscale_divisor"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
+    private const val PREF_KEY_HINA_CHARACTER_RENDER_COMPAT =
+        "compat_hina_character_render"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
     private const val PREF_KEY_FBO_MANAGER_COMPAT = "compat_fbo_manager"
@@ -192,6 +194,7 @@ object LauncherConfig {
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
+    const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = true
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = true
@@ -865,6 +868,19 @@ object LauncherConfig {
     fun setForceLinearMipmapFilterEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER, enabled)
+        }
+    }
+
+    fun isHinaCharacterRenderCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_HINA_CHARACTER_RENDER_COMPAT,
+            DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED
+        )
+    }
+
+    fun setHinaCharacterRenderCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_HINA_CHARACTER_RENDER_COMPAT, enabled)
         }
     }
 

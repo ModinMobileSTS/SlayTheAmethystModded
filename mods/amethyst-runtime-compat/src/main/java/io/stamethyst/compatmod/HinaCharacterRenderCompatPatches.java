@@ -21,8 +21,12 @@ import java.lang.reflect.Method;
 public final class HinaCharacterRenderCompatPatches {
     private static final String HINA_MOD_ID = "Blue archive Hina mod";
     private static final String HINA_HELPER_CLASS = "tuner.helpers.ModelController.character3DHelper";
+    private static final String HINA_CHARACTER_RENDER_COMPAT_PROP =
+        "amethyst.runtime_compat.hina_character_render";
     private static final int ORIGINAL_SSAA_SCALE = 4;
     private static final int MOBILE_RENDER_SCALE = 1;
+    private static final boolean HINA_CHARACTER_RENDER_COMPAT_ENABLED =
+        readBooleanSystemProperty(HINA_CHARACTER_RENDER_COMPAT_PROP, true);
     private static boolean resizeLogPrinted;
 
     private HinaCharacterRenderCompatPatches() {
@@ -84,6 +88,9 @@ public final class HinaCharacterRenderCompatPatches {
     }
 
     private static boolean shouldApplyCompat() {
+        if (!HINA_CHARACTER_RENDER_COMPAT_ENABLED) {
+            return false;
+        }
         if (Gdx.graphics == null) {
             return false;
         }
@@ -299,5 +306,27 @@ public final class HinaCharacterRenderCompatPatches {
             }
         }
         throw new NoSuchMethodException(methodName);
+    }
+
+    private static boolean readBooleanSystemProperty(String key, boolean defaultValue) {
+        String configured = System.getProperty(key);
+        if (configured == null) {
+            return defaultValue;
+        }
+        configured = configured.trim();
+        if (configured.length() == 0) {
+            return defaultValue;
+        }
+        if ("false".equalsIgnoreCase(configured)
+            || "0".equals(configured)
+            || "off".equalsIgnoreCase(configured)) {
+            return false;
+        }
+        if ("true".equalsIgnoreCase(configured)
+            || "1".equals(configured)
+            || "on".equalsIgnoreCase(configured)) {
+            return true;
+        }
+        return defaultValue;
     }
 }

@@ -288,6 +288,14 @@ object StsLaunchSpec {
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.runtime_compat.hina_character_render=" +
+                if (CompatibilitySettings.isHinaCharacterRenderCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
             "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
         )

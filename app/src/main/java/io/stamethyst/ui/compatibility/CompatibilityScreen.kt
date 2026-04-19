@@ -79,6 +79,9 @@ fun LauncherCompatibilityScreen(
             viewModel.onTexturePressureDownscaleDivisorChanged(context, divisor)
         },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
+        onHinaCharacterRenderCompatToggled = { enabled ->
+            viewModel.onHinaCharacterRenderCompatToggled(context, enabled)
+        },
         onNonRenderableFboFormatCompatToggled = { enabled ->
             viewModel.onNonRenderableFboFormatCompatToggled(context, enabled)
         },
@@ -114,6 +117,7 @@ private fun LauncherCompatibilityScreenPreview() {
             textureResidencyManagerCompatEnabled = true,
             texturePressureDownscaleDivisor = 2,
             forceLinearMipmapFilterEnabled = true,
+            hinaCharacterRenderCompatEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,
             fboManagerCompatEnabled = true,
             fboIdleReclaimCompatEnabled = true,
@@ -141,6 +145,7 @@ private fun LauncherCompatibilityScreenContent(
     onTextureResidencyManagerCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
+    onHinaCharacterRenderCompatToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
     onFboManagerCompatToggled: (Boolean) -> Unit = {},
     onFboIdleReclaimCompatToggled: (Boolean) -> Unit = {},
@@ -248,6 +253,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.forceLinearMipmapFilterEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onForceLinearMipmapFilterToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_hina_character_render_title),
+                    description = stringResource(R.string.compat_hina_character_render_desc),
+                    checked = uiState.hinaCharacterRenderCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onHinaCharacterRenderCompatToggled
                 )
 
                 CompatibilitySwitchRow(

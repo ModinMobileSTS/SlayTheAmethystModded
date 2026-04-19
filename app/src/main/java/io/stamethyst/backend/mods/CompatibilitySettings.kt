@@ -135,6 +135,16 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
+    fun isHinaCharacterRenderCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isHinaCharacterRenderCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setHinaCharacterRenderCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setHinaCharacterRenderCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
     fun isNonRenderableFboFormatCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isNonRenderableFboFormatCompatEnabled(context)
     }

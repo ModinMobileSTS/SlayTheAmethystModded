@@ -26,6 +26,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val textureResidencyManagerCompatEnabled: Boolean = true,
         val texturePressureDownscaleDivisor: Int = 2,
         val forceLinearMipmapFilterEnabled: Boolean = true,
+        val hinaCharacterRenderCompatEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
         val fboManagerCompatEnabled: Boolean = true,
         val fboIdleReclaimCompatEnabled: Boolean = true,
@@ -52,6 +53,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             textureResidencyManagerCompatEnabled = CompatibilitySettings.isTextureResidencyManagerCompatEnabled(host),
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
+            hinaCharacterRenderCompatEnabled = CompatibilitySettings.isHinaCharacterRenderCompatEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
             fboManagerCompatEnabled = CompatibilitySettings.isFboManagerCompatEnabled(host),
             fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
@@ -161,6 +163,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setForceLinearMipmapFilterEnabled(host, enabled)
         uiState = uiState.copy(forceLinearMipmapFilterEnabled = enabled)
+    }
+
+    fun onHinaCharacterRenderCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setHinaCharacterRenderCompatEnabled(host, enabled)
+        uiState = uiState.copy(hinaCharacterRenderCompatEnabled = enabled)
     }
 
     fun onNonRenderableFboFormatCompatToggled(host: Context, enabled: Boolean) {

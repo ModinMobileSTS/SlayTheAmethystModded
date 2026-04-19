@@ -224,6 +224,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "forceLinearMipmapFilter" to formatBoolean(
                             CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
                         ),
+                        "hinaCharacterRenderCompat" to formatBoolean(
+                            CompatibilitySettings.isHinaCharacterRenderCompatEnabled(context)
+                        ),
                         "nonRenderableFboFormatCompat" to formatBoolean(
                             CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)
                         ),
