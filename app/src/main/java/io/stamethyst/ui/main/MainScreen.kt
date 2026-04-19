@@ -581,6 +581,8 @@ private fun CrashRecoveryScreen(
                     text = stringResource(
                         if (crashRecovery.isOutOfMemory) {
                             R.string.sts_crash_page_guidance_oom
+                        } else if (crashRecovery.isLaunchPreparationProcessDisconnected) {
+                            R.string.sts_crash_page_guidance_launch_preparation_process_disconnected
                         } else {
                             R.string.sts_crash_page_guidance_default
                         }

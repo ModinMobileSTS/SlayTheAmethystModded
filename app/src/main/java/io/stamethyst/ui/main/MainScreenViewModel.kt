@@ -79,7 +79,8 @@ class MainScreenViewModel : ViewModel() {
         val isSignal: Boolean,
         val summaryText: String,
         val reportText: String,
-        val isOutOfMemory: Boolean
+        val isOutOfMemory: Boolean,
+        val isLaunchPreparationProcessDisconnected: Boolean
     )
 
     private data class ImportedStsJarFingerprint(
@@ -1183,7 +1184,9 @@ class MainScreenViewModel : ViewModel() {
                 isSignal = isSignal,
                 summaryText = report.summaryText,
                 reportText = report.reportText,
-                isOutOfMemory = isOutOfMemoryCrash(code, detail)
+                isOutOfMemory = isOutOfMemoryCrash(code, detail),
+                isLaunchPreparationProcessDisconnected =
+                    report.isLaunchPreparationProcessDisconnected
             )
         )
     }

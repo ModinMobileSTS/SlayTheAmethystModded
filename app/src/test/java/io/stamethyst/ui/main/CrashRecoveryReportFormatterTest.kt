@@ -1,6 +1,9 @@
 package io.stamethyst.ui.main
 
+import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CrashRecoveryReportFormatterTest {
@@ -29,6 +32,7 @@ class CrashRecoveryReportFormatterTest {
             """.trimIndent(),
             report.reportText
         )
+        assertFalse(report.isLaunchPreparationProcessDisconnected)
     }
 
     @Test
@@ -40,5 +44,26 @@ class CrashRecoveryReportFormatterTest {
 
         assertEquals("Game process exited unexpectedly, exit code -1.", report.summaryText)
         assertEquals("Game process exited unexpectedly, exit code -1.", report.reportText)
+        assertFalse(report.isLaunchPreparationProcessDisconnected)
+    }
+
+    @Test
+    fun format_detectsPrepProcessDisconnect_andStripsInternalMarker() {
+        val report = CrashRecoveryReportFormatter.format(
+            detail = LaunchPreparationFailureMessageResolver.markPrepProcessFailureDetail(
+                "The launcher lost contact with the startup preparation process before launch could continue."
+            ),
+            fallbackMessage = "Game crashed."
+        )
+
+        assertEquals(
+            "The launcher lost contact with the startup preparation process before launch could continue.",
+            report.summaryText
+        )
+        assertEquals(
+            "The launcher lost contact with the startup preparation process before launch could continue.",
+            report.reportText
+        )
+        assertTrue(report.isLaunchPreparationProcessDisconnected)
     }
 }

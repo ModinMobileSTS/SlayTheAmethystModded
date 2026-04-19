@@ -23,6 +23,7 @@
     <string name="sts_crash_page_capture_title">已捕获崩溃</string>
     <string name="sts_crash_page_guidance_default">建议先自行排查问题，可以将日志交给 AI 分析，确认是启动器本身的问题还是模组的问题。如果能够确定是启动器的问题，可以在反馈页面向开发者提供反馈。</string>
     <string name="sts_crash_page_guidance_oom">这次运行很可能已经耗尽了 JVM 堆内存。重试前建议先打开恢复设置，提高 JVM 堆上限；如果内存压力还是很高，再考虑减少最近启用的 MOD。</string>
+    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">这次启动是启动器在准备进程失联后主动中止的，目的是避免修补步骤看起来一直卡死。\n\n如果当时正在修补 desktop-1.0.jar，请勿在 patch 过程中退出到后台、切换到其他应用，或让系统清理本应用。请保持启动器停留在前台，等修补完成后再离开，然后重新尝试启动。</string>
     <string name="sts_crash_page_actions_title">快速操作</string>
     <string name="sts_crash_page_actions_desc">你可以立即重试，也可以先进入恢复设置再重新启动。下方崩溃文本支持选择和复制，也更方便做长截图。</string>
     <string name="sts_crash_page_action_recovery">打开设置</string>
@@ -243,7 +244,7 @@
     <string name="startup_failure_delegate_crashed_with_detail">游戏启动入口崩溃：%1$s</string>
     <string name="startup_failure_delegate_start_failed_with_detail">启动游戏入口失败：%1$s</string>
     <string name="startup_failure_launch_failed_with_detail">启动 JVM 失败：%1$s</string>
-    <string name="startup_failure_launch_preparation_process_disconnected">启动器在继续启动前与准备进程失去了连接。\n\n如果当时正在修补 desktop-1.0.jar，请勿在该修补步骤进行时退出到后台、切换到其他应用，或让系统清理本应用。请回到启动器后重试。</string>
+    <string name="startup_failure_launch_preparation_process_disconnected">启动器在继续启动前与准备进程失去了连接。</string>
     <string name="startup_failure_legacy_patched_desktop_jar_requires_reimport">检测到当前导入的 desktop-1.0.jar 已被旧版启动器改写过，不能直接升级到新的兼容补丁方案。\n\n请打开“设置”并重新导入原版、未修改的 desktop-1.0.jar 后再启动。\n如果手头只有当前这份文件，请重新从游戏安装目录获取一份原始 jar。</string>
     <string name="startup_failure_context_last_phase_with_percent">最后阶段 %1$d%%：%2$s</string>
     <string name="startup_failure_context_last_phase">最后阶段：%1$s</string>

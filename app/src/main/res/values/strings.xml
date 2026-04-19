@@ -23,6 +23,7 @@
     <string name="sts_crash_page_capture_title">Crash captured</string>
     <string name="sts_crash_page_guidance_default">It is recommended to troubleshoot the issue first. You can hand the logs to AI analysis to confirm whether the problem comes from the launcher itself or from a mod. If you can confirm that the launcher is the problem, you can use the feedback page to report it to the developer.</string>
     <string name="sts_crash_page_guidance_oom">This run likely exhausted JVM heap memory. Before retrying, consider opening recovery settings and raising the JVM heap max, or trim recently enabled mods if memory pressure stays high.</string>
+    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">The launcher deliberately stopped this launch after the startup preparation process lost contact, so the patch step would not appear to hang forever.\n\nIf desktop-1.0.jar was being patched, do not leave the app, switch to another app, or send it to the background during that patch step. Keep the launcher in the foreground until the patch completes, then try again.</string>
     <string name="sts_crash_page_actions_title">Quick actions</string>
     <string name="sts_crash_page_actions_desc">You can retry immediately, or open recovery settings first before starting again. The crash text below supports selection and copying, and is also more convenient for long screenshots.</string>
     <string name="sts_crash_page_action_recovery">Open settings</string>
@@ -243,7 +244,7 @@
     <string name="startup_failure_delegate_crashed_with_detail">Game launcher crashed: %1$s</string>
     <string name="startup_failure_delegate_start_failed_with_detail">Failed to start game launcher: %1$s</string>
     <string name="startup_failure_launch_failed_with_detail">Failed to launch JVM: %1$s</string>
-    <string name="startup_failure_launch_preparation_process_disconnected">The launcher lost contact with the startup preparation process before launch could continue.\n\nIf desktop-1.0.jar was being patched, do not leave the app, switch to another app, or send it to the background during that patch step. Return to the launcher and try again.</string>
+    <string name="startup_failure_launch_preparation_process_disconnected">The launcher lost contact with the startup preparation process before launch could continue.</string>
     <string name="startup_failure_legacy_patched_desktop_jar_requires_reimport">This imported desktop-1.0.jar was already rewritten by an older launcher build and can\'t be upgraded in place to the newer compatibility patch flow.\n\nOpen Settings and re-import the original, unmodified desktop-1.0.jar before launching again.\nIf you only have the current file, copy a fresh jar from your game install.</string>
     <string name="startup_failure_context_last_phase_with_percent">last phase %1$d%%: %2$s</string>
     <string name="startup_failure_context_last_phase">last phase: %1$s</string>
