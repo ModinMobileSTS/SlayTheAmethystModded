@@ -1,18 +1,29 @@
 package io.stamethyst.backend.launch
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
+import android.os.SystemClock
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 internal object LaunchPreparationProcessClient {
     private const val WAIT_SLICE_MS = 150L
+    private const val PREP_PROCESS_SUFFIX = ":prep"
+    private const val PREP_PROCESS_START_GRACE_MS = 2_000L
+    private const val PREP_PROCESS_MISSING_TIMEOUT_MS = 1_500L
+    private const val PREP_PROCESS_STALL_TIMEOUT_MS = 45_000L
+    private const val PREP_PROCESS_FAILURE_MARKER = "STS_PREP_PROCESS_FAILURE"
+
+    internal const val PREP_PROCESS_FAILURE_REASON_MISSING = "missing"
+    internal const val PREP_PROCESS_FAILURE_REASON_STALLED = "stalled"
 
     private sealed interface PreparationResult {
         data object Success : PreparationResult
@@ -29,10 +40,13 @@ internal object LaunchPreparationProcessClient {
         throwIfCancelled()
 
         val appContext = context.applicationContext
+        val startedAtMs = SystemClock.uptimeMillis()
+        val lastSignalAtMs = AtomicLong(startedAtMs)
         val latch = CountDownLatch(1)
         val resultRef = AtomicReference<PreparationResult?>()
         val receiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
             override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                lastSignalAtMs.set(SystemClock.uptimeMillis())
                 when (resultCode) {
                     LaunchPreparationProcessService.RESULT_PROGRESS -> {
                         progressCallback?.onProgress(
@@ -75,10 +89,35 @@ internal object LaunchPreparationProcessClient {
         }
 
         try {
+            var prepProcessMissingSinceMs = -1L
             while (true) {
                 throwIfCancelled()
                 if (latch.await(WAIT_SLICE_MS, TimeUnit.MILLISECONDS)) {
                     break
+                }
+                val now = SystemClock.uptimeMillis()
+                if (now - lastSignalAtMs.get() >= PREP_PROCESS_STALL_TIMEOUT_MS) {
+                    cancel(appContext)
+                    throw buildPrepProcessFailure(
+                        PREP_PROCESS_FAILURE_REASON_STALLED
+                    )
+                }
+                if (now - startedAtMs < PREP_PROCESS_START_GRACE_MS) {
+                    continue
+                }
+                if (isPrepProcessRunning(appContext)) {
+                    prepProcessMissingSinceMs = -1L
+                    continue
+                }
+                if (prepProcessMissingSinceMs < 0L) {
+                    prepProcessMissingSinceMs = now
+                    continue
+                }
+                if (now - prepProcessMissingSinceMs >= PREP_PROCESS_MISSING_TIMEOUT_MS) {
+                    cancel(appContext)
+                    throw buildPrepProcessFailure(
+                        PREP_PROCESS_FAILURE_REASON_MISSING
+                    )
                 }
             }
             throwIfCancelled()
@@ -102,6 +141,16 @@ internal object LaunchPreparationProcessClient {
                     "Launch preparation process exited without a terminal result"
                 )
         }
+    }
+
+    internal fun isPrepProcessFailureMessage(message: String?): Boolean {
+        val text = message?.trim().orEmpty()
+        return text.startsWith("$PREP_PROCESS_FAILURE_MARKER:")
+    }
+
+    private fun buildPrepProcessFailure(reason: String): IOException {
+        val normalizedReason = reason.trim().ifEmpty { "unknown" }
+        return IOException("$PREP_PROCESS_FAILURE_MARKER:$normalizedReason")
     }
 
     fun cancel(context: Context) {
@@ -138,5 +187,22 @@ internal object LaunchPreparationProcessClient {
             "Launch preparation failed in :prep process"
         }
         return IOException(summary)
+    }
+
+    private fun isPrepProcessRunning(context: Context): Boolean {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return false
+        return try {
+            activityManager.runningAppProcesses
+                ?.any { process ->
+                    process.processName == context.packageName + PREP_PROCESS_SUFFIX &&
+                        process.pid > 0 &&
+                        process.importance <
+                        ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+                }
+                ?: false
+        } catch (_: Throwable) {
+            false
+        }
     }
 }

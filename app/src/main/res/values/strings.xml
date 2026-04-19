@@ -241,6 +241,7 @@
     <string name="startup_failure_delegate_crashed_with_detail">Game launcher crashed: %1$s</string>
     <string name="startup_failure_delegate_start_failed_with_detail">Failed to start game launcher: %1$s</string>
     <string name="startup_failure_launch_failed_with_detail">Failed to launch JVM: %1$s</string>
+    <string name="startup_failure_launch_preparation_process_disconnected">The launcher lost contact with the startup preparation process before launch could continue.\n\nIf desktop-1.0.jar was being patched, do not leave the app, switch to another app, or send it to the background during that patch step. Return to the launcher and try again.</string>
     <string name="startup_failure_legacy_patched_desktop_jar_requires_reimport">This imported desktop-1.0.jar was already rewritten by an older launcher build and can\'t be upgraded in place to the newer compatibility patch flow.\n\nOpen Settings and re-import the original, unmodified desktop-1.0.jar before launching again.\nIf you only have the current file, copy a fresh jar from your game install.</string>
     <string name="startup_failure_context_last_phase_with_percent">last phase %1$d%%: %2$s</string>
     <string name="startup_failure_context_last_phase">last phase: %1$s</string>

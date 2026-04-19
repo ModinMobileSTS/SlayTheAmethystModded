@@ -9,6 +9,8 @@ import android.os.ResultReceiver
 import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class LaunchPreparationProcessService : Service() {
     companion object {
@@ -31,6 +33,8 @@ class LaunchPreparationProcessService : Service() {
 
     @Volatile
     private var workerThread: Thread? = null
+    private val currentResultReceiver = AtomicReference<ResultReceiver?>()
+    private val terminalResultSent = AtomicBoolean(false)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -59,6 +63,8 @@ class LaunchPreparationProcessService : Service() {
                     return START_NOT_STICKY
                 }
 
+                currentResultReceiver.set(receiver)
+                terminalResultSent.set(false)
                 val thread = Thread(
                     {
                         runPreparation(
@@ -77,9 +83,15 @@ class LaunchPreparationProcessService : Service() {
     }
 
     override fun onDestroy() {
+        val receiver = currentResultReceiver.getAndSet(null)
         val thread = workerThread
         workerThread = null
         thread?.interrupt()
+        if (receiver != null && terminalResultSent.compareAndSet(false, true)) {
+            runCatching {
+                receiver.send(RESULT_CANCELLED, errorBundle(IOException("Launch preparation cancelled")))
+            }
+        }
         super.onDestroy()
         android.os.Process.killProcess(android.os.Process.myPid())
     }
@@ -102,9 +114,10 @@ class LaunchPreparationProcessService : Service() {
                     }
                 )
             }
-            resultReceiver.send(RESULT_SUCCESS, Bundle.EMPTY)
+            sendTerminalResult(resultReceiver, RESULT_SUCCESS, Bundle.EMPTY)
         } catch (throwable: Throwable) {
-            resultReceiver.send(
+            sendTerminalResult(
+                resultReceiver,
                 if (isCancellation(throwable)) RESULT_CANCELLED else RESULT_FAILURE,
                 errorBundle(throwable)
             )
@@ -112,6 +125,7 @@ class LaunchPreparationProcessService : Service() {
             if (Thread.currentThread() === workerThread) {
                 workerThread = null
             }
+            currentResultReceiver.compareAndSet(resultReceiver, null)
             stopSelfResult(startId)
         }
     }
@@ -141,5 +155,16 @@ class LaunchPreparationProcessService : Service() {
         }
         val message = throwable.message?.lowercase().orEmpty()
         return message.contains("cancel")
+    }
+
+    private fun sendTerminalResult(
+        resultReceiver: ResultReceiver,
+        resultCode: Int,
+        data: Bundle
+    ) {
+        if (!terminalResultSent.compareAndSet(false, true)) {
+            return
+        }
+        resultReceiver.send(resultCode, data)
     }
 }
