@@ -88,6 +88,7 @@ object LauncherConfig {
     private const val PREF_KEY_FRIEREN_MOD_COMPAT = "compat_frieren_mod_compat"
     private const val PREF_KEY_DOWNFALL_IMPORT_COMPAT = "compat_downfall_import_compat"
     private const val PREF_KEY_VUPSHION_MOD_COMPAT = "compat_vupshion_mod_compat"
+    private const val PREF_KEY_JACKETNOANOKO_MOD_COMPAT = "compat_jacketnoanoko_mod_compat"
     private const val PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT =
         "compat_fragment_shader_precision_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
@@ -760,6 +761,16 @@ object LauncherConfig {
     fun setVupShionModCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_VUPSHION_MOD_COMPAT, enabled)
+        }
+    }
+
+    fun isJacketNoAnoKoModCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_JACKETNOANOKO_MOD_COMPAT, true)
+    }
+
+    fun setJacketNoAnoKoModCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_JACKETNOANOKO_MOD_COMPAT, enabled)
         }
     }
 

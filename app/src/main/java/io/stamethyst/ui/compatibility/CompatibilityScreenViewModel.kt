@@ -18,6 +18,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val frierenModCompatEnabled: Boolean = true,
         val downfallImportCompatEnabled: Boolean = true,
         val vupShionModCompatEnabled: Boolean = true,
+        val jacketNoAnoKoModCompatEnabled: Boolean = true,
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
@@ -43,6 +44,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
             downfallImportCompatEnabled = CompatibilitySettings.isDownfallImportCompatEnabled(host),
             vupShionModCompatEnabled = CompatibilitySettings.isVupShionModCompatEnabled(host),
+            jacketNoAnoKoModCompatEnabled = CompatibilitySettings.isJacketNoAnoKoModCompatEnabled(host),
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
@@ -95,6 +97,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setVupShionModCompatEnabled(host, enabled)
         uiState = uiState.copy(vupShionModCompatEnabled = enabled)
+    }
+
+    fun onJacketNoAnoKoModCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setJacketNoAnoKoModCompatEnabled(host, enabled)
+        uiState = uiState.copy(jacketNoAnoKoModCompatEnabled = enabled)
     }
 
     fun onFragmentShaderPrecisionCompatToggled(host: Context, enabled: Boolean) {

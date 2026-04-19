@@ -22,6 +22,7 @@ import io.stamethyst.backend.mods.FrierenModCompatPatcher
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
+import io.stamethyst.backend.mods.JacketNoAnoKoModCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
@@ -68,7 +69,10 @@ internal data class ModImportResult(
     val patchedDownfallMerchantClassEntries: Int = 0,
     val patchedDownfallHexaghostBodyClassEntries: Int = 0,
     val patchedDownfallBossMechanicPanelClassEntries: Int = 0,
-    val patchedVupShionWebButtonConstructor: Boolean = false
+    val patchedVupShionWebButtonConstructor: Boolean = false,
+    val patchedJacketNoAnoKoShaderEntries: Int = 0,
+    val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
+    val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
@@ -82,13 +86,16 @@ internal data class ModImportResult(
         get() = patchedDownfallClassEntries > 0
     val wasVupShionPatched: Boolean
         get() = patchedVupShionWebButtonConstructor
+    val wasJacketNoAnoKoPatched: Boolean
+        get() = patchedJacketNoAnoKoShaderEntries > 0
     val hasCompatibilityPatches: Boolean
         get() = wasAtlasPatched ||
             wasAtlasDownscaled ||
             wasManifestRootPatched ||
             wasFrierenAntiPiratePatched ||
             wasDownfallPatched ||
-            wasVupShionPatched
+            wasVupShionPatched ||
+            wasJacketNoAnoKoPatched
 }
 
 internal data class ModBatchImportResult(
@@ -193,6 +200,7 @@ internal object SettingsFileService {
     private const val DOWNFALL_MOD_ID = "downfall"
     private const val FRIEREN_MOD_ID = "frierenmod"
     private const val VUPSHION_MOD_ID = "vupshionmod"
+    private const val JACKETNOANOKO_MOD_ID = "jacketnoanokomod"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
         ".zip",
         ".rar",
@@ -497,6 +505,19 @@ internal object SettingsFileService {
                 patchedVupShionWebButtonConstructor =
                     VupShionModCompatPatcher.patchInPlace(tempFile).hasAnyPatch
             }
+            var patchedJacketNoAnoKoShaderEntries = 0
+            var patchedJacketNoAnoKoDesktopVersionDirectives = 0
+            var patchedJacketNoAnoKoFragmentPrecisionBlocks = 0
+            if (CompatibilitySettings.isJacketNoAnoKoModCompatEnabled(host)
+                && modId == JACKETNOANOKO_MOD_ID
+            ) {
+                val patchResult = JacketNoAnoKoModCompatPatcher.patchInPlace(tempFile)
+                patchedJacketNoAnoKoShaderEntries = patchResult.patchedShaderEntries
+                patchedJacketNoAnoKoDesktopVersionDirectives =
+                    patchResult.removedDesktopVersionDirectives
+                patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                    patchResult.insertedFragmentPrecisionBlocks
+            }
             if (replaceExistingDuplicates) {
                 ModManager.removeExistingOptionalModsForImport(
                     context = host,
@@ -537,7 +558,12 @@ internal object SettingsFileService {
                 patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
                 patchedDownfallBossMechanicPanelClassEntries =
                     patchedDownfallBossMechanicPanelClassEntries,
-                patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor
+                patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor,
+                patchedJacketNoAnoKoShaderEntries = patchedJacketNoAnoKoShaderEntries,
+                patchedJacketNoAnoKoDesktopVersionDirectives =
+                    patchedJacketNoAnoKoDesktopVersionDirectives,
+                patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                    patchedJacketNoAnoKoFragmentPrecisionBlocks
             )
             runCatching {
                 ImportedModPatchRegistry.put(
@@ -641,7 +667,16 @@ internal object SettingsFileService {
                                     result.patchedDownfallBossMechanicPanelClassEntries,
                             patchedVupShionWebButtonConstructor =
                                 existing.patchedVupShionWebButtonConstructor ||
-                                    result.patchedVupShionWebButtonConstructor
+                                    result.patchedVupShionWebButtonConstructor,
+                            patchedJacketNoAnoKoShaderEntries =
+                                existing.patchedJacketNoAnoKoShaderEntries +
+                                    result.patchedJacketNoAnoKoShaderEntries,
+                            patchedJacketNoAnoKoDesktopVersionDirectives =
+                                existing.patchedJacketNoAnoKoDesktopVersionDirectives +
+                                    result.patchedJacketNoAnoKoDesktopVersionDirectives,
+                            patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                                existing.patchedJacketNoAnoKoFragmentPrecisionBlocks +
+                                    result.patchedJacketNoAnoKoFragmentPrecisionBlocks
                         )
                     }
                 }
@@ -1342,6 +1377,64 @@ internal object SettingsFileService {
         }.trimEnd()
     }
 
+    fun buildJacketNoAnoKoPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasJacketNoAnoKoPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedJacketNoAnoKoShaderEntries =
+                        existing.patchedJacketNoAnoKoShaderEntries +
+                            result.patchedJacketNoAnoKoShaderEntries,
+                    patchedJacketNoAnoKoDesktopVersionDirectives =
+                        existing.patchedJacketNoAnoKoDesktopVersionDirectives +
+                            result.patchedJacketNoAnoKoDesktopVersionDirectives,
+                    patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                        existing.patchedJacketNoAnoKoFragmentPrecisionBlocks +
+                            result.patchedJacketNoAnoKoFragmentPrecisionBlocks
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return context.getString(R.string.mod_import_jacketnoanoko_message_none)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_jacketnoanoko_message_intro))
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
+                append('\n')
+                append(
+                    context.getString(
+                        R.string.mod_import_jacketnoanoko_message_item_detail,
+                        result.patchedJacketNoAnoKoShaderEntries,
+                        result.patchedJacketNoAnoKoDesktopVersionDirectives,
+                        result.patchedJacketNoAnoKoFragmentPrecisionBlocks
+                    )
+                )
+                append('\n')
+            }
+            append(context.getString(R.string.mod_import_jacketnoanoko_message_rule))
+        }.trimEnd()
+    }
+
     fun buildModImportPatchDetailMessage(
         context: Context,
         patchInfo: ImportedModPatchInfo
@@ -1431,6 +1524,18 @@ internal object SettingsFileService {
                 titleResId = R.string.main_mod_patch_section_vupshion_title,
                 detail = context.getString(R.string.mod_import_vupshion_message_item_detail),
                 rule = context.getString(R.string.mod_import_vupshion_message_rule)
+            )
+        }
+        if (patchInfo.wasJacketNoAnoKoPatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_jacketnoanoko_title,
+                detail = context.getString(
+                    R.string.mod_import_jacketnoanoko_message_item_detail,
+                    patchInfo.patchedJacketNoAnoKoShaderEntries,
+                    patchInfo.patchedJacketNoAnoKoDesktopVersionDirectives,
+                    patchInfo.patchedJacketNoAnoKoFragmentPrecisionBlocks
+                ),
+                rule = context.getString(R.string.mod_import_jacketnoanoko_message_rule)
             )
         }
         return sections.joinToString(separator = "\n\n")
@@ -1683,7 +1788,12 @@ internal object SettingsFileService {
             patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
             patchedDownfallBossMechanicPanelClassEntries =
                 patchedDownfallBossMechanicPanelClassEntries,
-            patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor
+            patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor,
+            patchedJacketNoAnoKoShaderEntries = patchedJacketNoAnoKoShaderEntries,
+            patchedJacketNoAnoKoDesktopVersionDirectives =
+                patchedJacketNoAnoKoDesktopVersionDirectives,
+            patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                patchedJacketNoAnoKoFragmentPrecisionBlocks
         )
     }
 

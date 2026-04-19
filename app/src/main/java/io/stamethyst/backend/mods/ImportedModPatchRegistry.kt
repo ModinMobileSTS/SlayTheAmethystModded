@@ -33,6 +33,12 @@ internal object ImportedModPatchRegistry {
         "patchedDownfallBossMechanicPanelClassEntries"
     private const val JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR =
         "patchedVupShionWebButtonConstructor"
+    private const val JSON_KEY_PATCHED_JACKETNOANOKO_SHADER_ENTRIES =
+        "patchedJacketNoAnoKoShaderEntries"
+    private const val JSON_KEY_PATCHED_JACKETNOANOKO_DESKTOP_VERSION_DIRECTIVES =
+        "patchedJacketNoAnoKoDesktopVersionDirectives"
+    private const val JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS =
+        "patchedJacketNoAnoKoFragmentPrecisionBlocks"
 
     fun readAll(context: Context): Map<String, ImportedModPatchInfo> {
         val root = readRoot(storageFile(context)) ?: return emptyMap()
@@ -170,7 +176,13 @@ internal object ImportedModPatchRegistry {
             patchedDownfallBossMechanicPanelClassEntries =
                 optInt(JSON_KEY_PATCHED_DOWNFALL_BOSS_MECHANIC_PANEL_CLASS_ENTRIES),
             patchedVupShionWebButtonConstructor =
-                optBoolean(JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR, false)
+                optBoolean(JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR, false),
+            patchedJacketNoAnoKoShaderEntries =
+                optInt(JSON_KEY_PATCHED_JACKETNOANOKO_SHADER_ENTRIES),
+            patchedJacketNoAnoKoDesktopVersionDirectives =
+                optInt(JSON_KEY_PATCHED_JACKETNOANOKO_DESKTOP_VERSION_DIRECTIVES),
+            patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                optInt(JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS)
         )
     }
 
@@ -204,6 +216,18 @@ internal object ImportedModPatchRegistry {
             put(
                 JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR,
                 patchedVupShionWebButtonConstructor
+            )
+            put(
+                JSON_KEY_PATCHED_JACKETNOANOKO_SHADER_ENTRIES,
+                patchedJacketNoAnoKoShaderEntries
+            )
+            put(
+                JSON_KEY_PATCHED_JACKETNOANOKO_DESKTOP_VERSION_DIRECTIVES,
+                patchedJacketNoAnoKoDesktopVersionDirectives
+            )
+            put(
+                JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS,
+                patchedJacketNoAnoKoFragmentPrecisionBlocks
             )
         }
     }

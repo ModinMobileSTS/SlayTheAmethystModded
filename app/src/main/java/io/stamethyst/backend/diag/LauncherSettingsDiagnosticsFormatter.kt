@@ -203,6 +203,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "vupShionModCompat" to formatBoolean(
                             CompatibilitySettings.isVupShionModCompatEnabled(context)
                         ),
+                        "jacketNoAnoKoModCompat" to formatBoolean(
+                            CompatibilitySettings.isJacketNoAnoKoModCompatEnabled(context)
+                        ),
                         "fragmentShaderPrecisionCompat" to formatBoolean(
                             CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(context)
                         ),

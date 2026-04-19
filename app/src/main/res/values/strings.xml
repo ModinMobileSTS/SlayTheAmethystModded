@@ -63,6 +63,8 @@
     <string name="compat_downfall_import_compat_desc">When enabled, importing downfall automatically patches merchant drawX to use a Settings.WIDTH/xScale-aware position, scales Hexaghost MyBody render offsets with Settings.scale, and reanchors the boss mechanic popup to the active boss so it renders to the right of the boss. This targets wide-screen drift and boss-obscuring UI on mobile. If disabled, newly imported Downfall jars are left untouched.</string>
     <string name="compat_vupshion_mod_compat_title">VUPShionMod import compatibility patch</string>
     <string name="compat_vupshion_mod_compat_desc">When enabled, importing vupshionmod automatically patches VUPShionMod/ui/WebButton to remove the Steam workshop subscription gate that can break main-menu background initialization. If disabled, newly imported VUPShionMod jars are left untouched.</string>
+    <string name="compat_jacketnoanoko_mod_compat_title">JacketNoAnoKo shader compatibility patch</string>
+    <string name="compat_jacketnoanoko_mod_compat_desc">When enabled, importing jacketnoanokomod automatically rewrites shader files under jacketnoanokomodResources/shaders/: desktop GLSL #version 120 headers are removed, and fragment shaders missing default precision get a GLES-compatible precision block injected. This targets the Android shader compile crash seen when the mod initializes SinsUI/orb effects. If disabled, newly imported JacketNoAnoKo jars are left untouched.</string>
     <string name="compat_fragment_shader_precision_compat_title">Fragment shader default precision compatibility patch</string>
     <string name="compat_fragment_shader_precision_compat_desc">When enabled, fragment shaders launched through the patched desktop jar automatically receive missing default precision declarations on GLES/ANGLE paths, reducing errors like \"no default precision defined for variable\". This is a runtime compatibility switch and takes effect on next launch.</string>
     <string name="compat_runtime_texture_compat_title">Runtime texture compatibility patch</string>
@@ -317,6 +319,7 @@
     <string name="main_mod_patch_section_frieren_title">FrierenMod startup compatibility</string>
     <string name="main_mod_patch_section_downfall_title">Downfall layout compatibility</string>
     <string name="main_mod_patch_section_vupshion_title">VUPShionMod startup compatibility</string>
+    <string name="main_mod_patch_section_jacketnoanoko_title">JacketNoAnoKo shader compatibility</string>
     <string name="main_mod_priority_adjust">Adjust load priority</string>
     <string name="main_mod_priority_dialog_title_format">%1$s load priority</string>
     <string name="main_mod_priority_dialog_summary">Lower numbers load earlier. Unset mods keep the default order, and prerequisites may still be pulled earlier to satisfy dependencies.</string>
@@ -365,6 +368,7 @@
     <string name="mod_import_dialog_frieren_patched_title">FrierenMod auto-patched</string>
     <string name="mod_import_dialog_downfall_patched_title">Downfall auto-patched</string>
     <string name="mod_import_dialog_vupshion_patched_title">VUPShionMod</string>
+    <string name="mod_import_dialog_jacketnoanoko_patched_title">JacketNoAnoKo auto-patched</string>
     <string name="mod_import_dialog_vupshion_special_message">VUPShionMod is extremely well made!\n\nThe developer also provided separate authorization for launcher support so this mod can run on the launcher.\n\nIf you are able, please subscribe to the mod on Steam Workshop or support the author on Afdian. Thank you very much!!</string>
     <string name="mod_import_dialog_vupshion_open_workshop">Open Workshop</string>
     <string name="mod_import_dialog_vupshion_open_afdian">Open Afdian</string>
@@ -457,6 +461,12 @@ Patch rule: merchant drawX now uses Settings.WIDTH/xScale-aware positioning, Hex
     <string name="mod_import_vupshion_message_item_detail">  Removed the Steam workshop subscription guard in VUPShionMod/ui/WebButton so the main-menu background can initialize without Steam ownership checks</string>
     <string name="mod_import_vupshion_message_rule">
 Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui/WebButton while leaving the rest of the class behavior intact.</string>
+    <string name="mod_import_jacketnoanoko_message_none">No JacketNoAnoKo shader compatibility fixes needed patching in this import.</string>
+    <string name="mod_import_jacketnoanoko_message_intro">The following mods had JacketNoAnoKo shader compatibility logic auto-patched during import:
+</string>
+    <string name="mod_import_jacketnoanoko_message_item_detail">  Patched shader files: %1$d, removed desktop #version directives: %2$d, inserted fragment precision blocks: %3$d</string>
+    <string name="mod_import_jacketnoanoko_message_rule">
+Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so desktop GLSL #version 120 headers are stripped, and fragment shaders missing default precision receive a GLES-compatible precision block.</string>
     <string name="mod_import_confirm_dialog_action_import">Import</string>
     <string name="mod_import_preview_file_label">File: %1$s</string>
     <string name="mod_import_preview_name_label">Name: %1$s</string>

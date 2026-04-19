@@ -121,6 +121,7 @@ internal object ModImportFlowCoordinator {
                         showFrierenPatchSummaryDialog(host, patchedResults)
                         showDownfallPatchSummaryDialog(host, patchedResults)
                         showVupShionPatchSummaryDialog(host, patchedResults)
+                        showJacketNoAnoKoPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -431,6 +432,25 @@ internal object ModImportFlowCoordinator {
             return
         }
         VupShionPatchedDialog.show(host)
+    }
+
+    private fun showJacketNoAnoKoPatchSummaryDialog(
+        host: Activity,
+        patchedResults: List<ModImportResult>
+    ) {
+        if (patchedResults.none { it.wasJacketNoAnoKoPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_jacketnoanoko_patched_title)
+            .setMessage(
+                SettingsFileService.buildJacketNoAnoKoPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun showCompressedArchiveWarningDialog(host: Activity, archiveDisplayNames: List<String>) {
