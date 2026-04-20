@@ -2,6 +2,7 @@ package io.stamethyst.backend.runtime
 
 import android.content.Context
 import android.content.res.AssetManager
+import android.os.SystemClock
 import android.system.Os
 import io.stamethyst.R
 import io.stamethyst.backend.fs.FileTreeCleaner
@@ -19,6 +20,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
 object RuntimePackInstaller {
@@ -26,6 +28,15 @@ object RuntimePackInstaller {
     private const val ARCHIVE_VERSION = "version"
     private const val ARCHIVE_AARCH64 = "bin-aarch64.tar.xz"
     private const val ARCHIVE_ARM64 = "bin-arm64.tar.xz"
+    private const val UNPACK_PROCESS_POLL_INTERVAL_MS = 250L
+    private const val UNPACK_PROGRESS_HEARTBEAT_INTERVAL_MS = 5_000L
+    private const val PROCESS_OUTPUT_JOIN_TIMEOUT_MS = 2_000L
+
+    private data class ProcessOutputCapture(
+        val output: ByteArrayOutputStream,
+        val failure: AtomicReference<Throwable?>,
+        val readerThread: Thread
+    )
 
     @Throws(IOException::class)
     private fun throwIfInterrupted() {
@@ -285,15 +296,16 @@ object RuntimePackInstaller {
             throwIfInterrupted()
             val packFile = packFiles[i]
             val startPercent = 78 + (i * 10f / packFiles.size).roundToInt()
+            val unpackingMessage = context.progressText(
+                R.string.startup_progress_unpacking_runtime_pack_file,
+                packFile.name,
+                i + 1,
+                packFiles.size
+            )
             reportProgress(
                 progressCallback,
                 startPercent,
-                context.progressText(
-                    R.string.startup_progress_unpacking_runtime_pack_file,
-                    packFile.name,
-                    i + 1,
-                    packFiles.size
-                )
+                unpackingMessage
             )
             val name = packFile.name
             val unpackedJar = File(packFile.parentFile, name.substring(0, name.length - ".pack".length))
@@ -307,14 +319,18 @@ object RuntimePackInstaller {
                 .redirectErrorStream(true)
                 .start()
 
-            val output = process.inputStream.use { stream -> readAll(stream) }
+            val outputCapture = startProcessOutputCapture(process)
             val exitCode: Int = try {
-                process.waitFor()
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw IOException("Interrupted while unpacking ${packFile.absolutePath}", e)
+                waitForProcessWithHeartbeats(process) {
+                    reportProgress(progressCallback, startPercent, unpackingMessage)
+                }
+            } catch (error: IOException) {
+                destroyProcess(process)
+                throw error
             }
+            val output = finishProcessOutputCapture(outputCapture)
             if (exitCode != 0 || !unpackedJar.exists()) {
+                destroyProcess(process)
                 throw IOException("unpack200 failed for ${packFile.name} (exit=$exitCode): $output")
             }
             val endPercent = 78 + ((i + 1) * 10f / packFiles.size).roundToInt()
@@ -328,6 +344,93 @@ object RuntimePackInstaller {
                     packFiles.size
                 )
             )
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun waitForProcessWithHeartbeats(
+        process: Process,
+        onHeartbeat: () -> Unit
+    ): Int {
+        var lastHeartbeatAtMs = SystemClock.uptimeMillis()
+        while (true) {
+            throwIfInterrupted()
+            val exitCode = try {
+                process.exitValue()
+            } catch (_: IllegalThreadStateException) {
+                null
+            }
+            if (exitCode != null) {
+                return exitCode
+            }
+            val now = SystemClock.uptimeMillis()
+            if (now - lastHeartbeatAtMs >= UNPACK_PROGRESS_HEARTBEAT_INTERVAL_MS) {
+                onHeartbeat()
+                lastHeartbeatAtMs = now
+            }
+            try {
+                Thread.sleep(UNPACK_PROCESS_POLL_INTERVAL_MS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("Interrupted while waiting for unpack process", e)
+            }
+        }
+    }
+
+    private fun startProcessOutputCapture(process: Process): ProcessOutputCapture {
+        val output = ByteArrayOutputStream()
+        val failure = AtomicReference<Throwable?>()
+        val readerThread = Thread(
+            {
+                try {
+                    process.inputStream.use { stream ->
+                        val buffer = ByteArray(4096)
+                        while (true) {
+                            val read = stream.read(buffer)
+                            if (read <= 0) {
+                                break
+                            }
+                            synchronized(output) {
+                                output.write(buffer, 0, read)
+                            }
+                        }
+                    }
+                } catch (error: Throwable) {
+                    if (!Thread.currentThread().isInterrupted) {
+                        failure.compareAndSet(null, error)
+                    }
+                }
+            },
+            "STS-Unpack200Output"
+        )
+        readerThread.isDaemon = true
+        readerThread.start()
+        return ProcessOutputCapture(output, failure, readerThread)
+    }
+
+    private fun finishProcessOutputCapture(capture: ProcessOutputCapture): String {
+        try {
+            capture.readerThread.join(PROCESS_OUTPUT_JOIN_TIMEOUT_MS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return synchronized(capture.output) {
+                capture.output.toString(StandardCharsets.UTF_8.name()).trim()
+            }
+        }
+        val text = synchronized(capture.output) {
+            capture.output.toString(StandardCharsets.UTF_8.name()).trim()
+        }
+        val failure = capture.failure.get() ?: return text
+        val suffix = "output-capture-failed:${failure.javaClass.name}:${failure.message.orEmpty()}".trim()
+        return if (text.isBlank()) suffix else "$text\n$suffix"
+    }
+
+    private fun destroyProcess(process: Process) {
+        runCatching { process.destroy() }
+        runCatching {
+            if (process.isAlive) {
+                process.destroyForcibly()
+            }
         }
     }
 
@@ -441,22 +544,6 @@ object RuntimePackInstaller {
             true
         } catch (_: IOException) {
             false
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun readAll(stream: InputStream): String {
-        val buffer = ByteArray(4096)
-        ByteArrayOutputStream().use { output ->
-            while (true) {
-                throwIfInterrupted()
-                val read = stream.read(buffer)
-                if (read <= 0) {
-                    break
-                }
-                output.write(buffer, 0, read)
-            }
-            return output.toString(StandardCharsets.UTF_8.name()).trim()
         }
     }
 

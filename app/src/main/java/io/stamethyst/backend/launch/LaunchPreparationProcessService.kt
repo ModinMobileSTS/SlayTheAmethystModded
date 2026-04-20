@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.ResultReceiver
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -101,10 +102,26 @@ class LaunchPreparationProcessService : Service() {
         launchMode: String,
         resultReceiver: ResultReceiver
     ) {
+        var lastLoggedProgressPercent = Int.MIN_VALUE
+        var lastLoggedProgressMessage = ""
         try {
             LaunchPreparationService.prepare(applicationContext, launchMode) { percent, message ->
                 if (Thread.currentThread().isInterrupted) {
                     throw IOException("Launch preparation cancelled")
+                }
+                if (shouldLogProgressUpdate(lastLoggedProgressPercent, lastLoggedProgressMessage, percent, message)) {
+                    MemoryDiagnosticsLogger.logEvent(
+                        context = applicationContext,
+                        event = "launch_preparation_progress_reported",
+                        extras = linkedMapOf<String, Any?>(
+                            "launchMode" to launchMode,
+                            "progress" to percent,
+                            "message" to message
+                        ),
+                        includeMemorySnapshot = false
+                    )
+                    lastLoggedProgressPercent = percent
+                    lastLoggedProgressMessage = message
                 }
                 resultReceiver.send(
                     RESULT_PROGRESS,
@@ -166,5 +183,23 @@ class LaunchPreparationProcessService : Service() {
             return
         }
         resultReceiver.send(resultCode, data)
+    }
+
+    private fun shouldLogProgressUpdate(
+        previousPercent: Int,
+        previousMessage: String,
+        nextPercent: Int,
+        nextMessage: String
+    ): Boolean {
+        if (nextMessage != previousMessage) {
+            return true
+        }
+        if (previousPercent == Int.MIN_VALUE) {
+            return true
+        }
+        if (nextPercent == 0 || nextPercent == 100) {
+            return true
+        }
+        return kotlin.math.abs(nextPercent - previousPercent) >= 5
     }
 }

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.content.res.AssetManager
 import io.stamethyst.R
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
@@ -15,6 +16,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import org.json.JSONObject
 
 object ComponentInstaller {
     private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
@@ -31,6 +33,17 @@ object ComponentInstaller {
     private fun interface JarValidator {
         @Throws(IOException::class)
         fun validate(jarFile: File)
+    }
+
+    private data class PackagedComponentsState(
+        val markerFile: File,
+        val expectedMarker: String,
+        val installedMarker: String?,
+        val markerMatches: Boolean,
+        val missingComponents: List<String>
+    ) {
+        val current: Boolean
+            get() = markerMatches && missingComponents.isEmpty()
     }
 
     @Throws(IOException::class)
@@ -52,8 +65,25 @@ object ComponentInstaller {
         throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
         val assets = context.assets
-        val packagedComponentsMarker = resolvePackagedComponentsMarker(context)
-        val packagedComponentsCurrent = arePackagedComponentsCurrent(context, assets, packagedComponentsMarker)
+        val packagedComponentsState = evaluatePackagedComponentsState(
+            context = context,
+            assets = assets,
+            expectedMarker = resolvePackagedComponentsMarker(context)
+        )
+        val packagedComponentsCurrent = packagedComponentsState.current
+        logDiagnostic(
+            context = context,
+            event = "component_install_state_resolved",
+            extras = linkedMapOf<String, Any?>(
+                "packagedComponentsCurrent" to packagedComponentsCurrent,
+                "forceReplaceBundledMods" to !packagedComponentsCurrent,
+                "expectedMarker" to packagedComponentsState.expectedMarker,
+                "installedMarker" to packagedComponentsState.installedMarker,
+                "markerMatches" to packagedComponentsState.markerMatches,
+                "markerFile" to buildFileState(packagedComponentsState.markerFile),
+                "missingComponents" to packagedComponentsState.missingComponents
+            )
+        )
 
         throwIfInterrupted()
         if (packagedComponentsCurrent) {
@@ -63,8 +93,26 @@ object ComponentInstaller {
                 context.progressText(R.string.startup_progress_launcher_components_already_up_to_date)
             )
         } else {
+            logDiagnostic(
+                context = context,
+                event = "component_install_packaged_components_update_started",
+                extras = linkedMapOf<String, Any?>(
+                    "missingComponents" to packagedComponentsState.missingComponents,
+                    "markerMatches" to packagedComponentsState.markerMatches
+                )
+            )
             installPackagedComponents(context, assets, progressCallback)
-            writeInstallMarker(componentInstallMarkerFile(context), packagedComponentsMarker)
+            writeInstallMarker(
+                componentInstallMarkerFile(context),
+                packagedComponentsState.expectedMarker
+            )
+            logDiagnostic(
+                context = context,
+                event = "component_install_packaged_components_update_completed",
+                extras = linkedMapOf<String, Any?>(
+                    "markerFile" to buildFileState(componentInstallMarkerFile(context))
+                )
+            )
         }
 
         throwIfInterrupted()
@@ -174,35 +222,76 @@ object ComponentInstaller {
         context: Context,
         forceReplaceExisting: Boolean
     ) {
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mods_started",
+            extras = linkedMapOf<String, Any?>(
+                "forceReplaceExisting" to forceReplaceExisting
+            )
+        )
         ensureBundledMod(
-            assets,
-            "components/mods/ModTheSpire.jar",
-            RuntimePaths.importedMtsJar(context),
-            ModJarSupport::validateMtsJar,
+            context = context,
+            modLabel = "ModTheSpire.jar",
+            assets = assets,
+            assetPath = "components/mods/ModTheSpire.jar",
+            targetFile = RuntimePaths.importedMtsJar(context),
+            validator = ModJarSupport::validateMtsJar,
             replaceExisting = forceReplaceExisting
+        )
+        logDiagnostic(
+            context = context,
+            event = "component_install_mts_loader_patch_started",
+            extras = linkedMapOf<String, Any?>(
+                "target" to buildFileState(RuntimePaths.importedMtsJar(context))
+            )
         )
         MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
+        logDiagnostic(
+            context = context,
+            event = "component_install_mts_loader_patch_completed",
+            extras = linkedMapOf<String, Any?>(
+                "target" to buildFileState(RuntimePaths.importedMtsJar(context))
+            )
+        )
         ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
         ensureBundledMod(
-            assets,
-            "components/mods/BaseMod.jar",
-            RuntimePaths.importedBaseModJar(context),
-            ModJarSupport::validateBaseModJar,
+            context = context,
+            modLabel = "BaseMod.jar",
+            assets = assets,
+            assetPath = "components/mods/BaseMod.jar",
+            targetFile = RuntimePaths.importedBaseModJar(context),
+            validator = ModJarSupport::validateBaseModJar,
             replaceExisting = forceReplaceExisting
         )
         ensureBundledMod(
-            assets,
-            "components/mods/StSLib.jar",
-            RuntimePaths.importedStsLibJar(context),
-            ModJarSupport::validateStsLibJar,
+            context = context,
+            modLabel = "StSLib.jar",
+            assets = assets,
+            assetPath = "components/mods/StSLib.jar",
+            targetFile = RuntimePaths.importedStsLibJar(context),
+            validator = ModJarSupport::validateStsLibJar,
             replaceExisting = forceReplaceExisting
         )
         ensureBundledMod(
-            assets,
-            "components/mods/AmethystRuntimeCompat.jar",
-            RuntimePaths.importedAmethystRuntimeCompatJar(context),
-            ModJarSupport::validateAmethystRuntimeCompatJar,
+            context = context,
+            modLabel = "AmethystRuntimeCompat.jar",
+            assets = assets,
+            assetPath = "components/mods/AmethystRuntimeCompat.jar",
+            targetFile = RuntimePaths.importedAmethystRuntimeCompatJar(context),
+            validator = ModJarSupport::validateAmethystRuntimeCompatJar,
             replaceExisting = forceReplaceExisting
+        )
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mods_completed",
+            extras = linkedMapOf<String, Any?>(
+                "runtimeModFiles" to listOf(
+                    RuntimePaths.importedMtsJar(context),
+                    RuntimePaths.importedBaseModJar(context),
+                    RuntimePaths.importedStsLibJar(context),
+                    RuntimePaths.importedAmethystRuntimeCompatJar(context)
+                ).map(::buildFileState)
+            )
         )
     }
 
@@ -292,6 +381,8 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun ensureBundledMod(
+        context: Context,
+        modLabel: String,
         assets: AssetManager,
         assetPath: String,
         targetFile: File,
@@ -299,31 +390,148 @@ object ComponentInstaller {
         replaceExisting: Boolean = false
     ) {
         throwIfInterrupted()
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mod_started",
+            extras = linkedMapOf<String, Any?>(
+                "modLabel" to modLabel,
+                "assetPath" to assetPath,
+                "replaceExisting" to replaceExisting,
+                "target" to buildFileState(targetFile)
+            )
+        )
         if (!replaceExisting && targetFile.isFile && targetFile.length() > 0) {
+            logDiagnostic(
+                context = context,
+                event = "component_install_bundled_mod_existing_validation_started",
+                extras = linkedMapOf<String, Any?>(
+                    "modLabel" to modLabel,
+                    "target" to buildFileState(targetFile)
+                )
+            )
             try {
                 validator.validate(targetFile)
+                logDiagnostic(
+                    context = context,
+                    event = "component_install_bundled_mod_reused_existing",
+                    extras = linkedMapOf<String, Any?>(
+                        "modLabel" to modLabel,
+                        "target" to buildFileState(targetFile)
+                    )
+                )
                 return
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                logDiagnostic(
+                    context = context,
+                    event = "component_install_bundled_mod_existing_validation_failed",
+                    extras = linkedMapOf<String, Any?>(
+                        "modLabel" to modLabel,
+                        "target" to buildFileState(targetFile),
+                        "errorClass" to error.javaClass.name,
+                        "errorMessage" to error.message
+                    )
+                )
+                logDiagnostic(
+                    context = context,
+                    event = "component_install_bundled_mod_delete_started",
+                    extras = linkedMapOf<String, Any?>(
+                        "modLabel" to modLabel,
+                        "reason" to "invalid_existing",
+                        "target" to buildFileState(targetFile)
+                    )
+                )
                 if (!targetFile.delete()) {
                     throw IOException("Failed to replace invalid mod file: ${targetFile.absolutePath}")
                 }
+                logDiagnostic(
+                    context = context,
+                    event = "component_install_bundled_mod_delete_completed",
+                    extras = linkedMapOf<String, Any?>(
+                        "modLabel" to modLabel,
+                        "reason" to "invalid_existing",
+                        "target" to buildFileState(targetFile)
+                    )
+                )
             }
         }
-        if (replaceExisting && targetFile.exists() && !targetFile.delete()) {
-            throw IOException("Failed to replace bundled mod file: ${targetFile.absolutePath}")
+        if (replaceExisting && targetFile.exists()) {
+            logDiagnostic(
+                context = context,
+                event = "component_install_bundled_mod_delete_started",
+                extras = linkedMapOf<String, Any?>(
+                    "modLabel" to modLabel,
+                    "reason" to "replace_existing",
+                    "target" to buildFileState(targetFile)
+                )
+            )
+            if (!targetFile.delete()) {
+                throw IOException("Failed to replace bundled mod file: ${targetFile.absolutePath}")
+            }
+            logDiagnostic(
+                context = context,
+                event = "component_install_bundled_mod_delete_completed",
+                extras = linkedMapOf<String, Any?>(
+                    "modLabel" to modLabel,
+                    "reason" to "replace_existing",
+                    "target" to buildFileState(targetFile)
+                )
+            )
         }
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mod_copy_started",
+            extras = linkedMapOf<String, Any?>(
+                "modLabel" to modLabel,
+                "assetPath" to assetPath,
+                "target" to buildFileState(targetFile)
+            )
+        )
         copyFile(assets, assetPath, targetFile)
         if (!targetFile.isFile || targetFile.length() <= 0) {
             throw IOException("Bundled mod install failed: ${targetFile.absolutePath}")
         }
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mod_copy_completed",
+            extras = linkedMapOf<String, Any?>(
+                "modLabel" to modLabel,
+                "target" to buildFileState(targetFile)
+            )
+        )
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mod_validation_started",
+            extras = linkedMapOf<String, Any?>(
+                "modLabel" to modLabel,
+                "target" to buildFileState(targetFile)
+            )
+        )
         try {
             validator.validate(targetFile)
         } catch (error: Throwable) {
+            logDiagnostic(
+                context = context,
+                event = "component_install_bundled_mod_validation_failed",
+                extras = linkedMapOf<String, Any?>(
+                    "modLabel" to modLabel,
+                    "target" to buildFileState(targetFile),
+                    "errorClass" to error.javaClass.name,
+                    "errorMessage" to error.message
+                )
+            )
             throw IOException(
                 "Bundled mod validation failed: ${targetFile.name}: ${error.message}",
                 error
             )
         }
+        logDiagnostic(
+            context = context,
+            event = "component_install_bundled_mod_completed",
+            extras = linkedMapOf<String, Any?>(
+                "modLabel" to modLabel,
+                "target" to buildFileState(targetFile)
+            )
+        )
     }
 
     @Throws(IOException::class)
@@ -439,57 +647,62 @@ object ComponentInstaller {
         return File(RuntimePaths.componentRoot(context), COMPONENT_INSTALL_MARKER_FILE_NAME)
     }
 
-    private fun arePackagedComponentsCurrent(
+    private fun evaluatePackagedComponentsState(
         context: Context,
         assets: AssetManager,
         expectedMarker: String
-    ): Boolean {
+    ): PackagedComponentsState {
         val markerFile = componentInstallMarkerFile(context)
-        if (!markerFile.isFile) {
-            return false
-        }
         val installedMarker = try {
-            markerFile.readText(StandardCharsets.UTF_8).trim()
+            if (!markerFile.isFile) {
+                null
+            } else {
+                markerFile.readText(StandardCharsets.UTF_8).trim()
+            }
         } catch (_: Throwable) {
-            return false
+            null
         }
-        if (installedMarker != expectedMarker) {
-            return false
-        }
-        return hasInstalledPackagedComponents(context, assets)
+        return PackagedComponentsState(
+            markerFile = markerFile,
+            expectedMarker = expectedMarker,
+            installedMarker = installedMarker,
+            markerMatches = installedMarker == expectedMarker,
+            missingComponents = collectMissingPackagedComponents(context, assets)
+        )
     }
 
-    private fun hasInstalledPackagedComponents(context: Context, assets: AssetManager): Boolean {
+    private fun collectMissingPackagedComponents(context: Context, assets: AssetManager): List<String> {
+        val missing = ArrayList<String>()
         if (!File(RuntimePaths.lwjglDir(context), "version").isFile ||
             !RuntimePaths.lwjglJar(context).isFile
         ) {
-            return false
+            missing += "lwjgl3"
         }
         if (!RuntimePaths.bootBridgeJar(context).isFile) {
-            return false
+            missing += "boot_bridge"
         }
         if (!File(RuntimePaths.lwjgl2InjectorDir(context), "version").isFile ||
             !RuntimePaths.lwjgl2InjectorJar(context).isFile
         ) {
-            return false
+            missing += "lwjgl2_injector"
         }
         if (!RuntimePaths.gdxPatchJar(context).isFile) {
-            return false
+            missing += "gdx_patch"
         }
         if (!RuntimePaths.bundledLog4jApiJar(context).isFile ||
             !RuntimePaths.bundledLog4jCoreJar(context).isFile
         ) {
-            return false
+            missing += "bundled_log4j_runtime"
         }
         if (!File(RuntimePaths.cacioDir(context), "version").isFile) {
-            return false
+            missing += "caciocavallo"
         }
         if (hasAssetChildren(assets, BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
             if (!containsNonEmptyFile(RuntimePaths.gdxPatchNativesDir(context))) {
-                return false
+                missing += "bundled_runtime_natives"
             }
         }
-        return true
+        return missing
     }
 
     private fun resolvePackagedComponentsMarker(context: Context): String {
@@ -543,6 +756,29 @@ object ComponentInstaller {
             return root.length() > 0L
         }
         return root.listFiles().orEmpty().any(::containsNonEmptyFile)
+    }
+
+    private fun buildFileState(file: File): JSONObject {
+        return JSONObject().apply {
+            put("path", file.absolutePath)
+            put("exists", file.exists())
+            put("isFile", file.isFile)
+            put("bytes", if (file.isFile) file.length().coerceAtLeast(0L) else 0L)
+            put("lastModifiedMs", if (file.exists()) file.lastModified().coerceAtLeast(0L) else 0L)
+        }
+    }
+
+    private fun logDiagnostic(
+        context: Context,
+        event: String,
+        extras: Map<String, Any?> = emptyMap()
+    ) {
+        MemoryDiagnosticsLogger.logEvent(
+            context = context,
+            event = event,
+            extras = extras,
+            includeMemorySnapshot = false
+        )
     }
 
     private fun removeLegacyCompatArtifacts(gdxPatchDir: File) {

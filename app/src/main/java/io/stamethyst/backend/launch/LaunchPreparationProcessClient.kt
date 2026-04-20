@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
 import android.os.SystemClock
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -97,6 +98,18 @@ internal object LaunchPreparationProcessClient {
                 }
                 val now = SystemClock.uptimeMillis()
                 if (now - lastSignalAtMs.get() >= PREP_PROCESS_STALL_TIMEOUT_MS) {
+                    MemoryDiagnosticsLogger.logEvent(
+                        context = appContext,
+                        event = "launch_preparation_wait_timeout",
+                        extras = linkedMapOf<String, Any?>(
+                            "launchMode" to launchMode,
+                            "reason" to PREP_PROCESS_FAILURE_REASON_STALLED,
+                            "elapsedMs" to now - startedAtMs,
+                            "lastSignalAgeMs" to now - lastSignalAtMs.get(),
+                            "prepProcessRunning" to isPrepProcessRunning(appContext)
+                        ),
+                        includeMemorySnapshot = false
+                    )
                     cancel(appContext)
                     throw buildPrepProcessFailure(
                         PREP_PROCESS_FAILURE_REASON_STALLED
@@ -114,6 +127,19 @@ internal object LaunchPreparationProcessClient {
                     continue
                 }
                 if (now - prepProcessMissingSinceMs >= PREP_PROCESS_MISSING_TIMEOUT_MS) {
+                    MemoryDiagnosticsLogger.logEvent(
+                        context = appContext,
+                        event = "launch_preparation_wait_timeout",
+                        extras = linkedMapOf<String, Any?>(
+                            "launchMode" to launchMode,
+                            "reason" to PREP_PROCESS_FAILURE_REASON_MISSING,
+                            "elapsedMs" to now - startedAtMs,
+                            "lastSignalAgeMs" to now - lastSignalAtMs.get(),
+                            "prepProcessMissingDurationMs" to now - prepProcessMissingSinceMs,
+                            "prepProcessRunning" to false
+                        ),
+                        includeMemorySnapshot = false
+                    )
                     cancel(appContext)
                     throw buildPrepProcessFailure(
                         PREP_PROCESS_FAILURE_REASON_MISSING
