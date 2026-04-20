@@ -13,12 +13,17 @@ public final class CompatRuntimeState {
     private static final String RUNTIME_COMPAT_DEBUG_PROP =
         "amethyst.runtime_compat.debug";
     private static final String FONT_SCALE_PROP = "amethyst.font_scale";
+    private static final String UI_SCALE_PROP = "amethyst.ui_scale";
     private static final float DEFAULT_TEXT_SCALE = 1.0f;
     private static final float BIG_TEXT_SCALE = 1.2f;
+    private static final float DEFAULT_UI_SCALE = 1.0f;
+    private static final float UI_SCALE_EPSILON = 0.0001f;
     private static final boolean RUNTIME_COMPAT_DEBUG_ENABLED =
         readBooleanSystemProperty(RUNTIME_COMPAT_DEBUG_PROP, false);
     private static final float CONFIGURED_FONT_SCALE =
         readFloatSystemProperty(FONT_SCALE_PROP, Float.NaN);
+    private static final float CONFIGURED_UI_SCALE =
+        readFloatSystemProperty(UI_SCALE_PROP, Float.NaN);
     private static final GuardedReflectionAccess UNSUPPORTED_GUARDED_ACCESS =
         new GuardedReflectionAccess(null, null, null, null);
     private static final Map<Class<?>, GuardedReflectionAccess> GUARDED_ACCESS_BY_CLASS =
@@ -46,12 +51,16 @@ public final class CompatRuntimeState {
             }
             startupConfigurationLogged = true;
             System.out.println(
-                "[amethyst-runtime-compat] init version=1.0.16 guardedDynamicCache=true "
+                "[amethyst-runtime-compat] init version=1.0.18 guardedDynamicCache=true "
                     + "duelistBaseValueShortcuts=true "
                     + "fontScale="
                     + (hasConfiguredFontScale()
                     ? Float.toString(CONFIGURED_FONT_SCALE)
                     : "<default>")
+                    + " uiScale="
+                    + Float.toString(getConfiguredUiScale())
+                    + " mobileUiLayout="
+                    + Boolean.toString(isMobileUiScaleStrategyActive())
             );
             System.out.println(
                 "[amethyst-runtime-compat] guarded dynamic cache active: "
@@ -118,6 +127,14 @@ public final class CompatRuntimeState {
             return requestedSize;
         }
         return requestedSize * (CONFIGURED_FONT_SCALE / baselineScale);
+    }
+
+    public static boolean isMobileUiScaleStrategyActive() {
+        return getConfiguredUiScale() > (DEFAULT_UI_SCALE + UI_SCALE_EPSILON);
+    }
+
+    public static boolean resolveMobileLayoutFlag(boolean originalValue) {
+        return originalValue || isMobileUiScaleStrategyActive();
     }
 
     public static Integer getDuelistBaseTributes(AbstractCard card) {
@@ -441,6 +458,13 @@ public final class CompatRuntimeState {
 
     private static boolean hasConfiguredFontScale() {
         return !Float.isNaN(CONFIGURED_FONT_SCALE) && CONFIGURED_FONT_SCALE > 0.0f;
+    }
+
+    private static float getConfiguredUiScale() {
+        if (Float.isNaN(CONFIGURED_UI_SCALE) || CONFIGURED_UI_SCALE <= 0.0f) {
+            return DEFAULT_UI_SCALE;
+        }
+        return CONFIGURED_UI_SCALE;
     }
 
     private static float readFloatSystemProperty(String key, float defaultValue) {

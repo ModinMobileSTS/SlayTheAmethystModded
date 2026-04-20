@@ -90,6 +90,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "gameplayFontScale" to LauncherConfig.formatGameplayFontScale(
                             LauncherConfig.readGameplayFontScale(context)
                         ),
+                        "largerUiEnabled" to formatBoolean(
+                            LauncherConfig.readGameplayLargerUiEnabled(context)
+                        ),
                         "mobileHudEnabled" to formatBoolean(
                             LauncherConfig.readMobileHudEnabled(context)
                         ),

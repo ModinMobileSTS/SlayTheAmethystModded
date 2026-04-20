@@ -2,8 +2,8 @@
   "modid": "amethystruntimecompat",
   "name": "Amethyst Runtime Compat",
   "author_list": ["OpenAI"],
-  "description": "Bundled runtime compatibility patch that caches Duelist Guarded dynamic-value lookups and shortcuts expensive Duelist tribute/summon base-value rendering paths on mobile.",
-  "version": "1.0.16",
+  "description": "Bundled runtime compatibility patch that applies launcher-configured mobile-style UI sizing and text scaling together with mobile-focused runtime compatibility fixes.",
+  "version": "1.0.18",
   "mts_version": "3.30.0",
   "sts_version": "12-18-2022",
   "dependencies": ["basemod"]

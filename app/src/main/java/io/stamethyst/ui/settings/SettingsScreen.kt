@@ -182,6 +182,7 @@ fun LauncherSettingsScreen(
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
         onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
         onGameplayFontScaleChanged = { value -> viewModel.onGameplayFontScaleChanged(activity, value) },
+        onGameplayLargerUiChanged = { enabled -> viewModel.onGameplayLargerUiChanged(activity, enabled) },
         onAutoCheckUpdatesChanged = { enabled ->
             viewModel.onAutoCheckUpdatesChanged(activity, enabled)
         },
@@ -314,6 +315,7 @@ private fun LauncherSettingsScreenPreview() {
             glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenEnabled = true,
             gameplayFontScale = 1.50f,
+            gameplayLargerUiEnabled = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK\nAmethystRuntimeCompat.jar: OK",
             logPathText = "/example/path/to/logs",
             targetFpsOptions = listOf(24, 30, 60, 120, 240),
@@ -373,6 +375,7 @@ private fun LauncherSettingsScreenContent(
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
     onGameplayFontScaleChanged: (Float) -> Unit = {},
+    onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
     onManualCheckUpdates: () -> Unit = {},
@@ -481,6 +484,7 @@ private fun LauncherSettingsScreenContent(
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                         onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                         onGameplayFontScaleChanged = onGameplayFontScaleChanged,
+                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
                     )
                 }
             }
@@ -1706,6 +1710,7 @@ private fun SettingsInputSection(
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
     onTouchscreenEnabledChanged: (Boolean) -> Unit,
     onGameplayFontScaleChanged: (Float) -> Unit,
+    onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
     var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
@@ -1824,6 +1829,15 @@ private fun SettingsInputSection(
         disabledText = stringResource(R.string.settings_touchscreen_disabled),
         description = stringResource(R.string.settings_touchscreen_desc),
         onCheckedChange = onTouchscreenEnabledChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.gameplayLargerUiEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_gameplay_larger_ui_enabled),
+        disabledText = stringResource(R.string.settings_gameplay_larger_ui_disabled),
+        description = stringResource(R.string.settings_gameplay_larger_ui_desc),
+        onCheckedChange = onGameplayLargerUiChanged
     )
 
     Text(

@@ -10,6 +10,7 @@ internal object GameplaySettingsService {
     const val MIN_FONT_SCALE = LauncherConfig.MIN_GAMEPLAY_FONT_SCALE
     const val MAX_FONT_SCALE = LauncherConfig.MAX_GAMEPLAY_FONT_SCALE
     const val FONT_SCALE_STEP = LauncherConfig.GAMEPLAY_FONT_SCALE_STEP
+    const val DEFAULT_LARGER_UI_ENABLED = LauncherConfig.DEFAULT_GAMEPLAY_LARGER_UI_ENABLED
 
     fun readTouchscreenEnabled(context: Context): Boolean {
         return LauncherConfig.readTouchscreenEnabled(context)
@@ -35,5 +36,14 @@ internal object GameplaySettingsService {
 
     fun formatFontScale(value: Float): String {
         return LauncherConfig.formatGameplayFontScale(value)
+    }
+
+    fun readLargerUiEnabled(context: Context): Boolean {
+        return LauncherConfig.readGameplayLargerUiEnabled(context)
+    }
+
+    @Throws(IOException::class)
+    fun saveLargerUiEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.saveGameplayLargerUiEnabled(context, enabled)
     }
 }

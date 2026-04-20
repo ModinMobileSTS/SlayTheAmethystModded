@@ -163,6 +163,14 @@ object StsLaunchSpec {
                 )
         )
         args.add(
+            "-Damethyst.ui_scale=" +
+                LauncherConfig.formatGameplayUiScale(
+                    LauncherConfig.resolveGameplayUiScale(
+                        LauncherConfig.readGameplayLargerUiEnabled(context)
+                    )
+                )
+        )
+        args.add(
             "-Damethyst.mobile_hud_enabled=" +
                 if (LauncherConfig.readMobileHudEnabled(context)) "true" else "false"
         )

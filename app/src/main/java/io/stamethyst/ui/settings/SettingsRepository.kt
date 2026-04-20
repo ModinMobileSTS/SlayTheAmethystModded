@@ -68,7 +68,8 @@ internal object SettingsRepository {
         val avoidDisplayCutout: Boolean,
         val cropScreenBottom: Boolean,
         val touchscreenEnabled: Boolean,
-        val fontScale: Float
+        val fontScale: Float,
+        val largerUiEnabled: Boolean
     )
 
     data class DiagnosticsSnapshot(
@@ -157,7 +158,8 @@ internal object SettingsRepository {
                 avoidDisplayCutout = LauncherPreferences.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
                 touchscreenEnabled = GameplaySettingsService.readTouchscreenEnabled(context),
-                fontScale = GameplaySettingsService.readFontScale(context)
+                fontScale = GameplaySettingsService.readFontScale(context),
+                largerUiEnabled = GameplaySettingsService.readLargerUiEnabled(context)
             ),
             diagnostics = DiagnosticsSnapshot(
                 showGamePerformanceOverlay = LauncherPreferences.isGamePerformanceOverlayEnabled(context),

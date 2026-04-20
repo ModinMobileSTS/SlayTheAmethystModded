@@ -209,12 +209,23 @@ object LauncherConfig {
     const val MIN_GAMEPLAY_FONT_SCALE = 1.00f
     const val MAX_GAMEPLAY_FONT_SCALE = 2.00f
     const val GAMEPLAY_FONT_SCALE_STEP = 0.05f
+    const val DEFAULT_GAMEPLAY_UI_SCALE = 1.00f
+    const val MIN_GAMEPLAY_UI_SCALE = 1.00f
+    const val MAX_GAMEPLAY_UI_SCALE = 1.50f
+    const val GAMEPLAY_UI_SCALE_STEP = 0.05f
+    const val DEFAULT_GAMEPLAY_LARGER_UI_ENABLED = true
     const val DEFAULT_PLAYER_NAME = "player"
 
     private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
     private const val GAMEPLAY_SETTINGS_KEY_BIGGER_TEXT = "Bigger Text"
     private const val GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN = "Touchscreen Enabled"
     private const val GAMEPLAY_SETTINGS_KEY_FONT_SCALE = "Amethyst Font Scale"
+    private const val GAMEPLAY_SETTINGS_KEY_UI_SCALE = "Amethyst UI Scale"
+    private const val GAMEPLAY_SETTINGS_KEY_LARGER_UI = "Amethyst Larger UI"
+    // The runtime compat mod currently treats any value above 1.00 as "use the
+    // larger mobile-style layout strategy", so the smallest non-default step is
+    // sufficient for the legacy numeric launch arg.
+    private const val ENABLED_GAMEPLAY_UI_SCALE = 1.05f
     private const val GAMEPLAY_SETTINGS_DEFAULT_ASSET_PATH =
         "components/default_saves/preferences/STSGameplaySettings"
     private const val PLAYER_SETTINGS_FILE_NAME = "STSPlayer"
@@ -1300,6 +1311,73 @@ object LauncherConfig {
         return String.format(Locale.US, "%.2f", normalizeGameplayFontScale(value))
     }
 
+    fun readGameplayLargerUiEnabled(context: Context): Boolean {
+        val file = File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME)
+        val explicitValue =
+            readGameplaySettingsBoolean(
+                file,
+                GAMEPLAY_SETTINGS_KEY_LARGER_UI,
+                DEFAULT_GAMEPLAY_LARGER_UI_ENABLED
+            )
+        if (explicitValue != null) {
+            return explicitValue
+        }
+        val customValue = readGameplaySettingsString(file, GAMEPLAY_SETTINGS_KEY_UI_SCALE)
+        if (customValue != null) {
+            return isGameplayUiScaleEnabled(
+                parseFloatLike(customValue, DEFAULT_GAMEPLAY_UI_SCALE)
+            )
+        }
+        return DEFAULT_GAMEPLAY_LARGER_UI_ENABLED
+    }
+
+    @Throws(IOException::class)
+    fun saveGameplayLargerUiEnabled(context: Context, enabled: Boolean) {
+        val formatted = formatGameplayUiScale(resolveGameplayUiScale(enabled))
+        writeGameplaySettingsValues(
+            context,
+            File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME),
+            linkedMapOf(
+                GAMEPLAY_SETTINGS_KEY_LARGER_UI to if (enabled) "true" else "false",
+                GAMEPLAY_SETTINGS_KEY_UI_SCALE to formatted
+            )
+        )
+    }
+
+    fun readGameplayUiScale(context: Context): Float {
+        return resolveGameplayUiScale(readGameplayLargerUiEnabled(context))
+    }
+
+    @Throws(IOException::class)
+    fun saveGameplayUiScale(context: Context, value: Float): String {
+        val enabled = isGameplayUiScaleEnabled(value)
+        saveGameplayLargerUiEnabled(context, enabled)
+        return formatGameplayUiScale(resolveGameplayUiScale(enabled))
+    }
+
+    fun normalizeGameplayUiScale(value: Float): Float {
+        val stepped =
+            (((value - MIN_GAMEPLAY_UI_SCALE) / GAMEPLAY_UI_SCALE_STEP).roundToInt() *
+                GAMEPLAY_UI_SCALE_STEP) + MIN_GAMEPLAY_UI_SCALE
+        return stepped.coerceIn(MIN_GAMEPLAY_UI_SCALE, MAX_GAMEPLAY_UI_SCALE)
+    }
+
+    fun resolveGameplayUiScale(enabled: Boolean): Float {
+        return if (enabled) {
+            ENABLED_GAMEPLAY_UI_SCALE
+        } else {
+            DEFAULT_GAMEPLAY_UI_SCALE
+        }
+    }
+
+    fun isGameplayUiScaleEnabled(value: Float): Boolean {
+        return normalizeGameplayUiScale(value) > DEFAULT_GAMEPLAY_UI_SCALE
+    }
+
+    fun formatGameplayUiScale(value: Float): String {
+        return String.format(Locale.US, "%.2f", normalizeGameplayUiScale(value))
+    }
+
     fun normalizePlayerName(name: String): String {
         val sanitized = sanitizeSingleLineText(name)
         return sanitized.ifEmpty { DEFAULT_PLAYER_NAME }
@@ -1386,12 +1464,16 @@ object LauncherConfig {
         }
     }
 
-    private fun readGameplaySettingsBoolean(file: File, key: String): Boolean? {
+    private fun readGameplaySettingsBoolean(
+        file: File,
+        key: String,
+        defaultValue: Boolean = DEFAULT_TOUCHSCREEN_ENABLED
+    ): Boolean? {
         val objectValue = readJsonObject(file) ?: return null
         if (!objectValue.has(key)) {
             return null
         }
-        return parseBooleanLike(objectValue.opt(key), DEFAULT_TOUCHSCREEN_ENABLED)
+        return parseBooleanLike(objectValue.opt(key), defaultValue)
     }
 
     private fun readGameplaySettingsString(file: File, key: String): String? {

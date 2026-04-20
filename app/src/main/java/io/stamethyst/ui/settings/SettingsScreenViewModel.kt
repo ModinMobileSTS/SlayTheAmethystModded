@@ -212,6 +212,7 @@ class SettingsScreenViewModel : ViewModel() {
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
         val gameplayFontScale: Float = GameplaySettingsService.DEFAULT_FONT_SCALE,
+        val gameplayLargerUiEnabled: Boolean = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
         val statusText: String = "",
         val logPathText: String = "",
         val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList(),
@@ -1508,6 +1509,17 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onGameplayLargerUiChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        if (!saveGameplayLargerUiSelection(host, enabled)) {
+            return
+        }
+        uiState = uiState.copy(gameplayLargerUiEnabled = enabled)
+        refreshStatus(host)
+    }
+
     fun onOpenCompatibility() {
         if (uiState.busy) {
             return
@@ -1706,7 +1718,8 @@ class SettingsScreenViewModel : ViewModel() {
             gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
             glBridgeSwapHeartbeatDebugEnabled = diagnostics.glBridgeSwapHeartbeatDebugEnabled,
             touchscreenEnabled = input.touchscreenEnabled,
-            gameplayFontScale = input.fontScale
+            gameplayFontScale = input.fontScale,
+            gameplayLargerUiEnabled = input.largerUiEnabled
         )
     }
 
@@ -2058,6 +2071,10 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_gameplay_font_scale,
             GameplaySettingsService.formatFontScale(input.fontScale)
+        )
+        lines += host.getString(
+            R.string.settings_status_gameplay_larger_ui,
+            toggleStateText(host, input.largerUiEnabled)
         )
         lines += host.getString(
             R.string.settings_status_mobile_hud,
@@ -2811,6 +2828,23 @@ class SettingsScreenViewModel : ViewModel() {
                 host,
                 UiText.StringResource(
                     R.string.settings_gameplay_font_scale_save_failed,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
+                Toast.LENGTH_SHORT
+            )
+            false
+        }
+    }
+
+    private fun saveGameplayLargerUiSelection(host: Activity, enabled: Boolean): Boolean {
+        return try {
+            GameplaySettingsService.saveLargerUiEnabled(host, enabled)
+            true
+        } catch (error: IOException) {
+            showToast(
+                host,
+                UiText.StringResource(
+                    R.string.settings_gameplay_larger_ui_save_failed,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_SHORT

@@ -5,7 +5,7 @@ This mod carries runtime-side compatibility fixes that are safer to ship as ModT
 ## Included fixes
 
 1. `FontScaleCompatPatches`
-Adjusts `FontHelper.prepFont` so launcher-configured text scaling is applied consistently during MTS launches.
+Adjusts `FontHelper.prepFont` so launcher-configured text scaling is applied consistently during MTS launches while staying independent from the launcher UI-scale slider. This addresses the symptom where text sizing only followed the base game's `Bigger Text` behavior or got unintentionally magnified again when UI scale was increased. Type: compatibility workaround implemented by `FontScaleCompatPatches`.
 
 2. `ResolutionDropdownCompatPatches`
 Guards the in-game settings resolution dropdown on Android-compatible runtimes. When no desktop-compatible resolution list can be built, the dropdown is replaced with a single `N/A` entry and resolution changes become a no-op instead of crashing. The patch also normalizes stale dropdown selection and scroll-window state during settings rendering so toggling graphics options cannot leave the placeholder dropdown pointing past its only row and crash inside `DropdownMenu.layoutRowsBelow`. Type: crash fix implemented by `ResolutionDropdownCompatPatches`.
@@ -27,6 +27,9 @@ Intercepts `downfall.patches.MainMenuColorPatch.setMainMenuBG(TitleBackground)` 
 
 8. `HinaCharacterRenderCompatPatches`
 Downsizes Blue Archive Hina's offscreen 3D character render target from its desktop-style supersampled framebuffer to a mobile-safe framebuffer, keeps the helper's original logical camera scale, and replaces the original mipmap generation path with linear filtering during the final blit. This addresses the symptom where Hina's in-run 3D model renders as a blank character or at the wrong size on Android-compatible runtimes after the oversized framebuffer is pressure-downscaled or the desktop mipmap path misbehaves. The fix is controlled by the launcher's runtime compatibility switch for Hina character rendering. Type: compatibility workaround for third-party mobile rendering assumptions implemented by `HinaCharacterRenderCompatPatches`.
+
+9. `UiScaleCompatPatches`
+Uses the launcher's UI-size setting to dynamically rewrite base-game and mod reads of `Settings.isMobile`, so enlarged mobile-style layout branches are reused without turning on the real mobile HUD mode. Main-menu classes and speech-bubble VFX classes are intentionally excluded so the title screen and dialogue bubbles keep their desktop behavior instead of picking up mobile-only spacing and text placement. This addresses the symptom where the only built-in way to enlarge the interface was the native mobile HUD toggle, which also changes global runtime state and can break modded screens. Type: compatibility workaround implemented by `UiScaleCompatPatches` together with `MobileUiLayoutClassPatcher`.
 
 ## Maintenance rule
 
