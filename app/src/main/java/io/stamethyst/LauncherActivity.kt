@@ -80,12 +80,20 @@ class LauncherActivity : AppCompatActivity() {
         ) : IncomingJarIntentTarget
     }
 
+    private sealed interface ExternalImportRequest {
+        data class ImportUri(
+            val uri: Uri
+        ) : ExternalImportRequest
+
+        object Unsupported : ExternalImportRequest
+    }
+
     private val mainViewModel: MainScreenViewModel by viewModels()
     private val settingsViewModel: SettingsScreenViewModel by viewModels()
     private var pendingImportDialog: AlertDialog? = null
     private var pendingImportLoadingDialog: AlertDialog? = null
     private var pendingStorageMigrationDialog: AlertDialog? = null
-    private var queuedImportUri: Uri? = null
+    private var queuedExternalImportRequest: ExternalImportRequest? = null
     private var pendingModImportFlow = false
     private var pendingGameReturnAnalysis: Runnable? = null
     private var launchedWithoutImportedStsJar = false
@@ -164,7 +172,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         cancelPendingGameReturnAnalysis()
-        queuedImportUri = null
+        queuedExternalImportRequest = null
         pendingImportDialog?.dismiss()
         pendingImportDialog = null
         pendingImportLoadingDialog?.dismiss()
@@ -269,48 +277,171 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun maybeHandleJarIntent(incomingIntent: Intent?) {
-        val uri = consumeJarImportUri(incomingIntent) ?: return
+        val request = consumeExternalJarIntent(incomingIntent) ?: return
         pendingModImportFlow = true
         if (pendingStorageMigrationDialog?.isShowing == true) {
-            queuedImportUri = uri
+            queuedExternalImportRequest = request
             return
         }
-        loadIncomingJarIntentTarget(uri)
+        handleExternalImportRequest(request)
     }
 
-    private fun consumeJarImportUri(incomingIntent: Intent?): Uri? {
-        if (incomingIntent == null || incomingIntent.action != Intent.ACTION_VIEW) {
+    private fun consumeExternalJarIntent(incomingIntent: Intent?): ExternalImportRequest? {
+        if (incomingIntent == null) {
             return null
         }
-        val data = incomingIntent.data ?: return null
-        if (!isJarIntent(incomingIntent, data)) {
-            return null
-        }
+        val request = when (incomingIntent.action) {
+            Intent.ACTION_VIEW -> consumeViewExternalJarIntent(incomingIntent)
+            Intent.ACTION_SEND -> consumeSendExternalJarIntent(incomingIntent)
+            Intent.ACTION_SEND_MULTIPLE -> consumeSendMultipleExternalJarIntent(incomingIntent)
+            else -> null
+        } ?: return null
 
+        clearConsumedExternalImportIntent(incomingIntent)
+        return request
+    }
+
+    private fun consumeViewExternalJarIntent(incomingIntent: Intent): ExternalImportRequest? {
+        val uri = incomingIntent.data ?: firstClipDataUri(incomingIntent)
+        if (uri != null) {
+            return if (isSupportedExternalImportUri(uri)) {
+                ExternalImportRequest.ImportUri(uri)
+            } else if (looksLikeJarRequest(incomingIntent, uri)) {
+                ExternalImportRequest.Unsupported
+            } else {
+                null
+            }
+        }
+        return if (looksLikeJarRequest(incomingIntent, null) || incomingIntent.clipData != null) {
+            ExternalImportRequest.Unsupported
+        } else {
+            null
+        }
+    }
+
+    private fun consumeSendExternalJarIntent(incomingIntent: Intent): ExternalImportRequest? {
+        val uri = readSendStreamUri(incomingIntent) ?: firstClipDataUri(incomingIntent)
+        if (uri != null) {
+            return if (isSupportedExternalImportUri(uri)) {
+                ExternalImportRequest.ImportUri(uri)
+            } else {
+                ExternalImportRequest.Unsupported
+            }
+        }
+        return if (
+            looksLikeJarRequest(incomingIntent, null) ||
+            incomingIntent.hasExtra(Intent.EXTRA_STREAM) ||
+            incomingIntent.clipData != null
+        ) {
+            ExternalImportRequest.Unsupported
+        } else {
+            null
+        }
+    }
+
+    private fun consumeSendMultipleExternalJarIntent(incomingIntent: Intent): ExternalImportRequest? {
+        val uris = readSendStreamUris(incomingIntent).ifEmpty { readAllClipDataUris(incomingIntent) }
+        if (uris.size == 1) {
+            val uri = uris.first()
+            return if (isSupportedExternalImportUri(uri)) {
+                ExternalImportRequest.ImportUri(uri)
+            } else {
+                ExternalImportRequest.Unsupported
+            }
+        }
+        if (uris.isNotEmpty()) {
+            return ExternalImportRequest.Unsupported
+        }
+        return if (
+            looksLikeJarRequest(incomingIntent, null) ||
+            incomingIntent.hasExtra(Intent.EXTRA_STREAM) ||
+            incomingIntent.clipData != null
+        ) {
+            ExternalImportRequest.Unsupported
+        } else {
+            null
+        }
+    }
+
+    private fun clearConsumedExternalImportIntent(incomingIntent: Intent) {
         incomingIntent.action = null
         incomingIntent.data = null
         incomingIntent.type = null
         incomingIntent.clipData = null
-        return data
+        incomingIntent.removeExtra(Intent.EXTRA_STREAM)
     }
 
-    private fun isJarIntent(incomingIntent: Intent, uri: Uri): Boolean {
+    private fun firstClipDataUri(incomingIntent: Intent): Uri? {
+        val clipData = incomingIntent.clipData ?: return null
+        for (index in 0 until clipData.itemCount) {
+            val uri = clipData.getItemAt(index)?.uri ?: continue
+            return uri
+        }
+        return null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readSendStreamUri(incomingIntent: Intent): Uri? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            incomingIntent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            incomingIntent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+        }
+    }
+
+    private fun readAllClipDataUris(incomingIntent: Intent): List<Uri> {
+        val clipData = incomingIntent.clipData ?: return emptyList()
+        val uris = ArrayList<Uri>(clipData.itemCount)
+        for (index in 0 until clipData.itemCount) {
+            val uri = clipData.getItemAt(index)?.uri ?: continue
+            uris += uri
+        }
+        return uris
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readSendStreamUris(incomingIntent: Intent): List<Uri> {
+        val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            incomingIntent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            incomingIntent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+        }
+        return uris.orEmpty()
+    }
+
+    private fun isSupportedExternalImportUri(uri: Uri): Boolean {
+        val normalizedScheme = uri.scheme
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+        return normalizedScheme.isNullOrEmpty() ||
+            normalizedScheme == "content" ||
+            normalizedScheme == "file"
+    }
+
+    private fun looksLikeJarRequest(incomingIntent: Intent, uri: Uri?): Boolean {
         val normalizedMime = incomingIntent.type
             ?.trim()
             ?.lowercase(Locale.ROOT)
         if (!normalizedMime.isNullOrEmpty() && normalizedMime in JAR_MIME_TYPES) {
             return true
         }
-        val lowerPath = (uri.lastPathSegment ?: uri.path)
+        val lowerPath = (uri?.lastPathSegment ?: uri?.path)
             .orEmpty()
             .lowercase(Locale.ROOT)
         return lowerPath.endsWith(".jar")
     }
 
+    private fun handleExternalImportRequest(request: ExternalImportRequest) {
+        when (request) {
+            is ExternalImportRequest.ImportUri -> loadIncomingJarIntentTarget(request.uri)
+            ExternalImportRequest.Unsupported -> showUnsupportedExternalImportDialog()
+        }
+    }
+
     private fun loadIncomingJarIntentTarget(uri: Uri) {
-        val displayName = SettingsFileService.resolveDisplayName(this, uri)
-        showImportLoadingDialog(displayName)
+        showImportLoadingDialog()
         Thread {
+            val displayName = SettingsFileService.resolveDisplayName(this, uri)
             val target = buildIncomingJarIntentTarget(uri, displayName)
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
@@ -420,7 +551,27 @@ class LauncherActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun showImportLoadingDialog(displayName: String) {
+    private fun showUnsupportedExternalImportDialog() {
+        dismissImportLoadingDialog()
+        val previousDialog = pendingImportDialog
+        pendingImportDialog = null
+        previousDialog?.dismiss()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.external_import_unsupported_title)
+            .setMessage(R.string.external_import_unsupported_message)
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+        dialog.setOnDismissListener {
+            if (pendingImportDialog === dialog) {
+                pendingImportDialog = null
+                finishPendingJarIntentFlow()
+            }
+        }
+        pendingImportDialog = dialog
+        dialog.show()
+    }
+
+    private fun showImportLoadingDialog() {
         val previousDialog = pendingImportLoadingDialog
         pendingImportLoadingDialog = null
         previousDialog?.dismiss()
@@ -437,7 +588,7 @@ class LauncherActivity : AppCompatActivity() {
             isIndeterminate = true
         }
         val messageView = TextView(this).apply {
-            text = getString(R.string.external_import_loading_message, displayName)
+            text = getString(R.string.external_import_loading_message_generic)
             setPadding(0, spacing, 0, 0)
         }
         container.addView(progressBar)
@@ -508,7 +659,7 @@ class LauncherActivity : AppCompatActivity() {
             if (pendingStorageMigrationDialog === dialog) {
                 pendingStorageMigrationDialog = null
             }
-            drainQueuedImportUri()
+            drainQueuedExternalImportRequest()
             maybeStartStartupAutoUpdateCheck()
         }
         pendingStorageMigrationDialog = dialog
@@ -536,18 +687,18 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
-    private fun drainQueuedImportUri() {
+    private fun drainQueuedExternalImportRequest() {
         if (isFinishing || isDestroyed) {
-            queuedImportUri = null
+            queuedExternalImportRequest = null
             finishPendingJarIntentFlow()
             return
         }
         if (pendingStorageMigrationDialog?.isShowing == true) {
             return
         }
-        val uri = queuedImportUri ?: return
-        queuedImportUri = null
-        loadIncomingJarIntentTarget(uri)
+        val request = queuedExternalImportRequest ?: return
+        queuedExternalImportRequest = null
+        handleExternalImportRequest(request)
     }
 
     private fun finishPendingJarIntentFlow() {
@@ -562,7 +713,11 @@ class LauncherActivity : AppCompatActivity() {
         if (pendingStorageMigrationDialog?.isShowing == true) {
             return
         }
-        if (queuedImportUri != null || pendingModImportFlow || pendingImportDialog?.isShowing == true) {
+        if (
+            queuedExternalImportRequest != null ||
+            pendingModImportFlow ||
+            pendingImportDialog?.isShowing == true
+        ) {
             return
         }
         settingsViewModel.startStartupAutoUpdateCheck(this)

@@ -478,6 +478,9 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="mod_import_preview_manifest_read_failed">Could not read ModTheSpire.json: %1$s</string>
     <string name="external_import_loading_title">Analyzing import file...</string>
     <string name="external_import_loading_message">Reading and checking %1$s. Please wait...</string>
+    <string name="external_import_loading_message_generic">Reading and checking the import file. Please wait...</string>
+    <string name="external_import_unsupported_title">Could not import file from this app</string>
+    <string name="external_import_unsupported_message">The launcher was opened from another app, but that app did not pass a readable jar file in a supported Android format.\n\nTry opening the jar from a file manager, or save the file locally first and then import it from the launcher.</string>
     <string name="sts_jar_import_busy">Importing desktop-1.0.jar...</string>
     <string name="sts_jar_import_success">Imported desktop-1.0.jar</string>
     <string name="sts_jar_import_failed">Import failed: %1$s</string>
