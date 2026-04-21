@@ -70,6 +70,7 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 private const val SUBMISSION_ATTENTION_WARNING_CLOSE_DELAY_SECONDS = 5
+private const val MISSING_EMAIL_WARNING_SUBMIT_DELAY_SECONDS = 3
 
 private data class FeedbackCategoryOption(
     val category: FeedbackCategory,
@@ -113,6 +114,8 @@ fun LauncherFeedbackScreen(
         modifier = modifier,
         formUiState = formViewModel.uiState,
         onGoBack = navigator::goBack,
+        onContinueAfterAcknowledgementsConfirmed = formViewModel::onContinueAfterAcknowledgementsConfirmed,
+        onReturnToAcknowledgements = formViewModel::onReturnToAcknowledgements,
         onCategorySelected = formViewModel::onCategorySelected,
         onGameIssueTypeSelected = formViewModel::onGameIssueTypeSelected,
         onReproducedOnLastRunSelected = formViewModel::onReproducedOnLastRunSelected,
@@ -123,15 +126,13 @@ fun LauncherFeedbackScreen(
         onReproductionStepsChanged = formViewModel::onReproductionStepsChanged,
         onEmailChanged = formViewModel::onEmailChanged,
         onEmailNotificationsEnabledChanged = formViewModel::onEmailNotificationsEnabledChanged,
-        onContinueAfterCategorySelected = formViewModel::onContinueAfterCategorySelected,
-        onReturnToCategorySelection = formViewModel::onReturnToCategorySelection,
-        onContinueAfterFormFilled = { formViewModel.onContinueAfterFormFilled(activity) },
-        onReturnToForm = formViewModel::onReturnToForm,
         onSubmissionAcknowledgementChanged = formViewModel::onSubmissionAcknowledgementChanged,
         onAddScreenshots = formViewModel::onAddScreenshots,
         onRemoveScreenshot = formViewModel::onRemoveScreenshot,
         onSubmit = { formViewModel.onSubmit(activity) },
         onDismissSubmissionAttentionWarning = formViewModel::onDismissSubmissionAttentionWarning,
+        onDismissMissingEmailConfirmation = formViewModel::onDismissMissingEmailConfirmation,
+        onSubmitWithoutEmail = { formViewModel.onSubmitWithoutEmail(activity) },
         onDismissBriefFeedbackConfirmation = formViewModel::onDismissBriefFeedbackConfirmation,
         onSubmitDespiteBriefFeedback = { formViewModel.onSubmitDespiteBriefFeedback(activity) }
     )
@@ -203,6 +204,8 @@ private fun LauncherFeedbackScreenContent(
     modifier: Modifier = Modifier,
     formUiState: FeedbackScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
+    onContinueAfterAcknowledgementsConfirmed: () -> Unit = {},
+    onReturnToAcknowledgements: () -> Unit = {},
     onCategorySelected: (FeedbackCategory) -> Unit = {},
     onGameIssueTypeSelected: (GameIssueType) -> Unit = {},
     onReproducedOnLastRunSelected: (Boolean) -> Unit = {},
@@ -213,10 +216,6 @@ private fun LauncherFeedbackScreenContent(
     onReproductionStepsChanged: (String) -> Unit = {},
     onEmailChanged: (String) -> Unit = {},
     onEmailNotificationsEnabledChanged: (Boolean) -> Unit = {},
-    onContinueAfterCategorySelected: () -> Unit = {},
-    onReturnToCategorySelection: () -> Unit = {},
-    onContinueAfterFormFilled: () -> Unit = {},
-    onReturnToForm: () -> Unit = {},
     onSubmissionAcknowledgementChanged: (
         FeedbackScreenViewModel.SubmissionAcknowledgement,
         Boolean
@@ -225,6 +224,8 @@ private fun LauncherFeedbackScreenContent(
     onRemoveScreenshot: (String) -> Unit = {},
     onSubmit: () -> Unit = {},
     onDismissSubmissionAttentionWarning: () -> Unit = {},
+    onDismissMissingEmailConfirmation: () -> Unit = {},
+    onSubmitWithoutEmail: () -> Unit = {},
     onDismissBriefFeedbackConfirmation: () -> Unit = {},
     onSubmitDespiteBriefFeedback: () -> Unit = {}
 ) {
@@ -233,10 +234,9 @@ private fun LauncherFeedbackScreenContent(
 
     val handleBackNavigation = {
         when (previousStep) {
-            FeedbackScreenViewModel.SubmissionStep.FORM -> onReturnToForm()
-            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION -> onReturnToCategorySelection()
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT -> onReturnToAcknowledgements()
+            FeedbackScreenViewModel.SubmissionStep.FORM -> Unit
             null -> onGoBack()
-            FeedbackScreenViewModel.SubmissionStep.SUBMISSION_CONFIRMATION -> Unit
         }
     }
 
@@ -272,18 +272,20 @@ private fun LauncherFeedbackScreenContent(
                 .padding(paddingValues)
         ) {
             when (currentStep) {
-                FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION -> {
-                    FeedbackCategorySelectionContent(
+                FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT -> {
+                    FeedbackAcknowledgementGateContent(
                         modifier = Modifier.fillMaxSize(),
                         uiState = formUiState,
-                        onCategorySelected = onCategorySelected,
-                        onContinueAfterCategorySelected = onContinueAfterCategorySelected
+                        onSubmissionAcknowledgementChanged = onSubmissionAcknowledgementChanged,
+                        onContinueAfterAcknowledgementsConfirmed =
+                            onContinueAfterAcknowledgementsConfirmed
                     )
                 }
                 FeedbackScreenViewModel.SubmissionStep.FORM -> {
                     FeedbackSubmissionTabContent(
                         modifier = Modifier.fillMaxSize(),
                         uiState = formUiState,
+                        onCategorySelected = onCategorySelected,
                         onGameIssueTypeSelected = onGameIssueTypeSelected,
                         onReproducedOnLastRunSelected = onReproducedOnLastRunSelected,
                         onSuspectUnknownChanged = onSuspectUnknownChanged,
@@ -293,17 +295,8 @@ private fun LauncherFeedbackScreenContent(
                         onReproductionStepsChanged = onReproductionStepsChanged,
                         onEmailChanged = onEmailChanged,
                         onEmailNotificationsEnabledChanged = onEmailNotificationsEnabledChanged,
-                        onReturnToCategorySelection = onReturnToCategorySelection,
                         onAddScreenshots = onAddScreenshots,
                         onRemoveScreenshot = onRemoveScreenshot,
-                        onContinueAfterFormFilled = onContinueAfterFormFilled
-                    )
-                }
-                FeedbackScreenViewModel.SubmissionStep.SUBMISSION_CONFIRMATION -> {
-                    FeedbackSubmissionConfirmationContent(
-                        modifier = Modifier.fillMaxSize(),
-                        uiState = formUiState,
-                        onSubmissionAcknowledgementChanged = onSubmissionAcknowledgementChanged,
                         onSubmit = onSubmit
                     )
                 }
@@ -369,6 +362,50 @@ private fun LauncherFeedbackScreenContent(
                     )
                 ) {
                     Text(stringResource(R.string.feedback_brief_warning_submit_anyway))
+                }
+            }
+        )
+    }
+
+    if (formUiState.showMissingEmailConfirmation) {
+        var remainingSeconds by remember { mutableIntStateOf(MISSING_EMAIL_WARNING_SUBMIT_DELAY_SECONDS) }
+        LaunchedEffect(Unit) {
+            while (remainingSeconds > 0) {
+                delay(1_000L)
+                remainingSeconds--
+            }
+        }
+        AlertDialog(
+            onDismissRequest = onDismissMissingEmailConfirmation,
+            title = { Text(stringResource(R.string.feedback_missing_email_warning_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.feedback_missing_email_warning_message)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissMissingEmailConfirmation) {
+                    Text(stringResource(R.string.feedback_missing_email_warning_continue_editing))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onSubmitWithoutEmail,
+                    enabled = remainingSeconds == 0,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(
+                        if (remainingSeconds > 0) {
+                            stringResource(
+                                R.string.feedback_missing_email_warning_submit_countdown,
+                                remainingSeconds
+                            )
+                        } else {
+                            stringResource(R.string.feedback_missing_email_warning_submit_anyway)
+                        }
+                    )
                 }
             }
         )
@@ -467,11 +504,14 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
 }
 
 @Composable
-private fun FeedbackCategorySelectionContent(
+private fun FeedbackAcknowledgementGateContent(
     modifier: Modifier = Modifier,
     uiState: FeedbackScreenViewModel.UiState,
-    onCategorySelected: (FeedbackCategory) -> Unit = {},
-    onContinueAfterCategorySelected: () -> Unit = {}
+    onSubmissionAcknowledgementChanged: (
+        FeedbackScreenViewModel.SubmissionAcknowledgement,
+        Boolean
+    ) -> Unit = { _, _ -> },
+    onContinueAfterAcknowledgementsConfirmed: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = modifier,
@@ -489,18 +529,15 @@ private fun FeedbackCategorySelectionContent(
         }
 
         item {
-            FeedbackSectionCard(title = stringResource(R.string.feedback_question_category_title)) {
-                Text(
-                    text = stringResource(R.string.feedback_question_category_hint),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                FeedbackCategoryOptions.forEach { option ->
-                    FeedbackChoiceRow(
-                        selected = uiState.category == option.category,
+            FeedbackSectionCard(title = stringResource(R.string.feedback_submission_confirmation_title)) {
+                FeedbackScreenViewModel.SubmissionAcknowledgement.entries.forEach { acknowledgement ->
+                    FeedbackCheckboxRow(
+                        checked = uiState.checkedSubmissionAcknowledgements.contains(acknowledgement),
                         enabled = !uiState.busy,
-                        title = stringResource(option.titleResId),
-                        subtitle = stringResource(option.descriptionResId),
-                        onClick = { onCategorySelected(option.category) }
+                        title = stringResource(acknowledgement.titleResId),
+                        onCheckedChange = { checked ->
+                            onSubmissionAcknowledgementChanged(acknowledgement, checked)
+                        }
                     )
                 }
             }
@@ -508,11 +545,11 @@ private fun FeedbackCategorySelectionContent(
 
         item {
             Button(
-                onClick = onContinueAfterCategorySelected,
-                enabled = !uiState.busy && uiState.category != null,
+                onClick = onContinueAfterAcknowledgementsConfirmed,
+                enabled = !uiState.busy && uiState.allSubmissionAcknowledgementsChecked,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(stringResource(R.string.feedback_next_step))
+                Text(stringResource(R.string.feedback_acknowledgement_continue))
             }
         }
     }
@@ -522,6 +559,7 @@ private fun FeedbackCategorySelectionContent(
 private fun FeedbackSubmissionTabContent(
     modifier: Modifier = Modifier,
     uiState: FeedbackScreenViewModel.UiState,
+    onCategorySelected: (FeedbackCategory) -> Unit = {},
     onGameIssueTypeSelected: (GameIssueType) -> Unit = {},
     onReproducedOnLastRunSelected: (Boolean) -> Unit = {},
     onSuspectUnknownChanged: (Boolean) -> Unit = {},
@@ -531,10 +569,9 @@ private fun FeedbackSubmissionTabContent(
     onReproductionStepsChanged: (String) -> Unit = {},
     onEmailChanged: (String) -> Unit = {},
     onEmailNotificationsEnabledChanged: (Boolean) -> Unit = {},
-    onReturnToCategorySelection: () -> Unit = {},
     onAddScreenshots: () -> Unit = {},
     onRemoveScreenshot: (String) -> Unit = {},
-    onContinueAfterFormFilled: () -> Unit = {}
+    onSubmit: () -> Unit = {}
 ) {
     val isGameBug = uiState.category == FeedbackCategory.GAME_BUG
 
@@ -556,10 +593,6 @@ private fun FeedbackSubmissionTabContent(
             }
         }
 
-        item {
-            FeedbackSubmissionIntroCard()
-        }
-
         if (!uiState.endpointConfigured) {
             item {
                 FeedbackEndpointUnconfiguredCard()
@@ -568,21 +601,18 @@ private fun FeedbackSubmissionTabContent(
 
         item {
             FeedbackSectionCard(title = stringResource(R.string.feedback_section_category)) {
-                uiState.category?.let { category ->
-                    Text(
-                        text = stringResource(feedbackCategoryOption(category).titleResId),
-                        style = MaterialTheme.typography.titleSmall
+                Text(
+                    text = stringResource(R.string.feedback_question_category_hint),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                FeedbackCategoryOptions.forEach { option ->
+                    FeedbackChoiceRow(
+                        selected = uiState.category == option.category,
+                        enabled = !uiState.busy,
+                        title = stringResource(option.titleResId),
+                        subtitle = stringResource(option.descriptionResId),
+                        onClick = { onCategorySelected(option.category) }
                     )
-                    Text(
-                        text = stringResource(feedbackCategoryOption(category).descriptionResId),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                TextButton(
-                    onClick = onReturnToCategorySelection,
-                    enabled = !uiState.busy
-                ) {
-                    Text(stringResource(R.string.feedback_change_category))
                 }
             }
         }
@@ -685,7 +715,13 @@ private fun FeedbackSubmissionTabContent(
                 )
             ) {
                 Text(
-                    text = stringResource(R.string.feedback_details_subtitle),
+                    text = stringResource(
+                        if (isGameBug) {
+                            R.string.feedback_details_subtitle_game
+                        } else {
+                            R.string.feedback_details_subtitle
+                        }
+                    ),
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedTextField(
@@ -804,65 +840,8 @@ private fun FeedbackSubmissionTabContent(
 
         item {
             Button(
-                onClick = onContinueAfterFormFilled,
-                enabled = !uiState.busy && uiState.endpointConfigured,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.feedback_form_confirm))
-            }
-        }
-    }
-}
-
-@Composable
-private fun FeedbackSubmissionConfirmationContent(
-    modifier: Modifier = Modifier,
-    uiState: FeedbackScreenViewModel.UiState,
-    onSubmissionAcknowledgementChanged: (
-        FeedbackScreenViewModel.SubmissionAcknowledgement,
-        Boolean
-    ) -> Unit = { _, _ -> },
-    onSubmit: () -> Unit = {}
-) {
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            if (uiState.busy) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                uiState.busyMessage?.let { message ->
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        }
-
-        item {
-            FeedbackSectionCard(title = stringResource(R.string.feedback_submission_confirmation_title)) {
-                FeedbackScreenViewModel.SubmissionAcknowledgement.entries.forEach { acknowledgement ->
-                    FeedbackCheckboxRow(
-                        checked = uiState.checkedSubmissionAcknowledgements.contains(acknowledgement),
-                        enabled = !uiState.busy,
-                        title = stringResource(acknowledgement.titleResId),
-                        onCheckedChange = { checked ->
-                            onSubmissionAcknowledgementChanged(acknowledgement, checked)
-                        }
-                    )
-                }
-            }
-        }
-
-        item {
-            Button(
                 onClick = onSubmit,
-                enabled = !uiState.busy &&
-                    uiState.endpointConfigured &&
-                    uiState.allSubmissionAcknowledgementsChecked,
+                enabled = !uiState.busy && uiState.endpointConfigured,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.feedback_submit))
@@ -1233,10 +1212,6 @@ private fun FeedbackEndpointUnconfiguredCard() {
             style = MaterialTheme.typography.bodySmall
         )
     }
-}
-
-private fun feedbackCategoryOption(category: FeedbackCategory): FeedbackCategoryOption {
-    return FeedbackCategoryOptions.first { it.category == category }
 }
 
 @Composable

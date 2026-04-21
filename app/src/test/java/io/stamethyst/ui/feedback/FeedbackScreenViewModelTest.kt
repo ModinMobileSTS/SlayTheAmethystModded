@@ -1,6 +1,4 @@
 package io.stamethyst.ui.feedback
-
-import io.stamethyst.backend.feedback.FeedbackCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,21 +39,47 @@ class FeedbackScreenViewModelTest {
     }
 
     @Test
-    fun startsInCategorySelectionStep() {
+    fun uiStateShouldWarnAboutMissingEmail_whenBlankAndNotConfirmed() {
+        val uiState = FeedbackScreenViewModel.UiState(email = "   ")
+
+        assertTrue(uiState.shouldWarnAboutMissingEmail)
+    }
+
+    @Test
+    fun uiStateShouldNotWarnAboutMissingEmail_whenBlankButAlreadyConfirmed() {
+        val uiState = FeedbackScreenViewModel.UiState(
+            email = "",
+            missingEmailWarningConfirmed = true
+        )
+
+        assertFalse(uiState.shouldWarnAboutMissingEmail)
+    }
+
+    @Test
+    fun uiStateShouldNotWarnAboutMissingEmail_whenEmailIsFilled() {
+        val uiState = FeedbackScreenViewModel.UiState(email = "name@example.com")
+
+        assertFalse(uiState.shouldWarnAboutMissingEmail)
+    }
+
+    @Test
+    fun startsInAcknowledgementStep() {
         val viewModel = FeedbackScreenViewModel()
 
         assertEquals(
-            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT,
             viewModel.uiState.submissionStep
         )
     }
 
     @Test
-    fun continueAfterCategorySelected_movesToFormStep() {
+    fun continueAfterAcknowledgementsConfirmed_movesToFormStep() {
         val viewModel = FeedbackScreenViewModel()
+        requiredAcknowledgements().forEach { acknowledgement ->
+            viewModel.onSubmissionAcknowledgementChanged(acknowledgement, true)
+        }
 
-        viewModel.onCategorySelected(FeedbackCategory.LAUNCHER_BUG)
-        viewModel.onContinueAfterCategorySelected()
+        viewModel.onContinueAfterAcknowledgementsConfirmed()
 
         assertEquals(
             FeedbackScreenViewModel.SubmissionStep.FORM,
@@ -64,27 +88,29 @@ class FeedbackScreenViewModelTest {
     }
 
     @Test
-    fun continueWithoutCategory_keepsCategorySelectionStep() {
+    fun continueWithoutAllAcknowledgements_keepsAcknowledgementStep() {
         val viewModel = FeedbackScreenViewModel()
 
-        viewModel.onContinueAfterCategorySelected()
+        viewModel.onContinueAfterAcknowledgementsConfirmed()
 
         assertEquals(
-            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT,
             viewModel.uiState.submissionStep
         )
     }
 
     @Test
-    fun returnToCategorySelection_movesBackToFirstStep() {
+    fun returnToAcknowledgements_movesBackToFirstStep() {
         val viewModel = FeedbackScreenViewModel()
+        requiredAcknowledgements().forEach { acknowledgement ->
+            viewModel.onSubmissionAcknowledgementChanged(acknowledgement, true)
+        }
 
-        viewModel.onCategorySelected(FeedbackCategory.GAME_BUG)
-        viewModel.onContinueAfterCategorySelected()
-        viewModel.onReturnToCategorySelection()
+        viewModel.onContinueAfterAcknowledgementsConfirmed()
+        viewModel.onReturnToAcknowledgements()
 
         assertEquals(
-            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT,
             viewModel.uiState.submissionStep
         )
         assertFalse(viewModel.uiState.showBriefFeedbackConfirmation)
@@ -138,6 +164,7 @@ class FeedbackScreenViewModelTest {
 
         assertTrue(viewModel.uiState.allSubmissionAcknowledgementsChecked)
         assertFalse(viewModel.uiState.hasSubmissionInterceptionAcknowledgementChecked)
+        assertEquals(null, viewModel.uiState.submissionStatus)
     }
 
     @Test
@@ -155,31 +182,59 @@ class FeedbackScreenViewModelTest {
     }
 
     @Test
-    fun returnToForm_setsFormStep() {
+    fun interceptionAcknowledgement_blocksProgressAndShowsWarning() {
         val viewModel = FeedbackScreenViewModel()
+        requiredAcknowledgements().forEach { acknowledgement ->
+            viewModel.onSubmissionAcknowledgementChanged(acknowledgement, true)
+        }
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.SHOULD_NOT_CHECK_THIS_BOX,
+            true
+        )
 
-        viewModel.onReturnToForm()
+        viewModel.onContinueAfterAcknowledgementsConfirmed()
 
         assertEquals(
-            FeedbackScreenViewModel.SubmissionStep.FORM,
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT,
             viewModel.uiState.submissionStep
         )
-        assertFalse(viewModel.uiState.showBriefFeedbackConfirmation)
+        assertTrue(viewModel.uiState.showSubmissionAttentionWarning)
+        assertEquals(FEEDBACK_SUBMISSION_WARNING_STATUS, viewModel.uiState.submissionStatus)
+    }
+
+    @Test
+    fun interceptionAcknowledgementStatus_clearsWhenUnchecked() {
+        val viewModel = FeedbackScreenViewModel()
+
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.SHOULD_NOT_CHECK_THIS_BOX,
+            true
+        )
+        assertEquals(FEEDBACK_SUBMISSION_WARNING_STATUS, viewModel.uiState.submissionStatus)
+
+        viewModel.onSubmissionAcknowledgementChanged(
+            FeedbackScreenViewModel.SubmissionAcknowledgement.SHOULD_NOT_CHECK_THIS_BOX,
+            false
+        )
+
+        assertEquals(null, viewModel.uiState.submissionStatus)
     }
 
     @Test
     fun submissionStepPreviousStep_matchesExpectedFlow() {
         assertEquals(
             null,
-            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION.previousStep()
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT.previousStep()
         )
         assertEquals(
-            FeedbackScreenViewModel.SubmissionStep.CATEGORY_SELECTION,
+            FeedbackScreenViewModel.SubmissionStep.ACKNOWLEDGEMENT,
             FeedbackScreenViewModel.SubmissionStep.FORM.previousStep()
         )
-        assertEquals(
-            FeedbackScreenViewModel.SubmissionStep.FORM,
-            FeedbackScreenViewModel.SubmissionStep.SUBMISSION_CONFIRMATION.previousStep()
-        )
+    }
+
+    private fun requiredAcknowledgements(): Set<FeedbackScreenViewModel.SubmissionAcknowledgement> {
+        return FeedbackScreenViewModel.SubmissionAcknowledgement.entries
+            .filter { it.requiredForSubmission }
+            .toSet()
     }
 }

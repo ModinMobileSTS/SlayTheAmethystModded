@@ -836,6 +836,11 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="feedback_brief_warning_message">The current report is still quite brief, so the developer may not be able to pinpoint the problem accurately. Add symptoms, triggers, and reproduction steps if you can, including your own guesses if helpful.</string>
     <string name="feedback_brief_warning_continue_editing">Keep editing</string>
     <string name="feedback_brief_warning_submit_anyway">Submit anyway</string>
+    <string name="feedback_missing_email_warning_title">No email provided</string>
+    <string name="feedback_missing_email_warning_message">If you do not provide an email address, you may not receive replies from the developer correctly. It is better to fill in an email before submitting.</string>
+    <string name="feedback_missing_email_warning_continue_editing">Keep editing</string>
+    <string name="feedback_missing_email_warning_submit_anyway">Submit anyway</string>
+    <string name="feedback_missing_email_warning_submit_countdown">Submit anyway (%1$ds)</string>
     <string name="feedback_subscriptions_title">Tracked issues</string>
     <string name="feedback_subscriptions_title_with_count">Tracked issues (%1$d)</string>
     <string name="feedback_issue_browser_title">Follow new issues</string>
@@ -871,6 +876,7 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="feedback_section_details_game">5. Details</string>
     <string name="feedback_section_details_other">2. Details</string>
     <string name="feedback_details_subtitle">When filling out this section, describe the issue in as much detail and with as much precision as possible so developers can locate and fix it accurately.</string>
+    <string name="feedback_details_subtitle_game">Describe the problem in detail: which mod seems responsible, what you think is happening, what you have already tried, and any other facts you already know. The more detail you provide, the easier it is for the developer to solve.</string>
     <string name="feedback_summary_label">One-line summary</string>
     <string name="feedback_section_screenshots_game">6. Screenshots</string>
     <string name="feedback_section_screenshots_other">3. Screenshots</string>
@@ -883,7 +889,8 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="feedback_email_opt_in_title">Send me an email when this report gets an update.</string>
     <string name="feedback_email_opt_in_subtitle">Your email address will not be shown publicly in the GitHub Issue.</string>
     <string name="feedback_email_label">Notification email</string>
-    <string name="feedback_submission_confirmation_title">Before you submit</string>
+    <string name="feedback_submission_confirmation_title">Before you continue</string>
+    <string name="feedback_acknowledgement_continue">Start filling the report</string>
     <string name="feedback_submission_acknowledgement_1">I understand that confusing issue descriptions will slow down the resolution process.</string>
     <string name="feedback_submission_acknowledgement_2">I understand that the launcher will not provide fixes for conflicts caused between mods.</string>
     <string name="feedback_submission_acknowledgement_3">I confirm that before submitting this feedback, I already tried to fix the problem, but still could not solve it, or only partially located the cause.</string>
@@ -977,7 +984,7 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="feedback_validation_suspected_mod">Select the mods you suspect, or choose &quot;Not sure&quot;.</string>
     <string name="feedback_validation_issue_type">Choose the symptom type.</string>
     <string name="feedback_validation_game_detail">Describe the in-game issue.</string>
-    <string name="feedback_validation_submission_acknowledgements">Check all pre-submission confirmation items first.</string>
+    <string name="feedback_validation_submission_acknowledgements">Check all required acknowledgement items first.</string>
     <string name="feedback_submission_notice_title">Feedback submitted</string>
     <string name="feedback_submission_notice_issue_followed">Feedback submitted. GitHub Issue #%1$d was created and automatically added to Tracked issues.\n\nYou can follow it later from Settings -> Feedback -> Tracked issues. When there are updates, the launcher home screen will also show a notification.</string>
     <string name="feedback_submission_notice_issue_followed_with_replacement">Feedback submitted. GitHub Issue #%1$d was created and automatically added to Tracked issues.\n\nTracked issues are limited to 10 entries, so the oldest tracked issue, Issue #%2$d, was removed automatically.</string>

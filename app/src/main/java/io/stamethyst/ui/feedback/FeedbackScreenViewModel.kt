@@ -52,14 +52,12 @@ class FeedbackScreenViewModel : ViewModel() {
     }
 
     enum class SubmissionStep {
-        CATEGORY_SELECTION,
-        FORM,
-        SUBMISSION_CONFIRMATION;
+        ACKNOWLEDGEMENT,
+        FORM;
 
         fun previousStep(): SubmissionStep? = when (this) {
-            CATEGORY_SELECTION -> null
-            FORM -> CATEGORY_SELECTION
-            SUBMISSION_CONFIRMATION -> FORM
+            ACKNOWLEDGEMENT -> null
+            FORM -> ACKNOWLEDGEMENT
         }
     }
 
@@ -117,7 +115,7 @@ class FeedbackScreenViewModel : ViewModel() {
         val busy: Boolean = false,
         val busyMessage: String? = null,
         val endpointConfigured: Boolean = BuildConfig.FEEDBACK_ENDPOINT.trim().isNotEmpty(),
-        val submissionStep: SubmissionStep = SubmissionStep.CATEGORY_SELECTION,
+        val submissionStep: SubmissionStep = SubmissionStep.ACKNOWLEDGEMENT,
         val availableMods: List<ModOption> = emptyList(),
         val category: FeedbackCategory? = null,
         val gameIssueType: GameIssueType? = null,
@@ -133,13 +131,18 @@ class FeedbackScreenViewModel : ViewModel() {
         val checkedSubmissionAcknowledgements: Set<SubmissionAcknowledgement> = emptySet(),
         val submissionStatus: Int? = null,
         val showSubmissionAttentionWarning: Boolean = false,
-        val showBriefFeedbackConfirmation: Boolean = false
+        val showBriefFeedbackConfirmation: Boolean = false,
+        val showMissingEmailConfirmation: Boolean = false,
+        val missingEmailWarningConfirmed: Boolean = false
     ) {
         val detailedFeedbackLength: Int
             get() = calculateDetailedFeedbackLength(detail, reproductionSteps)
 
         val shouldWarnAboutBriefFeedback: Boolean
             get() = detailedFeedbackLength <= BRIEF_FEEDBACK_WARNING_THRESHOLD
+
+        val shouldWarnAboutMissingEmail: Boolean
+            get() = email.trim().isEmpty() && !missingEmailWarningConfirmed
 
         val allSubmissionAcknowledgementsChecked: Boolean
             get() = checkedSubmissionAcknowledgements.containsAll(
@@ -190,56 +193,34 @@ class FeedbackScreenViewModel : ViewModel() {
         }
     }
 
-    fun onContinueAfterCategorySelected() {
-        if (uiState.category == null) {
+    fun onContinueAfterAcknowledgementsConfirmed() {
+        if (uiState.busy || !uiState.allSubmissionAcknowledgementsChecked) {
             return
         }
-        uiState = uiState.copy(submissionStep = SubmissionStep.FORM)
-    }
-
-    fun onReturnToCategorySelection() {
-        if (uiState.busy) {
-            return
-        }
-        uiState = uiState.copy(
-            submissionStep = SubmissionStep.CATEGORY_SELECTION,
-            showSubmissionAttentionWarning = false,
-            showBriefFeedbackConfirmation = false
-        )
-    }
-
-    fun onContinueAfterFormFilled(host: Activity) {
-        if (uiState.busy) {
-            return
-        }
-        val validationError = validateDraft(host)
-        if (validationError != null) {
-            LauncherTransientNoticeBus.show(host, validationError, Toast.LENGTH_LONG)
-            return
-        }
-        if (!uiState.endpointConfigured) {
-            LauncherTransientNoticeBus.show(
-                host,
-                host.getString(R.string.feedback_endpoint_missing_submit),
-                Toast.LENGTH_LONG
+        if (uiState.hasSubmissionInterceptionAcknowledgementChecked) {
+            uiState = uiState.copy(
+                showSubmissionAttentionWarning = true,
+                showBriefFeedbackConfirmation = false
             )
-            return
-        }
-        uiState = uiState.copy(
-            submissionStep = SubmissionStep.SUBMISSION_CONFIRMATION,
-            showSubmissionAttentionWarning = false,
-            showBriefFeedbackConfirmation = false
-        )
-    }
-
-    fun onReturnToForm() {
-        if (uiState.busy) {
             return
         }
         uiState = uiState.copy(
             submissionStep = SubmissionStep.FORM,
             showSubmissionAttentionWarning = false,
-            showBriefFeedbackConfirmation = false
+            showBriefFeedbackConfirmation = false,
+            showMissingEmailConfirmation = false
+        )
+    }
+
+    fun onReturnToAcknowledgements() {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(
+            submissionStep = SubmissionStep.ACKNOWLEDGEMENT,
+            showSubmissionAttentionWarning = false,
+            showBriefFeedbackConfirmation = false,
+            showMissingEmailConfirmation = false
         )
     }
 
@@ -253,7 +234,14 @@ class FeedbackScreenViewModel : ViewModel() {
         } else {
             next.remove(acknowledgement)
         }
-        uiState = uiState.copy(checkedSubmissionAcknowledgements = next)
+        uiState = uiState.copy(
+            checkedSubmissionAcknowledgements = next,
+            submissionStatus = if (next.any { it.interceptsSubmission }) {
+                FEEDBACK_SUBMISSION_WARNING_STATUS
+            } else {
+                null
+            }
+        )
     }
 
     fun onGameIssueTypeSelected(issueType: GameIssueType) {
@@ -303,7 +291,11 @@ class FeedbackScreenViewModel : ViewModel() {
     }
 
     fun onEmailChanged(value: String) {
-        uiState = uiState.copy(email = value)
+        uiState = uiState.copy(
+            email = value,
+            showMissingEmailConfirmation = false,
+            missingEmailWarningConfirmed = false
+        )
     }
 
     fun onEmailNotificationsEnabledChanged(enabled: Boolean) {
@@ -393,6 +385,13 @@ class FeedbackScreenViewModel : ViewModel() {
         uiState = uiState.copy(showBriefFeedbackConfirmation = false)
     }
 
+    fun onDismissMissingEmailConfirmation() {
+        if (!uiState.showMissingEmailConfirmation) {
+            return
+        }
+        uiState = uiState.copy(showMissingEmailConfirmation = false)
+    }
+
     fun onDismissSubmissionAttentionWarning() {
         if (!uiState.showSubmissionAttentionWarning) {
             return
@@ -402,6 +401,17 @@ class FeedbackScreenViewModel : ViewModel() {
 
     fun onSubmitDespiteBriefFeedback(host: Activity) {
         submitInternal(host, ignoreBriefFeedbackWarning = true)
+    }
+
+    fun onSubmitWithoutEmail(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(
+            showMissingEmailConfirmation = false,
+            missingEmailWarningConfirmed = true
+        )
+        submitInternal(host, ignoreBriefFeedbackWarning = false)
     }
 
     private fun submitInternal(host: Activity, ignoreBriefFeedbackWarning: Boolean) {
@@ -423,7 +433,6 @@ class FeedbackScreenViewModel : ViewModel() {
         }
         if (uiState.hasSubmissionInterceptionAcknowledgementChecked) {
             uiState = uiState.copy(
-                submissionStatus = FEEDBACK_SUBMISSION_WARNING_STATUS,
                 showSubmissionAttentionWarning = true,
                 showBriefFeedbackConfirmation = false
             )
@@ -437,12 +446,22 @@ class FeedbackScreenViewModel : ViewModel() {
             )
             return
         }
+        if (uiState.shouldWarnAboutMissingEmail) {
+            uiState = uiState.copy(
+                showMissingEmailConfirmation = true,
+                showBriefFeedbackConfirmation = false
+            )
+            return
+        }
         if (!ignoreBriefFeedbackWarning && uiState.shouldWarnAboutBriefFeedback) {
             uiState = uiState.copy(showBriefFeedbackConfirmation = true)
             return
         }
 
-        uiState = uiState.copy(showBriefFeedbackConfirmation = false)
+        uiState = uiState.copy(
+            showBriefFeedbackConfirmation = false,
+            showMissingEmailConfirmation = false
+        )
         val draft = buildDraft()
         setBusy(true, host.getString(R.string.feedback_busy_submitting))
         executor.execute {
@@ -580,13 +599,10 @@ class FeedbackScreenViewModel : ViewModel() {
         if (uiState.summary.trim().isEmpty()) {
             return host.getString(R.string.feedback_validation_summary_required)
         }
-        if (uiState.emailNotificationsEnabled) {
-            if (uiState.email.trim().isEmpty()) {
-                return host.getString(R.string.feedback_validation_email_required)
-            }
-            if (!Patterns.EMAIL_ADDRESS.matcher(uiState.email.trim()).matches()) {
-                return host.getString(R.string.feedback_validation_email_invalid)
-            }
+        if (uiState.email.trim().isNotEmpty() &&
+            !Patterns.EMAIL_ADDRESS.matcher(uiState.email.trim()).matches()
+        ) {
+            return host.getString(R.string.feedback_validation_email_invalid)
         }
         return when (category) {
             FeedbackCategory.FEATURE_REQUEST -> {
@@ -661,7 +677,7 @@ class FeedbackScreenViewModel : ViewModel() {
         clearWorkingDir()
         screenshotAttachments.clear()
         uiState = UiState(
-            submissionStep = SubmissionStep.CATEGORY_SELECTION,
+            submissionStep = SubmissionStep.ACKNOWLEDGEMENT,
             endpointConfigured = uiState.endpointConfigured,
             availableMods = currentMods
         )
