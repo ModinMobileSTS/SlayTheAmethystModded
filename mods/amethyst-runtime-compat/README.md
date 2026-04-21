@@ -31,6 +31,9 @@ Downsizes Blue Archive Hina's offscreen 3D character render target from its desk
 9. `UiScaleCompatPatches`
 Uses the launcher's UI-size setting to dynamically rewrite base-game and mod reads of `Settings.isMobile`, so enlarged mobile-style layout branches are reused without turning on the real mobile HUD mode. Main-menu classes and speech-bubble VFX classes are intentionally excluded so the title screen and dialogue bubbles keep their desktop behavior instead of picking up mobile-only spacing and text placement. This addresses the symptom where the only built-in way to enlarge the interface was the native mobile HUD toggle, which also changes global runtime state and can break modded screens. Type: compatibility workaround implemented by `UiScaleCompatPatches` together with `MobileUiLayoutClassPatcher`.
 
+10. `BurningEliteFlameCompatPatches`
+Enlarges the burning-elite emerald flame marker when the launcher's Larger UI mode reuses mobile map-node scaling. This addresses the symptom where the elite node grows with the larger mobile-style layout but its flame VFX stays at desktop size and becomes hard to notice. Type: compatibility workaround implemented by `BurningEliteFlameCompatPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:
