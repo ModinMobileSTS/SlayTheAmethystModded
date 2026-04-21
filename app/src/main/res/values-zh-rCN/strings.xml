@@ -23,7 +23,7 @@
     <string name="sts_crash_page_capture_title">已捕获崩溃</string>
     <string name="sts_crash_page_guidance_default">建议先自行排查问题，可以将日志交给 AI 分析，确认是启动器本身的问题还是模组的问题。如果能够确定是启动器的问题，可以在反馈页面向开发者提供反馈。</string>
     <string name="sts_crash_page_guidance_oom">这次运行很可能已经耗尽了 JVM 堆内存。重试前建议先打开恢复设置，提高 JVM 堆上限；如果内存压力还是很高，再考虑减少最近启用的 MOD。</string>
-    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">这次启动是启动器在准备进程失联后主动中止的，目的是避免修补步骤看起来一直卡死。\n\n如果当时正在修补 desktop-1.0.jar，请勿在 patch 过程中退出到后台、切换到其他应用，或让系统清理本应用。请保持启动器停留在前台，等修补完成后再离开，然后重新尝试启动。</string>
+    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">请勿在 patch 过程中退出到后台、切换到其他应用，或让系统清理本应用。请保持启动器停留在前台。</string>
     <string name="sts_crash_page_actions_title">快速操作</string>
     <string name="sts_crash_page_actions_desc">你可以立即重试，也可以先进入恢复设置再重新启动。下方崩溃文本支持选择和复制，也更方便做长截图。</string>
     <string name="sts_crash_page_action_recovery">打开设置</string>

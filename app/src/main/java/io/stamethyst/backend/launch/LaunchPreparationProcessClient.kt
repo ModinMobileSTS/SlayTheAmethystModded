@@ -21,6 +21,8 @@ internal object LaunchPreparationProcessClient {
     private const val PREP_PROCESS_START_GRACE_MS = 2_000L
     private const val PREP_PROCESS_MISSING_TIMEOUT_MS = 1_500L
     private const val PREP_PROCESS_STALL_TIMEOUT_MS = 45_000L
+    private const val PREP_PROCESS_MAX_MISSING_RECOVERY_ATTEMPTS = 2
+    private const val PREP_PROCESS_RECOVERY_COOLDOWN_MS = 300L
     private const val PREP_PROCESS_FAILURE_MARKER = "STS_PREP_PROCESS_FAILURE"
 
     internal const val PREP_PROCESS_FAILURE_REASON_MISSING = "missing"
@@ -38,8 +40,56 @@ internal object LaunchPreparationProcessClient {
         progressCallback: StartupProgressCallback?,
         throwIfCancelled: () -> Unit
     ) {
-        throwIfCancelled()
+        var recoveryAttempt = 0
+        while (true) {
+            throwIfCancelled()
+            try {
+                if (recoveryAttempt == 0) {
+                    prepareOnce(
+                        context = context,
+                        launchMode = launchMode,
+                        progressCallback = progressCallback,
+                        throwIfCancelled = throwIfCancelled
+                    )
+                } else {
+                    recoverAfterPrepMissing(
+                        context = context,
+                        launchMode = launchMode,
+                        progressCallback = progressCallback,
+                        throwIfCancelled = throwIfCancelled
+                    )
+                }
+                return
+            } catch (error: IOException) {
+                val shouldRecover = recoveryAttempt < PREP_PROCESS_MAX_MISSING_RECOVERY_ATTEMPTS &&
+                    containsPrepProcessFailureReason(error, PREP_PROCESS_FAILURE_REASON_MISSING)
+                if (!shouldRecover) {
+                    throw error
+                }
+                recoveryAttempt += 1
+                MemoryDiagnosticsLogger.logEvent(
+                    context = context.applicationContext,
+                    event = "launch_preparation_process_restart_requested",
+                    extras = linkedMapOf<String, Any?>(
+                        "launchMode" to launchMode,
+                        "attempt" to recoveryAttempt,
+                        "reason" to PREP_PROCESS_FAILURE_REASON_MISSING,
+                        "message" to error.message
+                    ),
+                    includeMemorySnapshot = false
+                )
+                SystemClock.sleep(PREP_PROCESS_RECOVERY_COOLDOWN_MS)
+            }
+        }
+    }
 
+    private fun prepareOnce(
+        context: Context,
+        launchMode: String,
+        progressCallback: StartupProgressCallback?,
+        throwIfCancelled: () -> Unit
+    ) {
+        throwIfCancelled()
         val appContext = context.applicationContext
         val startedAtMs = SystemClock.uptimeMillis()
         val lastSignalAtMs = AtomicLong(startedAtMs)
@@ -84,7 +134,11 @@ internal object LaunchPreparationProcessClient {
             putExtra(LaunchPreparationProcessService.EXTRA_LAUNCH_MODE, launchMode)
             putExtra(LaunchPreparationProcessService.EXTRA_RESULT_RECEIVER, receiver)
         }
-        val component = appContext.startService(startIntent)
+        val component = try {
+            appContext.startService(startIntent)
+        } catch (error: Throwable) {
+            throw IOException("Failed to start launch preparation service", error)
+        }
         if (component == null) {
             throw IOException("Failed to start launch preparation service")
         }
@@ -170,13 +224,45 @@ internal object LaunchPreparationProcessClient {
     }
 
     internal fun isPrepProcessFailureMessage(message: String?): Boolean {
-        val text = message?.trim().orEmpty()
-        return text.startsWith("$PREP_PROCESS_FAILURE_MARKER:")
+        return prepProcessFailureReason(message) != null
     }
 
-    private fun buildPrepProcessFailure(reason: String): IOException {
+    internal fun prepProcessFailureReason(message: String?): String? {
+        val text = message?.trim().orEmpty()
+        val markerIndex = text.indexOf("$PREP_PROCESS_FAILURE_MARKER:")
+        if (markerIndex < 0) {
+            return null
+        }
+        return text
+            .substring(markerIndex + PREP_PROCESS_FAILURE_MARKER.length + 1)
+            .substringBefore('\n')
+            .trim()
+            .removePrefix(":")
+            .ifEmpty { null }
+    }
+
+    internal fun buildPrepProcessFailure(reason: String): IOException {
         val normalizedReason = reason.trim().ifEmpty { "unknown" }
         return IOException("$PREP_PROCESS_FAILURE_MARKER:$normalizedReason")
+    }
+
+    internal fun isPrepProcessStartFailure(throwable: Throwable): Boolean {
+        return generateSequence(throwable) { it.cause }
+            .mapNotNull { error -> error.message?.trim() }
+            .any { message -> message == "Failed to start launch preparation service" }
+    }
+
+    internal fun buildPrepRecoveryFailure(
+        restartFailure: Throwable,
+        originalPrepFailure: IOException
+    ): IOException {
+        val message = restartFailure.message?.trim().orEmpty()
+            .ifEmpty { "Failed to recover launch preparation service" }
+        return IOException(message, originalPrepFailure).also { wrapped ->
+            if (restartFailure !== originalPrepFailure) {
+                wrapped.addSuppressed(restartFailure)
+            }
+        }
     }
 
     fun cancel(context: Context) {
@@ -230,5 +316,102 @@ internal object LaunchPreparationProcessClient {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun containsPrepProcessFailureReason(
+        throwable: Throwable,
+        reason: String
+    ): Boolean {
+        return generateSequence(throwable) { it.cause }
+            .mapNotNull { error -> prepProcessFailureReason(error.message) }
+            .any { failureReason -> failureReason == reason }
+    }
+
+    private fun recoverAfterPrepMissing(
+        context: Context,
+        launchMode: String,
+        progressCallback: StartupProgressCallback?,
+        throwIfCancelled: () -> Unit
+    ) {
+        val originalMissingFailure = buildPrepProcessFailure(PREP_PROCESS_FAILURE_REASON_MISSING)
+        try {
+            prepareOnce(
+                context = context,
+                launchMode = launchMode,
+                progressCallback = progressCallback,
+                throwIfCancelled = throwIfCancelled
+            )
+            return
+        } catch (restartFailure: IOException) {
+            if (!isPrepProcessStartFailure(restartFailure)) {
+                throw restartFailure
+            }
+            MemoryDiagnosticsLogger.logEvent(
+                context = context.applicationContext,
+                event = "launch_preparation_process_inline_recovery_requested",
+                extras = linkedMapOf<String, Any?>(
+                    "launchMode" to launchMode,
+                    "message" to restartFailure.message
+                ),
+                includeMemorySnapshot = false
+            )
+            try {
+                prepareInProcess(
+                    context = context,
+                    launchMode = launchMode,
+                    progressCallback = progressCallback,
+                    throwIfCancelled = throwIfCancelled
+                )
+            } catch (inlineFailure: IOException) {
+                throw buildPrepRecoveryFailure(inlineFailure, originalMissingFailure)
+            } catch (inlineFailure: Throwable) {
+                throw buildPrepRecoveryFailure(inlineFailure, originalMissingFailure)
+            }
+        }
+    }
+
+    private fun prepareInProcess(
+        context: Context,
+        launchMode: String,
+        progressCallback: StartupProgressCallback?,
+        throwIfCancelled: () -> Unit
+    ) {
+        throwIfCancelled()
+        val guardedProgressCallback = if (progressCallback == null) {
+            null
+        } else {
+            StartupProgressCallback { percent, message ->
+                throwIfCancelled()
+                progressCallback.onProgress(percent, message)
+            }
+        }
+        val appContext = context.applicationContext
+        MemoryDiagnosticsLogger.logEvent(
+            context = appContext,
+            event = "launch_preparation_process_inline_recovery_started",
+            extras = linkedMapOf<String, Any?>("launchMode" to launchMode),
+            includeMemorySnapshot = false
+        )
+        try {
+            LaunchPreparationService.prepare(appContext, launchMode, guardedProgressCallback)
+        } catch (error: IOException) {
+            MemoryDiagnosticsLogger.logEvent(
+                context = appContext,
+                event = "launch_preparation_process_inline_recovery_failed",
+                extras = linkedMapOf<String, Any?>(
+                    "launchMode" to launchMode,
+                    "errorClass" to error.javaClass.name,
+                    "message" to error.message
+                ),
+                includeMemorySnapshot = false
+            )
+            throw error
+        }
+        MemoryDiagnosticsLogger.logEvent(
+            context = appContext,
+            event = "launch_preparation_process_inline_recovery_completed",
+            extras = linkedMapOf<String, Any?>("launchMode" to launchMode),
+            includeMemorySnapshot = false
+        )
     }
 }

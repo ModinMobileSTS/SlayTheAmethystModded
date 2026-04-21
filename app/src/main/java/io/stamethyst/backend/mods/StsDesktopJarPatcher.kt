@@ -49,7 +49,7 @@ internal object StsDesktopJarPatcher {
             0,
             context.progressText(R.string.startup_progress_patching_desktop_jar_for_mts)
         )
-        if (stsJar == null || !stsJar.isFile) {
+        if (stsJar == null) {
             throw IOException("desktop-1.0.jar not found")
         }
         if (patchJar == null || !patchJar.isFile) {
@@ -64,6 +64,18 @@ internal object StsDesktopJarPatcher {
         val patchEntries = loadPatchClassEntries(patchJar)
         if (!patchEntries.keys.containsAll(REQUIRED_STS_PATCH_CLASSES)) {
             throw IOException("gdx-patch.jar is missing required patched classes")
+        }
+        val tempJar = File(stsJar.absolutePath + ".patching.tmp")
+        val backupJar = File(stsJar.absolutePath + ".patching.backup")
+        recoverInterruptedPatchArtifacts(
+            targetJar = stsJar,
+            tempJar = tempJar,
+            backupJar = backupJar
+        ) { candidate ->
+            isStsPatched(candidate, patchEntries)
+        }
+        if (!stsJar.isFile) {
+            throw IOException("desktop-1.0.jar not found")
         }
         reportProgress(
             progressCallback,
@@ -84,8 +96,6 @@ internal object StsDesktopJarPatcher {
             )
             return
         }
-
-        val tempJar = File(stsJar.absolutePath + ".patching.tmp")
         val seenNames: MutableSet<String> = HashSet()
         val sourceJarLength = stsJar.length().coerceAtLeast(1L)
         var lastReportedPercent = -1
@@ -201,12 +211,11 @@ internal object StsDesktopJarPatcher {
             97,
             context.progressText(R.string.startup_progress_finishing_desktop_jar_patch)
         )
-        if (stsJar.exists() && !stsJar.delete()) {
-            throw IOException("Failed to replace ${stsJar.absolutePath}")
-        }
-        if (!tempJar.renameTo(stsJar)) {
-            throw IOException("Failed to move ${tempJar.absolutePath} -> ${stsJar.absolutePath}")
-        }
+        replaceTargetJarWithBackup(
+            targetJar = stsJar,
+            tempJar = tempJar,
+            backupJar = backupJar
+        )
         stsJar.setLastModified(System.currentTimeMillis())
         reportProgress(
             progressCallback,
@@ -354,5 +363,76 @@ internal object StsDesktopJarPatcher {
         message: String
     ) {
         progressCallback?.onProgress(percent.coerceIn(0, 100), message)
+    }
+
+    internal fun recoverInterruptedPatchArtifacts(
+        targetJar: File,
+        tempJar: File,
+        backupJar: File,
+        isValidPatchedJar: (File) -> Boolean
+    ) {
+        if (targetJar.isFile && isValidPatchedJar(targetJar)) {
+            deleteIfExists(tempJar)
+            deleteIfExists(backupJar)
+            return
+        }
+
+        if (tempJar.isFile && isValidPatchedJar(tempJar)) {
+            if (targetJar.exists()) {
+                replaceTargetJarWithBackup(targetJar, tempJar, backupJar)
+            } else {
+                moveFile(tempJar, targetJar)
+                deleteIfExists(backupJar)
+            }
+            return
+        }
+
+        if (!targetJar.exists() && backupJar.isFile) {
+            moveFile(backupJar, targetJar)
+        }
+
+        if (targetJar.isFile && backupJar.exists()) {
+            deleteIfExists(backupJar)
+        }
+        if (tempJar.exists()) {
+            deleteIfExists(tempJar)
+        }
+    }
+
+    internal fun replaceTargetJarWithBackup(
+        targetJar: File,
+        tempJar: File,
+        backupJar: File
+    ) {
+        if (!tempJar.isFile) {
+            throw IOException("Patched temp jar missing: ${tempJar.absolutePath}")
+        }
+        if (backupJar.exists()) {
+            deleteIfExists(backupJar)
+        }
+        if (targetJar.exists()) {
+            moveFile(targetJar, backupJar)
+        }
+        try {
+            moveFile(tempJar, targetJar)
+        } catch (error: IOException) {
+            if (!targetJar.exists() && backupJar.isFile) {
+                runCatching { moveFile(backupJar, targetJar) }
+            }
+            throw error
+        }
+        deleteIfExists(backupJar)
+    }
+
+    private fun moveFile(source: File, target: File) {
+        if (!source.renameTo(target)) {
+            throw IOException("Failed to move ${source.absolutePath} -> ${target.absolutePath}")
+        }
+    }
+
+    private fun deleteIfExists(file: File) {
+        if (file.exists() && !file.delete()) {
+            throw IOException("Failed to delete ${file.absolutePath}")
+        }
     }
 }
