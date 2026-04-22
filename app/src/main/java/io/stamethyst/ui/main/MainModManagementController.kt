@@ -63,6 +63,7 @@ internal class MainModManagementController(
         val folderCollapsed: Map<String, Boolean>,
         val unassignedCollapsed: Boolean,
         val dependencyFolderCollapsed: Boolean,
+        val dragLocked: Boolean,
         val unassignedFolderName: String,
         val unassignedFolderOrder: Int
     )
@@ -95,6 +96,11 @@ internal class MainModManagementController(
         get() = folderStateStore.dependencyFolderIsCollapsed
         set(value) {
             folderStateStore.dependencyFolderIsCollapsed = value
+        }
+    private var dragLocked: Boolean
+        get() = folderStateStore.isDragLocked
+        set(value) {
+            folderStateStore.isDragLocked = value
         }
     private var unassignedFolderName: String
         get() = folderStateStore.unassignedName
@@ -141,6 +147,7 @@ internal class MainModManagementController(
             folderCollapsed = LinkedHashMap(folderCollapsed),
             unassignedCollapsed = unassignedCollapsed,
             dependencyFolderCollapsed = dependencyFolderCollapsed,
+            dragLocked = dragLocked,
             unassignedFolderName = unassignedFolderName,
             unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
         )
@@ -228,25 +235,7 @@ internal class MainModManagementController(
     }
 
     fun assignModToFolder(host: Activity, mod: ModItemUi, folderId: String) {
-        if (!hostCallbacks.canEditMainScreenState()) {
-            return
-        }
-        ensureFolderStateLoaded(host)
-        val targetFolder = modFolders.firstOrNull { it.id == folderId } ?: run {
-            return
-        }
-        val key = resolveModAssignmentKey(mod) ?: return
-        val currentFolderId = resolveAssignedFolderId(mod)
-        if (currentFolderId == folderId) {
-            revealFolderToken(host, folderId)
-            return
-        }
-        clearAssignmentForMod(mod)
-        folderAssignments[key] = folderId
-        folderCollapsed[folderId] = false
-        persistFolderState(host)
-        hostCallbacks.republish(host)
-        emitModMovedSnackbar(host, mod, targetFolder.name)
+        moveModToFolderToken(host, mod, folderId, emitUndoSnackbar = true)
     }
 
     fun moveModToUnassigned(host: Activity, modId: String) {
@@ -255,19 +244,7 @@ internal class MainModManagementController(
     }
 
     fun moveModToUnassigned(host: Activity, mod: ModItemUi) {
-        if (!hostCallbacks.canEditMainScreenState()) {
-            return
-        }
-        ensureFolderStateLoaded(host)
-        if (resolveAssignedFolderId(mod) == null) {
-            setUnassignedCollapsed(host, false)
-            return
-        }
-        clearAssignmentForMod(mod)
-        unassignedCollapsed = false
-        persistFolderState(host)
-        hostCallbacks.republish(host)
-        emitModMovedSnackbar(host, mod, unassignedFolderName)
+        moveModToFolderToken(host, mod, targetFolderId = null, emitUndoSnackbar = true)
     }
 
     fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {
@@ -368,6 +345,23 @@ internal class MainModManagementController(
         dependencyFolderCollapsed = collapsed
         persistFolderState(host)
         hostCallbacks.republish(host)
+    }
+
+    fun setDragLocked(host: Activity, locked: Boolean) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        if (dragLocked == locked) {
+            return
+        }
+        dragLocked = locked
+        persistFolderState(host)
+        hostCallbacks.republish(host)
+    }
+
+    fun toggleDragLocked(host: Activity) {
+        setDragLocked(host, !dragLocked)
     }
 
     fun moveFolderUp(host: Activity, folderId: String) {
@@ -1385,12 +1379,76 @@ internal class MainModManagementController(
         return defaultFolderName(index)
     }
 
-    private fun emitModMovedSnackbar(host: Activity, mod: ModItemUi, folderName: String) {
+    private fun moveModToFolderToken(
+        host: Activity,
+        mod: ModItemUi,
+        targetFolderId: String?,
+        emitUndoSnackbar: Boolean
+    ) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val previousFolderId = resolveAssignedFolderId(mod)
+        if (previousFolderId == targetFolderId) {
+            if (targetFolderId == null) {
+                setUnassignedCollapsed(host, false)
+            } else {
+                revealFolderToken(host, targetFolderId)
+            }
+            return
+        }
+
+        val targetFolderName = if (targetFolderId == null) {
+            clearAssignmentForMod(mod)
+            unassignedCollapsed = false
+            unassignedFolderName
+        } else {
+            val targetFolder = modFolders.firstOrNull { it.id == targetFolderId } ?: return
+            val key = resolveModAssignmentKey(mod) ?: return
+            clearAssignmentForMod(mod)
+            folderAssignments[key] = targetFolderId
+            folderCollapsed[targetFolderId] = false
+            targetFolder.name
+        }
+
+        persistFolderState(host)
+        hostCallbacks.republish(host)
+        if (emitUndoSnackbar) {
+            emitModMovedSnackbar(
+                host = host,
+                mod = mod,
+                folderName = targetFolderName,
+                previousFolderId = previousFolderId
+            )
+        }
+    }
+
+    private fun emitModMovedSnackbar(
+        host: Activity,
+        mod: ModItemUi,
+        folderName: String,
+        previousFolderId: String?
+    ) {
         val displayName = resolveModDisplayName(
             mod = mod,
             showModFileName = LauncherPreferences.readShowModFileName(host)
         )
-        emitSnackbar(host.getString(R.string.main_mod_moved_to_folder, displayName, folderName))
+        emitSnackbar(
+            message = UiText.DynamicString(
+                host.getString(R.string.main_mod_moved_to_folder, displayName, folderName)
+            ),
+            duration = LauncherTransientNoticeDuration.SHORT,
+            actionLabel = UiText.StringResource(R.string.common_action_undo),
+            onAction = {
+                moveModToFolderToken(
+                    host = host,
+                    mod = mod,
+                    targetFolderId = previousFolderId,
+                    emitUndoSnackbar = false
+                )
+            }
+        )
     }
 
     private fun ensureUniqueFolderName(baseName: String, excludeFolderId: String? = null): String {
@@ -1453,7 +1511,23 @@ internal class MainModManagementController(
         message: UiText,
         duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
     ) {
-        hostCallbacks.emitEffect(MainScreenViewModel.Effect.ShowSnackbar(message, duration))
+        emitSnackbar(message, duration, actionLabel = null, onAction = null)
+    }
+
+    private fun emitSnackbar(
+        message: UiText,
+        duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT,
+        actionLabel: UiText? = null,
+        onAction: (() -> Unit)? = null
+    ) {
+        hostCallbacks.emitEffect(
+            MainScreenViewModel.Effect.ShowSnackbar(
+                message = message,
+                duration = duration,
+                actionLabel = actionLabel,
+                onAction = onAction
+            )
+        )
     }
 
     private fun emitDialog(title: String, message: String) {

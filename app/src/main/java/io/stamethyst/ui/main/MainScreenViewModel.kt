@@ -112,6 +112,7 @@ class MainScreenViewModel : ViewModel() {
         val folderCollapsed: Map<String, Boolean> = emptyMap(),
         val unassignedCollapsed: Boolean = false,
         val dependencyFolderCollapsed: Boolean = true,
+        val dragLocked: Boolean = false,
         val unassignedFolderName: String = DEFAULT_UNASSIGNED_FOLDER_NAME,
         val unassignedFolderOrder: Int = 0
     )
@@ -119,7 +120,9 @@ class MainScreenViewModel : ViewModel() {
     sealed interface Effect {
         data class ShowSnackbar(
             val message: UiText,
-            val duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
+            val duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT,
+            val actionLabel: UiText? = null,
+            val onAction: (() -> Unit)? = null
         ) : Effect
         data class ShowDialog(val title: UiText, val message: UiText) : Effect
         data class OpenExportModPicker(
@@ -397,6 +400,10 @@ class MainScreenViewModel : ViewModel() {
 
     fun setDependencyFolderCollapsed(host: Activity, collapsed: Boolean) {
         modManagementController.setDependencyFolderCollapsed(host, collapsed)
+    }
+
+    fun toggleDragLocked(host: Activity) {
+        modManagementController.toggleDragLocked(host)
     }
 
     fun moveFolderUp(host: Activity, folderId: String) {
@@ -1480,6 +1487,7 @@ class MainScreenViewModel : ViewModel() {
             folderCollapsed = snapshot.folderCollapsed,
             unassignedCollapsed = snapshot.unassignedCollapsed,
             dependencyFolderCollapsed = snapshot.dependencyFolderCollapsed,
+            dragLocked = snapshot.dragLocked,
             unassignedFolderName = snapshot.unassignedFolderName,
             unassignedFolderOrder = snapshot.unassignedFolderOrder
         )

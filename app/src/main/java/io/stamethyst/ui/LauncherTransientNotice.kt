@@ -14,7 +14,9 @@ enum class LauncherTransientNoticeDuration {
 
 data class LauncherTransientNoticeRequest(
     val message: UiText,
-    val duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
+    val duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT,
+    val actionLabel: UiText? = null,
+    val onAction: (() -> Unit)? = null
 )
 
 object LauncherTransientNoticeBus {
@@ -72,10 +74,26 @@ object LauncherTransientNoticeBus {
         message: UiText,
         duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT
     ) {
+        show(
+            message = message,
+            duration = duration,
+            actionLabel = null,
+            onAction = null
+        )
+    }
+
+    fun show(
+        message: UiText,
+        duration: LauncherTransientNoticeDuration = LauncherTransientNoticeDuration.SHORT,
+        actionLabel: UiText? = null,
+        onAction: (() -> Unit)? = null
+    ) {
         _requests.tryEmit(
             LauncherTransientNoticeRequest(
                 message = message,
-                duration = duration
+                duration = duration,
+                actionLabel = actionLabel,
+                onAction = onAction
             )
         )
     }

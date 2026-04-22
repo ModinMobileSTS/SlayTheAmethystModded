@@ -90,6 +90,7 @@ internal fun ModFolderSection(
         buildFolderTargetIds(folders = folders, unassignedFolderOrder = unassignedFolderOrder)
     }
     val organizationControlsEnabled = uiState.controlsEnabled && hostAvailable
+    val organizationDragEnabled = organizationControlsEnabled && !uiState.dragLocked
     val modFileActionsEnabled = !uiState.busy && hostAvailable
     val interactionState = rememberModFolderSectionInteractionState(folderTargetIds = folderTargetIds)
     var pendingDeleteMod by remember { mutableStateOf<ModItemUi?>(null) }
@@ -127,7 +128,8 @@ internal fun ModFolderSection(
         modsByFolderId,
         folderCollapsed,
         unassignedCollapsed,
-        unassignedFolderName
+        unassignedFolderName,
+        uiState.dragLocked
     ) {
         buildFolderUiModels(
             displayFolderTargetIds = displayFolderTargetIds,
@@ -135,7 +137,8 @@ internal fun ModFolderSection(
             modsByFolderId = modsByFolderId,
             folderCollapsed = folderCollapsed,
             unassignedCollapsed = unassignedCollapsed,
-            unassignedFolderName = unassignedFolderName
+            unassignedFolderName = unassignedFolderName,
+            dragLocked = uiState.dragLocked
         )
     }
     val topLevelItemKeys = remember(dependencyMods.isNotEmpty(), folderUiModels) {
@@ -256,6 +259,14 @@ internal fun ModFolderSection(
         }
     }
 
+    LaunchedEffect(uiState.dragLocked, folderTargetIds) {
+        if (!uiState.dragLocked) {
+            return@LaunchedEffect
+        }
+        dragCoordinator.cancelActiveDrags()
+        interactionState.folderPreviewOrder = folderTargetIds
+    }
+
     val folderBackgroundColor = MaterialTheme.colorScheme.surfaceContainer
     val hoveredFolderBackgroundColor = MaterialTheme.colorScheme.secondaryContainer
 
@@ -359,6 +370,7 @@ internal fun ModFolderSection(
                         collapsed = dependencyFolderCollapsed,
                         forceCollapsed = dragCoordinator.shouldCollapseFolders,
                         showModFileName = showModFileName,
+                        dragLocked = uiState.dragLocked,
                         interactionState = interactionState,
                         collapseEnabled = uiState.controlsEnabled,
                         onToggleCollapsed = callbacks.onToggleDependencyFolderCollapsed,
@@ -476,41 +488,43 @@ internal fun ModFolderSection(
                                     .padding(horizontal = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                FolderOrderHandle(
-                                    reorderScope = reorderableItemScope,
-                                    enabled = organizationControlsEnabled,
-                                    folderId = folderTokenId,
-                                    canMoveUp = (folderDisplayIndexMap[folderTokenId] ?: 0) > 0,
-                                    canMoveDown = (folderDisplayIndexMap[folderTokenId] ?: 0) < displayFolderTargetIds.lastIndex,
-                                    onMoveUp = {
-                                        if (folderUiModel.isUnassigned) {
-                                            callbacks.onMoveUnassignedUp()
-                                        } else {
-                                            callbacks.onMoveFolderUp(folderTokenId)
-                                        }
-                                    },
-                                    onMoveDown = {
-                                        if (folderUiModel.isUnassigned) {
-                                            callbacks.onMoveUnassignedDown()
-                                        } else {
-                                            callbacks.onMoveFolderDown(folderTokenId)
-                                        }
-                                    },
-                                    onDragStarted = {
-                                        dragCoordinator.beginFolderReorder(folderTokenId, folderTargetIds)
-                                    },
-                                    onDragStopped = {
-                                        val draggedId = interactionState.activeDragFolderId
-                                        if (draggedId != null) {
-                                            val targetIndex = interactionState.folderPreviewOrder.indexOf(draggedId)
-                                            val currentIndex = folderTargetIds.indexOf(draggedId)
-                                            if (targetIndex >= 0 && currentIndex >= 0 && targetIndex != currentIndex) {
-                                                callbacks.onMoveFolderTokenToIndex(draggedId, targetIndex)
+                                if (organizationDragEnabled) {
+                                    FolderOrderHandle(
+                                        reorderScope = reorderableItemScope,
+                                        enabled = true,
+                                        folderId = folderTokenId,
+                                        canMoveUp = (folderDisplayIndexMap[folderTokenId] ?: 0) > 0,
+                                        canMoveDown = (folderDisplayIndexMap[folderTokenId] ?: 0) < displayFolderTargetIds.lastIndex,
+                                        onMoveUp = {
+                                            if (folderUiModel.isUnassigned) {
+                                                callbacks.onMoveUnassignedUp()
+                                            } else {
+                                                callbacks.onMoveFolderUp(folderTokenId)
                                             }
+                                        },
+                                        onMoveDown = {
+                                            if (folderUiModel.isUnassigned) {
+                                                callbacks.onMoveUnassignedDown()
+                                            } else {
+                                                callbacks.onMoveFolderDown(folderTokenId)
+                                            }
+                                        },
+                                        onDragStarted = {
+                                            dragCoordinator.beginFolderReorder(folderTokenId, folderTargetIds)
+                                        },
+                                        onDragStopped = {
+                                            val draggedId = interactionState.activeDragFolderId
+                                            if (draggedId != null) {
+                                                val targetIndex = interactionState.folderPreviewOrder.indexOf(draggedId)
+                                                val currentIndex = folderTargetIds.indexOf(draggedId)
+                                                if (targetIndex >= 0 && currentIndex >= 0 && targetIndex != currentIndex) {
+                                                    callbacks.onMoveFolderTokenToIndex(draggedId, targetIndex)
+                                                }
+                                            }
+                                            dragCoordinator.finishFolderReorder()
                                         }
-                                        dragCoordinator.finishFolderReorder()
-                                    }
-                                )
+                                    )
+                                }
                                 TriStateCheckbox(
                                     state = folderUiModel.toggleState,
                                     enabled = folderUiModel.mods.isNotEmpty() && organizationControlsEnabled,
@@ -639,7 +653,8 @@ internal fun ModFolderSection(
                                                     setExpanded = { interactionState.expandedCards[mod.storagePath] = it },
                                                     selectionEnabled = organizationControlsEnabled && mod.installed,
                                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
-                                                    dragEnabled = organizationControlsEnabled && mod.installed,
+                                                    dragEnabled = organizationDragEnabled && mod.installed,
+                                                    showDragHandle = !uiState.dragLocked,
                                                     onSuggestionRead = {
                                                         if (!suggestionText.isNullOrBlank()) {
                                                             callbacks.onMarkModSuggestionRead(mod, suggestionText)
@@ -691,6 +706,7 @@ private fun DependencyFolderListItem(
     collapsed: Boolean,
     forceCollapsed: Boolean,
     showModFileName: Boolean,
+    dragLocked: Boolean,
     interactionState: ModFolderSectionInteractionState,
     collapseEnabled: Boolean,
     onToggleCollapsed: () -> Unit,
@@ -783,6 +799,7 @@ private fun DependencyFolderListItem(
                             selectionEnabled = false,
                             fileActionsEnabled = false,
                             dragEnabled = false,
+                            showDragHandle = !dragLocked,
                             onSuggestionRead = {
                                 if (!suggestionText.isNullOrBlank()) {
                                     onMarkModSuggestionRead(mod, suggestionText)

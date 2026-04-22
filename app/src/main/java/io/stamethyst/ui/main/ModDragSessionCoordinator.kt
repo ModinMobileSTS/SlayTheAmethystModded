@@ -70,6 +70,18 @@ internal class ModDragSessionCoordinator(
         interactionState.scheduleDragScrollRestore()
     }
 
+    fun cancelActiveDrags() {
+        val hadFolderReorder = interactionState.activeDragFolderId != null
+        val hadModDrag = interactionState.modDragState.isActive ||
+            interactionState.modDragState.activePointerIdValue != null
+        if (!hadFolderReorder && !hadModDrag) {
+            return
+        }
+        interactionState.activeDragFolderId = null
+        interactionState.modDragState = ModDragInteractionState()
+        interactionState.scheduleDragScrollRestore()
+    }
+
     fun cancelModDrag() {
         if (interactionState.modDragState.isActive || interactionState.modDragState.activePointerIdValue != null) {
             interactionState.modDragState = ModDragInteractionState()

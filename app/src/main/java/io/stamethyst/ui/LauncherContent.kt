@@ -40,6 +40,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -114,13 +115,17 @@ fun LauncherContent(
         }
         LaunchedEffect(activity, transientNoticeHostState) {
             LauncherTransientNoticeBus.requests.collect { request ->
-                transientNoticeHostState.showSnackbar(
+                val result = transientNoticeHostState.showSnackbar(
                     message = request.message.resolve(activity),
+                    actionLabel = request.actionLabel?.resolve(activity),
                     duration = when (request.duration) {
                         LauncherTransientNoticeDuration.SHORT -> SnackbarDuration.Short
                         LauncherTransientNoticeDuration.LONG -> SnackbarDuration.Long
                     }
                 )
+                if (result == SnackbarResult.ActionPerformed) {
+                    request.onAction?.invoke()
+                }
             }
         }
         Surface(

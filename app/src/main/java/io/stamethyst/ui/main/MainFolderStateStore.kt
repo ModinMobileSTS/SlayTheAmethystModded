@@ -13,6 +13,7 @@ internal class MainFolderStateStore {
     private val folderCollapsed = LinkedHashMap<String, Boolean>()
     private var unassignedCollapsed = false
     private var dependencyFolderCollapsed = true
+    private var dragLocked = false
     private var unassignedFolderName = DEFAULT_UNASSIGNED_FOLDER_NAME
     private var unassignedFolderOrder = 0
     private var loaded = false
@@ -32,6 +33,11 @@ internal class MainFolderStateStore {
         get() = dependencyFolderCollapsed
         set(value) {
             dependencyFolderCollapsed = value
+        }
+    var isDragLocked: Boolean
+        get() = dragLocked
+        set(value) {
+            dragLocked = value
         }
     var unassignedName: String
         get() = unassignedFolderName
@@ -82,6 +88,7 @@ internal class MainFolderStateStore {
             .putString(KEY_COLLAPSED, collapsedObject.toString())
             .putBoolean(KEY_UNASSIGNED_COLLAPSED, unassignedCollapsed)
             .putBoolean(KEY_DEPENDENCY_FOLDER_COLLAPSED, dependencyFolderCollapsed)
+            .putBoolean(KEY_DRAG_LOCKED, dragLocked)
             .putString(KEY_UNASSIGNED_NAME, unassignedFolderName)
             .putInt(KEY_UNASSIGNED_ORDER, unassignedFolderOrder.coerceIn(0, modFolders.size))
             .apply()
@@ -197,6 +204,7 @@ internal class MainFolderStateStore {
         } else {
             preferences.getBoolean(KEY_LEGACY_STATUS_SUMMARY_COLLAPSED, true)
         }
+        dragLocked = preferences.getBoolean(KEY_DRAG_LOCKED, false)
         unassignedFolderName = preferences.getString(KEY_UNASSIGNED_NAME, DEFAULT_UNASSIGNED_FOLDER_NAME)
             ?.trim()
             ?.ifEmpty { DEFAULT_UNASSIGNED_FOLDER_NAME }
@@ -219,6 +227,7 @@ internal class MainFolderStateStore {
         private const val KEY_COLLAPSED = "collapsed"
         private const val KEY_UNASSIGNED_COLLAPSED = "unassigned_collapsed"
         private const val KEY_DEPENDENCY_FOLDER_COLLAPSED = "dependency_folder_collapsed"
+        private const val KEY_DRAG_LOCKED = "drag_locked"
         private const val KEY_LEGACY_STATUS_SUMMARY_COLLAPSED = "status_summary_collapsed"
         private const val KEY_UNASSIGNED_NAME = "unassigned_name"
         private const val KEY_UNASSIGNED_ORDER = "unassigned_order"

@@ -128,7 +128,8 @@ internal fun buildFolderUiModels(
     modsByFolderId: Map<String?, List<ModItemUi>>,
     folderCollapsed: Map<String, Boolean>,
     unassignedCollapsed: Boolean,
-    unassignedFolderName: String
+    unassignedFolderName: String,
+    dragLocked: Boolean
 ): List<FolderUiModel> {
     return displayFolderTargetIds.mapNotNull { folderTokenId ->
         val isUnassigned = folderTokenId == UNASSIGNED_FOLDER_ID
@@ -159,6 +160,8 @@ internal fun buildFolderUiModels(
             isUnassigned = isUnassigned,
             emptyTextResId = if (isUnassigned) {
                 R.string.main_folder_unassigned_empty
+            } else if (dragLocked) {
+                R.string.main_folder_empty
             } else {
                 R.string.main_folder_drag_here
             },

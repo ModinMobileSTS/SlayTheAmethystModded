@@ -85,6 +85,7 @@ internal fun ModCard(
     selectionEnabled: Boolean,
     fileActionsEnabled: Boolean,
     dragEnabled: Boolean,
+    showDragHandle: Boolean = true,
     onSuggestionRead: () -> Unit = {},
     callbacks: ModCardCallbacks
 ) {
@@ -221,19 +222,21 @@ internal fun ModCard(
                         enabled = false
                     )
                 }
-                Box(
-                    modifier = handleModifier,
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_drag_handle),
-                        contentDescription = stringResource(R.string.main_mod_drag),
-                        tint = if (dragEnabled) {
-                            MaterialTheme.colorScheme.outline
-                        } else {
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
-                        }
-                    )
+                if (showDragHandle) {
+                    Box(
+                        modifier = handleModifier,
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_drag_handle),
+                            contentDescription = stringResource(R.string.main_mod_drag),
+                            tint = if (dragEnabled) {
+                                MaterialTheme.colorScheme.outline
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
+                            }
+                        )
+                    }
                 }
             }
         )

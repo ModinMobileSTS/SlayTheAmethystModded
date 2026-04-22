@@ -162,7 +162,12 @@ fun LauncherMainScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 is MainScreenViewModel.Effect.ShowSnackbar ->
-                    LauncherTransientNoticeBus.show(effect.message, effect.duration)
+                    LauncherTransientNoticeBus.show(
+                        message = effect.message,
+                        duration = effect.duration,
+                        actionLabel = effect.actionLabel,
+                        onAction = effect.onAction
+                    )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
                 is MainScreenViewModel.Effect.OpenExportModPicker -> {
                     pendingExportModSourcePath = effect.sourcePath
@@ -401,9 +406,11 @@ private fun LauncherMainScreenContent(
                     modifier = Modifier.align(Alignment.TopCenter),
                     hazeState = hazeState,
                     folderControlsEnabled = uiState.controlsEnabled,
+                    dragLocked = uiState.dragLocked,
                     settingsEnabled = !uiState.busy,
                     hostAvailable = actions.isHostAvailable,
                     feedbackUnreadCount = feedbackUnreadCount,
+                    onToggleDragLocked = actions.onToggleDragLocked,
                     onAddFolderClick = { showCreateFolderDialog = true },
                     onOpenSettings = onOpenSettings,
                     onOpenFeedbackUpdates = onOpenFeedbackUpdates
@@ -755,9 +762,11 @@ private fun MainTopBar(
     modifier: Modifier = Modifier,
     hazeState: HazeState,
     folderControlsEnabled: Boolean,
+    dragLocked: Boolean,
     settingsEnabled: Boolean,
     hostAvailable: Boolean,
     feedbackUnreadCount: Int,
+    onToggleDragLocked: () -> Unit,
     onAddFolderClick: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit
@@ -803,6 +812,23 @@ private fun MainTopBar(
                             )
                         }
                     }
+                }
+                IconButton(
+                    onClick = onToggleDragLocked,
+                    enabled = folderControlsEnabled && hostAvailable
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            if (dragLocked) R.drawable.ic_lock else R.drawable.ic_lock_open
+                        ),
+                        contentDescription = stringResource(
+                            if (dragLocked) {
+                                R.string.main_action_unlock_drag
+                            } else {
+                                R.string.main_action_lock_drag
+                            }
+                        )
+                    )
                 }
                 IconButton(
                     onClick = onAddFolderClick,
