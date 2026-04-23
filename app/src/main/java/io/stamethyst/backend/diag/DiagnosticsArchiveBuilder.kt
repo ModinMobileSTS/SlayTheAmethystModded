@@ -7,6 +7,8 @@ import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
+import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
+import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -125,6 +127,42 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 "sts/jvm_logs/launcher_settings.txt",
                 LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                SteamCloudDiagnosticsStore.summaryFile(context),
+                "sts/steam_cloud/phase1/${SteamCloudDiagnosticsStore.summaryFile(context).name}"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                SteamCloudManifestStore.manifestFile(context),
+                "sts/steam_cloud/phase1/${SteamCloudManifestStore.manifestFile(context).name}"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                SteamCloudManifestStore.pullSummaryFile(context),
+                "sts/steam_cloud/phase1/${SteamCloudManifestStore.pullSummaryFile(context).name}"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                File(SteamCloudManifestStore.outputDir(context), "last-websocket-cm-endpoint.txt"),
+                "sts/steam_cloud/phase1/last-websocket-cm-endpoint.txt"
+            )
+            val phase0Dir = File(RuntimePaths.storageRoot(context), "steam-cloud-phase0")
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                File(phase0Dir, "summary.txt"),
+                "sts/steam_cloud/phase0/summary.txt"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                File(phase0Dir, "cloud-list.tsv"),
+                "sts/steam_cloud/phase0/cloud-list.tsv"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                File(phase0Dir, "last-websocket-cm-endpoint.txt"),
+                "sts/steam_cloud/phase0/last-websocket-cm-endpoint.txt"
             )
 
             val writtenJvmEntries = LinkedHashSet<String>()

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+        <receiver
+            android:name=".backend.steamcloud.SteamCloudPhase0DebugReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.stamethyst.debug.RUN_STEAM_CLOUD_PHASE0" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".backend.steamcloud.SteamCloudPhase0DebugService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>

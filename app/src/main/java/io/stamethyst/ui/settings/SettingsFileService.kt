@@ -12,9 +12,9 @@ import android.system.Os
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
-import androidx.core.content.FileProvider
 import io.stamethyst.R
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
+import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.DownfallImportCompatPatcher
@@ -255,7 +255,7 @@ internal object SettingsFileService {
     @Throws(IOException::class)
     fun resolveJvmLogsShareUri(host: Activity): Uri {
         val archiveFile = DiagnosticsProcessClient.buildJvmLogShareArchive(host).archiveFile
-        return FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", archiveFile)
+        return FileShareCompat.resolveShareUri(host, archiveFile)
     }
 
     @Throws(IOException::class)
@@ -1876,18 +1876,7 @@ internal object SettingsFileService {
 
     @Throws(IOException::class)
     private fun backupExistingSavesToDownloads(host: Activity, stsRoot: File): String? {
-        val sourceRoots = SaveArchiveLayout.existingSourceDirectories(stsRoot)
-        if (sourceRoots.isEmpty() || sourceRoots.none(::containsRegularFiles)) {
-            return null
-        }
-
-        val backupFileName = buildSaveBackupFileName()
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            backupExistingSavesToScopedDownloads(host, sourceRoots, backupFileName)
-            "Download/$backupFileName"
-        } else {
-            backupExistingSavesToLegacyDownloads(sourceRoots, backupFileName)
-        }
+        return SettingsSaveBackupService.backupExistingSavesToDownloads(host, stsRoot)
     }
 
     private fun collectRegularFiles(root: File, sink: MutableList<File>) {

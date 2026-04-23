@@ -46,6 +46,7 @@ object LauncherConfig {
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
+    private const val PREF_KEY_TOUCHSCREEN_ENABLED = "touchscreen_enabled"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_RENDERER_SELECTION_MODE = "renderer_selection_mode"
     private const val PREF_KEY_MANUAL_RENDERER_BACKEND = "manual_renderer_backend"
@@ -118,6 +119,10 @@ object LauncherConfig {
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
     private const val PREF_KEY_AUTO_CHECK_UPDATES_ENABLED = "auto_check_updates_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED =
+        "steam_cloud_auto_pull_before_launch_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED =
+        "steam_cloud_auto_push_after_clean_shutdown_enabled"
     private const val PREF_KEY_PREFERRED_UPDATE_MIRROR_ID = "preferred_update_mirror_id"
     private const val PREF_KEY_LAST_UPDATE_CHECK_AT_MS = "last_update_check_at_ms"
     private const val PREF_KEY_LAST_KNOWN_REMOTE_TAG = "last_known_remote_tag"
@@ -179,6 +184,8 @@ object LauncherConfig {
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
+    const val DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED = false
+    const val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED = false
     const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "gh_proxy_com"
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
@@ -1055,6 +1062,32 @@ object LauncherConfig {
         }
     }
 
+    fun isSteamCloudAutoPullBeforeLaunchEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED,
+            DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED
+        )
+    }
+
+    fun setSteamCloudAutoPullBeforeLaunchEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED, enabled)
+        }
+    }
+
+    fun isSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED,
+            DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED
+        )
+    }
+
+    fun setSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED, enabled)
+        }
+    }
+
     fun readPreferredUpdateMirrorId(context: Context): String {
         return prefs(context).getString(
             PREF_KEY_PREFERRED_UPDATE_MIRROR_ID,
@@ -1246,23 +1279,26 @@ object LauncherConfig {
     }
 
     fun readTouchscreenEnabled(context: Context): Boolean {
-        val file = File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME)
-        val value = readGameplaySettingsBoolean(file, GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN)
-        if (value != null) {
-            return value
+        val preferences = prefs(context)
+        if (preferences.contains(PREF_KEY_TOUCHSCREEN_ENABLED)) {
+            return preferences.getBoolean(
+                PREF_KEY_TOUCHSCREEN_ENABLED,
+                DEFAULT_TOUCHSCREEN_ENABLED
+            )
         }
-        return DEFAULT_TOUCHSCREEN_ENABLED
+        return readLegacyTouchscreenEnabled(gameplaySettingsFile(context))
+            ?: DEFAULT_TOUCHSCREEN_ENABLED
     }
 
     @Throws(IOException::class)
     fun saveTouchscreenEnabled(context: Context, enabled: Boolean) {
-        val value = if (enabled) "true" else "false"
-        writeGameplaySettingsValue(
-            context,
-            File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME),
-            GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN,
-            value
-        )
+        val committed = prefs(context)
+            .edit()
+            .putBoolean(PREF_KEY_TOUCHSCREEN_ENABLED, enabled)
+            .commit()
+        if (!committed) {
+            throw IOException("Failed to persist launcher touchscreen setting")
+        }
     }
 
     fun readGameplayFontScale(context: Context): Float {
@@ -1446,22 +1482,11 @@ object LauncherConfig {
         file: File,
         values: Map<String, String>
     ) {
-        val parent = file.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw IOException("Failed to create directory: ${parent.absolutePath}")
-        }
-        val root = mergeJsonObjects(
-            readBundledGameplaySettingsDefaults(context),
-            readJsonObject(file)
+        writeGameplaySettingsValues(
+            file = file,
+            values = values,
+            bundledDefaults = readBundledGameplaySettingsDefaults(context)
         )
-        values.forEach { (key, value) ->
-            root.put(key, value)
-        }
-        FileOutputStream(file, false).use { out ->
-            out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
-            out.write('\n'.code)
-            out.fd.sync()
-        }
     }
 
     private fun readGameplaySettingsBoolean(
@@ -1515,11 +1540,24 @@ object LauncherConfig {
     fun syncLauncherPrefsToDisk(context: Context): Boolean {
         val preferences = prefs(context)
         val snapshot = LinkedHashMap(preferences.all)
+        if (!snapshot.containsKey(PREF_KEY_TOUCHSCREEN_ENABLED)) {
+            snapshot[PREF_KEY_TOUCHSCREEN_ENABLED] =
+                readLegacyTouchscreenEnabled(gameplaySettingsFile(context))
+                    ?: DEFAULT_TOUCHSCREEN_ENABLED
+        }
         val editor = preferences.edit().clear()
         snapshot.forEach { (key, value) ->
             writePreferenceValue(editor, key, value)
         }
-        return editor.commit()
+        if (!editor.commit()) {
+            return false
+        }
+        return try {
+            syncLauncherManagedPreferenceFiles(context, snapshot)
+            true
+        } catch (_: IOException) {
+            false
+        }
     }
 
     private fun readPlayerSettingsString(file: File, key: String): String? {
@@ -1618,6 +1656,24 @@ object LauncherConfig {
             .trim()
     }
 
+    private fun syncLauncherManagedPreferenceFiles(
+        context: Context,
+        snapshot: Map<String, Any?>
+    ) {
+        syncTouchscreenEnabledToGameplaySettingsFile(
+            file = gameplaySettingsFile(context),
+            enabled = parseBooleanLike(
+                snapshot[PREF_KEY_TOUCHSCREEN_ENABLED],
+                DEFAULT_TOUCHSCREEN_ENABLED
+            ),
+            bundledDefaults = readBundledGameplaySettingsDefaults(context)
+        )
+    }
+
+    private fun readLegacyTouchscreenEnabled(file: File): Boolean? {
+        return readGameplaySettingsBoolean(file, GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN)
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun writePreferenceValue(editor: SharedPreferences.Editor, key: String, value: Any?) {
         when (value) {
@@ -1638,6 +1694,45 @@ object LauncherConfig {
         return File(RuntimePaths.stsRoot(context), "render_scale.txt")
     }
 
+    private fun gameplaySettingsFile(context: Context): File {
+        return File(RuntimePaths.preferencesDir(context), GAMEPLAY_SETTINGS_FILE_NAME)
+    }
+
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+
+    internal fun syncTouchscreenEnabledToGameplaySettingsFile(
+        file: File,
+        enabled: Boolean,
+        bundledDefaults: JSONObject? = null
+    ) {
+        writeGameplaySettingsValues(
+            file = file,
+            values = linkedMapOf(GAMEPLAY_SETTINGS_KEY_TOUCHSCREEN to if (enabled) "true" else "false"),
+            bundledDefaults = bundledDefaults
+        )
+    }
+
+    private fun writeGameplaySettingsValues(
+        file: File,
+        values: Map<String, String>,
+        bundledDefaults: JSONObject?
+    ) {
+        val parent = file.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        val root = mergeJsonObjects(
+            bundledDefaults,
+            readJsonObject(file)
+        )
+        values.forEach { (key, value) ->
+            root.put(key, value)
+        }
+        FileOutputStream(file, false).use { out ->
+            out.write(root.toString(2).toByteArray(StandardCharsets.UTF_8))
+            out.write('\n'.code)
+            out.fd.sync()
+        }
+    }
 }

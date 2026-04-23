@@ -24,6 +24,7 @@ import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
+import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.InvalidModImportFailure
@@ -247,7 +248,11 @@ class LauncherActivity : AppCompatActivity() {
                     )
                 ) {
                     GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
-                    mainViewModel.refresh(this@LauncherActivity)
+                    if (!(mainViewModel.uiState.busy &&
+                            mainViewModel.uiState.busyOperation == UiBusyOperation.STEAM_CLOUD_SYNC)
+                    ) {
+                        mainViewModel.refresh(this@LauncherActivity)
+                    }
                     cancelPendingGameReturnAnalysis()
                     return
                 }
@@ -320,7 +325,9 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun consumeSendExternalJarIntent(incomingIntent: Intent): ExternalImportRequest? {
-        val uri = readSendStreamUri(incomingIntent) ?: firstClipDataUri(incomingIntent)
+        val uri = readSendStreamUri(incomingIntent)
+            ?: firstClipDataUri(incomingIntent)
+            ?: incomingIntent.data
         if (uri != null) {
             return if (isSupportedExternalImportUri(uri)) {
                 ExternalImportRequest.ImportUri(uri)
@@ -340,7 +347,9 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun consumeSendMultipleExternalJarIntent(incomingIntent: Intent): ExternalImportRequest? {
-        val uris = readSendStreamUris(incomingIntent).ifEmpty { readAllClipDataUris(incomingIntent) }
+        val uris = readSendStreamUris(incomingIntent)
+            .ifEmpty { readAllClipDataUris(incomingIntent) }
+            .ifEmpty { listOfNotNull(incomingIntent.data) }
         if (uris.size == 1) {
             val uri = uris.first()
             return if (isSupportedExternalImportUri(uri)) {

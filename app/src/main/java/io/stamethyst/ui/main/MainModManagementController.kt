@@ -2,12 +2,11 @@ package io.stamethyst.ui.main
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
-import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import androidx.appcompat.app.AlertDialog
-import androidx.core.content.FileProvider
 import io.stamethyst.R
+import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.file_interactive.SafFileExporter
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
@@ -551,20 +550,14 @@ internal class MainModManagementController(
         executor.execute {
             try {
                 val shareFile = prepareModShareFile(host, sourceFile)
-                val shareUri = FileProvider.getUriForFile(
-                    host,
-                    "${host.packageName}.fileprovider",
-                    shareFile
-                )
                 host.runOnUiThread {
                     setBusy(false, null)
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/java-archive"
-                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                        clipData = ClipData.newRawUri(sourceFile.name, shareUri)
-                        putExtra(Intent.EXTRA_SUBJECT, sourceFile.name)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
+                    val shareIntent = FileShareCompat.buildShareIntent(
+                        host = host,
+                        uri = FileShareCompat.resolveShareUri(host, shareFile),
+                        fileName = sourceFile.name,
+                        mimeType = "application/java-archive"
+                    )
                     val chooserIntent = Intent.createChooser(
                         shareIntent,
                         host.getString(R.string.main_mod_share_chooser_title)

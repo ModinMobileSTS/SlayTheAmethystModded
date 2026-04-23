@@ -103,6 +103,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
     val DEFAULT_AUTO_CHECK_UPDATES_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_CHECK_UPDATES_ENABLED
+    val DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED
+    val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED
     val DEFAULT_PREFERRED_UPDATE_MIRROR_ID: String
         get() = LauncherConfig.DEFAULT_PREFERRED_UPDATE_MIRROR_ID
     val DEFAULT_PLAYER_NAME: String
@@ -377,6 +381,22 @@ object LauncherPreferences {
 
     fun setAutoCheckUpdatesEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setAutoCheckUpdatesEnabled(context, enabled)
+    }
+
+    fun isSteamCloudAutoPullBeforeLaunchEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamCloudAutoPullBeforeLaunchEnabled(context)
+    }
+
+    fun setSteamCloudAutoPullBeforeLaunchEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamCloudAutoPullBeforeLaunchEnabled(context, enabled)
+    }
+
+    fun isSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamCloudAutoPushAfterCleanShutdownEnabled(context)
+    }
+
+    fun setSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamCloudAutoPushAfterCleanShutdownEnabled(context, enabled)
     }
 
     fun readPreferredUpdateMirrorId(context: Context): String {

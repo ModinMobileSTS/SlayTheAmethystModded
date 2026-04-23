@@ -1,12 +1,11 @@
 package io.stamethyst.ui.settings
 
 import android.app.Activity
-import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
-import androidx.core.content.FileProvider
 import io.stamethyst.backend.diag.CrashArchiveContext
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
+import io.stamethyst.backend.file_interactive.FileShareCompat
 
 data class JvmLogsSharePayload(
     val uri: Uri,
@@ -17,11 +16,7 @@ internal object JvmLogShareService {
     fun prepareSharePayload(host: Activity): JvmLogsSharePayload {
         val archiveResult = DiagnosticsProcessClient.buildJvmLogShareArchive(host)
         val fileName = archiveResult.archiveFile.name
-        val shareUri = FileProvider.getUriForFile(
-            host,
-            "${host.packageName}.fileprovider",
-            archiveResult.archiveFile
-        )
+        val shareUri = FileShareCompat.resolveShareUri(host, archiveResult.archiveFile)
         return JvmLogsSharePayload(
             uri = shareUri,
             fileName = fileName
@@ -43,23 +38,19 @@ internal object JvmLogShareService {
             )
         )
         val fileName = archiveResult.archiveFile.name
-        val shareUri = FileProvider.getUriForFile(
-            host,
-            "${host.packageName}.fileprovider",
-            archiveResult.archiveFile
-        )
+        val shareUri = FileShareCompat.resolveShareUri(host, archiveResult.archiveFile)
         return JvmLogsSharePayload(
             uri = shareUri,
             fileName = fileName
         )
     }
 
-    fun buildShareIntent(payload: JvmLogsSharePayload): Intent {
-        return Intent(Intent.ACTION_SEND).apply {
-            type = "application/zip"
-            putExtra(Intent.EXTRA_STREAM, payload.uri)
-            clipData = ClipData.newRawUri(payload.fileName, payload.uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+    fun buildShareIntent(host: Activity, payload: JvmLogsSharePayload): Intent {
+        return FileShareCompat.buildShareIntent(
+            host = host,
+            uri = payload.uri,
+            fileName = payload.fileName,
+            mimeType = "application/zip"
+        )
     }
 }

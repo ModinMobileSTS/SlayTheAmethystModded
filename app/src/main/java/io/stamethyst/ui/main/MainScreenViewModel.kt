@@ -36,6 +36,14 @@ import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModSuggestionService
+import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.SteamCloudAutoSyncPlanner
+import io.stamethyst.backend.steamcloud.SteamCloudPullCoordinator
+import io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator
+import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
+import io.stamethyst.backend.steamcloud.SteamCloudSyncPhase
+import io.stamethyst.backend.steamcloud.SteamCloudSyncProgress
+import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.update.UpdateMirrorManager
@@ -83,6 +91,30 @@ class MainScreenViewModel : ViewModel() {
         val isLaunchPreparationProcessDisconnected: Boolean
     )
 
+    enum class SteamCloudIndicatorState {
+        HIDDEN,
+        UP_TO_DATE,
+        CHECKING,
+        CONFLICT,
+        SYNCING,
+        CONNECTION_FAILED,
+    }
+
+    data class SteamCloudIndicatorUi(
+        val visible: Boolean = false,
+        val state: SteamCloudIndicatorState = SteamCloudIndicatorState.HIDDEN,
+        val plan: SteamCloudUploadPlan? = null,
+        val errorSummary: String = "",
+        val syncDirection: SteamCloudSyncDirection? = null,
+        val progressMessage: String = "",
+        val progressPercent: Int? = null,
+        val progressCurrentPath: String = "",
+        val lastCheckedAtMs: Long? = null,
+    ) {
+        val operationInFlight: Boolean
+            get() = state == SteamCloudIndicatorState.CHECKING || state == SteamCloudIndicatorState.SYNCING
+    }
+
     private data class ImportedStsJarFingerprint(
         val absolutePath: String,
         val exists: Boolean,
@@ -114,7 +146,8 @@ class MainScreenViewModel : ViewModel() {
         val dependencyFolderCollapsed: Boolean = true,
         val dragLocked: Boolean = false,
         val unassignedFolderName: String = DEFAULT_UNASSIGNED_FOLDER_NAME,
-        val unassignedFolderOrder: Int = 0
+        val unassignedFolderOrder: Int = 0,
+        val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
     )
 
     sealed interface Effect {
@@ -137,6 +170,7 @@ class MainScreenViewModel : ViewModel() {
     private val suggestionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val diagnosticsExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val steamCloudExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
     private var currentReadModSuggestionKeys: Set<String> = emptySet()
@@ -146,6 +180,11 @@ class MainScreenViewModel : ViewModel() {
     private var validatedImportedStsJarFingerprint: ImportedStsJarFingerprint? = null
     private var validatedImportedStsJarState: Boolean? = null
     private var validatingImportedStsJarFingerprint: ImportedStsJarFingerprint? = null
+    @Volatile
+    private var steamCloudCheckInFlight = false
+    @Volatile
+    private var steamCloudSyncInFlight = false
+    private var lastSteamCloudCheckAtMs: Long? = null
     @Volatile
     private var launchInFlight = false
 
@@ -239,6 +278,318 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
+    fun syncSteamCloudIndicatorIfNeeded(host: Activity, force: Boolean = false) {
+        if (uiState.busy) {
+            return
+        }
+        val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
+        if (authMaterial == null) {
+            lastSteamCloudCheckAtMs = null
+            if (uiState.steamCloudIndicator.visible) {
+                uiState = uiState.copy(steamCloudIndicator = SteamCloudIndicatorUi())
+            }
+            return
+        }
+        if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
+            return
+        }
+        val lastCheckedAtMs = lastSteamCloudCheckAtMs
+        if (!force &&
+            lastCheckedAtMs != null &&
+            System.currentTimeMillis() - lastCheckedAtMs < STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS
+        ) {
+            return
+        }
+
+        steamCloudCheckInFlight = true
+        uiState = uiState.copy(
+            steamCloudIndicator = uiState.steamCloudIndicator.copy(
+                visible = true,
+                state = SteamCloudIndicatorState.CHECKING,
+                plan = null,
+                errorSummary = "",
+                syncDirection = null,
+                progressMessage = "",
+                progressPercent = null,
+                progressCurrentPath = "",
+            )
+        )
+        steamCloudExecutor.execute {
+            try {
+                val plan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val checkedAtMs = System.currentTimeMillis()
+                when {
+                    plan.conflicts.isNotEmpty() -> {
+                        host.runOnUiThread {
+                            steamCloudCheckInFlight = false
+                            lastSteamCloudCheckAtMs = checkedAtMs
+                            publishSteamCloudIndicatorPlan(plan, checkedAtMs)
+                        }
+                    }
+
+                    plan.uploadCandidates.isEmpty() && plan.remoteOnlyChanges.isEmpty() -> {
+                        host.runOnUiThread {
+                            steamCloudCheckInFlight = false
+                            lastSteamCloudCheckAtMs = checkedAtMs
+                            publishSteamCloudIndicatorPlan(plan, checkedAtMs)
+                        }
+                    }
+
+                    else -> {
+                        steamCloudCheckInFlight = false
+                        steamCloudSyncInFlight = true
+                        host.runOnUiThread {
+                            lastSteamCloudCheckAtMs = checkedAtMs
+                            publishSteamCloudIndicatorSyncing(
+                                direction = resolveAutomaticSyncDirection(plan),
+                                progressMessage = host.getString(R.string.main_steam_cloud_progress_preparing_auto_sync),
+                                progressPercent = 0,
+                                currentPath = "",
+                            )
+                        }
+                        performAutomaticSteamCloudSync(
+                            host = host,
+                            authMaterial = authMaterial,
+                            plan = plan,
+                            userInitiated = force,
+                        )
+                    }
+                }
+            } catch (error: Throwable) {
+                val summary = summarizeSteamCloudAutoSyncError(error)
+                host.runOnUiThread {
+                    steamCloudCheckInFlight = false
+                    publishSteamCloudIndicatorFailure(summary)
+                    if (force) {
+                        _effects.tryEmit(
+                            Effect.ShowSnackbar(
+                                message = UiText.StringResource(
+                                    R.string.main_steam_cloud_indicator_check_failed,
+                                    summary
+                                ),
+                                duration = LauncherTransientNoticeDuration.LONG,
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun onUseLocalSteamCloudProgress(host: Activity) {
+        if (uiState.busy || steamCloudCheckInFlight || steamCloudSyncInFlight) {
+            return
+        }
+        val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
+        if (authMaterial == null) {
+            lastSteamCloudCheckAtMs = null
+            uiState = uiState.copy(steamCloudIndicator = SteamCloudIndicatorUi())
+            return
+        }
+
+        steamCloudSyncInFlight = true
+        publishSteamCloudIndicatorSyncing(
+            direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+            progressMessage = host.getString(R.string.main_steam_cloud_progress_preparing_local_override),
+            progressPercent = 0,
+            currentPath = "",
+        )
+        steamCloudExecutor.execute {
+            try {
+                val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
+                    host,
+                    authMaterial,
+                ) { progress ->
+                    host.runOnUiThread {
+                        if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
+                            applySteamCloudSyncProgress(host, progress)
+                        }
+                    }
+                }
+                host.runOnUiThread {
+                    steamCloudSyncInFlight = false
+                    lastSteamCloudCheckAtMs = result.completedAtMs
+                    uiState = uiState.copy(
+                        steamCloudIndicator = SteamCloudIndicatorUi(
+                            visible = true,
+                            state = SteamCloudIndicatorState.UP_TO_DATE,
+                            lastCheckedAtMs = result.completedAtMs,
+                        )
+                    )
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_steam_cloud_local_override_succeeded,
+                                result.uploadedFileCount,
+                                result.deletedRemoteFileCount
+                            ),
+                            duration = LauncherTransientNoticeDuration.SHORT,
+                        )
+                    )
+                }
+            } catch (error: Throwable) {
+                val summary = summarizeSteamCloudAutoSyncError(error)
+                host.runOnUiThread {
+                    steamCloudSyncInFlight = false
+                    publishSteamCloudIndicatorFailure(summary)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_steam_cloud_override_failed,
+                                summary
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun onUseCloudSteamCloudProgress(host: Activity) {
+        if (uiState.busy || steamCloudCheckInFlight || steamCloudSyncInFlight) {
+            return
+        }
+        val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
+        if (authMaterial == null) {
+            lastSteamCloudCheckAtMs = null
+            uiState = uiState.copy(steamCloudIndicator = SteamCloudIndicatorUi())
+            return
+        }
+
+        steamCloudSyncInFlight = true
+        publishSteamCloudIndicatorSyncing(
+            direction = SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL,
+            progressMessage = host.getString(R.string.main_steam_cloud_progress_preparing_cloud_override),
+            progressPercent = 0,
+            currentPath = "",
+        )
+        steamCloudExecutor.execute {
+            try {
+                val result = SteamCloudPullCoordinator.pullAll(
+                    host,
+                    authMaterial,
+                ) { progress ->
+                    host.runOnUiThread {
+                        if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
+                            applySteamCloudSyncProgress(host, progress)
+                        }
+                    }
+                }
+                host.runOnUiThread {
+                    steamCloudSyncInFlight = false
+                    lastSteamCloudCheckAtMs = result.completedAtMs
+                    uiState = uiState.copy(
+                        steamCloudIndicator = SteamCloudIndicatorUi(
+                            visible = true,
+                            state = SteamCloudIndicatorState.UP_TO_DATE,
+                            lastCheckedAtMs = result.completedAtMs,
+                        )
+                    )
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_steam_cloud_cloud_override_succeeded,
+                                result.appliedFileCount
+                            ),
+                            duration = LauncherTransientNoticeDuration.SHORT,
+                        )
+                    )
+                }
+            } catch (error: Throwable) {
+                val summary = summarizeSteamCloudAutoSyncError(error)
+                host.runOnUiThread {
+                    steamCloudSyncInFlight = false
+                    publishSteamCloudIndicatorFailure(summary)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_steam_cloud_override_failed,
+                                summary
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun performAutomaticSteamCloudSync(
+        host: Activity,
+        authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+        plan: SteamCloudUploadPlan,
+        userInitiated: Boolean,
+    ) {
+        try {
+            if (plan.remoteOnlyChanges.isNotEmpty()) {
+                SteamCloudPullCoordinator.mergeRemoteOnlyChanges(
+                    host = host,
+                    authMaterial = authMaterial,
+                    plan = plan,
+                ) { progress ->
+                    host.runOnUiThread {
+                        if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
+                            applySteamCloudSyncProgress(host, progress)
+                        }
+                    }
+                }
+            }
+
+            if (plan.uploadCandidates.isNotEmpty()) {
+                SteamCloudPushCoordinator.pushLocalChanges(
+                    host = host,
+                    authMaterial = authMaterial,
+                    plan = plan,
+                ) { progress ->
+                    host.runOnUiThread {
+                        if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
+                            applySteamCloudSyncProgress(host, progress)
+                        }
+                    }
+                }
+            }
+
+            val completedAtMs = System.currentTimeMillis()
+            host.runOnUiThread {
+                steamCloudSyncInFlight = false
+                lastSteamCloudCheckAtMs = completedAtMs
+                uiState = uiState.copy(
+                    steamCloudIndicator = SteamCloudIndicatorUi(
+                        visible = true,
+                        state = SteamCloudIndicatorState.UP_TO_DATE,
+                        lastCheckedAtMs = completedAtMs,
+                    )
+                )
+                if (userInitiated) {
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(R.string.main_steam_cloud_auto_sync_succeeded),
+                            duration = LauncherTransientNoticeDuration.SHORT,
+                        )
+                    )
+                }
+            }
+        } catch (error: Throwable) {
+            val summary = summarizeSteamCloudAutoSyncError(error)
+            host.runOnUiThread {
+                steamCloudSyncInFlight = false
+                publishSteamCloudIndicatorFailure(summary)
+                if (userInitiated) {
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_steam_cloud_override_failed,
+                                summary
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     fun onDeleteMod(host: Activity, mod: ModItemUi) {
         modManagementController.onDeleteMod(host, mod)
     }
@@ -268,6 +619,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onLaunch(host: Activity) {
+        if (uiState.steamCloudIndicator.operationInFlight) {
+            return
+        }
         if (!tryBeginLaunchRequest()) {
             return
         }
@@ -586,6 +940,7 @@ class MainScreenViewModel : ViewModel() {
                 GameLaunchReturnTracker.terminateTrackedGameProcess(host, includeCached = true)
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                clearLaunchInFlightState()
                 dismissCrashRecovery()
                 showExpectedBackExitDialog(host)
                 true
@@ -597,7 +952,9 @@ class MainScreenViewModel : ViewModel() {
                     clearCrashExtras(intent)
                 }
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
+                clearLaunchInFlightState()
                 dismissCrashRecovery()
+                maybeStartSteamCloudAutoPushAfterCleanShutdown(host)
                 true
             }
 
@@ -944,6 +1301,22 @@ class MainScreenViewModel : ViewModel() {
         manualDismissBootOverlay: Boolean,
         forceJvmCrash: Boolean
     ) {
+        maybeStartSteamCloudAutoPullBeforeLaunch(
+            host = host,
+            launchMode = launchMode,
+            backBehavior = backBehavior,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            forceJvmCrash = forceJvmCrash,
+        )
+    }
+
+    private fun launchGameActivityInternal(
+        host: Activity,
+        launchMode: String,
+        backBehavior: BackBehavior,
+        manualDismissBootOverlay: Boolean,
+        forceJvmCrash: Boolean
+    ) {
         val launchStartedAtMs = GameLaunchReturnTracker.markGameLaunchStarted(host)
         if (LauncherPreferences.isLogcatCaptureEnabled(host)) {
             LogcatCaptureProcessClient.startCapture(host, launchStartedAtMs)
@@ -971,6 +1344,334 @@ class MainScreenViewModel : ViewModel() {
                 )
             )
             clearLaunchInFlightState()
+        }
+    }
+
+    private fun maybeStartSteamCloudAutoPullBeforeLaunch(
+        host: Activity,
+        launchMode: String,
+        backBehavior: BackBehavior,
+        manualDismissBootOverlay: Boolean,
+        forceJvmCrash: Boolean,
+    ) {
+        if (!LauncherPreferences.isSteamCloudAutoPullBeforeLaunchEnabled(host)) {
+            launchGameActivityInternal(
+                host = host,
+                launchMode = launchMode,
+                backBehavior = backBehavior,
+                manualDismissBootOverlay = manualDismissBootOverlay,
+                forceJvmCrash = forceJvmCrash,
+            )
+            return
+        }
+
+        val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
+        if (authMaterial == null) {
+            launchGameActivityInternal(
+                host = host,
+                launchMode = launchMode,
+                backBehavior = backBehavior,
+                manualDismissBootOverlay = manualDismissBootOverlay,
+                forceJvmCrash = forceJvmCrash,
+            )
+            return
+        }
+
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.main_busy_steam_cloud_prelaunch_sync),
+            operation = UiBusyOperation.STEAM_CLOUD_SYNC,
+        )
+        launchExecutor.execute {
+            try {
+                val uploadPlan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val decision = SteamCloudAutoSyncPlanner.planPreLaunchPull(uploadPlan)
+                when {
+                    decision.shouldBlockLaunch -> {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            clearLaunchInFlightState()
+                            publishSteamCloudIndicatorPlan(uploadPlan, System.currentTimeMillis())
+                            showSteamCloudAutoPullBlockedDialog(host, uploadPlan)
+                        }
+                    }
+
+                    decision.shouldPull -> {
+                        SteamCloudPullCoordinator.pullAll(host, authMaterial)
+                        host.runOnUiThread {
+                            if (host.isFinishing || host.isDestroyed) {
+                                clearLaunchInFlightState()
+                                return@runOnUiThread
+                            }
+                            setBusy(false, null)
+                            launchGameActivityInternal(
+                                host = host,
+                                launchMode = launchMode,
+                                backBehavior = backBehavior,
+                                manualDismissBootOverlay = manualDismissBootOverlay,
+                                forceJvmCrash = forceJvmCrash,
+                            )
+                        }
+                    }
+
+                    else -> {
+                        host.runOnUiThread {
+                            if (host.isFinishing || host.isDestroyed) {
+                                clearLaunchInFlightState()
+                                return@runOnUiThread
+                            }
+                            setBusy(false, null)
+                            launchGameActivityInternal(
+                                host = host,
+                                launchMode = launchMode,
+                                backBehavior = backBehavior,
+                                manualDismissBootOverlay = manualDismissBootOverlay,
+                                forceJvmCrash = forceJvmCrash,
+                            )
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    clearLaunchInFlightState()
+                    publishSteamCloudIndicatorFailure(summarizeSteamCloudAutoSyncError(error))
+                    showSteamCloudAutoPullFailedDialog(
+                        host,
+                        summarizeSteamCloudAutoSyncError(error)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun maybeStartSteamCloudAutoPushAfterCleanShutdown(host: Activity) {
+        if (!LauncherPreferences.isSteamCloudAutoPushAfterCleanShutdownEnabled(host)) {
+            return
+        }
+
+        val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
+            ?: return
+
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.main_busy_steam_cloud_postrun_sync),
+            operation = UiBusyOperation.STEAM_CLOUD_SYNC,
+        )
+        launchExecutor.execute {
+            try {
+                val uploadPlan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val decision = SteamCloudAutoSyncPlanner.planCleanShutdownPush(uploadPlan)
+                when {
+                    decision.blockedByConflicts -> {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            publishSteamCloudIndicatorPlan(uploadPlan, System.currentTimeMillis())
+                            refresh(host)
+                            _effects.tryEmit(
+                                Effect.ShowSnackbar(
+                                    message = UiText.StringResource(
+                                        R.string.main_steam_cloud_auto_push_blocked,
+                                        uploadPlan.conflicts.size
+                                    ),
+                                    duration = LauncherTransientNoticeDuration.LONG,
+                                )
+                            )
+                        }
+                    }
+
+                    decision.shouldPush -> {
+                        val result = SteamCloudPushCoordinator.pushLocalChanges(
+                            host,
+                            authMaterial,
+                            uploadPlan,
+                        )
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            uiState = uiState.copy(
+                                steamCloudIndicator = SteamCloudIndicatorUi(
+                                    visible = true,
+                                    state = SteamCloudIndicatorState.UP_TO_DATE,
+                                    lastCheckedAtMs = result.completedAtMs,
+                                )
+                            )
+                            lastSteamCloudCheckAtMs = result.completedAtMs
+                            refresh(host)
+                            _effects.tryEmit(
+                                Effect.ShowSnackbar(
+                                    message = UiText.StringResource(
+                                        R.string.main_steam_cloud_auto_push_succeeded,
+                                        result.uploadedFileCount
+                                    ),
+                                    duration = LauncherTransientNoticeDuration.SHORT,
+                                )
+                            )
+                        }
+                    }
+
+                    else -> {
+                        host.runOnUiThread {
+                            setBusy(false, null)
+                            refresh(host)
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    publishSteamCloudIndicatorFailure(summarizeSteamCloudAutoSyncError(error))
+                    refresh(host)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_steam_cloud_auto_push_failed,
+                                summarizeSteamCloudAutoSyncError(error)
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showSteamCloudAutoPullBlockedDialog(
+        host: Activity,
+        plan: SteamCloudUploadPlan,
+    ) {
+        _effects.tryEmit(
+            Effect.ShowDialog(
+                title = UiText.StringResource(R.string.main_steam_cloud_auto_pull_blocked_title),
+                message = UiText.DynamicString(
+                    host.getString(
+                        R.string.main_steam_cloud_auto_pull_blocked_message,
+                        plan.conflicts.size,
+                        plan.uploadCandidates.size,
+                        plan.remoteOnlyChanges.size
+                    )
+                ),
+            )
+        )
+    }
+
+    private fun showSteamCloudAutoPullFailedDialog(host: Activity, summary: String) {
+        _effects.tryEmit(
+            Effect.ShowDialog(
+                title = UiText.StringResource(R.string.main_steam_cloud_auto_pull_failed_title),
+                message = UiText.StringResource(
+                    R.string.main_steam_cloud_auto_pull_failed_message,
+                    summary
+                ),
+            )
+        )
+    }
+
+    private fun summarizeSteamCloudAutoSyncError(error: Throwable): String {
+        val cause = generateSequence(error) { current -> current.cause }
+            .firstOrNull { current -> current.message?.trim()?.isNotEmpty() == true }
+            ?: error
+        val message = cause.message?.trim().orEmpty()
+        return if (message.isNotEmpty()) {
+            message
+        } else {
+            cause.javaClass.simpleName
+        }
+    }
+
+    private fun publishSteamCloudIndicatorPlan(
+        plan: SteamCloudUploadPlan,
+        checkedAtMs: Long,
+    ) {
+        uiState = uiState.copy(
+            steamCloudIndicator = SteamCloudIndicatorUi(
+                visible = true,
+                state = if (plan.conflicts.isNotEmpty()) {
+                    SteamCloudIndicatorState.CONFLICT
+                } else {
+                    SteamCloudIndicatorState.UP_TO_DATE
+                },
+                plan = plan.conflicts.takeIf { it.isNotEmpty() }?.let { plan },
+                lastCheckedAtMs = checkedAtMs,
+            )
+        )
+    }
+
+    private fun resolveAutomaticSyncDirection(plan: SteamCloudUploadPlan): SteamCloudSyncDirection {
+        return when {
+            plan.remoteOnlyChanges.isNotEmpty() -> SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL
+            else -> SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
+        }
+    }
+
+    private fun publishSteamCloudIndicatorFailure(summary: String) {
+        uiState = uiState.copy(
+            steamCloudIndicator = SteamCloudIndicatorUi(
+                visible = true,
+                state = SteamCloudIndicatorState.CONNECTION_FAILED,
+                errorSummary = summary,
+                lastCheckedAtMs = uiState.steamCloudIndicator.lastCheckedAtMs,
+            )
+        )
+    }
+
+    private fun publishSteamCloudIndicatorSyncing(
+        direction: SteamCloudSyncDirection,
+        progressMessage: String,
+        progressPercent: Int?,
+        currentPath: String,
+    ) {
+        uiState = uiState.copy(
+            steamCloudIndicator = SteamCloudIndicatorUi(
+                visible = true,
+                state = SteamCloudIndicatorState.SYNCING,
+                syncDirection = direction,
+                progressMessage = progressMessage,
+                progressPercent = progressPercent?.coerceIn(0, 100),
+                progressCurrentPath = currentPath,
+                lastCheckedAtMs = uiState.steamCloudIndicator.lastCheckedAtMs,
+            )
+        )
+    }
+
+    private fun applySteamCloudSyncProgress(host: Activity, progress: SteamCloudSyncProgress) {
+        publishSteamCloudIndicatorSyncing(
+            direction = progress.direction,
+            progressMessage = buildSteamCloudProgressMessage(host, progress),
+            progressPercent = progress.progressPercent,
+            currentPath = progress.currentPath,
+        )
+    }
+
+    private fun buildSteamCloudProgressMessage(
+        host: Activity,
+        progress: SteamCloudSyncProgress,
+    ): String {
+        return when (progress.phase) {
+            SteamCloudSyncPhase.CONNECTING -> host.getString(R.string.main_steam_cloud_progress_connecting)
+            SteamCloudSyncPhase.LOGGING_ON -> host.getString(R.string.main_steam_cloud_progress_logging_on)
+            SteamCloudSyncPhase.REFRESHING_MANIFEST -> host.getString(R.string.main_steam_cloud_progress_refreshing_manifest)
+            SteamCloudSyncPhase.PREPARING_UPLOAD -> host.getString(R.string.main_steam_cloud_progress_preparing_upload)
+            SteamCloudSyncPhase.UPLOADING -> host.getString(
+                R.string.main_steam_cloud_progress_uploading,
+                progress.completedFiles,
+                progress.totalFiles
+            )
+
+            SteamCloudSyncPhase.DOWNLOADING -> host.getString(
+                R.string.main_steam_cloud_progress_downloading,
+                progress.completedFiles,
+                progress.totalFiles
+            )
+
+            SteamCloudSyncPhase.BACKING_UP_LOCAL -> host.getString(R.string.main_steam_cloud_progress_backing_up_local)
+            SteamCloudSyncPhase.APPLYING_TO_LOCAL -> host.getString(R.string.main_steam_cloud_progress_applying_to_local)
+            SteamCloudSyncPhase.FINALIZING -> when (progress.direction) {
+                SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD ->
+                    host.getString(R.string.main_steam_cloud_progress_finalizing_upload)
+
+                SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL ->
+                    host.getString(R.string.main_steam_cloud_progress_finalizing_pull)
+            }
         }
     }
 
@@ -1324,7 +2025,7 @@ class MainScreenViewModel : ViewModel() {
                     isSignal,
                     detail
                 )
-                val shareIntent = JvmLogShareService.buildShareIntent(payload)
+                val shareIntent = JvmLogShareService.buildShareIntent(host, payload)
                 Intent.createChooser(
                     shareIntent,
                     host.getString(R.string.sts_share_crash_chooser_title)
@@ -1457,6 +2158,7 @@ class MainScreenViewModel : ViewModel() {
         val currentBusyOperation = uiState.busyOperation
         val currentBusyMessage = uiState.busyMessage
         val currentBusyProgressPercent = uiState.busyProgressPercent
+        val currentSteamCloudIndicator = uiState.steamCloudIndicator
         val gameProcessRunning = GameLaunchReturnTracker.isGameProcessRunning(host)
         uiState = uiState.copy(
             initializing = false,
@@ -1489,7 +2191,8 @@ class MainScreenViewModel : ViewModel() {
             dependencyFolderCollapsed = snapshot.dependencyFolderCollapsed,
             dragLocked = snapshot.dragLocked,
             unassignedFolderName = snapshot.unassignedFolderName,
-            unassignedFolderOrder = snapshot.unassignedFolderOrder
+            unassignedFolderOrder = snapshot.unassignedFolderOrder,
+            steamCloudIndicator = currentSteamCloudIndicator,
         )
     }
 
@@ -1575,6 +2278,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     companion object {
+        private const val STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS = 60_000L
         private val DEFAULT_UNASSIGNED_FOLDER_NAME: String = if (Locale.getDefault().language.startsWith("zh")) {
             "未分类"
         } else {
@@ -1584,6 +2288,7 @@ class MainScreenViewModel : ViewModel() {
 
     override fun onCleared() {
         importedStsJarValidationExecutor.shutdownNow()
+        steamCloudExecutor.shutdownNow()
         launchExecutor.shutdownNow()
         diagnosticsExecutor.shutdownNow()
         suggestionExecutor.shutdownNow()

@@ -72,9 +72,19 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.steamcloud.SteamCloudLoginChallengeKind
+import io.stamethyst.backend.steamcloud.SteamCloudConflict
+import io.stamethyst.backend.steamcloud.SteamCloudConflictKind
+import io.stamethyst.backend.steamcloud.SteamCloudManifestEntry
+import io.stamethyst.backend.steamcloud.SteamCloudRemoteOnlyChange
+import io.stamethyst.backend.steamcloud.SteamCloudRemoteOnlyChangeKind
+import io.stamethyst.backend.steamcloud.SteamCloudUploadCandidate
+import io.stamethyst.backend.steamcloud.SteamCloudUploadCandidateKind
+import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
@@ -92,6 +102,9 @@ import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 private const val WORKSHOP_DOWNLOADER_PACKAGE_NAME = "top.apricityx.workshop"
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,6 +134,28 @@ fun LauncherSettingsScreen(
         onExportSaves = viewModel::onExportSaves,
         onExportLogs = { viewModel.onExportLogs(activity) },
         onExportLogsToFile = viewModel::onExportLogsToFile,
+        onStartSteamCloudLogin = { username, password ->
+            viewModel.onStartSteamCloudLogin(activity, username, password)
+        },
+        onRefreshSteamCloudManifest = { viewModel.onRefreshSteamCloudManifest(activity) },
+        onOpenSteamCloudManifestDialog = { viewModel.onOpenSteamCloudManifestDialog(activity) },
+        onDismissSteamCloudManifestDialog = viewModel::dismissSteamCloudManifestDialog,
+        onReviewSteamCloudUploadPlan = { viewModel.onReviewSteamCloudUploadPlan(activity) },
+        onDismissSteamCloudUploadPlanDialog = viewModel::dismissSteamCloudUploadPlanDialog,
+        onSteamCloudAutoPullBeforeLaunchChanged = { enabled ->
+            viewModel.onSteamCloudAutoPullBeforeLaunchChanged(activity, enabled)
+        },
+        onSteamCloudAutoPushAfterCleanShutdownChanged = { enabled ->
+            viewModel.onSteamCloudAutoPushAfterCleanShutdownChanged(activity, enabled)
+        },
+        onStartSteamCloudPush = { viewModel.onStartSteamCloudPush(activity) },
+        onConfirmSteamCloudPush = { viewModel.onConfirmSteamCloudPush(activity) },
+        onDismissSteamCloudPushConfirmDialog = viewModel::dismissSteamCloudPushConfirmDialog,
+        onPullSteamCloudFromManifest = { viewModel.onPullSteamCloudFromManifest(activity) },
+        onClearSteamCloudCredentials = { viewModel.onClearSteamCloudCredentials(activity) },
+        onSubmitSteamCloudChallengeCode = viewModel::onSubmitSteamCloudChallengeCode,
+        onAcceptSteamCloudDeviceConfirmation = viewModel::onAcceptSteamCloudDeviceConfirmation,
+        onCancelSteamCloudChallenge = viewModel::onCancelSteamCloudChallenge,
         onOpenNativeLibraryMarket = { navigator.push(Route.NativeLibraryMarket) },
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
@@ -230,6 +265,15 @@ fun LauncherDeveloperSettingsScreen(
         },
         onCompendiumUpgradeTouchFixEnabledChanged = { enabled ->
             viewModel.onCompendiumUpgradeTouchFixEnabledChanged(activity, enabled)
+        },
+        onSaveSteamCloudPhase0Credentials = { accountName, refreshToken, proxyUrl ->
+            viewModel.onSaveSteamCloudPhase0Credentials(activity, accountName, refreshToken, proxyUrl)
+        },
+        onRunSteamCloudPhase0Probe = {
+            viewModel.onRunSteamCloudPhase0Probe(activity)
+        },
+        onClearSteamCloudPhase0Credentials = {
+            viewModel.onClearSteamCloudPhase0Credentials(activity)
         },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
@@ -342,6 +386,22 @@ private fun LauncherSettingsScreenContent(
     onExportSaves: () -> Unit = {},
     onExportLogs: () -> Unit = {},
     onExportLogsToFile: () -> Unit = {},
+    onStartSteamCloudLogin: (String, String) -> Boolean = { _, _ -> false },
+    onRefreshSteamCloudManifest: () -> Unit = {},
+    onOpenSteamCloudManifestDialog: () -> Unit = {},
+    onDismissSteamCloudManifestDialog: () -> Unit = {},
+    onReviewSteamCloudUploadPlan: () -> Unit = {},
+    onDismissSteamCloudUploadPlanDialog: () -> Unit = {},
+    onSteamCloudAutoPullBeforeLaunchChanged: (Boolean) -> Unit = {},
+    onSteamCloudAutoPushAfterCleanShutdownChanged: (Boolean) -> Unit = {},
+    onStartSteamCloudPush: () -> Unit = {},
+    onConfirmSteamCloudPush: () -> Unit = {},
+    onDismissSteamCloudPushConfirmDialog: () -> Unit = {},
+    onPullSteamCloudFromManifest: () -> Unit = {},
+    onClearSteamCloudCredentials: () -> Unit = {},
+    onSubmitSteamCloudChallengeCode: (String) -> Unit = {},
+    onAcceptSteamCloudDeviceConfirmation: () -> Unit = {},
+    onCancelSteamCloudChallenge: () -> Unit = {},
     onOpenNativeLibraryMarket: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
@@ -457,6 +517,32 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
+                SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_title)) {
+                    SettingsSteamCloudSection(
+                        uiState = uiState,
+                        onStartSteamCloudLogin = onStartSteamCloudLogin,
+                        onRefreshSteamCloudManifest = onRefreshSteamCloudManifest,
+                        onOpenSteamCloudManifestDialog = onOpenSteamCloudManifestDialog,
+                        onDismissSteamCloudManifestDialog = onDismissSteamCloudManifestDialog,
+                        onReviewSteamCloudUploadPlan = onReviewSteamCloudUploadPlan,
+                        onDismissSteamCloudUploadPlanDialog = onDismissSteamCloudUploadPlanDialog,
+                        onSteamCloudAutoPullBeforeLaunchChanged =
+                            onSteamCloudAutoPullBeforeLaunchChanged,
+                        onSteamCloudAutoPushAfterCleanShutdownChanged =
+                            onSteamCloudAutoPushAfterCleanShutdownChanged,
+                        onStartSteamCloudPush = onStartSteamCloudPush,
+                        onConfirmSteamCloudPush = onConfirmSteamCloudPush,
+                        onDismissSteamCloudPushConfirmDialog = onDismissSteamCloudPushConfirmDialog,
+                        onPullSteamCloudFromManifest = onPullSteamCloudFromManifest,
+                        onClearSteamCloudCredentials = onClearSteamCloudCredentials,
+                        onSubmitSteamCloudChallengeCode = onSubmitSteamCloudChallengeCode,
+                        onAcceptSteamCloudDeviceConfirmation = onAcceptSteamCloudDeviceConfirmation,
+                        onCancelSteamCloudChallenge = onCancelSteamCloudChallenge,
+                    )
+                }
+            }
+
+            item {
                 SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
                     SettingsPerformanceSection(
                         uiState = uiState,
@@ -548,6 +634,602 @@ private fun LauncherSettingsScreenContent(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun SettingsSteamCloudSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onStartSteamCloudLogin: (String, String) -> Boolean,
+    onRefreshSteamCloudManifest: () -> Unit,
+    onOpenSteamCloudManifestDialog: () -> Unit,
+    onDismissSteamCloudManifestDialog: () -> Unit,
+    onReviewSteamCloudUploadPlan: () -> Unit,
+    onDismissSteamCloudUploadPlanDialog: () -> Unit,
+    onSteamCloudAutoPullBeforeLaunchChanged: (Boolean) -> Unit,
+    onSteamCloudAutoPushAfterCleanShutdownChanged: (Boolean) -> Unit,
+    onStartSteamCloudPush: () -> Unit,
+    onConfirmSteamCloudPush: () -> Unit,
+    onDismissSteamCloudPushConfirmDialog: () -> Unit,
+    onPullSteamCloudFromManifest: () -> Unit,
+    onClearSteamCloudCredentials: () -> Unit,
+    onSubmitSteamCloudChallengeCode: (String) -> Unit,
+    onAcceptSteamCloudDeviceConfirmation: () -> Unit,
+    onCancelSteamCloudChallenge: () -> Unit,
+) {
+    var showLoginDialog by rememberSaveable { mutableStateOf(false) }
+    var showPullConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingUsername by rememberSaveable { mutableStateOf(uiState.steamCloudAccountName) }
+    var pendingPassword by rememberSaveable { mutableStateOf("") }
+    var pendingChallengeCode by rememberSaveable { mutableStateOf("") }
+    val manifestSnapshot = uiState.steamCloudManifestDialogSnapshot
+    val uploadPlanSnapshot = uiState.steamCloudUploadPlanDialogSnapshot
+    val uploadConfirmPlan = uiState.steamCloudUploadConfirmPlan
+    val loginChallenge = uiState.steamCloudLoginChallenge
+
+    LaunchedEffect(loginChallenge?.kind, loginChallenge?.previousCodeWasIncorrect, loginChallenge?.emailHint) {
+        pendingChallengeCode = ""
+    }
+
+    Text(
+        text = stringResource(R.string.settings_steam_cloud_experimental_desc),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Spacer(modifier = Modifier.size(8.dp))
+    Text(
+        text = uiState.steamCloudStatusText.ifBlank {
+            stringResource(R.string.settings_steam_cloud_status_not_logged_in)
+        },
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SwitchSettingRow(
+        checked = uiState.steamCloudAutoPullBeforeLaunchEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_steam_cloud_auto_pull_enabled_title),
+        disabledText = stringResource(R.string.settings_steam_cloud_auto_pull_disabled_title),
+        description = stringResource(R.string.settings_steam_cloud_auto_pull_desc),
+        onCheckedChange = onSteamCloudAutoPullBeforeLaunchChanged,
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SwitchSettingRow(
+        checked = uiState.steamCloudAutoPushAfterCleanShutdownEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_steam_cloud_auto_push_enabled_title),
+        disabledText = stringResource(R.string.settings_steam_cloud_auto_push_disabled_title),
+        description = stringResource(R.string.settings_steam_cloud_auto_push_desc),
+        onCheckedChange = onSteamCloudAutoPushAfterCleanShutdownChanged,
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_login_title),
+        supportingText = uiState.steamCloudCredentialsSummary,
+        enabled = !uiState.busy,
+        onClick = {
+            pendingUsername = uiState.steamCloudAccountName
+            pendingPassword = ""
+            showLoginDialog = true
+        }
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_refresh_title),
+        supportingText = uiState.steamCloudManifestSummary,
+        enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+        onClick = onRefreshSteamCloudManifest
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_view_manifest_title),
+        supportingText = uiState.steamCloudManifestSummary,
+        enabled = !uiState.busy && uiState.steamCloudManifestAvailable,
+        onClick = onOpenSteamCloudManifestDialog
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_review_upload_plan_title),
+        supportingText = stringResource(R.string.settings_steam_cloud_review_upload_plan_desc),
+        enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+        onClick = onReviewSteamCloudUploadPlan
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_push_title),
+        supportingText = stringResource(R.string.settings_steam_cloud_push_desc),
+        enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+        onClick = onStartSteamCloudPush
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_pull_title),
+        supportingText = stringResource(R.string.settings_steam_cloud_pull_desc),
+        enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+        onClick = { showPullConfirmDialog = true }
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_clear_title),
+        supportingText = stringResource(R.string.settings_steam_cloud_clear_desc),
+        enabled = !uiState.busy,
+        onClick = onClearSteamCloudCredentials
+    )
+
+    if (showLoginDialog) {
+        AlertDialog(
+            onDismissRequest = { showLoginDialog = false },
+            title = { Text(stringResource(R.string.settings_steam_cloud_login_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_steam_cloud_login_dialog_desc),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = pendingUsername,
+                        onValueChange = { pendingUsername = it },
+                        singleLine = true,
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_steam_cloud_username_label)) }
+                    )
+                    OutlinedTextField(
+                        value = pendingPassword,
+                        onValueChange = { pendingPassword = it },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_steam_cloud_password_label)) }
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_steam_cloud_login_dialog_password_policy),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    enabled = !uiState.busy,
+                    onClick = {
+                        if (onStartSteamCloudLogin(pendingUsername, pendingPassword)) {
+                            showLoginDialog = false
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_steam_cloud_login_action))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    enabled = !uiState.busy,
+                    onClick = { showLoginDialog = false }
+                ) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showPullConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showPullConfirmDialog = false },
+            title = { Text(stringResource(R.string.settings_steam_cloud_pull_confirm_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_steam_cloud_pull_confirm_desc),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                HapticTextButton(
+                    enabled = !uiState.busy,
+                    onClick = {
+                        showPullConfirmDialog = false
+                        onPullSteamCloudFromManifest()
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_steam_cloud_pull_action))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    enabled = !uiState.busy,
+                    onClick = { showPullConfirmDialog = false }
+                ) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (manifestSnapshot != null) {
+        AlertDialog(
+            onDismissRequest = onDismissSteamCloudManifestDialog,
+            title = { Text(stringResource(R.string.settings_steam_cloud_view_manifest_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(
+                            R.string.settings_steam_cloud_manifest_dialog_summary,
+                            manifestSnapshot.fileCount,
+                            manifestSnapshot.preferencesCount,
+                            manifestSnapshot.savesCount
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (manifestSnapshot.warnings.isNotEmpty()) {
+                        Text(
+                            text = manifestSnapshot.warnings.joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(manifestSnapshot.entries.size) { index ->
+                            val entry = manifestSnapshot.entries[index]
+                            SteamCloudManifestEntryCard(entry = entry)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = onDismissSteamCloudManifestDialog) {
+                    Text(stringResource(R.string.common_action_close))
+                }
+            }
+        )
+    }
+
+    if (uploadPlanSnapshot != null) {
+        AlertDialog(
+            onDismissRequest = onDismissSteamCloudUploadPlanDialog,
+            title = { Text(stringResource(R.string.settings_steam_cloud_upload_plan_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(
+                            R.string.settings_steam_cloud_upload_plan_dialog_summary,
+                            if (uploadPlanSnapshot.baselineConfigured) {
+                                stringResource(R.string.settings_steam_cloud_upload_plan_baseline_ready)
+                            } else {
+                                stringResource(R.string.settings_steam_cloud_upload_plan_baseline_missing)
+                            },
+                            uploadPlanSnapshot.uploadCandidates.size,
+                            formatSteamCloudBytes(uploadPlanSnapshot.uploadBytes),
+                            uploadPlanSnapshot.conflicts.size,
+                            uploadPlanSnapshot.remoteOnlyChanges.size
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (uploadPlanSnapshot.uploadCandidates.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.settings_steam_cloud_upload_plan_candidates_title),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            uploadPlanSnapshot.uploadCandidates.forEach { candidate ->
+                                SteamCloudUploadCandidateCard(candidate)
+                            }
+                        }
+                        if (uploadPlanSnapshot.conflicts.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.settings_steam_cloud_upload_plan_conflicts_title),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            uploadPlanSnapshot.conflicts.forEach { conflict ->
+                                SteamCloudConflictCard(conflict)
+                            }
+                        }
+                        if (uploadPlanSnapshot.remoteOnlyChanges.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.settings_steam_cloud_upload_plan_remote_only_title),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            uploadPlanSnapshot.remoteOnlyChanges.forEach { change ->
+                                SteamCloudRemoteOnlyChangeCard(change)
+                            }
+                        }
+                        if (uploadPlanSnapshot.warnings.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.settings_steam_cloud_upload_plan_warnings_title),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Text(
+                                text = uploadPlanSnapshot.warnings.distinct().joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = onDismissSteamCloudUploadPlanDialog) {
+                    Text(stringResource(R.string.common_action_close))
+                }
+            }
+        )
+    }
+
+    if (uploadConfirmPlan != null) {
+        AlertDialog(
+            onDismissRequest = onDismissSteamCloudPushConfirmDialog,
+            title = { Text(stringResource(R.string.settings_steam_cloud_push_confirm_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(
+                            R.string.settings_steam_cloud_push_confirm_desc,
+                            uploadConfirmPlan.uploadCandidates.size,
+                            formatSteamCloudBytes(uploadConfirmPlan.uploadBytes)
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (uploadConfirmPlan.remoteOnlyChanges.isNotEmpty()) {
+                        Text(
+                            text = stringResource(
+                                R.string.settings_steam_cloud_push_confirm_remote_only,
+                                uploadConfirmPlan.remoteOnlyChanges.size
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    if (uploadConfirmPlan.warnings.isNotEmpty()) {
+                        Text(
+                            text = uploadConfirmPlan.warnings.distinct().joinToString("\n"),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    enabled = !uiState.busy,
+                    onClick = onConfirmSteamCloudPush
+                ) {
+                    Text(stringResource(R.string.settings_steam_cloud_push_action))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    enabled = !uiState.busy,
+                    onClick = onDismissSteamCloudPushConfirmDialog
+                ) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (loginChallenge != null) {
+        AlertDialog(
+            onDismissRequest = onCancelSteamCloudChallenge,
+            title = {
+                Text(
+                    when (loginChallenge.kind) {
+                        SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
+                            stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_title)
+                        SteamCloudLoginChallengeKind.DEVICE_CODE ->
+                            if (loginChallenge.previousCodeWasIncorrect) {
+                                stringResource(R.string.settings_steam_cloud_challenge_device_code_retry_title)
+                            } else {
+                                stringResource(R.string.settings_steam_cloud_challenge_device_code_title)
+                            }
+                        SteamCloudLoginChallengeKind.EMAIL_CODE ->
+                            if (loginChallenge.previousCodeWasIncorrect) {
+                                stringResource(R.string.settings_steam_cloud_challenge_email_code_retry_title)
+                            } else {
+                                stringResource(R.string.settings_steam_cloud_challenge_email_code_title)
+                            }
+                    }
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = when (loginChallenge.kind) {
+                            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
+                                stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_desc)
+                            SteamCloudLoginChallengeKind.DEVICE_CODE ->
+                                stringResource(R.string.settings_steam_cloud_challenge_device_code_desc)
+                            SteamCloudLoginChallengeKind.EMAIL_CODE ->
+                                if (loginChallenge.emailHint.isNotBlank()) {
+                                    stringResource(
+                                        R.string.settings_steam_cloud_challenge_email_code_desc_with_hint,
+                                        loginChallenge.emailHint
+                                    )
+                                } else {
+                                    stringResource(R.string.settings_steam_cloud_challenge_email_code_desc)
+                                }
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (loginChallenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION) {
+                        OutlinedTextField(
+                            value = pendingChallengeCode,
+                            onValueChange = { pendingChallengeCode = it },
+                            singleLine = true,
+                            enabled = true,
+                            label = {
+                                Text(
+                                    when (loginChallenge.kind) {
+                                        SteamCloudLoginChallengeKind.DEVICE_CODE ->
+                                            stringResource(R.string.settings_steam_cloud_challenge_device_code_label)
+                                        SteamCloudLoginChallengeKind.EMAIL_CODE ->
+                                            stringResource(R.string.settings_steam_cloud_challenge_email_code_label)
+                                        SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> ""
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        when (loginChallenge.kind) {
+                            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
+                                onAcceptSteamCloudDeviceConfirmation()
+                            SteamCloudLoginChallengeKind.DEVICE_CODE,
+                            SteamCloudLoginChallengeKind.EMAIL_CODE -> {
+                                if (pendingChallengeCode.isNotBlank()) {
+                                    onSubmitSteamCloudChallengeCode(pendingChallengeCode)
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        when (loginChallenge.kind) {
+                            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
+                                stringResource(R.string.settings_steam_cloud_challenge_continue_action)
+                            SteamCloudLoginChallengeKind.DEVICE_CODE,
+                            SteamCloudLoginChallengeKind.EMAIL_CODE ->
+                                stringResource(R.string.settings_steam_cloud_challenge_submit_action)
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = onCancelSteamCloudChallenge) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SteamCloudUploadCandidateCard(candidate: SteamCloudUploadCandidate) {
+    SteamCloudPlanRowCard(
+        title = candidate.localRelativePath,
+        subtitle = stringResource(
+            when (candidate.kind) {
+                SteamCloudUploadCandidateKind.NEW_FILE ->
+                    R.string.settings_steam_cloud_upload_candidate_new
+                SteamCloudUploadCandidateKind.MODIFIED_FILE ->
+                    R.string.settings_steam_cloud_upload_candidate_modified
+            },
+            formatSteamCloudBytes(candidate.fileSize)
+        )
+    )
+}
+
+@Composable
+private fun SteamCloudConflictCard(conflict: SteamCloudConflict) {
+    SteamCloudPlanRowCard(
+        title = conflict.localRelativePath,
+        subtitle = stringResource(
+            when (conflict.kind) {
+                SteamCloudConflictKind.BASELINE_REQUIRED ->
+                    R.string.settings_steam_cloud_conflict_baseline_required
+                SteamCloudConflictKind.BOTH_CHANGED ->
+                    R.string.settings_steam_cloud_conflict_both_changed
+            }
+        )
+    )
+}
+
+@Composable
+private fun SteamCloudRemoteOnlyChangeCard(change: SteamCloudRemoteOnlyChange) {
+    SteamCloudPlanRowCard(
+        title = change.localRelativePath,
+        subtitle = stringResource(
+            when (change.kind) {
+                SteamCloudRemoteOnlyChangeKind.NEW_REMOTE_FILE ->
+                    R.string.settings_steam_cloud_remote_only_new
+                SteamCloudRemoteOnlyChangeKind.MODIFIED_REMOTE_FILE ->
+                    R.string.settings_steam_cloud_remote_only_modified
+                SteamCloudRemoteOnlyChangeKind.REMOTE_FILE_DELETED ->
+                    R.string.settings_steam_cloud_remote_only_deleted
+            }
+        )
+    )
+}
+
+@Composable
+private fun SteamCloudPlanRowCard(
+    title: String,
+    subtitle: String,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            SelectionContainer {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun SteamCloudManifestEntryCard(entry: SteamCloudManifestEntry) {
+    val timestampText = remember(entry.timestamp) {
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(entry.timestamp))
+    }
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            SelectionContainer {
+                Text(
+                    text = entry.remotePath,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Text(
+                text = entry.localRelativePath,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = stringResource(
+                    R.string.settings_steam_cloud_manifest_entry_meta,
+                    entry.rawSize,
+                    timestampText,
+                    entry.persistState
+                ),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+private fun formatSteamCloudBytes(bytes: Long): String {
+    val kib = 1024.0
+    val mib = kib * 1024.0
+    return when {
+        bytes >= mib -> String.format(Locale.US, "%.1f MiB", bytes / mib)
+        bytes >= kib -> String.format(Locale.US, "%.1f KiB", bytes / kib)
+        else -> "$bytes B"
     }
 }
 
@@ -1160,6 +1842,9 @@ private fun LauncherDeveloperSettingsScreenContent(
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
+    onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
+    onRunSteamCloudPhase0Probe: () -> Unit = {},
+    onClearSteamCloudPhase0Credentials: () -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
@@ -1220,6 +1905,17 @@ private fun LauncherDeveloperSettingsScreenContent(
             }
 
             item {
+                SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_phase0_title)) {
+                    SettingsSteamCloudPhase0Section(
+                        uiState = uiState,
+                        onSaveCredentials = onSaveSteamCloudPhase0Credentials,
+                        onRunProbe = onRunSteamCloudPhase0Probe,
+                        onClearCredentials = onClearSteamCloudPhase0Credentials,
+                    )
+                }
+            }
+
+            item {
                 SettingsSectionCard(title = stringResource(R.string.settings_developer_render_title)) {
                     SettingsAdvancedRenderSection(
                         uiState = uiState,
@@ -1259,6 +1955,114 @@ private fun LauncherDeveloperSettingsScreenContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsSteamCloudPhase0Section(
+    uiState: SettingsScreenViewModel.UiState,
+    onSaveCredentials: (String, String, String) -> Boolean,
+    onRunProbe: () -> Unit,
+    onClearCredentials: () -> Unit,
+) {
+    var showCredentialsDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingAccountName by rememberSaveable { mutableStateOf("") }
+    var pendingRefreshToken by rememberSaveable { mutableStateOf("") }
+    var pendingProxyUrl by rememberSaveable { mutableStateOf("") }
+
+    Text(
+        text = uiState.steamCloudPhase0StatusText.ifBlank {
+            stringResource(R.string.settings_steam_cloud_phase0_status_idle)
+        },
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_phase0_credentials_title),
+        supportingText = uiState.steamCloudPhase0CredentialsSummary,
+        enabled = !uiState.busy,
+        onClick = {
+            pendingAccountName = uiState.steamCloudPhase0AccountName
+            pendingRefreshToken = ""
+            pendingProxyUrl = uiState.steamCloudPhase0ProxyUrl
+            showCredentialsDialog = true
+        }
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_phase0_run_title),
+        supportingText = stringResource(R.string.settings_steam_cloud_phase0_run_desc),
+        enabled = !uiState.busy,
+        onClick = onRunProbe
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_phase0_clear_title),
+        supportingText = stringResource(R.string.settings_steam_cloud_phase0_clear_desc),
+        enabled = !uiState.busy,
+        onClick = onClearCredentials
+    )
+
+    if (showCredentialsDialog) {
+        AlertDialog(
+            onDismissRequest = { showCredentialsDialog = false },
+            title = { Text(stringResource(R.string.settings_steam_cloud_phase0_credentials_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pendingAccountName,
+                        onValueChange = { pendingAccountName = it },
+                        singleLine = true,
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_account_label)) }
+                    )
+                    OutlinedTextField(
+                        value = pendingRefreshToken,
+                        onValueChange = { pendingRefreshToken = it },
+                        singleLine = false,
+                        minLines = 3,
+                        maxLines = 5,
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_token_label)) }
+                    )
+                    OutlinedTextField(
+                        value = pendingProxyUrl,
+                        onValueChange = { pendingProxyUrl = it },
+                        singleLine = true,
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_proxy_label)) }
+                    )
+                    Text(
+                        text = if (uiState.steamCloudPhase0RefreshTokenConfigured) {
+                            stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_keep_token)
+                        } else {
+                            stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_new_token)
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_proxy_hint),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        if (onSaveCredentials(pendingAccountName, pendingRefreshToken, pendingProxyUrl)) {
+                            showCredentialsDialog = false
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showCredentialsDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -2379,7 +3183,7 @@ fun SettingsEffectsHandler(
                 }
 
                 is SettingsScreenViewModel.Effect.ShareJvmLogsBundle -> {
-                    val shareIntent = JvmLogShareService.buildShareIntent(effect.payload)
+                    val shareIntent = JvmLogShareService.buildShareIntent(activity, effect.payload)
                     activity.startActivity(
                         Intent.createChooser(shareIntent, shareLogsChooserTitle)
                     )

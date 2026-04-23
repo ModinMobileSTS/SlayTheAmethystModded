@@ -5,6 +5,7 @@ enum class UiBusyOperation {
     MOD_IMPORT,
     NATIVE_LIBRARY_INSTALL,
     GAME_PROCESS_CLEANUP,
+    STEAM_CLOUD_SYNC,
     OTHER_BUSY
 
     ;
@@ -13,7 +14,8 @@ enum class UiBusyOperation {
         return when (this) {
             MOD_IMPORT,
             NATIVE_LIBRARY_INSTALL,
-            GAME_PROCESS_CLEANUP -> true
+            GAME_PROCESS_CLEANUP,
+            STEAM_CLOUD_SYNC -> true
             NONE,
             OTHER_BUSY -> false
         }

@@ -42,7 +42,10 @@ internal data class MainScreenActions(
     val onShareCrashRecoveryReport: () -> Unit = {},
     val onCloseApp: () -> Unit = {},
     val onImportMods: () -> Unit = {},
-    val onLaunch: () -> Unit = {}
+    val onLaunch: () -> Unit = {},
+    val onRefreshSteamCloudStatus: () -> Unit = {},
+    val onUseLocalSteamCloudProgress: () -> Unit = {},
+    val onUseCloudSteamCloudProgress: () -> Unit = {},
 )
 
 @Composable
@@ -104,7 +107,16 @@ internal fun rememberMainScreenActions(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")
                     )
                 },
-                onLaunch = { viewModel.onLaunch(activity) }
+                onLaunch = { viewModel.onLaunch(activity) },
+                onRefreshSteamCloudStatus = {
+                    viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
+                },
+                onUseLocalSteamCloudProgress = {
+                    viewModel.onUseLocalSteamCloudProgress(activity)
+                },
+                onUseCloudSteamCloudProgress = {
+                    viewModel.onUseCloudSteamCloudProgress(activity)
+                },
             )
         }
     }
