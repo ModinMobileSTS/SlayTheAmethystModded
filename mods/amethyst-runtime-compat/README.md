@@ -34,6 +34,9 @@ Uses the launcher's UI-size setting to dynamically rewrite base-game and mod rea
 10. `BurningEliteFlameCompatPatches`
 Enlarges the burning-elite emerald flame marker when the launcher's Larger UI mode reuses mobile map-node scaling. This addresses the symptom where the elite node grows with the larger mobile-style layout but its flame VFX stays at desktop size and becomes hard to notice. Type: compatibility workaround implemented by `BurningEliteFlameCompatPatches`.
 
+11. `CharacterOptionRelicKeywordCompatPatches`
+Reapplies BaseMod's starter-relic multiword-keyword normalization when mobile layout handling is active inside `CharacterOption.renderRelics`. This addresses the symptom where character-select relic descriptions leak raw keyword prefixes such as `spearandshield:` after the launcher's Larger UI mode reroutes the screen through the mobile single-relic branch. Type: compatibility workaround implemented by `CharacterOptionRelicKeywordCompatPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:
