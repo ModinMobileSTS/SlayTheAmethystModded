@@ -71,7 +71,9 @@ fun LauncherSteamCloudLoginScreen(
             loginChallenge == null &&
             uiState.steamCloudRefreshTokenConfigured
         ) {
-            navigator.popTo(Route.Settings)
+            if (!navigator.popTo(Route.FirstRunSetup)) {
+                navigator.popTo(Route.Settings)
+            }
         }
     }
 

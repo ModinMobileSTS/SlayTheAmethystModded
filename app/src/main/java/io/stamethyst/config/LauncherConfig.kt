@@ -120,10 +120,6 @@ object LauncherConfig {
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
     private const val PREF_KEY_AUTO_CHECK_UPDATES_ENABLED = "auto_check_updates_enabled"
-    private const val PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED =
-        "steam_cloud_auto_pull_before_launch_enabled"
-    private const val PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED =
-        "steam_cloud_auto_push_after_clean_shutdown_enabled"
     private const val PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED =
         "steam_cloud_watt_acceleration_enabled"
     private const val PREF_KEY_STEAM_CLOUD_SAVE_MODE = "steam_cloud_save_mode"
@@ -135,6 +131,7 @@ object LauncherConfig {
     private const val PREF_KEY_LAST_SUCCESSFUL_METADATA_SOURCE_ID = "last_successful_metadata_source_id"
     private const val PREF_KEY_LAST_SUCCESSFUL_DOWNLOAD_SOURCE_ID = "last_successful_download_source_id"
     private const val PREF_KEY_LAST_UPDATE_ERROR_SUMMARY = "last_update_error_summary"
+    private const val PREF_KEY_FIRST_RUN_SETUP_COMPLETED = "first_run_setup_completed"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -190,13 +187,12 @@ object LauncherConfig {
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
-    const val DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED = false
-    const val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED = false
-    const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = false
+    const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = true
     val DEFAULT_STEAM_CLOUD_SAVE_MODE: SteamCloudSaveMode = SteamCloudSaveMode.DEFAULT
     val DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS: Set<String> =
         SteamCloudSyncBlacklist.defaultLocalRelativePaths()
     const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "gh_proxy_com"
+    const val DEFAULT_FIRST_RUN_SETUP_COMPLETED = false
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
     const val MIN_JVM_HEAP_MAX_MB = 256
@@ -221,8 +217,8 @@ object LauncherConfig {
     const val MAX_RENDER_SCALE = 1.00f
 
     const val DEFAULT_TOUCHSCREEN_ENABLED = true
-    private const val DEFAULT_BIGGER_TEXT_ENABLED = true
-    const val DEFAULT_GAMEPLAY_FONT_SCALE = 1.50f
+    private const val DEFAULT_BIGGER_TEXT_ENABLED = false
+    const val DEFAULT_GAMEPLAY_FONT_SCALE = 1.00f
     const val MIN_GAMEPLAY_FONT_SCALE = 1.00f
     const val MAX_GAMEPLAY_FONT_SCALE = 2.00f
     const val GAMEPLAY_FONT_SCALE_STEP = 0.05f
@@ -230,7 +226,7 @@ object LauncherConfig {
     const val MIN_GAMEPLAY_UI_SCALE = 1.00f
     const val MAX_GAMEPLAY_UI_SCALE = 1.50f
     const val GAMEPLAY_UI_SCALE_STEP = 0.05f
-    const val DEFAULT_GAMEPLAY_LARGER_UI_ENABLED = true
+    const val DEFAULT_GAMEPLAY_LARGER_UI_ENABLED = false
     const val DEFAULT_PLAYER_NAME = "player"
 
     private const val GAMEPLAY_SETTINGS_FILE_NAME = "STSGameplaySettings"
@@ -1072,32 +1068,6 @@ object LauncherConfig {
         }
     }
 
-    fun isSteamCloudAutoPullBeforeLaunchEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED,
-            DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED
-        )
-    }
-
-    fun setSteamCloudAutoPullBeforeLaunchEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED, enabled)
-        }
-    }
-
-    fun isSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED,
-            DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED
-        )
-    }
-
-    fun setSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED, enabled)
-        }
-    }
-
     fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
             PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
@@ -1231,6 +1201,19 @@ object LauncherConfig {
             } else {
                 putString(PREF_KEY_LAST_UPDATE_ERROR_SUMMARY, summary.trim())
             }
+        }
+    }
+
+    fun isFirstRunSetupCompleted(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_FIRST_RUN_SETUP_COMPLETED,
+            DEFAULT_FIRST_RUN_SETUP_COMPLETED
+        )
+    }
+
+    fun setFirstRunSetupCompleted(context: Context, completed: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_FIRST_RUN_SETUP_COMPLETED, completed)
         }
     }
 
@@ -1599,6 +1582,8 @@ object LauncherConfig {
     fun syncLauncherPrefsToDisk(context: Context): Boolean {
         val preferences = prefs(context)
         val snapshot = LinkedHashMap(preferences.all)
+        snapshot.remove(LEGACY_PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED)
+        snapshot.remove(LEGACY_PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED)
         if (!snapshot.containsKey(PREF_KEY_TOUCHSCREEN_ENABLED)) {
             snapshot[PREF_KEY_TOUCHSCREEN_ENABLED] =
                 readLegacyTouchscreenEnabled(gameplaySettingsFile(context))
@@ -1759,6 +1744,11 @@ object LauncherConfig {
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREF_NAME_LAUNCHER, Context.MODE_PRIVATE)
+
+    private const val LEGACY_PREF_KEY_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED =
+        "steam_cloud_auto_pull_before_launch_enabled"
+    private const val LEGACY_PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED =
+        "steam_cloud_auto_push_after_clean_shutdown_enabled"
 
     internal fun syncTouchscreenEnabledToGameplaySettingsFile(
         file: File,

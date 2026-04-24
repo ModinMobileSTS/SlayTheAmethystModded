@@ -81,7 +81,9 @@ fun LauncherSteamCloudGuardScreen(
     LaunchedEffect(challenge, uiState.busy, uiState.steamCloudRefreshTokenConfigured) {
         if (challenge == null && !uiState.busy) {
             if (uiState.steamCloudRefreshTokenConfigured) {
-                navigator.popTo(Route.Settings)
+                if (!navigator.popTo(Route.FirstRunSetup)) {
+                    navigator.popTo(Route.Settings)
+                }
             } else if (!navigator.popTo(Route.SteamCloudLogin)) {
                 navigator.goBack()
             }

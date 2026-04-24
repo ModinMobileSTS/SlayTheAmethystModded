@@ -8,6 +8,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object QuickStart : Route
     @Serializable
+    data object FirstRunSetup : Route
+    @Serializable
     data object Main : Route
     @Serializable
     data object Settings : Route
@@ -17,6 +19,8 @@ sealed interface Route : NavKey {
     data object SteamCloudGuard : Route
     @Serializable
     data object SteamCloudSaveSettings : Route
+    @Serializable
+    data object SteamCloudSyncBlacklistSettings : Route
     @Serializable
     data object DeveloperSettings : Route
     @Serializable

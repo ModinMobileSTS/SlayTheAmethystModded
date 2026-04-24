@@ -130,6 +130,7 @@ class SteamCloudDiffPlannerTest {
             SteamCloudRemoteOnlyChangeKind.MODIFIED_REMOTE_FILE,
             plan.remoteOnlyChanges.single().kind
         )
+        assertEquals(2L, plan.remoteManifestFetchedAtMs)
     }
 
     @Test
@@ -279,7 +280,7 @@ class SteamCloudDiffPlannerTest {
 
     private fun remoteSnapshot(vararg entries: SteamCloudManifestEntry): SteamCloudManifestSnapshot {
         return SteamCloudManifestSnapshot(
-            fetchedAtMs = 1L,
+            fetchedAtMs = 2L,
             fileCount = entries.size,
             preferencesCount = entries.count { it.rootKind == SteamCloudRootKind.PREFERENCES },
             savesCount = entries.count { it.rootKind == SteamCloudRootKind.SAVES },

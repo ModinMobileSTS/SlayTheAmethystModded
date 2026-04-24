@@ -48,7 +48,6 @@ internal data class MainScreenActions(
     val onCloseApp: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
-    val onLaunchDirect: () -> Unit = {},
     val onRefreshSteamCloudStatus: () -> Unit = {},
     val onCancelSteamCloudCheck: () -> Unit = {},
     val onUseLocalSteamCloudProgress: () -> Unit = {},
@@ -115,9 +114,6 @@ internal fun rememberMainScreenActions(
                     )
                 },
                 onLaunch = { viewModel.onLaunchRequested(activity) },
-                onLaunchDirect = {
-                    viewModel.onLaunchBypassingSteamCloudPreLaunchSync(activity)
-                },
                 onRefreshSteamCloudStatus = {
                     viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
                 },

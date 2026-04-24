@@ -123,7 +123,11 @@ class LauncherActivity : AppCompatActivity() {
         val hasImportedStsJar = StsJarValidator.isValid(RuntimePaths.importedStsJar(this))
         launchedWithoutImportedStsJar = !hasImportedStsJar
         val initialRoute = if (hasImportedStsJar) {
-            Route.Main
+            if (LauncherPreferences.isFirstRunSetupCompleted(this)) {
+                Route.Main
+            } else {
+                Route.FirstRunSetup
+            }
         } else {
             Route.QuickStart
         }
@@ -138,6 +142,7 @@ class LauncherActivity : AppCompatActivity() {
                     initialRoute = initialRoute,
                     mainViewModel = mainViewModel,
                     settingsViewModel = settingsViewModel,
+                    onMainScreenOpened = ::onMainScreenOpened,
                 )
             }
         }
@@ -148,7 +153,6 @@ class LauncherActivity : AppCompatActivity() {
         }
         maybeShowExternalStsImportNotice(intent)
         maybeHandleJarIntent(intent)
-        maybeStartStartupAutoUpdateCheck()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -253,18 +257,21 @@ class LauncherActivity : AppCompatActivity() {
                     ) {
                         mainViewModel.refresh(this@LauncherActivity)
                     }
+                    settingsViewModel.startGameReturnAutoUpdateCheck(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
                     return
                 }
                 if (killRequested) {
                     GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
                     mainViewModel.refresh(this@LauncherActivity)
+                    settingsViewModel.startGameReturnAutoUpdateCheck(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
                     return
                 }
                 remainingAttempts--
                 if (remainingAttempts <= 0) {
                     GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    settingsViewModel.startGameReturnAutoUpdateCheck(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
                     return
                 }
@@ -669,7 +676,6 @@ class LauncherActivity : AppCompatActivity() {
                 pendingStorageMigrationDialog = null
             }
             drainQueuedExternalImportRequest()
-            maybeStartStartupAutoUpdateCheck()
         }
         pendingStorageMigrationDialog = dialog
         dialog.show()
@@ -712,24 +718,10 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun finishPendingJarIntentFlow() {
         pendingModImportFlow = false
-        maybeStartStartupAutoUpdateCheck()
     }
 
-    private fun maybeStartStartupAutoUpdateCheck() {
-        if (isFinishing || isDestroyed) {
-            return
-        }
-        if (pendingStorageMigrationDialog?.isShowing == true) {
-            return
-        }
-        if (
-            queuedExternalImportRequest != null ||
-            pendingModImportFlow ||
-            pendingImportDialog?.isShowing == true
-        ) {
-            return
-        }
-        settingsViewModel.startStartupAutoUpdateCheck(this)
+    private fun onMainScreenOpened() {
+        settingsViewModel.startMainScreenAutoUpdateCheck(this)
     }
 
     private fun formatByteCount(bytes: Long): String {

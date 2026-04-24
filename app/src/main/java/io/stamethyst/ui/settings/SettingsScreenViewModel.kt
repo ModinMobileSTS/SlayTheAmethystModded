@@ -106,6 +106,11 @@ private const val STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR = "SlayTheAmethystBackup"
 
 @Stable
 class SettingsScreenViewModel : ViewModel() {
+    private data class SteamCloudLoginAutoEnableResult(
+        val autoEnabled: Boolean,
+        val failureSummary: String? = null,
+    )
+
     sealed interface Effect {
         data object OpenImportJarPicker : Effect
         data object OpenImportModsPicker : Effect
@@ -263,10 +268,6 @@ class SettingsScreenViewModel : ViewModel() {
         val steamCloudSyncBlacklistPaths: Set<String> =
             LauncherPreferences.DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
         val steamCloudSyncBlacklistCandidates: List<String> = emptyList(),
-        val steamCloudAutoPullBeforeLaunchEnabled: Boolean =
-            LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED,
-        val steamCloudAutoPushAfterCleanShutdownEnabled: Boolean =
-            LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED,
         val steamCloudWattAccelerationEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
         val steamCloudCredentialsSummary: String = "",
@@ -300,7 +301,6 @@ class SettingsScreenViewModel : ViewModel() {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
-    private var startupAutoUpdateCheckRequested = false
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
     private var pendingSteamCloudConfirmationFuture: CompletableFuture<Boolean>? = null
@@ -328,16 +328,12 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(activity, clearBusy = false)
     }
 
-    fun startStartupAutoUpdateCheck(host: Activity) {
-        if (startupAutoUpdateCheckRequested) {
-            return
-        }
-        startupAutoUpdateCheckRequested = true
-        syncStoredUpdateState(host)
-        if (!uiState.autoCheckUpdatesEnabled) {
-            return
-        }
-        runUpdateCheck(host, userInitiated = false)
+    fun startGameReturnAutoUpdateCheck(host: Activity) {
+        startAutomaticUpdateCheck(host)
+    }
+
+    fun startMainScreenAutoUpdateCheck(host: Activity) {
+        startAutomaticUpdateCheck(host)
     }
 
     fun onAutoCheckUpdatesChanged(host: Activity, enabled: Boolean) {
@@ -882,8 +878,6 @@ class SettingsScreenViewModel : ViewModel() {
                             host,
                             SteamCloudSaveMode.INDEPENDENT,
                         )
-                        LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, false)
-                        LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, false)
                         steamCloudSaveMode = SteamCloudSaveMode.INDEPENDENT
                     }
                 }
@@ -928,10 +922,6 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudSaveMode = steamCloudSaveMode,
                         steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
                         steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
-                        steamCloudAutoPullBeforeLaunchEnabled =
-                            LauncherPreferences.isSteamCloudAutoPullBeforeLaunchEnabled(host),
-                        steamCloudAutoPushAfterCleanShutdownEnabled =
-                            LauncherPreferences.isSteamCloudAutoPushAfterCleanShutdownEnabled(host),
                         steamCloudWattAccelerationEnabled =
                             LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
                         steamCloudCredentialsSummary = buildSteamCloudCredentialsSummary(
@@ -966,6 +956,17 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private fun startAutomaticUpdateCheck(host: Activity) {
+        syncStoredUpdateState(host)
+        if (!uiState.autoCheckUpdatesEnabled) {
+            return
+        }
+        if (uiState.updateCheckInProgress || uiState.releaseHistoryLoading || uiState.busy) {
+            return
+        }
+        runUpdateCheck(host, userInitiated = false)
     }
 
     fun onStartSteamCloudLogin(
@@ -1055,18 +1056,45 @@ class SettingsScreenViewModel : ViewModel() {
                 }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)
+                val autoEnableResult = enableSteamCloudSaveModeAfterLogin(host)
                 host.runOnUiThread {
                     clearPendingSteamCloudChallengeState()
                     dismissSteamCloudManifestDialog()
                     dismissSteamCloudUploadPlanDialog()
                     dismissSteamCloudPushConfirmDialog()
-                    showToast(
-                        host,
-                        UiText.StringResource(
-                            R.string.settings_steam_cloud_login_succeeded,
-                            authResult.accountName
-                        )
-                    )
+                    when {
+                        autoEnableResult.failureSummary != null -> {
+                            showToast(
+                                host,
+                                UiText.StringResource(
+                                    R.string.settings_steam_cloud_login_succeeded,
+                                    authResult.accountName
+                                )
+                            )
+                            showToast(
+                                host,
+                                UiText.StringResource(
+                                    R.string.settings_steam_cloud_login_auto_enable_failed,
+                                    autoEnableResult.failureSummary
+                                ),
+                                Toast.LENGTH_LONG,
+                            )
+                        }
+
+                        autoEnableResult.autoEnabled -> {
+                            showSteamCloudAutoEnabledDialog(host)
+                        }
+
+                        else -> {
+                            showToast(
+                                host,
+                                UiText.StringResource(
+                                    R.string.settings_steam_cloud_login_succeeded,
+                                    authResult.accountName
+                                )
+                            )
+                        }
+                    }
                     refreshStatus(host)
                 }
             } catch (error: Throwable) {
@@ -1093,6 +1121,27 @@ class SettingsScreenViewModel : ViewModel() {
             }
         }
         return true
+    }
+
+    private fun enableSteamCloudSaveModeAfterLogin(host: Activity): SteamCloudLoginAutoEnableResult {
+        val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+        if (currentMode == SteamCloudSaveMode.STEAM_CLOUD) {
+            return SteamCloudLoginAutoEnableResult(autoEnabled = false)
+        }
+        return try {
+            SteamCloudSaveProfileManager.switchMode(
+                context = host,
+                fromMode = currentMode,
+                toMode = SteamCloudSaveMode.STEAM_CLOUD,
+            )
+            LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
+            SteamCloudLoginAutoEnableResult(autoEnabled = true)
+        } catch (error: Throwable) {
+            SteamCloudLoginAutoEnableResult(
+                autoEnabled = false,
+                failureSummary = summarizeSteamCloudError(host, error),
+            )
+        }
     }
 
     fun onRefreshSteamCloudManifest(host: Activity) {
@@ -1342,16 +1391,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onSteamCloudAutoPullBeforeLaunchChanged(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, enabled)
-        refreshStatus(host)
-    }
-
-    fun onSteamCloudAutoPushAfterCleanShutdownChanged(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, enabled)
-        refreshStatus(host)
-    }
-
     fun onSteamCloudWattAccelerationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudWattAccelerationEnabled(host, enabled)
         refreshStatus(host)
@@ -1388,9 +1427,6 @@ class SettingsScreenViewModel : ViewModel() {
                     toMode = targetMode,
                 )
                 LauncherPreferences.saveSteamCloudSaveMode(host, targetMode)
-                val cloudModeEnabled = targetMode == SteamCloudSaveMode.STEAM_CLOUD
-                LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, cloudModeEnabled)
-                LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, cloudModeEnabled)
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1492,8 +1528,6 @@ class SettingsScreenViewModel : ViewModel() {
                 SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
                 SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
                 LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
-                LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, true)
-                LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, true)
 
                 host.runOnUiThread {
                     showToast(
@@ -1550,8 +1584,6 @@ class SettingsScreenViewModel : ViewModel() {
                     )
                 }
                 LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.INDEPENDENT)
-                LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, false)
-                LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, false)
                 runCatching { SteamCloudAuthStore.clear(host) }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)
@@ -2779,6 +2811,17 @@ class SettingsScreenViewModel : ViewModel() {
         duration: Int = Toast.LENGTH_LONG
     ) {
         LauncherTransientNoticeBus.show(host, message, duration)
+    }
+
+    private fun showSteamCloudAutoEnabledDialog(host: Activity) {
+        if (host.isFinishing || host.isDestroyed) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.settings_steam_cloud_auto_enabled_title)
+            .setMessage(R.string.settings_steam_cloud_auto_enabled_message)
+            .setPositiveButton(R.string.common_action_confirm, null)
+            .show()
     }
 
     private fun summarizeNativeLibraryMarketError(

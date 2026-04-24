@@ -47,6 +47,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -58,6 +59,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -83,7 +85,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.render.RendererBackendResolver
-import io.stamethyst.backend.steamcloud.SteamCloudConflict
+import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.model.ModItemUi
@@ -144,7 +146,7 @@ fun LauncherMainScreen(
         if (hostActivity != null) {
             viewModel.refresh(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
-            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity)
+            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
         }
     }
 
@@ -157,7 +159,6 @@ fun LauncherMainScreen(
                 if (event == Lifecycle.Event.ON_RESUME) {
                     viewModel.refresh(activity)
                     viewModel.syncModSuggestionsIfNeeded(activity)
-                    viewModel.syncSteamCloudIndicatorIfNeeded(activity)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -318,8 +319,6 @@ private fun LauncherMainScreenContent(
 ) {
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showSteamCloudBottomSheet by remember { mutableStateOf(false) }
-    var showSteamCloudConflictBypassDialog by remember { mutableStateOf(false) }
-    var showSteamCloudFailureBypassDialog by remember { mutableStateOf(false) }
     val showInitializing = uiState.initializing
     val hazeState = rememberHazeState()
     val crashRecovery = uiState.crashRecovery
@@ -369,62 +368,6 @@ private fun LauncherMainScreenContent(
             dismissButton = {
                 TextButton(onClick = actions.onCancelLaunchWithUnreadSuggestions) {
                     Text(text = stringResource(R.string.main_launch_unread_suggestions_cancel))
-                }
-            }
-        )
-    }
-
-    if (showSteamCloudConflictBypassDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showSteamCloudConflictBypassDialog = false },
-            title = {
-                Text(text = stringResource(R.string.main_steam_cloud_conflict_bypass_dialog_title))
-            },
-            text = {
-                Text(text = stringResource(R.string.main_steam_cloud_conflict_bypass_dialog_message))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSteamCloudConflictBypassDialog = false
-                        showSteamCloudBottomSheet = false
-                        actions.onLaunchDirect()
-                    }
-                ) {
-                    Text(text = stringResource(R.string.main_steam_cloud_conflict_bypass_dialog_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSteamCloudConflictBypassDialog = false }) {
-                    Text(text = stringResource(R.string.main_steam_cloud_conflict_bypass_dialog_cancel))
-                }
-            }
-        )
-    }
-
-    if (showSteamCloudFailureBypassDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showSteamCloudFailureBypassDialog = false },
-            title = {
-                Text(text = stringResource(R.string.main_steam_cloud_failure_bypass_dialog_title))
-            },
-            text = {
-                Text(text = stringResource(R.string.main_steam_cloud_failure_bypass_dialog_message))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSteamCloudFailureBypassDialog = false
-                        showSteamCloudBottomSheet = false
-                        actions.onLaunchDirect()
-                    }
-                ) {
-                    Text(text = stringResource(R.string.main_steam_cloud_failure_bypass_dialog_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSteamCloudFailureBypassDialog = false }) {
-                    Text(text = stringResource(R.string.main_steam_cloud_failure_bypass_dialog_cancel))
                 }
             }
         )
@@ -502,6 +445,11 @@ private fun LauncherMainScreenContent(
                     onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                     onSteamCloudClick = {
                         if (steamCloudIndicator.visible) {
+                            if (steamCloudIndicator.state ==
+                                MainScreenViewModel.SteamCloudIndicatorState.HIDDEN
+                            ) {
+                                actions.onRefreshSteamCloudStatus()
+                            }
                             showSteamCloudBottomSheet = true
                         }
                     }
@@ -539,12 +487,6 @@ private fun LauncherMainScreenContent(
                 onCancelCheck = actions.onCancelSteamCloudCheck,
                 onUseLocal = actions.onUseLocalSteamCloudProgress,
                 onUseCloud = actions.onUseCloudSteamCloudProgress,
-                onContinueWithoutResolvingConflict = {
-                    showSteamCloudConflictBypassDialog = true
-                },
-                onContinueWithoutSteamSync = {
-                    showSteamCloudFailureBypassDialog = true
-                },
             )
         }
     }
@@ -924,7 +866,7 @@ private fun MainTopBar(
                     )
                 }
                 if (feedbackUnreadCount > 0) {
-                    IconButton(
+                    CompactTopBarIconButton(
                         onClick = onOpenFeedbackUpdates,
                         enabled = settingsEnabled
                     ) {
@@ -939,7 +881,7 @@ private fun MainTopBar(
                         }
                     }
                 }
-                IconButton(
+                CompactTopBarIconButton(
                     onClick = onToggleDragLocked,
                     enabled = folderControlsEnabled && hostAvailable
                 ) {
@@ -947,6 +889,7 @@ private fun MainTopBar(
                         painter = painterResource(
                             if (dragLocked) R.drawable.ic_lock else R.drawable.ic_lock_open
                         ),
+                        modifier = Modifier.size(26.dp),
                         contentDescription = stringResource(
                             if (dragLocked) {
                                 R.string.main_action_unlock_drag
@@ -956,7 +899,7 @@ private fun MainTopBar(
                         )
                     )
                 }
-                IconButton(
+                CompactTopBarIconButton(
                     onClick = onAddFolderClick,
                     enabled = folderControlsEnabled && hostAvailable
                 ) {
@@ -965,7 +908,7 @@ private fun MainTopBar(
                         contentDescription = stringResource(R.string.main_action_add_folder)
                     )
                 }
-                IconButton(
+                CompactTopBarIconButton(
                     onClick = onOpenSettings,
                     enabled = settingsEnabled
                 ) {
@@ -986,7 +929,7 @@ private fun SteamCloudStatusButton(
     onClick: () -> Unit,
 ) {
     val tint = steamCloudIndicatorTint(indicator.state)
-    IconButton(onClick = onClick, enabled = enabled) {
+    CompactTopBarIconButton(onClick = onClick, enabled = enabled) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 painter = painterResource(steamCloudButtonIcon(indicator.state)),
@@ -1008,6 +951,23 @@ private fun SteamCloudStatusButton(
                 MainScreenViewModel.SteamCloudIndicatorState.CONFLICT,
                 MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> Unit
             }
+        }
+    }
+}
+
+@Composable
+private fun CompactTopBarIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(36.dp)
+        ) {
+            content()
         }
     }
 }
@@ -1073,8 +1033,6 @@ private fun SteamCloudBottomSheetContent(
     onCancelCheck: () -> Unit,
     onUseLocal: () -> Unit,
     onUseCloud: () -> Unit,
-    onContinueWithoutResolvingConflict: () -> Unit,
-    onContinueWithoutSteamSync: () -> Unit,
 ) {
     val tint = steamCloudIndicatorTint(indicator.state)
     val title = steamCloudActionBarTitle(indicator.state)
@@ -1084,7 +1042,7 @@ private fun SteamCloudBottomSheetContent(
         ?.div(100f)
     val conflictCardSummaries = remember(indicator.plan) {
         indicator.plan?.takeIf { it.conflicts.isNotEmpty() }?.let {
-            buildSteamCloudConflictCardSummaries(it.conflicts)
+            buildSteamCloudConflictCardSummaries(it)
         }
     }
 
@@ -1152,13 +1110,14 @@ private fun SteamCloudBottomSheetContent(
 
         indicator.plan?.warnings?.firstOrNull()?.let { warning ->
             Text(
-                text = warning,
+                text = localizedSteamCloudPlanWarning(warning),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
         when (indicator.state) {
+            MainScreenViewModel.SteamCloudIndicatorState.HIDDEN,
             MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE,
             MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> {
                 Button(
@@ -1168,22 +1127,15 @@ private fun SteamCloudBottomSheetContent(
                 ) {
                     Text(
                         text = stringResource(
-                            if (indicator.state == MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE) {
-                                R.string.main_steam_cloud_action_recheck
-                            } else {
+                            if (indicator.state ==
+                                MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED
+                            ) {
                                 R.string.main_steam_cloud_action_retry
+                            } else {
+                                R.string.main_steam_cloud_action_recheck
                             }
                         )
                     )
-                }
-                if (indicator.state == MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED) {
-                    OutlinedButton(
-                        onClick = onContinueWithoutSteamSync,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(R.string.main_steam_cloud_failure_bypass_action))
-                    }
                 }
             }
 
@@ -1199,13 +1151,6 @@ private fun SteamCloudBottomSheetContent(
                         onSelect = onUseCloud,
                         actionLabel = stringResource(R.string.main_steam_cloud_conflict_use_cloud),
                     )
-                    OutlinedButton(
-                        onClick = onContinueWithoutResolvingConflict,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(R.string.main_steam_cloud_conflict_bypass_action))
-                    }
                 } else {
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -1224,17 +1169,10 @@ private fun SteamCloudBottomSheetContent(
                         ) {
                             Text(text = stringResource(R.string.main_steam_cloud_conflict_use_cloud))
                         }
-                        OutlinedButton(
-                            onClick = onContinueWithoutResolvingConflict,
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Text(text = stringResource(R.string.main_steam_cloud_conflict_bypass_action))
-                        }
                     }
                 }
             }
 
-            MainScreenViewModel.SteamCloudIndicatorState.HIDDEN,
             MainScreenViewModel.SteamCloudIndicatorState.SYNCING -> Unit
 
             MainScreenViewModel.SteamCloudIndicatorState.CHECKING -> {
@@ -1252,7 +1190,7 @@ private fun SteamCloudBottomSheetContent(
 
 private data class SteamCloudConflictCardSummary(
     val side: SteamCloudConflictCardSide,
-    val latestModifiedMs: Long?,
+    val timestampMs: Long?,
     val totalBytes: Long,
 )
 
@@ -1267,45 +1205,44 @@ private enum class SteamCloudConflictCardSide {
 }
 
 private fun buildSteamCloudConflictCardSummaries(
-    conflicts: List<SteamCloudConflict>,
+    plan: SteamCloudUploadPlan,
 ): SteamCloudConflictCardSummaries {
     return SteamCloudConflictCardSummaries(
         local = buildSteamCloudConflictCardSummary(
-            conflicts = conflicts,
+            plan = plan,
             side = SteamCloudConflictCardSide.LOCAL,
         ),
         cloud = buildSteamCloudConflictCardSummary(
-            conflicts = conflicts,
+            plan = plan,
             side = SteamCloudConflictCardSide.CLOUD,
         ),
     )
 }
 
 private fun buildSteamCloudConflictCardSummary(
-    conflicts: List<SteamCloudConflict>,
+    plan: SteamCloudUploadPlan,
     side: SteamCloudConflictCardSide,
 ): SteamCloudConflictCardSummary {
     return when (side) {
         SteamCloudConflictCardSide.LOCAL -> {
-            val currentEntries = conflicts.mapNotNull { conflict ->
+            val currentEntries = plan.conflicts.mapNotNull { conflict ->
                 conflict.currentLocal?.let { conflict.localRelativePath to it }
             }
             val latestEntry = currentEntries.maxByOrNull { (_, entry) -> entry.lastModifiedMs }
             SteamCloudConflictCardSummary(
                 side = side,
-                latestModifiedMs = latestEntry?.second?.lastModifiedMs,
+                timestampMs = latestEntry?.second?.lastModifiedMs,
                 totalBytes = currentEntries.sumOf { (_, entry) -> entry.fileSize },
             )
         }
 
         SteamCloudConflictCardSide.CLOUD -> {
-            val currentEntries = conflicts.mapNotNull { conflict ->
+            val currentEntries = plan.conflicts.mapNotNull { conflict ->
                 conflict.currentRemote?.let { conflict.localRelativePath to it }
             }
-            val latestEntry = currentEntries.maxByOrNull { (_, entry) -> entry.timestamp }
             SteamCloudConflictCardSummary(
                 side = side,
-                latestModifiedMs = latestEntry?.second?.timestamp,
+                timestampMs = plan.remoteManifestFetchedAtMs.takeIf { it > 0L },
                 totalBytes = currentEntries.sumOf { (_, entry) -> entry.rawSize },
             )
         }
@@ -1322,7 +1259,11 @@ private fun SteamCloudConflictChoiceCard(
         SteamCloudConflictCardSide.LOCAL -> MaterialTheme.colorScheme.primary
         SteamCloudConflictCardSide.CLOUD -> MaterialTheme.colorScheme.secondary
     }
-    val latestModifiedText = summary.latestModifiedMs
+    val timestampLabelResId = when (summary.side) {
+        SteamCloudConflictCardSide.LOCAL -> R.string.main_steam_cloud_conflict_card_latest_modified
+        SteamCloudConflictCardSide.CLOUD -> R.string.main_steam_cloud_conflict_card_manifest_refreshed_at
+    }
+    val timestampText = summary.timestampMs
         ?.takeIf { it > 0L }
         ?.let(::formatSteamCloudTimestamp)
         ?: stringResource(R.string.update_unknown_date)
@@ -1354,8 +1295,8 @@ private fun SteamCloudConflictChoiceCard(
             )
             SteamCloudConflictMetaLine(
                 text = stringResource(
-                    R.string.main_steam_cloud_conflict_card_latest_modified,
-                    latestModifiedText
+                    timestampLabelResId,
+                    timestampText
                 )
             )
             SteamCloudConflictMetaLine(
@@ -1436,6 +1377,49 @@ private fun steamCloudActionBarSummary(
             } else {
                 stringResource(R.string.main_steam_cloud_bar_summary_failed)
             }
+    }
+}
+
+@Composable
+private fun localizedSteamCloudPlanWarning(
+    warning: String,
+): String {
+    val resources = LocalResources.current
+    return when (val parsed = SteamCloudUserWarning.parse(warning)) {
+        is SteamCloudUserWarning.UnsupportedLocalPath -> {
+            resources.getString(
+                R.string.main_steam_cloud_warning_unsupported_local_path,
+                parsed.localRelativePath
+            )
+        }
+
+        is SteamCloudUserWarning.FailedToMapLocalFile -> {
+            resources.getString(
+                R.string.main_steam_cloud_warning_failed_to_map_local_file,
+                parsed.localRelativePath
+            )
+        }
+
+        SteamCloudUserWarning.BaselineRequired -> {
+            resources.getString(R.string.main_steam_cloud_warning_baseline_required)
+        }
+
+        is SteamCloudUserWarning.IgnoredLocalDeletions -> {
+            resources.getQuantityString(
+                R.plurals.main_steam_cloud_warning_ignored_local_deletions,
+                parsed.count,
+                parsed.count
+            )
+        }
+
+        is SteamCloudUserWarning.UnsupportedRemotePath -> {
+            resources.getString(
+                R.string.main_steam_cloud_warning_unsupported_remote_path,
+                parsed.remotePath
+            )
+        }
+
+        null -> warning
     }
 }
 

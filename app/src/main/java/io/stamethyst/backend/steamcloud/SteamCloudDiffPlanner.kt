@@ -31,7 +31,7 @@ internal object SteamCloudDiffPlanner {
             val baselineRemote = baselineRemoteByPath[localRelativePath]
             val rootKind = resolveRootKind(localRelativePath, currentLocal, currentRemote, baselineLocal, baselineRemote)
                 ?: run {
-                    warnings += "Ignored unsupported local path while planning upload: $localRelativePath"
+                    warnings += SteamCloudUserWarning.UnsupportedLocalPath(localRelativePath).rawMessage()
                     continue
                 }
 
@@ -74,7 +74,7 @@ internal object SteamCloudDiffPlanner {
                         ?: baselineRemote?.remotePath
                         ?: SteamCloudPathMapper.buildRemotePath(localRelativePath)
                     if (remotePath == null) {
-                        warnings += "Failed to map local file for Steam Cloud upload: $localRelativePath"
+                        warnings += SteamCloudUserWarning.FailedToMapLocalFile(localRelativePath).rawMessage()
                         continue
                     }
                     uploadCandidates += SteamCloudUploadCandidate(
@@ -113,15 +113,16 @@ internal object SteamCloudDiffPlanner {
         }
 
         if (baseline == null) {
-            warnings += "No previous Steam Cloud sync baseline is saved yet. Existing files present on both sides are treated as conflicts until you complete a full pull once."
+            warnings += SteamCloudUserWarning.BaselineRequired.rawMessage()
         }
         if (ignoredLocalDeletionCount > 0) {
-            warnings += "Ignored $ignoredLocalDeletionCount local deletion(s) because Phase 2 uploads do not delete Steam Cloud files."
+            warnings += SteamCloudUserWarning.IgnoredLocalDeletions(ignoredLocalDeletionCount).rawMessage()
         }
         currentRemoteSnapshot.warnings.forEach { warnings += it }
 
         return SteamCloudUploadPlan(
             plannedAtMs = plannedAtMs,
+            remoteManifestFetchedAtMs = currentRemoteSnapshot.fetchedAtMs,
             baselineConfigured = baseline != null,
             uploadCandidates = uploadCandidates,
             conflicts = conflicts,

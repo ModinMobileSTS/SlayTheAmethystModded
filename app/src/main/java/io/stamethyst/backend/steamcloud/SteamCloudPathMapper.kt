@@ -76,7 +76,7 @@ internal object SteamCloudPathMapper {
         val entries = remoteEntries.mapNotNull { remoteEntry ->
             val mappedPath = mapRemotePath(remoteEntry.remotePath)
             if (mappedPath == null) {
-                warnings += "Ignored unsupported Steam Cloud path: ${remoteEntry.remotePath}"
+                warnings += SteamCloudUserWarning.UnsupportedRemotePath(remoteEntry.remotePath).rawMessage()
                 return@mapNotNull null
             }
 

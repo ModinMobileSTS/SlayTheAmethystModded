@@ -104,10 +104,6 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
     val DEFAULT_AUTO_CHECK_UPDATES_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_CHECK_UPDATES_ENABLED
-    val DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED: Boolean
-        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED
-    val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED: Boolean
-        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED
     val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
     val DEFAULT_STEAM_CLOUD_SAVE_MODE: SteamCloudSaveMode
@@ -390,22 +386,6 @@ object LauncherPreferences {
         LauncherConfig.setAutoCheckUpdatesEnabled(context, enabled)
     }
 
-    fun isSteamCloudAutoPullBeforeLaunchEnabled(context: Context): Boolean {
-        return LauncherConfig.isSteamCloudAutoPullBeforeLaunchEnabled(context)
-    }
-
-    fun setSteamCloudAutoPullBeforeLaunchEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setSteamCloudAutoPullBeforeLaunchEnabled(context, enabled)
-    }
-
-    fun isSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context): Boolean {
-        return LauncherConfig.isSteamCloudAutoPushAfterCleanShutdownEnabled(context)
-    }
-
-    fun setSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setSteamCloudAutoPushAfterCleanShutdownEnabled(context, enabled)
-    }
-
     fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean {
         return LauncherConfig.isSteamCloudWattAccelerationEnabled(context)
     }
@@ -476,6 +456,14 @@ object LauncherPreferences {
 
     fun saveLastUpdateErrorSummary(context: Context, summary: String?) {
         LauncherConfig.saveLastUpdateErrorSummary(context, summary)
+    }
+
+    fun isFirstRunSetupCompleted(context: Context): Boolean {
+        return LauncherConfig.isFirstRunSetupCompleted(context)
+    }
+
+    fun setFirstRunSetupCompleted(context: Context, completed: Boolean) {
+        LauncherConfig.setFirstRunSetupCompleted(context, completed)
     }
 
     fun normalizeTargetFps(targetFps: Int): Int {

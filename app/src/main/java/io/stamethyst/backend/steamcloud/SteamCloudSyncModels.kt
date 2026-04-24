@@ -66,6 +66,7 @@ data class SteamCloudRemoteOnlyChange(
 
 data class SteamCloudUploadPlan(
     val plannedAtMs: Long,
+    val remoteManifestFetchedAtMs: Long = 0L,
     val baselineConfigured: Boolean,
     val uploadCandidates: List<SteamCloudUploadCandidate>,
     val conflicts: List<SteamCloudConflict>,

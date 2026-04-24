@@ -65,6 +65,7 @@ import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
+import io.stamethyst.ui.settings.LauncherFirstRunSetupScreen
 import io.stamethyst.ui.settings.LauncherDeveloperSettingsScreen
 import io.stamethyst.ui.settings.LauncherMobileGluesSettingsScreen
 import io.stamethyst.ui.settings.LauncherNativeLibraryMarketScreen
@@ -72,13 +73,16 @@ import io.stamethyst.ui.settings.LauncherSettingsScreen
 import io.stamethyst.ui.settings.LauncherSteamCloudGuardScreen
 import io.stamethyst.ui.settings.LauncherSteamCloudLoginScreen
 import io.stamethyst.ui.settings.LauncherSteamCloudSaveSettingsScreen
+import io.stamethyst.ui.settings.LauncherSteamCloudSyncBlacklistSettingsScreen
 import io.stamethyst.ui.settings.SettingsScreenViewModel
+import io.stamethyst.ui.preferences.LauncherPreferences
 
 @Composable
 fun LauncherContent(
     initialRoute: Route = Route.Main,
     mainViewModel: MainScreenViewModel,
     settingsViewModel: SettingsScreenViewModel,
+    onMainScreenOpened: () -> Unit = {},
 ) {
     val activity = requireNotNull(LocalActivity.current)
     val navigator = rememberAppNavigator(initialRoute)
@@ -115,6 +119,11 @@ fun LauncherContent(
         LaunchedEffect(activity) {
             FeedbackInboxCoordinator.bind(activity.applicationContext)
             FeedbackInboxCoordinator.syncOnLauncherStart(activity.applicationContext)
+        }
+        LaunchedEffect(activity, currentRoute) {
+            if (currentRoute == Route.Main) {
+                onMainScreenOpened()
+            }
         }
         LaunchedEffect(activity, transientNoticeHostState) {
             LauncherTransientNoticeBus.requests.collect { request ->
@@ -175,7 +184,22 @@ fun LauncherContent(
                             QuickStartScreen(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
-                                onImportSuccess = { navigator.resetRoot(Route.Main) }
+                                onImportSuccess = {
+                                    navigator.resetRoot(
+                                        if (LauncherPreferences.isFirstRunSetupCompleted(activity)) {
+                                            Route.Main
+                                        } else {
+                                            Route.FirstRunSetup
+                                        }
+                                    )
+                                }
+                            )
+                        }
+
+                        entry<Route.FirstRunSetup> {
+                            LauncherFirstRunSetupScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
 
@@ -231,6 +255,13 @@ fun LauncherContent(
 
                         entry<Route.SteamCloudSaveSettings> {
                             LauncherSteamCloudSaveSettingsScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.SteamCloudSyncBlacklistSettings> {
+                            LauncherSteamCloudSyncBlacklistSettingsScreen(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
                             )

@@ -222,6 +222,7 @@ fun LauncherSettingsScreen(
         onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
         onOpenReleaseHistory = { viewModel.onOpenReleaseHistory(activity) },
         onDismissReleaseHistoryDialog = viewModel::dismissReleaseHistoryDialog,
+        onOpenFirstRunSetup = { navigator.push(Route.FirstRunSetup) },
         onOpenCompatibility = viewModel::onOpenCompatibility,
         onOpenMobileGluesSettings = viewModel::onOpenMobileGluesSettings,
         onOpenDeveloperSettings = { navigator.push(Route.DeveloperSettings) },
@@ -424,6 +425,7 @@ private fun LauncherSettingsScreenContent(
     onManualCheckUpdates: () -> Unit = {},
     onOpenReleaseHistory: () -> Unit = {},
     onDismissReleaseHistoryDialog: () -> Unit = {},
+    onOpenFirstRunSetup: () -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
     onOpenDeveloperSettings: () -> Unit = {},
@@ -497,6 +499,17 @@ private fun LauncherSettingsScreenContent(
             }
 
             item {
+                SettingsSectionCard(title = stringResource(R.string.settings_first_run_title)) {
+                    SettingsActionListItem(
+                        title = stringResource(R.string.settings_first_run_reopen_action),
+                        supportingText = stringResource(R.string.settings_first_run_reopen_desc),
+                        enabled = !uiState.busy,
+                        onClick = onOpenFirstRunSetup
+                    )
+                }
+            }
+
+            item {
                 SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files)) {
                     SettingsImportSection(
                         busy = uiState.busy,
@@ -521,6 +534,9 @@ private fun LauncherSettingsScreenContent(
                         onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
                         onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
                         onScreenBottomCropChanged = onScreenBottomCropChanged,
+                        onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
+                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
+                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
                     )
                 }
             }
@@ -538,9 +554,6 @@ private fun LauncherSettingsScreenContent(
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
-                        onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
-                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
-                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
                     )
                 }
             }
@@ -705,7 +718,7 @@ private fun steamCloudSaveModeDisplayName(mode: SteamCloudSaveMode): String {
 }
 
 @Composable
-private fun SteamCloudAccountCard(
+internal fun SteamCloudAccountCard(
     loggedIn: Boolean,
     accountName: String,
     avatarUrl: String,
@@ -961,7 +974,7 @@ private fun formatSteamCloudBytes(bytes: Long): String {
 }
 
 @Composable
-private fun SettingsAppearanceSection(
+internal fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onThemeModeChanged: (LauncherThemeMode) -> Unit,
     onThemeColorChanged: (LauncherThemeColor) -> Unit,
@@ -1062,7 +1075,7 @@ private fun themeModeDisplayName(themeMode: LauncherThemeMode): String {
 }
 
 @Composable
-private fun SettingsUpdateSection(
+internal fun SettingsUpdateSection(
     uiState: SettingsScreenViewModel.UiState,
     onAutoCheckUpdatesChanged: (Boolean) -> Unit,
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit,
@@ -1807,13 +1820,16 @@ private fun SettingsDeveloperEntrySection(
 }
 
 @Composable
-private fun SettingsPerformanceSection(
+internal fun SettingsPerformanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
     onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     onScreenBottomCropChanged: (Boolean) -> Unit,
+    onTouchscreenEnabledChanged: (Boolean) -> Unit,
+    onGameplayFontScaleChanged: (Float) -> Unit,
+    onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
     val view = LocalView.current
     var showTargetFpsDialog by rememberSaveable { mutableStateOf(false) }
@@ -1823,6 +1839,12 @@ private fun SettingsPerformanceSection(
     }
     var lastRenderScaleStep by remember(uiState.selectedRenderScale) {
         mutableIntStateOf(renderScaleToStep(uiState.selectedRenderScale))
+    }
+    var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
+        mutableFloatStateOf(uiState.gameplayFontScale)
+    }
+    var lastGameplayFontScaleStep by remember(uiState.gameplayFontScale) {
+        mutableIntStateOf(gameplayFontScaleToStep(uiState.gameplayFontScale))
     }
 
     Text(
@@ -1892,6 +1914,60 @@ private fun SettingsPerformanceSection(
         disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
         description = stringResource(R.string.settings_crop_screen_bottom_desc),
         onCheckedChange = onScreenBottomCropChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.touchscreenEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_touchscreen_enabled),
+        disabledText = stringResource(R.string.settings_touchscreen_disabled),
+        description = stringResource(R.string.settings_touchscreen_desc),
+        onCheckedChange = onTouchscreenEnabledChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.gameplayLargerUiEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_gameplay_larger_ui_enabled),
+        disabledText = stringResource(R.string.settings_gameplay_larger_ui_disabled),
+        description = stringResource(R.string.settings_gameplay_larger_ui_desc),
+        onCheckedChange = onGameplayLargerUiChanged
+    )
+
+    Text(
+        text = stringResource(R.string.settings_gameplay_font_scale_title),
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Text(
+        text = stringResource(
+            R.string.settings_gameplay_font_scale_value,
+            GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue)
+        ),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Text(
+        text = stringResource(R.string.settings_gameplay_font_scale_desc),
+        style = MaterialTheme.typography.bodySmall
+    )
+    Slider(
+        value = gameplayFontScaleSliderValue,
+        onValueChange = { value ->
+            val normalized = GameplaySettingsService.normalizeFontScale(value)
+            gameplayFontScaleSliderValue = normalized
+            val step = gameplayFontScaleToStep(normalized)
+            if (step != lastGameplayFontScaleStep) {
+                lastGameplayFontScaleStep = step
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        },
+        onValueChangeFinished = { onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
+        valueRange = GameplaySettingsService.MIN_FONT_SCALE..GameplaySettingsService.MAX_FONT_SCALE,
+        steps = (
+            (GameplaySettingsService.MAX_FONT_SCALE - GameplaySettingsService.MIN_FONT_SCALE) /
+                GameplaySettingsService.FONT_SCALE_STEP
+            ).roundToInt() - 1,
+        enabled = !uiState.busy,
+        modifier = Modifier.fillMaxWidth()
     )
 
     if (showTargetFpsDialog) {
@@ -2239,20 +2315,48 @@ private fun SettingsInputSection(
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
-    onTouchscreenEnabledChanged: (Boolean) -> Unit,
-    onGameplayFontScaleChanged: (Float) -> Unit,
-    onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
-    val view = LocalView.current
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = stringResource(R.string.settings_input_basic_title),
+            style = MaterialTheme.typography.titleSmall
+        )
+        SettingsInputBasicsSection(
+            uiState = uiState,
+            onPlayerNameChanged = onPlayerNameChanged,
+            onBackBehaviorChanged = onBackBehaviorChanged,
+            onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
+            onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
+            onShowModFileNameChanged = onShowModFileNameChanged,
+            onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
+        )
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.settings_input_floating_title),
+            style = MaterialTheme.typography.titleSmall
+        )
+        SettingsFloatingMouseSection(
+            uiState = uiState,
+            onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
+            onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
+            onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
+        )
+    }
+}
+
+@Composable
+internal fun SettingsInputBasicsSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onPlayerNameChanged: (String) -> Boolean,
+    onBackBehaviorChanged: (BackBehavior) -> Unit,
+    onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
+    onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    onShowModFileNameChanged: (Boolean) -> Unit,
+    onGamePerformanceOverlayChanged: (Boolean) -> Unit,
+) {
     var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
     var showBackBehaviorDialog by rememberSaveable { mutableStateOf(false) }
     var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
-    var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
-        mutableFloatStateOf(uiState.gameplayFontScale)
-    }
-    var lastGameplayFontScaleStep by remember(uiState.gameplayFontScale) {
-        mutableIntStateOf(gameplayFontScaleToStep(uiState.gameplayFontScale))
-    }
 
     SettingsActionListItem(
         title = stringResource(R.string.settings_player_name_title),
@@ -2280,15 +2384,6 @@ private fun SettingsInputSection(
     )
 
     SwitchSettingRow(
-        checked = uiState.showFloatingMouseWindow,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touch_mouse_floating_window_visible),
-        disabledText = stringResource(R.string.settings_touch_mouse_floating_window_hidden),
-        description = stringResource(R.string.settings_touch_mouse_floating_window_desc),
-        onCheckedChange = onShowFloatingMouseWindowChanged
-    )
-
-    SwitchSettingRow(
         checked = uiState.touchMouseNewInteraction,
         enabled = !uiState.busy,
         enabledText = stringResource(R.string.settings_touch_mouse_interaction_new),
@@ -2297,17 +2392,6 @@ private fun SettingsInputSection(
         onCheckedChange = onTouchMouseNewInteractionChanged
     )
 
-    if (!uiState.touchMouseNewInteraction) {
-        SwitchSettingRow(
-            checked = uiState.longPressMouseShowsKeyboard,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_enabled),
-            disabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_disabled),
-            description = stringResource(R.string.settings_touch_mouse_long_press_keyboard_desc),
-            onCheckedChange = onLongPressMouseShowsKeyboardChanged
-        )
-    }
-
     SwitchSettingRow(
         checked = uiState.builtInSoftKeyboardEnabled,
         enabled = !uiState.busy,
@@ -2315,15 +2399,6 @@ private fun SettingsInputSection(
         disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
         description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
         onCheckedChange = onBuiltInSoftKeyboardChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.autoSwitchLeftAfterRightClick,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_auto_switch_left_enabled),
-        disabledText = stringResource(R.string.settings_auto_switch_left_disabled),
-        description = stringResource(R.string.settings_auto_switch_left_desc),
-        onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
     )
 
     SwitchSettingRow(
@@ -2352,61 +2427,7 @@ private fun SettingsInputSection(
         description = stringResource(R.string.settings_performance_overlay_desc),
         onCheckedChange = onGamePerformanceOverlayChanged
     )
-
-    SwitchSettingRow(
-        checked = uiState.touchscreenEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touchscreen_enabled),
-        disabledText = stringResource(R.string.settings_touchscreen_disabled),
-        description = stringResource(R.string.settings_touchscreen_desc),
-        onCheckedChange = onTouchscreenEnabledChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.gameplayLargerUiEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_gameplay_larger_ui_enabled),
-        disabledText = stringResource(R.string.settings_gameplay_larger_ui_disabled),
-        description = stringResource(R.string.settings_gameplay_larger_ui_desc),
-        onCheckedChange = onGameplayLargerUiChanged
-    )
-
-    Text(
-        text = stringResource(R.string.settings_gameplay_font_scale_title),
-        style = MaterialTheme.typography.bodyMedium
-    )
-    Text(
-        text = stringResource(
-            R.string.settings_gameplay_font_scale_value,
-            GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue)
-        ),
-        style = MaterialTheme.typography.bodySmall
-    )
-    Text(
-        text = stringResource(R.string.settings_gameplay_font_scale_desc),
-        style = MaterialTheme.typography.bodySmall
-    )
-    Slider(
-        value = gameplayFontScaleSliderValue,
-        onValueChange = { value ->
-            val normalized = GameplaySettingsService.normalizeFontScale(value)
-            gameplayFontScaleSliderValue = normalized
-            val step = gameplayFontScaleToStep(normalized)
-            if (step != lastGameplayFontScaleStep) {
-                lastGameplayFontScaleStep = step
-                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            }
-        },
-        onValueChangeFinished = { onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
-        valueRange = GameplaySettingsService.MIN_FONT_SCALE..GameplaySettingsService.MAX_FONT_SCALE,
-        steps = (
-            (GameplaySettingsService.MAX_FONT_SCALE - GameplaySettingsService.MIN_FONT_SCALE) /
-                GameplaySettingsService.FONT_SCALE_STEP
-            ).roundToInt() - 1,
-        enabled = !uiState.busy,
-        modifier = Modifier.fillMaxWidth()
-    )
-
+    
     if (showPlayerNameDialog) {
         AlertDialog(
             onDismissRequest = { showPlayerNameDialog = false },
@@ -2475,7 +2496,43 @@ private fun SettingsInputSection(
             }
         )
     }
+}
 
+@Composable
+internal fun SettingsFloatingMouseSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
+    onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
+    onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
+) {
+    SwitchSettingRow(
+        checked = uiState.showFloatingMouseWindow,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_touch_mouse_floating_window_visible),
+        disabledText = stringResource(R.string.settings_touch_mouse_floating_window_hidden),
+        description = stringResource(R.string.settings_touch_mouse_floating_window_desc),
+        onCheckedChange = onShowFloatingMouseWindowChanged
+    )
+
+    if (!uiState.touchMouseNewInteraction) {
+        SwitchSettingRow(
+            checked = uiState.longPressMouseShowsKeyboard,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_enabled),
+            disabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_disabled),
+            description = stringResource(R.string.settings_touch_mouse_long_press_keyboard_desc),
+            onCheckedChange = onLongPressMouseShowsKeyboardChanged
+        )
+    }
+
+    SwitchSettingRow(
+        checked = uiState.autoSwitchLeftAfterRightClick,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_auto_switch_left_enabled),
+        disabledText = stringResource(R.string.settings_auto_switch_left_disabled),
+        description = stringResource(R.string.settings_auto_switch_left_desc),
+        onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
+    )
 }
 
 @Composable
