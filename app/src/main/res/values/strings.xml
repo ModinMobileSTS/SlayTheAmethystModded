@@ -698,6 +698,9 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="settings_steam_cloud_auto_push_enabled_title">Auto push after clean shutdown</string>
     <string name="settings_steam_cloud_auto_push_disabled_title">Auto push after clean shutdown off</string>
     <string name="settings_steam_cloud_auto_push_desc">When enabled, the launcher uploads safe local-only changes after a clean game exit. Conflicts are skipped and left for manual review.</string>
+    <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam Cloud accelerated connection on</string>
+    <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam Cloud accelerated connection off</string>
+    <string name="settings_steam_cloud_watt_acceleration_desc">Route Steam Cloud login, Steam Web API, and HTTP file transfer requests through Watt Toolkit Steam forwarding rules. Keep this off if you only want direct Steam connections.</string>
     <string name="settings_steam_cloud_login_title">Log in to Steam</string>
     <string name="settings_steam_cloud_refresh_title">Refresh cloud manifest</string>
     <string name="settings_steam_cloud_view_manifest_title">View cloud files</string>

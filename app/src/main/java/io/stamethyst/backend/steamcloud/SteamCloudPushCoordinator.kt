@@ -8,9 +8,25 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 internal object SteamCloudPushCoordinator {
     private const val FAILURE_PATH_SAMPLE_LIMIT = 12
+
+    private data class PlanUploadTelemetry(
+        var clientInitMs: Long? = null,
+        var connectMs: Long? = null,
+        var logOnMs: Long? = null,
+        var manifestRpcMs: Long? = null,
+        var manifestMapMs: Long? = null,
+        var manifestWriteMs: Long? = null,
+        var baselineReadMs: Long? = null,
+        var localSnapshotMs: Long? = null,
+        var diffPlanMs: Long? = null,
+        var totalMeasuredMs: Long? = null,
+        var remoteEntryCount: Int? = null,
+        var localEntryCount: Int? = null,
+    )
 
     private data class PreparedMirrorPlan(
         val uploadCandidates: List<SteamCloudUploadCandidate>,
@@ -25,7 +41,12 @@ internal object SteamCloudPushCoordinator {
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
     ): SteamCloudUploadPlan {
         val startedAtMs = System.currentTimeMillis()
+        val totalStartedAtNs = System.nanoTime()
+        val clientInitStartedAtNs = System.nanoTime()
         val client = SteamCloudClient(host)
+        val telemetry = PlanUploadTelemetry(
+            clientInitMs = elapsedMs(clientInitStartedAtNs),
+        )
         try {
             client.use {
                 client.beginOperationDiagnostics(
@@ -33,22 +54,48 @@ internal object SteamCloudPushCoordinator {
                     authMaterial.accountName,
                     authMaterial.guardData.isNotBlank(),
                 )
+                val connectStartedAtNs = System.nanoTime()
                 client.start()
+                telemetry.connectMs = elapsedMs(connectStartedAtNs)
+                val logOnStartedAtNs = System.nanoTime()
                 client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                telemetry.logOnMs = elapsedMs(logOnStartedAtNs)
+
+                val manifestRpcStartedAtNs = System.nanoTime()
+                val remoteEntries = client.listFiles(STEAM_CLOUD_APP_ID)
+                telemetry.manifestRpcMs = elapsedMs(manifestRpcStartedAtNs)
+                telemetry.remoteEntryCount = remoteEntries.size
+
+                val manifestMapStartedAtNs = System.nanoTime()
                 val snapshot = SteamCloudPathMapper.buildManifestSnapshot(
                     fetchedAtMs = System.currentTimeMillis(),
-                    remoteEntries = client.listFiles(STEAM_CLOUD_APP_ID),
+                    remoteEntries = remoteEntries,
                 )
+                telemetry.manifestMapMs = elapsedMs(manifestMapStartedAtNs)
+
+                val manifestWriteStartedAtNs = System.nanoTime()
                 SteamCloudManifestStore.writeSnapshot(host, snapshot)
                 SteamCloudAuthStore.recordManifestSuccess(host, snapshot.fetchedAtMs)
+                telemetry.manifestWriteMs = elapsedMs(manifestWriteStartedAtNs)
 
+                val baselineReadStartedAtNs = System.nanoTime()
                 val baseline = SteamCloudBaselineStore.readSnapshot(host)
+                telemetry.baselineReadMs = elapsedMs(baselineReadStartedAtNs)
+
+                val localSnapshotStartedAtNs = System.nanoTime()
+                val localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host))
+                telemetry.localSnapshotMs = elapsedMs(localSnapshotStartedAtNs)
+                telemetry.localEntryCount = localEntries.size
+
+                val diffPlanStartedAtNs = System.nanoTime()
                 val plan = SteamCloudDiffPlanner.buildUploadPlan(
                     plannedAtMs = System.currentTimeMillis(),
-                    currentLocalEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
+                    currentLocalEntries = localEntries,
                     currentRemoteSnapshot = snapshot,
                     baseline = baseline,
                 )
+                telemetry.diffPlanMs = elapsedMs(diffPlanStartedAtNs)
+                telemetry.totalMeasuredMs = elapsedMs(totalStartedAtNs)
                 SteamCloudDiagnosticsStore.writeSummary(
                     context = host,
                     operation = "plan_upload",
@@ -57,19 +104,21 @@ internal object SteamCloudPushCoordinator {
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
                     diagnostics = client.snapshotDiagnostics(),
-                    extraLines = listOf(
-                        "Manifest files: ${snapshot.fileCount}",
-                        "Upload candidates: ${plan.uploadCandidates.size}",
-                        "Conflicts: ${plan.conflicts.size}",
-                        "Remote-only changes: ${plan.remoteOnlyChanges.size}",
-                        "Baseline configured: ${plan.baselineConfigured}",
-                    ) + plan.warnings.map { "Warning: $it" },
+                    extraLines = buildList {
+                        addAll(planUploadTimingLines(telemetry))
+                        add("Manifest files: ${snapshot.fileCount}")
+                        add("Upload candidates: ${plan.uploadCandidates.size}")
+                        add("Conflicts: ${plan.conflicts.size}")
+                        add("Remote-only changes: ${plan.remoteOnlyChanges.size}")
+                        add("Baseline configured: ${plan.baselineConfigured}")
+                    } + plan.warnings.map { "Warning: $it" },
                 )
                 return plan
             }
         } catch (error: Throwable) {
             SteamCloudAuthStore.recordFailure(host, summarizeError(error))
             runCatching {
+                telemetry.totalMeasuredMs = elapsedMs(totalStartedAtNs)
                 SteamCloudDiagnosticsStore.writeSummary(
                     context = host,
                     operation = "plan_upload",
@@ -80,9 +129,10 @@ internal object SteamCloudPushCoordinator {
                     diagnostics = client.snapshotDiagnostics(),
                     failureSummary = summarizeError(error),
                     error = error,
-                    extraLines = listOf(
-                        "Existing guard data provided: ${if (authMaterial.guardData.isBlank()) "no" else "yes"}",
-                    ),
+                    extraLines = buildList {
+                        addAll(planUploadTimingLines(telemetry))
+                        add("Existing guard data provided: ${if (authMaterial.guardData.isBlank()) "no" else "yes"}")
+                    },
                 )
             }
             throw error
@@ -572,6 +622,28 @@ internal object SteamCloudPushCoordinator {
     ) {
         progressCallback?.invoke(progress)
     }
+
+    private fun planUploadTimingLines(telemetry: PlanUploadTelemetry): List<String> = listOf(
+        "Plan total measured ms: ${formatTimingMs(telemetry.totalMeasuredMs)}",
+        "Client init ms: ${formatTimingMs(telemetry.clientInitMs)}",
+        "Connect ms: ${formatTimingMs(telemetry.connectMs)}",
+        "Logon ms: ${formatTimingMs(telemetry.logOnMs)}",
+        "Manifest RPC ms: ${formatTimingMs(telemetry.manifestRpcMs)}",
+        "Manifest map ms: ${formatTimingMs(telemetry.manifestMapMs)}",
+        "Manifest write ms: ${formatTimingMs(telemetry.manifestWriteMs)}",
+        "Baseline read ms: ${formatTimingMs(telemetry.baselineReadMs)}",
+        "Local snapshot ms: ${formatTimingMs(telemetry.localSnapshotMs)}",
+        "Diff plan ms: ${formatTimingMs(telemetry.diffPlanMs)}",
+        "Remote entries: ${formatTimingCount(telemetry.remoteEntryCount)}",
+        "Local entries: ${formatTimingCount(telemetry.localEntryCount)}",
+    )
+
+    private fun formatTimingMs(value: Long?): String = value?.toString() ?: "<not reached>"
+
+    private fun formatTimingCount(value: Int?): String = value?.toString() ?: "<not reached>"
+
+    private fun elapsedMs(startedAtNs: Long): Long =
+        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNs).coerceAtLeast(0L)
 
     private fun summarizeError(error: Throwable): String {
         val message = error.message?.trim().orEmpty()

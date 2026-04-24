@@ -255,6 +255,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED,
         val steamCloudAutoPushAfterCleanShutdownEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED,
+        val steamCloudWattAccelerationEnabled: Boolean =
+            LauncherPreferences.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
         val steamCloudCredentialsSummary: String = "",
         val steamCloudStatusText: String = "",
         val steamCloudManifestSummary: String = "",
@@ -880,6 +882,8 @@ class SettingsScreenViewModel : ViewModel() {
                             LauncherPreferences.isSteamCloudAutoPullBeforeLaunchEnabled(host),
                         steamCloudAutoPushAfterCleanShutdownEnabled =
                             LauncherPreferences.isSteamCloudAutoPushAfterCleanShutdownEnabled(host),
+                        steamCloudWattAccelerationEnabled =
+                            LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
                         steamCloudCredentialsSummary = buildSteamCloudCredentialsSummary(
                             host,
                             steamCloudAuthSnapshot
@@ -1248,6 +1252,11 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onSteamCloudAutoPushAfterCleanShutdownChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onSteamCloudWattAccelerationChanged(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setSteamCloudWattAccelerationEnabled(host, enabled)
         refreshStatus(host)
     }
 

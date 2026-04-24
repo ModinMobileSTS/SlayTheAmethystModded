@@ -148,6 +148,9 @@ fun LauncherSettingsScreen(
         onSteamCloudAutoPushAfterCleanShutdownChanged = { enabled ->
             viewModel.onSteamCloudAutoPushAfterCleanShutdownChanged(activity, enabled)
         },
+        onSteamCloudWattAccelerationChanged = { enabled ->
+            viewModel.onSteamCloudWattAccelerationChanged(activity, enabled)
+        },
         onStartSteamCloudPush = { viewModel.onStartSteamCloudPush(activity) },
         onConfirmSteamCloudPush = { viewModel.onConfirmSteamCloudPush(activity) },
         onDismissSteamCloudPushConfirmDialog = viewModel::dismissSteamCloudPushConfirmDialog,
@@ -394,6 +397,7 @@ private fun LauncherSettingsScreenContent(
     onDismissSteamCloudUploadPlanDialog: () -> Unit = {},
     onSteamCloudAutoPullBeforeLaunchChanged: (Boolean) -> Unit = {},
     onSteamCloudAutoPushAfterCleanShutdownChanged: (Boolean) -> Unit = {},
+    onSteamCloudWattAccelerationChanged: (Boolean) -> Unit = {},
     onStartSteamCloudPush: () -> Unit = {},
     onConfirmSteamCloudPush: () -> Unit = {},
     onDismissSteamCloudPushConfirmDialog: () -> Unit = {},
@@ -530,6 +534,8 @@ private fun LauncherSettingsScreenContent(
                             onSteamCloudAutoPullBeforeLaunchChanged,
                         onSteamCloudAutoPushAfterCleanShutdownChanged =
                             onSteamCloudAutoPushAfterCleanShutdownChanged,
+                        onSteamCloudWattAccelerationChanged =
+                            onSteamCloudWattAccelerationChanged,
                         onStartSteamCloudPush = onStartSteamCloudPush,
                         onConfirmSteamCloudPush = onConfirmSteamCloudPush,
                         onDismissSteamCloudPushConfirmDialog = onDismissSteamCloudPushConfirmDialog,
@@ -648,6 +654,7 @@ private fun SettingsSteamCloudSection(
     onDismissSteamCloudUploadPlanDialog: () -> Unit,
     onSteamCloudAutoPullBeforeLaunchChanged: (Boolean) -> Unit,
     onSteamCloudAutoPushAfterCleanShutdownChanged: (Boolean) -> Unit,
+    onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
     onStartSteamCloudPush: () -> Unit,
     onConfirmSteamCloudPush: () -> Unit,
     onDismissSteamCloudPushConfirmDialog: () -> Unit,
@@ -681,6 +688,16 @@ private fun SettingsSteamCloudSection(
             stringResource(R.string.settings_steam_cloud_status_not_logged_in)
         },
         style = MaterialTheme.typography.bodySmall
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SwitchSettingRow(
+        checked = uiState.steamCloudWattAccelerationEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
+        disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
+        description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
+        onCheckedChange = onSteamCloudWattAccelerationChanged,
     )
 
     Spacer(modifier = Modifier.size(8.dp))

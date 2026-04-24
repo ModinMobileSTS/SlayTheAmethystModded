@@ -123,6 +123,8 @@ object LauncherConfig {
         "steam_cloud_auto_pull_before_launch_enabled"
     private const val PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED =
         "steam_cloud_auto_push_after_clean_shutdown_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED =
+        "steam_cloud_watt_acceleration_enabled"
     private const val PREF_KEY_PREFERRED_UPDATE_MIRROR_ID = "preferred_update_mirror_id"
     private const val PREF_KEY_LAST_UPDATE_CHECK_AT_MS = "last_update_check_at_ms"
     private const val PREF_KEY_LAST_KNOWN_REMOTE_TAG = "last_known_remote_tag"
@@ -186,6 +188,7 @@ object LauncherConfig {
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
     const val DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED = false
     const val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED = false
+    const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = false
     const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "gh_proxy_com"
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
@@ -1085,6 +1088,19 @@ object LauncherConfig {
     fun setSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED, enabled)
+        }
+    }
+
+    fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
+            DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
+        )
+    }
+
+    fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED, enabled)
         }
     }
 

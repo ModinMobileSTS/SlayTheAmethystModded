@@ -55,6 +55,11 @@ internal object SteamCloudDiagnosticsStore {
                 }"
             )
             add(
+                "Watt Acceleration: ${
+                    diagnostics?.wattAccelerationDescription?.trim()?.takeIf { it.isNotEmpty() } ?: "<unknown>"
+                }"
+            )
+            add(
                 "Current Stage: ${
                     diagnostics?.currentStage?.trim()?.takeIf { it.isNotEmpty() } ?: "<unknown>"
                 }"
@@ -84,6 +89,8 @@ internal object SteamCloudDiagnosticsStore {
                     diagnostics?.candidateSourceDescription?.trim()?.takeIf { it.isNotEmpty() } ?: "<not selected>"
                 }"
             )
+            add("CM Server Selection Ms: ${formatOptionalDurationMs(diagnostics?.cmServerSelectionMs)}")
+            add("CM Connect Wait Ms: ${formatOptionalDurationMs(diagnostics?.cmConnectWaitMs)}")
             add(
                 "Allowed Challenges: ${
                     diagnostics?.allowedChallengesDescription?.trim()?.takeIf { it.isNotEmpty() } ?: "<not evaluated>"
@@ -147,6 +154,11 @@ internal object SteamCloudDiagnosticsStore {
 
     private fun formatTimestamp(timestampMs: Long): String {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestampMs))
+    }
+
+    private fun formatOptionalDurationMs(value: Long?): String {
+        val duration = value ?: return "<not recorded>"
+        return if (duration >= 0L) duration.toString() else "<not reached>"
     }
 
     private fun appendExceptionChain(lines: MutableList<String>, error: Throwable) {

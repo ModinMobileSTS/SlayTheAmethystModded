@@ -107,6 +107,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED
     val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED
+    val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
     val DEFAULT_PREFERRED_UPDATE_MIRROR_ID: String
         get() = LauncherConfig.DEFAULT_PREFERRED_UPDATE_MIRROR_ID
     val DEFAULT_PLAYER_NAME: String
@@ -397,6 +399,14 @@ object LauncherPreferences {
 
     fun setSteamCloudAutoPushAfterCleanShutdownEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamCloudAutoPushAfterCleanShutdownEnabled(context, enabled)
+    }
+
+    fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamCloudWattAccelerationEnabled(context)
+    }
+
+    fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamCloudWattAccelerationEnabled(context, enabled)
     }
 
     fun readPreferredUpdateMirrorId(context: Context): String {

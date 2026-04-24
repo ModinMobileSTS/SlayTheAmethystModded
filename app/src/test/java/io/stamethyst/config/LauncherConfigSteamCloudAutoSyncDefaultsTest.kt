@@ -13,4 +13,9 @@ class LauncherConfigSteamCloudAutoSyncDefaultsTest {
     fun autoPushAfterCleanShutdown_isDisabledByDefault() {
         assertFalse(LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED)
     }
+
+    @Test
+    fun wattAcceleration_isDisabledByDefault() {
+        assertFalse(LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED)
+    }
 }

@@ -47,6 +47,7 @@ import in.dragonbra.javasteam.steam.authentication.AuthPollResult;
 import in.dragonbra.javasteam.steam.authentication.AuthSession;
 import in.dragonbra.javasteam.steam.authentication.AuthSessionDetails;
 import in.dragonbra.javasteam.steam.authentication.IAuthenticator;
+import in.dragonbra.javasteam.steam.discovery.FileServerListProvider;
 import in.dragonbra.javasteam.steam.discovery.ServerRecord;
 import in.dragonbra.javasteam.steam.discovery.SmartCMServerList;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileChangeList;
@@ -87,6 +88,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final int JAVA_STEAM_STACKTRACE_LINE_LIMIT = 24;
     private static final String OUTPUT_DIR_NAME = "steam-cloud";
     private static final String LAST_CM_ENDPOINT_FILE_NAME = "last-websocket-cm-endpoint.txt";
+    private static final String CM_SERVER_LIST_FILE_NAME = "steam-cm-server-list.bin";
 
     private final SteamClient steamClient;
     private final CallbackManager callbackManager;
@@ -95,6 +97,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private final Cloud cloudService;
     private final OkHttpClient httpClient;
     private final File lastCmEndpointFile;
+    private final boolean wattAccelerationEnabled;
     private final EnumSet<ProtocolTypes> protocolTypes = EnumSet.of(ProtocolTypes.WEB_SOCKET);
     private final JavaSteamLogCollector javaSteamLogCollector;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -112,6 +115,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile String lastAuthPromptDescription = "<not requested>";
     private volatile boolean guardDataConfigured = false;
     private volatile boolean guardDataUpdated = false;
+    private volatile long cmServerSelectionMs = -1L;
+    private volatile long cmConnectWaitMs = -1L;
     private Thread callbackThread;
 
     private static final class PreparedServerRecord {
@@ -133,18 +138,21 @@ public final class SteamCloudClient implements AutoCloseable {
         }
         lastCmEndpointFile = new File(outputDir, LAST_CM_ENDPOINT_FILE_NAME);
 
-        httpClient = new OkHttpClient.Builder()
-            .connectTimeout(DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .readTimeout(DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .writeTimeout(DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .callTimeout(DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .retryOnConnectionFailure(true)
-            .build();
+        wattAccelerationEnabled = SteamCloudAcceleratedHttp.isEnabled(context);
+        httpClient = SteamCloudAcceleratedHttp.createClient(
+            context,
+            DOWNLOAD_TIMEOUT_MS,
+            DOWNLOAD_TIMEOUT_MS,
+            DOWNLOAD_TIMEOUT_MS
+        );
+        Log.i(TAG, "Steam Cloud Watt acceleration: " + (wattAccelerationEnabled ? "enabled" : "disabled") + '.');
 
+        File cmServerListFile = new File(outputDir, CM_SERVER_LIST_FILE_NAME);
         SteamConfiguration steamConfiguration = SteamConfiguration.create(builder -> {
             builder.withHttpClient(httpClient);
             builder.withConnectionTimeout(CONNECT_TIMEOUT_MS);
             builder.withProtocolTypes(protocolTypes);
+            builder.withServerListProvider(new FileServerListProvider(cmServerListFile));
         });
 
         javaSteamLogCollector = new JavaSteamLogCollector();
@@ -190,6 +198,8 @@ public final class SteamCloudClient implements AutoCloseable {
         lastAuthPromptDescription = "<not requested>";
         loggedOnResultDescription = "<not received>";
         disconnectedDescription = "<not observed>";
+        cmServerSelectionMs = -1L;
+        cmConnectWaitMs = -1L;
         Log.i(
             TAG,
             "Beginning Steam Cloud operation="
@@ -223,7 +233,13 @@ public final class SteamCloudClient implements AutoCloseable {
             callbackThread.setDaemon(true);
             callbackThread.start();
 
-            PreparedServerRecord preparedServerRecord = selectWebSocketServerRecord();
+            PreparedServerRecord preparedServerRecord;
+            long serverSelectionStartedAtNs = System.nanoTime();
+            try {
+                preparedServerRecord = selectWebSocketServerRecord();
+            } finally {
+                cmServerSelectionMs = elapsedMillis(serverSelectionStartedAtNs);
+            }
             ServerRecord serverRecord = preparedServerRecord == null ? null : preparedServerRecord.serverRecord;
             if (serverRecord == null) {
                 throw new IllegalStateException(
@@ -240,8 +256,13 @@ public final class SteamCloudClient implements AutoCloseable {
                     + " source="
                     + candidateSourceDescription
             );
-            steamClient.connect(serverRecord);
-            waitForStage(connectedFuture, CONNECT_TIMEOUT_MS, "Steam connect");
+            long connectStartedAtNs = System.nanoTime();
+            try {
+                steamClient.connect(serverRecord);
+                waitForStage(connectedFuture, CONNECT_TIMEOUT_MS, "Steam connect");
+            } finally {
+                cmConnectWaitMs = elapsedMillis(connectStartedAtNs);
+            }
             persistResolvedWebSocketEndpoint(serverRecord);
         } catch (Exception error) {
             Log.e(TAG, "Steam connect failed during " + currentStage + '.', error);
@@ -653,7 +674,10 @@ public final class SteamCloudClient implements AutoCloseable {
             javaSteamLogCollector.describeLastLog(),
             javaSteamLogCollector.describeLastError(),
             javaSteamLogCollector.snapshotTailLines(),
-            javaSteamLogCollector.snapshotErrorStackLines()
+            javaSteamLogCollector.snapshotErrorStackLines(),
+            wattAccelerationEnabled ? "enabled" : "disabled",
+            cmServerSelectionMs,
+            cmConnectWaitMs
         );
     }
 
@@ -1230,6 +1254,9 @@ public final class SteamCloudClient implements AutoCloseable {
         private final String javaSteamLastErrorDescription;
         private final List<String> javaSteamLogTailLines;
         private final List<String> javaSteamErrorStackLines;
+        private final String wattAccelerationDescription;
+        private final long cmServerSelectionMs;
+        private final long cmConnectWaitMs;
 
         private DiagnosticsSnapshot(
             String currentStage,
@@ -1246,7 +1273,10 @@ public final class SteamCloudClient implements AutoCloseable {
             String javaSteamLastLogDescription,
             String javaSteamLastErrorDescription,
             List<String> javaSteamLogTailLines,
-            List<String> javaSteamErrorStackLines
+            List<String> javaSteamErrorStackLines,
+            String wattAccelerationDescription,
+            long cmServerSelectionMs,
+            long cmConnectWaitMs
         ) {
             this.currentStage = currentStage;
             this.protocolTypesDescription = protocolTypesDescription;
@@ -1263,6 +1293,9 @@ public final class SteamCloudClient implements AutoCloseable {
             this.javaSteamLastErrorDescription = javaSteamLastErrorDescription;
             this.javaSteamLogTailLines = Collections.unmodifiableList(new ArrayList<>(javaSteamLogTailLines));
             this.javaSteamErrorStackLines = Collections.unmodifiableList(new ArrayList<>(javaSteamErrorStackLines));
+            this.wattAccelerationDescription = wattAccelerationDescription;
+            this.cmServerSelectionMs = cmServerSelectionMs;
+            this.cmConnectWaitMs = cmConnectWaitMs;
         }
 
         public String getCurrentStage() {
@@ -1323,6 +1356,18 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public List<String> getJavaSteamErrorStackLines() {
             return javaSteamErrorStackLines;
+        }
+
+        public String getWattAccelerationDescription() {
+            return wattAccelerationDescription;
+        }
+
+        public long getCmServerSelectionMs() {
+            return cmServerSelectionMs;
+        }
+
+        public long getCmConnectWaitMs() {
+            return cmConnectWaitMs;
         }
     }
 
