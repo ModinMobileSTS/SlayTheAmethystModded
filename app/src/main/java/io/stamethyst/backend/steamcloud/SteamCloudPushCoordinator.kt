@@ -2,6 +2,7 @@ package io.stamethyst.backend.steamcloud
 
 import android.app.Activity
 import `in`.dragonbra.javasteam.enums.EResult
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
@@ -78,12 +79,24 @@ internal object SteamCloudPushCoordinator {
                 SteamCloudAuthStore.recordManifestSuccess(host, snapshot.fetchedAtMs)
                 telemetry.manifestWriteMs = elapsedMs(manifestWriteStartedAtNs)
 
+                val syncBlacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(host)
+                val filteredSnapshot = SteamCloudSyncBlacklist.filterManifestSnapshot(
+                    snapshot = snapshot,
+                    configuredBlacklist = syncBlacklist,
+                )
+
                 val baselineReadStartedAtNs = System.nanoTime()
-                val baseline = SteamCloudBaselineStore.readSnapshot(host)
+                val baseline = SteamCloudSyncBlacklist.filterBaseline(
+                    baseline = SteamCloudBaselineStore.readSnapshot(host),
+                    configuredBlacklist = syncBlacklist,
+                )
                 telemetry.baselineReadMs = elapsedMs(baselineReadStartedAtNs)
 
                 val localSnapshotStartedAtNs = System.nanoTime()
-                val localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host))
+                val localEntries = SteamCloudSyncBlacklist.filterLocalEntries(
+                    entries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
+                    configuredBlacklist = syncBlacklist,
+                )
                 telemetry.localSnapshotMs = elapsedMs(localSnapshotStartedAtNs)
                 telemetry.localEntryCount = localEntries.size
 
@@ -91,7 +104,7 @@ internal object SteamCloudPushCoordinator {
                 val plan = SteamCloudDiffPlanner.buildUploadPlan(
                     plannedAtMs = System.currentTimeMillis(),
                     currentLocalEntries = localEntries,
-                    currentRemoteSnapshot = snapshot,
+                    currentRemoteSnapshot = filteredSnapshot,
                     baseline = baseline,
                 )
                 telemetry.diffPlanMs = elapsedMs(diffPlanStartedAtNs)
@@ -258,12 +271,19 @@ internal object SteamCloudPushCoordinator {
                 summaryPath = SteamCloudManifestStore.pushSummaryFile(host).absolutePath,
                 warnings = plan.warnings + refreshedSnapshot.warnings,
             )
+            val syncBlacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(host)
             SteamCloudBaselineStore.writeSnapshot(
                 host,
                 SteamCloudSyncBaseline(
                     syncedAtMs = result.completedAtMs,
-                    localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
-                    remoteEntries = refreshedSnapshot.entries,
+                    localEntries = SteamCloudSyncBlacklist.filterLocalEntries(
+                        entries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
+                        configuredBlacklist = syncBlacklist,
+                    ),
+                    remoteEntries = SteamCloudSyncBlacklist.filterManifestSnapshot(
+                        snapshot = refreshedSnapshot,
+                        configuredBlacklist = syncBlacklist,
+                    ).entries,
                 )
             )
             writePushSummary(
@@ -329,6 +349,7 @@ internal object SteamCloudPushCoordinator {
     fun overwriteRemoteWithLocal(
         host: Activity,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+        sourceRoot: File = RuntimePaths.stsRoot(host),
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
     ): SteamCloudPushResult {
         val startedAtMs = System.currentTimeMillis()
@@ -376,12 +397,22 @@ internal object SteamCloudPushCoordinator {
             SteamCloudManifestStore.writeSnapshot(host, currentRemoteSnapshot)
             SteamCloudAuthStore.recordManifestSuccess(host, currentRemoteSnapshot.fetchedAtMs)
 
-            val localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host))
+            val syncBlacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(host)
+            val localEntries = SteamCloudSyncBlacklist.filterLocalEntries(
+                entries = SteamCloudLocalSnapshotCollector.collect(sourceRoot),
+                configuredBlacklist = syncBlacklist,
+            )
             preparedPlan = prepareMirrorPlan(
                 SteamCloudMirrorPlanner.buildLocalMirrorPlan(
                     currentLocalEntries = localEntries,
-                    currentRemoteSnapshot = currentRemoteSnapshot,
-                    baseline = SteamCloudBaselineStore.readSnapshot(host),
+                    currentRemoteSnapshot = SteamCloudSyncBlacklist.filterManifestSnapshot(
+                        snapshot = currentRemoteSnapshot,
+                        configuredBlacklist = syncBlacklist,
+                    ),
+                    baseline = SteamCloudSyncBlacklist.filterBaseline(
+                        baseline = SteamCloudBaselineStore.readSnapshot(host),
+                        configuredBlacklist = syncBlacklist,
+                    ),
                 )
             )
             reportProgress(
@@ -407,7 +438,7 @@ internal object SteamCloudPushCoordinator {
             val totalUploads = preparedPlan.uploadCandidates.size
             preparedPlan.uploadCandidates.forEachIndexed { index, candidate ->
                 val sourceFile = File(
-                    RuntimePaths.stsRoot(host),
+                    sourceRoot,
                     candidate.localRelativePath.replace('/', File.separatorChar)
                 )
                 val uploadedFile = try {
@@ -479,7 +510,10 @@ internal object SteamCloudPushCoordinator {
                 SteamCloudSyncBaseline(
                     syncedAtMs = result.completedAtMs,
                     localEntries = localEntries,
-                    remoteEntries = refreshedSnapshot.entries,
+                    remoteEntries = SteamCloudSyncBlacklist.filterManifestSnapshot(
+                        snapshot = refreshedSnapshot,
+                        configuredBlacklist = syncBlacklist,
+                    ).entries,
                 )
             )
             writeMirrorPushSummary(

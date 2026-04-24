@@ -115,7 +115,9 @@ internal fun rememberMainScreenActions(
                     )
                 },
                 onLaunch = { viewModel.onLaunchRequested(activity) },
-                onLaunchDirect = { viewModel.onLaunch(activity) },
+                onLaunchDirect = {
+                    viewModel.onLaunchBypassingSteamCloudPreLaunchSync(activity)
+                },
                 onRefreshSteamCloudStatus = {
                     viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
                 },

@@ -1,6 +1,7 @@
 package io.stamethyst.backend.steamcloud
 
 import android.app.Activity
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.settings.SettingsSaveBackupService
 import java.io.File
@@ -90,6 +91,106 @@ internal object SteamCloudPullCoordinator {
     }
 
     @Throws(Exception::class)
+    fun downloadAllToDirectory(
+        host: Activity,
+        authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+        outputRoot: File,
+        progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
+    ): SteamCloudManifestSnapshot {
+        val startedAtMs = System.currentTimeMillis()
+        if (!outputRoot.isDirectory && !outputRoot.mkdirs()) {
+            throw IOException("Failed to create Steam Cloud backup staging directory: ${outputRoot.absolutePath}")
+        }
+
+        val client = SteamCloudClient(host)
+        val downloadResults = mutableListOf<SteamCloudClient.DownloadResult>()
+        try {
+            client.use {
+                client.beginOperationDiagnostics(
+                    "backup_remote",
+                    authMaterial.accountName,
+                    authMaterial.guardData.isNotBlank(),
+                )
+                reportProgress(
+                    progressCallback,
+                    SteamCloudSyncProgress(
+                        direction = SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL,
+                        phase = SteamCloudSyncPhase.CONNECTING,
+                        progressPercent = 5,
+                    )
+                )
+                client.start()
+                reportProgress(
+                    progressCallback,
+                    SteamCloudSyncProgress(
+                        direction = SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL,
+                        phase = SteamCloudSyncPhase.LOGGING_ON,
+                        progressPercent = 12,
+                    )
+                )
+                client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                reportProgress(
+                    progressCallback,
+                    SteamCloudSyncProgress(
+                        direction = SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL,
+                        phase = SteamCloudSyncPhase.REFRESHING_MANIFEST,
+                        progressPercent = 20,
+                    )
+                )
+                val snapshot = SteamCloudPathMapper.buildManifestSnapshot(
+                    fetchedAtMs = System.currentTimeMillis(),
+                    remoteEntries = client.listFiles(STEAM_CLOUD_APP_ID),
+                )
+                SteamCloudManifestStore.writeSnapshot(host, snapshot)
+                SteamCloudAuthStore.recordManifestSuccess(host, snapshot.fetchedAtMs)
+                downloadResults += downloadEntries(
+                    client = client,
+                    appId = STEAM_CLOUD_APP_ID,
+                    entries = SteamCloudPullPlanner.buildPlan(snapshot).entries,
+                    stagingRoot = outputRoot,
+                    progressCallback = progressCallback,
+                )
+                SteamCloudDiagnosticsStore.writeSummary(
+                    context = host,
+                    operation = "backup_remote",
+                    outcome = "SUCCESS",
+                    accountName = authMaterial.accountName,
+                    startedAtMs = startedAtMs,
+                    completedAtMs = System.currentTimeMillis(),
+                    diagnostics = client.snapshotDiagnostics(),
+                    extraLines = listOf(
+                        "Manifest files: ${snapshot.fileCount}",
+                        "Downloaded files: ${downloadResults.size}",
+                        "Downloaded raw bytes: ${downloadResults.sumOf { it.rawBytes }}",
+                        "Output root: ${outputRoot.absolutePath}",
+                    ) + snapshot.warnings.map { "Warning: $it" },
+                )
+                return snapshot
+            }
+        } catch (error: Throwable) {
+            SteamCloudAuthStore.recordFailure(host, summarizeError(error))
+            runCatching {
+                SteamCloudDiagnosticsStore.writeSummary(
+                    context = host,
+                    operation = "backup_remote",
+                    outcome = "FAILED",
+                    accountName = authMaterial.accountName,
+                    startedAtMs = startedAtMs,
+                    completedAtMs = System.currentTimeMillis(),
+                    diagnostics = client.snapshotDiagnostics(),
+                    failureSummary = summarizeError(error),
+                    error = error,
+                    extraLines = listOf(
+                        "Downloaded files before failure: ${downloadResults.size}",
+                        "Output root: ${outputRoot.absolutePath}",
+                    ),
+                )
+            }
+            throw error
+        }
+    }
+
+    @Throws(Exception::class)
     fun pullAll(
         host: Activity,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
@@ -153,7 +254,12 @@ internal object SteamCloudPullCoordinator {
                 SteamCloudManifestStore.writeSnapshot(host, requireNotNull(snapshot))
                 SteamCloudAuthStore.recordManifestSuccess(host, requireNotNull(snapshot).fetchedAtMs)
 
-                val plan = SteamCloudPullPlanner.buildPlan(requireNotNull(snapshot))
+                val syncBlacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(host)
+                val filteredSnapshot = SteamCloudSyncBlacklist.filterManifestSnapshot(
+                    snapshot = requireNotNull(snapshot),
+                    configuredBlacklist = syncBlacklist,
+                )
+                val plan = SteamCloudPullPlanner.buildPlan(filteredSnapshot)
                 reportProgress(
                     progressCallback,
                     SteamCloudSyncProgress(
@@ -190,7 +296,7 @@ internal object SteamCloudPullCoordinator {
                     RuntimePaths.stsRoot(host)
                 )
                 val backupMs = elapsedMs(backupStartedAtNs)
-                val pullPlan = SteamCloudPullPlanner.buildPlan(requireNotNull(snapshot))
+                val pullPlan = SteamCloudPullPlanner.buildPlan(filteredSnapshot)
                 reportProgress(
                     progressCallback,
                     SteamCloudSyncProgress(
@@ -207,6 +313,7 @@ internal object SteamCloudPullCoordinator {
                     stsRoot = RuntimePaths.stsRoot(host),
                     replaceRoots = pullPlan.replaceRoots,
                     rollbackRoot = rollbackRoot,
+                    preserveLocalRelativePaths = syncBlacklist,
                 )
                 val applyMs = elapsedMs(applyStartedAtNs)
 
@@ -215,15 +322,18 @@ internal object SteamCloudPullCoordinator {
                     backupLabel = backupLabel,
                     completedAtMs = System.currentTimeMillis(),
                     summaryPath = SteamCloudManifestStore.pullSummaryFile(host).absolutePath,
-                    warnings = requireNotNull(snapshot).warnings,
+                    warnings = filteredSnapshot.warnings,
                 )
                 val baselineStartedAtNs = System.nanoTime()
                 SteamCloudBaselineStore.writeSnapshot(
                     host,
                     SteamCloudSyncBaseline(
                         syncedAtMs = result.completedAtMs,
-                        localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
-                        remoteEntries = requireNotNull(snapshot).entries,
+                        localEntries = SteamCloudSyncBlacklist.filterLocalEntries(
+                            entries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
+                            configuredBlacklist = syncBlacklist,
+                        ),
+                        remoteEntries = filteredSnapshot.entries,
                     )
                 )
                 val baselineMs = elapsedMs(baselineStartedAtNs)
@@ -417,12 +527,19 @@ internal object SteamCloudPullCoordinator {
             val snapshot = SteamCloudManifestStore.readSnapshot(host)
                 ?: throw IOException("Steam Cloud manifest is missing after upload-plan refresh.")
             val completedAtMs = System.currentTimeMillis()
+            val syncBlacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(host)
             SteamCloudBaselineStore.writeSnapshot(
                 host,
                 SteamCloudSyncBaseline(
                     syncedAtMs = completedAtMs,
-                    localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
-                    remoteEntries = snapshot.entries,
+                    localEntries = SteamCloudSyncBlacklist.filterLocalEntries(
+                        entries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
+                        configuredBlacklist = syncBlacklist,
+                    ),
+                    remoteEntries = SteamCloudSyncBlacklist.filterManifestSnapshot(
+                        snapshot = snapshot,
+                        configuredBlacklist = syncBlacklist,
+                    ).entries,
                 )
             )
             SteamCloudDiagnosticsStore.writeSummary(
@@ -630,6 +747,7 @@ internal object SteamCloudPullCoordinator {
         stsRoot: File,
         replaceRoots: Set<SteamCloudRootKind>,
         rollbackRoot: File,
+        preserveLocalRelativePaths: Set<String>,
     ) {
         if (!rollbackRoot.isDirectory && !rollbackRoot.mkdirs()) {
             throw IOException("Failed to create Steam Cloud rollback directory: ${rollbackRoot.absolutePath}")
@@ -649,6 +767,14 @@ internal object SteamCloudPullCoordinator {
                 if (stagedRoot.exists()) {
                     movePath(stagedRoot, liveRoot)
                 }
+                restorePreservedLocalPaths(
+                    rollbackRoot = rollbackTarget,
+                    liveRoot = liveRoot,
+                    relativeSuffixes = SteamCloudSyncBlacklist.relativeSuffixesForRoot(
+                        rootKind = rootKind,
+                        configuredBlacklist = preserveLocalRelativePaths,
+                    ),
+                )
             }
         } catch (error: Throwable) {
             for ((liveRoot, rollbackTarget) in movedBackups.asReversed()) {
@@ -660,6 +786,27 @@ internal object SteamCloudPullCoordinator {
                 }
             }
             throw error
+        }
+    }
+
+    private fun restorePreservedLocalPaths(
+        rollbackRoot: File,
+        liveRoot: File,
+        relativeSuffixes: Set<String>,
+    ) {
+        if (!rollbackRoot.exists() || relativeSuffixes.isEmpty()) {
+            return
+        }
+        relativeSuffixes.forEach { relativeSuffix ->
+            val source = File(rollbackRoot, relativeSuffix.replace('/', File.separatorChar))
+            if (!source.exists()) {
+                return@forEach
+            }
+            val target = File(liveRoot, relativeSuffix.replace('/', File.separatorChar))
+            if (target.exists() && !target.deleteRecursively()) {
+                throw IOException("Failed to replace preserved local path: ${target.absolutePath}")
+            }
+            copyPath(source, target)
         }
     }
 

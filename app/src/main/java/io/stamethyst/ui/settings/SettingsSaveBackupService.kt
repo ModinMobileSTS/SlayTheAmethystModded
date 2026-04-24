@@ -29,10 +29,35 @@ internal object SettingsSaveBackupService {
 
         val backupFileName = buildSaveBackupFileName()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            backupExistingSavesToScopedDownloads(host, sourceRoots, backupFileName)
+            backupExistingSavesToScopedDownloads(host, sourceRoots, backupFileName, null)
             "Download/$backupFileName"
         } else {
-            backupExistingSavesToLegacyDownloads(sourceRoots, backupFileName)
+            backupExistingSavesToLegacyDownloads(sourceRoots, backupFileName, null)
+        }
+    }
+
+    @Throws(IOException::class)
+    fun backupSaveProfileToDownloads(
+        host: Activity,
+        sourceRoot: File,
+        backupFileName: String,
+        relativeSubdirectory: String,
+    ): String {
+        val sourceRoots = SaveArchiveLayout.existingSourceDirectories(sourceRoot)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            backupExistingSavesToScopedDownloads(
+                host = host,
+                sourceRoots = sourceRoots,
+                backupFileName = backupFileName,
+                relativeSubdirectory = relativeSubdirectory,
+            )
+            "Download/$relativeSubdirectory/$backupFileName"
+        } else {
+            backupExistingSavesToLegacyDownloads(
+                sourceRoots = sourceRoots,
+                backupFileName = backupFileName,
+                relativeSubdirectory = relativeSubdirectory,
+            )
         }
     }
 
@@ -72,11 +97,15 @@ internal object SettingsSaveBackupService {
         host: Activity,
         sourceRoots: List<File>,
         backupFileName: String,
+        relativeSubdirectory: String?,
     ) {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, backupFileName)
             put(MediaStore.Downloads.MIME_TYPE, "application/zip")
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(
+                MediaStore.Downloads.RELATIVE_PATH,
+                buildDownloadsRelativePath(relativeSubdirectory)
+            )
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
 
@@ -109,6 +138,7 @@ internal object SettingsSaveBackupService {
     private fun backupExistingSavesToLegacyDownloads(
         sourceRoots: List<File>,
         backupFileName: String,
+        relativeSubdirectory: String?,
     ): String {
         val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             ?: throw IOException("Downloads directory is unavailable")
@@ -116,7 +146,16 @@ internal object SettingsSaveBackupService {
             throw IOException("Failed to create Downloads directory: ${downloadsDir.absolutePath}")
         }
 
-        val backupFile = File(downloadsDir, backupFileName)
+        val targetDir = relativeSubdirectory
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { File(downloadsDir, it) }
+            ?: downloadsDir
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IOException("Failed to create backup directory: ${targetDir.absolutePath}")
+        }
+
+        val backupFile = File(targetDir, backupFileName)
         FileOutputStream(backupFile, false).use { output ->
             writeSaveDirectoriesToZip(output, sourceRoots)
         }
@@ -143,6 +182,16 @@ internal object SettingsSaveBackupService {
     private fun buildSaveBackupFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-saves-backup-${formatter.format(Date())}.zip"
+    }
+
+    private fun buildDownloadsRelativePath(relativeSubdirectory: String?): String {
+        val suffix = relativeSubdirectory
+            ?.trim()
+            ?.replace('\\', '/')
+            ?.trim('/')
+            ?.takeIf { it.isNotEmpty() }
+            ?: return Environment.DIRECTORY_DOWNLOADS
+        return Environment.DIRECTORY_DOWNLOADS + "/" + suffix
     }
 
     @Throws(IOException::class)

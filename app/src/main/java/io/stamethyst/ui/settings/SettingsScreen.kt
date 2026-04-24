@@ -3,18 +3,21 @@ package io.stamethyst.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -59,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -67,17 +71,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
-import io.stamethyst.backend.steamcloud.SteamCloudLoginChallengeKind
+import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudConflict
 import io.stamethyst.backend.steamcloud.SteamCloudConflictKind
 import io.stamethyst.backend.steamcloud.SteamCloudManifestEntry
@@ -94,6 +100,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
@@ -102,7 +109,10 @@ import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.icon.ArrowBack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import okhttp3.Request
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -135,16 +145,12 @@ fun LauncherSettingsScreen(
         onExportSaves = viewModel::onExportSaves,
         onExportLogs = { viewModel.onExportLogs(activity) },
         onExportLogsToFile = viewModel::onExportLogsToFile,
-        onStartSteamCloudLogin = { username, password ->
-            viewModel.onStartSteamCloudLogin(activity, username, password)
-        },
+        onOpenSteamCloudLogin = { navigator.push(Route.SteamCloudLogin) },
         onSteamCloudWattAccelerationChanged = { enabled ->
             viewModel.onSteamCloudWattAccelerationChanged(activity, enabled)
         },
+        onOpenSteamCloudSaveSettings = { navigator.push(Route.SteamCloudSaveSettings) },
         onClearSteamCloudCredentials = { viewModel.onClearSteamCloudCredentials(activity) },
-        onSubmitSteamCloudChallengeCode = viewModel::onSubmitSteamCloudChallengeCode,
-        onAcceptSteamCloudDeviceConfirmation = viewModel::onAcceptSteamCloudDeviceConfirmation,
-        onCancelSteamCloudChallenge = viewModel::onCancelSteamCloudChallenge,
         onOpenNativeLibraryMarket = { navigator.push(Route.NativeLibraryMarket) },
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
@@ -375,12 +381,10 @@ private fun LauncherSettingsScreenContent(
     onExportSaves: () -> Unit = {},
     onExportLogs: () -> Unit = {},
     onExportLogsToFile: () -> Unit = {},
-    onStartSteamCloudLogin: (String, String) -> Boolean = { _, _ -> false },
+    onOpenSteamCloudLogin: () -> Unit = {},
     onSteamCloudWattAccelerationChanged: (Boolean) -> Unit = {},
+    onOpenSteamCloudSaveSettings: () -> Unit = {},
     onClearSteamCloudCredentials: () -> Unit = {},
-    onSubmitSteamCloudChallengeCode: (String) -> Unit = {},
-    onAcceptSteamCloudDeviceConfirmation: () -> Unit = {},
-    onCancelSteamCloudChallenge: () -> Unit = {},
     onOpenNativeLibraryMarket: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
@@ -473,13 +477,11 @@ private fun LauncherSettingsScreenContent(
                 SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_title)) {
                     SettingsSteamCloudSection(
                         uiState = uiState,
-                        onStartSteamCloudLogin = onStartSteamCloudLogin,
+                        onOpenSteamCloudLogin = onOpenSteamCloudLogin,
                         onSteamCloudWattAccelerationChanged =
                             onSteamCloudWattAccelerationChanged,
+                        onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
                         onClearSteamCloudCredentials = onClearSteamCloudCredentials,
-                        onSubmitSteamCloudChallengeCode = onSubmitSteamCloudChallengeCode,
-                        onAcceptSteamCloudDeviceConfirmation = onAcceptSteamCloudDeviceConfirmation,
-                        onCancelSteamCloudChallenge = onCancelSteamCloudChallenge,
                     )
                 }
             }
@@ -608,37 +610,43 @@ private fun LauncherSettingsScreenContent(
 @Composable
 private fun SettingsSteamCloudSection(
     uiState: SettingsScreenViewModel.UiState,
-    onStartSteamCloudLogin: (String, String) -> Boolean,
+    onOpenSteamCloudLogin: () -> Unit,
     onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
+    onOpenSteamCloudSaveSettings: () -> Unit,
     onClearSteamCloudCredentials: () -> Unit,
-    onSubmitSteamCloudChallengeCode: (String) -> Unit,
-    onAcceptSteamCloudDeviceConfirmation: () -> Unit,
-    onCancelSteamCloudChallenge: () -> Unit,
 ) {
-    var showLoginDialog by rememberSaveable { mutableStateOf(false) }
     var showLogoutConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingUsername by rememberSaveable { mutableStateOf(uiState.steamCloudAccountName) }
-    var pendingPassword by rememberSaveable { mutableStateOf("") }
-    var pendingChallengeCode by rememberSaveable { mutableStateOf("") }
-    val loginChallenge = uiState.steamCloudLoginChallenge
     val accountName = uiState.steamCloudAccountName.ifBlank {
         stringResource(R.string.settings_steam_cloud_account_unknown)
     }
+    val accountDisplayName = uiState.steamCloudPersonaName.ifBlank { accountName }
+    val currentSaveModeText = steamCloudSaveModeDisplayName(uiState.steamCloudSaveMode)
 
-    LaunchedEffect(loginChallenge?.kind, loginChallenge?.previousCodeWasIncorrect, loginChallenge?.emailHint) {
-        pendingChallengeCode = ""
-    }
+    Text(
+        text = stringResource(R.string.settings_steam_cloud_intro),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
+    Spacer(modifier = Modifier.size(8.dp))
     SteamCloudAccountCard(
         loggedIn = uiState.steamCloudRefreshTokenConfigured,
-        accountName = accountName,
+        accountName = accountDisplayName,
+        avatarUrl = uiState.steamCloudAvatarUrl,
         busy = uiState.busy,
-        onLogin = {
-            pendingUsername = uiState.steamCloudAccountName
-            pendingPassword = ""
-            showLoginDialog = true
-        },
+        onLogin = onOpenSteamCloudLogin,
         onLogout = { showLogoutConfirmDialog = true },
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_cloud_save_settings_title),
+        supportingText = stringResource(
+            R.string.settings_steam_cloud_save_settings_summary,
+            currentSaveModeText,
+        ),
+        enabled = !uiState.busy,
+        onClick = onOpenSteamCloudSaveSettings,
     )
 
     Spacer(modifier = Modifier.size(8.dp))
@@ -650,60 +658,6 @@ private fun SettingsSteamCloudSection(
         description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
         onCheckedChange = onSteamCloudWattAccelerationChanged,
     )
-
-    if (showLoginDialog) {
-        AlertDialog(
-            onDismissRequest = { showLoginDialog = false },
-            title = { Text(stringResource(R.string.settings_steam_cloud_login_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = stringResource(R.string.settings_steam_cloud_login_dialog_desc),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    OutlinedTextField(
-                        value = pendingUsername,
-                        onValueChange = { pendingUsername = it },
-                        singleLine = true,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_username_label)) }
-                    )
-                    OutlinedTextField(
-                        value = pendingPassword,
-                        onValueChange = { pendingPassword = it },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_password_label)) }
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_steam_cloud_login_dialog_password_policy),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            confirmButton = {
-                HapticTextButton(
-                    enabled = !uiState.busy,
-                    onClick = {
-                        if (onStartSteamCloudLogin(pendingUsername, pendingPassword)) {
-                            showLoginDialog = false
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.settings_steam_cloud_login_action))
-                }
-            },
-            dismissButton = {
-                HapticTextButton(
-                    enabled = !uiState.busy,
-                    onClick = { showLoginDialog = false }
-                ) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            }
-        )
-    }
 
     if (showLogoutConfirmDialog) {
         AlertDialog(
@@ -737,102 +691,16 @@ private fun SettingsSteamCloudSection(
         )
     }
 
-    if (loginChallenge != null) {
-        AlertDialog(
-            onDismissRequest = onCancelSteamCloudChallenge,
-            title = {
-                Text(
-                    when (loginChallenge.kind) {
-                        SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
-                            stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_title)
-                        SteamCloudLoginChallengeKind.DEVICE_CODE ->
-                            if (loginChallenge.previousCodeWasIncorrect) {
-                                stringResource(R.string.settings_steam_cloud_challenge_device_code_retry_title)
-                            } else {
-                                stringResource(R.string.settings_steam_cloud_challenge_device_code_title)
-                            }
-                        SteamCloudLoginChallengeKind.EMAIL_CODE ->
-                            if (loginChallenge.previousCodeWasIncorrect) {
-                                stringResource(R.string.settings_steam_cloud_challenge_email_code_retry_title)
-                            } else {
-                                stringResource(R.string.settings_steam_cloud_challenge_email_code_title)
-                            }
-                    }
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = when (loginChallenge.kind) {
-                            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
-                                stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_desc)
-                            SteamCloudLoginChallengeKind.DEVICE_CODE ->
-                                stringResource(R.string.settings_steam_cloud_challenge_device_code_desc)
-                            SteamCloudLoginChallengeKind.EMAIL_CODE ->
-                                if (loginChallenge.emailHint.isNotBlank()) {
-                                    stringResource(
-                                        R.string.settings_steam_cloud_challenge_email_code_desc_with_hint,
-                                        loginChallenge.emailHint
-                                    )
-                                } else {
-                                    stringResource(R.string.settings_steam_cloud_challenge_email_code_desc)
-                                }
-                        },
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    if (loginChallenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION) {
-                        OutlinedTextField(
-                            value = pendingChallengeCode,
-                            onValueChange = { pendingChallengeCode = it },
-                            singleLine = true,
-                            enabled = true,
-                            label = {
-                                Text(
-                                    when (loginChallenge.kind) {
-                                        SteamCloudLoginChallengeKind.DEVICE_CODE ->
-                                            stringResource(R.string.settings_steam_cloud_challenge_device_code_label)
-                                        SteamCloudLoginChallengeKind.EMAIL_CODE ->
-                                            stringResource(R.string.settings_steam_cloud_challenge_email_code_label)
-                                        SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> ""
-                                    }
-                                )
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                HapticTextButton(
-                    onClick = {
-                        when (loginChallenge.kind) {
-                            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
-                                onAcceptSteamCloudDeviceConfirmation()
-                            SteamCloudLoginChallengeKind.DEVICE_CODE,
-                            SteamCloudLoginChallengeKind.EMAIL_CODE -> {
-                                if (pendingChallengeCode.isNotBlank()) {
-                                    onSubmitSteamCloudChallengeCode(pendingChallengeCode)
-                                }
-                            }
-                        }
-                    }
-                ) {
-                    Text(
-                        when (loginChallenge.kind) {
-                            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
-                                stringResource(R.string.settings_steam_cloud_challenge_continue_action)
-                            SteamCloudLoginChallengeKind.DEVICE_CODE,
-                            SteamCloudLoginChallengeKind.EMAIL_CODE ->
-                                stringResource(R.string.settings_steam_cloud_challenge_submit_action)
-                        }
-                    )
-                }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = onCancelSteamCloudChallenge) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            }
-        )
+}
+
+@Composable
+private fun steamCloudSaveModeDisplayName(mode: SteamCloudSaveMode): String {
+    return when (mode) {
+        SteamCloudSaveMode.INDEPENDENT ->
+            stringResource(R.string.settings_steam_cloud_save_mode_independent_title)
+
+        SteamCloudSaveMode.STEAM_CLOUD ->
+            stringResource(R.string.settings_steam_cloud_save_mode_cloud_title)
     }
 }
 
@@ -840,12 +708,11 @@ private fun SettingsSteamCloudSection(
 private fun SteamCloudAccountCard(
     loggedIn: Boolean,
     accountName: String,
+    avatarUrl: String,
     busy: Boolean,
     onLogin: () -> Unit,
     onLogout: () -> Unit,
 ) {
-    val avatarText = accountName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "S"
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -855,19 +722,10 @@ private fun SteamCloudAccountCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = avatarText,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
+        SteamCloudAvatarImage(
+            loggedIn = loggedIn,
+            avatarUrl = avatarUrl,
+        )
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -911,6 +769,73 @@ private fun SteamCloudAccountCard(
         }
     }
 }
+
+@Composable
+private fun SteamCloudAvatarImage(
+    loggedIn: Boolean,
+    avatarUrl: String,
+) {
+    val context = LocalContext.current.applicationContext
+    val avatarBitmap by produceState<Bitmap?>(initialValue = null, loggedIn, avatarUrl) {
+        value = if (loggedIn && avatarUrl.isNotBlank()) {
+            loadSteamCloudAvatarBitmap(context, avatarUrl)
+        } else {
+            null
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        if (loggedIn && avatarBitmap != null) {
+            Image(
+                bitmap = requireNotNull(avatarBitmap).asImageBitmap(),
+                contentDescription = stringResource(R.string.settings_steam_cloud_account_avatar_content_desc),
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Icon(
+                painter = painterResource(R.drawable.ic_account_circle),
+                contentDescription = stringResource(R.string.settings_steam_cloud_account_default_icon_content_desc),
+                modifier = Modifier.size(30.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+private suspend fun loadSteamCloudAvatarBitmap(
+    context: Context,
+    avatarUrl: String,
+): Bitmap? = withContext(Dispatchers.IO) {
+    runCatching {
+        val client = SteamCloudAcceleratedHttp.createClient(
+            context = context,
+            connectTimeoutMs = AVATAR_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = AVATAR_READ_TIMEOUT_MS,
+            callTimeoutMs = AVATAR_CALL_TIMEOUT_MS,
+        )
+        val request = Request.Builder()
+            .url(avatarUrl)
+            .header("User-Agent", "SlayTheAmethyst/${context.packageName}")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                return@use null
+            }
+            response.body.byteStream().use(BitmapFactory::decodeStream)
+        }
+    }.getOrNull()
+}
+
+private const val AVATAR_CONNECT_TIMEOUT_MS = 8_000L
+private const val AVATAR_READ_TIMEOUT_MS = 15_000L
+private const val AVATAR_CALL_TIMEOUT_MS = 20_000L
 
 @Composable
 private fun SteamCloudUploadCandidateCard(candidate: SteamCloudUploadCandidate) {

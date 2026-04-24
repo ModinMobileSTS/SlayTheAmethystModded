@@ -7,6 +7,7 @@
 
     <queries>
         <package android:name="top.apricityx.workshop" />
+        <package android:name="com.valvesoftware.android.steam.community" />
     </queries>
 
     <application

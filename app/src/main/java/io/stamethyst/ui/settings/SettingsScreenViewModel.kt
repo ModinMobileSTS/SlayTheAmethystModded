@@ -27,8 +27,11 @@ import io.stamethyst.backend.steamcloud.SteamCloudManifestSnapshot
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.backend.steamcloud.SteamCloudPhase0ManifestProbe
 import io.stamethyst.backend.steamcloud.SteamCloudPhase0Store
+import io.stamethyst.backend.steamcloud.SteamCloudProfileService
 import io.stamethyst.backend.steamcloud.SteamCloudPullCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator
+import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
+import io.stamethyst.backend.steamcloud.SteamCloudSyncBlacklist
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBaseline
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.nativelib.NativeLibraryMarketAvailability
@@ -74,6 +77,7 @@ import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.LauncherTransientNoticeBus
@@ -97,6 +101,8 @@ import java.util.jar.Manifest
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+
+private const val STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR = "SlayTheAmethystBackup"
 
 @Stable
 class SettingsScreenViewModel : ViewModel() {
@@ -251,6 +257,12 @@ class SettingsScreenViewModel : ViewModel() {
         val steamCloudAccountName: String = "",
         val steamCloudRefreshTokenConfigured: Boolean = false,
         val steamCloudGuardDataConfigured: Boolean = false,
+        val steamCloudPersonaName: String = "",
+        val steamCloudAvatarUrl: String = "",
+        val steamCloudSaveMode: SteamCloudSaveMode = LauncherPreferences.DEFAULT_STEAM_CLOUD_SAVE_MODE,
+        val steamCloudSyncBlacklistPaths: Set<String> =
+            LauncherPreferences.DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
+        val steamCloudSyncBlacklistCandidates: List<String> = emptyList(),
         val steamCloudAutoPullBeforeLaunchEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED,
         val steamCloudAutoPushAfterCleanShutdownEnabled: Boolean =
@@ -828,6 +840,9 @@ class SettingsScreenViewModel : ViewModel() {
                         accountName = "",
                         refreshTokenConfigured = false,
                         guardDataConfigured = false,
+                        steamId64 = "",
+                        personaName = "",
+                        avatarUrl = "",
                         lastAuthAtMs = null,
                         lastManifestAtMs = null,
                         lastPullAtMs = null,
@@ -842,6 +857,36 @@ class SettingsScreenViewModel : ViewModel() {
                     SteamCloudBaselineStore.readSnapshot(host)
                 }.getOrNull()
                 val steamCloudPhase0Snapshot = SteamCloudPhase0Store.readSnapshot(host)
+                var steamCloudSaveMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                val steamCloudSyncBlacklistPaths =
+                    LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
+                val steamCloudSyncBlacklistCandidates =
+                    runCatching {
+                        SteamCloudSyncBlacklist.listSelectableLocalRelativePaths(
+                            stsRoot = RuntimePaths.stsRoot(host),
+                            configuredBlacklist = steamCloudSyncBlacklistPaths,
+                        )
+                    }.getOrElse {
+                        steamCloudSyncBlacklistPaths.toList().sorted()
+                    }
+                if (!steamCloudAuthSnapshot.refreshTokenConfigured &&
+                    steamCloudSaveMode == SteamCloudSaveMode.STEAM_CLOUD
+                ) {
+                    runCatching {
+                        SteamCloudSaveProfileManager.switchMode(
+                            context = host,
+                            fromMode = SteamCloudSaveMode.STEAM_CLOUD,
+                            toMode = SteamCloudSaveMode.INDEPENDENT,
+                        )
+                        LauncherPreferences.saveSteamCloudSaveMode(
+                            host,
+                            SteamCloudSaveMode.INDEPENDENT,
+                        )
+                        LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, false)
+                        LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, false)
+                        steamCloudSaveMode = SteamCloudSaveMode.INDEPENDENT
+                    }
+                }
 
                 val status = buildStatusText(
                     host = host,
@@ -878,6 +923,11 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudAccountName = steamCloudAuthSnapshot.accountName,
                         steamCloudRefreshTokenConfigured = steamCloudAuthSnapshot.refreshTokenConfigured,
                         steamCloudGuardDataConfigured = steamCloudAuthSnapshot.guardDataConfigured,
+                        steamCloudPersonaName = steamCloudAuthSnapshot.personaName,
+                        steamCloudAvatarUrl = steamCloudAuthSnapshot.avatarUrl,
+                        steamCloudSaveMode = steamCloudSaveMode,
+                        steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
+                        steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
                         steamCloudAutoPullBeforeLaunchEnabled =
                             LauncherPreferences.isSteamCloudAutoPullBeforeLaunchEnabled(host),
                         steamCloudAutoPushAfterCleanShutdownEnabled =
@@ -955,7 +1005,20 @@ class SettingsScreenViewModel : ViewModel() {
                     authResult.accountName,
                     authResult.refreshToken,
                     authResult.guardData,
+                    authResult.steamId64,
                 )
+                if (authResult.steamId64.isNotBlank()) {
+                    runCatching {
+                        SteamCloudProfileService.fetchProfile(host, authResult.steamId64)
+                    }.getOrNull()?.let { profile ->
+                        SteamCloudAuthStore.recordProfile(
+                            host,
+                            profile.steamId64,
+                            profile.personaName,
+                            profile.avatarUrl,
+                        )
+                    }
+                }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)
                 host.runOnUiThread {
@@ -1260,20 +1323,226 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onSteamCloudSaveModeChanged(host: Activity, mode: SteamCloudSaveMode) {
+        if (uiState.busy) {
+            return
+        }
+        val targetMode = mode
+        if (targetMode == SteamCloudSaveMode.STEAM_CLOUD) {
+            val loggedIn = runCatching {
+                SteamCloudAuthStore.readSnapshot(host).refreshTokenConfigured
+            }.getOrDefault(false)
+            if (!loggedIn) {
+                showToast(host, UiText.StringResource(R.string.settings_steam_cloud_save_mode_cloud_requires_login))
+                refreshStatus(host)
+                return
+            }
+        }
+
+        val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+        if (currentMode == targetMode) {
+            refreshStatus(host)
+            return
+        }
+
+        setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
+        executor.execute {
+            try {
+                SteamCloudSaveProfileManager.switchMode(
+                    context = host,
+                    fromMode = currentMode,
+                    toMode = targetMode,
+                )
+                LauncherPreferences.saveSteamCloudSaveMode(host, targetMode)
+                val cloudModeEnabled = targetMode == SteamCloudSaveMode.STEAM_CLOUD
+                LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, cloudModeEnabled)
+                LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, cloudModeEnabled)
+                host.runOnUiThread {
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_steam_cloud_save_mode_switch_succeeded,
+                            targetMode.displayName(host),
+                        )
+                    )
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_steam_cloud_save_mode_switch_failed,
+                            error.message ?: error.javaClass.simpleName
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                    refreshStatus(host)
+                }
+            }
+        }
+    }
+
+    fun onSteamCloudSyncBlacklistPathChanged(
+        host: Activity,
+        localRelativePath: String,
+        selected: Boolean,
+    ) {
+        if (uiState.busy) {
+            return
+        }
+        val normalizedPath = SteamCloudSyncBlacklist.normalizeLocalRelativePath(localRelativePath)
+            ?: run {
+                refreshStatus(host)
+                return
+            }
+        val nextPaths = LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
+            .toMutableSet()
+        if (selected) {
+            nextPaths += normalizedPath
+        } else {
+            nextPaths -= normalizedPath
+        }
+        LauncherPreferences.saveSteamCloudSyncBlacklistPaths(host, nextPaths)
+        refreshStatus(host)
+    }
+
+    fun onForceIndependentSaveOverwriteCloud(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        if (LauncherPreferences.readSteamCloudSaveMode(host) != SteamCloudSaveMode.STEAM_CLOUD) {
+            refreshStatus(host)
+            return
+        }
+        val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
+        if (authMaterial == null) {
+            showToast(host, UiText.StringResource(R.string.settings_steam_cloud_credentials_missing))
+            refreshStatus(host)
+            return
+        }
+        if (!SteamCloudSaveProfileManager.profileHasRegularFiles(host, SteamCloudSaveMode.INDEPENDENT)) {
+            showToast(host, UiText.StringResource(R.string.settings_steam_cloud_independent_profile_missing))
+            refreshStatus(host)
+            return
+        }
+
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_steam_cloud_force_independent_override),
+            operation = UiBusyOperation.STEAM_CLOUD_SYNC,
+        )
+        executor.execute {
+            try {
+                SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
+                val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                val remoteBackupLabel = backupRemoteSteamCloudProfile(host, authMaterial, timestamp)
+                SettingsSaveBackupService.backupSaveProfileToDownloads(
+                    host = host,
+                    sourceRoot = SteamCloudSaveProfileManager.profileRoot(
+                        host,
+                        SteamCloudSaveMode.INDEPENDENT
+                    ),
+                    backupFileName = "independent-saves-before-steam-cloud-overwrite-$timestamp.zip",
+                    relativeSubdirectory = STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR,
+                )
+
+                val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
+                    host = host,
+                    authMaterial = authMaterial,
+                    sourceRoot = SteamCloudSaveProfileManager.profileRoot(
+                        host,
+                        SteamCloudSaveMode.INDEPENDENT
+                    ),
+                )
+                SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
+                SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
+                LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
+                LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, true)
+                LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, true)
+
+                host.runOnUiThread {
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_steam_cloud_force_independent_override_succeeded,
+                            result.uploadedFileCount,
+                            result.deletedRemoteFileCount,
+                            remoteBackupLabel.substringBeforeLast('/').ifBlank {
+                                "Download/$STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR"
+                            },
+                        ),
+                        Toast.LENGTH_LONG,
+                    )
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                runCatching {
+                    if (LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD) {
+                        SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
+                    }
+                }
+                val summary = summarizeSteamCloudError(host, error)
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                host.runOnUiThread {
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_steam_cloud_force_independent_override_failed,
+                            summary,
+                        ),
+                        Toast.LENGTH_LONG,
+                    )
+                    refreshStatus(host)
+                }
+            }
+        }
+    }
+
     fun onClearSteamCloudCredentials(host: Activity) {
         if (uiState.busy) {
             return
         }
         cancelPendingSteamCloudChallenge("Steam Cloud credentials cleared.")
-        runCatching { SteamCloudAuthStore.clear(host) }
-        SteamCloudManifestStore.clear(host)
-        SteamCloudBaselineStore.clear(host)
-        SteamCloudDiagnosticsStore.clear(host)
-        dismissSteamCloudManifestDialog()
-        dismissSteamCloudUploadPlanDialog()
-        dismissSteamCloudPushConfirmDialog()
-        showToast(host, UiText.StringResource(R.string.settings_steam_cloud_credentials_cleared))
-        refreshStatus(host)
+        setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
+        executor.execute {
+            try {
+                val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                if (currentMode != SteamCloudSaveMode.INDEPENDENT) {
+                    SteamCloudSaveProfileManager.switchMode(
+                        context = host,
+                        fromMode = currentMode,
+                        toMode = SteamCloudSaveMode.INDEPENDENT,
+                    )
+                }
+                LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.INDEPENDENT)
+                LauncherPreferences.setSteamCloudAutoPullBeforeLaunchEnabled(host, false)
+                LauncherPreferences.setSteamCloudAutoPushAfterCleanShutdownEnabled(host, false)
+                runCatching { SteamCloudAuthStore.clear(host) }
+                SteamCloudManifestStore.clear(host)
+                SteamCloudBaselineStore.clear(host)
+                SteamCloudDiagnosticsStore.clear(host)
+                host.runOnUiThread {
+                    dismissSteamCloudManifestDialog()
+                    dismissSteamCloudUploadPlanDialog()
+                    dismissSteamCloudPushConfirmDialog()
+                    showToast(host, UiText.StringResource(R.string.settings_steam_cloud_credentials_cleared))
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_steam_cloud_save_mode_switch_failed,
+                            error.message ?: error.javaClass.simpleName
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                    refreshStatus(host)
+                }
+            }
+        }
     }
 
     fun onSubmitSteamCloudChallengeCode(code: String) {
@@ -3429,6 +3698,32 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun backupRemoteSteamCloudProfile(
+        host: Activity,
+        authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+        timestamp: String,
+    ): String {
+        val stagingRoot = File(
+            SteamCloudManifestStore.outputDir(host),
+            "remote-backup-staging-$timestamp-${System.nanoTime()}"
+        )
+        return try {
+            SteamCloudPullCoordinator.downloadAllToDirectory(
+                host = host,
+                authMaterial = authMaterial,
+                outputRoot = stagingRoot,
+            )
+            SettingsSaveBackupService.backupSaveProfileToDownloads(
+                host = host,
+                sourceRoot = stagingRoot,
+                backupFileName = "steam-cloud-saves-before-independent-overwrite-$timestamp.zip",
+                relativeSubdirectory = STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR,
+            )
+        } finally {
+            stagingRoot.deleteRecursively()
+        }
+    }
+
     private fun buildLogPathText(host: Activity): String {
         val latestLog = RuntimePaths.latestLog(host)
         val archivedDir = RuntimePaths.jvmLogsDir(host)
@@ -3762,6 +4057,16 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.settings_back_behavior_escape)
             BackBehavior.NONE ->
                 host.getString(R.string.settings_back_behavior_none)
+        }
+    }
+
+    private fun SteamCloudSaveMode.displayName(host: Activity): String {
+        return when (this) {
+            SteamCloudSaveMode.INDEPENDENT ->
+                host.getString(R.string.settings_steam_cloud_save_mode_independent_title)
+
+            SteamCloudSaveMode.STEAM_CLOUD ->
+                host.getString(R.string.settings_steam_cloud_save_mode_cloud_title)
         }
     }
 

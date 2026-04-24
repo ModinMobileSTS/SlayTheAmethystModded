@@ -12,6 +12,12 @@ sealed interface Route : NavKey {
     @Serializable
     data object Settings : Route
     @Serializable
+    data object SteamCloudLogin : Route
+    @Serializable
+    data object SteamCloudGuard : Route
+    @Serializable
+    data object SteamCloudSaveSettings : Route
+    @Serializable
     data object DeveloperSettings : Route
     @Serializable
     data object NativeLibraryMarket : Route

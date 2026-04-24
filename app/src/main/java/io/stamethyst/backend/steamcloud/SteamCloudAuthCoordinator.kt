@@ -7,6 +7,7 @@ internal object SteamCloudAuthCoordinator {
         val accountName: String,
         val refreshToken: String,
         val guardData: String,
+        val steamId64: String,
     )
 
     @Throws(Exception::class)
@@ -35,6 +36,10 @@ internal object SteamCloudAuthCoordinator {
                     normalizedGuardData,
                     prompt,
                 )
+                val steamId64 = runCatching {
+                    client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                    client.currentSteamId64
+                }.getOrDefault("")
                 SteamCloudDiagnosticsStore.writeSummary(
                     context = context,
                     operation = "credentials_login",
@@ -46,12 +51,14 @@ internal object SteamCloudAuthCoordinator {
                     extraLines = listOf(
                         "Refresh token received: ${authMaterial.refreshToken.length} chars",
                         "Guard data returned: ${if (authMaterial.guardData.isNullOrBlank()) "no" else "yes"}",
+                        "SteamID64 resolved: ${if (steamId64.isBlank()) "no" else "yes"}",
                     ),
                 )
                 return AuthResult(
                     accountName = authMaterial.accountName,
                     refreshToken = authMaterial.refreshToken,
                     guardData = authMaterial.guardData ?: "",
+                    steamId64 = steamId64,
                 )
             }
         } catch (error: Throwable) {

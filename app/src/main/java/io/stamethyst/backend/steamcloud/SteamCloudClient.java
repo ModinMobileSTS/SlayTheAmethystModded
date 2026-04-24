@@ -67,6 +67,7 @@ import in.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback;
 import in.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback;
 import in.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration;
 import in.dragonbra.javasteam.types.AsyncJobSingle;
+import in.dragonbra.javasteam.types.SteamID;
 import in.dragonbra.javasteam.util.log.LogListener;
 import in.dragonbra.javasteam.util.log.LogManager;
 import io.stamethyst.config.RuntimePaths;
@@ -115,6 +116,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile String lastAuthPromptDescription = "<not requested>";
     private volatile boolean guardDataConfigured = false;
     private volatile boolean guardDataUpdated = false;
+    private volatile String currentSteamId64 = "";
     private volatile long cmServerSelectionMs = -1L;
     private volatile long cmConnectWaitMs = -1L;
     private Thread callbackThread;
@@ -185,6 +187,8 @@ public final class SteamCloudClient implements AutoCloseable {
         });
         callbackManager.subscribe(LoggedOnCallback.class, callback -> {
             loggedOnResultDescription = String.valueOf(callback.getResult());
+            SteamID steamID = callback.getClientSteamID();
+            currentSteamId64 = steamID == null ? "" : String.valueOf(steamID.convertToUInt64());
             Log.i(TAG, "Steam logon result: " + callback.getResult());
             loggedOnFuture.complete(callback);
         });
@@ -197,6 +201,7 @@ public final class SteamCloudClient implements AutoCloseable {
         allowedChallengesDescription = "<not evaluated>";
         lastAuthPromptDescription = "<not requested>";
         loggedOnResultDescription = "<not received>";
+        currentSteamId64 = "";
         disconnectedDescription = "<not observed>";
         cmServerSelectionMs = -1L;
         cmConnectWaitMs = -1L;
@@ -347,10 +352,20 @@ public final class SteamCloudClient implements AutoCloseable {
             if (callback.getResult() != EResult.OK) {
                 throw new IllegalStateException("Steam logon failed: " + callback.getResult());
             }
+            SteamID steamID = callback.getClientSteamID();
+            if (steamID != null) {
+                currentSteamId64 = String.valueOf(steamID.convertToUInt64());
+            } else if (steamClient.getSteamID() != null) {
+                currentSteamId64 = String.valueOf(steamClient.getSteamID().convertToUInt64());
+            }
         } catch (Exception error) {
             Log.e(TAG, "Refresh-token logon failed during " + currentStage + '.', error);
             throw error;
         }
+    }
+
+    public String getCurrentSteamId64() {
+        return currentSteamId64;
     }
 
     public List<RemoteFileRecord> listFiles(int appId) throws Exception {

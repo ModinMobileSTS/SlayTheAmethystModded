@@ -17,6 +17,7 @@ import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SteamCloudSaveMode
 
 object LauncherPreferences {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior
@@ -109,6 +110,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED
     val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
+    val DEFAULT_STEAM_CLOUD_SAVE_MODE: SteamCloudSaveMode
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_SAVE_MODE
+    val DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS: Set<String>
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS
     val DEFAULT_PREFERRED_UPDATE_MIRROR_ID: String
         get() = LauncherConfig.DEFAULT_PREFERRED_UPDATE_MIRROR_ID
     val DEFAULT_PLAYER_NAME: String
@@ -407,6 +412,22 @@ object LauncherPreferences {
 
     fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamCloudWattAccelerationEnabled(context, enabled)
+    }
+
+    fun readSteamCloudSaveMode(context: Context): SteamCloudSaveMode {
+        return LauncherConfig.readSteamCloudSaveMode(context)
+    }
+
+    fun saveSteamCloudSaveMode(context: Context, mode: SteamCloudSaveMode) {
+        LauncherConfig.saveSteamCloudSaveMode(context, mode)
+    }
+
+    fun readSteamCloudSyncBlacklistPaths(context: Context): Set<String> {
+        return LauncherConfig.readSteamCloudSyncBlacklistPaths(context)
+    }
+
+    fun saveSteamCloudSyncBlacklistPaths(context: Context, localRelativePaths: Set<String>) {
+        LauncherConfig.saveSteamCloudSyncBlacklistPaths(context, localRelativePaths)
     }
 
     fun readPreferredUpdateMirrorId(context: Context): String {

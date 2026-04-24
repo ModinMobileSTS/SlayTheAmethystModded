@@ -69,6 +69,9 @@ import io.stamethyst.ui.settings.LauncherDeveloperSettingsScreen
 import io.stamethyst.ui.settings.LauncherMobileGluesSettingsScreen
 import io.stamethyst.ui.settings.LauncherNativeLibraryMarketScreen
 import io.stamethyst.ui.settings.LauncherSettingsScreen
+import io.stamethyst.ui.settings.LauncherSteamCloudGuardScreen
+import io.stamethyst.ui.settings.LauncherSteamCloudLoginScreen
+import io.stamethyst.ui.settings.LauncherSteamCloudSaveSettingsScreen
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 
 @Composable
@@ -209,6 +212,27 @@ fun LauncherContent(
                                 onDismissFeedbackSubmissionNotice = {
                                     pendingFeedbackNotice = null
                                 }
+                            )
+                        }
+
+                        entry<Route.SteamCloudLogin> {
+                            LauncherSteamCloudLoginScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.SteamCloudGuard> {
+                            LauncherSteamCloudGuardScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.SteamCloudSaveSettings> {
+                            LauncherSteamCloudSaveSettingsScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
 

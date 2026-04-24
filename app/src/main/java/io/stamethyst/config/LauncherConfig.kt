@@ -14,6 +14,7 @@ import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.steamcloud.SteamCloudSyncBlacklist
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.RuntimePaths
 import java.io.File
@@ -125,6 +126,9 @@ object LauncherConfig {
         "steam_cloud_auto_push_after_clean_shutdown_enabled"
     private const val PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED =
         "steam_cloud_watt_acceleration_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_SAVE_MODE = "steam_cloud_save_mode"
+    private const val PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS =
+        "steam_cloud_sync_blacklist_paths"
     private const val PREF_KEY_PREFERRED_UPDATE_MIRROR_ID = "preferred_update_mirror_id"
     private const val PREF_KEY_LAST_UPDATE_CHECK_AT_MS = "last_update_check_at_ms"
     private const val PREF_KEY_LAST_KNOWN_REMOTE_TAG = "last_known_remote_tag"
@@ -189,6 +193,9 @@ object LauncherConfig {
     const val DEFAULT_STEAM_CLOUD_AUTO_PULL_BEFORE_LAUNCH_ENABLED = false
     const val DEFAULT_STEAM_CLOUD_AUTO_PUSH_AFTER_CLEAN_SHUTDOWN_ENABLED = false
     const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = false
+    val DEFAULT_STEAM_CLOUD_SAVE_MODE: SteamCloudSaveMode = SteamCloudSaveMode.DEFAULT
+    val DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS: Set<String> =
+        SteamCloudSyncBlacklist.defaultLocalRelativePaths()
     const val DEFAULT_PREFERRED_UPDATE_MIRROR_ID = "gh_proxy_com"
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
@@ -1101,6 +1108,42 @@ object LauncherConfig {
     fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED, enabled)
+        }
+    }
+
+    fun readSteamCloudSaveMode(context: Context): SteamCloudSaveMode {
+        return SteamCloudSaveMode.fromPersistedValue(
+            prefs(context).getString(
+                PREF_KEY_STEAM_CLOUD_SAVE_MODE,
+                DEFAULT_STEAM_CLOUD_SAVE_MODE.persistedValue
+            )
+        )
+    }
+
+    fun saveSteamCloudSaveMode(context: Context, mode: SteamCloudSaveMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_STEAM_CLOUD_SAVE_MODE, mode.persistedValue)
+        }
+    }
+
+    fun readSteamCloudSyncBlacklistPaths(context: Context): Set<String> {
+        val preferences = prefs(context)
+        if (!preferences.contains(PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS)) {
+            return LinkedHashSet(DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS)
+        }
+        return SteamCloudSyncBlacklist.normalizeLocalRelativePaths(
+            preferences.getStringSet(PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS, emptySet()).orEmpty()
+        )
+    }
+
+    fun saveSteamCloudSyncBlacklistPaths(context: Context, localRelativePaths: Set<String>) {
+        prefs(context).edit {
+            putStringSet(
+                PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
+                LinkedHashSet(
+                    SteamCloudSyncBlacklist.normalizeLocalRelativePaths(localRelativePaths)
+                )
+            )
         }
     }
 

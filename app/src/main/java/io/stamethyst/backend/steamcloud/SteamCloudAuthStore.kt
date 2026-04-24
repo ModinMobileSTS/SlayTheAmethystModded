@@ -10,6 +10,9 @@ internal object SteamCloudAuthStore {
     private const val KEY_ACCOUNT_NAME = "account_name"
     private const val KEY_REFRESH_TOKEN = "refresh_token"
     private const val KEY_GUARD_DATA = "guard_data"
+    private const val KEY_STEAM_ID_64 = "steam_id_64"
+    private const val KEY_PERSONA_NAME = "persona_name"
+    private const val KEY_AVATAR_URL = "avatar_url"
     private const val KEY_LAST_AUTH_AT_MS = "last_auth_at_ms"
     private const val KEY_LAST_MANIFEST_AT_MS = "last_manifest_at_ms"
     private const val KEY_LAST_PULL_AT_MS = "last_pull_at_ms"
@@ -26,6 +29,9 @@ internal object SteamCloudAuthStore {
         val accountName: String,
         val refreshTokenConfigured: Boolean,
         val guardDataConfigured: Boolean,
+        val steamId64: String,
+        val personaName: String,
+        val avatarUrl: String,
         val lastAuthAtMs: Long?,
         val lastManifestAtMs: Long?,
         val lastPullAtMs: Long?,
@@ -55,6 +61,9 @@ internal object SteamCloudAuthStore {
             accountName = prefs.getString(KEY_ACCOUNT_NAME, null)?.trim().orEmpty(),
             refreshTokenConfigured = refreshToken.isNotBlank(),
             guardDataConfigured = guardData.isNotBlank(),
+            steamId64 = prefs.getString(KEY_STEAM_ID_64, null)?.trim().orEmpty(),
+            personaName = prefs.getString(KEY_PERSONA_NAME, null)?.trim().orEmpty(),
+            avatarUrl = prefs.getString(KEY_AVATAR_URL, null)?.trim().orEmpty(),
             lastAuthAtMs = prefs.optionalLong(KEY_LAST_AUTH_AT_MS),
             lastManifestAtMs = prefs.optionalLong(KEY_LAST_MANIFEST_AT_MS),
             lastPullAtMs = prefs.optionalLong(KEY_LAST_PULL_AT_MS),
@@ -68,17 +77,35 @@ internal object SteamCloudAuthStore {
         accountName: String,
         refreshToken: String,
         guardData: String,
+        steamId64: String,
     ) {
         prefs(context)
             .edit()
             .putString(KEY_ACCOUNT_NAME, accountName.trim())
             .putString(KEY_REFRESH_TOKEN, refreshToken.trim())
             .putString(KEY_GUARD_DATA, guardData.trim())
+            .putString(KEY_STEAM_ID_64, steamId64.trim())
+            .remove(KEY_PERSONA_NAME)
+            .remove(KEY_AVATAR_URL)
             .putLong(KEY_LAST_AUTH_AT_MS, System.currentTimeMillis())
             .remove(KEY_LAST_MANIFEST_AT_MS)
             .remove(KEY_LAST_PULL_AT_MS)
             .remove(KEY_LAST_PUSH_AT_MS)
             .remove(KEY_LAST_ERROR)
+            .apply()
+    }
+
+    fun recordProfile(
+        context: Context,
+        steamId64: String,
+        personaName: String,
+        avatarUrl: String,
+    ) {
+        prefs(context)
+            .edit()
+            .putString(KEY_STEAM_ID_64, steamId64.trim())
+            .putString(KEY_PERSONA_NAME, personaName.trim())
+            .putString(KEY_AVATAR_URL, avatarUrl.trim())
             .apply()
     }
 
