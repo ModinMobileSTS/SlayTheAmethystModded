@@ -701,6 +701,10 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam Cloud accelerated connection on</string>
     <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam Cloud accelerated connection off</string>
     <string name="settings_steam_cloud_watt_acceleration_desc">Route Steam Cloud login, Steam Web API, and HTTP file transfer requests through Watt Toolkit Steam forwarding rules. Keep this off if you only want direct Steam connections.</string>
+    <string name="settings_steam_cloud_account_signed_in">Current Steam account</string>
+    <string name="settings_steam_cloud_account_not_signed_in">Not signed in</string>
+    <string name="settings_steam_cloud_account_login_hint">Sign in to enable Steam Cloud sync.</string>
+    <string name="settings_steam_cloud_account_unknown">Steam account</string>
     <string name="settings_steam_cloud_login_title">Log in to Steam</string>
     <string name="settings_steam_cloud_refresh_title">Refresh cloud manifest</string>
     <string name="settings_steam_cloud_view_manifest_title">View cloud files</string>
@@ -717,6 +721,9 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="settings_steam_cloud_password_label">Steam password</string>
     <string name="settings_steam_cloud_login_dialog_password_policy">The launcher only stores the refresh token and guard data after a successful login.</string>
     <string name="settings_steam_cloud_login_action">Log in</string>
+    <string name="settings_steam_cloud_logout_action">Log out</string>
+    <string name="settings_steam_cloud_logout_confirm_title">Log out of Steam Cloud?</string>
+    <string name="settings_steam_cloud_logout_confirm_desc">This removes the saved Steam Cloud token and guard data from this device. You can log in again later.</string>
     <string name="settings_steam_cloud_pull_confirm_title">Confirm full pull</string>
     <string name="settings_steam_cloud_pull_confirm_desc">This will refresh the latest Steam Cloud manifest, download all supported files, back up your current saves to Downloads, and then replace local `preferences/` and `saves/`. Local extra files in those two folders will be removed.</string>
     <string name="settings_steam_cloud_pull_action">Pull now</string>
