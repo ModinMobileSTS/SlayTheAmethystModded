@@ -75,6 +75,16 @@ internal object SteamCloudDiagnosticsStore {
                 }"
             )
             add(
+                "LoggedOn Callback SteamID64: ${
+                    diagnostics?.loggedOnCallbackSteamId64?.trim()?.takeIf { it.isNotEmpty() } ?: "<not resolved>"
+                }"
+            )
+            add(
+                "SteamClient SteamID64: ${
+                    diagnostics?.steamClientSteamId64?.trim()?.takeIf { it.isNotEmpty() } ?: "<not resolved>"
+                }"
+            )
+            add(
                 "Disconnected Callback: ${
                     diagnostics?.disconnectedDescription?.trim()?.takeIf { it.isNotEmpty() } ?: "<not observed>"
                 }"

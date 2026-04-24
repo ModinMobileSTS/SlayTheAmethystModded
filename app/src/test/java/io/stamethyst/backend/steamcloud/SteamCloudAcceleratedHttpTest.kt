@@ -87,6 +87,15 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun steamImageRouteProfile_supportsFastlyAvatarHost() {
+        assertTrue(
+            SteamImageCdnWattToolkitRouteProfile.supportedHosts.contains(
+                "avatars.fastly.steamstatic.com",
+            ),
+        )
+    }
+
+    @Test
     fun interceptor_routesSteamApiRequestThroughWattForwardTarget() {
         apiServer.enqueue(
             MockResponse.Builder()

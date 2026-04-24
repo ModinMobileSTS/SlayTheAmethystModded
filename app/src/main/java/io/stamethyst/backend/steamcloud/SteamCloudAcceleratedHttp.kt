@@ -44,6 +44,7 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
         "community.akamai.steamstatic.com",
         "avatars.akamai.steamstatic.com",
         "store.akamai.steamstatic.com",
+        "avatars.fastly.steamstatic.com",
     ),
     bootstrapForwardTargets = listOf("steamimage.rmbgame.net"),
 )

@@ -117,6 +117,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile boolean guardDataConfigured = false;
     private volatile boolean guardDataUpdated = false;
     private volatile String currentSteamId64 = "";
+    private volatile String loggedOnCallbackSteamId64 = "";
+    private volatile String steamClientSteamId64 = "";
     private volatile long cmServerSelectionMs = -1L;
     private volatile long cmConnectWaitMs = -1L;
     private Thread callbackThread;
@@ -189,6 +191,9 @@ public final class SteamCloudClient implements AutoCloseable {
             loggedOnResultDescription = String.valueOf(callback.getResult());
             SteamID steamID = callback.getClientSteamID();
             currentSteamId64 = steamID == null ? "" : String.valueOf(steamID.convertToUInt64());
+            loggedOnCallbackSteamId64 = currentSteamId64;
+            SteamID clientSteamId = steamClient.getSteamID();
+            steamClientSteamId64 = clientSteamId == null ? "" : String.valueOf(clientSteamId.convertToUInt64());
             Log.i(TAG, "Steam logon result: " + callback.getResult());
             loggedOnFuture.complete(callback);
         });
@@ -202,6 +207,8 @@ public final class SteamCloudClient implements AutoCloseable {
         lastAuthPromptDescription = "<not requested>";
         loggedOnResultDescription = "<not received>";
         currentSteamId64 = "";
+        loggedOnCallbackSteamId64 = "";
+        steamClientSteamId64 = "";
         disconnectedDescription = "<not observed>";
         cmServerSelectionMs = -1L;
         cmConnectWaitMs = -1L;
@@ -358,6 +365,8 @@ public final class SteamCloudClient implements AutoCloseable {
             } else if (steamClient.getSteamID() != null) {
                 currentSteamId64 = String.valueOf(steamClient.getSteamID().convertToUInt64());
             }
+            SteamID clientSteamId = steamClient.getSteamID();
+            steamClientSteamId64 = clientSteamId == null ? "" : String.valueOf(clientSteamId.convertToUInt64());
         } catch (Exception error) {
             Log.e(TAG, "Refresh-token logon failed during " + currentStage + '.', error);
             throw error;
@@ -463,9 +472,7 @@ public final class SteamCloudClient implements AutoCloseable {
             rawBytesCount = rawBytes.length;
 
             File parent = outputFile.getParentFile();
-            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-                throw new IOException("Failed to create output directory: " + parent.getAbsolutePath());
-            }
+            ensureDirectoryExists(parent, "output directory");
             long writeStartedAtNs = System.nanoTime();
             try (FileOutputStream outputStream = new FileOutputStream(outputFile, false)) {
                 outputStream.write(rawBytes);
@@ -691,6 +698,8 @@ public final class SteamCloudClient implements AutoCloseable {
             javaSteamLogCollector.snapshotTailLines(),
             javaSteamLogCollector.snapshotErrorStackLines(),
             wattAccelerationEnabled ? "enabled" : "disabled",
+            loggedOnCallbackSteamId64,
+            steamClientSteamId64,
             cmServerSelectionMs,
             cmConnectWaitMs
         );
@@ -1196,11 +1205,19 @@ public final class SteamCloudClient implements AutoCloseable {
         }
     }
 
+    static void ensureDirectoryExists(File directory, String description) throws IOException {
+        if (directory == null || directory.isDirectory()) {
+            return;
+        }
+        if (directory.mkdirs() || directory.isDirectory()) {
+            return;
+        }
+        throw new IOException("Failed to create " + description + ": " + directory.getAbsolutePath());
+    }
+
     private static void writeTextFile(File target, String content) throws IOException {
         File parent = target.getParentFile();
-        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-            throw new IOException("Failed to create parent directory for " + target.getAbsolutePath());
-        }
+        ensureDirectoryExists(parent, "parent directory for " + target.getAbsolutePath());
         File tempFile = new File(parent, "." + target.getName() + "." + System.nanoTime() + ".tmp");
         try (FileOutputStream output = new FileOutputStream(tempFile)) {
             output.write(content.getBytes(StandardCharsets.UTF_8));
@@ -1270,6 +1287,8 @@ public final class SteamCloudClient implements AutoCloseable {
         private final List<String> javaSteamLogTailLines;
         private final List<String> javaSteamErrorStackLines;
         private final String wattAccelerationDescription;
+        private final String loggedOnCallbackSteamId64;
+        private final String steamClientSteamId64;
         private final long cmServerSelectionMs;
         private final long cmConnectWaitMs;
 
@@ -1290,6 +1309,8 @@ public final class SteamCloudClient implements AutoCloseable {
             List<String> javaSteamLogTailLines,
             List<String> javaSteamErrorStackLines,
             String wattAccelerationDescription,
+            String loggedOnCallbackSteamId64,
+            String steamClientSteamId64,
             long cmServerSelectionMs,
             long cmConnectWaitMs
         ) {
@@ -1309,6 +1330,8 @@ public final class SteamCloudClient implements AutoCloseable {
             this.javaSteamLogTailLines = Collections.unmodifiableList(new ArrayList<>(javaSteamLogTailLines));
             this.javaSteamErrorStackLines = Collections.unmodifiableList(new ArrayList<>(javaSteamErrorStackLines));
             this.wattAccelerationDescription = wattAccelerationDescription;
+            this.loggedOnCallbackSteamId64 = loggedOnCallbackSteamId64;
+            this.steamClientSteamId64 = steamClientSteamId64;
             this.cmServerSelectionMs = cmServerSelectionMs;
             this.cmConnectWaitMs = cmConnectWaitMs;
         }
@@ -1375,6 +1398,14 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public String getWattAccelerationDescription() {
             return wattAccelerationDescription;
+        }
+
+        public String getLoggedOnCallbackSteamId64() {
+            return loggedOnCallbackSteamId64;
+        }
+
+        public String getSteamClientSteamId64() {
+            return steamClientSteamId64;
         }
 
         public long getCmServerSelectionMs() {

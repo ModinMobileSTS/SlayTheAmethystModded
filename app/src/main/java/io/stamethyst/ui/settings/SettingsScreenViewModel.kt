@@ -1007,17 +1007,51 @@ class SettingsScreenViewModel : ViewModel() {
                     authResult.guardData,
                     authResult.steamId64,
                 )
+                val loginDiagnosticsExtraLines = mutableListOf(
+                    "Refresh token received: ${authResult.refreshToken.length} chars",
+                    "Guard data returned: ${if (authResult.guardData.isBlank()) "no" else "yes"}",
+                    "SteamID64 resolved: ${if (authResult.steamId64.isBlank()) "no" else "yes"}",
+                    "Resolved SteamID64 value: ${authResult.steamId64.ifBlank { "<blank>" }}",
+                )
                 if (authResult.steamId64.isNotBlank()) {
-                    runCatching {
+                    val profileResult = runCatching {
                         SteamCloudProfileService.fetchProfile(host, authResult.steamId64)
-                    }.getOrNull()?.let { profile ->
+                    }
+                    profileResult.getOrNull()?.let { profile ->
                         SteamCloudAuthStore.recordProfile(
                             host,
                             profile.steamId64,
                             profile.personaName,
                             profile.avatarUrl,
                         )
+                        loginDiagnosticsExtraLines +=
+                            "Profile fetch result: success for ${profile.steamId64.ifBlank { "<blank>" }}"
+                        loginDiagnosticsExtraLines +=
+                            "Profile persona name: ${profile.personaName.ifBlank { "<blank>" }}"
+                        loginDiagnosticsExtraLines +=
+                            "Profile avatar URL: ${profile.avatarUrl.ifBlank { "<blank>" }}"
                     }
+                    profileResult.exceptionOrNull()?.let { profileError ->
+                        loginDiagnosticsExtraLines +=
+                            "Profile fetch result: failed (${summarizeSteamCloudError(host, profileError)})"
+                    }
+                    if (profileResult.isSuccess && profileResult.getOrNull() == null) {
+                        loginDiagnosticsExtraLines += "Profile fetch result: returned no matching public profile"
+                    }
+                } else {
+                    loginDiagnosticsExtraLines += "Profile fetch skipped: SteamID64 was blank after refresh-token logon"
+                }
+                runCatching {
+                    SteamCloudDiagnosticsStore.writeSummary(
+                        context = host,
+                        operation = "credentials_login",
+                        outcome = "SUCCESS",
+                        accountName = authResult.accountName,
+                        startedAtMs = authResult.diagnosticsStartedAtMs,
+                        completedAtMs = authResult.diagnosticsCompletedAtMs,
+                        diagnostics = authResult.diagnosticsSnapshot,
+                        extraLines = loginDiagnosticsExtraLines,
+                    )
                 }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)

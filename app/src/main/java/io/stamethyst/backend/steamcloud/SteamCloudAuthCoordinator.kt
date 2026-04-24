@@ -8,6 +8,9 @@ internal object SteamCloudAuthCoordinator {
         val refreshToken: String,
         val guardData: String,
         val steamId64: String,
+        val diagnosticsStartedAtMs: Long,
+        val diagnosticsCompletedAtMs: Long,
+        val diagnosticsSnapshot: SteamCloudClient.DiagnosticsSnapshot,
     )
 
     @Throws(Exception::class)
@@ -40,18 +43,21 @@ internal object SteamCloudAuthCoordinator {
                     client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
                     client.currentSteamId64
                 }.getOrDefault("")
+                val completedAtMs = System.currentTimeMillis()
+                val diagnosticsSnapshot = client.snapshotDiagnostics()
                 SteamCloudDiagnosticsStore.writeSummary(
                     context = context,
                     operation = "credentials_login",
                     outcome = "SUCCESS",
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
-                    completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    completedAtMs = completedAtMs,
+                    diagnostics = diagnosticsSnapshot,
                     extraLines = listOf(
                         "Refresh token received: ${authMaterial.refreshToken.length} chars",
                         "Guard data returned: ${if (authMaterial.guardData.isNullOrBlank()) "no" else "yes"}",
                         "SteamID64 resolved: ${if (steamId64.isBlank()) "no" else "yes"}",
+                        "Resolved SteamID64 value: ${steamId64.ifBlank { "<blank>" }}",
                     ),
                 )
                 return AuthResult(
@@ -59,6 +65,9 @@ internal object SteamCloudAuthCoordinator {
                     refreshToken = authMaterial.refreshToken,
                     guardData = authMaterial.guardData ?: "",
                     steamId64 = steamId64,
+                    diagnosticsStartedAtMs = startedAtMs,
+                    diagnosticsCompletedAtMs = completedAtMs,
+                    diagnosticsSnapshot = diagnosticsSnapshot,
                 )
             }
         } catch (error: Throwable) {
