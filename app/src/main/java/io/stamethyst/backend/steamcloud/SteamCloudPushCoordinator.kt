@@ -10,6 +10,15 @@ import java.util.Date
 import java.util.Locale
 
 internal object SteamCloudPushCoordinator {
+    private const val FAILURE_PATH_SAMPLE_LIMIT = 12
+
+    private data class PreparedMirrorPlan(
+        val uploadCandidates: List<SteamCloudUploadCandidate>,
+        val deleteRemotePaths: List<String>,
+        val warnings: List<String>,
+        val removedDeleteOverlaps: List<String>,
+    )
+
     @Throws(Exception::class)
     fun buildUploadPlan(
         host: Activity,
@@ -143,12 +152,19 @@ internal object SteamCloudPushCoordinator {
                     RuntimePaths.stsRoot(host),
                     candidate.localRelativePath.replace('/', File.separatorChar)
                 )
-                val uploadedFile = client.uploadFile(
-                    STEAM_CLOUD_APP_ID,
-                    candidate.remotePath,
-                    sourceFile,
-                    requireNotNull(uploadBatch).batchId,
-                )
+                val uploadedFile = try {
+                    client.uploadFile(
+                        STEAM_CLOUD_APP_ID,
+                        candidate.remotePath,
+                        sourceFile,
+                        requireNotNull(uploadBatch).batchId,
+                    )
+                } catch (error: Throwable) {
+                    throw IllegalStateException(
+                        "Steam Cloud upload failed for ${candidate.remotePath} (${candidate.localRelativePath}, localSha1=${candidate.sha1.ifBlank { "<none>" }}, size=${candidate.fileSize}): ${summarizeError(error)}",
+                        error,
+                    )
+                }
                 uploadedBytes += uploadedFile.fileSize
                 reportProgress(
                     progressCallback,
@@ -225,6 +241,7 @@ internal object SteamCloudPushCoordinator {
             )
             return result
         } catch (error: Throwable) {
+            val failureDiagnostics = client.snapshotDiagnostics()
             uploadBatch?.let { batch ->
                 runCatching {
                     client.completeUploadBatch(STEAM_CLOUD_APP_ID, batch.batchId, EResult.Fail)
@@ -239,7 +256,7 @@ internal object SteamCloudPushCoordinator {
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    diagnostics = failureDiagnostics,
                     failureSummary = summarizeError(error),
                     error = error,
                     extraLines = buildList {
@@ -267,6 +284,7 @@ internal object SteamCloudPushCoordinator {
         val startedAtMs = System.currentTimeMillis()
         val client = SteamCloudClient(host)
         var uploadBatch: SteamCloudClient.UploadBatch? = null
+        var preparedPlan: PreparedMirrorPlan? = null
 
         try {
             client.beginOperationDiagnostics(
@@ -309,9 +327,12 @@ internal object SteamCloudPushCoordinator {
             SteamCloudAuthStore.recordManifestSuccess(host, currentRemoteSnapshot.fetchedAtMs)
 
             val localEntries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host))
-            val mirrorPlan = SteamCloudMirrorPlanner.buildLocalMirrorPlan(
-                currentLocalEntries = localEntries,
-                currentRemoteSnapshot = currentRemoteSnapshot,
+            preparedPlan = prepareMirrorPlan(
+                SteamCloudMirrorPlanner.buildLocalMirrorPlan(
+                    currentLocalEntries = localEntries,
+                    currentRemoteSnapshot = currentRemoteSnapshot,
+                    baseline = SteamCloudBaselineStore.readSnapshot(host),
+                )
             )
             reportProgress(
                 progressCallback,
@@ -319,32 +340,39 @@ internal object SteamCloudPushCoordinator {
                     direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                     phase = SteamCloudSyncPhase.PREPARING_UPLOAD,
                     completedFiles = 0,
-                    totalFiles = mirrorPlan.uploadCandidates.size,
+                    totalFiles = preparedPlan.uploadCandidates.size,
                     progressPercent = 28,
                 )
             )
 
-            if (mirrorPlan.uploadCandidates.isNotEmpty() || mirrorPlan.deleteRemotePaths.isNotEmpty()) {
+            if (preparedPlan.uploadCandidates.isNotEmpty() || preparedPlan.deleteRemotePaths.isNotEmpty()) {
                 uploadBatch = client.beginUploadBatch(
                     STEAM_CLOUD_APP_ID,
-                    mirrorPlan.uploadCandidates.map { it.remotePath },
-                    mirrorPlan.deleteRemotePaths,
+                    preparedPlan.uploadCandidates.map { it.remotePath },
+                    preparedPlan.deleteRemotePaths,
                 )
             }
 
             var uploadedBytes = 0L
-            val totalUploads = mirrorPlan.uploadCandidates.size
-            mirrorPlan.uploadCandidates.forEachIndexed { index, candidate ->
+            val totalUploads = preparedPlan.uploadCandidates.size
+            preparedPlan.uploadCandidates.forEachIndexed { index, candidate ->
                 val sourceFile = File(
                     RuntimePaths.stsRoot(host),
                     candidate.localRelativePath.replace('/', File.separatorChar)
                 )
-                val uploadedFile = client.uploadFile(
-                    STEAM_CLOUD_APP_ID,
-                    candidate.remotePath,
-                    sourceFile,
-                    requireNotNull(uploadBatch).batchId,
-                )
+                val uploadedFile = try {
+                    client.uploadFile(
+                        STEAM_CLOUD_APP_ID,
+                        candidate.remotePath,
+                        sourceFile,
+                        requireNotNull(uploadBatch).batchId,
+                    )
+                } catch (error: Throwable) {
+                    throw IllegalStateException(
+                        "Steam Cloud upload failed for ${candidate.remotePath} (${candidate.localRelativePath}, localSha1=${candidate.sha1.ifBlank { "<none>" }}, size=${candidate.fileSize}): ${summarizeError(error)}",
+                        error,
+                    )
+                }
                 uploadedBytes += uploadedFile.fileSize
                 reportProgress(
                     progressCallback,
@@ -389,12 +417,12 @@ internal object SteamCloudPushCoordinator {
             SteamCloudAuthStore.recordManifestSuccess(host, refreshedSnapshot.fetchedAtMs)
 
             val result = SteamCloudPushResult(
-                uploadedFileCount = mirrorPlan.uploadCandidates.size,
+                uploadedFileCount = preparedPlan.uploadCandidates.size,
                 uploadedBytes = uploadedBytes,
-                deletedRemoteFileCount = mirrorPlan.deleteRemotePaths.size,
+                deletedRemoteFileCount = preparedPlan.deleteRemotePaths.size,
                 completedAtMs = System.currentTimeMillis(),
                 summaryPath = SteamCloudManifestStore.pushSummaryFile(host).absolutePath,
-                warnings = currentRemoteSnapshot.warnings + refreshedSnapshot.warnings,
+                warnings = currentRemoteSnapshot.warnings + preparedPlan.warnings + refreshedSnapshot.warnings,
             )
             SteamCloudBaselineStore.writeSnapshot(
                 host,
@@ -406,7 +434,10 @@ internal object SteamCloudPushCoordinator {
             )
             writeMirrorPushSummary(
                 host = host,
-                plan = mirrorPlan,
+                plan = SteamCloudMirrorPlan(
+                    uploadCandidates = preparedPlan.uploadCandidates,
+                    deleteRemotePaths = preparedPlan.deleteRemotePaths,
+                ),
                 snapshot = refreshedSnapshot,
                 result = result,
             )
@@ -430,6 +461,7 @@ internal object SteamCloudPushCoordinator {
             )
             return result
         } catch (error: Throwable) {
+            val failureDiagnostics = client.snapshotDiagnostics()
             uploadBatch?.let { batch ->
                 runCatching {
                     client.completeUploadBatch(STEAM_CLOUD_APP_ID, batch.batchId, EResult.Fail)
@@ -444,10 +476,11 @@ internal object SteamCloudPushCoordinator {
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    diagnostics = failureDiagnostics,
                     failureSummary = summarizeError(error),
                     error = error,
                     extraLines = buildList {
+                        addAll(describePreparedMirrorPlan(preparedPlan))
                         uploadBatch?.let { batch ->
                             add("Upload batch id: ${batch.batchId}")
                         }
@@ -548,6 +581,81 @@ internal object SteamCloudPushCoordinator {
             error.javaClass.simpleName
         }
     }
+
+    private fun prepareMirrorPlan(plan: SteamCloudMirrorPlan): PreparedMirrorPlan {
+        val duplicateUploads = plan.uploadCandidates
+            .groupBy { normalizeRemotePathKey(it.remotePath) }
+            .values
+            .filter { it.size > 1 }
+        require(duplicateUploads.isEmpty()) {
+            val sample = duplicateUploads
+                .map { group -> group.first().remotePath }
+                .sortedWith(compareBy<String>({ it.lowercase(Locale.ROOT) }, { it }))
+                .take(FAILURE_PATH_SAMPLE_LIMIT)
+                .joinToString(", ")
+            "Steam Cloud local override planned duplicate upload paths: $sample"
+        }
+
+        val uploadCandidates = plan.uploadCandidates
+            .distinctBy { normalizeRemotePathKey(it.remotePath) }
+            .sortedWith(
+                compareBy<SteamCloudUploadCandidate>({ normalizeRemotePathKey(it.remotePath) }, { it.remotePath })
+            )
+        val uploadKeys = uploadCandidates.mapTo(linkedSetOf()) { normalizeRemotePathKey(it.remotePath) }
+        val removedDeleteOverlaps = plan.deleteRemotePaths
+            .filter { normalizeRemotePathKey(it) in uploadKeys }
+            .distinctBy(::normalizeRemotePathKey)
+            .sortedWith(compareBy<String>({ normalizeRemotePathKey(it) }, { it }))
+        val deleteRemotePaths = plan.deleteRemotePaths
+            .distinctBy(::normalizeRemotePathKey)
+            .filterNot { normalizeRemotePathKey(it) in uploadKeys }
+            .sortedWith(compareBy<String>({ normalizeRemotePathKey(it) }, { it }))
+
+        val warnings = buildList {
+            if (removedDeleteOverlaps.isNotEmpty()) {
+                add(
+                    "Removed ${removedDeleteOverlaps.size} overlapping Steam Cloud delete request(s) because those paths are also being uploaded."
+                )
+            }
+        }
+
+        return PreparedMirrorPlan(
+            uploadCandidates = uploadCandidates,
+            deleteRemotePaths = deleteRemotePaths,
+            warnings = warnings,
+            removedDeleteOverlaps = removedDeleteOverlaps,
+        )
+    }
+
+    private fun describePreparedMirrorPlan(plan: PreparedMirrorPlan?): List<String> {
+        if (plan == null) {
+            return emptyList()
+        }
+        return buildList {
+            add("Mirror upload candidates before failure: ${plan.uploadCandidates.size}")
+            add("Mirror delete candidates before failure: ${plan.deleteRemotePaths.size}")
+            if (plan.removedDeleteOverlaps.isNotEmpty()) {
+                add("Removed overlapping delete paths: ${plan.removedDeleteOverlaps.size}")
+                plan.removedDeleteOverlaps
+                    .take(FAILURE_PATH_SAMPLE_LIMIT)
+                    .forEach { remotePath -> add("Overlap path: $remotePath") }
+            }
+            plan.uploadCandidates
+                .take(FAILURE_PATH_SAMPLE_LIMIT)
+                .forEach { candidate ->
+                    add(
+                        "Upload path: ${candidate.remotePath} | localSha1=${candidate.sha1.ifBlank { "<none>" }} | size=${candidate.fileSize}"
+                    )
+                }
+            plan.deleteRemotePaths
+                .take(FAILURE_PATH_SAMPLE_LIMIT)
+                .forEach { remotePath -> add("Delete path: $remotePath") }
+            plan.warnings.forEach { warning -> add("Warning: $warning") }
+        }
+    }
+
+    private fun normalizeRemotePathKey(remotePath: String): String =
+        remotePath.trim().replace('\\', '/').lowercase(Locale.ROOT)
 
     private fun formatTimestamp(timestampMs: Long): String {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestampMs))

@@ -9,6 +9,7 @@ data class SteamCloudLocalFileSnapshotEntry(
     val fileSize: Long,
     val lastModifiedMs: Long,
     val sha256: String,
+    val sha1: String = "",
 )
 
 @Serializable
@@ -30,6 +31,7 @@ data class SteamCloudUploadCandidate(
     val fileSize: Long,
     val lastModifiedMs: Long,
     val sha256: String,
+    val sha1: String = "",
     val kind: SteamCloudUploadCandidateKind,
 )
 

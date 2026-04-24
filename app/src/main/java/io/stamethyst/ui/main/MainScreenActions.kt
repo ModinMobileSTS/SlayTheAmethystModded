@@ -6,6 +6,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import io.stamethyst.model.ModItemUi
 
+internal enum class LaunchRequestAction {
+    NONE,
+    OPEN_STEAM_CLOUD_SHEET,
+}
+
 internal data class MainScreenActions(
     val isHostAvailable: Boolean,
     val onSuggestNextFolderName: () -> String = { "文件夹1" },
@@ -42,8 +47,10 @@ internal data class MainScreenActions(
     val onShareCrashRecoveryReport: () -> Unit = {},
     val onCloseApp: () -> Unit = {},
     val onImportMods: () -> Unit = {},
-    val onLaunch: () -> Unit = {},
+    val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
+    val onLaunchDirect: () -> Unit = {},
     val onRefreshSteamCloudStatus: () -> Unit = {},
+    val onCancelSteamCloudCheck: () -> Unit = {},
     val onUseLocalSteamCloudProgress: () -> Unit = {},
     val onUseCloudSteamCloudProgress: () -> Unit = {},
 )
@@ -107,9 +114,13 @@ internal fun rememberMainScreenActions(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")
                     )
                 },
-                onLaunch = { viewModel.onLaunch(activity) },
+                onLaunch = { viewModel.onLaunchRequested(activity) },
+                onLaunchDirect = { viewModel.onLaunch(activity) },
                 onRefreshSteamCloudStatus = {
                     viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
+                },
+                onCancelSteamCloudCheck = {
+                    viewModel.cancelSteamCloudCheck(activity)
                 },
                 onUseLocalSteamCloudProgress = {
                     viewModel.onUseLocalSteamCloudProgress(activity)

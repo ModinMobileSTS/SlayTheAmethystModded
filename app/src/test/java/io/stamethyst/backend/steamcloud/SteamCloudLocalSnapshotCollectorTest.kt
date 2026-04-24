@@ -21,6 +21,7 @@ class SteamCloudLocalSnapshotCollectorTest {
             assertEquals("preferences/1_Tuner_CLASS.backUp", snapshot[0].localRelativePath)
             assertEquals("saves/WATCHER.autosave", snapshot[1].localRelativePath)
             assertTrue(snapshot.all { it.sha256.isNotBlank() })
+            assertTrue(snapshot.all { it.sha1.isNotBlank() })
         } finally {
             tempRoot.deleteRecursively()
         }

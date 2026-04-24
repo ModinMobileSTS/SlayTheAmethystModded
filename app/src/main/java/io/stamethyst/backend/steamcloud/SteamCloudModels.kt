@@ -31,6 +31,7 @@ data class SteamCloudManifestEntry(
     val timestamp: Long,
     val machineName: String,
     val persistState: String,
+    val sha1: String = "",
 )
 
 @Serializable

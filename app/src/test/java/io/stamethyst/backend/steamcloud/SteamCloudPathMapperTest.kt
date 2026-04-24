@@ -37,21 +37,24 @@ class SteamCloudPathMapperTest {
                     128L,
                     100L,
                     "",
-                    "Persisted"
+                    "Persisted",
+                    "sha-player"
                 ),
                 SteamCloudClient.RemoteFileRecord(
                     "%GameInstall%saves/WATCHER.autosave",
                     256L,
                     200L,
                     "",
-                    "Persisted"
+                    "Persisted",
+                    "sha-save"
                 ),
                 SteamCloudClient.RemoteFileRecord(
                     "%GameInstall%runs/ignore-me",
                     512L,
                     300L,
                     "",
-                    "Persisted"
+                    "Persisted",
+                    ""
                 )
             )
         )
@@ -60,6 +63,8 @@ class SteamCloudPathMapperTest {
         assertEquals(1, snapshot.preferencesCount)
         assertEquals(1, snapshot.savesCount)
         assertEquals(2, snapshot.entries.size)
+        assertEquals("sha-player", snapshot.entries[0].sha1)
+        assertEquals("sha-save", snapshot.entries[1].sha1)
         assertTrue(snapshot.warnings.any { it.contains("%GameInstall%runs/ignore-me") })
     }
 }

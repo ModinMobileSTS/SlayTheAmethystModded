@@ -84,6 +84,7 @@ internal object SteamCloudDiffPlanner {
                         fileSize = currentLocal.fileSize,
                         lastModifiedMs = currentLocal.lastModifiedMs,
                         sha256 = currentLocal.sha256,
+                        sha1 = currentLocal.sha1,
                         kind = if (baselineRemote == null && currentRemote == null) {
                             SteamCloudUploadCandidateKind.NEW_FILE
                         } else {

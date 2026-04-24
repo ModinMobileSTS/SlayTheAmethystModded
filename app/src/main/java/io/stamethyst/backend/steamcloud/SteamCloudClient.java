@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URI;
@@ -112,6 +113,16 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile boolean guardDataConfigured = false;
     private volatile boolean guardDataUpdated = false;
     private Thread callbackThread;
+
+    private static final class PreparedServerRecord {
+        private final ServerRecord serverRecord;
+        private final String candidateSourceDescription;
+
+        private PreparedServerRecord(ServerRecord serverRecord, String candidateSourceDescription) {
+            this.serverRecord = serverRecord;
+            this.candidateSourceDescription = candidateSourceDescription;
+        }
+    }
 
     public SteamCloudClient(Context context) {
         applyProxySystemProperties();
@@ -212,18 +223,15 @@ public final class SteamCloudClient implements AutoCloseable {
             callbackThread.setDaemon(true);
             callbackThread.start();
 
-            ServerRecord serverRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
-            if (serverRecord != null) {
-                candidateSourceDescription = "Steam server list";
-            } else {
-                serverRecord = resolveFallbackWebSocketServer();
-            }
+            PreparedServerRecord preparedServerRecord = selectWebSocketServerRecord();
+            ServerRecord serverRecord = preparedServerRecord == null ? null : preparedServerRecord.serverRecord;
             if (serverRecord == null) {
                 throw new IllegalStateException(
                     "Steam server list returned no websocket CM candidate, and no fallback websocket endpoint was available."
                 );
             }
 
+            candidateSourceDescription = preparedServerRecord.candidateSourceDescription;
             resolvedServerDescription = describeServerRecord(serverRecord);
             Log.i(
                 TAG,
@@ -351,7 +359,8 @@ public final class SteamCloudClient implements AutoCloseable {
                     file.getRawFileSize(),
                     file.getTimestamp().toInstant().toEpochMilli(),
                     machineName,
-                    file.getPersistState().name()
+                    file.getPersistState().name(),
+                    bytesToHex(file.getShaFile())
                 ));
             }
 
@@ -653,26 +662,124 @@ public final class SteamCloudClient implements AutoCloseable {
         return waitForEither(future, disconnectedFuture, timeoutMs, stage);
     }
 
-    private ServerRecord resolveFallbackWebSocketServer() {
+    private PreparedServerRecord selectWebSocketServerRecord() throws IOException {
+        List<PreparedServerRecord> candidates = new ArrayList<>();
+
+        ServerRecord serverListRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
+        if (serverListRecord != null) {
+            candidates.add(new PreparedServerRecord(serverListRecord, "Steam server list"));
+        }
+
         String cachedAddress = readOptionalTextFile(lastCmEndpointFile);
         if (!isBlank(cachedAddress)) {
-            candidateSourceDescription = "Cached websocket CM fallback";
-            return ServerRecord.createWebSocketServer(cachedAddress);
+            candidates.add(
+                new PreparedServerRecord(
+                    ServerRecord.createWebSocketServer(cachedAddress),
+                    "Cached websocket CM fallback"
+                )
+            );
         }
 
         String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
         if (!isBlank(defaultAddress)) {
-            candidateSourceDescription = "JavaSteam default websocket CM";
-            return ServerRecord.createWebSocketServer(defaultAddress);
+            candidates.add(
+                new PreparedServerRecord(
+                    ServerRecord.createWebSocketServer(defaultAddress),
+                    "JavaSteam default websocket CM"
+                )
+            );
+        }
+
+        IOException lastResolutionError = null;
+        List<String> attemptedKeys = new ArrayList<>();
+        for (PreparedServerRecord candidate : candidates) {
+            String dedupeKey = buildServerRecordKey(candidate.serverRecord);
+            if (attemptedKeys.contains(dedupeKey)) {
+                continue;
+            }
+            attemptedKeys.add(dedupeKey);
+            try {
+                return materializeWebSocketServerRecord(candidate);
+            } catch (IOException error) {
+                lastResolutionError = error;
+                Log.w(
+                    TAG,
+                    "Skipping Steam websocket CM candidate source="
+                        + candidate.candidateSourceDescription
+                        + " because endpoint pre-resolution failed: "
+                        + sanitizeSingleLine(error.getMessage()),
+                    error
+                );
+            }
+        }
+
+        if (lastResolutionError != null) {
+            throw lastResolutionError;
         }
         return null;
+    }
+
+    private PreparedServerRecord materializeWebSocketServerRecord(PreparedServerRecord candidate) throws IOException {
+        ServerRecord serverRecord = candidate.serverRecord;
+        if (serverRecord == null || serverRecord.getEndpoint() == null) {
+            return candidate;
+        }
+        if (!serverRecord.getProtocolTypes().contains(ProtocolTypes.WEB_SOCKET)) {
+            return candidate;
+        }
+
+        InetSocketAddress endpoint = serverRecord.getEndpoint();
+        String host = sanitizeSingleLine(endpoint.getHostString());
+        int port = endpoint.getPort();
+        if (isBlank(host)) {
+            return candidate;
+        }
+
+        InetAddress resolvedAddress = endpoint.getAddress();
+        if (resolvedAddress != null) {
+            String literalAddress = sanitizeSingleLine(resolvedAddress.getHostAddress());
+            if (!isBlank(literalAddress)) {
+                return new PreparedServerRecord(
+                    ServerRecord.createWebSocketServer(formatHostPort(literalAddress, port)),
+                    candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + literalAddress + ")"
+                );
+            }
+            return candidate;
+        }
+
+        if (isIpLiteral(host)) {
+            return candidate;
+        }
+
+        InetAddress[] addresses = InetAddress.getAllByName(host);
+        if (addresses == null || addresses.length == 0) {
+            throw new IOException("Failed to resolve Steam websocket CM hostname: " + host);
+        }
+        String preferredAddress = selectPreferredAddress(addresses);
+        if (isBlank(preferredAddress)) {
+            throw new IOException("Resolved Steam websocket CM hostname had no usable address: " + host);
+        }
+
+        Log.i(TAG, "Pre-resolved Steam websocket CM hostname " + host + " -> " + preferredAddress + '.');
+        return new PreparedServerRecord(
+            ServerRecord.createWebSocketServer(formatHostPort(preferredAddress, port)),
+            candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + preferredAddress + ")"
+        );
     }
 
     private void persistResolvedWebSocketEndpoint(ServerRecord serverRecord) {
         if (serverRecord == null || !serverRecord.getProtocolTypes().contains(ProtocolTypes.WEB_SOCKET)) {
             return;
         }
-        String address = serverRecord.getEndpoint().getHostString() + ":" + serverRecord.getEndpoint().getPort();
+        InetSocketAddress endpoint = serverRecord.getEndpoint();
+        if (endpoint == null) {
+            return;
+        }
+        String address = endpoint.getHostString();
+        if (endpoint.getAddress() != null && !isBlank(endpoint.getAddress().getHostAddress())) {
+            address = endpoint.getAddress().getHostAddress();
+        }
+        address = formatHostPort(address, endpoint.getPort());
         try {
             writeTextFile(lastCmEndpointFile, address + "\n");
         } catch (IOException ignored) {
@@ -856,6 +963,61 @@ public final class SteamCloudClient implements AutoCloseable {
         return prefix + separator + filename;
     }
 
+    private static String buildServerRecordKey(ServerRecord serverRecord) {
+        if (serverRecord == null || serverRecord.getEndpoint() == null) {
+            return "<null>";
+        }
+        return sanitizeSingleLine(serverRecord.getEndpoint().getHostString()).toLowerCase(Locale.ROOT)
+            + ':'
+            + serverRecord.getEndpoint().getPort()
+            + '|'
+            + describeProtocolTypes(serverRecord.getProtocolTypes());
+    }
+
+    private static String selectPreferredAddress(InetAddress[] addresses) {
+        if (addresses == null || addresses.length == 0) {
+            return "";
+        }
+        for (InetAddress address : addresses) {
+            String literal = address == null ? "" : sanitizeSingleLine(address.getHostAddress());
+            if (!isBlank(literal) && literal.indexOf(':') < 0) {
+                return literal;
+            }
+        }
+        for (InetAddress address : addresses) {
+            String literal = address == null ? "" : sanitizeSingleLine(address.getHostAddress());
+            if (!isBlank(literal)) {
+                return literal;
+            }
+        }
+        return "";
+    }
+
+    private static String formatHostPort(String host, int port) {
+        String sanitizedHost = sanitizeSingleLine(host);
+        if (sanitizedHost.indexOf(':') >= 0 && !sanitizedHost.startsWith("[") && !sanitizedHost.endsWith("]")) {
+            sanitizedHost = '[' + sanitizedHost + ']';
+        }
+        return sanitizedHost + ':' + port;
+    }
+
+    private static boolean isIpLiteral(String host) {
+        String value = sanitizeSingleLine(host);
+        if (value.isEmpty()) {
+            return false;
+        }
+        if (value.indexOf(':') >= 0) {
+            return true;
+        }
+        for (int index = 0; index < value.length(); index++) {
+            char c = value.charAt(index);
+            if ((c < '0' || c > '9') && c != '.') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean commitHttpUpload(
         boolean transferSucceeded,
         int appId,
@@ -909,9 +1071,15 @@ public final class SteamCloudClient implements AutoCloseable {
         } catch (IOException error) {
             throw new IOException("Failed to read Steam Cloud upload source file.", error);
         }
-        byte[] sha = digest.digest();
-        StringBuilder builder = new StringBuilder(sha.length * 2);
-        for (byte value : sha) {
+        return bytesToHex(digest.digest());
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
             builder.append(String.format(Locale.US, "%02x", value & 0xFF));
         }
         return builder.toString();
@@ -1164,19 +1332,22 @@ public final class SteamCloudClient implements AutoCloseable {
         private final long timestampMs;
         private final String machineName;
         private final String persistState;
+        private final String sha1;
 
         public RemoteFileRecord(
             String remotePath,
             long rawFileSize,
             long timestampMs,
             String machineName,
-            String persistState
+            String persistState,
+            String sha1
         ) {
             this.remotePath = remotePath;
             this.rawFileSize = rawFileSize;
             this.timestampMs = timestampMs;
             this.machineName = machineName;
             this.persistState = persistState;
+            this.sha1 = sha1 == null ? "" : sha1;
         }
 
         public String getRemotePath() {
@@ -1197,6 +1368,10 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public String getPersistState() {
             return persistState;
+        }
+
+        public String getSha1() {
+            return sha1;
         }
     }
 

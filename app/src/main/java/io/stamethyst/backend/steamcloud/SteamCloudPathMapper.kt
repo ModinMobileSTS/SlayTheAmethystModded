@@ -88,6 +88,7 @@ internal object SteamCloudPathMapper {
                 timestamp = remoteEntry.timestampMs,
                 machineName = remoteEntry.machineName,
                 persistState = remoteEntry.persistState,
+                sha1 = remoteEntry.sha1,
             )
         }.sortedWith(
             compareBy<SteamCloudManifestEntry>({ it.localRelativePath.lowercase() }, { it.localRelativePath })

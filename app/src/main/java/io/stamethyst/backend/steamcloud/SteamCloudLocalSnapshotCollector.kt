@@ -42,18 +42,21 @@ internal object SteamCloudLocalSnapshotCollector {
             if (relativeSuffix.isBlank()) {
                 continue
             }
+            val fileDigests = digestFile(file)
             sink += SteamCloudLocalFileSnapshotEntry(
                 localRelativePath = rootKind.directoryName + "/" + relativeSuffix,
                 rootKind = rootKind,
                 fileSize = file.length(),
                 lastModifiedMs = file.lastModified().coerceAtLeast(0L),
-                sha256 = sha256Hex(file),
+                sha256 = fileDigests.sha256,
+                sha1 = fileDigests.sha1,
             )
         }
     }
 
-    private fun sha256Hex(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
+    private fun digestFile(file: File): FileDigests {
+        val sha256 = MessageDigest.getInstance("SHA-256")
+        val sha1 = MessageDigest.getInstance("SHA-1")
         FileInputStream(file).use { input ->
             val buffer = ByteArray(8192)
             while (true) {
@@ -61,11 +64,23 @@ internal object SteamCloudLocalSnapshotCollector {
                 if (read < 0) {
                     break
                 }
-                digest.update(buffer, 0, read)
+                sha256.update(buffer, 0, read)
+                sha1.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString(separator = "") { byte ->
+        return FileDigests(
+            sha256 = digestToHex(sha256),
+            sha1 = digestToHex(sha1),
+        )
+    }
+
+    private fun digestToHex(digest: MessageDigest): String =
+        digest.digest().joinToString(separator = "") { byte ->
             "%02x".format(Locale.US, byte.toInt() and 0xFF)
         }
-    }
+
+    private data class FileDigests(
+        val sha256: String,
+        val sha1: String,
+    )
 }

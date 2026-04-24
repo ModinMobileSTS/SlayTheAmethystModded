@@ -16,10 +16,12 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 object ComponentInstaller {
     private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
+    private const val LONG_OPERATION_HEARTBEAT_INTERVAL_MS = 5_000L
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
     private const val BUNDLED_RUNTIME_NATIVE_ASSET_DIR = "components/bundled_runtime_natives"
     private const val LEGACY_HINA_VIDEO_PATCH_JAR = "hina-video-compat.jar"
@@ -90,7 +92,7 @@ object ComponentInstaller {
             reportProgress(
                 progressCallback,
                 72,
-                context.progressText(R.string.startup_progress_launcher_components_already_up_to_date)
+                context.getString(R.string.startup_progress_launcher_components_already_up_to_date)
             )
         } else {
             logDiagnostic(
@@ -119,28 +121,33 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             72,
-            context.progressText(R.string.startup_progress_installing_bundled_mods)
+            context.getString(R.string.startup_progress_installing_bundled_mods)
         )
-        installBundledMods(assets, context, forceReplaceExisting = !packagedComponentsCurrent)
+        installBundledMods(
+            assets = assets,
+            context = context,
+            forceReplaceExisting = !packagedComponentsCurrent,
+            progressCallback = progressCallback
+        )
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             87,
-            context.progressText(R.string.startup_progress_preparing_local_java_shim)
+            context.getString(R.string.startup_progress_preparing_local_java_shim)
         )
         ensureMtsLocalJreShim(context)
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             96,
-            context.progressText(R.string.startup_progress_checking_default_preferences)
+            context.getString(R.string.startup_progress_checking_default_preferences)
         )
         ensureDefaultPreferencesIfMissing(assets, context)
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             100,
-            context.progressText(R.string.startup_progress_components_ready)
+            context.getString(R.string.startup_progress_components_ready)
         )
     }
 
@@ -154,21 +161,21 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             5,
-            context.progressText(R.string.startup_progress_installing_lwjgl_bridge)
+            context.getString(R.string.startup_progress_installing_lwjgl_bridge)
         )
         replaceAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context))
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             15,
-            context.progressText(R.string.startup_progress_installing_startup_bridge)
+            context.getString(R.string.startup_progress_installing_startup_bridge)
         )
         replaceAssetTree(assets, "components/boot_bridge", RuntimePaths.bootBridgeDir(context))
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             25,
-            context.progressText(R.string.startup_progress_installing_lwjgl2_injector)
+            context.getString(R.string.startup_progress_installing_lwjgl2_injector)
         )
         replaceAssetTree(
             assets,
@@ -179,7 +186,7 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             40,
-            context.progressText(R.string.startup_progress_installing_gdx_patches)
+            context.getString(R.string.startup_progress_installing_gdx_patches)
         )
         replaceAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
         removeLegacyCompatArtifacts(RuntimePaths.gdxPatchDir(context))
@@ -187,7 +194,7 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             48,
-            context.progressText(R.string.startup_progress_installing_bundled_native_libraries)
+            context.getString(R.string.startup_progress_installing_bundled_native_libraries)
         )
         if (hasAssetChildren(assets, BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
             copyAssetTree(
@@ -200,7 +207,7 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             60,
-            context.progressText(R.string.startup_progress_installing_bundled_log4j_runtime)
+            context.getString(R.string.startup_progress_installing_bundled_log4j_runtime)
         )
         replaceAssetTree(
             assets,
@@ -211,7 +218,7 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             70,
-            context.progressText(R.string.startup_progress_installing_caciocavallo_runtime)
+            context.getString(R.string.startup_progress_installing_caciocavallo_runtime)
         )
         replaceAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
     }
@@ -220,7 +227,8 @@ object ComponentInstaller {
     private fun installBundledMods(
         assets: AssetManager,
         context: Context,
-        forceReplaceExisting: Boolean
+        forceReplaceExisting: Boolean,
+        progressCallback: StartupProgressCallback?
     ) {
         logDiagnostic(
             context = context,
@@ -245,7 +253,13 @@ object ComponentInstaller {
                 "target" to buildFileState(RuntimePaths.importedMtsJar(context))
             )
         )
-        MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
+        runWithProgressHeartbeat(
+            progressCallback = progressCallback,
+            percent = 78,
+            message = context.getString(R.string.startup_progress_installing_bundled_mods)
+        ) {
+            MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
+        }
         logDiagnostic(
             context = context,
             event = "component_install_mts_loader_patch_completed",
@@ -746,6 +760,45 @@ object ComponentInstaller {
         }
         val bounded = percent.coerceIn(0, 100)
         callback.onProgress(bounded, message)
+    }
+
+    @Throws(IOException::class)
+    private fun runWithProgressHeartbeat(
+        progressCallback: StartupProgressCallback?,
+        percent: Int,
+        message: String,
+        operation: () -> Unit
+    ) {
+        if (progressCallback == null) {
+            operation()
+            return
+        }
+
+        val stopped = AtomicBoolean(false)
+        val heartbeatThread = Thread(
+            {
+                while (!stopped.get()) {
+                    try {
+                        Thread.sleep(LONG_OPERATION_HEARTBEAT_INTERVAL_MS)
+                    } catch (_: InterruptedException) {
+                        return@Thread
+                    }
+                    if (!stopped.get()) {
+                        reportProgress(progressCallback, percent, message)
+                    }
+                }
+            },
+            "STS-Prep-Heartbeat"
+        ).apply {
+            isDaemon = true
+        }
+        heartbeatThread.start()
+        try {
+            operation()
+        } finally {
+            stopped.set(true)
+            heartbeatThread.interrupt()
+        }
     }
 
     private fun containsNonEmptyFile(root: File): Boolean {
