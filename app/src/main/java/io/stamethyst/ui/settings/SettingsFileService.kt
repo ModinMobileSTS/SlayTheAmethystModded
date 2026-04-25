@@ -1798,10 +1798,13 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun importSaveArchive(host: Activity, uri: Uri): SaveImportResult {
-        val stsRoot = RuntimePaths.stsRoot(host)
-        if (!stsRoot.exists() && !stsRoot.mkdirs()) {
-            throw IOException("Failed to create save root: ${stsRoot.absolutePath}")
+    fun importSaveArchive(
+        host: Activity,
+        uri: Uri,
+        targetRoot: File = RuntimePaths.stsRoot(host),
+    ): SaveImportResult {
+        if (!targetRoot.exists() && !targetRoot.mkdirs()) {
+            throw IOException("Failed to create save root: ${targetRoot.absolutePath}")
         }
 
         val scanResult = scanSaveArchive(host, uri)
@@ -1809,9 +1812,9 @@ internal object SettingsFileService {
             throw IOException("Archive did not contain importable save files")
         }
 
-        val backupLabel = backupExistingSavesToDownloads(host, stsRoot)
-        clearExistingSaveTargets(stsRoot, scanResult.targetTopLevelDirs)
-        val importedFiles = extractSaveArchive(host, uri, stsRoot)
+        val backupLabel = backupExistingSavesToDownloads(host, targetRoot)
+        clearExistingSaveTargets(targetRoot, scanResult.targetTopLevelDirs)
+        val importedFiles = extractSaveArchive(host, uri, targetRoot)
         if (importedFiles <= 0) {
             throw IOException("Archive did not contain importable save files")
         }

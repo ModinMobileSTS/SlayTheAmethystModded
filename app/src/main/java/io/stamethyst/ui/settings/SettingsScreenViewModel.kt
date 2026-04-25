@@ -2673,24 +2673,75 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        importSavesArchive(host, uri)
+        if (LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD) {
+            showSaveImportTargetDialog(host, uri)
+            return
+        }
+        importSavesArchive(
+            host = host,
+            uri = uri,
+            targetRoot = RuntimePaths.stsRoot(host),
+            targetLabel = SteamCloudSaveMode.INDEPENDENT.displayName(host),
+        )
     }
 
-    private fun importSavesArchive(host: Activity, uri: Uri) {
+    private fun showSaveImportTargetDialog(host: Activity, uri: Uri) {
+        if (host.isFinishing || host.isDestroyed) {
+            return
+        }
+        val importTargets = arrayOf(
+            host.getString(R.string.settings_save_import_target_independent_action),
+            host.getString(R.string.settings_save_import_target_cloud_action),
+        )
+        AlertDialog.Builder(host)
+            .setTitle(R.string.settings_save_import_target_dialog_title)
+            .setMessage(R.string.settings_save_import_target_dialog_message)
+            .setItems(importTargets) { _, which ->
+                when (which) {
+                    0 -> importSavesArchive(
+                        host = host,
+                        uri = uri,
+                        targetRoot = SteamCloudSaveProfileManager.profileRoot(
+                            host,
+                            SteamCloudSaveMode.INDEPENDENT
+                        ),
+                        targetLabel = SteamCloudSaveMode.INDEPENDENT.displayName(host),
+                    )
+
+                    1 -> importSavesArchive(
+                        host = host,
+                        uri = uri,
+                        targetRoot = RuntimePaths.stsRoot(host),
+                        targetLabel = SteamCloudSaveMode.STEAM_CLOUD.displayName(host),
+                    )
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun importSavesArchive(
+        host: Activity,
+        uri: Uri,
+        targetRoot: File,
+        targetLabel: String,
+    ) {
         setBusy(true, UiText.StringResource(R.string.settings_busy_importing_save_archive))
         executor.execute {
             try {
-                val result = SettingsFileService.importSaveArchive(host, uri)
+                val result = SettingsFileService.importSaveArchive(host, uri, targetRoot)
                 host.runOnUiThread {
                     val message = if (result.backupLabel.isNullOrEmpty()) {
                         UiText.StringResource(
-                            R.string.settings_save_imported,
-                            result.importedFiles
+                            R.string.settings_save_imported_to_target,
+                            result.importedFiles,
+                            targetLabel,
                         )
                     } else {
                         UiText.StringResource(
-                            R.string.settings_save_imported_with_backup,
+                            R.string.settings_save_imported_with_backup_to_target,
                             result.importedFiles,
+                            targetLabel,
                             result.backupLabel
                         )
                     }

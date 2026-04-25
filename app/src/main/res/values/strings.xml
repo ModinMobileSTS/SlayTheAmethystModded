@@ -1100,6 +1100,12 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="settings_busy_importing_save_archive">Importing save archive...</string>
     <string name="settings_save_imported">Imported %1$d save files</string>
     <string name="settings_save_imported_with_backup">Imported %1$d save files (backup: %2$s)</string>
+    <string name="settings_save_import_target_dialog_title">Choose save import target</string>
+    <string name="settings_save_import_target_dialog_message">Steam Cloud save mode is currently enabled. Choose whether this archive should overwrite the independent save profile or the current Steam Cloud save profile.</string>
+    <string name="settings_save_import_target_independent_action">Overwrite independent saves</string>
+    <string name="settings_save_import_target_cloud_action">Overwrite Steam Cloud saves</string>
+    <string name="settings_save_imported_to_target">Imported %1$d save files to %2$s</string>
+    <string name="settings_save_imported_with_backup_to_target">Imported %1$d save files to %2$s (backup: %3$s)</string>
     <string name="settings_save_import_failed">Save import failed: %1$s</string>
     <string name="settings_busy_exporting_save_archive">Exporting save archive...</string>
     <string name="settings_save_exported">Save archive exported (%1$d files)</string>
