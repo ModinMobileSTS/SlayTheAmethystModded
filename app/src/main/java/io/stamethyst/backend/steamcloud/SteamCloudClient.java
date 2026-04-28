@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.security.MessageDigest;
@@ -85,6 +86,10 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final long RPC_TIMEOUT_MS = 90_000L;
     private static final long DOWNLOAD_TIMEOUT_MS = 60_000L;
     private static final long CALLBACK_POLL_TIMEOUT_MS = 250L;
+    private static final int BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS = 4;
+    private static final long[] BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
+    private static final int TRANSIENT_RPC_MAX_ATTEMPTS = 4;
+    private static final long[] TRANSIENT_RPC_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
     private static final int JAVA_STEAM_LOG_TAIL_LIMIT = 12;
     private static final int JAVA_STEAM_STACKTRACE_LINE_LIMIT = 24;
     private static final String OUTPUT_DIR_NAME = "steam-cloud";
@@ -419,6 +424,16 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public DownloadResult downloadFile(int appId, String remotePath, File outputFile) throws Exception {
+        return downloadFile(appId, remotePath, outputFile, -1L, "");
+    }
+
+    public DownloadResult downloadFile(
+        int appId,
+        String remotePath,
+        File outputFile,
+        long expectedRawSize,
+        String expectedSha1
+    ) throws Exception {
         long startedAtNs = System.nanoTime();
         long rpcMs = 0L;
         long httpMs = 0L;
@@ -470,6 +485,7 @@ public final class SteamCloudClient implements AutoCloseable {
                 decompressed = true;
             }
             rawBytesCount = rawBytes.length;
+            validateDownloadedBytes(rawBytes, expectedRawSize, expectedSha1, remotePath);
 
             File parent = outputFile.getParentFile();
             ensureDirectoryExists(parent, "output directory");
@@ -535,8 +551,8 @@ public final class SteamCloudClient implements AutoCloseable {
                     + " deletes="
                     + remotePathsToDelete.size()
             );
-            AppUploadBatchResponse response = waitForStage(
-                steamCloud.beginAppUploadBatch(
+            AppUploadBatchResponse response = waitForStageWithRetries(
+                () -> steamCloud.beginAppUploadBatch(
                     appId,
                     buildUploadMachineName(),
                     remotePathsToUpload,
@@ -593,12 +609,7 @@ public final class SteamCloudClient implements AutoCloseable {
                     .setUploadBatchId(uploadBatchId)
                     .build();
             ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder> beginResponse =
-                waitForServiceJob(
-                    cloudService.beginHTTPUpload(request),
-                    RPC_TIMEOUT_MS,
-                    "BeginHTTPUpload"
-                );
-            ensureServiceResult(beginResponse, "BeginHTTPUpload");
+                beginHttpUploadWithRetries(request, remotePath);
             startedUpload = true;
 
             SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder body = beginResponse.getBody();
@@ -643,8 +654,8 @@ public final class SteamCloudClient implements AutoCloseable {
 
     public void completeUploadBatch(int appId, long batchId, EResult batchResult) throws Exception {
         try {
-            waitForStage(
-                steamCloud.completeAppUploadBatch(appId, batchId, batchResult),
+            waitForStageWithRetries(
+                () -> steamCloud.completeAppUploadBatch(appId, batchId, batchResult),
                 RPC_TIMEOUT_MS,
                 "CompleteAppUploadBatch"
             );
@@ -708,6 +719,24 @@ public final class SteamCloudClient implements AutoCloseable {
     private <T> T waitForStage(CompletableFuture<T> future, long timeoutMs, String stage) throws Exception {
         currentStage = stage;
         return waitForEither(future, disconnectedFuture, timeoutMs, stage);
+    }
+
+    private <T> T waitForStageWithRetries(
+        Supplier<CompletableFuture<T>> futureSupplier,
+        long timeoutMs,
+        String stage
+    ) throws Exception {
+        for (int attempt = 1; attempt <= TRANSIENT_RPC_MAX_ATTEMPTS; attempt++) {
+            try {
+                return waitForStage(futureSupplier.get(), timeoutMs, stage);
+            } catch (Exception error) {
+                if (!isRetryableSteamCloudException(error) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
+                    throw error;
+                }
+                sleepBeforeTransientRetry(stage, error, attempt);
+            }
+        }
+        throw new IllegalStateException(stage + " failed without completing.");
     }
 
     private PreparedServerRecord selectWebSocketServerRecord() throws IOException {
@@ -1079,14 +1108,25 @@ public final class SteamCloudClient implements AutoCloseable {
                 .setFileSha(sha1Hex)
                 .setFilename(remotePath)
                 .build();
-        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_CommitHTTPUpload_Response.Builder> response =
-            waitForServiceJob(
+        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_CommitHTTPUpload_Response.Builder> response = null;
+        for (int attempt = 1; attempt <= TRANSIENT_RPC_MAX_ATTEMPTS; attempt++) {
+            response = waitForServiceJob(
                 cloudService.commitHTTPUpload(request),
                 RPC_TIMEOUT_MS,
                 "CommitHTTPUpload"
             );
+            EResult result = response.getResult();
+            if (result == EResult.OK) {
+                return response.getBody().getFileCommitted();
+            }
+            if (!isRetryableSteamCloudResult(result) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
+                ensureServiceResult(response, "CommitHTTPUpload");
+            }
+            sleepBeforeTransientRetry("CommitHTTPUpload", result, remotePath, attempt);
+        }
+
         ensureServiceResult(response, "CommitHTTPUpload");
-        return response.getBody().getFileCommitted();
+        throw new IllegalStateException("CommitHTTPUpload failed without a response result.");
     }
 
     private <T extends GeneratedMessage.Builder<T>> ServiceMethodResponse<T> waitForServiceJob(
@@ -1095,6 +1135,143 @@ public final class SteamCloudClient implements AutoCloseable {
         String stage
     ) throws Exception {
         return waitForStage(job.toFuture(), timeoutMs, stage);
+    }
+
+    private ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder>
+    beginHttpUploadWithRetries(
+        SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Request request,
+        String remotePath
+    ) throws Exception {
+        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder> response = null;
+        for (int attempt = 1; attempt <= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS; attempt++) {
+            response = waitForServiceJob(
+                cloudService.beginHTTPUpload(request),
+                RPC_TIMEOUT_MS,
+                "BeginHTTPUpload"
+            );
+            EResult result = response.getResult();
+            if (result == EResult.OK) {
+                return response;
+            }
+            if (!isRetryableBeginHttpUploadResult(result) || attempt >= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS) {
+                ensureServiceResult(response, "BeginHTTPUpload");
+            }
+
+            long delayMs = BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS[
+                Math.min(attempt - 1, BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS.length - 1)
+            ];
+            Log.w(
+                TAG,
+                "BeginHTTPUpload returned "
+                    + result
+                    + " for "
+                    + remotePath
+                    + "; retrying attempt "
+                    + (attempt + 1)
+                    + "/"
+                    + BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS
+                    + " after "
+                    + delayMs
+                    + "ms."
+            );
+            sleepBeforeRetry(delayMs);
+        }
+
+        ensureServiceResult(response, "BeginHTTPUpload");
+        throw new IllegalStateException("BeginHTTPUpload failed without a response result.");
+    }
+
+    private static void sleepBeforeTransientRetry(
+        String stage,
+        EResult result,
+        String remotePath,
+        int attempt
+    ) throws InterruptedException {
+        long delayMs = transientRetryDelayMs(attempt);
+        Log.w(
+            TAG,
+            stage
+                + " returned "
+                + result
+                + (isBlank(remotePath) ? "" : " for " + remotePath)
+                + "; retrying attempt "
+                + (attempt + 1)
+                + "/"
+                + TRANSIENT_RPC_MAX_ATTEMPTS
+                + " after "
+                + delayMs
+                + "ms."
+        );
+        sleepBeforeRetry(delayMs);
+    }
+
+    private static void sleepBeforeTransientRetry(
+        String stage,
+        Exception error,
+        int attempt
+    ) throws InterruptedException {
+        long delayMs = transientRetryDelayMs(attempt);
+        Log.w(
+            TAG,
+            stage
+                + " failed transiently: "
+                + sanitizeSingleLine(error.getMessage())
+                + "; retrying attempt "
+                + (attempt + 1)
+                + "/"
+                + TRANSIENT_RPC_MAX_ATTEMPTS
+                + " after "
+                + delayMs
+                + "ms.",
+            error
+        );
+        sleepBeforeRetry(delayMs);
+    }
+
+    private static long transientRetryDelayMs(int attempt) {
+        return TRANSIENT_RPC_RETRY_DELAYS_MS[
+            Math.min(attempt - 1, TRANSIENT_RPC_RETRY_DELAYS_MS.length - 1)
+        ];
+    }
+
+    private static boolean isRetryableSteamCloudResult(EResult result) {
+        return result == EResult.Busy
+            || result == EResult.ServiceUnavailable
+            || result == EResult.Timeout
+            || result == EResult.RemoteCallFailed;
+    }
+
+    private static boolean isRetryableSteamCloudException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof TimeoutException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("busy")
+                    || normalized.contains("timeout")
+                    || normalized.contains("timed out")
+                    || normalized.contains("serviceunavailable")
+                    || normalized.contains("service unavailable")
+                    || normalized.contains("remotecallfailed")
+                    || normalized.contains("remote call failed")
+                ) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isRetryableBeginHttpUploadResult(EResult result) {
+        return isRetryableSteamCloudResult(result);
+    }
+
+    private static void sleepBeforeRetry(long delayMs) throws InterruptedException {
+        Thread.sleep(delayMs);
     }
 
     private static <T extends GeneratedMessage.Builder<T>> void ensureServiceResult(
@@ -1177,6 +1354,48 @@ public final class SteamCloudClient implements AutoCloseable {
             output.write(buffer, 0, read);
         }
         return output.toByteArray();
+    }
+
+    private static void validateDownloadedBytes(
+        byte[] rawBytes,
+        long expectedRawSize,
+        String expectedSha1,
+        String remotePath
+    ) throws IOException {
+        if (expectedRawSize >= 0L && rawBytes.length != expectedRawSize) {
+            throw new IOException(
+                "Steam Cloud download size mismatch for "
+                    + remotePath
+                    + ": expectedRawSize="
+                    + expectedRawSize
+                    + " actualRawSize="
+                    + rawBytes.length
+            );
+        }
+        if (isBlank(expectedSha1)) {
+            return;
+        }
+        String actualSha1 = sha1Hex(rawBytes);
+        if (!actualSha1.equalsIgnoreCase(expectedSha1.trim())) {
+            throw new IOException(
+                "Steam Cloud download SHA-1 mismatch for "
+                    + remotePath
+                    + ": expectedSha1="
+                    + expectedSha1.trim()
+                    + " actualSha1="
+                    + actualSha1
+            );
+        }
+    }
+
+    private static String sha1Hex(byte[] bytes) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            digest.update(bytes);
+            return bytesToHex(digest.digest());
+        } catch (Exception error) {
+            throw new IOException("Failed to calculate Steam Cloud download SHA-1.", error);
+        }
     }
 
     private static void applyProxySystemProperties() {

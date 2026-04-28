@@ -40,6 +40,7 @@ internal object SteamCloudPushCoordinator {
     fun buildUploadPlan(
         host: Activity,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+        shouldContinue: () -> Boolean = { true },
     ): SteamCloudUploadPlan {
         val startedAtMs = System.currentTimeMillis()
         val totalStartedAtNs = System.nanoTime()
@@ -107,6 +108,17 @@ internal object SteamCloudPushCoordinator {
                     currentRemoteSnapshot = filteredSnapshot,
                     baseline = baseline,
                 )
+                val baselineRefreshed = plan.isAlreadySynced() && shouldContinue()
+                if (baselineRefreshed) {
+                    SteamCloudBaselineStore.writeSnapshot(
+                        host,
+                        SteamCloudSyncBaseline(
+                            syncedAtMs = System.currentTimeMillis(),
+                            localEntries = localEntries,
+                            remoteEntries = filteredSnapshot.entries,
+                        )
+                    )
+                }
                 telemetry.diffPlanMs = elapsedMs(diffPlanStartedAtNs)
                 telemetry.totalMeasuredMs = elapsedMs(totalStartedAtNs)
                 SteamCloudDiagnosticsStore.writeSummary(
@@ -124,6 +136,7 @@ internal object SteamCloudPushCoordinator {
                         add("Conflicts: ${plan.conflicts.size}")
                         add("Remote-only changes: ${plan.remoteOnlyChanges.size}")
                         add("Baseline configured: ${plan.baselineConfigured}")
+                        add("Baseline refreshed: ${if (baselineRefreshed) "yes" else "no"}")
                     } + plan.warnings.map { "Warning: $it" },
                 )
                 return plan
@@ -426,11 +439,10 @@ internal object SteamCloudPushCoordinator {
                 )
             )
 
-            if (preparedPlan.uploadCandidates.isNotEmpty() || preparedPlan.deleteRemotePaths.isNotEmpty()) {
+            if (preparedPlan.uploadCandidates.isNotEmpty()) {
                 uploadBatch = client.beginUploadBatch(
                     STEAM_CLOUD_APP_ID,
                     preparedPlan.uploadCandidates.map { it.remotePath },
-                    preparedPlan.deleteRemotePaths,
                 )
             }
 
@@ -488,6 +500,21 @@ internal object SteamCloudPushCoordinator {
                     batch.batchId,
                     EResult.OK,
                 )
+                uploadBatch = null
+            }
+
+            if (preparedPlan.deleteRemotePaths.isNotEmpty()) {
+                uploadBatch = client.beginUploadBatch(
+                    STEAM_CLOUD_APP_ID,
+                    emptyList(),
+                    preparedPlan.deleteRemotePaths,
+                )
+                client.completeUploadBatch(
+                    STEAM_CLOUD_APP_ID,
+                    requireNotNull(uploadBatch).batchId,
+                    EResult.OK,
+                )
+                uploadBatch = null
             }
 
             val refreshedSnapshot = SteamCloudPathMapper.buildManifestSnapshot(
@@ -656,6 +683,9 @@ internal object SteamCloudPushCoordinator {
     ) {
         progressCallback?.invoke(progress)
     }
+
+    private fun SteamCloudUploadPlan.isAlreadySynced(): Boolean =
+        conflicts.isEmpty() && uploadCandidates.isEmpty() && remoteOnlyChanges.isEmpty()
 
     private fun planUploadTimingLines(telemetry: PlanUploadTelemetry): List<String> = listOf(
         "Plan total measured ms: ${formatTimingMs(telemetry.totalMeasuredMs)}",

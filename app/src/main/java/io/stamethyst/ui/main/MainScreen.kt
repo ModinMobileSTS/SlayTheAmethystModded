@@ -484,6 +484,12 @@ private fun LauncherMainScreenContent(
             SteamCloudBottomSheetContent(
                 indicator = steamCloudIndicator,
                 onRefresh = actions.onRefreshSteamCloudStatus,
+                onLaunch = {
+                    val action = actions.onLaunch()
+                    if (action != LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET) {
+                        showSteamCloudBottomSheet = false
+                    }
+                },
                 onCancelCheck = actions.onCancelSteamCloudCheck,
                 onUseLocal = actions.onUseLocalSteamCloudProgress,
                 onUseCloud = actions.onUseCloudSteamCloudProgress,
@@ -1030,6 +1036,7 @@ private fun steamCloudButtonContentDescription(
 private fun SteamCloudBottomSheetContent(
     indicator: MainScreenViewModel.SteamCloudIndicatorUi,
     onRefresh: () -> Unit,
+    onLaunch: () -> Unit,
     onCancelCheck: () -> Unit,
     onUseLocal: () -> Unit,
     onUseCloud: () -> Unit,
@@ -1118,7 +1125,6 @@ private fun SteamCloudBottomSheetContent(
 
         when (indicator.state) {
             MainScreenViewModel.SteamCloudIndicatorState.HIDDEN,
-            MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE,
             MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> {
                 Button(
                     onClick = onRefresh,
@@ -1136,6 +1142,29 @@ private fun SteamCloudBottomSheetContent(
                             }
                         )
                     )
+                }
+            }
+
+            MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = stringResource(R.string.main_steam_cloud_action_recheck))
+                    }
+                    Button(
+                        onClick = onLaunch,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = stringResource(R.string.main_launch_game))
+                    }
                 }
             }
 

@@ -37,6 +37,7 @@ import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModSuggestionService
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
 import io.stamethyst.backend.steamcloud.SteamCloudPullCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
@@ -320,55 +321,62 @@ class MainScreenViewModel : ViewModel() {
         )
         steamCloudExecutor.execute {
             try {
-                val plan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
-                val checkedAtMs = System.currentTimeMillis()
-                if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
-                    return@execute
-                }
-                when {
-                    plan.conflicts.isNotEmpty() -> {
-                        host.runOnUiThread {
+                SteamCloudOperationMutex.runExclusive {
+                    if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
+                        return@runExclusive
+                    }
+                    val plan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial) {
+                        isSteamCloudCheckSessionCurrent(checkSessionId)
+                    }
+                    val checkedAtMs = System.currentTimeMillis()
+                    if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
+                        return@runExclusive
+                    }
+                    when {
+                        plan.conflicts.isNotEmpty() -> {
+                            host.runOnUiThread {
+                                if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
+                                    return@runOnUiThread
+                                }
+                                steamCloudCheckInFlight = false
+                                lastSteamCloudCheckAtMs = checkedAtMs
+                                publishSteamCloudIndicatorPlan(plan, checkedAtMs)
+                            }
+                        }
+
+                        plan.uploadCandidates.isEmpty() && plan.remoteOnlyChanges.isEmpty() -> {
+                            host.runOnUiThread {
+                                if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
+                                    return@runOnUiThread
+                                }
+                                steamCloudCheckInFlight = false
+                                lastSteamCloudCheckAtMs = checkedAtMs
+                                publishSteamCloudIndicatorPlan(plan, checkedAtMs)
+                            }
+                        }
+
+                        else -> {
                             if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
-                                return@runOnUiThread
+                                return@runExclusive
                             }
                             steamCloudCheckInFlight = false
-                            lastSteamCloudCheckAtMs = checkedAtMs
-                            publishSteamCloudIndicatorPlan(plan, checkedAtMs)
-                        }
-                    }
-
-                    plan.uploadCandidates.isEmpty() && plan.remoteOnlyChanges.isEmpty() -> {
-                        host.runOnUiThread {
-                            if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
-                                return@runOnUiThread
+                            steamCloudSyncInFlight = true
+                            host.runOnUiThread {
+                                lastSteamCloudCheckAtMs = checkedAtMs
+                                publishSteamCloudIndicatorSyncing(
+                                    direction = resolveAutomaticSyncDirection(plan),
+                                    progressMessage = host.getString(R.string.main_steam_cloud_progress_preparing_auto_sync),
+                                    progressPercent = 0,
+                                    currentPath = "",
+                                )
                             }
-                            steamCloudCheckInFlight = false
-                            lastSteamCloudCheckAtMs = checkedAtMs
-                            publishSteamCloudIndicatorPlan(plan, checkedAtMs)
-                        }
-                    }
-
-                    else -> {
-                        if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
-                            return@execute
-                        }
-                        steamCloudCheckInFlight = false
-                        steamCloudSyncInFlight = true
-                        host.runOnUiThread {
-                            lastSteamCloudCheckAtMs = checkedAtMs
-                            publishSteamCloudIndicatorSyncing(
-                                direction = resolveAutomaticSyncDirection(plan),
-                                progressMessage = host.getString(R.string.main_steam_cloud_progress_preparing_auto_sync),
-                                progressPercent = 0,
-                                currentPath = "",
+                            performAutomaticSteamCloudSync(
+                                host = host,
+                                authMaterial = authMaterial,
+                                plan = plan,
+                                userInitiated = force,
                             )
                         }
-                        performAutomaticSteamCloudSync(
-                            host = host,
-                            authMaterial = authMaterial,
-                            plan = plan,
-                            userInitiated = force,
-                        )
                     }
                 }
             } catch (error: Throwable) {
@@ -446,13 +454,15 @@ class MainScreenViewModel : ViewModel() {
         )
         steamCloudExecutor.execute {
             try {
-                val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
-                    host,
-                    authMaterial,
-                ) { progress ->
-                    host.runOnUiThread {
-                        if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
-                            applySteamCloudSyncProgress(host, progress)
+                val result = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPushCoordinator.overwriteRemoteWithLocal(
+                        host,
+                        authMaterial,
+                    ) { progress ->
+                        host.runOnUiThread {
+                            if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
+                                applySteamCloudSyncProgress(host, progress)
+                            }
                         }
                     }
                 }
@@ -519,13 +529,15 @@ class MainScreenViewModel : ViewModel() {
         )
         steamCloudExecutor.execute {
             try {
-                val result = SteamCloudPullCoordinator.pullAll(
-                    host,
-                    authMaterial,
-                ) { progress ->
-                    host.runOnUiThread {
-                        if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
-                            applySteamCloudSyncProgress(host, progress)
+                val result = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPullCoordinator.pullAll(
+                        host,
+                        authMaterial,
+                    ) { progress ->
+                        host.runOnUiThread {
+                            if (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.SYNCING) {
+                                applySteamCloudSyncProgress(host, progress)
+                            }
                         }
                     }
                 }

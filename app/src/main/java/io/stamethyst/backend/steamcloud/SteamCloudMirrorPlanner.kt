@@ -172,10 +172,14 @@ internal object SteamCloudMirrorPlanner {
         if (baseline == null || current == null) {
             return true
         }
+        val sha1Changed = baseline.sha1.isNotBlank() &&
+            current.sha1.isNotBlank() &&
+            !baseline.sha1.equals(current.sha1, ignoreCase = true)
         return baseline.remotePath != current.remotePath
             || baseline.rawSize != current.rawSize
             || baseline.timestamp != current.timestamp
             || baseline.persistState != current.persistState
+            || sha1Changed
     }
 
     private fun shouldSkipUploadBecauseRemoteMatches(

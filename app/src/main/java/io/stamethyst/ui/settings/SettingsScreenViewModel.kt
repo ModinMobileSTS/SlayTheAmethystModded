@@ -25,6 +25,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudLoginChallenge
 import io.stamethyst.backend.steamcloud.SteamCloudLoginChallengeKind
 import io.stamethyst.backend.steamcloud.SteamCloudManifestSnapshot
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
+import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
 import io.stamethyst.backend.steamcloud.SteamCloudPhase0ManifestProbe
 import io.stamethyst.backend.steamcloud.SteamCloudPhase0Store
 import io.stamethyst.backend.steamcloud.SteamCloudProfileService
@@ -1156,7 +1157,9 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_refresh))
         executor.execute {
             try {
-                val snapshot = SteamCloudPullCoordinator.refreshManifest(host, authMaterial)
+                val snapshot = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPullCoordinator.refreshManifest(host, authMaterial)
+                }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1214,7 +1217,9 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_plan_upload))
         executor.execute {
             try {
-                val plan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val plan = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                }
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
                     uiState = uiState.copy(steamCloudUploadPlanDialogSnapshot = plan)
@@ -1255,7 +1260,9 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_plan_upload))
         executor.execute {
             try {
-                val plan = SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val plan = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                }
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
                     when {
@@ -1315,7 +1322,9 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_push))
         executor.execute {
             try {
-                val result = SteamCloudPushCoordinator.pushLocalChanges(host, authMaterial, plan)
+                val result = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPushCoordinator.pushLocalChanges(host, authMaterial, plan)
+                }
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
                     dismissSteamCloudUploadPlanDialog()
@@ -1363,7 +1372,9 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_pull))
         executor.execute {
             try {
-                val result = SteamCloudPullCoordinator.pullAll(host, authMaterial)
+                val result = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudPullCoordinator.pullAll(host, authMaterial)
+                }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1504,30 +1515,33 @@ class SettingsScreenViewModel : ViewModel() {
         )
         executor.execute {
             try {
-                SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
-                val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                val remoteBackupLabel = backupRemoteSteamCloudProfile(host, authMaterial, timestamp)
-                SettingsSaveBackupService.backupSaveProfileToDownloads(
-                    host = host,
-                    sourceRoot = SteamCloudSaveProfileManager.profileRoot(
-                        host,
-                        SteamCloudSaveMode.INDEPENDENT
-                    ),
-                    backupFileName = "independent-saves-before-steam-cloud-overwrite-$timestamp.zip",
-                    relativeSubdirectory = STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR,
-                )
+                val (remoteBackupLabel, result) = SteamCloudOperationMutex.runExclusive {
+                    SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
+                    val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                    val remoteBackupLabel = backupRemoteSteamCloudProfile(host, authMaterial, timestamp)
+                    SettingsSaveBackupService.backupSaveProfileToDownloads(
+                        host = host,
+                        sourceRoot = SteamCloudSaveProfileManager.profileRoot(
+                            host,
+                            SteamCloudSaveMode.INDEPENDENT
+                        ),
+                        backupFileName = "independent-saves-before-steam-cloud-overwrite-$timestamp.zip",
+                        relativeSubdirectory = STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR,
+                    )
 
-                val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
-                    host = host,
-                    authMaterial = authMaterial,
-                    sourceRoot = SteamCloudSaveProfileManager.profileRoot(
-                        host,
-                        SteamCloudSaveMode.INDEPENDENT
-                    ),
-                )
-                SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
-                SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
-                LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
+                    val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
+                        host = host,
+                        authMaterial = authMaterial,
+                        sourceRoot = SteamCloudSaveProfileManager.profileRoot(
+                            host,
+                            SteamCloudSaveMode.INDEPENDENT
+                        ),
+                    )
+                    SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
+                    SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
+                    LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
+                    remoteBackupLabel to result
+                }
 
                 host.runOnUiThread {
                     showToast(

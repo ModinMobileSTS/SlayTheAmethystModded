@@ -913,7 +913,13 @@ internal object SteamCloudPullCoordinator {
             val results = ArrayList<SteamCloudClient.DownloadResult>(entries.size)
             entries.forEachIndexed { index, entry ->
                 val outputFile = File(stagingRoot, entry.localRelativePath)
-                val downloadResult = client.downloadFile(appId, entry.remotePath, outputFile)
+                val downloadResult = client.downloadFile(
+                    appId,
+                    entry.remotePath,
+                    outputFile,
+                    entry.rawSize,
+                    entry.sha1,
+                )
                 results += downloadResult
                 if (entry.timestamp > 0L) {
                     outputFile.setLastModified(entry.timestamp)
@@ -947,7 +953,13 @@ internal object SteamCloudPullCoordinator {
             entries.forEachIndexed { index, entry ->
                 futures += completionService.submit(Callable {
                     val outputFile = File(stagingRoot, entry.localRelativePath)
-                    val downloadResult = client.downloadFile(appId, entry.remotePath, outputFile)
+                    val downloadResult = client.downloadFile(
+                        appId,
+                        entry.remotePath,
+                        outputFile,
+                        entry.rawSize,
+                        entry.sha1,
+                    )
                     if (entry.timestamp > 0L) {
                         outputFile.setLastModified(entry.timestamp)
                     }

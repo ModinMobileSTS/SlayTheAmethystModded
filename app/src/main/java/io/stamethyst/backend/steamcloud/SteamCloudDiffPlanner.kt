@@ -54,15 +54,17 @@ internal object SteamCloudDiffPlanner {
             when {
                 !localChanged && !remoteChanged -> Unit
                 localChanged && remoteChanged -> {
-                    conflicts += SteamCloudConflict(
-                        localRelativePath = localRelativePath,
-                        rootKind = rootKind,
-                        kind = SteamCloudConflictKind.BOTH_CHANGED,
-                        currentLocal = currentLocal,
-                        currentRemote = currentRemote,
-                        baselineLocal = baselineLocal,
-                        baselineRemote = baselineRemote,
-                    )
+                    if (!currentLocalMatchesRemote(currentLocal, currentRemote)) {
+                        conflicts += SteamCloudConflict(
+                            localRelativePath = localRelativePath,
+                            rootKind = rootKind,
+                            kind = SteamCloudConflictKind.BOTH_CHANGED,
+                            currentLocal = currentLocal,
+                            currentRemote = currentRemote,
+                            baselineLocal = baselineLocal,
+                            baselineRemote = baselineRemote,
+                        )
+                    }
                 }
 
                 localChanged -> {
@@ -154,10 +156,27 @@ internal object SteamCloudDiffPlanner {
         if (baseline == null || current == null) {
             return true
         }
+        val sha1Changed = baseline.sha1.isNotBlank() &&
+            current.sha1.isNotBlank() &&
+            !baseline.sha1.equals(current.sha1, ignoreCase = true)
         return baseline.remotePath != current.remotePath
             || baseline.rawSize != current.rawSize
             || baseline.timestamp != current.timestamp
             || baseline.persistState != current.persistState
+            || sha1Changed
+    }
+
+    private fun currentLocalMatchesRemote(
+        local: SteamCloudLocalFileSnapshotEntry?,
+        remote: SteamCloudManifestEntry?,
+    ): Boolean {
+        if (local == null || remote == null) {
+            return false
+        }
+        if (local.sha1.isBlank() || remote.sha1.isBlank()) {
+            return false
+        }
+        return local.sha1.equals(remote.sha1, ignoreCase = true)
     }
 
     private fun resolveRootKind(

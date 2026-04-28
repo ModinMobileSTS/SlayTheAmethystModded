@@ -34,23 +34,41 @@ internal object SteamCloudManifestStore {
         if (!file.isFile) {
             return null
         }
-        return json.decodeFromString(file.readText(Charsets.UTF_8))
+        return readSnapshotFile(file)
     }
 
     @Throws(IOException::class)
     fun writeSnapshot(context: Context, snapshot: SteamCloudManifestSnapshot) {
         val file = manifestFile(context)
-        val parent = file.parentFile
-        if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
-            throw IOException("Failed to create Steam Cloud output directory: ${parent.absolutePath}")
-        }
-        file.writeText(json.encodeToString(snapshot), Charsets.UTF_8)
+        SteamCloudAtomicFileStore.writeText(file, json.encodeToString(snapshot), Charsets.UTF_8)
     }
 
     fun clear(context: Context) {
-        manifestFile(context).delete()
+        val manifest = manifestFile(context)
+        manifest.delete()
+        SteamCloudAtomicFileStore.backupFile(manifest).delete()
         pullSummaryFile(context).delete()
         pullDownloadDetailsFile(context).delete()
         pushSummaryFile(context).delete()
     }
+
+    private fun readSnapshotFile(file: File): SteamCloudManifestSnapshot? {
+        return try {
+            decodeSnapshot(file)
+        } catch (_: Throwable) {
+            val backupFile = SteamCloudAtomicFileStore.backupFile(file)
+            if (!backupFile.isFile) {
+                null
+            } else {
+                runCatching {
+                    val snapshot = decodeSnapshot(backupFile)
+                    SteamCloudAtomicFileStore.writeText(file, json.encodeToString(snapshot), Charsets.UTF_8)
+                    snapshot
+                }.getOrNull()
+            }
+        }
+    }
+
+    private fun decodeSnapshot(file: File): SteamCloudManifestSnapshot =
+        json.decodeFromString(file.readText(Charsets.UTF_8))
 }
