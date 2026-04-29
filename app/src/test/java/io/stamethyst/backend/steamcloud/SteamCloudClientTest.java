@@ -5,6 +5,9 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 
 public final class SteamCloudClientTest {
     @Test
@@ -32,6 +35,65 @@ public final class SteamCloudClientTest {
             "Failed to create output directory: " + directory.getAbsolutePath(),
             error.getMessage()
         );
+    }
+
+    @Test
+    public void validateDownloadedBytes_acceptsMatchingSizeAndSha1() throws Exception {
+        invokeValidateDownloadedBytes(
+            "abc".getBytes(StandardCharsets.UTF_8),
+            3L,
+            "A9993E364706816ABA3E25717850C26C9CD0D89D",
+            "%GameInstall%preferences/STSPlayer"
+        );
+    }
+
+    @Test
+    public void validateDownloadedBytes_throwsOnSizeMismatch() throws Exception {
+        InvocationTargetException error = Assert.assertThrows(
+            InvocationTargetException.class,
+            () -> invokeValidateDownloadedBytes(
+                "abc".getBytes(StandardCharsets.UTF_8),
+                4L,
+                "",
+                "%GameInstall%preferences/STSPlayer"
+            )
+        );
+
+        Assert.assertTrue(error.getCause() instanceof IOException);
+        Assert.assertTrue(error.getCause().getMessage().contains("expectedRawSize=4 actualRawSize=3"));
+    }
+
+    @Test
+    public void validateDownloadedBytes_throwsOnSha1Mismatch() throws Exception {
+        InvocationTargetException error = Assert.assertThrows(
+            InvocationTargetException.class,
+            () -> invokeValidateDownloadedBytes(
+                "abc".getBytes(StandardCharsets.UTF_8),
+                3L,
+                "0000000000000000000000000000000000000000",
+                "%GameInstall%preferences/STSPlayer"
+            )
+        );
+
+        Assert.assertTrue(error.getCause() instanceof IOException);
+        Assert.assertTrue(error.getCause().getMessage().contains("Steam Cloud download SHA-1 mismatch"));
+    }
+
+    private static void invokeValidateDownloadedBytes(
+        byte[] rawBytes,
+        long expectedRawSize,
+        String expectedSha1,
+        String remotePath
+    ) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "validateDownloadedBytes",
+            byte[].class,
+            long.class,
+            String.class,
+            String.class
+        );
+        method.setAccessible(true);
+        method.invoke(null, rawBytes, expectedRawSize, expectedSha1, remotePath);
     }
 
     private static final class SequencedDirectoryFile extends File {

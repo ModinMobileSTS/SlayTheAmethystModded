@@ -64,10 +64,8 @@
     <string name="compat_downfall_import_compat_desc">When enabled, importing downfall automatically patches merchant drawX to use a Settings.WIDTH/xScale-aware position, scales Hexaghost MyBody render offsets with Settings.scale, and reanchors the boss mechanic popup to the active boss so it renders to the right of the boss. This targets wide-screen drift and boss-obscuring UI on mobile. If disabled, newly imported Downfall jars are left untouched.</string>
     <string name="compat_vupshion_mod_compat_title">VUPShionMod import compatibility patch</string>
     <string name="compat_vupshion_mod_compat_desc">When enabled, importing vupshionmod automatically patches VUPShionMod/ui/WebButton to remove the Steam workshop subscription gate that can break main-menu background initialization. If disabled, newly imported VUPShionMod jars are left untouched.</string>
-    <string name="compat_jacketnoanoko_mod_compat_title">JacketNoAnoKo shader compatibility patch</string>
-    <string name="compat_jacketnoanoko_mod_compat_desc">When enabled, importing jacketnoanokomod automatically rewrites shader files under jacketnoanokomodResources/shaders/: desktop GLSL #version 120 headers are removed, and fragment shaders missing default precision get a GLES-compatible precision block injected. This targets the Android shader compile crash seen when the mod initializes SinsUI/orb effects. If disabled, newly imported JacketNoAnoKo jars are left untouched.</string>
-    <string name="compat_fragment_shader_precision_compat_title">Fragment shader default precision compatibility patch</string>
-    <string name="compat_fragment_shader_precision_compat_desc">When enabled, fragment shaders launched through the patched desktop jar automatically receive missing default precision declarations on GLES/ANGLE paths, reducing errors like \"no default precision defined for variable\". This is a runtime compatibility switch and takes effect on next launch.</string>
+    <string name="compat_fragment_shader_precision_compat_title">Shader source compatibility patch</string>
+    <string name="compat_fragment_shader_precision_compat_desc">When enabled, shaders launched through the patched desktop jar automatically strip desktop GLSL version headers and fragment shaders receive missing default precision declarations on GLES/ANGLE paths, reducing errors like \"shader version mismatch\" and \"no default precision defined for variable\". This is a runtime compatibility switch and takes effect on next launch.</string>
     <string name="compat_runtime_texture_compat_title">Runtime texture compatibility patch</string>
     <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you see missing materials/textures, consider enabling it. Pros: continues fixing black blocks not covered during import-time patching. Cons: increases startup CPU/GPU overhead from managed texture scanning, and runtime Linear/Clamp fallback may make some textures blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_main_menu_preview_reuse_title">Main-menu character preview reuse</string>
@@ -472,7 +470,7 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
 </string>
     <string name="mod_import_jacketnoanoko_message_item_detail">  Patched shader files: %1$d, removed desktop #version directives: %2$d, inserted fragment precision blocks: %3$d</string>
     <string name="mod_import_jacketnoanoko_message_rule">
-Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so desktop GLSL #version 120 headers are stripped, and fragment shaders missing default precision receive a GLES-compatible precision block.</string>
+Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so desktop GLSL #version 120 headers are stripped, and fragment shaders missing default precision receive a GLES-compatible precision block.</string>
     <string name="mod_import_confirm_dialog_action_import">Import</string>
     <string name="mod_import_preview_file_label">File: %1$s</string>
     <string name="mod_import_preview_name_label">Name: %1$s</string>
@@ -889,8 +887,15 @@ Patch rule: rewrite shader resources under jacketnoanokomodResources/shaders/ so
     <string name="main_steam_cloud_bar_summary_failed">Steam Cloud check failed. Retry to reconnect.</string>
     <string name="main_steam_cloud_action_recheck">Check again</string>
     <string name="main_steam_cloud_action_retry">Retry</string>
+    <string name="main_steam_cloud_action_retry_auto">Retry (%1$ds)</string>
+    <string name="main_steam_cloud_action_cancel_upload">Cancel upload</string>
+    <string name="main_steam_cloud_action_start_without_sync">Start game</string>
+    <string name="main_steam_cloud_launch_warning_title">Start without Steam Cloud sync?</string>
+    <string name="main_steam_cloud_launch_warning_message">Steam Cloud sync failed, so your latest cloud progress could not be verified. Starting now uses the current local saves and may leave cloud progress out of date until the next successful sync.</string>
+    <string name="main_steam_cloud_launch_warning_cancel">Go back</string>
     <string name="main_steam_cloud_action_cancel_check">Cancel check</string>
     <string name="main_steam_cloud_check_cancelled_summary">Check cancelled. Your current saves are not synced.</string>
+    <string name="main_steam_cloud_sync_cancelled_summary">Steam Cloud upload cancelled. Your current saves are not synced.</string>
     <string name="main_steam_cloud_conflict_choice_hint">Direct conflicts were found. Choose which side should win for the conflicting save files.</string>
     <string name="main_steam_cloud_conflict_card_local_title">Local progress</string>
     <string name="main_steam_cloud_conflict_card_cloud_title">Steam Cloud progress</string>

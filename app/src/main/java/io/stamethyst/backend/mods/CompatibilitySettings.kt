@@ -60,11 +60,6 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
-    fun setJacketNoAnoKoModCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setJacketNoAnoKoModCompatEnabled(context, enabled)
-    }
-
-    @JvmStatic
     fun isFragmentShaderPrecisionCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isFragmentShaderPrecisionCompatEnabled(context)
     }

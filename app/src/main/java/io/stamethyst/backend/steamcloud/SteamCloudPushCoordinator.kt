@@ -9,6 +9,7 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 
 internal object SteamCloudPushCoordinator {
@@ -171,6 +172,7 @@ internal object SteamCloudPushCoordinator {
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         plan: SteamCloudUploadPlan,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
+        shouldContinue: () -> Boolean = { true },
     ): SteamCloudPushResult {
         require(plan.conflicts.isEmpty()) {
             "Steam Cloud push was requested with unresolved conflicts."
@@ -207,6 +209,7 @@ internal object SteamCloudPushCoordinator {
                 )
             )
             client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+            ensureNotCancelled(shouldContinue)
             reportProgress(
                 progressCallback,
                 SteamCloudSyncProgress(
@@ -221,9 +224,11 @@ internal object SteamCloudPushCoordinator {
                 STEAM_CLOUD_APP_ID,
                 plan.uploadCandidates.map { it.remotePath },
             )
+            ensureNotCancelled(shouldContinue)
 
             var uploadedBytes = 0L
             plan.uploadCandidates.forEachIndexed { index, candidate ->
+                ensureNotCancelled(shouldContinue)
                 val sourceFile = File(
                     RuntimePaths.stsRoot(host),
                     candidate.localRelativePath.replace('/', File.separatorChar)
@@ -241,6 +246,7 @@ internal object SteamCloudPushCoordinator {
                         error,
                     )
                 }
+                ensureNotCancelled(shouldContinue)
                 uploadedBytes += uploadedFile.fileSize
                 reportProgress(
                     progressCallback,
@@ -264,6 +270,7 @@ internal object SteamCloudPushCoordinator {
                     progressPercent = 92,
                 )
             )
+            ensureNotCancelled(shouldContinue)
             client.completeUploadBatch(
                 STEAM_CLOUD_APP_ID,
                 requireNotNull(uploadBatch).batchId,
@@ -364,6 +371,7 @@ internal object SteamCloudPushCoordinator {
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         sourceRoot: File = RuntimePaths.stsRoot(host),
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
+        shouldContinue: () -> Boolean = { true },
     ): SteamCloudPushResult {
         val startedAtMs = System.currentTimeMillis()
         val client = SteamCloudClient(host)
@@ -394,6 +402,7 @@ internal object SteamCloudPushCoordinator {
                 )
             )
             client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+            ensureNotCancelled(shouldContinue)
             reportProgress(
                 progressCallback,
                 SteamCloudSyncProgress(
@@ -428,6 +437,7 @@ internal object SteamCloudPushCoordinator {
                     ),
                 )
             )
+            ensureNotCancelled(shouldContinue)
             reportProgress(
                 progressCallback,
                 SteamCloudSyncProgress(
@@ -444,11 +454,13 @@ internal object SteamCloudPushCoordinator {
                     STEAM_CLOUD_APP_ID,
                     preparedPlan.uploadCandidates.map { it.remotePath },
                 )
+                ensureNotCancelled(shouldContinue)
             }
 
             var uploadedBytes = 0L
             val totalUploads = preparedPlan.uploadCandidates.size
             preparedPlan.uploadCandidates.forEachIndexed { index, candidate ->
+                ensureNotCancelled(shouldContinue)
                 val sourceFile = File(
                     sourceRoot,
                     candidate.localRelativePath.replace('/', File.separatorChar)
@@ -466,6 +478,7 @@ internal object SteamCloudPushCoordinator {
                         error,
                     )
                 }
+                ensureNotCancelled(shouldContinue)
                 uploadedBytes += uploadedFile.fileSize
                 reportProgress(
                     progressCallback,
@@ -494,6 +507,7 @@ internal object SteamCloudPushCoordinator {
                     progressPercent = 92,
                 )
             )
+            ensureNotCancelled(shouldContinue)
             uploadBatch?.let { batch ->
                 client.completeUploadBatch(
                     STEAM_CLOUD_APP_ID,
@@ -504,11 +518,13 @@ internal object SteamCloudPushCoordinator {
             }
 
             if (preparedPlan.deleteRemotePaths.isNotEmpty()) {
+                ensureNotCancelled(shouldContinue)
                 uploadBatch = client.beginUploadBatch(
                     STEAM_CLOUD_APP_ID,
                     emptyList(),
                     preparedPlan.deleteRemotePaths,
                 )
+                ensureNotCancelled(shouldContinue)
                 client.completeUploadBatch(
                     STEAM_CLOUD_APP_ID,
                     requireNotNull(uploadBatch).batchId,
@@ -682,6 +698,12 @@ internal object SteamCloudPushCoordinator {
         progress: SteamCloudSyncProgress,
     ) {
         progressCallback?.invoke(progress)
+    }
+
+    private fun ensureNotCancelled(shouldContinue: () -> Boolean) {
+        if (!shouldContinue()) {
+            throw CancellationException("Steam Cloud sync cancelled by user.")
+        }
     }
 
     private fun SteamCloudUploadPlan.isAlreadySynced(): Boolean =

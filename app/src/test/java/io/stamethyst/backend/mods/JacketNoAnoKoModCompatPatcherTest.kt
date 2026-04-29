@@ -93,6 +93,49 @@ class JacketNoAnoKoModCompatPatcherTest {
     }
 
     @Test
+    fun patchInPlace_patchesShaderEntriesOutsideCanonicalResourceRoot() {
+        val tempDir = Files.createTempDirectory("jacketnoanoko-patcher-nested")
+        val jarFile = tempDir.resolve("JacketNoAnoKoMod.jar").toFile()
+        createJar(
+            jarFile,
+            mapOf(
+                "nested/resources/shaders/ElectrocardiogramLoewe.frag" to (
+                    "#version 120\n" +
+                        "void main() {\n" +
+                        "    gl_FragColor = vec4(1.0);\n" +
+                        "}\n"
+                    ),
+                "nested/resources/shaders/common.vert" to (
+                    "#version 120\n" +
+                        "attribute vec4 a_position;\n" +
+                        "void main() {\n" +
+                        "    gl_Position = a_position;\n" +
+                        "}\n"
+                    )
+            )
+        )
+
+        val patchResult = JacketNoAnoKoModCompatPatcher.patchInPlace(jarFile)
+        assertEquals(2, patchResult.patchedShaderEntries)
+        assertEquals(2, patchResult.removedDesktopVersionDirectives)
+        assertEquals(1, patchResult.insertedFragmentPrecisionBlocks)
+
+        val patchedFragment = readJarText(
+            jarFile,
+            "nested/resources/shaders/ElectrocardiogramLoewe.frag"
+        )
+        assertFalse(patchedFragment.contains("#version 120"))
+        assertTrue(patchedFragment.contains("precision highp float;"))
+
+        val patchedVertex = readJarText(
+            jarFile,
+            "nested/resources/shaders/common.vert"
+        )
+        assertFalse(patchedVertex.contains("#version 120"))
+        assertFalse(patchedVertex.contains("precision highp float;"))
+    }
+
+    @Test
     fun patchInPlace_returnsZeroesWhenTargetShadersAreMissing() {
         val tempDir = Files.createTempDirectory("jacketnoanoko-patcher-empty")
         val jarFile = tempDir.resolve("OtherMod.jar").toFile()

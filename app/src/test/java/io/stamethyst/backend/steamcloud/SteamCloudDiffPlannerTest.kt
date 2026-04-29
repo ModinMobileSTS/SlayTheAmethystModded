@@ -243,6 +243,96 @@ class SteamCloudDiffPlannerTest {
     }
 
     @Test
+    fun buildUploadPlan_treatsMatchingCurrentSha1AsAlreadySynced() {
+        val sha1 = "cd2bada30bd171d5b4b24783ff5a45ff46367eb6"
+        val baseline = SteamCloudSyncBaseline(
+            syncedAtMs = 1L,
+            localEntries = listOf(
+                localEntry(localRelativePath = "preferences/1_STSDataVagabond", sha256 = "baseline-local")
+            ),
+            remoteEntries = listOf(
+                remoteEntry(
+                    remotePath = "%GameInstall%preferences/1_STSDataVagabond",
+                    localRelativePath = "preferences/1_STSDataVagabond",
+                    rawSize = 120L,
+                    timestamp = 100L,
+                    sha1 = "baseline-remote",
+                )
+            )
+        )
+
+        val plan = SteamCloudDiffPlanner.buildUploadPlan(
+            plannedAtMs = 2L,
+            currentLocalEntries = listOf(
+                localEntry(
+                    localRelativePath = "preferences/1_STSDataVagabond",
+                    fileSize = 154L,
+                    sha256 = "updated-local",
+                    sha1 = sha1,
+                )
+            ),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%preferences/1_STSDataVagabond",
+                    localRelativePath = "preferences/1_STSDataVagabond",
+                    rawSize = 154L,
+                    timestamp = 200L,
+                    sha1 = sha1.uppercase(),
+                )
+            ),
+            baseline = baseline,
+        )
+
+        assertEquals(0, plan.uploadCandidates.size)
+        assertEquals(0, plan.conflicts.size)
+        assertEquals(0, plan.remoteOnlyChanges.size)
+    }
+
+    @Test
+    fun buildUploadPlan_detectsRemoteSha1ChangeWhenMetadataMatches() {
+        val baseline = SteamCloudSyncBaseline(
+            syncedAtMs = 1L,
+            localEntries = listOf(
+                localEntry(localRelativePath = "preferences/STSPlayer", sha256 = "same-local")
+            ),
+            remoteEntries = listOf(
+                remoteEntry(
+                    remotePath = "%GameInstall%preferences/STSPlayer",
+                    localRelativePath = "preferences/STSPlayer",
+                    rawSize = 100L,
+                    timestamp = 100L,
+                    sha1 = "old-remote-sha1",
+                )
+            )
+        )
+
+        val plan = SteamCloudDiffPlanner.buildUploadPlan(
+            plannedAtMs = 2L,
+            currentLocalEntries = listOf(
+                localEntry(localRelativePath = "preferences/STSPlayer", sha256 = "same-local")
+            ),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%preferences/STSPlayer",
+                    localRelativePath = "preferences/STSPlayer",
+                    rawSize = 100L,
+                    timestamp = 100L,
+                    sha1 = "new-remote-sha1",
+                )
+            ),
+            baseline = baseline,
+        )
+
+        assertEquals(0, plan.uploadCandidates.size)
+        assertEquals(0, plan.conflicts.size)
+        assertEquals(1, plan.remoteOnlyChanges.size)
+        assertEquals(
+            SteamCloudRemoteOnlyChangeKind.MODIFIED_REMOTE_FILE,
+            plan.remoteOnlyChanges.single().kind
+        )
+    }
+
+    @Test
     fun buildUploadPlan_ignoresLocalDeletesInPhase2() {
         val baseline = SteamCloudSyncBaseline(
             syncedAtMs = 1L,
@@ -295,6 +385,7 @@ class SteamCloudDiffPlannerTest {
         fileSize: Long = 100L,
         lastModifiedMs: Long = 1L,
         sha256: String,
+        sha1: String = "",
     ): SteamCloudLocalFileSnapshotEntry {
         return SteamCloudLocalFileSnapshotEntry(
             localRelativePath = localRelativePath,
@@ -302,6 +393,7 @@ class SteamCloudDiffPlannerTest {
             fileSize = fileSize,
             lastModifiedMs = lastModifiedMs,
             sha256 = sha256,
+            sha1 = sha1,
         )
     }
 
@@ -311,6 +403,7 @@ class SteamCloudDiffPlannerTest {
         rootKind: SteamCloudRootKind = SteamCloudRootKind.PREFERENCES,
         rawSize: Long,
         timestamp: Long,
+        sha1: String = "",
     ): SteamCloudManifestEntry {
         return SteamCloudManifestEntry(
             remotePath = remotePath,
@@ -320,6 +413,7 @@ class SteamCloudDiffPlannerTest {
             timestamp = timestamp,
             machineName = "",
             persistState = "Persisted",
+            sha1 = sha1,
         )
     }
 }

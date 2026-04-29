@@ -25,7 +25,8 @@ class StsShaderPrecisionCompatPatcherTest {
 
         val patchedBytes = StsShaderPrecisionCompatPatcher.patchShaderProgramClass(originalBytes)
         assertTrue(StsShaderPrecisionCompatPatcher.isPatchedShaderProgramClass(patchedBytes))
-        assertTrue(hasCompatCall(patchedBytes))
+        assertTrue(hasCompatCall(patchedBytes, "normalizeVertexShader"))
+        assertTrue(hasCompatCall(patchedBytes, "normalizeFragmentShader"))
 
         val patchedAgain = StsShaderPrecisionCompatPatcher.patchShaderProgramClass(patchedBytes)
         assertArrayEquals(patchedBytes, patchedAgain)
@@ -47,7 +48,7 @@ class StsShaderPrecisionCompatPatcherTest {
         }
     }
 
-    private fun hasCompatCall(classBytes: ByteArray): Boolean {
+    private fun hasCompatCall(classBytes: ByteArray, methodName: String): Boolean {
         val classNode = ClassNode()
         ClassReader(classBytes).accept(classNode, ClassReader.SKIP_FRAMES)
         val constructor = requireNotNull(
@@ -60,7 +61,7 @@ class StsShaderPrecisionCompatPatcherTest {
             val call = current as? MethodInsnNode
             if (call != null &&
                 call.owner == "io/stamethyst/gdx/FragmentShaderCompat" &&
-                call.name == "ensureDefaultPrecision" &&
+                call.name == methodName &&
                 call.desc == "(Ljava/lang/String;)Ljava/lang/String;"
             ) {
                 return true

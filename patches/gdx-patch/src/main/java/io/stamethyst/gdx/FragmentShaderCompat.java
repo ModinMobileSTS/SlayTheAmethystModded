@@ -12,11 +12,41 @@ public final class FragmentShaderCompat {
     private FragmentShaderCompat() {
     }
 
+    public static String normalizeVertexShader(String source) {
+        if (source == null || source.isEmpty()) {
+            return source;
+        }
+        if (!isCompatEnabled()) {
+            return source;
+        }
+
+        return stripLeadingDesktopVersionDirective(source, "vertex");
+    }
+
+    public static String normalizeFragmentShader(String source) {
+        if (source == null || source.isEmpty()) {
+            return source;
+        }
+        if (!isCompatEnabled()) {
+            return source;
+        }
+
+        return ensureDefaultPrecisionInternal(stripLeadingDesktopVersionDirective(source, "fragment"));
+    }
+
     public static String ensureDefaultPrecision(String source) {
         if (source == null || source.isEmpty()) {
             return source;
         }
         if (!isCompatEnabled()) {
+            return source;
+        }
+
+        return ensureDefaultPrecisionInternal(source);
+    }
+
+    private static String ensureDefaultPrecisionInternal(String source) {
+        if (source == null || source.isEmpty()) {
             return source;
         }
 
@@ -44,6 +74,51 @@ public final class FragmentShaderCompat {
         );
         patched.append(source, insertIndex, source.length());
         return patched.toString();
+    }
+
+    private static String stripLeadingDesktopVersionDirective(String source, String shaderType) {
+        int versionIndex = findLeadingVersionDirectiveIndex(source);
+        if (versionIndex < 0) {
+            return source;
+        }
+
+        int lineEnd = skipLine(source, versionIndex);
+        String directiveLine = source.substring(versionIndex, lineEnd).trim();
+        if (!isDesktopVersionDirective(directiveLine)) {
+            return source;
+        }
+
+        System.out.println(
+            "[gdx-patch] Shader source compat stripped desktop GLSL version header from " +
+                shaderType + " shader"
+        );
+        return source.substring(0, versionIndex) + source.substring(lineEnd);
+    }
+
+    private static int findLeadingVersionDirectiveIndex(String source) {
+        int cursor = 0;
+        if (source.charAt(0) == '\ufeff') {
+            cursor = 1;
+        }
+        int candidate = skipTrivia(source, cursor);
+        return startsWithDirective(source, candidate, "#version") ? candidate : -1;
+    }
+
+    private static boolean isDesktopVersionDirective(String line) {
+        String[] tokens = line.trim().split("\\s+");
+        if (tokens.length < 2 || !"#version".equalsIgnoreCase(tokens[0])) {
+            return false;
+        }
+        for (String token : tokens) {
+            if ("es".equalsIgnoreCase(token)) {
+                return false;
+            }
+        }
+        try {
+            return Integer.parseInt(tokens[1]) >= 110;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     private static void appendPrecisionBlock(

@@ -37,6 +37,9 @@ Enlarges the burning-elite emerald flame marker when the launcher's Larger UI mo
 11. `CharacterOptionRelicKeywordCompatPatches`
 Reapplies BaseMod's starter-relic multiword-keyword normalization when mobile layout handling is active inside `CharacterOption.renderRelics`. This addresses the symptom where character-select relic descriptions leak raw keyword prefixes such as `spearandshield:` after the launcher's Larger UI mode reroutes the screen through the mobile single-relic branch. Type: compatibility workaround implemented by `CharacterOptionRelicKeywordCompatPatches`.
 
+12. `JacketNoAnoKoElectrocardiogramCompatPatches`
+Rewrites JacketNoAnoKo's `ElectrocardiogramLoeweEffect` shader sources to GLES 100 at runtime on Android-compatible runtimes, installs the compiled shader back into the original effect, and lets the original render method draw the visual effect. If the rewritten shader still fails, it falls back to preserving the effect timing and sound trigger while skipping only the render, so the `Inspiration`/tuning card can continue resolving its selected gameplay effect without crashing. This addresses the repeated `Shader compilation failed: Error: shader version mismatch` crash at `ElectrocardiogramLoeweEffect.update(ElectrocardiogramLoeweEffect.java:64)`. Type: crash fix implemented by `JacketNoAnoKoElectrocardiogramCompatPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

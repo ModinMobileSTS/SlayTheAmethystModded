@@ -23,8 +23,8 @@ internal data class JacketNoAnoKoModCompatPatchResult(
 
 internal object JacketNoAnoKoModCompatPatcher {
     private const val SHADER_ROOT = "jacketnoanokomodresources/shaders/"
-    private val SHADER_EXTENSIONS = setOf(".fs", ".vs")
-    private val FRAGMENT_SHADER_EXTENSIONS = setOf(".fs")
+    private val SHADER_EXTENSIONS = setOf(".fs", ".vs", ".frag", ".vert")
+    private val FRAGMENT_SHADER_EXTENSIONS = setOf(".fs", ".frag")
     private val FLOAT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;")
     private val INT_PRECISION_PATTERN =
@@ -80,12 +80,13 @@ internal object JacketNoAnoKoModCompatPatcher {
 
     private fun isTargetShaderEntry(entryName: String): Boolean {
         val normalized = entryName.trim().lowercase(Locale.ROOT)
-        if (!normalized.startsWith(SHADER_ROOT)) {
-            return false
-        }
-        return SHADER_EXTENSIONS.any { extension ->
+        val isShaderFile = SHADER_EXTENSIONS.any { extension ->
             normalized.endsWith(extension)
         }
+        if (!isShaderFile) {
+            return false
+        }
+        return normalized.startsWith(SHADER_ROOT) || normalized.contains("/shaders/")
     }
 
     private fun isFragmentShaderEntry(entryName: String): Boolean {

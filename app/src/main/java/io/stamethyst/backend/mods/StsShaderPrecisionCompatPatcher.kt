@@ -17,10 +17,12 @@ internal object StsShaderPrecisionCompatPatcher {
         "com/badlogic/gdx/graphics/glutils/ShaderProgram"
     private const val STRING_SHADER_CONSTRUCTOR_DESC =
         "(Ljava/lang/String;Ljava/lang/String;)V"
+    private const val VERTEX_SHADER_FIELD_NAME = "vertexShaderSource"
     private const val FRAGMENT_SHADER_FIELD_NAME = "fragmentShaderSource"
     private const val STRING_DESC = "Ljava/lang/String;"
     private const val HELPER_INTERNAL_NAME = "io/stamethyst/gdx/FragmentShaderCompat"
-    private const val HELPER_METHOD_NAME = "ensureDefaultPrecision"
+    private const val NORMALIZE_VERTEX_METHOD_NAME = "normalizeVertexShader"
+    private const val NORMALIZE_FRAGMENT_METHOD_NAME = "normalizeFragmentShader"
     private const val HELPER_METHOD_DESC = "(Ljava/lang/String;)Ljava/lang/String;"
 
     fun patchShaderProgramClass(classBytes: ByteArray): ByteArray {
@@ -36,23 +38,24 @@ internal object StsShaderPrecisionCompatPatcher {
             return classBytes
         }
 
-        val insertBefore = findFragmentShaderStoreStart(shaderCtor)
-            ?: throw IOException("Unsupported desktop-1.0.jar: fragmentShaderSource assignment not found")
+        val vertexInsertBefore = findStringFieldStoreStart(
+            method = shaderCtor,
+            fieldName = VERTEX_SHADER_FIELD_NAME,
+            sourceVar = 1
+        ) ?: throw IOException("Unsupported desktop-1.0.jar: vertexShaderSource assignment not found")
+        val fragmentInsertBefore = findStringFieldStoreStart(
+            method = shaderCtor,
+            fieldName = FRAGMENT_SHADER_FIELD_NAME,
+            sourceVar = 2
+        ) ?: throw IOException("Unsupported desktop-1.0.jar: fragmentShaderSource assignment not found")
+
         shaderCtor.instructions.insertBefore(
-            insertBefore,
-            InsnList().apply {
-                add(VarInsnNode(Opcodes.ALOAD, 2))
-                add(
-                    MethodInsnNode(
-                        Opcodes.INVOKESTATIC,
-                        HELPER_INTERNAL_NAME,
-                        HELPER_METHOD_NAME,
-                        HELPER_METHOD_DESC,
-                        false
-                    )
-                )
-                add(VarInsnNode(Opcodes.ASTORE, 2))
-            }
+            vertexInsertBefore,
+            buildNormalizeCall(sourceVar = 1, methodName = NORMALIZE_VERTEX_METHOD_NAME)
+        )
+        shaderCtor.instructions.insertBefore(
+            fragmentInsertBefore,
+            buildNormalizeCall(sourceVar = 2, methodName = NORMALIZE_FRAGMENT_METHOD_NAME)
         )
 
         val classWriter = ClassWriter(0)
@@ -72,13 +75,18 @@ internal object StsShaderPrecisionCompatPatcher {
     }
 
     private fun isPatchedConstructor(method: MethodNode): Boolean {
+        return hasNormalizeCall(method, NORMALIZE_VERTEX_METHOD_NAME) &&
+            hasNormalizeCall(method, NORMALIZE_FRAGMENT_METHOD_NAME)
+    }
+
+    private fun hasNormalizeCall(method: MethodNode, methodName: String): Boolean {
         var current = method.instructions.first
         while (current != null) {
             val call = current as? MethodInsnNode
             if (call != null &&
                 call.opcode == Opcodes.INVOKESTATIC &&
                 call.owner == HELPER_INTERNAL_NAME &&
-                call.name == HELPER_METHOD_NAME &&
+                call.name == methodName &&
                 call.desc == HELPER_METHOD_DESC
             ) {
                 return true
@@ -88,20 +96,40 @@ internal object StsShaderPrecisionCompatPatcher {
         return false
     }
 
-    private fun findFragmentShaderStoreStart(method: MethodNode): VarInsnNode? {
+    private fun buildNormalizeCall(sourceVar: Int, methodName: String): InsnList {
+        return InsnList().apply {
+            add(VarInsnNode(Opcodes.ALOAD, sourceVar))
+            add(
+                MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    HELPER_INTERNAL_NAME,
+                    methodName,
+                    HELPER_METHOD_DESC,
+                    false
+                )
+            )
+            add(VarInsnNode(Opcodes.ASTORE, sourceVar))
+        }
+    }
+
+    private fun findStringFieldStoreStart(
+        method: MethodNode,
+        fieldName: String,
+        sourceVar: Int
+    ): VarInsnNode? {
         var current = method.instructions.first
         while (current != null) {
             val putField = current as? FieldInsnNode
             if (putField != null &&
                 putField.opcode == Opcodes.PUTFIELD &&
                 putField.owner == SHADER_PROGRAM_INTERNAL_NAME &&
-                putField.name == FRAGMENT_SHADER_FIELD_NAME &&
+                putField.name == fieldName &&
                 putField.desc == STRING_DESC
             ) {
                 val stringLoad = previousMeaningful(putField.previous) as? VarInsnNode ?: return null
                 val thisLoad = previousMeaningful(stringLoad.previous) as? VarInsnNode ?: return null
                 if (stringLoad.opcode == Opcodes.ALOAD &&
-                    stringLoad.`var` == 2 &&
+                    stringLoad.`var` == sourceVar &&
                     thisLoad.opcode == Opcodes.ALOAD &&
                     thisLoad.`var` == 0
                 ) {

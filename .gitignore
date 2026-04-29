@@ -108,3 +108,4 @@ patches/gdx-patch/bin/main/com/badlogic/gdx/backends/lwjgl/*.class
 /mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/CompatRuntimeState$GuardedReflectionAccess.class
 /mods/amethyst-runtime-compat/bin/main/io/stamethyst/compatmod/CompatRuntimeState.class
 /mods/amethyst-runtime-compat/bin/main/ModTheSpire.json
+logs/*

@@ -48,8 +48,10 @@ internal data class MainScreenActions(
     val onCloseApp: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
+    val onLaunchAfterSteamCloudError: () -> Unit = {},
     val onRefreshSteamCloudStatus: () -> Unit = {},
     val onCancelSteamCloudCheck: () -> Unit = {},
+    val onCancelSteamCloudSync: () -> Unit = {},
     val onUseLocalSteamCloudProgress: () -> Unit = {},
     val onUseCloudSteamCloudProgress: () -> Unit = {},
 )
@@ -114,11 +116,15 @@ internal fun rememberMainScreenActions(
                     )
                 },
                 onLaunch = { viewModel.onLaunchRequested(activity) },
+                onLaunchAfterSteamCloudError = { viewModel.onLaunchAfterSteamCloudError(activity) },
                 onRefreshSteamCloudStatus = {
                     viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
                 },
                 onCancelSteamCloudCheck = {
                     viewModel.cancelSteamCloudCheck(activity)
+                },
+                onCancelSteamCloudSync = {
+                    viewModel.cancelSteamCloudSync(activity)
                 },
                 onUseLocalSteamCloudProgress = {
                     viewModel.onUseLocalSteamCloudProgress(activity)

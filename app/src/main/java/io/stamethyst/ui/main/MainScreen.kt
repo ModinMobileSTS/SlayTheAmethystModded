@@ -85,6 +85,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
 import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.ui.LauncherTransientNoticeBus
@@ -102,6 +103,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -319,6 +321,7 @@ private fun LauncherMainScreenContent(
 ) {
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showSteamCloudBottomSheet by remember { mutableStateOf(false) }
+    var showSteamCloudLaunchWarning by remember { mutableStateOf(false) }
     val showInitializing = uiState.initializing
     val hazeState = rememberHazeState()
     val crashRecovery = uiState.crashRecovery
@@ -330,6 +333,15 @@ private fun LauncherMainScreenContent(
     LaunchedEffect(steamCloudIndicator.visible) {
         if (!steamCloudIndicator.visible) {
             showSteamCloudBottomSheet = false
+            showSteamCloudLaunchWarning = false
+        }
+    }
+
+    LaunchedEffect(steamCloudIndicator.state, steamCloudIndicator.errorSummary) {
+        if (steamCloudIndicator.visible &&
+            steamCloudIndicator.state == MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED
+        ) {
+            showSteamCloudBottomSheet = true
         }
     }
 
@@ -478,7 +490,10 @@ private fun LauncherMainScreenContent(
 
     if (steamCloudBottomSheetVisible) {
         ModalBottomSheet(
-            onDismissRequest = { showSteamCloudBottomSheet = false },
+            onDismissRequest = {
+                showSteamCloudBottomSheet = false
+                showSteamCloudLaunchWarning = false
+            },
             sheetState = steamCloudBottomSheetState
         ) {
             SteamCloudBottomSheetContent(
@@ -490,11 +505,38 @@ private fun LauncherMainScreenContent(
                         showSteamCloudBottomSheet = false
                     }
                 },
+                onLaunchAfterError = { showSteamCloudLaunchWarning = true },
                 onCancelCheck = actions.onCancelSteamCloudCheck,
+                onCancelSync = actions.onCancelSteamCloudSync,
                 onUseLocal = actions.onUseLocalSteamCloudProgress,
                 onUseCloud = actions.onUseCloudSteamCloudProgress,
+                autoRetryError = !showSteamCloudLaunchWarning,
             )
         }
+    }
+
+    if (showSteamCloudLaunchWarning) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showSteamCloudLaunchWarning = false },
+            title = { Text(text = stringResource(R.string.main_steam_cloud_launch_warning_title)) },
+            text = { Text(text = stringResource(R.string.main_steam_cloud_launch_warning_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSteamCloudLaunchWarning = false
+                        showSteamCloudBottomSheet = false
+                        actions.onLaunchAfterSteamCloudError()
+                    }
+                ) {
+                    Text(text = stringResource(R.string.main_steam_cloud_action_start_without_sync))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSteamCloudLaunchWarning = false }) {
+                    Text(text = stringResource(R.string.main_steam_cloud_launch_warning_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -1037,13 +1079,17 @@ private fun SteamCloudBottomSheetContent(
     indicator: MainScreenViewModel.SteamCloudIndicatorUi,
     onRefresh: () -> Unit,
     onLaunch: () -> Unit,
+    onLaunchAfterError: () -> Unit,
     onCancelCheck: () -> Unit,
+    onCancelSync: () -> Unit,
     onUseLocal: () -> Unit,
     onUseCloud: () -> Unit,
+    autoRetryError: Boolean,
 ) {
     val tint = steamCloudIndicatorTint(indicator.state)
     val title = steamCloudActionBarTitle(indicator.state)
     val summary = steamCloudActionBarSummary(indicator)
+    var retryCountdownSeconds by remember(indicator.state, indicator.errorSummary) { mutableStateOf(5) }
     val progressFraction = indicator.progressPercent
         ?.coerceIn(0, 100)
         ?.div(100f)
@@ -1051,6 +1097,18 @@ private fun SteamCloudBottomSheetContent(
         indicator.plan?.takeIf { it.conflicts.isNotEmpty() }?.let {
             buildSteamCloudConflictCardSummaries(it)
         }
+    }
+
+    LaunchedEffect(indicator.state, indicator.errorSummary, autoRetryError) {
+        if (indicator.state != MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED || !autoRetryError) {
+            return@LaunchedEffect
+        }
+        retryCountdownSeconds = 5
+        repeat(5) {
+            delay(1000)
+            retryCountdownSeconds = (retryCountdownSeconds - 1).coerceAtLeast(0)
+        }
+        onRefresh()
     }
 
     Column(
@@ -1124,24 +1182,41 @@ private fun SteamCloudBottomSheetContent(
         }
 
         when (indicator.state) {
-            MainScreenViewModel.SteamCloudIndicatorState.HIDDEN,
-            MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> {
+            MainScreenViewModel.SteamCloudIndicatorState.HIDDEN -> {
                 Button(
                     onClick = onRefresh,
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = stringResource(
-                            if (indicator.state ==
-                                MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED
-                            ) {
-                                R.string.main_steam_cloud_action_retry
-                            } else {
-                                R.string.main_steam_cloud_action_recheck
-                            }
+                    Text(text = stringResource(R.string.main_steam_cloud_action_recheck))
+                }
+            }
+
+            MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onLaunchAfterError,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = stringResource(R.string.main_steam_cloud_action_start_without_sync))
+                    }
+                    Button(
+                        onClick = onRefresh,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.main_steam_cloud_action_retry_auto,
+                                retryCountdownSeconds,
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -1202,7 +1277,17 @@ private fun SteamCloudBottomSheetContent(
                 }
             }
 
-            MainScreenViewModel.SteamCloudIndicatorState.SYNCING -> Unit
+            MainScreenViewModel.SteamCloudIndicatorState.SYNCING -> {
+                if (indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD) {
+                    OutlinedButton(
+                        onClick = onCancelSync,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = stringResource(R.string.main_steam_cloud_action_cancel_upload))
+                    }
+                }
+            }
 
             MainScreenViewModel.SteamCloudIndicatorState.CHECKING -> {
                 OutlinedButton(
