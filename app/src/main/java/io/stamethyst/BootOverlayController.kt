@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
@@ -186,10 +187,12 @@ class BootOverlayController(
             return
         }
         bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        val progressColor = LauncherConfig.readThemeColor(activity).seedColor
         bootOverlay?.setContent {
             BootOverlayPanel(
                 uiState = overlayUiState,
                 manualDismissBootOverlay = manualDismissBootOverlay,
+                progressColor = progressColor,
                 onDismissClick = {
                     if (!manualDismissBootOverlay || bootOverlayDismissed) {
                         return@BootOverlayPanel
@@ -611,6 +614,7 @@ private data class BootOverlayUiState(
 private fun BootOverlayPanel(
     uiState: BootOverlayUiState,
     manualDismissBootOverlay: Boolean,
+    progressColor: Color,
     onDismissClick: () -> Unit
 ) {
     val targetProgress = (uiState.progress / 100f).coerceIn(0f, 1f)
@@ -655,7 +659,9 @@ private fun BootOverlayPanel(
                 progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 24.dp)
+                    .padding(top = 24.dp),
+                color = progressColor,
+                trackColor = progressColor.copy(alpha = 0.28f)
             )
             Text(
                 text = uiState.statusText,

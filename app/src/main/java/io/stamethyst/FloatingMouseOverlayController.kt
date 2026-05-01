@@ -189,7 +189,10 @@ internal class FloatingMouseOverlayController(
                 }
 
                 override fun onSystemKeyboardRequested() {
-                    imeController?.requestShow(reason = "builtin_keyboard_system_key")
+                    imeController?.requestShow(
+                        reason = "builtin_keyboard_system_key",
+                        keepVisible = false
+                    )
                 }
 
                 override fun onVisibilityChanged(visible: Boolean) {

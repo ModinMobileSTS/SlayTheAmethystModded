@@ -121,12 +121,15 @@ internal class FloatingMouseImeController(
         sessionState = SoftKeyboardSessionMachine.State()
     }
 
-    fun requestShow(reason: String) {
-        keepKeyboardVisibleRequested = true
+    fun requestShow(
+        reason: String,
+        keepVisible: Boolean = true
+    ) {
+        keepKeyboardVisibleRequested = keepVisible
         lastExplicitShowRequestAtMs = SystemClock.uptimeMillis()
         cancelPendingUnexpectedHideRecovery()
         debugLogger(
-            "requestShow reason=$reason " +
+            "requestShow reason=$reason keepVisible=$keepVisible " +
                 snapshotState()
         )
         applyTransition(

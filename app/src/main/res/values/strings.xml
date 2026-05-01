@@ -129,7 +129,7 @@
     <string name="touch_mouse_builtin_keyboard_space">Space</string>
     <string name="touch_mouse_builtin_keyboard_backspace">Bksp</string>
     <string name="touch_mouse_builtin_keyboard_enter">Enter</string>
-    <string name="touch_mouse_builtin_keyboard_system">IME</string>
+    <string name="touch_mouse_builtin_keyboard_system">Keyboard</string>
     <string name="touch_mouse_builtin_keyboard_hide">Hide</string>
     <string name="touch_mouse_floating_menu_lock">Lock</string>
     <string name="touch_mouse_floating_menu_unlock">Unlock</string>

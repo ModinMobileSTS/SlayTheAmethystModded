@@ -129,7 +129,7 @@
     <string name="touch_mouse_builtin_keyboard_space">空格</string>
     <string name="touch_mouse_builtin_keyboard_backspace">退格</string>
     <string name="touch_mouse_builtin_keyboard_enter">回车</string>
-    <string name="touch_mouse_builtin_keyboard_system">系统</string>
+    <string name="touch_mouse_builtin_keyboard_system">键盘</string>
     <string name="touch_mouse_builtin_keyboard_hide">收起</string>
     <string name="touch_mouse_floating_menu_lock">锁定</string>
     <string name="touch_mouse_floating_menu_unlock">解锁</string>

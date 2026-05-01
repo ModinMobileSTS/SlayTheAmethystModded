@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -278,7 +279,7 @@ internal class InGameSoftKeyboardOverlayController(
         }
     }
 
-    private fun createKeyButton(spec: KeySpec): TextView {
+    private fun createKeyButton(spec: KeySpec): View {
         val isActive = when (spec) {
             is KeySpec.ActionKey -> {
                 spec.action == Action.SHIFT && shiftEnabled ||
@@ -286,6 +287,19 @@ internal class InGameSoftKeyboardOverlayController(
             }
 
             else -> false
+        }
+        if (spec is KeySpec.ActionKey && spec.action == Action.SYSTEM_KEYBOARD) {
+            return ImageView(activity).apply {
+                background = createKeyBackground(accent = true, active = false)
+                contentDescription = resolveLabel(spec)
+                scaleType = ImageView.ScaleType.CENTER
+                setImageResource(R.drawable.ic_keyboard)
+                setColorFilter(0xFFFFFFFF.toInt())
+                setOnClickListener {
+                    LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
+                    handleKeyPress(spec)
+                }
+            }
         }
         return TextView(activity).apply {
             gravity = Gravity.CENTER
