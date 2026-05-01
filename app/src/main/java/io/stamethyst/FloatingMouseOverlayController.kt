@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.haptics.LauncherHaptics
@@ -29,8 +30,7 @@ internal class FloatingMouseOverlayController(
     private val isNativeInputDispatchReady: () -> Boolean,
     private val requestRenderViewFocus: () -> Unit,
     private val autoSwitchBackToLeftAfterRightClick: Boolean,
-    private val touchMouseNewInteraction: Boolean,
-    private val longPressMouseShowsKeyboard: Boolean,
+    private val touchMouseInteractionMode: TouchMouseInteractionMode,
     private val builtInSoftKeyboardEnabled: Boolean,
 ) {
     private enum class TouchMouseMode {
@@ -186,6 +186,10 @@ internal class FloatingMouseOverlayController(
                 override fun onTab(): Boolean {
                     sendSyntheticSoftKey(KeyEvent.KEYCODE_TAB)
                     return true
+                }
+
+                override fun onSystemKeyboardRequested() {
+                    imeController?.requestShow(reason = "builtin_keyboard_system_key")
                 }
 
                 override fun onVisibilityChanged(visible: Boolean) {
@@ -382,7 +386,7 @@ internal class FloatingMouseOverlayController(
                 floatingMouseDownRawY = event.rawY
                 floatingMouseDownLeft = params.leftMargin
                 floatingMouseDownTop = params.topMargin
-                if (!touchMouseNewInteraction && longPressMouseShowsKeyboard) {
+                if (touchMouseInteractionMode == TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP) {
                     val longPressRunnable = Runnable {
                         if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
                             floatingMouseLongPressTriggered = true
@@ -454,7 +458,7 @@ internal class FloatingMouseOverlayController(
 
     private fun handleFloatingMouseTap(button: View) {
         LauncherHaptics.perform(button, HapticFeedbackConstants.KEYBOARD_TAP)
-        if (touchMouseNewInteraction) {
+        if (touchMouseInteractionMode == TouchMouseInteractionMode.OPEN_MENU_ON_TAP) {
             if (floatingMouseMenuExpanded) {
                 hideFloatingMouseExpandedMenu()
             } else {
@@ -848,7 +852,7 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun showFloatingMouseExpandedMenu() {
-        if ((!touchMouseNewInteraction && !longPressMouseShowsKeyboard) || isSoftKeyboardVisible()) {
+        if (isSoftKeyboardVisible()) {
             return
         }
         val menu = floatingMouseExpandedMenu ?: return

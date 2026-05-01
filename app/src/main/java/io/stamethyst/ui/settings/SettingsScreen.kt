@@ -101,6 +101,7 @@ import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SteamCloudSaveMode
+import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
@@ -183,8 +184,9 @@ fun LauncherSettingsScreen(
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
-        onTouchMouseNewInteractionChanged = { enabled -> viewModel.onTouchMouseNewInteractionChanged(activity, enabled) },
-        onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
+        onTouchMouseInteractionModeChanged = { mode ->
+            viewModel.onTouchMouseInteractionModeChanged(activity, mode)
+        },
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
         },
@@ -339,8 +341,7 @@ private fun LauncherSettingsScreenPreview() {
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             showFloatingMouseWindow = true,
-            touchMouseNewInteraction = true,
-            longPressMouseShowsKeyboard = true,
+            touchMouseInteractionMode = TouchMouseInteractionMode.OPEN_MENU_ON_TAP,
             builtInSoftKeyboardEnabled = true,
             hapticFeedbackEnabled = true,
             autoSwitchLeftAfterRightClick = true,
@@ -406,8 +407,7 @@ private fun LauncherSettingsScreenContent(
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
-    onTouchMouseNewInteractionChanged: (Boolean) -> Unit = {},
-    onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
+    onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
@@ -554,8 +554,7 @@ private fun LauncherSettingsScreenContent(
                         onPlayerNameChanged = onPlayerNameChanged,
                         onBackBehaviorChanged = onBackBehaviorChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
-                        onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
-                        onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
+                        onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
                         onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
@@ -2316,8 +2315,7 @@ private fun SettingsInputSection(
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
-    onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
-    onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
+    onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
@@ -2333,7 +2331,6 @@ private fun SettingsInputSection(
             uiState = uiState,
             onPlayerNameChanged = onPlayerNameChanged,
             onBackBehaviorChanged = onBackBehaviorChanged,
-            onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
             onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
             onHapticFeedbackChanged = onHapticFeedbackChanged,
             onShowModFileNameChanged = onShowModFileNameChanged,
@@ -2347,7 +2344,7 @@ private fun SettingsInputSection(
         SettingsFloatingMouseSection(
             uiState = uiState,
             onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
-            onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
+            onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
             onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
         )
     }
@@ -2358,7 +2355,6 @@ internal fun SettingsInputBasicsSection(
     uiState: SettingsScreenViewModel.UiState,
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
-    onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
@@ -2391,15 +2387,6 @@ internal fun SettingsInputBasicsSection(
     Text(
         text = stringResource(R.string.settings_back_behavior_desc),
         style = MaterialTheme.typography.bodySmall
-    )
-
-    SwitchSettingRow(
-        checked = uiState.touchMouseNewInteraction,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touch_mouse_interaction_new),
-        disabledText = stringResource(R.string.settings_touch_mouse_interaction_legacy),
-        description = stringResource(R.string.settings_touch_mouse_interaction_desc),
-        onCheckedChange = onTouchMouseNewInteractionChanged
     )
 
     SwitchSettingRow(
@@ -2521,7 +2508,7 @@ internal fun SettingsInputBasicsSection(
 internal fun SettingsFloatingMouseSection(
     uiState: SettingsScreenViewModel.UiState,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
-    onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
+    onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
 ) {
     SwitchSettingRow(
@@ -2533,16 +2520,16 @@ internal fun SettingsFloatingMouseSection(
         onCheckedChange = onShowFloatingMouseWindowChanged
     )
 
-    if (!uiState.touchMouseNewInteraction) {
-        SwitchSettingRow(
-            checked = uiState.longPressMouseShowsKeyboard,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_enabled),
-            disabledText = stringResource(R.string.settings_touch_mouse_long_press_keyboard_disabled),
-            description = stringResource(R.string.settings_touch_mouse_long_press_keyboard_desc),
-            onCheckedChange = onLongPressMouseShowsKeyboardChanged
-        )
-    }
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_touch_mouse_interaction_label),
+        valueText = uiState.touchMouseInteractionMode.displayName(),
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_touch_mouse_interaction_desc),
+        options = TouchMouseInteractionMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = onTouchMouseInteractionModeChanged
+    )
 
     SwitchSettingRow(
         checked = uiState.autoSwitchLeftAfterRightClick,
@@ -3078,6 +3065,30 @@ private fun backBehaviorDisplayName(behavior: BackBehavior): String {
 }
 
 @Composable
+private fun TouchMouseInteractionMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            TouchMouseInteractionMode.OPEN_MENU_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_open_menu
+            TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_toggle_button
+        }
+    )
+}
+
+@Composable
+private fun TouchMouseInteractionMode.description(): String {
+    return stringResource(
+        when (this) {
+            TouchMouseInteractionMode.OPEN_MENU_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_open_menu_desc
+            TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_toggle_button_desc
+        }
+    )
+}
+
+@Composable
 internal fun <T> SettingsDropdownField(
     label: String,
     valueText: String,
@@ -3086,8 +3097,8 @@ internal fun <T> SettingsDropdownField(
     supportingTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     options: List<T>,
     optionEnabled: (T) -> Boolean = { true },
-    optionLabel: (T) -> String,
-    optionDescription: ((T) -> String?)? = null,
+    optionLabel: @Composable (T) -> String,
+    optionDescription: (@Composable (T) -> String?)? = null,
     onOptionSelected: (T) -> Unit,
 ) {
     var expanded by remember(label, options, enabled) { mutableStateOf(false) }

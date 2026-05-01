@@ -29,6 +29,8 @@ internal class InGameSoftKeyboardOverlayController(
 
         fun onTab(): Boolean
 
+        fun onSystemKeyboardRequested()
+
         fun onVisibilityChanged(visible: Boolean)
     }
 
@@ -55,6 +57,7 @@ internal class InGameSoftKeyboardOverlayController(
         SPACE,
         BACKSPACE,
         ENTER,
+        SYSTEM_KEYBOARD,
         HIDE
     }
 
@@ -219,8 +222,9 @@ internal class InGameSoftKeyboardOverlayController(
                     KeySpec.ActionKey(Action.MODE, 1.2f),
                     KeySpec.ActionKey(Action.TAB, 1.05f),
                     KeySpec.ActionKey(Action.PASTE, 1.2f),
-                    KeySpec.ActionKey(Action.SPACE, 2.7f),
+                    KeySpec.ActionKey(Action.SPACE, 2.3f),
                     KeySpec.ActionKey(Action.ENTER, 1.35f),
+                    KeySpec.ActionKey(Action.SYSTEM_KEYBOARD, 1.2f),
                     KeySpec.ActionKey(Action.HIDE, 1.1f)
                 )
             )
@@ -244,8 +248,9 @@ internal class InGameSoftKeyboardOverlayController(
                     KeySpec.ActionKey(Action.MODE, 1.2f),
                     KeySpec.ActionKey(Action.TAB, 1.05f),
                     KeySpec.ActionKey(Action.PASTE, 1.2f),
-                    KeySpec.ActionKey(Action.SPACE, 2.7f),
+                    KeySpec.ActionKey(Action.SPACE, 2.3f),
                     KeySpec.ActionKey(Action.ENTER, 1.35f),
+                    KeySpec.ActionKey(Action.SYSTEM_KEYBOARD, 1.2f),
                     KeySpec.ActionKey(Action.HIDE, 1.1f)
                 )
             )
@@ -329,6 +334,7 @@ internal class InGameSoftKeyboardOverlayController(
                 Action.SPACE -> activity.getString(R.string.touch_mouse_builtin_keyboard_space)
                 Action.BACKSPACE -> activity.getString(R.string.touch_mouse_builtin_keyboard_backspace)
                 Action.ENTER -> activity.getString(R.string.touch_mouse_builtin_keyboard_enter)
+                Action.SYSTEM_KEYBOARD -> activity.getString(R.string.touch_mouse_builtin_keyboard_system)
                 Action.HIDE -> activity.getString(R.string.touch_mouse_builtin_keyboard_hide)
             }
         }
@@ -372,6 +378,10 @@ internal class InGameSoftKeyboardOverlayController(
                 Action.SPACE -> callbacks.onCommitText(" ")
                 Action.BACKSPACE -> callbacks.onBackspace()
                 Action.ENTER -> callbacks.onEnter()
+                Action.SYSTEM_KEYBOARD -> {
+                    hide(refocusRenderView = false)
+                    callbacks.onSystemKeyboardRequested()
+                }
                 Action.HIDE -> hide()
             }
         }

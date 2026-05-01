@@ -4,6 +4,13 @@ import java.util.regex.Pattern;
 
 public final class FragmentShaderCompat {
     private static final String ENABLED_PROP = "amethyst.gdx.fragment_shader_precision_compat";
+    private static final String NATIVE_DIR_PROP = "amethyst.gdx.native_dir";
+    private static final Pattern LEGACY_TEXTURE_FUNCTION_PATTERN =
+        Pattern.compile("(?<![A-Za-z0-9_])texture\\s*\\(");
+    private static final Pattern STANDARD_DERIVATIVE_PATTERN =
+        Pattern.compile("\\b(?:fwidth|dFdx|dFdy)\\s*\\(");
+    private static final Pattern STANDARD_DERIVATIVE_EXTENSION_PATTERN =
+        Pattern.compile("(?m)^\\s*#extension\\s+GL_OES_standard_derivatives\\s*:");
     private static final Pattern FLOAT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;");
     private static final Pattern INT_PRECISION_PATTERN =
@@ -20,7 +27,8 @@ public final class FragmentShaderCompat {
             return source;
         }
 
-        return stripLeadingDesktopVersionDirective(source, "vertex");
+        String stripped = stripLeadingDesktopVersionDirective(source, "vertex");
+        return ensureGles100VersionDirective(stripped, "vertex");
     }
 
     public static String normalizeFragmentShader(String source) {
@@ -31,7 +39,12 @@ public final class FragmentShaderCompat {
             return source;
         }
 
-        return ensureDefaultPrecisionInternal(stripLeadingDesktopVersionDirective(source, "fragment"));
+        String stripped = stripLeadingDesktopVersionDirective(source, "fragment");
+        String versioned = ensureGles100VersionDirective(stripped, "fragment");
+        String legacyCompatible = isModernGlesVersionDirective(versioned)
+            ? versioned
+            : ensureLegacyFragmentCompatibility(versioned);
+        return ensureDefaultPrecisionInternal(legacyCompatible);
     }
 
     public static String ensureDefaultPrecision(String source) {
@@ -95,6 +108,51 @@ public final class FragmentShaderCompat {
         return source.substring(0, versionIndex) + source.substring(lineEnd);
     }
 
+    private static String ensureLegacyFragmentCompatibility(String source) {
+        String patched = source;
+        patched = ensureStandardDerivativesExtension(patched);
+        patched = LEGACY_TEXTURE_FUNCTION_PATTERN.matcher(patched).replaceAll("texture2D(");
+        return patched;
+    }
+
+    private static String ensureGles100VersionDirective(String source, String shaderType) {
+        if (!isGlesBackedRuntime() || findLeadingVersionDirectiveIndex(source) >= 0) {
+            return source;
+        }
+
+        int insertIndex = source.charAt(0) == '\ufeff' ? 1 : 0;
+        String lineSeparator = detectLineSeparator(source);
+        System.out.println(
+            "[gdx-patch] Shader source compat added GLES 100 version header to " +
+                shaderType + " shader"
+        );
+        return source.substring(0, insertIndex) +
+            "#version 100" + lineSeparator +
+            source.substring(insertIndex);
+    }
+
+    private static String ensureStandardDerivativesExtension(String source) {
+        if (!STANDARD_DERIVATIVE_PATTERN.matcher(source).find() ||
+            STANDARD_DERIVATIVE_EXTENSION_PATTERN.matcher(source).find()
+        ) {
+            return source;
+        }
+
+        String lineSeparator = detectLineSeparator(source);
+        int insertIndex = findInsertIndex(source);
+        StringBuilder patched = new StringBuilder(source.length() + 64);
+        patched.append(source, 0, insertIndex);
+        if (insertIndex > 0) {
+            char previous = source.charAt(insertIndex - 1);
+            if (previous != '\n' && previous != '\r') {
+                patched.append(lineSeparator);
+            }
+        }
+        patched.append("#extension GL_OES_standard_derivatives : enable").append(lineSeparator);
+        patched.append(source, insertIndex, source.length());
+        return patched.toString();
+    }
+
     private static int findLeadingVersionDirectiveIndex(String source) {
         int cursor = 0;
         if (source.charAt(0) == '\ufeff') {
@@ -116,6 +174,27 @@ public final class FragmentShaderCompat {
         }
         try {
             return Integer.parseInt(tokens[1]) >= 110;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isModernGlesVersionDirective(String source) {
+        int versionIndex = findLeadingVersionDirectiveIndex(source);
+        if (versionIndex < 0) {
+            return false;
+        }
+
+        int lineEnd = skipLine(source, versionIndex);
+        String[] tokens = source.substring(versionIndex, lineEnd).trim().split("\\s+");
+        if (tokens.length < 3 || !"#version".equalsIgnoreCase(tokens[0])) {
+            return false;
+        }
+        if (!"es".equalsIgnoreCase(tokens[2])) {
+            return false;
+        }
+        try {
+            return Integer.parseInt(tokens[1]) >= 300;
         } catch (NumberFormatException ignored) {
             return false;
         }
@@ -241,5 +320,12 @@ public final class FragmentShaderCompat {
             return false;
         }
         return true;
+    }
+
+    private static boolean isGlesBackedRuntime() {
+        if (System.getProperty(NATIVE_DIR_PROP) != null) {
+            return true;
+        }
+        return System.getProperty("os.version", "").startsWith("Android-");
     }
 }

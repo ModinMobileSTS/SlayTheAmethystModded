@@ -105,6 +105,11 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 
+private enum class SteamCloudConflictResolutionChoice {
+    USE_LOCAL,
+    USE_CLOUD,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherMainScreen(
@@ -322,6 +327,9 @@ private fun LauncherMainScreenContent(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showSteamCloudBottomSheet by remember { mutableStateOf(false) }
     var showSteamCloudLaunchWarning by remember { mutableStateOf(false) }
+    var pendingSteamCloudConflictChoice by remember {
+        mutableStateOf<SteamCloudConflictResolutionChoice?>(null)
+    }
     val showInitializing = uiState.initializing
     val hazeState = rememberHazeState()
     val crashRecovery = uiState.crashRecovery
@@ -334,6 +342,13 @@ private fun LauncherMainScreenContent(
         if (!steamCloudIndicator.visible) {
             showSteamCloudBottomSheet = false
             showSteamCloudLaunchWarning = false
+            pendingSteamCloudConflictChoice = null
+        }
+    }
+
+    LaunchedEffect(steamCloudIndicator.state) {
+        if (steamCloudIndicator.state != MainScreenViewModel.SteamCloudIndicatorState.CONFLICT) {
+            pendingSteamCloudConflictChoice = null
         }
     }
 
@@ -508,11 +523,30 @@ private fun LauncherMainScreenContent(
                 onLaunchAfterError = { showSteamCloudLaunchWarning = true },
                 onCancelCheck = actions.onCancelSteamCloudCheck,
                 onCancelSync = actions.onCancelSteamCloudSync,
-                onUseLocal = actions.onUseLocalSteamCloudProgress,
-                onUseCloud = actions.onUseCloudSteamCloudProgress,
+                onUseLocal = {
+                    pendingSteamCloudConflictChoice = SteamCloudConflictResolutionChoice.USE_LOCAL
+                },
+                onUseCloud = {
+                    pendingSteamCloudConflictChoice = SteamCloudConflictResolutionChoice.USE_CLOUD
+                },
                 autoRetryError = !showSteamCloudLaunchWarning,
             )
         }
+    }
+
+    pendingSteamCloudConflictChoice?.let { choice ->
+        SteamCloudConflictConfirmationDialog(
+            choice = choice,
+            plan = steamCloudIndicator.plan,
+            onDismiss = { pendingSteamCloudConflictChoice = null },
+            onConfirm = {
+                pendingSteamCloudConflictChoice = null
+                when (choice) {
+                    SteamCloudConflictResolutionChoice.USE_LOCAL -> actions.onUseLocalSteamCloudProgress()
+                    SteamCloudConflictResolutionChoice.USE_CLOUD -> actions.onUseCloudSteamCloudProgress()
+                }
+            },
+        )
     }
 
     if (showSteamCloudLaunchWarning) {
@@ -538,6 +572,61 @@ private fun LauncherMainScreenContent(
             }
         )
     }
+}
+
+@Composable
+private fun SteamCloudConflictConfirmationDialog(
+    choice: SteamCloudConflictResolutionChoice,
+    plan: SteamCloudUploadPlan?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val localChangeCount = plan?.uploadCandidates?.size ?: 0
+    val cloudOnlyChangeCount = plan?.remoteOnlyChanges?.size ?: 0
+    val directConflictCount = plan?.conflicts?.size ?: 0
+    val titleRes = when (choice) {
+        SteamCloudConflictResolutionChoice.USE_LOCAL ->
+            R.string.main_steam_cloud_conflict_confirm_local_title
+        SteamCloudConflictResolutionChoice.USE_CLOUD ->
+            R.string.main_steam_cloud_conflict_confirm_cloud_title
+    }
+    val messageRes = when (choice) {
+        SteamCloudConflictResolutionChoice.USE_LOCAL ->
+            R.string.main_steam_cloud_conflict_confirm_local_message
+        SteamCloudConflictResolutionChoice.USE_CLOUD ->
+            R.string.main_steam_cloud_conflict_confirm_cloud_message
+    }
+    val confirmRes = when (choice) {
+        SteamCloudConflictResolutionChoice.USE_LOCAL ->
+            R.string.main_steam_cloud_conflict_confirm_local_action
+        SteamCloudConflictResolutionChoice.USE_CLOUD ->
+            R.string.main_steam_cloud_conflict_confirm_cloud_action
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(titleRes)) },
+        text = {
+            Text(
+                text = stringResource(
+                    messageRes,
+                    localChangeCount,
+                    cloudOnlyChangeCount,
+                    directConflictCount,
+                )
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(text = stringResource(confirmRes))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_steam_cloud_conflict_confirm_cancel))
+            }
+        },
+    )
 }
 
 @Composable

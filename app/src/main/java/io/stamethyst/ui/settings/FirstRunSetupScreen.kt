@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.LauncherThemeColor
+import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
@@ -84,6 +85,30 @@ private enum class FirstRunSetupStep {
     INPUT,
     UPDATES,
     STEAM_CLOUD,
+}
+
+@Composable
+private fun TouchMouseInteractionMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            TouchMouseInteractionMode.OPEN_MENU_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_open_menu
+            TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_toggle_button
+        }
+    )
+}
+
+@Composable
+private fun TouchMouseInteractionMode.description(): String {
+    return stringResource(
+        when (this) {
+            TouchMouseInteractionMode.OPEN_MENU_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_open_menu_desc
+            TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
+                R.string.settings_touch_mouse_interaction_mode_toggle_button_desc
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -271,8 +296,8 @@ fun LauncherFirstRunSetupScreen(
                                 onShowFloatingMouseWindowChanged = { enabled ->
                                     viewModel.onShowFloatingMouseWindowChanged(activity, enabled)
                                 },
-                                onTouchMouseNewInteractionChanged = { enabled ->
-                                    viewModel.onTouchMouseNewInteractionChanged(activity, enabled)
+                                onTouchMouseInteractionModeChanged = { mode ->
+                                    viewModel.onTouchMouseInteractionModeChanged(activity, mode)
                                 },
                             )
                         }
@@ -533,7 +558,7 @@ private fun FirstRunRenderStep(
 private fun FirstRunInputStep(
     uiState: SettingsScreenViewModel.UiState,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
-    onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
+    onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
 ) {
     SettingsSectionCard(
         title = stringResource(R.string.settings_input_floating_title)
@@ -555,13 +580,15 @@ private fun FirstRunInputStep(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                SwitchSettingRow(
-                    checked = uiState.touchMouseNewInteraction,
+                SettingsDropdownField(
+                    label = stringResource(R.string.settings_touch_mouse_interaction_label),
+                    valueText = uiState.touchMouseInteractionMode.displayName(),
                     enabled = !uiState.busy,
-                    enabledText = stringResource(R.string.settings_touch_mouse_interaction_new),
-                    disabledText = stringResource(R.string.settings_touch_mouse_interaction_legacy),
-                    description = stringResource(R.string.settings_first_run_input_mouse_interaction_desc),
-                    onCheckedChange = onTouchMouseNewInteractionChanged,
+                    supportingText = stringResource(R.string.settings_first_run_input_mouse_interaction_desc),
+                    options = TouchMouseInteractionMode.entries,
+                    optionLabel = { mode -> mode.displayName() },
+                    optionDescription = { mode -> mode.description() },
+                    onOptionSelected = onTouchMouseInteractionModeChanged,
                 )
             }
         }

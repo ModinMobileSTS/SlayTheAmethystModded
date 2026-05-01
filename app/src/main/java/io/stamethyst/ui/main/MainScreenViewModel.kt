@@ -448,7 +448,8 @@ class MainScreenViewModel : ViewModel() {
             return LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET
         }
         if (uiState.steamCloudIndicator.visible &&
-            uiState.steamCloudIndicator.state == SteamCloudIndicatorState.CONNECTION_FAILED
+            (uiState.steamCloudIndicator.state == SteamCloudIndicatorState.CONNECTION_FAILED ||
+                uiState.steamCloudIndicator.state == SteamCloudIndicatorState.CONFLICT)
         ) {
             return LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET
         }

@@ -75,9 +75,8 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "showFloatingMouseWindow" to formatBoolean(
                             LauncherConfig.readShowFloatingMouseWindow(context)
                         ),
-                        "longPressMouseShowsKeyboard" to formatBoolean(
-                            LauncherConfig.readLongPressMouseShowsKeyboard(context)
-                        ),
+                        "touchMouseInteractionMode" to
+                            LauncherConfig.readTouchMouseInteractionMode(context).persistedValue,
                         "builtInSoftKeyboardEnabled" to formatBoolean(
                             LauncherConfig.isBuiltInSoftKeyboardEnabled(context)
                         ),

@@ -11,6 +11,7 @@ import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.TouchMouseInteractionMode
 
 internal data class GameSessionConfig(
     val renderScale: Float,
@@ -24,8 +25,7 @@ internal data class GameSessionConfig(
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
     val mirrorJvmLogsToLogcat: Boolean,
-    val touchMouseNewInteraction: Boolean,
-    val longPressMouseShowsKeyboard: Boolean,
+    val touchMouseInteractionMode: TouchMouseInteractionMode,
     val builtInSoftKeyboardEnabled: Boolean,
     val autoSwitchLeftAfterRightClick: Boolean,
     val requestedRenderSurfaceBackend: RenderSurfaceBackend,
@@ -80,8 +80,7 @@ internal data class GameSessionConfig(
                 showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(context),
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
-                touchMouseNewInteraction = LauncherConfig.readTouchMouseNewInteraction(context),
-                longPressMouseShowsKeyboard = LauncherConfig.readLongPressMouseShowsKeyboard(context),
+                touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),
                 builtInSoftKeyboardEnabled = LauncherConfig.isBuiltInSoftKeyboardEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
                 requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,

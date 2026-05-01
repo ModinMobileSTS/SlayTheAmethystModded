@@ -449,10 +449,11 @@ internal object SteamCloudPushCoordinator {
                 )
             )
 
-            if (preparedPlan.uploadCandidates.isNotEmpty()) {
+            if (preparedPlan.uploadCandidates.isNotEmpty() || preparedPlan.deleteRemotePaths.isNotEmpty()) {
                 uploadBatch = client.beginUploadBatch(
                     STEAM_CLOUD_APP_ID,
                     preparedPlan.uploadCandidates.map { it.remotePath },
+                    preparedPlan.deleteRemotePaths,
                 )
                 ensureNotCancelled(shouldContinue)
             }
@@ -512,22 +513,6 @@ internal object SteamCloudPushCoordinator {
                 client.completeUploadBatch(
                     STEAM_CLOUD_APP_ID,
                     batch.batchId,
-                    EResult.OK,
-                )
-                uploadBatch = null
-            }
-
-            if (preparedPlan.deleteRemotePaths.isNotEmpty()) {
-                ensureNotCancelled(shouldContinue)
-                uploadBatch = client.beginUploadBatch(
-                    STEAM_CLOUD_APP_ID,
-                    emptyList(),
-                    preparedPlan.deleteRemotePaths,
-                )
-                ensureNotCancelled(shouldContinue)
-                client.completeUploadBatch(
-                    STEAM_CLOUD_APP_ID,
-                    requireNotNull(uploadBatch).batchId,
                     EResult.OK,
                 )
                 uploadBatch = null

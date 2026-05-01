@@ -7,6 +7,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.TouchMouseInteractionMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -48,8 +49,7 @@ class GameSessionConfigTest {
             showFloatingMouseWindow = false,
             showGamePerformanceOverlay = false,
             mirrorJvmLogsToLogcat = false,
-            touchMouseNewInteraction = false,
-            longPressMouseShowsKeyboard = false,
+            touchMouseInteractionMode = TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP,
             builtInSoftKeyboardEnabled = true,
             autoSwitchLeftAfterRightClick = false,
             requestedRenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,

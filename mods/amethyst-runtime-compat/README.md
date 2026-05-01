@@ -40,6 +40,9 @@ Reapplies BaseMod's starter-relic multiword-keyword normalization when mobile la
 12. `JacketNoAnoKoElectrocardiogramCompatPatches`
 Rewrites JacketNoAnoKo's `ElectrocardiogramLoeweEffect` shader sources to GLES 100 at runtime on Android-compatible runtimes, installs the compiled shader back into the original effect, and lets the original render method draw the visual effect. If the rewritten shader still fails, it falls back to preserving the effect timing and sound trigger while skipping only the render, so the `Inspiration`/tuning card can continue resolving its selected gameplay effect without crashing. This addresses the repeated `Shader compilation failed: Error: shader version mismatch` crash at `ElectrocardiogramLoeweEffect.update(ElectrocardiogramLoeweEffect.java:64)`. Type: crash fix implemented by `JacketNoAnoKoElectrocardiogramCompatPatches`.
 
+13. `JacketNoAnoKoJesterFormCompatPatches`
+Reimplements JacketNoAnoKo's `JesterForm.use` and `JesterFormPower.atStartOfTurnPostDraw` on Android-compatible runtimes so the gameplay actions still apply while creation of `CombinedFireworksSpotlightEffect` is guarded. If the rewritten shader compiles, the original fireworks/spotlight effect is preserved; if shader setup still fails, only that visual effect is skipped. This addresses the `Shader compilation failed: Error: shader version mismatch` crash at `CombinedFireworksSpotlightEffect.<init>(CombinedFireworksSpotlightEffect.java:40)` when playing `jacketnoanokomod:JesterForm` or when its power triggers on later turns. Type: crash fix implemented by `JacketNoAnoKoJesterFormCompatPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

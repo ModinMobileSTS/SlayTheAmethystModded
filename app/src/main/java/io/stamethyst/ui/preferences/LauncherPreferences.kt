@@ -18,6 +18,7 @@ import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SteamCloudSaveMode
+import io.stamethyst.config.TouchMouseInteractionMode
 
 object LauncherPreferences {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior
@@ -62,10 +63,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_THEME_COLOR
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
-    val DEFAULT_TOUCH_MOUSE_NEW_INTERACTION: Boolean
-        get() = LauncherConfig.DEFAULT_TOUCH_MOUSE_NEW_INTERACTION
-    val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD: Boolean
-        get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
+    val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode
+        get() = LauncherConfig.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE
     val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
     val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
@@ -162,20 +161,12 @@ object LauncherPreferences {
         LauncherConfig.saveShowFloatingMouseWindow(context, enabled)
     }
 
-    fun readTouchMouseNewInteraction(context: Context): Boolean {
-        return LauncherConfig.readTouchMouseNewInteraction(context)
+    fun readTouchMouseInteractionMode(context: Context): TouchMouseInteractionMode {
+        return LauncherConfig.readTouchMouseInteractionMode(context)
     }
 
-    fun saveTouchMouseNewInteraction(context: Context, enabled: Boolean) {
-        LauncherConfig.saveTouchMouseNewInteraction(context, enabled)
-    }
-
-    fun readLongPressMouseShowsKeyboard(context: Context): Boolean {
-        return LauncherConfig.readLongPressMouseShowsKeyboard(context)
-    }
-
-    fun saveLongPressMouseShowsKeyboard(context: Context, enabled: Boolean) {
-        LauncherConfig.saveLongPressMouseShowsKeyboard(context, enabled)
+    fun saveTouchMouseInteractionMode(context: Context, mode: TouchMouseInteractionMode) {
+        LauncherConfig.saveTouchMouseInteractionMode(context, mode)
     }
 
     fun isBuiltInSoftKeyboardEnabled(context: Context): Boolean {

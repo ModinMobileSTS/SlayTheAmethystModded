@@ -11,6 +11,7 @@ import io.stamethyst.FloatingMouseOverlayController
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.bridge.AndroidGamepadGlfwMapper
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
+import io.stamethyst.config.TouchMouseInteractionMode
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import kotlin.text.iterator
@@ -36,8 +37,7 @@ class GameInputHandler(
     fun initFloatingMouseControls(
         host: FrameLayout,
         autoSwitchLeftAfterRightClick: Boolean,
-        touchMouseNewInteraction: Boolean,
-        longPressMouseShowsKeyboard: Boolean,
+        touchMouseInteractionMode: TouchMouseInteractionMode,
         builtInSoftKeyboardEnabled: Boolean
     ) {
         floatingMouseController = FloatingMouseOverlayController(
@@ -45,8 +45,7 @@ class GameInputHandler(
             isNativeInputDispatchReady = isInputDispatchReady,
             requestRenderViewFocus = requestRenderViewFocus,
             autoSwitchBackToLeftAfterRightClick = autoSwitchLeftAfterRightClick,
-            touchMouseNewInteraction = touchMouseNewInteraction,
-            longPressMouseShowsKeyboard = longPressMouseShowsKeyboard,
+            touchMouseInteractionMode = touchMouseInteractionMode,
             builtInSoftKeyboardEnabled = builtInSoftKeyboardEnabled
         ).also { controller ->
             controller.attachToHost(host)

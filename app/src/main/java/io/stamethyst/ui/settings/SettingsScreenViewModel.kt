@@ -80,6 +80,7 @@ import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
+import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.UiText
@@ -104,6 +105,16 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 private const val STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR = "SlayTheAmethystBackup"
+
+@StringRes
+private fun TouchMouseInteractionMode.displayNameResId(): Int {
+    return when (this) {
+        TouchMouseInteractionMode.OPEN_MENU_ON_TAP ->
+            R.string.settings_touch_mouse_interaction_mode_open_menu
+        TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
+            R.string.settings_touch_mouse_interaction_mode_toggle_button
+    }
+}
 
 @Stable
 class SettingsScreenViewModel : ViewModel() {
@@ -216,8 +227,8 @@ class SettingsScreenViewModel : ViewModel() {
         val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
-        val touchMouseNewInteraction: Boolean = LauncherPreferences.DEFAULT_TOUCH_MOUSE_NEW_INTERACTION,
-        val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
+        val touchMouseInteractionMode: TouchMouseInteractionMode =
+            LauncherPreferences.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE,
         val builtInSoftKeyboardEnabled: Boolean =
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
         val hapticFeedbackEnabled: Boolean = LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED,
@@ -2233,21 +2244,12 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onTouchMouseNewInteractionChanged(host: Activity, enabled: Boolean) {
+    fun onTouchMouseInteractionModeChanged(host: Activity, mode: TouchMouseInteractionMode) {
         if (uiState.busy) {
             return
         }
-        uiState = uiState.copy(touchMouseNewInteraction = enabled)
-        saveTouchMouseNewInteractionSelection(host, enabled)
-        refreshStatus(host)
-    }
-
-    fun onLongPressMouseShowsKeyboardChanged(host: Activity, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        uiState = uiState.copy(longPressMouseShowsKeyboard = enabled)
-        saveLongPressMouseShowsKeyboardSelection(host, enabled)
+        uiState = uiState.copy(touchMouseInteractionMode = mode)
+        saveTouchMouseInteractionModeSelection(host, mode)
         refreshStatus(host)
     }
 
@@ -2631,8 +2633,7 @@ class SettingsScreenViewModel : ViewModel() {
             backBehavior = input.backBehavior,
             manualDismissBootOverlay = input.manualDismissBootOverlay,
             showFloatingMouseWindow = input.showFloatingMouseWindow,
-            touchMouseNewInteraction = input.touchMouseNewInteraction,
-            longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
+            touchMouseInteractionMode = input.touchMouseInteractionMode,
             builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
             hapticFeedbackEnabled = input.hapticFeedbackEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
@@ -3116,14 +3117,8 @@ class SettingsScreenViewModel : ViewModel() {
         )
         lines += host.getString(
             R.string.status_touch_mouse_interaction_format,
-            touchMouseInteractionLabel(host, input.touchMouseNewInteraction)
+            touchMouseInteractionLabel(host, input.touchMouseInteractionMode)
         )
-        if (!input.touchMouseNewInteraction) {
-            lines += host.getString(
-                R.string.status_touch_mouse_long_press_keyboard_format,
-                toggleStateText(host, input.longPressMouseShowsKeyboard)
-            )
-        }
         lines += host.getString(
             R.string.status_built_in_soft_keyboard_format,
             toggleStateText(host, input.builtInSoftKeyboardEnabled)
@@ -3406,14 +3401,8 @@ class SettingsScreenViewModel : ViewModel() {
         )
     }
 
-    private fun touchMouseInteractionLabel(host: Activity, useNewInteraction: Boolean): String {
-        return host.getString(
-            if (useNewInteraction) {
-                R.string.settings_touch_mouse_interaction_mode_new
-            } else {
-                R.string.settings_touch_mouse_interaction_mode_legacy
-            }
-        )
+    private fun touchMouseInteractionLabel(host: Activity, mode: TouchMouseInteractionMode): String {
+        return host.getString(mode.displayNameResId())
     }
 
     private fun virtualResolutionModeDisplayName(
@@ -3608,12 +3597,11 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
     }
 
-    private fun saveTouchMouseNewInteractionSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.saveTouchMouseNewInteraction(host, enabled)
-    }
-
-    private fun saveLongPressMouseShowsKeyboardSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.saveLongPressMouseShowsKeyboard(host, enabled)
+    private fun saveTouchMouseInteractionModeSelection(
+        host: Activity,
+        mode: TouchMouseInteractionMode
+    ) {
+        LauncherPreferences.saveTouchMouseInteractionMode(host, mode)
     }
 
     private fun saveBuiltInSoftKeyboardSelection(host: Activity, enabled: Boolean) {

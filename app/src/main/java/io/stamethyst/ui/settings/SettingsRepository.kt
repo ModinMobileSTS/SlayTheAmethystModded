@@ -19,6 +19,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -58,8 +59,7 @@ internal object SettingsRepository {
         val backBehavior: BackBehavior,
         val manualDismissBootOverlay: Boolean,
         val showFloatingMouseWindow: Boolean,
-        val touchMouseNewInteraction: Boolean,
-        val longPressMouseShowsKeyboard: Boolean,
+        val touchMouseInteractionMode: TouchMouseInteractionMode,
         val builtInSoftKeyboardEnabled: Boolean,
         val hapticFeedbackEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
@@ -147,8 +147,7 @@ internal object SettingsRepository {
                 backBehavior = LauncherPreferences.readBackBehavior(context),
                 manualDismissBootOverlay = LauncherPreferences.readManualDismissBootOverlay(context),
                 showFloatingMouseWindow = LauncherPreferences.readShowFloatingMouseWindow(context),
-                touchMouseNewInteraction = LauncherPreferences.readTouchMouseNewInteraction(context),
-                longPressMouseShowsKeyboard = LauncherPreferences.readLongPressMouseShowsKeyboard(context),
+                touchMouseInteractionMode = LauncherPreferences.readTouchMouseInteractionMode(context),
                 builtInSoftKeyboardEnabled =
                     LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
                 hapticFeedbackEnabled = LauncherPreferences.isHapticFeedbackEnabled(context),
