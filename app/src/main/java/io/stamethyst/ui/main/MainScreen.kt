@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1182,6 +1183,11 @@ private fun SteamCloudBottomSheetContent(
     val progressFraction = indicator.progressPercent
         ?.coerceIn(0, 100)
         ?.div(100f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progressFraction ?: 0f,
+        animationSpec = tween(durationMillis = 360),
+        label = "steam_cloud_indicator_progress"
+    )
     val conflictCardSummaries = remember(indicator.plan) {
         indicator.plan?.takeIf { it.conflicts.isNotEmpty() }?.let {
             buildSteamCloudConflictCardSummaries(it)
@@ -1245,7 +1251,7 @@ private fun SteamCloudBottomSheetContent(
         ) {
             if (progressFraction != null) {
                 LinearProgressIndicator(
-                    progress = { progressFraction },
+                    progress = { animatedProgress },
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {

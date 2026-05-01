@@ -10,6 +10,8 @@ import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1321,8 +1323,13 @@ internal fun SettingsBusyIndicator(
         ?.coerceIn(0, 100)
         ?.div(100f)
     if (progressFraction != null) {
+        val animatedProgress by animateFloatAsState(
+            targetValue = progressFraction,
+            animationSpec = tween(durationMillis = 360),
+            label = "settings_busy_progress"
+        )
         LinearProgressIndicator(
-            progress = { progressFraction },
+            progress = { animatedProgress },
             modifier = Modifier.fillMaxWidth()
         )
     } else {
@@ -2331,7 +2338,6 @@ private fun SettingsInputSection(
             uiState = uiState,
             onPlayerNameChanged = onPlayerNameChanged,
             onBackBehaviorChanged = onBackBehaviorChanged,
-            onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
             onHapticFeedbackChanged = onHapticFeedbackChanged,
             onShowModFileNameChanged = onShowModFileNameChanged,
             onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
@@ -2345,6 +2351,7 @@ private fun SettingsInputSection(
             uiState = uiState,
             onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
             onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
+            onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
             onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
         )
     }
@@ -2355,7 +2362,6 @@ internal fun SettingsInputBasicsSection(
     uiState: SettingsScreenViewModel.UiState,
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
-    onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -2387,15 +2393,6 @@ internal fun SettingsInputBasicsSection(
     Text(
         text = stringResource(R.string.settings_back_behavior_desc),
         style = MaterialTheme.typography.bodySmall
-    )
-
-    SwitchSettingRow(
-        checked = uiState.builtInSoftKeyboardEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
-        disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
-        description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
-        onCheckedChange = onBuiltInSoftKeyboardChanged
     )
 
     SwitchSettingRow(
@@ -2509,6 +2506,7 @@ internal fun SettingsFloatingMouseSection(
     uiState: SettingsScreenViewModel.UiState,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
+    onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
 ) {
     SwitchSettingRow(
@@ -2529,6 +2527,15 @@ internal fun SettingsFloatingMouseSection(
         optionLabel = { mode -> mode.displayName() },
         optionDescription = { mode -> mode.description() },
         onOptionSelected = onTouchMouseInteractionModeChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.builtInSoftKeyboardEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
+        disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
+        description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
+        onCheckedChange = onBuiltInSoftKeyboardChanged
     )
 
     SwitchSettingRow(
