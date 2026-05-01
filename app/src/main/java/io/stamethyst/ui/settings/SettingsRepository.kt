@@ -61,6 +61,7 @@ internal object SettingsRepository {
         val touchMouseNewInteraction: Boolean,
         val longPressMouseShowsKeyboard: Boolean,
         val builtInSoftKeyboardEnabled: Boolean,
+        val hapticFeedbackEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
         val showModFileName: Boolean,
         val mobileHudEnabled: Boolean,
@@ -150,6 +151,7 @@ internal object SettingsRepository {
                 longPressMouseShowsKeyboard = LauncherPreferences.readLongPressMouseShowsKeyboard(context),
                 builtInSoftKeyboardEnabled =
                     LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
+                hapticFeedbackEnabled = LauncherPreferences.isHapticFeedbackEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherPreferences.readAutoSwitchLeftAfterRightClick(context),
                 showModFileName = LauncherPreferences.readShowModFileName(context),
                 mobileHudEnabled = LauncherPreferences.readMobileHudEnabled(context),

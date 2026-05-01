@@ -108,6 +108,7 @@ import io.stamethyst.ui.Icons
 import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
+import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.icon.ArrowBack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -186,6 +187,9 @@ fun LauncherSettingsScreen(
         onLongPressMouseShowsKeyboardChanged = { enabled -> viewModel.onLongPressMouseShowsKeyboardChanged(activity, enabled) },
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
+        },
+        onHapticFeedbackChanged = { enabled ->
+            viewModel.onHapticFeedbackChanged(activity, enabled)
         },
         onAutoSwitchLeftAfterRightClickChanged = { enabled -> viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled) },
         onShowModFileNameChanged = { enabled -> viewModel.onShowModFileNameChanged(activity, enabled) },
@@ -338,6 +342,7 @@ private fun LauncherSettingsScreenPreview() {
             touchMouseNewInteraction = true,
             longPressMouseShowsKeyboard = true,
             builtInSoftKeyboardEnabled = true,
+            hapticFeedbackEnabled = true,
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
             mobileHudEnabled = false,
@@ -404,6 +409,7 @@ private fun LauncherSettingsScreenContent(
     onTouchMouseNewInteractionChanged: (Boolean) -> Unit = {},
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
+    onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
@@ -551,6 +557,7 @@ private fun LauncherSettingsScreenContent(
                         onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
                         onLongPressMouseShowsKeyboardChanged = onLongPressMouseShowsKeyboardChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
+                        onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
                         onShowModFileNameChanged = onShowModFileNameChanged,
                         onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
@@ -1866,7 +1873,7 @@ internal fun SettingsPerformanceSection(
             val step = renderScaleToStep(value)
             if (step != lastRenderScaleStep) {
                 lastRenderScaleStep = step
-                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
             }
         },
         onValueChangeFinished = { onRenderScaleSelected(renderScaleSliderValue) },
@@ -1957,7 +1964,7 @@ internal fun SettingsPerformanceSection(
             val step = gameplayFontScaleToStep(normalized)
             if (step != lastGameplayFontScaleStep) {
                 lastGameplayFontScaleStep = step
-                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
             }
         },
         onValueChangeFinished = { onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
@@ -2253,7 +2260,7 @@ private fun SettingsAdvancedRenderSection(
             )
             if (step != lastHeapStep) {
                 lastHeapStep = step
-                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
             }
         },
         onValueChangeFinished = { onJvmHeapMaxSelected(heapSliderValue.roundToInt()) },
@@ -2312,6 +2319,7 @@ private fun SettingsInputSection(
     onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
     onLongPressMouseShowsKeyboardChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    onHapticFeedbackChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -2327,6 +2335,7 @@ private fun SettingsInputSection(
             onBackBehaviorChanged = onBackBehaviorChanged,
             onTouchMouseNewInteractionChanged = onTouchMouseNewInteractionChanged,
             onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
+            onHapticFeedbackChanged = onHapticFeedbackChanged,
             onShowModFileNameChanged = onShowModFileNameChanged,
             onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
         )
@@ -2351,6 +2360,7 @@ internal fun SettingsInputBasicsSection(
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onTouchMouseNewInteractionChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    onHapticFeedbackChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
 ) {
@@ -2399,6 +2409,15 @@ internal fun SettingsInputBasicsSection(
         disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
         description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
         onCheckedChange = onBuiltInSoftKeyboardChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.hapticFeedbackEnabled,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_haptic_feedback_enabled),
+        disabledText = stringResource(R.string.settings_haptic_feedback_disabled),
+        description = stringResource(R.string.settings_haptic_feedback_desc),
+        onCheckedChange = onHapticFeedbackChanged
     )
 
     SwitchSettingRow(
@@ -2553,8 +2572,8 @@ internal fun SwitchSettingRow(
             checked = checked,
             enabled = enabled,
             onCheckedChange = { changed ->
-                performTapHapticFeedback(view)
                 onCheckedChange(changed)
+                performTapHapticFeedback(view)
             }
         )
         Spacer(modifier = Modifier.width(10.dp))
@@ -3227,5 +3246,9 @@ private fun Modifier.hapticToggleable(
 }
 
 private fun performTapHapticFeedback(view: android.view.View) {
-    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    performHapticFeedback(view, HapticFeedbackConstants.KEYBOARD_TAP)
+}
+
+private fun performHapticFeedback(view: android.view.View, feedbackConstant: Int) {
+    LauncherHaptics.perform(view, feedbackConstant)
 }

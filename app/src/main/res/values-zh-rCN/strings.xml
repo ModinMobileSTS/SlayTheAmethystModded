@@ -114,7 +114,11 @@
     <string name="settings_built_in_soft_keyboard_enabled">游戏内置软键盘：启用</string>
     <string name="settings_built_in_soft_keyboard_disabled">游戏内置软键盘：禁用</string>
     <string name="settings_built_in_soft_keyboard_desc">启用后，悬浮菜单中的打开键盘操作会改为打开一个内置键盘，而不是系统输入法。若仍需系统输入法，可关闭此项。</string>
+    <string name="settings_haptic_feedback_enabled">震动反馈：启用</string>
+    <string name="settings_haptic_feedback_disabled">震动反馈：禁用</string>
+    <string name="settings_haptic_feedback_desc">统一控制启动器与游戏内悬浮层的震动反馈，包括点击、开关、滑条和模组启用切换。</string>
     <string name="status_built_in_soft_keyboard_format">游戏内置软键盘：%1$s</string>
+    <string name="status_haptic_feedback_format">震动反馈：%1$s</string>
     <string name="settings_compendium_upgrade_touch_fix_enabled">百科大全看升级版触控修复：启用</string>
     <string name="settings_compendium_upgrade_touch_fix_disabled">百科大全看升级版触控修复：禁用</string>
     <string name="settings_compendium_upgrade_touch_fix_desc">启用后，在触屏模式下会放大百科大全卡片放大界面里“看升级版”的点击区域，并在按下时直接切换，减少滑动或手指轻微漂移导致的点不到的问题。</string>

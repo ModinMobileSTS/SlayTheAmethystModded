@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import io.stamethyst.ui.haptics.LauncherHaptics
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -299,7 +300,7 @@ internal class InGameSoftKeyboardOverlayController(
                 active = isActive
             )
             setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                 handleKeyPress(spec)
             }
         }

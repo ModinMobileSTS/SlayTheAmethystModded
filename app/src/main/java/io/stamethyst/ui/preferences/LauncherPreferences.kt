@@ -68,6 +68,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD
     val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
+    val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_HAPTIC_FEEDBACK_ENABLED
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     val DEFAULT_SHOW_MOD_FILE_NAME: Boolean
@@ -182,6 +184,14 @@ object LauncherPreferences {
 
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setBuiltInSoftKeyboardEnabled(context, enabled)
+    }
+
+    fun isHapticFeedbackEnabled(context: Context): Boolean {
+        return LauncherConfig.isHapticFeedbackEnabled(context)
+    }
+
+    fun setHapticFeedbackEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setHapticFeedbackEnabled(context, enabled)
     }
 
     fun readAutoSwitchLeftAfterRightClick(context: Context): Boolean {

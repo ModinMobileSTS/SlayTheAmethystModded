@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import io.stamethyst.R
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.ui.haptics.LauncherHaptics
 import kotlin.math.roundToInt
 
 @Composable
@@ -207,7 +208,7 @@ internal fun ModPriorityDialog(
                             )
                         if (step != lastPriorityStep) {
                             lastPriorityStep = step
-                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            LauncherHaptics.perform(view, HapticFeedbackConstants.CLOCK_TICK)
                         }
                     },
                     valueRange = ModManager.OPTIONAL_MOD_PRIORITY_MIN.toFloat()..

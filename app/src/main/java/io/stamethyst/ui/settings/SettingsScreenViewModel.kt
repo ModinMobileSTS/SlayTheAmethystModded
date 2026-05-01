@@ -220,6 +220,7 @@ class SettingsScreenViewModel : ViewModel() {
         val longPressMouseShowsKeyboard: Boolean = LauncherPreferences.DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD,
         val builtInSoftKeyboardEnabled: Boolean =
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
+        val hapticFeedbackEnabled: Boolean = LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
@@ -2259,6 +2260,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onHapticFeedbackChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(hapticFeedbackEnabled = enabled)
+        saveHapticFeedbackSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onAutoSwitchLeftAfterRightClickChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -2624,6 +2634,7 @@ class SettingsScreenViewModel : ViewModel() {
             touchMouseNewInteraction = input.touchMouseNewInteraction,
             longPressMouseShowsKeyboard = input.longPressMouseShowsKeyboard,
             builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
+            hapticFeedbackEnabled = input.hapticFeedbackEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
             showModFileName = input.showModFileName,
             mobileHudEnabled = input.mobileHudEnabled,
@@ -3118,6 +3129,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, input.builtInSoftKeyboardEnabled)
         )
         lines += host.getString(
+            R.string.status_haptic_feedback_format,
+            toggleStateText(host, input.hapticFeedbackEnabled)
+        )
+        lines += host.getString(
             R.string.settings_status_auto_switch_left_after_right_click,
             toggleStateText(host, input.autoSwitchLeftAfterRightClick)
         )
@@ -3603,6 +3618,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveBuiltInSoftKeyboardSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setBuiltInSoftKeyboardEnabled(host, enabled)
+    }
+
+    private fun saveHapticFeedbackSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setHapticFeedbackEnabled(host, enabled)
     }
 
     private fun saveAutoSwitchLeftAfterRightClickSelection(host: Activity, enabled: Boolean) {

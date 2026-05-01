@@ -114,7 +114,11 @@
     <string name="settings_built_in_soft_keyboard_enabled">Built-in in-game keyboard: Enabled</string>
     <string name="settings_built_in_soft_keyboard_disabled">Built-in in-game keyboard: Disabled</string>
     <string name="settings_built_in_soft_keyboard_desc">When enabled, the floating menu keyboard button opens a built-in full-width keyboard instead of the system keyboard. Disable this if you need the system IME again. Takes effect the next time the game launches.</string>
+    <string name="settings_haptic_feedback_enabled">Vibration feedback: Enabled</string>
+    <string name="settings_haptic_feedback_disabled">Vibration feedback: Disabled</string>
+    <string name="settings_haptic_feedback_desc">Controls launcher and in-game overlay vibration feedback, including taps, switches, sliders, and mod toggles.</string>
     <string name="status_built_in_soft_keyboard_format">Built-in in-game keyboard: %1$s</string>
+    <string name="status_haptic_feedback_format">Vibration feedback: %1$s</string>
     <string name="settings_compendium_upgrade_touch_fix_enabled">Compendium upgrade toggle touch fix: Enabled</string>
     <string name="settings_compendium_upgrade_touch_fix_disabled">Compendium upgrade toggle touch fix: Disabled</string>
     <string name="settings_compendium_upgrade_touch_fix_desc">In touchscreen mode, enlarges the Compendium card popup &quot;View Upgrades&quot; tap target and applies the toggle on touch-down so it is easier to hit. Takes effect the next time the game launches.</string>

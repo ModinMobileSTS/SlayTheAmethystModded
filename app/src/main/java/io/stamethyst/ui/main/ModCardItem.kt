@@ -1,10 +1,6 @@
 package io.stamethyst.ui.main
 
 import android.content.Context
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -53,6 +49,7 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.haptics.LauncherHaptics
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -210,7 +207,7 @@ internal fun ModCard(
                         checked = mod.enabled,
                         onCheckedChange = { checked ->
                             if (checked != mod.enabled) {
-                                triggerToggleVibration(context)
+                                LauncherHaptics.vibrateToggle(context)
                             }
                             callbacks.onToggleMod(mod, checked)
                         }
@@ -454,20 +451,5 @@ internal fun DraggingModCardOverlay(
                 }
             )
         }
-    }
-}
-
-private fun triggerToggleVibration(context: Context) {
-    runCatching {
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        } ?: return
-        if (!vibrator.hasVibrator()) {
-            return
-        }
-        vibrator.vibrate(VibrationEffect.createOneShot(14L, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 }

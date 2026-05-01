@@ -72,6 +72,7 @@ import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.SimpleMarkdownCard
@@ -511,7 +512,7 @@ private fun FirstRunRenderStep(
                 val step = gameplayFontScaleToStep(normalized)
                 if (step != lastGameplayFontScaleStep) {
                     lastGameplayFontScaleStep = step
-                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    LauncherHaptics.perform(view, HapticFeedbackConstants.CLOCK_TICK)
                 }
             },
             onValueChangeFinished = {

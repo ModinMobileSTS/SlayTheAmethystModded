@@ -46,6 +46,7 @@ object LauncherConfig {
         "long_press_mouse_shows_keyboard"
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
+    private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCHSCREEN_ENABLED = "touchscreen_enabled"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
@@ -167,6 +168,7 @@ object LauncherConfig {
     const val DEFAULT_TOUCH_MOUSE_NEW_INTERACTION = true
     const val DEFAULT_LONG_PRESS_MOUSE_SHOWS_KEYBOARD = true
     const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
+    const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
@@ -360,6 +362,19 @@ object LauncherConfig {
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED, enabled)
+        }
+    }
+
+    fun isHapticFeedbackEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_HAPTIC_FEEDBACK_ENABLED,
+            DEFAULT_HAPTIC_FEEDBACK_ENABLED
+        )
+    }
+
+    fun setHapticFeedbackEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_HAPTIC_FEEDBACK_ENABLED, enabled)
         }
     }
 

@@ -17,6 +17,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
 import io.stamethyst.ui.LauncherTransientNoticeBus
+import io.stamethyst.ui.haptics.LauncherHaptics
 import net.kdt.pojavlaunch.AWTInputBridge
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
@@ -385,7 +386,7 @@ internal class FloatingMouseOverlayController(
                     val longPressRunnable = Runnable {
                         if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
                             floatingMouseLongPressTriggered = true
-                            button.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            LauncherHaptics.perform(button, HapticFeedbackConstants.LONG_PRESS)
                             if (floatingMouseMenuExpanded) {
                                 hideFloatingMouseExpandedMenu()
                             } else {
@@ -452,7 +453,7 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun handleFloatingMouseTap(button: View) {
-        button.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        LauncherHaptics.perform(button, HapticFeedbackConstants.KEYBOARD_TAP)
         if (touchMouseNewInteraction) {
             if (floatingMouseMenuExpanded) {
                 hideFloatingMouseExpandedMenu()
@@ -682,7 +683,7 @@ internal class FloatingMouseOverlayController(
             isFocusableInTouchMode = false
             updateFloatingMouseMenuButtonAppearance(this, false)
             setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                 if (spec.toggleable) {
                     toggleSpecialKey(spec.keyCode)
                 } else {
@@ -720,7 +721,7 @@ internal class FloatingMouseOverlayController(
 
     private fun createFloatingMouseModeButton(): TextView {
         return createFloatingMouseTextActionButton("") {
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
             toggleTouchMouseMode()
         }.apply {
             floatingMouseModeButton = this
@@ -747,7 +748,7 @@ internal class FloatingMouseOverlayController(
             floatingMouseLockButton = this
             updateFloatingMouseLockButtonUi()
             setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                 toggleTouchMouseLock()
             }
         }
@@ -771,7 +772,7 @@ internal class FloatingMouseOverlayController(
                 FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
             )
             setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                 showSoftKeyboard()
             }
         }
@@ -1646,7 +1647,7 @@ internal class FloatingMouseOverlayController(
             val previousDirection = previousOffset.compareTo(0f)
             val currentDirection = normalizedOffset.compareTo(0f)
             if (!previousActive || previousDirection != currentDirection) {
-                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                LauncherHaptics.perform(this, HapticFeedbackConstants.CLOCK_TICK)
                 dispatchScrollTick()
             }
             ensureRepeating()

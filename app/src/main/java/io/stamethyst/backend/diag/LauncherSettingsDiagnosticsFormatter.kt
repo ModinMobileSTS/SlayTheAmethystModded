@@ -81,6 +81,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "builtInSoftKeyboardEnabled" to formatBoolean(
                             LauncherConfig.isBuiltInSoftKeyboardEnabled(context)
                         ),
+                        "hapticFeedbackEnabled" to formatBoolean(
+                            LauncherConfig.isHapticFeedbackEnabled(context)
+                        ),
                         "autoSwitchLeftAfterRightClick" to formatBoolean(
                             LauncherConfig.readAutoSwitchLeftAfterRightClick(context)
                         ),
