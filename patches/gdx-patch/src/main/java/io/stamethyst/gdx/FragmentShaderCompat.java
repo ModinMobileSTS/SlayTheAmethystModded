@@ -11,6 +11,11 @@ public final class FragmentShaderCompat {
         Pattern.compile("\\b(?:fwidth|dFdx|dFdy)\\s*\\(");
     private static final Pattern STANDARD_DERIVATIVE_EXTENSION_PATTERN =
         Pattern.compile("(?m)^\\s*#extension\\s+GL_OES_standard_derivatives\\s*:");
+    private static final Pattern SCALAR_FRACT_REDEFINITION_PATTERN =
+        Pattern.compile(
+            "(?m)^\\s*float\\s+fract\\s*\\(\\s*float\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\)\\s*\\{\\s*" +
+                "return\\s+\\1\\s*-\\s*floor\\s*\\(\\s*\\1\\s*\\)\\s*;\\s*\\}\\s*(?:\\r?\\n)?"
+        );
     private static final Pattern FLOAT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;");
     private static final Pattern INT_PRECISION_PATTERN =
@@ -41,9 +46,10 @@ public final class FragmentShaderCompat {
 
         String stripped = stripLeadingDesktopVersionDirective(source, "fragment");
         String versioned = ensureGles100VersionDirective(stripped, "fragment");
-        String legacyCompatible = isModernGlesVersionDirective(versioned)
-            ? versioned
-            : ensureLegacyFragmentCompatibility(versioned);
+        String withoutRedefinedBuiltIns = removeBuiltInFunctionRedefinitions(versioned);
+        String legacyCompatible = isModernGlesVersionDirective(withoutRedefinedBuiltIns)
+            ? withoutRedefinedBuiltIns
+            : ensureLegacyFragmentCompatibility(withoutRedefinedBuiltIns);
         return ensureDefaultPrecisionInternal(legacyCompatible);
     }
 
@@ -113,6 +119,10 @@ public final class FragmentShaderCompat {
         patched = ensureStandardDerivativesExtension(patched);
         patched = LEGACY_TEXTURE_FUNCTION_PATTERN.matcher(patched).replaceAll("texture2D(");
         return patched;
+    }
+
+    private static String removeBuiltInFunctionRedefinitions(String source) {
+        return SCALAR_FRACT_REDEFINITION_PATTERN.matcher(source).replaceAll("");
     }
 
     private static String ensureGles100VersionDirective(String source, String shaderType) {

@@ -162,6 +162,26 @@ public class FragmentShaderCompatTest {
     }
 
     @Test
+    public void normalizeFragmentShader_removesScalarFractRedefinition() {
+        String original = "float fract(float x) { return x - floor(x); }\n" +
+            "void main() {\n" +
+            "    float a = fract(0.5);\n" +
+            "    vec3 b = fract(vec3(0.5));\n" +
+            "    gl_FragColor = vec4(b * a, 1.0);\n" +
+            "}\n";
+        String previous = System.getProperty(ENABLED_PROP);
+        try {
+            System.setProperty(ENABLED_PROP, "true");
+            String patched = FragmentShaderCompat.normalizeFragmentShader(original);
+            assertFalse(patched.contains("float fract(float x)"));
+            assertTrue(patched.contains("float a = fract(0.5);"));
+            assertTrue(patched.contains("vec3 b = fract(vec3(0.5));"));
+        } finally {
+            restoreProperty(previous);
+        }
+    }
+
+    @Test
     public void normalizeFragmentShader_respectsDisabledProperty() {
         String original = "#version 120\nvoid main() {\n    gl_FragColor = vec4(1.0);\n}\n";
         String previous = System.getProperty(ENABLED_PROP);
