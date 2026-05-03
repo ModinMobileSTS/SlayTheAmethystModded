@@ -197,7 +197,9 @@
     <string name="startup_progress_copying_runtime_archives">Copying runtime archives...</string>
     <string name="startup_progress_copied_runtime_archive">Copied %1$s</string>
     <string name="startup_progress_extracting_universal_runtime">Extracting universal runtime...</string>
+    <string name="startup_progress_extracting_universal_runtime_percent">Extracting universal runtime... %1$d%%</string>
     <string name="startup_progress_extracting_architecture_runtime">Extracting architecture runtime...</string>
+    <string name="startup_progress_extracting_architecture_runtime_percent">Extracting architecture runtime... %1$d%%</string>
     <string name="startup_progress_unpacking_runtime_pack200_files">Unpacking runtime pack200 files...</string>
     <string name="startup_progress_unpacking_runtime_pack_file">Unpacking %1$s (%2$d/%3$d)...</string>
     <string name="startup_progress_unpacked_runtime_pack_file">Unpacked %1$s (%2$d/%3$d)</string>

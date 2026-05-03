@@ -28,6 +28,8 @@ object RuntimePackInstaller {
     private const val ARCHIVE_VERSION = "version"
     private const val ARCHIVE_AARCH64 = "bin-aarch64.tar.xz"
     private const val ARCHIVE_ARM64 = "bin-arm64.tar.xz"
+    private const val EXTRACT_PROGRESS_HEARTBEAT_INTERVAL_MS = 5_000L
+    private const val EXTRACT_PROGRESS_STEP_PERCENT = 5
     private const val UNPACK_PROCESS_POLL_INTERVAL_MS = 250L
     private const val UNPACK_PROGRESS_HEARTBEAT_INTERVAL_MS = 5_000L
     private const val PROCESS_OUTPUT_JOIN_TIMEOUT_MS = 2_000L
@@ -37,6 +39,76 @@ object RuntimePackInstaller {
         val failure: AtomicReference<Throwable?>,
         val readerThread: Thread
     )
+
+    private class CountingInputStream(private val delegate: InputStream) : InputStream() {
+        var bytesRead: Long = 0
+            private set
+
+        override fun read(): Int {
+            val value = delegate.read()
+            if (value >= 0) {
+                bytesRead += 1
+            }
+            return value
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val read = delegate.read(buffer, offset, length)
+            if (read > 0) {
+                bytesRead += read.toLong()
+            }
+            return read
+        }
+
+        override fun close() {
+            delegate.close()
+        }
+    }
+
+    private class ArchiveExtractionProgressReporter(
+        private val progressCallback: StartupProgressCallback?,
+        private val startPercent: Int,
+        private val endPercent: Int,
+        private val totalBytes: Long,
+        private val messageForArchivePercent: (Int) -> String
+    ) {
+        private var lastReportedArchivePercent = Int.MIN_VALUE
+        private var lastReportedAtMs = 0L
+
+        fun maybeReport(bytesRead: Long, force: Boolean = false) {
+            if (progressCallback == null) {
+                return
+            }
+            val archivePercent = archivePercent(bytesRead)
+            val now = SystemClock.uptimeMillis()
+            val shouldReport = force ||
+                lastReportedArchivePercent == Int.MIN_VALUE ||
+                archivePercent == 100 && lastReportedArchivePercent != 100 ||
+                archivePercent - lastReportedArchivePercent >= EXTRACT_PROGRESS_STEP_PERCENT ||
+                now - lastReportedAtMs >= EXTRACT_PROGRESS_HEARTBEAT_INTERVAL_MS
+            if (!shouldReport) {
+                return
+            }
+            lastReportedArchivePercent = archivePercent
+            lastReportedAtMs = now
+            progressCallback.onProgress(
+                mappedStagePercent(archivePercent).coerceIn(0, 100),
+                messageForArchivePercent(archivePercent)
+            )
+        }
+
+        private fun archivePercent(bytesRead: Long): Int {
+            if (totalBytes <= 0L) {
+                return 0
+            }
+            val boundedBytes = bytesRead.coerceIn(0L, totalBytes)
+            return (boundedBytes * 100f / totalBytes).roundToInt().coerceIn(0, 100)
+        }
+
+        private fun mappedStagePercent(archivePercent: Int): Int {
+            return startPercent + ((endPercent - startPercent) * archivePercent / 100f).roundToInt()
+        }
+    }
 
     @Throws(IOException::class)
     private fun throwIfInterrupted() {
@@ -133,14 +205,32 @@ object RuntimePackInstaller {
             42,
             context.progressText(R.string.startup_progress_extracting_universal_runtime)
         )
-        extractTarXz(File(stagingDir, ARCHIVE_UNIVERSAL), runtimeRoot)
+        extractTarXz(
+            tarXzFile = File(stagingDir, ARCHIVE_UNIVERSAL),
+            destination = runtimeRoot,
+            progressCallback = progressCallback,
+            startPercent = 42,
+            endPercent = 62,
+            messageForArchivePercent = { percent ->
+                context.progressText(R.string.startup_progress_extracting_universal_runtime_percent, percent)
+            }
+        )
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             62,
             context.progressText(R.string.startup_progress_extracting_architecture_runtime)
         )
-        extractTarXz(File(stagingDir, archArchive), runtimeRoot)
+        extractTarXz(
+            tarXzFile = File(stagingDir, archArchive),
+            destination = runtimeRoot,
+            progressCallback = progressCallback,
+            startPercent = 62,
+            endPercent = 78,
+            messageForArchivePercent = { percent ->
+                context.progressText(R.string.startup_progress_extracting_architecture_runtime_percent, percent)
+            }
+        )
 
         throwIfInterrupted()
         reportProgress(
@@ -214,15 +304,32 @@ object RuntimePackInstaller {
     }
 
     @Throws(IOException::class)
-    private fun extractTarXz(tarXzFile: File, destination: File) {
+    private fun extractTarXz(
+        tarXzFile: File,
+        destination: File,
+        progressCallback: StartupProgressCallback?,
+        startPercent: Int,
+        endPercent: Int,
+        messageForArchivePercent: (Int) -> String
+    ) {
         throwIfInterrupted()
+        val progressReporter = ArchiveExtractionProgressReporter(
+            progressCallback = progressCallback,
+            startPercent = startPercent,
+            endPercent = endPercent,
+            totalBytes = tarXzFile.length(),
+            messageForArchivePercent = messageForArchivePercent
+        )
+        progressReporter.maybeReport(0L, force = true)
         FileInputStream(tarXzFile).use { fileInput ->
-            XZInputStream(fileInput).use { xzInput ->
+            val countingInput = CountingInputStream(fileInput)
+            XZInputStream(countingInput).use { xzInput ->
                 TarArchiveInputStream(xzInput).use { tarInput ->
                     val buffer = ByteArray(8192)
                     var entry: TarArchiveEntry?
                     while (tarInput.nextEntry.also { entry = it } != null) {
                         throwIfInterrupted()
+                        progressReporter.maybeReport(countingInput.bytesRead)
                         val current = entry!!
                         val outFile = File(destination, current.name)
                         if (current.isDirectory) {
@@ -256,6 +363,7 @@ object RuntimePackInstaller {
                                     break
                                 }
                                 output.write(buffer, 0, read)
+                                progressReporter.maybeReport(countingInput.bytesRead)
                             }
                         }
 
@@ -266,6 +374,7 @@ object RuntimePackInstaller {
                 }
             }
         }
+        progressReporter.maybeReport(tarXzFile.length(), force = true)
     }
 
     private fun isRuntimeReady(javaHome: File): Boolean {

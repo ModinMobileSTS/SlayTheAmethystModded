@@ -197,7 +197,9 @@
     <string name="startup_progress_copying_runtime_archives">正在复制运行时归档…</string>
     <string name="startup_progress_copied_runtime_archive">已复制 %1$s</string>
     <string name="startup_progress_extracting_universal_runtime">正在解压通用运行时…</string>
+    <string name="startup_progress_extracting_universal_runtime_percent">正在解压通用运行时… %1$d%%</string>
     <string name="startup_progress_extracting_architecture_runtime">正在解压架构运行时…</string>
+    <string name="startup_progress_extracting_architecture_runtime_percent">正在解压架构运行时… %1$d%%</string>
     <string name="startup_progress_unpacking_runtime_pack200_files">正在解包 runtime pack200 文件…</string>
     <string name="startup_progress_unpacking_runtime_pack_file">正在解包 %1$s（%2$d/%3$d）…</string>
     <string name="startup_progress_unpacked_runtime_pack_file">已解包 %1$s（%2$d/%3$d）</string>
