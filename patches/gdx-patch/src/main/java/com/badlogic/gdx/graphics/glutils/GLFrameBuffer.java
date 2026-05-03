@@ -181,8 +181,6 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		new ConcurrentHashMap<String, AtomicInteger>();
 	private final static ConcurrentHashMap<String, String> FRAMEBUFFER_LIVE_OWNER_SAMPLES =
 		new ConcurrentHashMap<String, String>();
-	private final static ConcurrentHashMap<GLTexture, GLFrameBuffer<?>> FRAMEBUFFER_TEXTURE_OWNERS =
-		new ConcurrentHashMap<GLTexture, GLFrameBuffer<?>>();
 	private final static int FRAMEBUFFER_LIVE_OWNER_SUMMARY_LIMIT = 4;
 	private static boolean fboFallbackLogged = false;
 	private static boolean nonRenderableFormatFallbackLogged = false;
@@ -191,6 +189,12 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private static volatile long currentFrameId;
 	private static volatile long lastFrameBufferIdleSweepFrame = -1L;
 	private static volatile long lastFrameBufferManagerSweepFrame = -1L;
+	private final static ThreadLocal<IntBuffer> GL_INT_QUERY_BUFFER = new ThreadLocal<IntBuffer>() {
+		@Override
+		protected IntBuffer initialValue () {
+			return ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
+		}
+	};
 
 	private final long debugFrameBufferId = allocateDebugFrameBufferId();
 	private int debugBuildGeneration = 0;
@@ -360,7 +364,8 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	private static int getCurrentFramebufferBinding (GL20 gl) {
-		IntBuffer intbuf = ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
+		IntBuffer intbuf = GL_INT_QUERY_BUFFER.get();
+		intbuf.clear();
 		gl.glGetIntegerv(GL20.GL_FRAMEBUFFER_BINDING, intbuf);
 		return intbuf.get(0);
 	}
@@ -513,7 +518,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 				gl.glBindFramebuffer(GL20.GL_FRAMEBUFFER, previousFramebufferHandle);
 				releaseNativeResources("build_failed", false, true);
 				if (createdColorTexture && colorTexture != null && !nativeResourcesAllocated) {
-					FRAMEBUFFER_TEXTURE_OWNERS.remove(colorTexture);
+					unregisterFrameBufferTextureOwner(colorTexture, this);
 					disposeColorTexture(colorTexture);
 					colorTexture = null;
 				}
@@ -642,11 +647,11 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private boolean ensureColorTextureAvailable (String reason) {
 		if (colorTexture == null) {
 			colorTexture = createColorTexture();
-			FRAMEBUFFER_TEXTURE_OWNERS.put(colorTexture, this);
+			registerFrameBufferTextureOwner(colorTexture, this);
 			ensureTextureAllocationMatchesPlan(colorTexture, reason + "_created");
 			return true;
 		}
-		FRAMEBUFFER_TEXTURE_OWNERS.put(colorTexture, this);
+		registerFrameBufferTextureOwner(colorTexture, this);
 		if (colorTexture.hasTextureObjectHandle()) {
 			return false;
 		}
@@ -665,10 +670,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		}
 
 		T previousTexture = colorTexture;
-		FRAMEBUFFER_TEXTURE_OWNERS.remove(previousTexture);
+		unregisterFrameBufferTextureOwner(previousTexture, this);
 		T rebuiltTexture = createColorTexture();
 		colorTexture = rebuiltTexture;
-		FRAMEBUFFER_TEXTURE_OWNERS.put(rebuiltTexture, this);
+		registerFrameBufferTextureOwner(rebuiltTexture, this);
 		disposeColorTexture(previousTexture);
 		return true;
 	}
@@ -774,7 +779,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 		if (colorTexture != null) {
 			if (permanentDispose) {
-				FRAMEBUFFER_TEXTURE_OWNERS.remove(colorTexture);
+				unregisterFrameBufferTextureOwner(colorTexture, this);
 				disposeColorTexture(colorTexture);
 				colorTexture = null;
 				released = released || releasedColorTextureHandle != 0;
@@ -809,6 +814,10 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			build();
 		}
 		markUsed(reason);
+	}
+
+	public final void onExternalColorTextureAccess (String reason) {
+		onColorTextureAccess(reason);
 	}
 
 	private void markUsed (String reason) {
@@ -1023,14 +1032,24 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	public static void onExternalTextureAccess (GLTexture texture, String reason) {
 		if (texture == null) return;
-		GLFrameBuffer<?> frameBuffer = FRAMEBUFFER_TEXTURE_OWNERS.get(texture);
+		GLFrameBuffer<?> frameBuffer = texture.getFrameBufferTextureOwner();
 		if (frameBuffer != null) {
 			frameBuffer.onColorTextureAccess(reason);
 		}
 	}
 
 	public static boolean isFrameBufferTexture (GLTexture texture) {
-		return texture != null && FRAMEBUFFER_TEXTURE_OWNERS.containsKey(texture);
+		return texture != null && texture.getFrameBufferTextureOwner() != null;
+	}
+
+	private static void registerFrameBufferTextureOwner (GLTexture texture, GLFrameBuffer<?> owner) {
+		if (texture == null) return;
+		texture.setFrameBufferTextureOwner(owner);
+	}
+
+	private static void unregisterFrameBufferTextureOwner (GLTexture texture, GLFrameBuffer<?> owner) {
+		if (texture == null) return;
+		texture.clearFrameBufferTextureOwner(owner);
 	}
 
 	public static void reclaimIdleFrameBuffers (Application app, long frameId) {

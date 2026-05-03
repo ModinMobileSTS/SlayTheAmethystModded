@@ -82,7 +82,10 @@ public class LwjglApplication implements Application {
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
+	private static final String RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP =
+		"amethyst.gdx.runtime_texture_compat_periodic_scan";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
+	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final int VSYNC_SOFTWARE_SYNC_MARGIN_FPS = 1;
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
@@ -146,6 +149,7 @@ public class LwjglApplication implements Application {
 	protected final Array<Runnable> runnables = new Array<Runnable>();
 	protected final Array<Runnable> executedRunnables = new Array<Runnable>();
 	protected final SnapshotArray<LifecycleListener> lifecycleListeners = new SnapshotArray<LifecycleListener>(LifecycleListener.class);
+	private Field managedTexturesField;
 	protected int logLevel = LOG_INFO;
 	protected ApplicationLogger applicationLogger;
 	protected String preferencesdir;
@@ -174,7 +178,9 @@ public class LwjglApplication implements Application {
 	public LwjglApplication (ApplicationListener listener, LwjglApplicationConfiguration config, LwjglGraphics graphics) {
 		LwjglNativesLoader.load();
 		setApplicationLogger(new LwjglApplicationLogger());
-		installNoContextDiagnostics();
+		if (readBooleanSystemProperty(NO_CONTEXT_DIAGNOSTICS_PROP, false)) {
+			installNoContextDiagnostics();
+		}
 
 		if (config.title == null) config.title = listener.getClass().getSimpleName();
 		this.graphics = graphics;
@@ -1170,9 +1176,9 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldRunGlobalTextureCompatScan () {
+		if (!readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP, false)) return false;
 		long frame = graphics.frameId;
-		// Startup phase is most sensitive to transient black blocks: scan every frame first.
-		if (frame < 3600) return true;
+		if (frame < 3600) return (frame % 60) == 0;
 		if (frame < 7200) return (frame % 10) == 0;
 		if (frame < 21600) return (frame % 60) == 0;
 		return (frame % 600) == 0;
@@ -1281,7 +1287,7 @@ public class LwjglApplication implements Application {
 
 	private int getManagedTextureCount () {
 		try {
-			Object managedObj = readStaticField(Texture.class, "managedTextures");
+			Object managedObj = getManagedTexturesField().get(null);
 			if (!(managedObj instanceof Map<?, ?>)) return -1;
 
 			Object texturesObj = ((Map<?, ?>)managedObj).get(this);
@@ -1325,7 +1331,7 @@ public class LwjglApplication implements Application {
 		if (!shouldEnableGlobalTextureCompat()) return;
 
 		try {
-			Object managedObj = readStaticField(Texture.class, "managedTextures");
+			Object managedObj = getManagedTexturesField().get(null);
 			if (!(managedObj instanceof Map<?, ?>)) return;
 
 			Object texturesObj = ((Map<?, ?>)managedObj).get(this);
@@ -1483,6 +1489,13 @@ public class LwjglApplication implements Application {
 				System.out.println("[gdx-patch] Global texture compat unavailable: " + t);
 			}
 		}
+	}
+
+	private Field getManagedTexturesField () throws Exception {
+		if (managedTexturesField == null) {
+			managedTexturesField = findField(Texture.class, "managedTextures");
+		}
+		return managedTexturesField;
 	}
 
 	void mainLoop () {

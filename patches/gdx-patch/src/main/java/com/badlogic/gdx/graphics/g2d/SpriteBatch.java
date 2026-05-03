@@ -22,6 +22,7 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Mesh;
 import com.badlogic.gdx.graphics.Mesh.VertexDataType;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.TextureData;
 import com.badlogic.gdx.graphics.VertexAttribute;
 import com.badlogic.gdx.graphics.VertexAttributes.Usage;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
@@ -29,7 +30,6 @@ import com.badlogic.gdx.math.Affine2;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.NumberUtils;
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -42,6 +42,11 @@ public class SpriteBatch implements Batch {
 	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
 	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
+	private static final boolean RUNTIME_TEXTURE_COMPAT_ENABLED = readBooleanProperty(RUNTIME_TEXTURE_COMPAT_PROP, false);
+	private static final boolean GLOBAL_ATLAS_FILTER_COMPAT_ENABLED =
+		readBooleanProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
+	private static final boolean GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED =
+		readBooleanProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
 
 	/** @deprecated Do not use, this field is for testing only and is likely to be removed. Sets the {@link VertexDataType} to be
 	 *             used when gles 3 is not available, defaults to {@link VertexDataType#VertexArray}. */
@@ -249,17 +254,6 @@ public class SpriteBatch implements Batch {
 		return defaultValue;
 	}
 
-	private static Object invokeNoArgMethod (Object target, String methodName) {
-		if (target == null || methodName == null || methodName.length() == 0) return null;
-		try {
-			Method method = target.getClass().getMethod(methodName);
-			method.setAccessible(true);
-			return method.invoke(target);
-		} catch (Throwable ignored) {
-			return null;
-		}
-	}
-
 	private static boolean isPowerOfTwo (int value) {
 		return value > 0 && (value & (value - 1)) == 0;
 	}
@@ -267,9 +261,8 @@ public class SpriteBatch implements Batch {
 	private static boolean textureDataUseMipMaps (Texture texture) {
 		if (texture == null) return false;
 		try {
-			Object textureData = Texture.class.getMethod("getTextureData").invoke(texture);
-			Object value = invokeNoArgMethod(textureData, "useMipMaps");
-			return value instanceof Boolean && ((Boolean)value).booleanValue();
+			TextureData textureData = texture.getTextureData();
+			return textureData != null && textureData.useMipMaps();
 		} catch (Throwable ignored) {
 			return false;
 		}
@@ -286,12 +279,11 @@ public class SpriteBatch implements Batch {
 
 	private void applyGlobalAtlasCompatIfNeeded (Texture texture) {
 		if (texture == null) return;
-		if (!readBooleanProperty(RUNTIME_TEXTURE_COMPAT_PROP, false)) return;
-		if (!readBooleanProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true)) return;
+		if (!RUNTIME_TEXTURE_COMPAT_ENABLED || !GLOBAL_ATLAS_FILTER_COMPAT_ENABLED) return;
 		if (compatTouchedTextures.contains(texture)) return;
 		compatTouchedTextures.add(texture);
 
-		boolean verbose = readBooleanProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
+		boolean verbose = GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED;
 		boolean useMipMaps = textureDataUseMipMaps(texture);
 		boolean minFilterMipMap = texture.getMinFilter().isMipMap();
 		boolean npot = !isPowerOfTwo(texture.getWidth()) || !isPowerOfTwo(texture.getHeight());

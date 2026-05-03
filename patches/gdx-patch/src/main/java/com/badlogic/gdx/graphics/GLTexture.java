@@ -255,6 +255,12 @@ public abstract class GLTexture implements Disposable {
 	private static volatile long textureResidencyLowWaterBytes = -1L;
 	private static volatile int textureResidencyGrowthStrikes;
 	private static volatile int textureResidencyEmergencyStrikes;
+	private static final ThreadLocal<IntBuffer> GL_INT_QUERY_BUFFER = new ThreadLocal<IntBuffer>() {
+		@Override
+		protected IntBuffer initialValue () {
+			return ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
+		}
+	};
 
 	public final int glTarget;
 	protected int glHandle;
@@ -276,6 +282,7 @@ public abstract class GLTexture implements Disposable {
 	private int residencyReleaseCount;
 	private int residencyRestoreCount;
 	private int residencyRestoreFailureCount;
+	private volatile GLFrameBuffer<?> frameBufferTextureOwner;
 	private boolean handleReclaimPending;
 	private boolean permanentlyDisposed;
 
@@ -689,6 +696,7 @@ public abstract class GLTexture implements Disposable {
 
 		Array<Texture> managedTextures = getManagedTextures(app);
 		if (managedTextures == null || managedTextures.size == 0) return;
+		int currentTexture2DBinding = getCurrentTextureBinding(GL_TEXTURE_2D_ENUM);
 
 		TextureResidencySweepResult sweepResult = null;
 		if (textureResidencyEmergencyStrikes >= 2) {
@@ -700,7 +708,8 @@ public abstract class GLTexture implements Disposable {
 				TEXTURE_RESIDENCY_EMERGENCY_MAX_RECLAIMS,
 				true,
 				lowWaterBytes,
-				emergencyTriggerBytes
+				emergencyTriggerBytes,
+				currentTexture2DBinding
 			);
 		} else if (textureResidencyGrowthStrikes >= 2) {
 			sweepResult = reclaimResidencyTextures(
@@ -711,7 +720,8 @@ public abstract class GLTexture implements Disposable {
 				TEXTURE_RESIDENCY_WATCHDOG_MAX_RECLAIMS,
 				false,
 				lowWaterBytes,
-				watchdogTriggerBytes
+				watchdogTriggerBytes,
+				currentTexture2DBinding
 			);
 		}
 
@@ -743,10 +753,28 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private void notifyBeforeTextureAccess (String reason) {
-		GLFrameBuffer.onExternalTextureAccess(this, reason);
+		GLFrameBuffer<?> frameBufferOwner = frameBufferTextureOwner;
+		if (frameBufferOwner != null) {
+			frameBufferOwner.onExternalColorTextureAccess(reason);
+		}
 		lastAccessFrame = currentFrameId >= 0L ? currentFrameId : lastAccessFrame;
 		lastAccessTimeNanos = nowMonotonicNanos();
 		lastUseReason = reason == null || reason.length() == 0 ? "unknown" : reason;
+	}
+
+	public final void setFrameBufferTextureOwner (GLFrameBuffer<?> owner) {
+		frameBufferTextureOwner = owner;
+	}
+
+	public final void clearFrameBufferTextureOwner (GLFrameBuffer<?> owner) {
+		GLFrameBuffer<?> currentOwner = frameBufferTextureOwner;
+		if (currentOwner == owner || currentOwner == null) {
+			frameBufferTextureOwner = null;
+		}
+	}
+
+	public final GLFrameBuffer<?> getFrameBufferTextureOwner () {
+		return frameBufferTextureOwner;
 	}
 
 	private int releaseHandle (String reason, boolean deleteGlHandle) {
@@ -820,8 +848,13 @@ public abstract class GLTexture implements Disposable {
 		}
 	}
 
-	private boolean reclaimForResidencySweep (long minIdleNanos, long minBytes, String reason) {
-		String protectReason = resolveTextureResidencyProtectReason(minIdleNanos, minBytes);
+	private boolean reclaimForResidencySweep (
+		long minIdleNanos,
+		long minBytes,
+		String reason,
+		int currentTexture2DBinding
+	) {
+		String protectReason = resolveTextureResidencyProtectReason(minIdleNanos, minBytes, currentTexture2DBinding);
 		if (protectReason != null) return false;
 		long reclaimedBytes = captureTrackedHandleBytes();
 		if (releaseHandleForReuse(reason) == 0) return false;
@@ -831,7 +864,7 @@ public abstract class GLTexture implements Disposable {
 		return true;
 	}
 
-	private String resolveTextureResidencyProtectReason (long minIdleNanos, long minBytes) {
+	private String resolveTextureResidencyProtectReason (long minIdleNanos, long minBytes, int currentTexture2DBinding) {
 		if (TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) {
 			logTextureResidencySkipForRamSaverIfNeeded();
 			return "disabled_for_ramsaver";
@@ -849,7 +882,7 @@ public abstract class GLTexture implements Disposable {
 		if (!isResidencyWatchdogOwnerEligible()) return "owner_not_eligible";
 		if (isResidencyWatchdogSourceExcluded(data)) return "excluded_hot_path";
 		if (captureTrackedHandleBytes() < minBytes) return "below_min_bytes";
-		if (getCurrentTextureBinding(glTarget) == glHandle) return "currently_bound";
+		if (currentTexture2DBinding == glHandle) return "currently_bound";
 		if (getIdleDurationNanos() < minIdleNanos) return "recently_used";
 		if (lastRestoreFrame >= 0L && getRestoreAgeNanos() < TEXTURE_RESIDENCY_RESTORE_GRACE_NANOS) {
 			return "recently_restored";
@@ -979,7 +1012,8 @@ public abstract class GLTexture implements Disposable {
 		int maxReclaims,
 		boolean emergency,
 		long lowWaterBytes,
-		long triggerBytes
+		long triggerBytes,
+		int currentTexture2DBinding
 	) {
 		long bytesBefore = TEXTURE_NATIVE_ESTIMATED_BYTES.get();
 		int sweepIndex = emergency
@@ -989,7 +1023,11 @@ public abstract class GLTexture implements Disposable {
 		List<GLTexture> candidates = new ArrayList<GLTexture>(managedTextures.size);
 		for (int i = 0; i < managedTextures.size; i++) {
 			GLTexture texture = managedTextures.get(i);
-			if (texture != null && texture.resolveTextureResidencyProtectReason(minIdleNanos, minBytes) == null) {
+			if (texture != null && texture.resolveTextureResidencyProtectReason(
+				minIdleNanos,
+				minBytes,
+				currentTexture2DBinding
+			) == null) {
 				candidates.add(texture);
 			}
 		}
@@ -1008,7 +1046,8 @@ public abstract class GLTexture implements Disposable {
 			if (!candidate.reclaimForResidencySweep(
 				minIdleNanos,
 				minBytes,
-				emergency ? "texture_residency_emergency" : "texture_residency_watchdog"
+				emergency ? "texture_residency_emergency" : "texture_residency_watchdog",
+				currentTexture2DBinding
 			)) continue;
 			reclaimedCount++;
 			reclaimedBytes += Math.max(0L, candidate.residencyLastKnownBytes);
@@ -1109,8 +1148,8 @@ public abstract class GLTexture implements Disposable {
 		}
 		final TextureDataType type = data.getType();
 		if (type == TextureDataType.Custom) {
-			String stackKey = captureTextureUploadStackIfNeeded();
 			String sourcePath = resolveTextureSourcePath(data);
+			String stackKey = captureTextureUploadStackIfNeeded(data, sourcePath, data.getWidth(), data.getHeight(), data.getFormat());
 			data.consumeCustomData(target);
 			recordTextureNativeBytes(
 				target,
@@ -1123,10 +1162,16 @@ public abstract class GLTexture implements Disposable {
 			);
 			return;
 		}
-		String stackKey = captureTextureUploadStackIfNeeded();
 		String sourcePath = resolveTextureSourcePath(data);
+		String stackKey = null;
+		if (shouldCaptureTextureUploadStackForDiagnostics()) {
+			stackKey = captureRelevantTextureUploadStack();
+		}
 		logLargeTextureUpload(data, miplevel, stackKey, sourcePath);
 		Pixmap pixmap = data.consumePixmap();
+		if (stackKey == null) {
+			stackKey = captureTextureUploadStackIfNeeded(data, sourcePath, pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat());
+		}
 		boolean disposePixmap = data.disposePixmap();
 		if (data.getFormat() != pixmap.getFormat()) {
 			Pixmap tmp = new Pixmap(pixmap.getWidth(), pixmap.getHeight(), data.getFormat());
@@ -1178,9 +1223,41 @@ public abstract class GLTexture implements Disposable {
 		}
 	}
 
-	private static String captureTextureUploadStackIfNeeded () {
-		if (!GPU_RESOURCE_DIAG_TEXTURE_STACKS_ENABLED && !TEXTURE_PRESSURE_DOWNSCALE_ENABLED) return null;
+	private static boolean shouldCaptureTextureUploadStackForDiagnostics () {
+		return GPU_RESOURCE_DIAG_ENABLED && GPU_RESOURCE_DIAG_TEXTURE_STACKS_ENABLED;
+	}
+
+	private static String captureTextureUploadStackIfNeeded (
+		TextureData data,
+		String sourcePath,
+		int width,
+		int height,
+		Pixmap.Format format
+	) {
+		if (shouldCaptureTextureUploadStackForDiagnostics()) return captureRelevantTextureUploadStack();
+		if (!TEXTURE_PRESSURE_DOWNSCALE_ENABLED) return null;
+		if (!needsTexturePressureStackClassification(data, sourcePath, width, height, format)) return null;
 		return captureRelevantTextureUploadStack();
+	}
+
+	private static boolean needsTexturePressureStackClassification (
+		TextureData data,
+		String sourcePath,
+		int width,
+		int height,
+		Pixmap.Format format
+	) {
+		if (width <= 0 || height <= 0) return false;
+		long estimatedBytes = estimateTextureBytes(width, height, format);
+		if (estimatedBytes < TEXTURE_PRESSURE_DOWNSCALE_ART_MIN_BYTES) return false;
+		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
+		if (normalizedSourcePath != null) return false;
+		long projectedTotalBytes = safeAdd(
+			safeAdd(TEXTURE_NATIVE_ESTIMATED_BYTES.get(), GLFrameBuffer.getEstimatedNativeBytes()),
+			estimatedBytes
+		);
+		if (projectedTotalBytes >= TEXTURE_PRESSURE_DOWNSCALE_SOFT_BYTES) return true;
+		return width >= 2048 || height >= 2048 || (data != null && data.useMipMaps());
 	}
 
 	private static Pixmap maybePressureDownscalePixmap (
@@ -2384,7 +2461,8 @@ public abstract class GLTexture implements Disposable {
 	private static int getCurrentTextureBinding (int target) {
 		int bindingQuery = getTextureBindingQueryEnum(target);
 		if (bindingQuery == 0) return 0;
-		IntBuffer intbuf = ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
+		IntBuffer intbuf = GL_INT_QUERY_BUFFER.get();
+		intbuf.clear();
 		Gdx.gl.glGetIntegerv(bindingQuery, intbuf);
 		return intbuf.get(0);
 	}

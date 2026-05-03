@@ -17,6 +17,8 @@ import com.megacrit.cardcrawl.core.Settings;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class HinaCharacterRenderCompatPatches {
     private static final String HINA_MOD_ID = "Blue archive Hina mod";
@@ -27,7 +29,11 @@ public final class HinaCharacterRenderCompatPatches {
     private static final int MOBILE_RENDER_SCALE = 1;
     private static final boolean HINA_CHARACTER_RENDER_COMPAT_ENABLED =
         readBooleanSystemProperty(HINA_CHARACTER_RENDER_COMPAT_PROP, true);
+    private static final boolean SHOULD_APPLY_COMPAT = resolveShouldApplyCompat();
+    private static final Map<String, Field> FIELD_CACHE = new HashMap<>();
+    private static final Map<String, Method> METHOD_CACHE = new HashMap<>();
     private static boolean resizeLogPrinted;
+    private static boolean renderFallbackLogPrinted;
 
     private HinaCharacterRenderCompatPatches() {
     }
@@ -78,20 +84,24 @@ public final class HinaCharacterRenderCompatPatches {
                 if (!spriteBatch.isDrawing()) {
                     spriteBatch.begin();
                 }
-                System.out.println(
-                    "[amethyst-runtime-compat] Hina render compat fallback: " +
-                        error.getClass().getSimpleName() + ": " + error.getMessage()
-                );
+                if (!renderFallbackLogPrinted) {
+                    renderFallbackLogPrinted = true;
+                    System.out.println(
+                        "[amethyst-runtime-compat] Hina render compat fallback: " +
+                            error.getClass().getSimpleName() + ": " + error.getMessage()
+                    );
+                }
                 return SpireReturn.Continue();
             }
         }
     }
 
     private static boolean shouldApplyCompat() {
+        return SHOULD_APPLY_COMPAT && Gdx.graphics != null;
+    }
+
+    private static boolean resolveShouldApplyCompat() {
         if (!HINA_CHARACTER_RENDER_COMPAT_ENABLED) {
-            return false;
-        }
-        if (Gdx.graphics == null) {
             return false;
         }
         String osVersion = System.getProperty("os.version", "");
@@ -143,10 +153,12 @@ public final class HinaCharacterRenderCompatPatches {
             frameBufferBegan = false;
 
             Texture colorBufferTexture = frameBuffer.getColorBufferTexture();
-            colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-            TextureRegion region = new TextureRegion(colorBufferTexture);
-            region.flip(false, true);
-            setFieldValue(helper, "region", region);
+            TextureRegion region = (TextureRegion)getFieldValue(helper, "region");
+            if (region == null || region.getTexture() != colorBufferTexture) {
+                region = new TextureRegion(colorBufferTexture);
+                region.flip(false, true);
+                setFieldValue(helper, "region", region);
+            }
 
             float drawX = getFloatFieldValue(helper, "drawX");
             float drawY = getFloatFieldValue(helper, "drawY");
@@ -216,6 +228,7 @@ public final class HinaCharacterRenderCompatPatches {
             targetHeight,
             true
         );
+        mobileFrameBuffer.getColorBufferTexture().setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         OrthographicCamera mobileCamera = createMobileCamera(logicalCameraWidth, logicalCameraHeight);
 
         setFieldValue(helper, "frameBuffer", mobileFrameBuffer);
@@ -268,11 +281,17 @@ public final class HinaCharacterRenderCompatPatches {
     }
 
     private static Field findField(Class<?> type, String fieldName) throws Exception {
+        String cacheKey = type.getName() + "#" + fieldName;
+        Field cached = FIELD_CACHE.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
         Class<?> current = type;
         while (current != null) {
             try {
                 Field field = current.getDeclaredField(fieldName);
                 field.setAccessible(true);
+                FIELD_CACHE.put(cacheKey, field);
                 return field;
             } catch (NoSuchFieldException ignored) {
                 current = current.getSuperclass();
@@ -288,7 +307,6 @@ public final class HinaCharacterRenderCompatPatches {
         Object... args
     ) throws Exception {
         Method method = findMethod(target.getClass(), methodName, parameterTypes);
-        method.setAccessible(true);
         return method.invoke(target, args);
     }
 
@@ -297,15 +315,34 @@ public final class HinaCharacterRenderCompatPatches {
         String methodName,
         Class<?>[] parameterTypes
     ) throws Exception {
+        String cacheKey = buildMethodCacheKey(type, methodName, parameterTypes);
+        Method cached = METHOD_CACHE.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
         Class<?> current = type;
         while (current != null) {
             try {
-                return current.getDeclaredMethod(methodName, parameterTypes);
+                Method method = current.getDeclaredMethod(methodName, parameterTypes);
+                method.setAccessible(true);
+                METHOD_CACHE.put(cacheKey, method);
+                return method;
             } catch (NoSuchMethodException ignored) {
                 current = current.getSuperclass();
             }
         }
         throw new NoSuchMethodException(methodName);
+    }
+
+    private static String buildMethodCacheKey(Class<?> type, String methodName, Class<?>[] parameterTypes) {
+        StringBuilder builder = new StringBuilder(type.getName()).append('#').append(methodName).append('(');
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(parameterTypes[i].getName());
+        }
+        return builder.append(')').toString();
     }
 
     private static boolean readBooleanSystemProperty(String key, boolean defaultValue) {
