@@ -208,7 +208,8 @@ internal class GameSessionCoordinator(
         return CallbackBridge.windowWidth > 0 && CallbackBridge.windowHeight > 0
     }
 
-    fun handleAndroidBackPressed() {
+    fun handleAndroidBackPressed(source: String = "unknown") {
+        logAndroidBackHandling(source, "pressed")
         when (config.backBehavior) {
             BackBehavior.EXIT_TO_LAUNCHER -> requestBackExitToLauncher()
             BackBehavior.SEND_ESCAPE -> sendEscapeKeyToGame()
@@ -216,20 +217,41 @@ internal class GameSessionCoordinator(
         }
     }
 
-    fun handleAndroidBackKeyEvent(event: KeyEvent): Boolean {
-        if (inputHandler.isGamepadKeyEvent(event)) {
-            return false
-        }
+    fun handleAndroidBackKeyEvent(event: KeyEvent, source: String = "dispatch_key_event"): Boolean {
         when (event.action) {
-            KeyEvent.ACTION_DOWN -> return true
+            KeyEvent.ACTION_DOWN -> {
+                logAndroidBackHandling(source, "key_down_consumed")
+                return true
+            }
             KeyEvent.ACTION_UP -> {
                 if (!event.isCanceled) {
-                    handleAndroidBackPressed()
+                    handleAndroidBackPressed(source)
+                } else {
+                    logAndroidBackHandling(source, "key_up_canceled")
                 }
                 return true
             }
-            else -> return true
+            else -> {
+                logAndroidBackHandling(source, "key_other_consumed")
+                return true
+            }
         }
+    }
+
+    private fun logAndroidBackHandling(source: String, stage: String) {
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_android_back_handling",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "source" to source,
+                "stage" to stage,
+                "backBehavior" to config.backBehavior.persistedValue,
+                "backExitRequested" to backExitRequested,
+                "inputDispatchReady" to isInputDispatchReady()
+            ),
+            includeMemorySnapshot = false
+        )
     }
 
     private fun tryStartJvmWhenSurfaceReady() {
