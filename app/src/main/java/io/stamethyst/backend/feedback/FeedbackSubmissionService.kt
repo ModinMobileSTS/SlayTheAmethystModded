@@ -68,7 +68,8 @@ private data class PreparedFeedbackSubmission(
     val issueTitle: String,
     val issueBody: String,
     val requestJson: String,
-    val archiveFile: File
+    val archiveFile: File,
+    val screenshots: List<FeedbackScreenshotAttachment>
 )
 
 object FeedbackSubmissionService {
@@ -120,7 +121,8 @@ object FeedbackSubmissionService {
             issueTitle = issueTitle,
             issueBody = issueBody,
             requestJson = requestJson,
-            archiveFile = archiveFile
+            archiveFile = archiveFile,
+            screenshots = draft.screenshots
         )
     }
 
@@ -160,6 +162,15 @@ object FeedbackSubmissionService {
                 writeTextPart(output, boundary, "issue_title", prepared.issueTitle, "text/plain; charset=UTF-8")
                 writeTextPart(output, boundary, "issue_body", prepared.issueBody, "text/markdown; charset=UTF-8")
                 writeFilePart(output, boundary, "bundle", prepared.archiveFile, "application/zip")
+                prepared.screenshots.forEach { screenshot ->
+                    writeFilePart(
+                        output = output,
+                        boundary = boundary,
+                        fieldName = "screenshots",
+                        sourceFile = screenshot.file,
+                        contentType = guessContentType(screenshot.displayName)
+                    )
+                }
                 output.writeBytes("--$boundary--$MULTIPART_LINE_END")
                 output.flush()
             }
@@ -420,13 +431,6 @@ object FeedbackSubmissionService {
                     "sts/feedback/latest_log_summary.txt",
                     buildLogSummaryText(logSummary)
                 )
-                draft.screenshots.forEach { attachment ->
-                    val entryName = buildUniqueEntryName(
-                        writtenEntries = writtenEntries,
-                        baseEntryName = "sts/feedback/screenshots/${sanitizeFileName(attachment.displayName)}"
-                    )
-                    writeFileEntry(zipOutput, entryName, attachment.file)
-                }
             }
         }
 
@@ -716,6 +720,16 @@ object FeedbackSubmissionService {
             copyStream(input, output)
         }
         output.writeBytes(MULTIPART_LINE_END)
+    }
+
+    private fun guessContentType(fileName: String): String {
+        val lower = fileName.lowercase()
+        return when {
+            lower.endsWith(".png") -> "image/png"
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
+            lower.endsWith(".webp") -> "image/webp"
+            else -> "application/octet-stream"
+        }
     }
 
     private fun readResponseText(connection: HttpURLConnection): String {

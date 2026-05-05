@@ -3,6 +3,7 @@ package io.stamethyst.backend.feedback
 import android.app.Activity
 import android.os.Build
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.diag.DiagnosticsArchiveBuilder
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedOutputStream
 import java.io.BufferedReader
@@ -28,7 +29,8 @@ object FeedbackConversationService {
         host: Activity,
         issueNumber: Long,
         messageText: String,
-        screenshots: List<FeedbackScreenshotAttachment>
+        screenshots: List<FeedbackScreenshotAttachment>,
+        attachLogs: Boolean = false
     ): FeedbackPostedComment {
         val endpoint = "${BuildConfig.FEEDBACK_BASE_URL.trim().trimEnd('/')}/api/feedback-issues/message"
         val boundary = "----StsFeedbackMessage${System.currentTimeMillis()}"
@@ -72,6 +74,17 @@ object FeedbackConversationService {
                         sourceFile = screenshot.file,
                         contentType = guessContentType(screenshot.displayName)
                     )
+                }
+                if (attachLogs) {
+                    val logArchive = DiagnosticsArchiveBuilder.createJvmLogShareArchive(host)
+                    writeFilePart(
+                        output = output,
+                        boundary = boundary,
+                        fieldName = "log_bundle",
+                        sourceFile = logArchive.archiveFile,
+                        contentType = "application/zip"
+                    )
+                    logArchive.archiveFile.delete()
                 }
                 output.writeBytes("--$boundary--$MULTIPART_LINE_END")
                 output.flush()

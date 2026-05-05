@@ -60,6 +60,7 @@ import io.stamethyst.ui.compatibility.LauncherCompatibilityScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackConversationScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackIssueBrowserScreen
+import io.stamethyst.ui.feedback.LauncherFeedbackIssuePreviewScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackSubscriptionsScreen
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
@@ -321,6 +322,13 @@ fun LauncherContent(
 
                         entry<Route.FeedbackConversation> { route ->
                             LauncherFeedbackConversationScreen(
+                                modifier = Modifier.fillMaxSize(),
+                                issueNumber = route.issueNumber
+                            )
+                        }
+
+                        entry<Route.FeedbackIssuePreview> { route ->
+                            LauncherFeedbackIssuePreviewScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 issueNumber = route.issueNumber
                             )

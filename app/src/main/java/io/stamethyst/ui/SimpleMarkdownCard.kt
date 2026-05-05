@@ -32,12 +32,13 @@ internal fun SimpleMarkdownCard(
     title: String,
     markdown: String,
     modifier: Modifier = Modifier,
+    containerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceContainerHigh,
 ) {
     val blocks = remember(markdown) { parseSimpleMarkdown(markdown) }
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = containerColor
         )
     ) {
         Column(

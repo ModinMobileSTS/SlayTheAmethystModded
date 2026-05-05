@@ -69,7 +69,8 @@ class FeedbackConversationViewModel(
         val issueBody: String = "",
         val events: List<FeedbackThreadEvent> = emptyList(),
         val messageText: String = "",
-        val screenshots: List<ScreenshotItem> = emptyList()
+        val screenshots: List<ScreenshotItem> = emptyList(),
+        val attachLogs: Boolean = false
     ) {
         val isClosed: Boolean
             get() = state.equals("closed", ignoreCase = true)
@@ -147,6 +148,10 @@ class FeedbackConversationViewModel(
 
     fun onMessageChanged(value: String) {
         uiState = uiState.copy(messageText = value)
+    }
+
+    fun onAttachLogsChanged(value: Boolean) {
+        uiState = uiState.copy(attachLogs = value)
     }
 
     fun onAddScreenshots() {
@@ -236,7 +241,8 @@ class FeedbackConversationViewModel(
                     host = host,
                     issueNumber = issueNumber,
                     messageText = message,
-                    screenshots = screenshots
+                    screenshots = screenshots,
+                    attachLogs = uiState.attachLogs
                 )
             }.onSuccess { comment ->
                 val optimisticCache = appendOptimisticComment(host, comment)
@@ -443,7 +449,8 @@ class FeedbackConversationViewModel(
         screenshotAttachments.clear()
         uiState = uiState.copy(
             messageText = "",
-            screenshots = emptyList()
+            screenshots = emptyList(),
+            attachLogs = false
         )
     }
 

@@ -61,6 +61,7 @@ import io.stamethyst.backend.feedback.FeedbackInboxUiState
 import io.stamethyst.backend.feedback.FeedbackIssueBrowseItem
 import io.stamethyst.backend.feedback.FeedbackIssueSubscription
 import io.stamethyst.backend.feedback.GameIssueType
+import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
@@ -194,6 +195,7 @@ fun LauncherFeedbackIssueBrowserScreen(
         onRefreshIssues = { browserViewModel.onRefresh(activity) },
         onLoadMoreIssues = { browserViewModel.onLoadMore(activity) },
         onIssueStateFilterSelected = browserViewModel::onIssueStateFilterSelected,
+        onViewIssue = { issueNumber -> navigator.push(Route.FeedbackIssuePreview(issueNumber)) },
         onFollowIssue = { issueNumber -> browserViewModel.onSubscribe(activity, issueNumber) }
     )
 }
@@ -472,6 +474,7 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
     onRefreshIssues: () -> Unit = {},
     onLoadMoreIssues: () -> Unit = {},
     onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit = {},
+    onViewIssue: (Long) -> Unit = {},
     onFollowIssue: (Long) -> Unit = {}
 ) {
     Scaffold(
@@ -498,6 +501,7 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
             onRefreshIssues = onRefreshIssues,
             onLoadMoreIssues = onLoadMoreIssues,
             onIssueStateFilterSelected = onIssueStateFilterSelected,
+            onViewIssue = onViewIssue,
             onFollowIssue = onFollowIssue
         )
     }
@@ -922,6 +926,7 @@ private fun FeedbackIssueBrowserContent(
     onRefreshIssues: () -> Unit = {},
     onLoadMoreIssues: () -> Unit = {},
     onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit = {},
+    onViewIssue: (Long) -> Unit = {},
     onFollowIssue: (Long) -> Unit = {}
 ) {
     val visibleIssues = uiState.visibleIssues
@@ -1001,6 +1006,7 @@ private fun FeedbackIssueBrowserContent(
                                 issue = issue,
                                 followed = followedIssueNumbers.contains(issue.issueNumber),
                                 busy = uiState.busy,
+                                onViewIssue = { onViewIssue(issue.issueNumber) },
                                 onFollowIssue = { onFollowIssue(issue.issueNumber) }
                             )
                         }
@@ -1089,62 +1095,45 @@ private fun FeedbackIssueBrowserRow(
     issue: FeedbackIssueBrowseItem,
     followed: Boolean,
     busy: Boolean,
+    onViewIssue: () -> Unit,
     onFollowIssue: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = issue.title.ifBlank {
                     stringResource(R.string.feedback_issue_fallback_title, issue.issueNumber)
                 },
                 style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            if (followed) {
+            if (issue.bodyPreview.isNotBlank()) {
                 Text(
-                    text = stringResource(R.string.feedback_followed),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    text = issue.bodyPreview,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        Text(
-            text = buildFeedbackIssueMetaText(
-                issueNumber = issue.issueNumber,
-                isClosed = issue.isClosed,
-                updatedAtMs = issue.updatedAtMs,
-                commentCount = issue.commentCount
-            ),
-            style = MaterialTheme.typography.bodySmall
-        )
-        if (issue.bodyPreview.isNotBlank()) {
-            Text(
-                text = issue.bodyPreview,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(R.string.feedback_author_format, issue.authorLabel),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
-            )
+            OutlinedButton(
+                onClick = onViewIssue,
+                enabled = !busy
+            ) {
+                Text(stringResource(R.string.feedback_view_issue))
+            }
             if (followed) {
                 OutlinedButton(
                     onClick = {},
@@ -1312,7 +1301,7 @@ private fun FeedbackEffectsHandler(
 ) {
     val activity = requireNotNull(LocalActivity.current)
     val screenshotPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
+        ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         viewModel.onScreenshotUrisPicked(activity, uris)
     }
@@ -1321,7 +1310,7 @@ private fun FeedbackEffectsHandler(
         viewModel.effects.collect { effect ->
             when (effect) {
                 FeedbackScreenViewModel.Effect.OpenScreenshotPicker -> {
-                    screenshotPicker.launch(arrayOf("image/*"))
+                    screenshotPicker.launch("image/*")
                 }
 
                 is FeedbackScreenViewModel.Effect.SubmissionCompleted -> {

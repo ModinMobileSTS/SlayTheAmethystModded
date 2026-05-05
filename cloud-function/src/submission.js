@@ -120,6 +120,57 @@ async function maybeUploadBundle(submission, file, currentConfig) {
   }
 }
 
+async function uploadSubmissionScreenshots(submission, screenshotFiles, currentConfig) {
+  if (!screenshotFiles.length) {
+    return [];
+  }
+
+  const releaseDescriptor = buildDiagnosticsReleaseDescriptor(new Date(), currentConfig);
+  const releaseRecord = await ensureDiagnosticsRelease(releaseDescriptor, currentConfig);
+  const uploads = [];
+
+  for (const file of screenshotFiles) {
+    const extension = resolveFileExtension(file.originalname, file.mimetype);
+    const baseName = buildBundleBaseName(submission.requestId, file.originalname || 'screenshot');
+    const assetName = `${baseName}${extension}`;
+    const upload = await uploadReleaseAsset({
+      owner: currentConfig.diagnosticsOwner,
+      repo: currentConfig.diagnosticsRepo,
+      uploadUrl: releaseRecord.upload_url,
+      assetName,
+      contentType: file.mimetype || 'application/octet-stream',
+      content: file.buffer
+    }, currentConfig);
+    uploads.push({
+      name: file.originalname || assetName,
+      url: upload.htmlUrl,
+      mimeType: file.mimetype || 'application/octet-stream',
+      assetName
+    });
+  }
+
+  return uploads;
+}
+
+function resolveFileExtension(fileName, mimeType) {
+  const normalizedName = String(fileName || '').trim();
+  const dotIndex = normalizedName.lastIndexOf('.');
+  if (dotIndex > 0 && dotIndex < normalizedName.length - 1) {
+    return normalizedName.slice(dotIndex);
+  }
+  const normalizedMime = String(mimeType || '').trim().toLowerCase();
+  if (normalizedMime === 'image/png') {
+    return '.png';
+  }
+  if (normalizedMime === 'image/jpeg') {
+    return '.jpg';
+  }
+  if (normalizedMime === 'image/webp') {
+    return '.webp';
+  }
+  return '.bin';
+}
+
 function buildIssueLabels(payload, staticLabels) {
   const labels = new Set(staticLabels);
   const feedback = payload && payload.feedback ? payload.feedback : {};
@@ -171,7 +222,7 @@ function buildNotificationSection(feedback) {
   ].join('\n');
 }
 
-function appendRelaySection(issueBody, requestId, bundleRecord) {
+function appendRelaySection(issueBody, requestId, bundleRecord, screenshotAttachments) {
   const lines = [
     issueBody.trim(),
     '',
@@ -195,6 +246,14 @@ function appendRelaySection(issueBody, requestId, bundleRecord) {
     lines.push(`- Diagnostic release: ${bundleRecord.repository}@${bundleRecord.releaseTag}`);
   }
 
+  if (screenshotAttachments && screenshotAttachments.length > 0) {
+    lines.push('');
+    lines.push('## 截图');
+    for (const attachment of screenshotAttachments) {
+      lines.push(`- [${attachment.name}](${attachment.url})`);
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -215,6 +274,7 @@ module.exports = {
   parseSubmissionRequest,
   parsePayloadJson,
   maybeUploadBundle,
+  uploadSubmissionScreenshots,
   buildIssueLabels,
   prepareIssueBody,
   buildNotificationSection,

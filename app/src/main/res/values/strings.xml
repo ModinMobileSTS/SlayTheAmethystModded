@@ -1233,6 +1233,8 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="feedback_followed">Following</string>
     <string name="feedback_author_format">Author: %1$s</string>
     <string name="feedback_follow">Follow</string>
+    <string name="feedback_view_issue">View</string>
+    <string name="feedback_follow_issue">Follow this issue</string>
     <string name="feedback_issue_fallback_title">Issue #%1$d</string>
     <string name="feedback_summary_placeholder_feature">Example: remember the last email used in the feedback form</string>
     <string name="feedback_summary_placeholder_launcher">Example: the launcher crashes right after importing a certain mod</string>
@@ -1273,6 +1275,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="feedback_conversation_reopen_action">Reopen</string>
     <string name="feedback_conversation_close_action">Close issue</string>
     <string name="feedback_conversation_send">Send</string>
+    <string name="feedback_conversation_attach_logs">Attach new logs</string>
     <string name="feedback_attachment_view_format">View attachment: %1$s</string>
     <string name="feedback_view_on_github">View on GitHub</string>
     <string name="feedback_author_me">Me</string>

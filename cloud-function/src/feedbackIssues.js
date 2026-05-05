@@ -27,9 +27,13 @@ function parseIssueMessageRequest(req) {
   }
 
   const messageText = String(req.body.message_text || '').trim();
-  const files = Array.isArray(req.files) ? req.files : [];
-  if (!messageText && files.length === 0) {
-    throw httpError(400, 'message_text or screenshots is required');
+  const files = req.files && typeof req.files === 'object' ? req.files : {};
+  const screenshots = Array.isArray(files.screenshots) ? files.screenshots : [];
+  const logBundle = Array.isArray(files.log_bundle) && files.log_bundle.length > 0
+    ? files.log_bundle[0]
+    : null;
+  if (!messageText && screenshots.length === 0 && !logBundle) {
+    throw httpError(400, 'message_text, screenshots, or log_bundle is required');
   }
 
   return {
@@ -39,7 +43,8 @@ function parseIssueMessageRequest(req) {
     playerName: firstNonEmpty(req.body.player_name, 'player'),
     appVersion: firstNonEmpty(req.body.app_version, 'unknown'),
     deviceLabel: firstNonEmpty(req.body.device_label, 'Android Device'),
-    screenshots: files
+    screenshots,
+    logBundle
   };
 }
 
@@ -142,7 +147,34 @@ async function uploadIssueMessageScreenshots(messageRequest, currentConfig) {
   return uploads;
 }
 
-function buildIssueMessageCommentBody(messageRequest, uploadedAttachments) {
+async function uploadIssueMessageLogBundle(messageRequest, currentConfig) {
+  if (!messageRequest.logBundle) {
+    return null;
+  }
+
+  const releaseDescriptor = buildDiagnosticsReleaseDescriptor(new Date(), currentConfig);
+  const releaseRecord = await ensureDiagnosticsRelease(releaseDescriptor, currentConfig);
+  const file = messageRequest.logBundle;
+  const baseName = buildBundleBaseName(messageRequest.requestId, 'logs');
+  const assetName = `${baseName}.zip`;
+  const upload = await uploadReleaseAsset({
+    owner: currentConfig.diagnosticsOwner,
+    repo: currentConfig.diagnosticsRepo,
+    uploadUrl: releaseRecord.upload_url,
+    assetName,
+    contentType: file.mimetype || 'application/zip',
+    content: file.buffer
+  }, currentConfig);
+
+  return {
+    name: file.originalname || 'jvm-logs.zip',
+    url: upload.htmlUrl,
+    mimeType: file.mimetype || 'application/zip',
+    assetName
+  };
+}
+
+function buildIssueMessageCommentBody(messageRequest, uploadedAttachments, logBundleAttachment) {
   const sentAt = new Date().toISOString();
   const sections = [];
 
@@ -154,6 +186,13 @@ function buildIssueMessageCommentBody(messageRequest, uploadedAttachments) {
     sections.push([
       '### 截图',
       ...uploadedAttachments.map((attachment) => `- [${attachment.name}](${attachment.url})`)
+    ].join('\n'));
+  }
+
+  if (logBundleAttachment) {
+    sections.push([
+      '### 日志',
+      `- [${logBundleAttachment.name}](${logBundleAttachment.url})`
     ].join('\n'));
   }
 
@@ -175,7 +214,8 @@ function buildIssueMessageCommentBody(messageRequest, uploadedAttachments) {
       appVersion: messageRequest.appVersion,
       deviceLabel: messageRequest.deviceLabel,
       sentAt,
-      attachments: uploadedAttachments
+      attachments: uploadedAttachments,
+      logBundle: logBundleAttachment
     })
   );
 
@@ -226,5 +266,6 @@ module.exports = {
   parseIssueBrowseRequest,
   listBrowsableIssues,
   uploadIssueMessageScreenshots,
+  uploadIssueMessageLogBundle,
   buildIssueMessageCommentBody
 };

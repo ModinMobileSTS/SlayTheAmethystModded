@@ -208,6 +208,15 @@ object FeedbackIssueSyncService {
         return remote
     }
 
+    fun fetchIssuePreview(
+        context: Context,
+        issueNumber: Long
+    ): FeedbackIssueThreadCache {
+        val remote = fetchRemoteIssue(context, issueNumber)
+        FeedbackIssueLocalStore.saveIssueCache(context, remote)
+        return remote
+    }
+
     fun markIssueViewed(context: Context, issueNumber: Long) {
         val cache = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber)
         FeedbackIssueLocalStore.updateSubscriptions(context) { subscriptions ->

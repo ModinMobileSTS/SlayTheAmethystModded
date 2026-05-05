@@ -13,6 +13,7 @@ const {
 const {
   parseSubmissionRequest,
   maybeUploadBundle,
+  uploadSubmissionScreenshots,
   buildIssueLabels,
   prepareIssueBody,
   appendRelaySection
@@ -23,6 +24,7 @@ const {
   parseIssueBrowseRequest,
   listBrowsableIssues,
   uploadIssueMessageScreenshots,
+  uploadIssueMessageLogBundle,
   buildIssueMessageCommentBody
 } = require('./feedbackIssues');
 const {
@@ -77,14 +79,22 @@ function createApp(config) {
     try {
       enforceSharedSecret(req, config);
 
+      const files = req.files && typeof req.files === 'object' ? req.files : {};
+      const bundleFile = Array.isArray(files.bundle) && files.bundle.length > 0
+        ? files.bundle[0]
+        : null;
+      const screenshotFiles = Array.isArray(files.screenshots) ? files.screenshots : [];
+
       const submission = parseSubmissionRequest(req);
-      const bundleRecord = await maybeUploadBundle(submission, req.file, config);
+      const bundleRecord = await maybeUploadBundle(submission, bundleFile, config);
+      const screenshotAttachments = await uploadSubmissionScreenshots(submission, screenshotFiles, config);
       const labels = buildIssueLabels(submission.payload, config.staticLabels);
       const preparedIssueBody = prepareIssueBody(submission.issueBody, submission.payload);
       const issueBody = appendRelaySection(
         preparedIssueBody,
         submission.requestId,
-        bundleRecord
+        bundleRecord,
+        screenshotAttachments
       );
       const issue = await createGithubIssue({
         title: submission.issueTitle,
@@ -108,6 +118,7 @@ function createApp(config) {
           html_url: issue.html_url
         },
         diagnosticBundle: bundleRecord,
+        screenshots: screenshotAttachments,
         mailNotification
       });
     } catch (error) {
@@ -207,12 +218,17 @@ function createApp(config) {
 
       const messageRequest = parseIssueMessageRequest(req);
       const attachments = await uploadIssueMessageScreenshots(messageRequest, config);
-      const commentRequest = buildIssueMessageCommentBody(messageRequest, attachments);
+      const logBundleAttachment = await uploadIssueMessageLogBundle(messageRequest, config);
+      const commentRequest = buildIssueMessageCommentBody(messageRequest, attachments, logBundleAttachment);
       const comment = await createGithubIssueComment(
         messageRequest.issueNumber,
         commentRequest.body,
         config
       );
+
+      const allAttachments = logBundleAttachment
+        ? [...attachments, logBundleAttachment]
+        : attachments;
 
       res.status(201).json({
         ok: true,
@@ -220,7 +236,7 @@ function createApp(config) {
         commentId: Number(comment.id),
         commentUrl: comment.html_url || null,
         createdAt: comment.created_at || commentRequest.sentAt,
-        attachments
+        attachments: allAttachments
       });
     } catch (error) {
       next(error);
@@ -265,10 +281,19 @@ function createApp(config) {
     }
   };
 
-  app.post('/', upload.single('bundle'), handleFeedbackSubmission);
-  app.post('/api/sts-feedback', upload.single('bundle'), handleFeedbackSubmission);
+  app.post('/', upload.fields([
+    { name: 'bundle', maxCount: 1 },
+    { name: 'screenshots', maxCount: 4 }
+  ]), handleFeedbackSubmission);
+  app.post('/api/sts-feedback', upload.fields([
+    { name: 'bundle', maxCount: 1 },
+    { name: 'screenshots', maxCount: 4 }
+  ]), handleFeedbackSubmission);
   app.get('/api/feedback-issues/browse', handleIssueBrowse);
-  app.post('/api/feedback-issues/message', upload.array('screenshots', 4), handleIssueMessage);
+  app.post('/api/feedback-issues/message', upload.fields([
+    { name: 'screenshots', maxCount: 4 },
+    { name: 'log_bundle', maxCount: 1 }
+  ]), handleIssueMessage);
   app.post('/api/feedback-issues/state', handleIssueState);
   app.post('/github/webhook', handleGithubWebhook);
 
