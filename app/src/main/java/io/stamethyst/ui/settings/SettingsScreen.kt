@@ -113,6 +113,7 @@ import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.openBasicTutorial
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -444,6 +445,7 @@ private fun LauncherSettingsScreenContent(
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
     val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     Scaffold(
         topBar = {
@@ -472,6 +474,19 @@ private fun LauncherSettingsScreenContent(
         ) {
             item {
                 SettingsBusyIndicator(uiState = uiState)
+            }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_basic_tutorial_title)) {
+                    SettingsActionListItem(
+                        title = stringResource(R.string.settings_basic_tutorial_action),
+                        supportingText = stringResource(R.string.settings_basic_tutorial_desc),
+                        enabled = !uiState.busy,
+                        onClick = {
+                            openBasicTutorial(context)
+                        }
+                    )
+                }
             }
 
             item {

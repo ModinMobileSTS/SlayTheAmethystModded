@@ -153,6 +153,14 @@ object LauncherPreferences {
         LauncherConfig.saveManualDismissBootOverlay(context, enabled)
     }
 
+    fun isBasicTutorialNoticeDismissed(context: Context): Boolean {
+        return LauncherConfig.isBasicTutorialNoticeDismissed(context)
+    }
+
+    fun setBasicTutorialNoticeDismissed(context: Context, dismissed: Boolean) {
+        LauncherConfig.setBasicTutorialNoticeDismissed(context, dismissed)
+    }
+
     fun readShowFloatingMouseWindow(context: Context): Boolean {
         return LauncherConfig.readShowFloatingMouseWindow(context)
     }

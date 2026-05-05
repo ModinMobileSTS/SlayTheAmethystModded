@@ -1,5 +1,12 @@
 <resources>
     <string name="app_name">SlayTheAmethyst</string>
+    <string name="basic_tutorial_notice_title">Basic tutorial released</string>
+    <string name="basic_tutorial_notice_message">The launcher basic tutorial has been released. Everyone is welcome to come and support it!</string>
+    <string name="basic_tutorial_notice_action_dismiss">Don\'t remind again</string>
+    <string name="basic_tutorial_notice_action_open">Go support it</string>
+    <string name="settings_basic_tutorial_title">Beginner tutorial</string>
+    <string name="settings_basic_tutorial_action">View launcher beginner tutorial</string>
+    <string name="settings_basic_tutorial_desc">Open the Bilibili tutorial video for first-time setup and usage guidance.</string>
     <string name="sts_crash_dialog_title">Game crashed</string>
     <string name="sts_crash_detail_format">Game crashed.\n%1$s</string>
     <string name="sts_normal_exit">Game process exited unexpectedly, exit code %1$d.</string>

@@ -1,5 +1,12 @@
 <resources>
     <string name="app_name">SlayTheAmethyst</string>
+    <string name="basic_tutorial_notice_title">启动器基础教程已发布</string>
+    <string name="basic_tutorial_notice_message">该启动器的基础教程已经发布，欢迎大家前来捧场！</string>
+    <string name="basic_tutorial_notice_action_dismiss">不再提醒</string>
+    <string name="basic_tutorial_notice_action_open">前往捧场</string>
+    <string name="settings_basic_tutorial_title">新手教程</string>
+    <string name="settings_basic_tutorial_action">查看启动器新手教程</string>
+    <string name="settings_basic_tutorial_desc">打开 B 站视频，查看基础使用教程。</string>
     <string name="sts_crash_dialog_title">游戏已崩溃</string>
     <string name="sts_crash_detail_format">游戏已崩溃。\n%1$s</string>
     <string name="sts_normal_exit">游戏进程异常退出，退出码 %1$d。</string>

@@ -131,6 +131,7 @@ object LauncherConfig {
     private const val PREF_KEY_LAST_SUCCESSFUL_DOWNLOAD_SOURCE_ID = "last_successful_download_source_id"
     private const val PREF_KEY_LAST_UPDATE_ERROR_SUMMARY = "last_update_error_summary"
     private const val PREF_KEY_FIRST_RUN_SETUP_COMPLETED = "first_run_setup_completed"
+    private const val PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED = "basic_tutorial_notice_dismissed"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -309,6 +310,16 @@ object LauncherConfig {
     fun saveManualDismissBootOverlay(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY, enabled)
+        }
+    }
+
+    fun isBasicTutorialNoticeDismissed(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED, false)
+    }
+
+    fun setBasicTutorialNoticeDismissed(context: Context, dismissed: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED, dismissed)
         }
     }
 

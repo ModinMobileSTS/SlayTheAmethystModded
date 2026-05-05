@@ -89,6 +89,9 @@ fun LauncherContent(
     val navigator = rememberAppNavigator(initialRoute)
     val uriHandler = LocalUriHandler.current
     val transientNoticeHostState = remember { SnackbarHostState() }
+    var showBasicTutorialNotice by remember(activity) {
+        mutableStateOf(!LauncherPreferences.isBasicTutorialNoticeDismissed(activity))
+    }
     var pendingFeedbackNotice by remember {
         mutableStateOf<FeedbackSubmissionNotice?>(null)
     }
@@ -552,6 +555,32 @@ fun LauncherContent(
                         )
                     }
                 }
+                if (showBasicTutorialNotice) {
+                    val dismissBasicTutorialNotice = {
+                        LauncherPreferences.setBasicTutorialNoticeDismissed(activity, true)
+                        showBasicTutorialNotice = false
+                    }
+                    AlertDialog(
+                        onDismissRequest = dismissBasicTutorialNotice,
+                        title = { Text(stringResource(R.string.basic_tutorial_notice_title)) },
+                        text = { Text(stringResource(R.string.basic_tutorial_notice_message)) },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    dismissBasicTutorialNotice()
+                                    openBasicTutorial(activity)
+                                }
+                            ) {
+                                Text(stringResource(R.string.basic_tutorial_notice_action_open))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = dismissBasicTutorialNotice) {
+                                Text(stringResource(R.string.basic_tutorial_notice_action_dismiss))
+                            }
+                        }
+                    )
+                }
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(
                     onDismissRequest = FeedbackInboxCoordinator::dismissUnreadNotice,
@@ -598,7 +627,7 @@ fun LauncherContent(
             }
         }
     }
-}
+    }
 }
 
 @Composable
