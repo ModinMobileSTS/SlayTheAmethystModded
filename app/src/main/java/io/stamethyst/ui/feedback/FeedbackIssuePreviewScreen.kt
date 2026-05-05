@@ -35,16 +35,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
-import io.stamethyst.backend.feedback.FeedbackThreadAuthorType
-import io.stamethyst.backend.feedback.FeedbackThreadEvent
-import io.stamethyst.backend.feedback.FeedbackThreadEventType
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.icon.ArrowBack
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -164,7 +158,7 @@ fun LauncherFeedbackIssuePreviewScreen(
             }
 
             items(uiState.events, key = { it.id }) { event ->
-                FeedbackPreviewEventCard(
+                FeedbackConversationEventCard(
                     event = event,
                     onOpenAttachment = { url -> uriHandler.openUri(url) },
                     onOpenComment = { url ->
@@ -210,83 +204,4 @@ private fun FeedbackIssuePreviewBottomBar(
             }
         }
     }
-}
-
-@Composable
-private fun FeedbackPreviewEventCard(
-    event: FeedbackThreadEvent,
-    onOpenAttachment: (String) -> Unit,
-    onOpenComment: (String?) -> Unit
-) {
-    val arrangement = if (event.authorType == FeedbackThreadAuthorType.ME) {
-        Arrangement.End
-    } else {
-        Arrangement.Start
-    }
-    val containerColor = when (event.type) {
-        FeedbackThreadEventType.STATE_CHANGE -> MaterialTheme.colorScheme.surfaceContainerHighest
-        FeedbackThreadEventType.COMMENT -> when (event.authorType) {
-            FeedbackThreadAuthorType.ME -> MaterialTheme.colorScheme.primaryContainer
-            FeedbackThreadAuthorType.DEVELOPER -> MaterialTheme.colorScheme.secondaryContainer
-            FeedbackThreadAuthorType.OTHER -> MaterialTheme.colorScheme.surfaceContainerHigh
-            FeedbackThreadAuthorType.SYSTEM -> MaterialTheme.colorScheme.surfaceContainerHigh
-        }
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = arrangement
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(0.9f),
-            colors = CardDefaults.cardColors(containerColor = containerColor)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "${event.authorLabel} · ${formatPreviewEventTime(event.createdAtMs)}",
-                    style = MaterialTheme.typography.labelSmall
-                )
-                if (event.body.isNotBlank()) {
-                    SimpleMarkdownCard(
-                        title = "",
-                        markdown = event.body,
-                        containerColor = containerColor
-                    )
-                }
-                event.attachments.forEach { attachment ->
-                    TextButton(
-                        onClick = { onOpenAttachment(attachment.url) },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            stringResource(
-                                R.string.feedback_attachment_view_format,
-                                attachment.name.ifBlank { attachment.url }
-                            )
-                        )
-                    }
-                }
-                if (!event.htmlUrl.isNullOrBlank()) {
-                    TextButton(
-                        onClick = { onOpenComment(event.htmlUrl) },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(stringResource(R.string.feedback_view_on_github))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun formatPreviewEventTime(timestampMs: Long): String {
-    if (timestampMs <= 0L) {
-        return stringResource(R.string.feedback_unknown_time)
-    }
-    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestampMs))
 }

@@ -48,6 +48,7 @@ import io.stamethyst.backend.feedback.FeedbackThreadEvent
 import io.stamethyst.backend.feedback.FeedbackThreadEventType
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.icon.ArrowBack
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -185,9 +186,9 @@ fun LauncherFeedbackConversationScreen(
                         )
                         if (uiState.issueBody.isNotBlank()) {
                             HorizontalDivider()
-                            Text(
-                                text = uiState.issueBody,
-                                style = MaterialTheme.typography.bodySmall
+                            SimpleMarkdownCard(
+                                title = "",
+                                markdown = uiState.issueBody
                             )
                         }
                     }
@@ -358,7 +359,7 @@ private fun FeedbackConversationComposer(
 }
 
 @Composable
-private fun FeedbackConversationEventCard(
+internal fun FeedbackConversationEventCard(
     event: FeedbackThreadEvent,
     onOpenAttachment: (String) -> Unit,
     onOpenComment: (String?) -> Unit
@@ -396,9 +397,10 @@ private fun FeedbackConversationEventCard(
                     style = MaterialTheme.typography.labelSmall
                 )
                 if (event.body.isNotBlank()) {
-                    Text(
-                        text = event.body,
-                        style = MaterialTheme.typography.bodyMedium
+                    SimpleMarkdownCard(
+                        title = "",
+                        markdown = event.body,
+                        containerColor = containerColor
                     )
                 }
                 event.attachments.forEach { attachment ->
