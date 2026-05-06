@@ -321,6 +321,15 @@
     <string name="main_folder_move_down">Move down</string>
     <string name="main_mod_move_folder_dialog_title_format">Move %1$s to folder</string>
     <string name="main_mod_move_folder_current_format">%1$s (current)</string>
+    <string name="main_batch_move_dialog_title_format">Move %1$d selected mods to folder</string>
+    <string name="main_batch_edit_selected_format">%1$d selected</string>
+    <string name="main_batch_action_move">Move</string>
+    <string name="main_batch_action_enable">Enable</string>
+    <string name="main_batch_action_disable">Disable</string>
+    <string name="main_batch_action_delete">Delete</string>
+    <string name="main_batch_action_cancel">Cancel</string>
+    <string name="main_batch_delete_title">Delete selected mods</string>
+    <string name="main_batch_delete_confirm_format">Delete %1$d selected mods? This cannot be undone.</string>
     <string name="main_mod_unknown_version">Unknown</string>
     <string name="main_mod_no_description">No description yet</string>
     <string name="main_mod_modid_format">modid: %1$s</string>
@@ -600,7 +609,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_unplayable_mods_sheet_url">https://docs.qq.com/sheet/DS0xtV2FsVUVUSXhr?u=3f6b432cd4f7498b8388829a3a5e1555</string>
     <string name="settings_logcat_capture_enabled">Game logcat diagnostics capture: Enabled</string>
     <string name="settings_logcat_capture_disabled">Game logcat diagnostics capture: Disabled</string>
-    <string name="settings_logcat_capture_desc">Capture system logcat during game sessions after launch and include it in exported diagnostics archives. Enabled by default.</string>
+    <string name="settings_logcat_capture_desc">Capture system logcat during game sessions after launch and include it in exported diagnostics archives. Disabled by default.</string>
     <string name="settings_launcher_logcat_capture_enabled">Launcher logcat diagnostics capture: Enabled</string>
     <string name="settings_launcher_logcat_capture_disabled">Launcher logcat diagnostics capture: Disabled</string>
     <string name="settings_launcher_logcat_capture_desc">Capture launcher-related logcat while the launcher process is alive and include it in exported diagnostics archives. Enabled by default.</string>
@@ -641,6 +650,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_mod_deleted">Deleted mod: %1$s</string>
     <string name="main_mod_missing_deleted">Mod is missing or already deleted: %1$s</string>
     <string name="main_mod_moved_to_folder">Moved %1$s to %2$s</string>
+    <string name="main_batch_moved_to_folder">Moved %1$d mods to %2$s</string>
     <string name="main_mod_delete_failed">Failed to delete mod: %1$s</string>
     <string name="main_mod_export_missing">The mod file is missing and cannot be exported.</string>
     <string name="main_mod_share_missing">The mod file is missing and cannot be shared.</string>
@@ -664,6 +674,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_missing_dependencies_footer">Import the missing prerequisites first, or the game may fail to start correctly.</string>
     <string name="main_batch_disable_blocked_title">Some mods could not be disabled</string>
     <string name="main_batch_disable_blocked_item">&quot;%1$s&quot; is required by %2$s</string>
+    <string name="main_batch_delete_done">Deleted %1$d mods, %2$d missing or already deleted</string>
     <string name="main_duplicate_modid_message_intro">Multiple enabled mods share the same modid:</string>
     <string name="main_duplicate_modid_message_footer">Leave only one enabled mod for each duplicated modid before starting the game.</string>
     <string name="main_mts_validation_message_intro">The following enabled mods cannot be parsed by ModTheSpire at launch:</string>

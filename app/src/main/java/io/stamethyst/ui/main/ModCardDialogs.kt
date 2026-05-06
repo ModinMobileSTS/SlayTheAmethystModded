@@ -47,6 +47,11 @@ internal data class ModFolderMoveTarget(
     val isCurrent: Boolean
 )
 
+internal data class ModBatchMoveTarget(
+    val folderTokenId: String,
+    val folderName: String
+)
+
 @Composable
 internal fun ModActionsDialog(
     visible: Boolean,
@@ -381,6 +386,54 @@ internal fun MoveModToFolderDialog(
                             target.folderName
                         },
                         enabled = controlsEnabled && !target.isCurrent
+                    ) {
+                        onSelectTarget(target.folderTokenId)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            PillCancelButton(onClick = onDismiss) {
+                Text(stringResource(R.string.main_folder_dialog_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+internal fun MoveSelectedModsToFolderDialog(
+    visible: Boolean,
+    selectedCount: Int,
+    targets: List<ModBatchMoveTarget>,
+    controlsEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onSelectTarget: (String) -> Unit
+) {
+    if (!visible) {
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    R.string.main_batch_move_dialog_title_format,
+                    selectedCount
+                )
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                targets.forEach { target ->
+                    ModActionDialogListItem(
+                        text = target.folderName,
+                        enabled = controlsEnabled
                     ) {
                         onSelectTarget(target.folderTokenId)
                     }

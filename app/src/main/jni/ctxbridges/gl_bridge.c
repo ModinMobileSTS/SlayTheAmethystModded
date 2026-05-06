@@ -89,10 +89,11 @@ static void gl_queue_bridge_window_surface(gl_render_window_t* bundle, const cha
     if (bundle == NULL) {
         return;
     }
+    ANativeWindow* window = pojavAcquireBridgeWindow();
     pthread_mutex_lock(&g_surface_mutex);
-    ANativeWindow* window = (pojav_environ == NULL) ? NULL : pojav_environ->pojavWindow;
     gl_replace_queued_surface_locked(bundle, window);
     pthread_mutex_unlock(&g_surface_mutex);
+    pojavReleaseBridgeWindow(window);
     ;
 }
 
@@ -114,15 +115,14 @@ static ANativeWindow* gl_take_queued_or_bridge_surface(gl_render_window_t* bundl
         return queued;
     }
 
+    bool isMainWindowBundle = false;
     pthread_mutex_lock(&g_surface_mutex);
-    bool canReuseBridgeWindow = pojav_environ != NULL &&
-        pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
-        pojav_environ->pojavWindow != NULL;
-    if (canReuseBridgeWindow) {
-        queued = pojav_environ->pojavWindow;
-        ANativeWindow_acquire(queued);
-    }
+    isMainWindowBundle = pojav_environ != NULL &&
+        pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle;
     pthread_mutex_unlock(&g_surface_mutex);
+    if (isMainWindowBundle) {
+        queued = pojavAcquireBridgeWindow();
+    }
 
     if (queued != NULL) {
         ;
@@ -136,16 +136,18 @@ static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const
         return false;
     }
     bool queued = false;
+    ANativeWindow* window = pojavAcquireBridgeWindow();
     pthread_mutex_lock(&g_surface_mutex);
     if (pojav_environ != NULL &&
         pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
-        pojav_environ->pojavWindow != NULL &&
+        window != NULL &&
         bundle->nativeSurface == NULL) {
-        gl_replace_queued_surface_locked(bundle, pojav_environ->pojavWindow);
+        gl_replace_queued_surface_locked(bundle, window);
         bundle->state = STATE_RENDERER_NEW_WINDOW;
         queued = true;
     }
     pthread_mutex_unlock(&g_surface_mutex);
+    pojavReleaseBridgeWindow(window);
 
     if (queued) {
         ;
@@ -485,15 +487,17 @@ void gl_make_current(gl_render_window_t* bundle) {
         return;
     }
     bool hasSetMainWindow = false;
+    ANativeWindow* window = pojavAcquireBridgeWindow();
     pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle == NULL) {
         pojav_environ->mainWindowBundle = (basic_render_window_t*)bundle;
         hasSetMainWindow = true;
     }
     if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle) {
-        gl_replace_queued_surface_locked(bundle, pojav_environ->pojavWindow);
+        gl_replace_queued_surface_locked(bundle, window);
     }
     pthread_mutex_unlock(&g_surface_mutex);
+    pojavReleaseBridgeWindow(window);
     if (hasSetMainWindow) {
         ;
     }
@@ -578,15 +582,17 @@ void gl_swap_buffers() {
 
 void gl_setup_window() {
     bool updated = false;
+    ANativeWindow* window = pojavAcquireBridgeWindow();
     pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle != NULL) {
         ;
         gl_render_window_t* mainBundle = (gl_render_window_t*)pojav_environ->mainWindowBundle;
         mainBundle->state = STATE_RENDERER_NEW_WINDOW;
-        gl_replace_queued_surface_locked(mainBundle, pojav_environ->pojavWindow);
+        gl_replace_queued_surface_locked(mainBundle, window);
         updated = true;
     }
     pthread_mutex_unlock(&g_surface_mutex);
+    pojavReleaseBridgeWindow(window);
     if (updated) {
         ;
     }

@@ -723,6 +723,10 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.onDeleteMod(host, mod)
     }
 
+    fun onDeleteMods(host: Activity, mods: List<ModItemUi>) {
+        modManagementController.onDeleteMods(host, mods)
+    }
+
     fun onExportMod(host: Activity, mod: ModItemUi) {
         modManagementController.onExportMod(host, mod)
     }
@@ -741,6 +745,10 @@ class MainScreenViewModel : ViewModel() {
 
     fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
         modManagementController.onToggleMod(host, mod, enabled)
+    }
+
+    fun setModsSelected(host: Activity, mods: List<ModItemUi>, selected: Boolean) {
+        modManagementController.setModsSelected(host, mods, selected)
     }
 
     fun onSetPriority(host: Activity, mod: ModItemUi, priority: Int?) {
@@ -853,12 +861,20 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.assignModToFolder(host, mod, folderId)
     }
 
+    fun assignModsToFolder(host: Activity, mods: List<ModItemUi>, folderId: String) {
+        modManagementController.assignModsToFolder(host, mods, folderId)
+    }
+
     fun moveModToUnassigned(host: Activity, modId: String) {
         modManagementController.moveModToUnassigned(host, modId)
     }
 
     fun moveModToUnassigned(host: Activity, mod: ModItemUi) {
         modManagementController.moveModToUnassigned(host, mod)
+    }
+
+    fun moveModsToUnassigned(host: Activity, mods: List<ModItemUi>) {
+        modManagementController.moveModsToUnassigned(host, mods)
     }
 
     fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {

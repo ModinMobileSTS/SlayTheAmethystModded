@@ -1,12 +1,23 @@
 package io.stamethyst.ui.main
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -67,10 +78,12 @@ internal data class ModCardCallbacks(
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
     val onDragCancel: () -> Unit = {},
-    val onMoveFolderPickerRequest: (ModItemUi) -> Unit = {}
+    val onMoveFolderPickerRequest: (ModItemUi) -> Unit = {},
+    val onBatchSelectionStart: (ModItemUi) -> Unit = {}
 )
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun ModCard(
     mod: ModItemUi,
     suggestionText: String? = null,
@@ -84,6 +97,10 @@ internal fun ModCard(
     fileActionsEnabled: Boolean,
     dragEnabled: Boolean,
     showDragHandle: Boolean = true,
+    batchSelectionMode: Boolean = false,
+    batchSelected: Boolean = false,
+    batchSelectionEnabled: Boolean = false,
+    onBatchSelectionChange: (Boolean) -> Unit = {},
     onSuggestionRead: () -> Unit = {},
     callbacks: ModCardCallbacks
 ) {
@@ -98,6 +115,32 @@ internal fun ModCard(
     var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
     var showImportPatchDialog by remember(mod.storagePath, mod.importPatchDetails) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(10.dp)
+    val dragAffordanceVisible = showDragHandle && !batchSelectionMode
+    val targetBorderColor = when {
+        batchSelected -> MaterialTheme.colorScheme.primary
+        !dragAffordanceVisible -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+    val animatedBorderColor by animateColorAsState(
+        targetValue = targetBorderColor,
+        animationSpec = tween(durationMillis = 180),
+        label = "modCardBorderColor"
+    )
+    val animatedBorderWidth by animateDpAsState(
+        targetValue = if (batchSelected) 2.dp else 1.dp,
+        animationSpec = tween(durationMillis = 180),
+        label = "modCardBorderWidth"
+    )
+    val targetBackgroundColor = when {
+        batchSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+        mod.enabled -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
+    val animatedBackgroundColor by animateColorAsState(
+        targetValue = targetBackgroundColor,
+        animationSpec = tween(durationMillis = 180),
+        label = "modCardBackgroundColor"
+    )
     val dragVisualOffsetFromPointer = remember(density) {
 //        Offset(x = 0f, y = with(density) { MOD_DRAG_VISUAL_OFFSET_Y_DP.dp.toPx() })
         Offset(x = 0f, y = 0f)
@@ -173,8 +216,22 @@ internal fun ModCard(
                     change.consume()
                 }
             }
-        }
+    }
     val handleModifier = dragHandleGestureModifier
+    val cardTapModifier = Modifier.combinedClickable(
+        onClick = {
+            if (batchSelectionMode && batchSelectionEnabled) {
+                onBatchSelectionChange(!batchSelected)
+            } else {
+                setExpanded(!isExpanded)
+            }
+        },
+        onLongClick = {
+            if (batchSelectionEnabled) {
+                callbacks.onBatchSelectionStart(mod)
+            }
+        }
+    )
 
     Column(
         modifier = Modifier
@@ -186,19 +243,15 @@ internal fun ModCard(
             .onGloballyPositioned { cardCoordinates = it }
             .clip(cardShape)
             .border(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant,
+                animatedBorderWidth,
+                animatedBorderColor,
                 cardShape
             )
             .background(
-                if (mod.enabled) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainer
-                },
+                animatedBackgroundColor,
                 cardShape
             )
-            .clickable { setExpanded(!isExpanded) }
+            .then(cardTapModifier)
             .animateContentSize(
                 animationSpec = tween(
                     durationMillis = MOVE_ANIMATION_MS,
@@ -227,8 +280,21 @@ internal fun ModCard(
             },
             importPatchBadgeEnabled = true,
             onImportPatchClick = { showImportPatchDialog = true },
+            headerLeading = {
+                if (batchSelectionMode) {
+                    Checkbox(
+                        checked = batchSelected,
+                        onCheckedChange = { checked ->
+                            if (batchSelectionEnabled) {
+                                onBatchSelectionChange(checked)
+                            }
+                        },
+                        enabled = batchSelectionEnabled
+                    )
+                }
+            },
             headerTrailing = {
-                if (selectionEnabled) {
+                if (!batchSelectionMode && selectionEnabled) {
                     Checkbox(
                         checked = mod.enabled,
                         onCheckedChange = { checked ->
@@ -238,27 +304,38 @@ internal fun ModCard(
                             callbacks.onToggleMod(mod, checked)
                         }
                     )
-                } else {
+                } else if (!batchSelectionMode) {
                     Checkbox(
                         checked = mod.enabled,
                         onCheckedChange = null,
                         enabled = false
                     )
                 }
-                if (showDragHandle) {
-                    Box(
-                        modifier = handleModifier,
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_drag_handle),
-                            contentDescription = stringResource(R.string.main_mod_drag),
-                            tint = if (dragEnabled) {
-                                MaterialTheme.colorScheme.outline
-                            } else {
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
-                            }
-                        )
+                AnimatedVisibility(
+                    visible = dragAffordanceVisible,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 120)) +
+                        expandHorizontally(animationSpec = tween(durationMillis = 160), expandFrom = Alignment.CenterHorizontally) +
+                        scaleIn(initialScale = 0.86f, animationSpec = tween(durationMillis = 160)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 90)) +
+                        shrinkHorizontally(animationSpec = tween(durationMillis = 130), shrinkTowards = Alignment.CenterHorizontally) +
+                        scaleOut(targetScale = 0.86f, animationSpec = tween(durationMillis = 130)),
+                    label = "modDragHandleVisibility"
+                ) {
+                    if (dragAffordanceVisible) {
+                        Box(
+                            modifier = handleModifier,
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_drag_handle),
+                                contentDescription = stringResource(R.string.main_mod_drag),
+                                tint = if (dragEnabled) {
+                                    MaterialTheme.colorScheme.outline
+                                } else {
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
+                                }
+                            )
+                        }
                     }
                 }
             }

@@ -6,6 +6,7 @@ import io.stamethyst.model.ModItemUi
 internal data class ModFolderSectionCallbacks(
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onDeleteMod: (ModItemUi) -> Unit = {},
+    val onDeleteMods: (List<ModItemUi>) -> Unit = {},
     val onExportMod: (ModItemUi) -> Unit = {},
     val onShareMod: (ModItemUi) -> Unit = {},
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
@@ -25,6 +26,9 @@ internal data class ModFolderSectionCallbacks(
     val onMoveFolderTokenToIndex: (String, Int) -> Unit = { _, _ -> },
     val onAssignModToFolder: (ModItemUi, String) -> Unit = { _, _ -> },
     val onMoveModToUnassigned: (ModItemUi) -> Unit = {},
+    val onAssignModsToFolder: (List<ModItemUi>, String) -> Unit = { _, _ -> },
+    val onMoveModsToUnassigned: (List<ModItemUi>) -> Unit = {},
+    val onSetModsSelected: (List<ModItemUi>, Boolean) -> Unit = { _, _ -> },
     val onRevealFolderToken: (String) -> Unit = {}
 )
 

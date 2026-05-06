@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -53,6 +54,23 @@ struct PotatoBridge {
 EGLConfig config;
 struct PotatoBridge potatoBridge;
 static bool g_bridge_ready = false;
+static pthread_mutex_t g_pojav_window_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+EXTERNAL_API ANativeWindow* pojavAcquireBridgeWindow(void) {
+    pthread_mutex_lock(&g_pojav_window_mutex);
+    ANativeWindow* window = (pojav_environ == NULL) ? NULL : pojav_environ->pojavWindow;
+    if (window != NULL) {
+        ANativeWindow_acquire(window);
+    }
+    pthread_mutex_unlock(&g_pojav_window_mutex);
+    return window;
+}
+
+EXTERNAL_API void pojavReleaseBridgeWindow(ANativeWindow* window) {
+    if (window != NULL) {
+        ANativeWindow_release(window);
+    }
+}
 
 #include "ctxbridges/egl_loader.h"
 #include "ctxbridges/osmesa_loader.h"
@@ -85,14 +103,22 @@ EXTERNAL_API void pojavTerminate() {
 }
 
 JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow(JNIEnv* env, ABI_COMPAT jclass clazz, jobject surface) {
-    ANativeWindow* previousWindow = pojav_environ->pojavWindow;
     ANativeWindow* nextWindow = NULL;
     if (surface != NULL) {
         nextWindow = ANativeWindow_fromSurface(env, surface);
     }
+
+    pthread_mutex_lock(&g_pojav_window_mutex);
+    ANativeWindow* previousWindow = pojav_environ->pojavWindow;
     pojav_environ->pojavWindow = nextWindow;
     if (previousWindow != nextWindow) {
         pojav_reset_window_geometry_cache(pojav_environ);
+    }
+    pthread_mutex_unlock(&g_pojav_window_mutex);
+
+    if (previousWindow == nextWindow && nextWindow != NULL) {
+        ANativeWindow_release(nextWindow);
+        return;
     }
     if (previousWindow != NULL) {
         ANativeWindow_release(previousWindow);
@@ -105,9 +131,12 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow
 
 JNIEXPORT void JNICALL
 Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(ABI_COMPAT JNIEnv *env, ABI_COMPAT jclass clazz) {
+    pthread_mutex_lock(&g_pojav_window_mutex);
     ANativeWindow* window = pojav_environ->pojavWindow;
     pojav_environ->pojavWindow = NULL;
     pojav_reset_window_geometry_cache(pojav_environ);
+    pthread_mutex_unlock(&g_pojav_window_mutex);
+
     if (br_setup_window != NULL) {
         // Notify renderer bridge that the window is gone so it can switch to pbuffer early.
         br_setup_window();
@@ -229,12 +258,11 @@ EXTERNAL_API int pojavInit() {
         printf("Failed to attach Java-side JNIEnv to GLFW thread\n");
         return 0;
     }
-    ANativeWindow* window = pojav_environ->pojavWindow;
+    ANativeWindow* window = pojavAcquireBridgeWindow();
     if (window == NULL) {
         printf("EGLBridge: pojavInit aborted because bridge window is NULL\n");
         return 0;
     }
-    ANativeWindow_acquire(window);
     int nativeWidth = ANativeWindow_getWidth(window);
     int nativeHeight = ANativeWindow_getHeight(window);
     int javaWidth = pojav_environ->savedWidth;

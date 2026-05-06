@@ -61,6 +61,7 @@ class StsGameActivity : AppCompatActivity() {
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
     private var bootOverlayKeepScreenOn = false
     private val launchGuardToken: String = UUID.randomUUID().toString()
+    private val launchGuardLock = Any()
     private var launchGuardAcquired = false
 
     private val gameBackPressedCallback = object : OnBackPressedCallback(true) {
@@ -116,9 +117,8 @@ class StsGameActivity : AppCompatActivity() {
         if (::sessionCoordinator.isInitialized) {
             sessionCoordinator.onDestroy()
         }
-        if (launchGuardAcquired) {
-            GameProcessLaunchGuard.release(launchGuardToken)
-            launchGuardAcquired = false
+        if (launchGuardAcquired && (!::sessionCoordinator.isInitialized || !sessionCoordinator.jvmLaunchStarted)) {
+            releaseLaunchGuard()
         }
         super.onDestroy()
     }
@@ -252,7 +252,8 @@ class StsGameActivity : AppCompatActivity() {
             activity = this,
             config = sessionConfig,
             renderSurfaceManager = renderSurfaceManager,
-            inputHandler = inputHandler
+            inputHandler = inputHandler,
+            onJvmLaunchFinished = { releaseLaunchGuard() }
         )
         gameAudioController = GameAudioController(
             activity = this,
@@ -359,6 +360,16 @@ class StsGameActivity : AppCompatActivity() {
         } catch (_: Throwable) {
         }
         onBackInvokedCallback = null
+    }
+
+    private fun releaseLaunchGuard() {
+        synchronized(launchGuardLock) {
+            if (!launchGuardAcquired) {
+                return
+            }
+            GameProcessLaunchGuard.release(launchGuardToken)
+            launchGuardAcquired = false
+        }
     }
 
     private fun buildMemoryEventExtras(): Map<String, Any?> {

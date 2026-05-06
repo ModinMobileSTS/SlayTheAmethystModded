@@ -14,4 +14,7 @@ typedef struct {
     struct ANativeWindow *newNativeSurface;
 } basic_render_window_t;
 
+struct ANativeWindow* pojavAcquireBridgeWindow(void);
+void pojavReleaseBridgeWindow(struct ANativeWindow* window);
+
 #endif //POJAVLAUNCHER_COMMON_H

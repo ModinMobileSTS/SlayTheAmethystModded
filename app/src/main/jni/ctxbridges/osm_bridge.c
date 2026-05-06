@@ -45,7 +45,7 @@ void osm_set_no_render_buffer(ANativeWindow_Buffer* buffer) {
 }
 
 void osm_swap_surfaces(osm_render_window_t* bundle) {
-    if(bundle->nativeSurface != NULL && bundle->newNativeSurface != bundle->nativeSurface) {
+    if(bundle->nativeSurface != NULL) {
         if(!bundle->disable_rendering) {
             ;
             ANativeWindow_unlockAndPost(bundle->nativeSurface);
@@ -56,7 +56,6 @@ void osm_swap_surfaces(osm_render_window_t* bundle) {
         ;
         bundle->nativeSurface = bundle->newNativeSurface;
         bundle->newNativeSurface = NULL;
-        ANativeWindow_acquire(bundle->nativeSurface);
         ANativeWindow_setBuffersGeometry(bundle->nativeSurface, 0, 0, WINDOW_FORMAT_RGBX_8888);
         bundle->disable_rendering = false;
         return;
@@ -70,6 +69,9 @@ void osm_swap_surfaces(osm_render_window_t* bundle) {
 }
 
 void osm_release_window() {
+    if (currentBundle->newNativeSurface != NULL) {
+        pojavReleaseBridgeWindow(currentBundle->newNativeSurface);
+    }
     currentBundle->newNativeSurface = NULL;
     osm_swap_surfaces(currentBundle);
 }
@@ -94,7 +96,7 @@ void osm_make_current(osm_render_window_t* bundle) {
     if(pojav_environ->mainWindowBundle == NULL) {
         pojav_environ->mainWindowBundle = (basic_render_window_t*) bundle;
         ;
-        pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
+        pojav_environ->mainWindowBundle->newNativeSurface = pojavAcquireBridgeWindow();
         hasSetMainWindow = true;
     }
     if(bundle->nativeSurface == NULL) {
@@ -129,7 +131,10 @@ void osm_setup_window() {
     if(pojav_environ->mainWindowBundle != NULL) {
         ;
         pojav_environ->mainWindowBundle->state = STATE_RENDERER_NEW_WINDOW;
-        pojav_environ->mainWindowBundle->newNativeSurface = pojav_environ->pojavWindow;
+        if (pojav_environ->mainWindowBundle->newNativeSurface != NULL) {
+            pojavReleaseBridgeWindow(pojav_environ->mainWindowBundle->newNativeSurface);
+        }
+        pojav_environ->mainWindowBundle->newNativeSurface = pojavAcquireBridgeWindow();
     }
 }
 

@@ -237,6 +237,10 @@ internal class MainModManagementController(
         moveModToFolderToken(host, mod, folderId, emitUndoSnackbar = true)
     }
 
+    fun assignModsToFolder(host: Activity, mods: List<ModItemUi>, folderId: String) {
+        moveModsToFolderToken(host, mods, folderId)
+    }
+
     fun moveModToUnassigned(host: Activity, modId: String) {
         val target = findOptionalModByAnyId(modId) ?: return
         moveModToUnassigned(host, target)
@@ -244,6 +248,10 @@ internal class MainModManagementController(
 
     fun moveModToUnassigned(host: Activity, mod: ModItemUi) {
         moveModToFolderToken(host, mod, targetFolderId = null, emitUndoSnackbar = true)
+    }
+
+    fun moveModsToUnassigned(host: Activity, mods: List<ModItemUi>) {
+        moveModsToFolderToken(host, mods, targetFolderId = null)
     }
 
     fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {
@@ -465,6 +473,89 @@ internal class MainModManagementController(
                     )
                     hostCallbacks.republish(host)
                 }
+            }
+        }
+    }
+
+    fun onDeleteMods(host: Activity, mods: List<ModItemUi>) {
+        if (hostCallbacks.isBusy()) {
+            return
+        }
+        val candidates = mods
+            .filter { mod -> !mod.required && mod.installed }
+            .distinctBy { mod -> mod.storagePath }
+        if (candidates.isEmpty()) {
+            return
+        }
+
+        val targetIds = LinkedHashSet<String>()
+        candidates.forEach { mod -> collectModIdentityIds(mod).forEach { targetIds.add(it) } }
+        val blockedDependents = LinkedHashSet<String>()
+        resolveOptionalModsWithPendingSelection().forEach { mod ->
+            if (!mod.enabled) {
+                return@forEach
+            }
+            val candidateIds = collectModIdentityIds(mod)
+            if (candidateIds.any { targetIds.contains(it) }) {
+                return@forEach
+            }
+            val dependsOnDeleted = mod.dependencies.any { dependency ->
+                val normalizedDependency = normalizeModId(dependency)
+                normalizedDependency.isNotEmpty() && targetIds.contains(normalizedDependency)
+            }
+            if (dependsOnDeleted) {
+                blockedDependents.add(resolveModDisplayName(mod))
+            }
+        }
+        if (blockedDependents.isNotEmpty()) {
+            emitDialog(
+                title = host.getString(R.string.main_mod_delete_blocked_title),
+                message = host.getString(
+                    R.string.main_mod_delete_blocked_message,
+                    blockedDependents.joinToString(", ")
+                )
+            )
+            return
+        }
+
+        setBusy(true, UiText.StringResource(R.string.main_mod_delete_busy))
+        executor.execute {
+            var deletedCount = 0
+            var missingCount = 0
+            var firstError: Throwable? = null
+            candidates.forEach { mod ->
+                if (firstError != null) {
+                    return@forEach
+                }
+                try {
+                    if (ModManager.deleteOptionalModByStoragePath(host, mod.storagePath)) {
+                        deletedCount++
+                    } else {
+                        missingCount++
+                    }
+                } catch (error: Throwable) {
+                    firstError = error
+                }
+            }
+            host.runOnUiThread {
+                setBusy(false, null)
+                candidates.forEach { mod ->
+                    clearPendingSelectionForMod(mod)
+                    removeFolderAssignmentForDeletedMod(mod)
+                }
+                refresh(host, storageAccessible = true)
+                val error = firstError
+                if (error != null) {
+                    emitSnackbar(
+                        host.getString(
+                            R.string.main_mod_delete_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        )
+                    )
+                } else {
+                    emitSnackbar(host.getString(R.string.main_batch_delete_done, deletedCount, missingCount))
+                }
+                hostCallbacks.republish(host)
             }
         }
     }
@@ -692,6 +783,24 @@ internal class MainModManagementController(
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 )
             )
+        }
+        hostCallbacks.republish(host)
+    }
+
+    fun setModsSelected(host: Activity, mods: List<ModItemUi>, selected: Boolean) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        val targets = mods
+            .filter { mod -> mod.installed && !mod.required }
+            .distinctBy { mod -> mod.storagePath }
+        if (targets.isEmpty()) {
+            return
+        }
+        if (selected) {
+            batchEnableMods(host, targets)
+        } else {
+            batchDisableMods(host, targets)
         }
         hostCallbacks.republish(host)
     }
@@ -1442,6 +1551,56 @@ internal class MainModManagementController(
                 )
             }
         )
+    }
+
+    private fun moveModsToFolderToken(
+        host: Activity,
+        mods: List<ModItemUi>,
+        targetFolderId: String?
+    ) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        val targets = mods
+            .filter { mod -> mod.installed && !mod.required }
+            .distinctBy { mod -> mod.storagePath }
+        if (targets.isEmpty()) {
+            return
+        }
+        ensureFolderStateLoaded(host)
+        val targetFolderName = if (targetFolderId == null) {
+            unassignedCollapsed = false
+            unassignedFolderName
+        } else {
+            val targetFolder = modFolders.firstOrNull { it.id == targetFolderId } ?: return
+            folderCollapsed[targetFolderId] = false
+            targetFolder.name
+        }
+
+        var movedCount = 0
+        targets.forEach { mod ->
+            val previousFolderId = resolveAssignedFolderId(mod)
+            if (previousFolderId == targetFolderId) {
+                return@forEach
+            }
+            clearAssignmentForMod(mod)
+            if (targetFolderId != null) {
+                val key = resolveModAssignmentKey(mod) ?: return@forEach
+                folderAssignments[key] = targetFolderId
+            }
+            movedCount++
+        }
+        if (movedCount == 0) {
+            if (targetFolderId == null) {
+                setUnassignedCollapsed(host, false)
+            } else {
+                revealFolderToken(host, targetFolderId)
+            }
+            return
+        }
+        persistFolderState(host)
+        emitSnackbar(host.getString(R.string.main_batch_moved_to_folder, movedCount, targetFolderName))
+        hostCallbacks.republish(host)
     }
 
     private fun ensureUniqueFolderName(baseName: String, excludeFolderId: String? = null): String {

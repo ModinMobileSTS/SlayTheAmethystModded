@@ -11,6 +11,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -71,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
@@ -1019,19 +1022,7 @@ private fun MainTopBar(
                     onClick = onToggleDragLocked,
                     enabled = folderControlsEnabled && hostAvailable
                 ) {
-                    Icon(
-                        painter = painterResource(
-                            if (dragLocked) R.drawable.ic_lock else R.drawable.ic_lock_open
-                        ),
-                        modifier = Modifier.size(26.dp),
-                        contentDescription = stringResource(
-                            if (dragLocked) {
-                                R.string.main_action_unlock_drag
-                            } else {
-                                R.string.main_action_lock_drag
-                            }
-                        )
-                    )
+                    DragLockStateIcon(dragLocked = dragLocked)
                 }
                 CompactTopBarIconButton(
                     onClick = onAddFolderClick,
@@ -1052,6 +1043,48 @@ private fun MainTopBar(
                     )
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun DragLockStateIcon(dragLocked: Boolean) {
+    val iconRotation by animateFloatAsState(
+        targetValue = if (dragLocked) 0f else -12f,
+        animationSpec = tween(durationMillis = 220),
+        label = "dragLockIconRotation"
+    )
+    AnimatedContent(
+        targetState = dragLocked,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(durationMillis = 140)) +
+                scaleIn(initialScale = 0.82f, animationSpec = tween(durationMillis = 180))) togetherWith
+                (fadeOut(animationSpec = tween(durationMillis = 90)) +
+                    scaleOut(targetScale = 0.82f, animationSpec = tween(durationMillis = 90)))
+        },
+        label = "dragLockIcon"
+    ) { locked ->
+        Icon(
+            painter = painterResource(if (locked) R.drawable.ic_lock else R.drawable.ic_lock_open),
+            modifier = Modifier
+                .size(26.dp)
+                .graphicsLayer {
+                    rotationZ = iconRotation
+                    scaleX = if (locked) 1f else 1.04f
+                    scaleY = if (locked) 1f else 1.04f
+                },
+            tint = if (locked) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            contentDescription = stringResource(
+                if (locked) {
+                    R.string.main_action_unlock_drag
+                } else {
+                    R.string.main_action_lock_drag
+                }
+            )
         )
     }
 }
@@ -1869,6 +1902,7 @@ private fun ColumnScope.MainContentSwitcher(
                         onToggleMod = actions.onToggleMod,
                         onSetPriority = actions.onSetPriority,
                         onDeleteMod = actions.onDeleteMod,
+                        onDeleteMods = actions.onDeleteMods,
                         onExportMod = actions.onExportMod,
                         onShareMod = actions.onShareMod,
                         onRenameModFile = actions.onRenameModFile,
@@ -1887,6 +1921,9 @@ private fun ColumnScope.MainContentSwitcher(
                         onMoveFolderTokenToIndex = actions.onMoveFolderTokenToIndex,
                         onAssignModToFolder = actions.onAssignModToFolder,
                         onMoveModToUnassigned = actions.onMoveModToUnassigned,
+                        onAssignModsToFolder = actions.onAssignModsToFolder,
+                        onMoveModsToUnassigned = actions.onMoveModsToUnassigned,
+                        onSetModsSelected = actions.onSetModsSelected,
                         onRevealFolderToken = actions.onRevealFolderToken
                     )
                 )

@@ -47,6 +47,7 @@ internal fun ModCardBodyContent(
     onSuggestionClick: () -> Unit = {},
     importPatchBadgeEnabled: Boolean = true,
     onImportPatchClick: () -> Unit = {},
+    headerLeading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
     val resolvedName = resolveModDisplayName(mod, showModFileName = showModFileName)
@@ -59,6 +60,7 @@ internal fun ModCardBodyContent(
         .distinct()
 
     Row(verticalAlignment = Alignment.CenterVertically) {
+        headerLeading()
         Icon(
             painter = painterResource(R.drawable.ic_image_mod),
             contentDescription = null,

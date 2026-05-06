@@ -26,7 +26,8 @@ internal class GameSessionCoordinator(
     private val activity: StsGameActivity,
     private val config: GameSessionConfig,
     private val renderSurfaceManager: RenderSurfaceManager,
-    private val inputHandler: GameInputHandler
+    private val inputHandler: GameInputHandler,
+    private val onJvmLaunchFinished: () -> Unit
 ) {
     companion object {
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
@@ -52,9 +53,15 @@ internal class GameSessionCoordinator(
 
     private var waitingLandscapeSinceMs = -1L
     private var startCheckPosted = false
+    @Volatile
+    private var destroyed = false
     private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
     private val foregroundAudioPolicy = ForegroundAudioPolicy()
+    private val startCheckRunnable = Runnable {
+        startCheckPosted = false
+        tryStartJvmWhenSurfaceReady()
+    }
     private val backExitForceRestartRunnable = Runnable {
         if (backExitRequested) {
             forceRestartLauncherAndTerminateProcess()
@@ -113,6 +120,9 @@ internal class GameSessionCoordinator(
         getWindowHeight = { renderSurfaceManager.resolvePhysicalHeight() }
     )
 
+    val jvmLaunchStarted: Boolean
+        get() = jvmLaunchController.vmStarted
+
     private var performanceOverlayController: GamePerformanceOverlayController? = null
 
     fun initSessionUi(overlayView: TextView) {
@@ -135,6 +145,8 @@ internal class GameSessionCoordinator(
     }
 
     fun onDestroy() {
+        destroyed = true
+        cancelStartCheck()
         cancelBackExitForceRestart()
         cancelForegroundAudioRestoreRetries()
         activityResumed = false
@@ -149,6 +161,9 @@ internal class GameSessionCoordinator(
     }
 
     fun onResume() {
+        if (destroyed) {
+            return
+        }
         activityResumed = true
         foregroundAudioPolicy.markActivityResumed(true)
         performanceOverlayController?.onResume()
@@ -230,7 +245,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun tryStartJvmWhenSurfaceReady() {
-        if (backExitRequested || jvmLaunchController.vmStarted) {
+        if (destroyed || activity.isFinishing || activity.isDestroyed || backExitRequested || jvmLaunchController.vmStarted) {
             return
         }
 
@@ -260,6 +275,9 @@ internal class GameSessionCoordinator(
     }
 
     private fun startJvmOnce() {
+        if (destroyed || activity.isFinishing || activity.isDestroyed) {
+            return
+        }
         if (jvmLaunchController.vmStarted || backExitRequested) {
             if (backExitRequested) {
                 activity.finish()
@@ -289,17 +307,23 @@ internal class GameSessionCoordinator(
     }
 
     private fun scheduleStartCheck() {
-        if (jvmLaunchController.vmStarted || startCheckPosted) {
+        if (destroyed || activity.isFinishing || activity.isDestroyed || jvmLaunchController.vmStarted || startCheckPosted) {
             return
         }
         startCheckPosted = true
-        renderSurfaceManager.renderView.postDelayed({
-            startCheckPosted = false
-            tryStartJvmWhenSurfaceReady()
-        }, 120L)
+        renderSurfaceManager.renderView.postDelayed(startCheckRunnable, 120L)
+    }
+
+    private fun cancelStartCheck() {
+        if (!startCheckPosted) {
+            return
+        }
+        startCheckPosted = false
+        renderSurfaceManager.renderView.removeCallbacks(startCheckRunnable)
     }
 
     private fun handleJvmExit(exitCode: Int) {
+        onJvmLaunchFinished()
         if (crashReturnTriggered) {
             return
         }
@@ -383,6 +407,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun handleJvmLaunchFailed(throwable: Throwable) {
+        onJvmLaunchFinished()
         if (crashReturnTriggered) {
             return
         }
