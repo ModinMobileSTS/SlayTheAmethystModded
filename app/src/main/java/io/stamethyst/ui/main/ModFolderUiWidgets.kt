@@ -31,6 +31,7 @@ internal fun FolderOrderHandle(
     reorderScope: ReorderableCollectionItemScope,
     enabled: Boolean,
     folderId: String,
+    modifier: Modifier = Modifier,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -51,7 +52,7 @@ internal fun FolderOrderHandle(
             }
         )
     }
-    Box(modifier = handleModifier) {
+    Box(modifier = modifier.then(handleModifier)) {
         IconButton(
             enabled = enabled,
             onClick = { menuExpanded = true }

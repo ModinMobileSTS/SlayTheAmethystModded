@@ -39,7 +39,6 @@ internal data class FolderUiModel(
     val mods: List<ModItemUi>,
     val isCollapsed: Boolean,
     val isUnassigned: Boolean,
-    val emptyTextResId: Int,
     val selectedCount: Int,
     val toggleState: ToggleableState
 )

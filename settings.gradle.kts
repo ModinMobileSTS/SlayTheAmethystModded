@@ -23,6 +23,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "SlayTheAmethyst"
 include(":app")
+include(":macrobenchmark")
 include(":boot-bridge")
 include(":mods:amethyst-runtime-compat")
 include(":patches:gdx-patch")

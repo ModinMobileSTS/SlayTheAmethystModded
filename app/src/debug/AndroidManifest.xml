@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application>
+        <activity
+            android:name=".ui.main.ModFolderBenchmarkActivity"
+            android:exported="true" />
+
         <receiver
             android:name=".backend.steamcloud.SteamCloudPhase0DebugReceiver"
             android:enabled="true"

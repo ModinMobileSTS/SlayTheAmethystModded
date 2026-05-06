@@ -13,7 +13,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.IntSize
-import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 
 internal data class ModDragOverlayAnchor(
@@ -128,8 +127,7 @@ internal fun buildFolderUiModels(
     modsByFolderId: Map<String?, List<ModItemUi>>,
     folderCollapsed: Map<String, Boolean>,
     unassignedCollapsed: Boolean,
-    unassignedFolderName: String,
-    dragLocked: Boolean
+    unassignedFolderName: String
 ): List<FolderUiModel> {
     return displayFolderTargetIds.mapNotNull { folderTokenId ->
         val isUnassigned = folderTokenId == UNASSIGNED_FOLDER_ID
@@ -158,13 +156,6 @@ internal fun buildFolderUiModels(
             mods = modsInFolder,
             isCollapsed = isCollapsed,
             isUnassigned = isUnassigned,
-            emptyTextResId = if (isUnassigned) {
-                R.string.main_folder_unassigned_empty
-            } else if (dragLocked) {
-                R.string.main_folder_empty
-            } else {
-                R.string.main_folder_drag_here
-            },
             selectedCount = selectedCount,
             toggleState = toggleState
         )

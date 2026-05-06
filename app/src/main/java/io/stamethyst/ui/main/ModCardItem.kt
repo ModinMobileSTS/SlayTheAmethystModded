@@ -1,18 +1,9 @@
 package io.stamethyst.ui.main
 
 import android.content.Context
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +25,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +62,7 @@ internal data class ModCardDragStartInfo(
     val pointerIdValue: Long
 )
 
+@Stable
 internal data class ModCardCallbacks(
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
@@ -96,7 +90,9 @@ internal fun ModCard(
     selectionEnabled: Boolean,
     fileActionsEnabled: Boolean,
     dragEnabled: Boolean,
+    dragEnabledState: State<Boolean>? = null,
     showDragHandle: Boolean = true,
+    dragAffordanceAlpha: State<Float>? = null,
     batchSelectionMode: Boolean = false,
     batchSelected: Boolean = false,
     batchSelectionEnabled: Boolean = false,
@@ -116,31 +112,6 @@ internal fun ModCard(
     var showImportPatchDialog by remember(mod.storagePath, mod.importPatchDetails) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(10.dp)
     val dragAffordanceVisible = showDragHandle && !batchSelectionMode
-    val targetBorderColor = when {
-        batchSelected -> MaterialTheme.colorScheme.primary
-        !dragAffordanceVisible -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
-    val animatedBorderColor by animateColorAsState(
-        targetValue = targetBorderColor,
-        animationSpec = tween(durationMillis = 180),
-        label = "modCardBorderColor"
-    )
-    val animatedBorderWidth by animateDpAsState(
-        targetValue = if (batchSelected) 2.dp else 1.dp,
-        animationSpec = tween(durationMillis = 180),
-        label = "modCardBorderWidth"
-    )
-    val targetBackgroundColor = when {
-        batchSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
-        mod.enabled -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-        else -> MaterialTheme.colorScheme.surfaceContainer
-    }
-    val animatedBackgroundColor by animateColorAsState(
-        targetValue = targetBackgroundColor,
-        animationSpec = tween(durationMillis = 180),
-        label = "modCardBackgroundColor"
-    )
     val dragVisualOffsetFromPointer = remember(density) {
 //        Offset(x = 0f, y = with(density) { MOD_DRAG_VISUAL_OFFSET_Y_DP.dp.toPx() })
         Offset(x = 0f, y = 0f)
@@ -149,15 +120,15 @@ internal fun ModCard(
     val dragHandleGestureModifier = Modifier
         .size(26.dp)
         .onGloballyPositioned { handleCoordinates = it }
-        .pointerInput(mod.storagePath, dragEnabled) {
-            if (!dragEnabled) {
-                return@pointerInput
-            }
+        .pointerInput(mod.storagePath) {
             awaitEachGesture {
                 val down = awaitFirstDown(
                     requireUnconsumed = false,
                     pass = PointerEventPass.Initial
                 )
+                if (dragEnabledState?.value == false || !dragEnabled) {
+                    return@awaitEachGesture
+                }
                 down.consume()
                 var dragStartInHandle: Offset? = null
                 while (dragStartInHandle == null) {
@@ -243,12 +214,22 @@ internal fun ModCard(
             .onGloballyPositioned { cardCoordinates = it }
             .clip(cardShape)
             .border(
-                animatedBorderWidth,
-                animatedBorderColor,
+                if (batchSelected) 2.dp else 1.dp,
+                if (batchSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
                 cardShape
             )
             .background(
-                animatedBackgroundColor,
+                if (batchSelected) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+                } else if (mod.enabled) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainer
+                },
                 cardShape
             )
             .then(cardTapModifier)
@@ -311,31 +292,28 @@ internal fun ModCard(
                         enabled = false
                     )
                 }
-                AnimatedVisibility(
-                    visible = dragAffordanceVisible,
-                    enter = fadeIn(animationSpec = tween(durationMillis = 120)) +
-                        expandHorizontally(animationSpec = tween(durationMillis = 160), expandFrom = Alignment.CenterHorizontally) +
-                        scaleIn(initialScale = 0.86f, animationSpec = tween(durationMillis = 160)),
-                    exit = fadeOut(animationSpec = tween(durationMillis = 90)) +
-                        shrinkHorizontally(animationSpec = tween(durationMillis = 130), shrinkTowards = Alignment.CenterHorizontally) +
-                        scaleOut(targetScale = 0.86f, animationSpec = tween(durationMillis = 130)),
-                    label = "modDragHandleVisibility"
-                ) {
-                    if (dragAffordanceVisible) {
-                        Box(
-                            modifier = handleModifier,
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_drag_handle),
-                                contentDescription = stringResource(R.string.main_mod_drag),
-                                tint = if (dragEnabled) {
-                                    MaterialTheme.colorScheme.outline
-                                } else {
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
-                                }
-                            )
-                        }
+                if (showDragHandle) {
+                    Box(
+                        modifier = handleModifier.graphicsLayer {
+                            alpha = if (dragAffordanceVisible) {
+                                dragAffordanceAlpha?.value ?: 1f
+                            } else {
+                                0f
+                            }
+                            scaleX = 0.92f + alpha * 0.08f
+                            scaleY = 0.92f + alpha * 0.08f
+                        },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_drag_handle),
+                            contentDescription = stringResource(R.string.main_mod_drag),
+                            tint = if (dragEnabled) {
+                                MaterialTheme.colorScheme.outline
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)
+                            }
+                        )
                     }
                 }
             }
