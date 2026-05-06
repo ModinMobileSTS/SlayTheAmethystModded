@@ -319,6 +319,8 @@
     <string name="main_folder_reorder">重排文件夹</string>
     <string name="main_folder_move_up">上移</string>
     <string name="main_folder_move_down">下移</string>
+    <string name="main_mod_move_folder_dialog_title_format">移动 %1$s 到文件夹</string>
+    <string name="main_mod_move_folder_current_format">%1$s（当前）</string>
     <string name="main_mod_unknown_version">未知</string>
     <string name="main_mod_no_description">暂无简介</string>
     <string name="main_mod_modid_format">modid: %1$s</string>

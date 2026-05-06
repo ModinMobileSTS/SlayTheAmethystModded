@@ -94,6 +94,7 @@ internal fun ModFolderSection(
     val modFileActionsEnabled = !uiState.busy && hostAvailable
     val interactionState = rememberModFolderSectionInteractionState(folderTargetIds = folderTargetIds)
     var pendingDeleteMod by remember { mutableStateOf<ModItemUi?>(null) }
+    var pendingMoveMod by remember { mutableStateOf<ModItemUi?>(null) }
     val filterText = interactionState.filterText
     val filteredMods = remember(mods, filterText) {
         val keyword = filterText.trim()
@@ -301,6 +302,35 @@ internal fun ModFolderSection(
                 onConfirm = {
                     pendingDeleteMod = null
                     callbacks.onDeleteMod(mod)
+                }
+            )
+        }
+
+        pendingMoveMod?.let { mod ->
+            val currentFolderTokenId = resolveAssignedFolderId(
+                mod = mod,
+                folderAssignments = folderAssignments,
+                validFolderIds = folderIds
+            ) ?: UNASSIGNED_FOLDER_ID
+            MoveModToFolderDialog(
+                visible = true,
+                modName = resolveModDisplayName(mod, showModFileName = showModFileName),
+                targets = folderUiModels.map { folderUiModel ->
+                    ModFolderMoveTarget(
+                        folderTokenId = folderUiModel.folderTokenId,
+                        folderName = folderUiModel.folderName,
+                        isCurrent = folderUiModel.folderTokenId == currentFolderTokenId
+                    )
+                },
+                controlsEnabled = organizationControlsEnabled && mod.installed,
+                onDismiss = { pendingMoveMod = null },
+                onSelectTarget = { targetFolderTokenId ->
+                    pendingMoveMod = null
+                    if (targetFolderTokenId == UNASSIGNED_FOLDER_ID) {
+                        callbacks.onMoveModToUnassigned(mod)
+                    } else {
+                        callbacks.onAssignModToFolder(mod, targetFolderTokenId)
+                    }
                 }
             )
         }
@@ -676,7 +706,8 @@ internal fun ModFolderSection(
                                                         },
                                                         onDragCancel = {
                                                             dragCoordinator.cancelModDrag()
-                                                        }
+                                                        },
+                                                        onMoveFolderPickerRequest = { pendingMoveMod = it }
                                                     )
                                                 )
                                             }

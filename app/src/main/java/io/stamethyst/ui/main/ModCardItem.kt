@@ -66,7 +66,8 @@ internal data class ModCardCallbacks(
     val onShareMod: (ModItemUi) -> Unit = {},
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
-    val onDragCancel: () -> Unit = {}
+    val onDragCancel: () -> Unit = {},
+    val onMoveFolderPickerRequest: (ModItemUi) -> Unit = {}
 )
 
 @Composable
@@ -115,10 +116,35 @@ internal fun ModCard(
                     pass = PointerEventPass.Initial
                 )
                 down.consume()
+                var dragStartInHandle: Offset? = null
+                while (dragStartInHandle == null) {
+                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id }
+                        ?: event.changes.firstOrNull()
+                        ?: break
+
+                    if (change.changedToUpIgnoreConsumed()) {
+                        change.consume()
+                        break
+                    }
+
+                    val dragOffset = change.position - down.position
+                    val longPressed = change.uptimeMillis - down.uptimeMillis >=
+                        viewConfiguration.longPressTimeoutMillis
+                    val movedPastTouchSlop = dragOffset.getDistance() >= viewConfiguration.touchSlop
+                    if (longPressed || movedPastTouchSlop) {
+                        change.consume()
+                        dragStartInHandle = change.position
+                    }
+                }
+                if (dragStartInHandle == null) {
+                    callbacks.onMoveFolderPickerRequest(mod)
+                    return@awaitEachGesture
+                }
                 val anchor = buildModCardDragOverlayAnchor(
                     handleCoordinates = handleCoordinates,
                     cardCoordinates = cardCoordinates,
-                    startInHandle = down.position,
+                    startInHandle = dragStartInHandle,
                     visualOffsetFromPointer = dragVisualOffsetFromPointer
                 )
                 if (anchor == null) {

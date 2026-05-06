@@ -319,6 +319,8 @@
     <string name="main_folder_reorder">Reorder folders</string>
     <string name="main_folder_move_up">Move up</string>
     <string name="main_folder_move_down">Move down</string>
+    <string name="main_mod_move_folder_dialog_title_format">Move %1$s to folder</string>
+    <string name="main_mod_move_folder_current_format">%1$s (current)</string>
     <string name="main_mod_unknown_version">Unknown</string>
     <string name="main_mod_no_description">No description yet</string>
     <string name="main_mod_modid_format">modid: %1$s</string>

@@ -2,10 +2,13 @@ package io.stamethyst.ui.main
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -37,6 +40,12 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.ui.haptics.LauncherHaptics
 import kotlin.math.roundToInt
+
+internal data class ModFolderMoveTarget(
+    val folderTokenId: String,
+    val folderName: String,
+    val isCurrent: Boolean
+)
 
 @Composable
 internal fun ModActionsDialog(
@@ -327,6 +336,61 @@ internal fun RenameModFileDisplayModeWarningDialog(
         dismissButton = {
             PillCancelButton(onClick = onDismiss) {
                 Text(text = stringResource(R.string.main_mod_rename_display_mode_warning_dismiss))
+            }
+        }
+    )
+}
+
+@Composable
+internal fun MoveModToFolderDialog(
+    visible: Boolean,
+    modName: String,
+    targets: List<ModFolderMoveTarget>,
+    controlsEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onSelectTarget: (String) -> Unit
+) {
+    if (!visible) {
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    R.string.main_mod_move_folder_dialog_title_format,
+                    modName
+                )
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                targets.forEach { target ->
+                    ModActionDialogListItem(
+                        text = if (target.isCurrent) {
+                            stringResource(
+                                R.string.main_mod_move_folder_current_format,
+                                target.folderName
+                            )
+                        } else {
+                            target.folderName
+                        },
+                        enabled = controlsEnabled && !target.isCurrent
+                    ) {
+                        onSelectTarget(target.folderTokenId)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            PillCancelButton(onClick = onDismiss) {
+                Text(stringResource(R.string.main_folder_dialog_cancel))
             }
         }
     )
