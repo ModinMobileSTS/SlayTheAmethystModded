@@ -319,6 +319,14 @@
     <string name="main_folder_reorder">Reorder folders</string>
     <string name="main_folder_move_up">Move up</string>
     <string name="main_folder_move_down">Move down</string>
+    <string name="main_import_folder_picker_list_title">Place imported mods</string>
+    <string name="main_import_folder_picker_list_message">Review where each new mod goes. Tap a row to change its folder.</string>
+    <string name="main_import_folder_picker_unassigned">Uncategorized</string>
+    <string name="main_import_folder_picker_item_target_format">Target: %1$s</string>
+    <string name="main_import_folder_picker_item_title_format">Choose folder for %1$s</string>
+    <string name="main_import_folder_picker_skip">Keep all Uncategorized</string>
+    <string name="main_import_folder_picker_confirm">Apply</string>
+    <string name="main_mod_new_import_badge">New</string>
     <string name="main_mod_move_folder_dialog_title_format">Move %1$s to folder</string>
     <string name="main_mod_move_folder_current_format">%1$s (current)</string>
     <string name="main_batch_move_dialog_title_format">Move %1$d selected mods to folder</string>

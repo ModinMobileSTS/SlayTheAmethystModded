@@ -246,6 +246,14 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
+    private fun clearNewlyImportedHighlights(host: Activity) {
+        if (uiState.optionalMods.none { it.newlyImported }) {
+            return
+        }
+        modManagementController.clearNewlyImportedHighlights()
+        republish(host)
+    }
+
     fun syncModSuggestionsIfNeeded(host: Activity) {
         val cachedSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
         if (cachedSuggestions != currentModSuggestions) {
@@ -745,10 +753,16 @@ class MainScreenViewModel : ViewModel() {
 
     fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
         modManagementController.onToggleMod(host, mod, enabled)
+        if (enabled && modManagementController.clearEnabledNewlyImportedHighlights()) {
+            republish(host)
+        }
     }
 
     fun setModsSelected(host: Activity, mods: List<ModItemUi>, selected: Boolean) {
         modManagementController.setModsSelected(host, mods, selected)
+        if (selected && modManagementController.clearEnabledNewlyImportedHighlights()) {
+            republish(host)
+        }
     }
 
     fun onSetPriority(host: Activity, mod: ModItemUi, priority: Int?) {
@@ -879,10 +893,16 @@ class MainScreenViewModel : ViewModel() {
 
     fun setFolderSelected(host: Activity, folderId: String, selected: Boolean) {
         modManagementController.setFolderSelected(host, folderId, selected)
+        if (selected && modManagementController.clearEnabledNewlyImportedHighlights()) {
+            republish(host)
+        }
     }
 
     fun setUnassignedSelected(host: Activity, selected: Boolean) {
         modManagementController.setUnassignedSelected(host, selected)
+        if (selected && modManagementController.clearEnabledNewlyImportedHighlights()) {
+            republish(host)
+        }
     }
 
     fun toggleFolderCollapsed(host: Activity, folderId: String) {
@@ -1520,6 +1540,7 @@ class MainScreenViewModel : ViewModel() {
                 manualDismissBootOverlay,
                 forceJvmCrash
             )
+            clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
             LogcatCaptureProcessClient.stopCapture(host)
             GameLaunchReturnTracker.clearPendingGameLaunch(host)

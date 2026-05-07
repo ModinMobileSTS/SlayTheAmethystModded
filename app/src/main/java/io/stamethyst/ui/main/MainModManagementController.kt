@@ -130,7 +130,12 @@ internal class MainModManagementController(
             pendingSelectionInitialized = true
         }
         optionalModsSnapshot.clear()
-        optionalModsSnapshot.addAll(optionalMods.map { it.copy(enabled = false) })
+        optionalModsSnapshot.addAll(
+            optionalMods.map { mod ->
+                val highlighted = mod.newlyImported && !isPendingOptionalModEnabled(mod)
+                mod.copy(enabled = false, newlyImported = highlighted)
+            }
+        )
         markOptionalModsWithPendingSelectionDirty()
         prunePendingSelectionToInstalled()
         sanitizeFolderAssignments(optionalMods)
@@ -158,6 +163,25 @@ internal class MainModManagementController(
 
     fun applyPendingSelection(host: Activity) {
         ModManager.replaceEnabledOptionalModIds(host, LinkedHashSet(pendingEnabledOptionalModIds))
+    }
+
+    fun clearEnabledNewlyImportedHighlights(): Boolean {
+        var changed = false
+        resolveOptionalModsWithPendingSelection().forEach { mod ->
+            if (mod.enabled && mod.newlyImported) {
+                changed = clearNewlyImportedHighlightForStoragePath(mod.storagePath) || changed
+            }
+        }
+        if (changed) {
+            markOptionalModsWithPendingSelectionDirty()
+        }
+        return changed
+    }
+
+    fun clearNewlyImportedHighlights() {
+        if (NewlyImportedModHighlightStore.clearAll()) {
+            markOptionalModsWithPendingSelectionDirty()
+        }
     }
 
     fun suggestNextFolderName(): String {
@@ -714,6 +738,9 @@ internal class MainModManagementController(
                 host.runOnUiThread {
                     setBusy(false, null)
                     replacePendingSelectionForRenamedMod(mod, renamedFile.absolutePath)
+                    if (NewlyImportedModHighlightStore.clear(mod.storagePath)) {
+                        NewlyImportedModHighlightStore.mark(listOf(renamedFile.absolutePath))
+                    }
                     clearAssignmentForMod(mod)
                     if (!assignedFolderId.isNullOrBlank()) {
                         folderAssignments[renamedFile.absolutePath] = assignedFolderId
@@ -1314,7 +1341,8 @@ internal class MainModManagementController(
                 enabled = mod.enabled,
                 explicitPriority = mod.explicitPriority,
                 effectivePriority = mod.effectivePriority,
-                importPatchDetails = importPatchDetails
+                importPatchDetails = importPatchDetails,
+                newlyImported = NewlyImportedModHighlightStore.contains(mod.jarFile.absolutePath)
             )
         }
     }
@@ -1348,7 +1376,10 @@ internal class MainModManagementController(
             return optionalModsWithPendingSelectionCache
         }
         optionalModsWithPendingSelectionCache = optionalModsSnapshot.map { mod ->
-            mod.copy(enabled = isPendingOptionalModEnabled(mod))
+            mod.copy(
+                enabled = isPendingOptionalModEnabled(mod),
+                newlyImported = NewlyImportedModHighlightStore.contains(mod.storagePath)
+            )
         }
         optionalModsWithPendingSelectionDirty = false
         return optionalModsWithPendingSelectionCache
@@ -1363,6 +1394,9 @@ internal class MainModManagementController(
         val storedId = resolveStoredOptionalModId(mod)
         var changed = false
         if (storedId != null) {
+            if (enabled && clearNewlyImportedHighlightForStoragePath(storedId)) {
+                changed = true
+            }
             if (enabled) {
                 if (pendingEnabledOptionalModIds.add(storedId)) {
                     changed = true
@@ -1376,6 +1410,18 @@ internal class MainModManagementController(
         if (changed) {
             markOptionalModsWithPendingSelectionDirty()
         }
+    }
+
+    private fun clearNewlyImportedHighlightForStoragePath(storagePath: String): Boolean {
+        val normalized = storagePath.trim()
+        if (normalized.isEmpty()) {
+            return false
+        }
+        var changed = false
+        resolveModStoragePathCandidates(normalized).forEach { candidate ->
+            changed = NewlyImportedModHighlightStore.clear(candidate) || changed
+        }
+        return changed
     }
 
     private fun clearPendingSelectionForMod(mod: ModItemUi) {

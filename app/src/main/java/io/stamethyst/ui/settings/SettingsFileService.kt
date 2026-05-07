@@ -58,6 +58,7 @@ internal data class SaveImportResult(
 internal data class ModImportResult(
     val modId: String,
     val modName: String,
+    val storagePath: String,
     val patchedAtlasEntries: Int,
     val patchedFilterLines: Int,
     val downscaledAtlasEntries: Int = 0,
@@ -72,7 +73,8 @@ internal data class ModImportResult(
     val patchedVupShionWebButtonConstructor: Boolean = false,
     val patchedJacketNoAnoKoShaderEntries: Int = 0,
     val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
-    val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0
+    val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0,
+    val folderPlacementHandledByDuplicateReuse: Boolean = false
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
@@ -100,6 +102,7 @@ internal data class ModImportResult(
 
 internal data class ModBatchImportResult(
     val importedCount: Int,
+    val importedResults: List<ModImportResult> = emptyList(),
     val errors: List<String>,
     val blockedComponents: List<String>,
     val compressedArchives: List<String>,
@@ -121,6 +124,23 @@ internal data class ModBatchImportResult(
                 failure.displayName
             }
         }
+
+    constructor(
+        importedCount: Int,
+        errors: List<String>,
+        blockedComponents: List<String>,
+        compressedArchives: List<String>,
+        invalidModJars: List<InvalidModImportFailure>,
+        patchedResults: List<ModImportResult>
+    ) : this(
+        importedCount = importedCount,
+        importedResults = emptyList(),
+        errors = errors,
+        blockedComponents = blockedComponents,
+        compressedArchives = compressedArchives,
+        invalidModJars = invalidModJars,
+        patchedResults = patchedResults
+    )
 }
 
 internal data class InvalidModImportFailure(
@@ -531,8 +551,9 @@ internal object SettingsFileService {
                 ?: if (displayName.isNotBlank()) displayName else "$modId.jar"
             val targetFile = ModManager.resolveStorageFileForImportedMod(host, requestedFileName)
             moveFileReplacing(tempFile, targetFile)
+            var folderPlacementHandledByDuplicateReuse = false
             if (!duplicateReusePlan.assignedFolderId.isNullOrBlank()) {
-                runCatching {
+                folderPlacementHandledByDuplicateReuse = runCatching {
                     applyDuplicateModImportFolderReuse(
                         host = host,
                         normalizedModId = modId,
@@ -540,12 +561,13 @@ internal object SettingsFileService {
                         targetStoragePath = targetFile.absolutePath,
                         assignedFolderId = duplicateReusePlan.assignedFolderId
                     )
-                }
+                }.getOrDefault(false)
             }
             val modName = manifest.name.trim().ifBlank { modId }
             val result = ModImportResult(
                 modId = modId,
                 modName = modName,
+                storagePath = targetFile.absolutePath,
                 patchedAtlasEntries = patchedAtlasEntries,
                 patchedFilterLines = patchedFilterLines,
                 downscaledAtlasEntries = downscaledAtlasEntries,
@@ -563,7 +585,8 @@ internal object SettingsFileService {
                 patchedJacketNoAnoKoDesktopVersionDirectives =
                     patchedJacketNoAnoKoDesktopVersionDirectives,
                 patchedJacketNoAnoKoFragmentPrecisionBlocks =
-                    patchedJacketNoAnoKoFragmentPrecisionBlocks
+                    patchedJacketNoAnoKoFragmentPrecisionBlocks,
+                folderPlacementHandledByDuplicateReuse = folderPlacementHandledByDuplicateReuse
             )
             runCatching {
                 ImportedModPatchRegistry.put(
@@ -616,6 +639,7 @@ internal object SettingsFileService {
         val blockedComponents = LinkedHashSet<String>()
         val compressedArchives = LinkedHashSet<String>()
         val invalidModJars = ArrayList<InvalidModImportFailure>()
+        val importedMods = ArrayList<ModImportResult>()
         val patchedMods = LinkedHashMap<String, ModImportResult>()
 
         for (uri in uris) {
@@ -633,6 +657,7 @@ internal object SettingsFileService {
                     importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
                 )
                 imported++
+                importedMods.add(result)
                 if (result.hasCompatibilityPatches) {
                     val existing = patchedMods[result.modId]
                     if (existing == null) {
@@ -698,6 +723,7 @@ internal object SettingsFileService {
 
         return ModBatchImportResult(
             importedCount = imported,
+            importedResults = importedMods,
             errors = errors,
             blockedComponents = blockedComponents.toList(),
             compressedArchives = compressedArchives.toList(),
@@ -1628,15 +1654,15 @@ internal object SettingsFileService {
         sourceStoragePaths: Collection<String>,
         targetStoragePath: String,
         assignedFolderId: String
-    ) {
+    ): Boolean {
         val targetPath = targetStoragePath.trim()
         val folderId = assignedFolderId.trim()
         if (targetPath.isEmpty() || folderId.isEmpty()) {
-            return
+            return false
         }
         val folderStateStore = MainFolderStateStore().apply { ensureLoaded(host) }
         if (folderStateStore.folders.none { it.id == folderId }) {
-            return
+            return false
         }
 
         var changed = false
@@ -1658,6 +1684,7 @@ internal object SettingsFileService {
         if (changed) {
             folderStateStore.persist(host)
         }
+        return true
     }
 
     private fun isEphemeralImportFileName(fileName: String?): Boolean {

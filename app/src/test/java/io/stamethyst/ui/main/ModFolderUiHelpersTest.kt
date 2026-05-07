@@ -1,6 +1,5 @@
 package io.stamethyst.ui.main
 
-import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -165,33 +164,33 @@ class ModFolderUiHelpersTest {
     }
 
     @Test
-    fun buildFolderUiModels_usesDragHintForEmptyFolderWhenUnlocked() {
+    fun buildFolderUiModels_buildsEmptyFolderModel() {
         val models = buildFolderUiModels(
             displayFolderTargetIds = listOf("folder-a"),
             foldersById = mapOf("folder-a" to MainScreenViewModel.ModFolder("folder-a", "Alpha")),
             modsByFolderId = emptyMap(),
             folderCollapsed = emptyMap(),
             unassignedCollapsed = false,
-            unassignedFolderName = "未分类",
-            dragLocked = false
+            unassignedFolderName = "未分类"
         )
 
-        assertEquals(R.string.main_folder_drag_here, models.single().emptyTextResId)
+        assertEquals("Alpha", models.single().folderName)
+        assertTrue(models.single().mods.isEmpty())
     }
 
     @Test
-    fun buildFolderUiModels_usesNeutralEmptyHintWhenDragLocked() {
+    fun buildFolderUiModels_buildsUnassignedEmptyFolderModel() {
         val models = buildFolderUiModels(
-            displayFolderTargetIds = listOf("folder-a"),
-            foldersById = mapOf("folder-a" to MainScreenViewModel.ModFolder("folder-a", "Alpha")),
+            displayFolderTargetIds = listOf(UNASSIGNED_FOLDER_ID),
+            foldersById = emptyMap(),
             modsByFolderId = emptyMap(),
             folderCollapsed = emptyMap(),
             unassignedCollapsed = false,
-            unassignedFolderName = "未分类",
-            dragLocked = true
+            unassignedFolderName = "未分类"
         )
 
-        assertEquals(R.string.main_folder_empty, models.single().emptyTextResId)
+        assertEquals("未分类", models.single().folderName)
+        assertTrue(models.single().isUnassigned)
     }
 
     private fun createMod(

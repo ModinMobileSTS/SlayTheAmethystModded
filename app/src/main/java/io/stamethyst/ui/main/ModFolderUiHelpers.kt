@@ -42,6 +42,16 @@ internal fun resolveModStoragePathCandidates(storagePath: String): List<String> 
     return candidates.toList()
 }
 
+internal fun matchesModStoragePathCandidate(storagePath: String, targetPath: String): Boolean {
+    val normalizedStorage = storagePath.trim()
+    val normalizedTarget = targetPath.trim()
+    if (normalizedStorage.isEmpty() || normalizedTarget.isEmpty()) {
+        return false
+    }
+    return resolveModStoragePathCandidates(normalizedStorage).contains(normalizedTarget) ||
+        resolveModStoragePathCandidates(normalizedTarget).contains(normalizedStorage)
+}
+
 internal fun resolveExistingModStoragePath(
     storagePath: String,
     exists: (String) -> Boolean = { candidate -> File(candidate).isFile }

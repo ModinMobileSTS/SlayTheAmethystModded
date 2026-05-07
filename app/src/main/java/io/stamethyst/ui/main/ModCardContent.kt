@@ -96,6 +96,10 @@ internal fun ModCardBodyContent(
                         onClick = onImportPatchClick
                     )
                 }
+                if (mod.newlyImported) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    NewImportBadge()
+                }
                 val effectivePriority = mod.effectivePriority
                 if (effectivePriority != null) {
                     Spacer(modifier = Modifier.width(6.dp))
@@ -199,6 +203,21 @@ private fun ModImportPatchIcon(
                 modifier = Modifier.size(12.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun NewImportBadge() {
+    Surface(
+        color = MaterialTheme.colorScheme.tertiary,
+        contentColor = MaterialTheme.colorScheme.onTertiary,
+        shape = RoundedCornerShape(999.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.main_mod_new_import_badge),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+        )
     }
 }
 

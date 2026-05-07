@@ -319,6 +319,14 @@
     <string name="main_folder_reorder">重排文件夹</string>
     <string name="main_folder_move_up">上移</string>
     <string name="main_folder_move_down">下移</string>
+    <string name="main_import_folder_picker_list_title">放置新模组</string>
+    <string name="main_import_folder_picker_list_message">修改模组分类的文件夹</string>
+    <string name="main_import_folder_picker_unassigned">未分类</string>
+    <string name="main_import_folder_picker_item_target_format">目标：%1$s</string>
+    <string name="main_import_folder_picker_item_title_format">选择「%1$s」的文件夹</string>
+    <string name="main_import_folder_picker_skip">全部保留在未分类</string>
+    <string name="main_import_folder_picker_confirm">应用</string>
+    <string name="main_mod_new_import_badge">新</string>
     <string name="main_mod_move_folder_dialog_title_format">移动 %1$s 到文件夹</string>
     <string name="main_mod_move_folder_current_format">%1$s（当前）</string>
     <string name="main_batch_move_dialog_title_format">将 %1$d 个已选模组移动到文件夹</string>

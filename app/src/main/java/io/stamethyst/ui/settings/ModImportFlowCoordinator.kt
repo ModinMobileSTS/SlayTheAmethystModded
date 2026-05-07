@@ -1,10 +1,13 @@
 package io.stamethyst.ui.settings
 
 import android.app.Activity
+import android.app.Dialog
 import android.net.Uri
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.SimpleAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import io.stamethyst.R
@@ -12,13 +15,30 @@ import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.VupShionPatchedDialog
+import io.stamethyst.ui.main.MainFolderStateStore
+import io.stamethyst.ui.main.NewlyImportedModHighlightStore
+import io.stamethyst.ui.main.UNASSIGNED_FOLDER_ID
+import io.stamethyst.ui.main.resolveModStoragePathCandidates
 import java.util.concurrent.ExecutorService
 
 internal object ModImportFlowCoordinator {
+    private const val IMPORT_FOLDER_ROW_TITLE = "title"
+    private const val IMPORT_FOLDER_ROW_SUBTITLE = "subtitle"
+
+    private data class ImportFolderOption(
+        val id: String?,
+        val name: String
+    )
+
+    private data class ImportedModFolderSelection(
+        val result: ModImportResult,
+        var folderId: String?
+    )
+
     data class Callbacks(
         val setBusy: (Boolean, UiText?, UiBusyOperation, Int?) -> Unit,
         val showNotice: (UiText, Int) -> Unit,
-        val onImportApplied: () -> Unit = {},
+        val onImportApplied: (ModBatchImportResult) -> Unit = {},
         val onFlowFinished: () -> Unit = {}
     )
 
@@ -94,6 +114,7 @@ internal object ModImportFlowCoordinator {
                 val compressedArchiveList = batchResult.compressedArchives
                 val invalidModJars = batchResult.invalidModJars
                 val patchedResults = batchResult.patchedResults
+                NewlyImportedModHighlightStore.mark(batchResult.importedResults.map { it.storagePath })
                 host.runOnUiThread {
                     clearBusy(callbacks)
                     if (blockedList.isNotEmpty()) {
@@ -170,8 +191,16 @@ internal object ModImportFlowCoordinator {
                             )
                         }
                     }
-                    callbacks.onImportApplied()
-                    callbacks.onFlowFinished()
+                    showImportedModFolderPickerIfNeeded(
+                        host = host,
+                        importedResults = batchResult.importedResults,
+                        onComplete = {
+                            callbacks.onImportApplied(batchResult)
+                            if (!host.isFinishing && !host.isDestroyed) {
+                                callbacks.onFlowFinished()
+                            }
+                        }
+                    )
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -183,7 +212,7 @@ internal object ModImportFlowCoordinator {
                         ),
                         Toast.LENGTH_LONG
                     )
-                    callbacks.onImportApplied()
+                    callbacks.onImportApplied(emptyModBatchImportResult())
                     callbacks.onFlowFinished()
                 }
             }
@@ -466,6 +495,256 @@ internal object ModImportFlowCoordinator {
             .show()
     }
 
+    private fun showImportedModFolderPickerIfNeeded(
+        host: Activity,
+        importedResults: List<ModImportResult>,
+        onComplete: () -> Unit
+    ) {
+        if (host.isFinishing || host.isDestroyed) {
+            return
+        }
+        val importedMods = importedResults
+            .filter { it.storagePath.trim().isNotEmpty() }
+            .filterNot { it.folderPlacementHandledByDuplicateReuse }
+            .distinctBy { it.storagePath.trim() }
+        if (importedMods.isEmpty()) {
+            onComplete()
+            return
+        }
+
+        val folderStateStore = MainFolderStateStore().apply { ensureLoaded(host) }
+        if (folderStateStore.folders.isEmpty()) {
+            importedMods.forEach { result ->
+                clearImportedModFolderAssignment(folderStateStore, result.storagePath)
+            }
+            folderStateStore.unassignedIsCollapsed = false
+            folderStateStore.persist(host)
+            onComplete()
+            return
+        }
+
+        showImportedModFolderListPicker(
+            host = host,
+            folderStateStore = folderStateStore,
+            importedMods = importedMods,
+            onComplete = onComplete
+        )
+    }
+
+    private fun showImportedModFolderListPicker(
+        host: Activity,
+        folderStateStore: MainFolderStateStore,
+        importedMods: List<ModImportResult>,
+        onComplete: () -> Unit
+    ) {
+        if (host.isFinishing || host.isDestroyed) {
+            return
+        }
+        val folderOptions = buildImportFolderOptions(folderStateStore)
+        val selections = importedMods.map { result ->
+            ImportedModFolderSelection(result = result, folderId = null)
+        }
+        val adapterItems = buildImportFolderSelectionLabels(host, selections, folderOptions).toMutableList()
+        val adapter = SimpleAdapter(
+            host,
+            adapterItems,
+            android.R.layout.simple_list_item_2,
+            arrayOf(IMPORT_FOLDER_ROW_TITLE, IMPORT_FOLDER_ROW_SUBTITLE),
+            intArrayOf(android.R.id.text1, android.R.id.text2)
+        )
+        val listView = ListView(host).apply {
+            dividerHeight = 1
+            this.adapter = adapter
+        }
+        val padding = (host.resources.displayMetrics.density * 20).toInt()
+        listView.setPadding(padding, 0, padding, 0)
+
+        fun refreshLabels() {
+            adapterItems.clear()
+            adapterItems.addAll(buildImportFolderSelectionLabels(host, selections, folderOptions))
+            adapter.notifyDataSetChanged()
+        }
+
+        fun applyChoices(applySelections: Boolean) {
+            applyImportedModFolderChoices(
+                host = host,
+                folderStateStore = folderStateStore,
+                selections = if (applySelections) {
+                    selections
+                } else {
+                    selections.map { selection -> selection.copy(folderId = null) }
+                }
+            )
+            onComplete()
+        }
+
+        var completed = false
+        fun complete(applySelections: Boolean) {
+            if (completed) {
+                return
+            }
+            completed = true
+            applyChoices(applySelections)
+        }
+
+        fun dismissAndComplete(dialog: Dialog, applySelections: Boolean) {
+            if (completed) {
+                return
+            }
+            completed = true
+            dialog.dismiss()
+            applyChoices(applySelections)
+        }
+
+        AlertDialog.Builder(host)
+            .setTitle(R.string.main_import_folder_picker_list_title)
+            .setMessage(R.string.main_import_folder_picker_list_message)
+            .setView(listView)
+            .setNegativeButton(R.string.main_import_folder_picker_skip, null)
+            .setPositiveButton(R.string.main_import_folder_picker_confirm, null)
+            .setOnCancelListener {
+                complete(applySelections = false)
+            }
+            .create()
+            .also { dialog ->
+                dialog.setOnDismissListener {
+                    if (!completed && !host.isFinishing && !host.isDestroyed) {
+                        complete(applySelections = false)
+                    }
+                }
+                dialog.show()
+                dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                    dismissAndComplete(dialog, applySelections = false)
+                }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    dismissAndComplete(dialog, applySelections = true)
+                }
+                listView.setOnItemClickListener { _, _, which, _ ->
+                    showImportedModTargetFolderPicker(
+                        host = host,
+                        selection = selections[which],
+                        folderOptions = folderOptions,
+                        onFolderSelected = { folderId ->
+                            selections[which].folderId = folderId
+                            refreshLabels()
+                        }
+                    )
+                }
+            }
+    }
+
+    private fun showImportedModTargetFolderPicker(
+        host: Activity,
+        selection: ImportedModFolderSelection,
+        folderOptions: List<ImportFolderOption>,
+        onFolderSelected: (String?) -> Unit
+    ) {
+        val selectedIndex = folderOptions.indexOfFirst { it.id == selection.folderId }.coerceAtLeast(0)
+        AlertDialog.Builder(host)
+            .setTitle(
+                host.getString(
+                    R.string.main_import_folder_picker_item_title_format,
+                    selection.result.modName.ifBlank { selection.result.modId }
+                )
+            )
+            .setSingleChoiceItems(folderOptions.map { it.name }.toTypedArray(), selectedIndex) { dialog, which ->
+                onFolderSelected(folderOptions.getOrNull(which)?.id)
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.main_folder_dialog_cancel, null)
+            .show()
+    }
+
+    private fun applyImportedModFolderChoices(
+        host: Activity,
+        folderStateStore: MainFolderStateStore,
+        selections: List<ImportedModFolderSelection>
+    ) {
+        selections.forEach { selection ->
+            applyImportedModFolderChoice(
+                host = host,
+                folderStateStore = folderStateStore,
+                storagePath = selection.result.storagePath,
+                folderId = selection.folderId
+            )
+        }
+    }
+
+    private fun buildImportFolderSelectionLabels(
+        host: Activity,
+        selections: List<ImportedModFolderSelection>,
+        folderOptions: List<ImportFolderOption>
+    ): List<Map<String, String>> {
+        return selections.map { selection ->
+            val modName = selection.result.modName.ifBlank { selection.result.modId }
+            val folderName = folderOptions.firstOrNull { it.id == selection.folderId }?.name
+                ?: host.getString(R.string.main_import_folder_picker_unassigned)
+            mapOf(
+                IMPORT_FOLDER_ROW_TITLE to modName,
+                IMPORT_FOLDER_ROW_SUBTITLE to host.getString(
+                    R.string.main_import_folder_picker_item_target_format,
+                    folderName
+                )
+            )
+        }
+    }
+
+    private fun buildImportFolderOptions(folderStateStore: MainFolderStateStore): List<ImportFolderOption> {
+        val folderTokens = folderStateStore.buildFolderOrderTokens()
+            .filter { folderToken ->
+                folderToken == UNASSIGNED_FOLDER_ID || folderStateStore.folders.any { it.id == folderToken }
+            }
+        val foldersById = folderStateStore.folders.associateBy { it.id }
+        return folderTokens.map { folderToken ->
+            if (folderToken == UNASSIGNED_FOLDER_ID) {
+                ImportFolderOption(id = null, name = folderStateStore.unassignedName)
+            } else {
+                ImportFolderOption(
+                    id = folderToken,
+                    name = foldersById[folderToken]?.name ?: folderToken
+                )
+            }
+        }
+    }
+
+    private fun applyImportedModFolderChoice(
+        host: Activity,
+        folderStateStore: MainFolderStateStore,
+        storagePath: String,
+        folderId: String?
+    ) {
+        var changed = clearImportedModFolderAssignment(folderStateStore, storagePath)
+        val targetFolderId = folderId?.trim().orEmpty()
+        if (targetFolderId.isEmpty()) {
+            folderStateStore.unassignedIsCollapsed = false
+        } else if (folderStateStore.folders.any { it.id == targetFolderId }) {
+            val normalizedPath = storagePath.trim()
+            if (normalizedPath.isNotEmpty()) {
+                folderStateStore.assignments[normalizedPath] = targetFolderId
+            }
+            folderStateStore.collapsedMap[targetFolderId] = false
+            changed = true
+        } else {
+            folderStateStore.unassignedIsCollapsed = false
+        }
+        if (changed || targetFolderId.isEmpty()) {
+            folderStateStore.persist(host)
+        }
+    }
+
+    private fun clearImportedModFolderAssignment(
+        folderStateStore: MainFolderStateStore,
+        storagePath: String
+    ): Boolean {
+        var changed = false
+        resolveModStoragePathCandidates(storagePath).forEach { candidate ->
+            if (folderStateStore.assignments.remove(candidate) != null) {
+                changed = true
+            }
+        }
+        return changed
+    }
+
     private fun showCancelled(callbacks: Callbacks) {
         callbacks.showNotice(UiText.StringResource(R.string.mod_import_cancelled), Toast.LENGTH_SHORT)
         callbacks.onFlowFinished()
@@ -473,6 +752,18 @@ internal object ModImportFlowCoordinator {
 
     private fun clearBusy(callbacks: Callbacks) {
         callbacks.setBusy(false, null, UiBusyOperation.MOD_IMPORT, null)
+    }
+
+    private fun emptyModBatchImportResult(): ModBatchImportResult {
+        return ModBatchImportResult(
+            importedCount = 0,
+            importedResults = emptyList(),
+            errors = emptyList(),
+            blockedComponents = emptyList(),
+            compressedArchives = emptyList(),
+            invalidModJars = emptyList(),
+            patchedResults = emptyList()
+        )
     }
 
     private fun resolveErrorMessage(host: Activity, message: String?): String {

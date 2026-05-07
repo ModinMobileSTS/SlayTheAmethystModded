@@ -16,5 +16,6 @@ data class ModItemUi(
     val enabled: Boolean,
     val explicitPriority: Int?,
     val effectivePriority: Int?,
-    val importPatchDetails: String? = null
+    val importPatchDetails: String? = null,
+    val newlyImported: Boolean = false
 )

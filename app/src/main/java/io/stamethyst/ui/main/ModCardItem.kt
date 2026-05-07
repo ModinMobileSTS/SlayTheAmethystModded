@@ -231,9 +231,11 @@ internal fun ModCard(
             .onGloballyPositioned { cardCoordinates = it }
             .clip(cardShape)
             .border(
-                if (batchSelected) 2.dp else 1.dp,
+                if (batchSelected || mod.newlyImported) 2.dp else 1.dp,
                 if (batchSelected) {
                     MaterialTheme.colorScheme.primary
+                } else if (mod.newlyImported) {
+                    MaterialTheme.colorScheme.tertiary
                 } else {
                     MaterialTheme.colorScheme.outlineVariant
                 },
@@ -242,6 +244,8 @@ internal fun ModCard(
             .background(
                 if (batchSelected) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+                } else if (mod.newlyImported) {
+                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
                 } else if (mod.enabled) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                 } else {
