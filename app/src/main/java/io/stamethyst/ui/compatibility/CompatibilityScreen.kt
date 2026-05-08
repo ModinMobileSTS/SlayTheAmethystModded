@@ -66,9 +66,6 @@ fun LauncherCompatibilityScreen(
         onMainMenuPreviewReuseCompatToggled = { enabled ->
             viewModel.onMainMenuPreviewReuseCompatToggled(context, enabled)
         },
-        onRelicTouchscreenObtainCompatToggled = { enabled ->
-            viewModel.onRelicTouchscreenObtainCompatToggled(context, enabled)
-        },
         onLargeTextureDownscaleCompatToggled = { enabled ->
             viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
         },
@@ -112,7 +109,7 @@ private fun LauncherCompatibilityScreenPreview() {
             fragmentShaderPrecisionCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             mainMenuPreviewReuseCompatEnabled = true,
-            relicTouchscreenObtainCompatEnabled = true,
+            nativeTouchscreenAllowlistCompatEnabled = true,
             largeTextureDownscaleCompatEnabled = true,
             textureResidencyManagerCompatEnabled = true,
             texturePressureDownscaleDivisor = 2,
@@ -140,7 +137,6 @@ private fun LauncherCompatibilityScreenContent(
     onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onMainMenuPreviewReuseCompatToggled: (Boolean) -> Unit = {},
-    onRelicTouchscreenObtainCompatToggled: (Boolean) -> Unit = {},
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
     onTextureResidencyManagerCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
@@ -209,14 +205,6 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.mainMenuPreviewReuseCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onMainMenuPreviewReuseCompatToggled
-                )
-
-                CompatibilitySwitchRow(
-                    title = stringResource(R.string.compat_relic_touchscreen_obtain_title),
-                    description = stringResource(R.string.compat_relic_touchscreen_obtain_desc),
-                    checked = uiState.relicTouchscreenObtainCompatEnabled,
-                    enabled = !uiState.busy,
-                    onCheckedChange = onRelicTouchscreenObtainCompatToggled
                 )
 
                 CompatibilitySwitchRow(

@@ -79,8 +79,8 @@
     <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you see missing materials/textures, consider enabling it. Pros: continues fixing black blocks not covered during import-time patching. Cons: increases startup CPU/GPU overhead from managed texture scanning, and runtime Linear/Clamp fallback may make some textures blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_main_menu_preview_reuse_title">Main-menu character preview reuse</string>
     <string name="compat_main_menu_preview_reuse_desc">When enabled, repeated main-menu preview rebuilds reuse already-instantiated character previews when safe, and modded character-option textures are cached instead of being reloaded every cycle. This reduces repeated return-to-menu churn and makes the related diagnostics easier to read. Disable it if you want behavior closer to the original mod stack while investigating character-select regressions. This takes effect on the next launch.</string>
-    <string name="compat_relic_touchscreen_obtain_title">Relic touchscreen direct pick</string>
-    <string name="compat_relic_touchscreen_obtain_desc">When enabled, relic clicks use the same direct-pick path as mouse mode instead of the original touchscreen confirm-button path. This fixes modded relic choice screens that reuse boss relic click logic but do not render the original boss relic confirm button. This is a runtime compatibility switch and takes effect on the next launch.</string>
+    <string name="compat_native_touchscreen_allowlist_title">Native touchscreen compatibility allowlist</string>
+    <string name="compat_native_touchscreen_allowlist_desc">When enabled, the launcher stops exposing native touchscreen semantics globally to mods and only re-enables verified vanilla touchscreen confirm flows such as the shop and boss relic confirm paths, while keeping the touch indicator visible. This reduces modded screens getting trapped in untested touchscreen state machines. Disable it if you want to restore the original global native touchscreen semantics. This is a runtime compatibility switch and takes effect on the next launch.</string>
     <string name="compat_large_texture_downscale_title">Large texture fallback downscale</string>
     <string name="compat_large_texture_downscale_desc">When enabled, the runtime applies a generic fallback for oversized texture uploads: large external-mod atlas pages, loose textures, portraits, card art, and other runtime-loaded images can be downscaled automatically, while especially large textures can also be reduced after GPU memory pressure crosses the soft budget. This lowers HarmonyOS/Android compatibility-layer GPU leak kills, but some affected assets may look softer. Default is ON.</string>
     <string name="compat_texture_residency_manager_title">Global texture leak watchdog</string>
@@ -721,7 +721,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_first_run_render_intro_desc">To adapt the game for mobile, the launcher applies several changes to improve readability and the overall play experience. Adjust these behaviors to match your preference.</string>
     <string name="settings_first_run_render_display_cutout_desc">When enabled, a black margin is shown on the left side to keep full-screen camera cutouts from covering game content, which can otherwise make some mod controls impossible to tap.</string>
     <string name="settings_first_run_render_crop_screen_bottom_desc">When enabled, a black margin is shown on the right side so the top-right settings area remains tappable on some full-screen devices.</string>
-    <string name="settings_first_run_render_touchscreen_desc">When enabled, the game uses its built-in touchscreen logic, including touch indicators and snap-to confirm buttons. This can also make some mod controls impossible to tap, so turn it off if you run into that problem.</string>
+    <string name="settings_first_run_render_touchscreen_desc">Choose how game touch input is exposed. Hybrid mode is recommended for modded play; mobile mode restores the original global touchscreen behavior.</string>
     <string name="settings_first_run_render_larger_ui_desc">When enabled, the game uses a larger UI that is easier to tap, but it also changes some visual effects. Choose based on your own preference.</string>
     <string name="settings_first_run_render_font_scale_desc">Controls text size. The original game uses a scale of 1, and text that is too small can be hard to read on a phone.</string>
     <string name="settings_first_run_input_intro_desc">Controls some special interactions, such as how mods that require keyboard and mouse should be operated on a phone.</string>
@@ -1103,6 +1103,13 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_touchscreen_enabled">Touchscreen input: Enabled</string>
     <string name="settings_touchscreen_disabled">Touchscreen input: Disabled</string>
     <string name="settings_touchscreen_desc">Controls whether the native touch adaptation mode is used. When disabled, the mouse cursor is shown and the desktop UI is used.</string>
+    <string name="settings_touchscreen_mode_title">Touchscreen input mode</string>
+    <string name="settings_touchscreen_mode_desktop">Desktop mode</string>
+    <string name="settings_touchscreen_mode_hybrid">Hybrid mode</string>
+    <string name="settings_touchscreen_mode_mobile">Mobile mode</string>
+    <string name="settings_touchscreen_mode_desktop_desc">Use desktop mouse semantics without the native touch indicator or touchscreen confirm paths.</string>
+    <string name="settings_touchscreen_mode_hybrid_desc">Recommended. Keeps touch input and the touch indicator, but exposes native touchscreen semantics only to verified vanilla flows for better mod compatibility.</string>
+    <string name="settings_touchscreen_mode_mobile_desc">Restores global native touchscreen semantics. Closest to vanilla mobile touch behavior, but more likely to trigger mod UI issues.</string>
     <string name="settings_gameplay_font_scale_title">Text size</string>
     <string name="settings_gameplay_font_scale_value">%1$sx</string>
     <string name="settings_gameplay_font_scale_desc">Controls the text size multiplier for MTS launches. Takes effect the next time the game launches.</string>
@@ -1391,6 +1398,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_target_fps_option">%1$d FPS</string>
     <string name="settings_player_name_save_failed">Failed to save player name: %1$s</string>
     <string name="settings_touchscreen_save_failed">Failed to save touchscreen setting: %1$s</string>
+    <string name="settings_touchscreen_mode_save_failed">Failed to save touchscreen mode: %1$s</string>
     <string name="settings_gameplay_font_scale_save_failed">Failed to save text size: %1$s</string>
     <string name="settings_gameplay_larger_ui_save_failed">Failed to save larger UI setting: %1$s</string>
     <string name="settings_mobileglues_save_failed">Failed to save MobileGlues settings: %1$s</string>
@@ -1433,6 +1441,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_status_string_dedup">String Deduplication: %1$s</string>
     <string name="settings_status_back_behavior">Back behavior: %1$s</string>
     <string name="settings_status_touchscreen">Touchscreen input: %1$s</string>
+    <string name="settings_status_touchscreen_mode">Touchscreen mode: %1$s</string>
     <string name="settings_status_gameplay_font_scale">Text size: %1$sx</string>
     <string name="settings_status_gameplay_larger_ui">Larger UI: %1$s</string>
     <string name="settings_status_mobile_hud">Mobile HUD: %1$s</string>
@@ -1459,7 +1468,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_status_import_atlas_downscale_level">Import atlas pre-downscale level: max edge %1$dpx</string>
     <string name="settings_status_mod_manifest_root_compat">Mod manifest root compat: %1$s</string>
     <string name="settings_status_runtime_texture_compat">Runtime texture compat: %1$s</string>
-    <string name="settings_status_relic_touchscreen_obtain_compat">Relic touchscreen direct pick: %1$s</string>
+    <string name="settings_status_native_touchscreen_allowlist_compat">Native touchscreen compatibility allowlist: %1$s</string>
     <string name="settings_status_texture_pressure_downscale_divisor">Texture pressure downscale divisor: x%1$d</string>
     <string name="settings_status_force_linear_mipmap_filter">Force linear mipmap filter: %1$s</string>
     <string name="settings_status_bundled_jre_path">Bundled JRE path: %1$s</string>

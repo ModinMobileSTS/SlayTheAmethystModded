@@ -95,7 +95,9 @@ object LauncherConfig {
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_MAIN_MENU_PREVIEW_REUSE_COMPAT =
         "compat_main_menu_preview_reuse"
-    private const val PREF_KEY_RELIC_TOUCHSCREEN_OBTAIN_COMPAT =
+    // Keep the legacy stored key so existing users do not lose their toggle state
+    // when the old relic direct-pick switch is replaced by the touchscreen allowlist.
+    private const val PREF_KEY_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT =
         "compat_relic_touchscreen_obtain"
     private const val PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT =
         "compat_large_texture_downscale"
@@ -205,7 +207,8 @@ object LauncherConfig {
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
     const val DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED = true
-    const val DEFAULT_RELIC_TOUCHSCREEN_OBTAIN_COMPAT_ENABLED = true
+    const val DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED = true
+    val DEFAULT_TOUCHSCREEN_INPUT_MODE: TouchscreenInputMode = TouchscreenInputMode.HYBRID
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = true
     const val DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = true
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
@@ -861,16 +864,16 @@ object LauncherConfig {
         }
     }
 
-    fun isRelicTouchscreenObtainCompatEnabled(context: Context): Boolean {
+    fun isNativeTouchscreenAllowlistCompatEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
-            PREF_KEY_RELIC_TOUCHSCREEN_OBTAIN_COMPAT,
-            DEFAULT_RELIC_TOUCHSCREEN_OBTAIN_COMPAT_ENABLED
+            PREF_KEY_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT,
+            DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED
         )
     }
 
-    fun setRelicTouchscreenObtainCompatEnabled(context: Context, enabled: Boolean) {
+    fun setNativeTouchscreenAllowlistCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_RELIC_TOUCHSCREEN_OBTAIN_COMPAT, enabled)
+            putBoolean(PREF_KEY_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT, enabled)
         }
     }
 
@@ -1369,6 +1372,13 @@ object LauncherConfig {
             ?: DEFAULT_TOUCHSCREEN_ENABLED
     }
 
+    fun readTouchscreenInputMode(context: Context): TouchscreenInputMode {
+        return TouchscreenInputMode.fromSettings(
+            touchscreenEnabled = readTouchscreenEnabled(context),
+            nativeTouchscreenAllowlistEnabled = isNativeTouchscreenAllowlistCompatEnabled(context)
+        )
+    }
+
     @Throws(IOException::class)
     fun saveTouchscreenEnabled(context: Context, enabled: Boolean) {
         val committed = prefs(context)
@@ -1378,6 +1388,15 @@ object LauncherConfig {
         if (!committed) {
             throw IOException("Failed to persist launcher touchscreen setting")
         }
+    }
+
+    @Throws(IOException::class)
+    fun saveTouchscreenInputMode(context: Context, mode: TouchscreenInputMode) {
+        saveTouchscreenEnabled(context, mode.touchscreenEnabled)
+        setNativeTouchscreenAllowlistCompatEnabled(
+            context,
+            mode.nativeTouchscreenAllowlistEnabled
+        )
     }
 
     fun readGameplayFontScale(context: Context): Float {

@@ -1,7 +1,11 @@
 package io.stamethyst.compatmod;
 
 import com.badlogic.gdx.Gdx;
+import com.megacrit.cardcrawl.blights.AbstractBlight;
 import com.megacrit.cardcrawl.cards.AbstractCard;
+import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
+import com.megacrit.cardcrawl.relics.AbstractRelic;
+import com.megacrit.cardcrawl.rooms.TreasureRoomBoss;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -14,12 +18,30 @@ public final class CompatRuntimeState {
         "amethyst.runtime_compat.debug";
     private static final String FONT_SCALE_PROP = "amethyst.font_scale";
     private static final String UI_SCALE_PROP = "amethyst.ui_scale";
+    private static final String TOUCHSCREEN_POLICY_PROP = "amethyst.touchscreen_policy";
+    private static final String TOUCHSCREEN_POLICY_VANILLA_ALLOWLIST = "vanilla_allowlist";
+    private static final String NATIVE_TOUCHSCREEN_ENABLED_PROP =
+        "amethyst.native_touchscreen_enabled";
+    private static final String TOUCH_INDICATOR_ENABLED_PROP =
+        "amethyst.touch_indicator_enabled";
+    private static final String TOUCHSCREEN_STATE_CLEANUP_PROP =
+        "amethyst.runtime_compat.touchscreen_state_cleanup";
     private static final float DEFAULT_TEXT_SCALE = 1.0f;
     private static final float BIG_TEXT_SCALE = 1.2f;
     private static final float DEFAULT_UI_SCALE = 1.0f;
     private static final float UI_SCALE_EPSILON = 0.0001f;
     private static final boolean RUNTIME_COMPAT_DEBUG_ENABLED =
         readBooleanSystemProperty(RUNTIME_COMPAT_DEBUG_PROP, false);
+    private static final String TOUCHSCREEN_POLICY =
+        readStringSystemProperty(TOUCHSCREEN_POLICY_PROP, "global");
+    private static final boolean VANILLA_TOUCHSCREEN_ALLOWLIST_ACTIVE =
+        TOUCHSCREEN_POLICY_VANILLA_ALLOWLIST.equalsIgnoreCase(TOUCHSCREEN_POLICY);
+    private static final boolean NATIVE_TOUCHSCREEN_ENABLED =
+        readBooleanSystemProperty(NATIVE_TOUCHSCREEN_ENABLED_PROP, false);
+    private static final boolean TOUCH_INDICATOR_ENABLED =
+        readBooleanSystemProperty(TOUCH_INDICATOR_ENABLED_PROP, NATIVE_TOUCHSCREEN_ENABLED);
+    private static final boolean TOUCHSCREEN_STATE_CLEANUP_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_STATE_CLEANUP_PROP, true);
     private static final float CONFIGURED_FONT_SCALE =
         readFloatSystemProperty(FONT_SCALE_PROP, Float.NaN);
     private static final float CONFIGURED_UI_SCALE =
@@ -61,6 +83,14 @@ public final class CompatRuntimeState {
                     + Float.toString(getConfiguredUiScale())
                     + " mobileUiLayout="
                     + Boolean.toString(isMobileUiScaleStrategyActive())
+                    + " touchscreenPolicy="
+                    + TOUCHSCREEN_POLICY
+                    + " nativeTouchscreen="
+                    + Boolean.toString(NATIVE_TOUCHSCREEN_ENABLED)
+                    + " touchIndicator="
+                    + Boolean.toString(TOUCH_INDICATOR_ENABLED)
+                    + " touchStateCleanup="
+                    + Boolean.toString(TOUCHSCREEN_STATE_CLEANUP_ENABLED)
             );
             System.out.println(
                 "[amethyst-runtime-compat] guarded dynamic cache active: "
@@ -135,6 +165,93 @@ public final class CompatRuntimeState {
 
     public static boolean resolveMobileLayoutFlag(boolean originalValue) {
         return originalValue || isMobileUiScaleStrategyActive();
+    }
+
+    public static boolean isTouchscreenStateCleanupEnabled() {
+        return TOUCHSCREEN_STATE_CLEANUP_ENABLED;
+    }
+
+    public static boolean resolveTouchIndicatorFlag(boolean originalValue) {
+        return originalValue || TOUCH_INDICATOR_ENABLED;
+    }
+
+    public static boolean resolveMainMenuTouchLayoutTouchscreenFlag(boolean originalValue) {
+        if (originalValue) {
+            return true;
+        }
+        return isVanillaTouchscreenAllowlistActive() && NATIVE_TOUCHSCREEN_ENABLED;
+    }
+
+    public static boolean resolveMainMenuTouchLayoutMobileFlag(boolean originalValue) {
+        if (originalValue) {
+            return true;
+        }
+        return isVanillaTouchscreenAllowlistActive() && NATIVE_TOUCHSCREEN_ENABLED;
+    }
+
+    public static boolean resolveVanillaAllowlistedTouchscreenFlag(boolean originalValue) {
+        if (!isVanillaTouchscreenAllowlistActive()) {
+            return originalValue;
+        }
+        return NATIVE_TOUCHSCREEN_ENABLED;
+    }
+
+    public static boolean resolveVanillaShopTouchscreenFlag(boolean originalValue) {
+        return resolveVanillaAllowlistedTouchscreenFlag(originalValue);
+    }
+
+    public static boolean resolveRelicTouchscreenForObtain(
+        boolean originalValue,
+        AbstractRelic relic
+    ) {
+        if (!isVanillaTouchscreenAllowlistActive()) {
+            return originalValue;
+        }
+        return NATIVE_TOUCHSCREEN_ENABLED && isVanillaBossRelicScreenRelic(relic);
+    }
+
+    public static boolean resolveBlightTouchscreenForObtain(
+        boolean originalValue,
+        AbstractBlight blight
+    ) {
+        if (!isVanillaTouchscreenAllowlistActive()) {
+            return originalValue;
+        }
+        return NATIVE_TOUCHSCREEN_ENABLED && isVanillaBossRelicScreenBlight(blight);
+    }
+
+    private static boolean isVanillaTouchscreenAllowlistActive() {
+        return VANILLA_TOUCHSCREEN_ALLOWLIST_ACTIVE;
+    }
+
+    private static boolean isVanillaBossRelicScreenRelic(AbstractRelic relic) {
+        if (relic == null) {
+            return false;
+        }
+        try {
+            return AbstractDungeon.screen == AbstractDungeon.CurrentScreen.BOSS_REWARD
+                && AbstractDungeon.getCurrRoom() instanceof TreasureRoomBoss
+                && AbstractDungeon.bossRelicScreen != null
+                && AbstractDungeon.bossRelicScreen.relics != null
+                && AbstractDungeon.bossRelicScreen.relics.contains(relic);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private static boolean isVanillaBossRelicScreenBlight(AbstractBlight blight) {
+        if (blight == null) {
+            return false;
+        }
+        try {
+            return AbstractDungeon.screen == AbstractDungeon.CurrentScreen.BOSS_REWARD
+                && AbstractDungeon.getCurrRoom() instanceof TreasureRoomBoss
+                && AbstractDungeon.bossRelicScreen != null
+                && AbstractDungeon.bossRelicScreen.blights != null
+                && AbstractDungeon.bossRelicScreen.blights.contains(blight);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     public static Integer getDuelistBaseTributes(AbstractCard card) {
@@ -454,6 +571,18 @@ public final class CompatRuntimeState {
             return true;
         }
         return defaultValue;
+    }
+
+    private static String readStringSystemProperty(String key, String defaultValue) {
+        String configured = System.getProperty(key);
+        if (configured == null) {
+            return defaultValue;
+        }
+        configured = configured.trim();
+        if (configured.length() == 0) {
+            return defaultValue;
+        }
+        return configured;
     }
 
     private static boolean hasConfiguredFontScale() {

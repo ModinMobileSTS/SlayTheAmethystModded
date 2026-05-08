@@ -45,6 +45,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
     private fun capture(context: Context): LauncherSettingsDiagnosticsSnapshot {
         val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
         val mobileGlues = LauncherConfig.readMobileGluesSettings(context)
+        val touchscreenInputMode = LauncherConfig.readTouchscreenInputMode(context)
+        val nativeTouchscreenAllowlistCompatEnabled =
+            CompatibilitySettings.isNativeTouchscreenAllowlistCompatEnabled(context)
         return LauncherSettingsDiagnosticsSnapshot(
             sections = listOf(
                 LauncherSettingsDiagnosticsSection(
@@ -86,9 +89,19 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "autoSwitchLeftAfterRightClick" to formatBoolean(
                             LauncherConfig.readAutoSwitchLeftAfterRightClick(context)
                         ),
-                        "touchscreenEnabled" to formatBoolean(
-                            LauncherConfig.readTouchscreenEnabled(context)
+                        "touchscreenInputMode" to touchscreenInputMode.persistedValue,
+                        "touchscreenEnabled" to formatBoolean(touchscreenInputMode.touchscreenEnabled),
+                        "nativeTouchscreenEnabled" to formatBoolean(
+                            touchscreenInputMode.touchscreenEnabled
                         ),
+                        "touchIndicatorEnabled" to formatBoolean(
+                            touchscreenInputMode.touchscreenEnabled
+                        ),
+                        "touchscreenPolicy" to if (touchscreenInputMode.nativeTouchscreenAllowlistEnabled) {
+                            "vanilla_allowlist"
+                        } else {
+                            "global"
+                        },
                         "gameplayFontScale" to LauncherConfig.formatGameplayFontScale(
                             LauncherConfig.readGameplayFontScale(context)
                         ),
@@ -220,8 +233,8 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "mainMenuPreviewReuseCompat" to formatBoolean(
                             CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(context)
                         ),
-                        "relicTouchscreenObtainCompat" to formatBoolean(
-                            CompatibilitySettings.isRelicTouchscreenObtainCompatEnabled(context)
+                        "nativeTouchscreenAllowlistCompat" to formatBoolean(
+                            nativeTouchscreenAllowlistCompatEnabled
                         ),
                         "largeTextureDownscaleCompat" to formatBoolean(
                             CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(context)

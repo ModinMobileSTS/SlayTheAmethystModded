@@ -2,10 +2,13 @@ package io.stamethyst.ui.settings
 
 import android.content.Context
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.TouchscreenInputMode
 import java.io.IOException
 
 internal object GameplaySettingsService {
     const val DEFAULT_TOUCHSCREEN_ENABLED = LauncherConfig.DEFAULT_TOUCHSCREEN_ENABLED
+    val DEFAULT_TOUCHSCREEN_INPUT_MODE: TouchscreenInputMode =
+        LauncherConfig.DEFAULT_TOUCHSCREEN_INPUT_MODE
     const val DEFAULT_FONT_SCALE = LauncherConfig.DEFAULT_GAMEPLAY_FONT_SCALE
     const val MIN_FONT_SCALE = LauncherConfig.MIN_GAMEPLAY_FONT_SCALE
     const val MAX_FONT_SCALE = LauncherConfig.MAX_GAMEPLAY_FONT_SCALE
@@ -16,9 +19,18 @@ internal object GameplaySettingsService {
         return LauncherConfig.readTouchscreenEnabled(context)
     }
 
+    fun readTouchscreenInputMode(context: Context): TouchscreenInputMode {
+        return LauncherConfig.readTouchscreenInputMode(context)
+    }
+
     @Throws(IOException::class)
     fun saveTouchscreenEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.saveTouchscreenEnabled(context, enabled)
+    }
+
+    @Throws(IOException::class)
+    fun saveTouchscreenInputMode(context: Context, mode: TouchscreenInputMode) {
+        LauncherConfig.saveTouchscreenInputMode(context, mode)
     }
 
     fun readFontScale(context: Context): Float {

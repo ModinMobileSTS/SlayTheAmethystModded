@@ -39,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -70,6 +71,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.TouchMouseInteractionMode
+import io.stamethyst.config.TouchscreenInputMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
@@ -107,6 +109,28 @@ private fun TouchMouseInteractionMode.description(): String {
                 R.string.settings_touch_mouse_interaction_mode_open_menu_desc
             TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
                 R.string.settings_touch_mouse_interaction_mode_toggle_button_desc
+        }
+    )
+}
+
+@Composable
+private fun TouchscreenInputMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            TouchscreenInputMode.DESKTOP -> R.string.settings_touchscreen_mode_desktop
+            TouchscreenInputMode.HYBRID -> R.string.settings_touchscreen_mode_hybrid
+            TouchscreenInputMode.MOBILE -> R.string.settings_touchscreen_mode_mobile
+        }
+    )
+}
+
+@Composable
+private fun TouchscreenInputMode.description(): String {
+    return stringResource(
+        when (this) {
+            TouchscreenInputMode.DESKTOP -> R.string.settings_touchscreen_mode_desktop_desc
+            TouchscreenInputMode.HYBRID -> R.string.settings_touchscreen_mode_hybrid_desc
+            TouchscreenInputMode.MOBILE -> R.string.settings_touchscreen_mode_mobile_desc
         }
     )
 }
@@ -270,20 +294,17 @@ fun LauncherFirstRunSetupScreen(
                         }
 
                         FirstRunSetupStep.RENDER -> {
-                            FirstRunRenderStep(
-                                uiState = uiState,
-                                onDisplayCutoutAvoidanceChanged = { enabled ->
-                                    viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
-                                },
-                                onScreenBottomCropChanged = { enabled ->
-                                    viewModel.onScreenBottomCropChanged(activity, enabled)
-                                },
-                                onTouchscreenEnabledChanged = { enabled ->
-                                    viewModel.onTouchscreenEnabledChanged(activity, enabled)
-                                },
-                                onGameplayFontScaleChanged = { value ->
-                                    viewModel.onGameplayFontScaleChanged(activity, value)
-                                },
+                        FirstRunRenderStep(
+                            uiState = uiState,
+                            onDisplayCutoutAvoidanceChanged = { enabled ->
+                                viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
+                            },
+                            onScreenBottomCropChanged = { enabled ->
+                                viewModel.onScreenBottomCropChanged(activity, enabled)
+                            },
+                            onGameplayFontScaleChanged = { value ->
+                                viewModel.onGameplayFontScaleChanged(activity, value)
+                            },
                                 onGameplayLargerUiChanged = { enabled ->
                                     viewModel.onGameplayLargerUiChanged(activity, enabled)
                                 },
@@ -293,6 +314,9 @@ fun LauncherFirstRunSetupScreen(
                         FirstRunSetupStep.INPUT -> {
                             FirstRunInputStep(
                                 uiState = uiState,
+                                onTouchscreenInputModeChanged = { mode ->
+                                    viewModel.onTouchscreenInputModeChanged(activity, mode)
+                                },
                                 onShowFloatingMouseWindowChanged = { enabled ->
                                     viewModel.onShowFloatingMouseWindowChanged(activity, enabled)
                                 },
@@ -466,7 +490,6 @@ private fun FirstRunRenderStep(
     uiState: SettingsScreenViewModel.UiState,
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     onScreenBottomCropChanged: (Boolean) -> Unit,
-    onTouchscreenEnabledChanged: (Boolean) -> Unit,
     onGameplayFontScaleChanged: (Float) -> Unit,
     onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
@@ -497,15 +520,6 @@ private fun FirstRunRenderStep(
             disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
             description = stringResource(R.string.settings_first_run_render_crop_screen_bottom_desc),
             onCheckedChange = onScreenBottomCropChanged,
-        )
-
-        SwitchSettingRow(
-            checked = uiState.touchscreenEnabled,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_touchscreen_enabled),
-            disabledText = stringResource(R.string.settings_touchscreen_disabled),
-            description = stringResource(R.string.settings_first_run_render_touchscreen_desc),
-            onCheckedChange = onTouchscreenEnabledChanged,
         )
 
         SwitchSettingRow(
@@ -557,12 +571,28 @@ private fun FirstRunRenderStep(
 @Composable
 private fun FirstRunInputStep(
     uiState: SettingsScreenViewModel.UiState,
+    onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
 ) {
     SettingsSectionCard(
-        title = stringResource(R.string.settings_input_floating_title)
+        title = stringResource(R.string.settings_section_input)
     ) {
+        SettingsDropdownField(
+            label = stringResource(R.string.settings_touchscreen_mode_title),
+            valueText = uiState.touchscreenInputMode.displayName(),
+            enabled = !uiState.busy,
+            supportingText = stringResource(R.string.settings_first_run_render_touchscreen_desc),
+            options = TouchscreenInputMode.entries,
+            optionLabel = { mode -> mode.displayName() },
+            optionDescription = { mode -> mode.description() },
+            onOptionSelected = onTouchscreenInputModeChanged,
+        )
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.settings_input_floating_title),
+            style = MaterialTheme.typography.titleSmall,
+        )
         SwitchSettingRow(
             checked = uiState.showFloatingMouseWindow,
             enabled = !uiState.busy,

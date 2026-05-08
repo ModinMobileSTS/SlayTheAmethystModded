@@ -11,6 +11,7 @@ import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.TouchscreenInputMode
 import net.kdt.pojavlaunch.AWTCanvasView
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
@@ -152,9 +153,30 @@ object StsLaunchSpec {
         )
         args.add("-Duser.home=${stsHome.absolutePath}")
         args.add("-Duser.dir=${stsRoot.absolutePath}")
+        val touchscreenInputMode = LauncherConfig.readTouchscreenInputMode(context)
         args.add(
             "-Damethyst.touchscreen_enabled=" +
-                if (LauncherConfig.readTouchscreenEnabled(context)) "true" else "false"
+                if (touchscreenInputMode == TouchscreenInputMode.MOBILE) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.native_touchscreen_enabled=" +
+                if (touchscreenInputMode.touchscreenEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.touch_indicator_enabled=" +
+                if (touchscreenInputMode.touchscreenEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.touchscreen_policy=" +
+                if (touchscreenInputMode.nativeTouchscreenAllowlistEnabled) {
+                    "vanilla_allowlist"
+                } else {
+                    "global"
+                }
         )
         args.add(
             "-Damethyst.font_scale=" +
@@ -266,14 +288,6 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.runtime_compat.main_menu_preview_reuse=" +
                 if (CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(context)) {
-                    "true"
-                } else {
-                    "false"
-                }
-        )
-        args.add(
-            "-Damethyst.runtime_compat.relic_touchscreen_obtain=" +
-                if (CompatibilitySettings.isRelicTouchscreenObtainCompatEnabled(context)) {
                     "true"
                 } else {
                     "false"

@@ -22,12 +22,15 @@ public class ColorTabBar {
     private static final int TICKBOX_W = 48;
     private static final String COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP =
         "amethyst.compendium_upgrade_touch_fix_enabled";
+    private static final String NATIVE_TOUCHSCREEN_ENABLED_PROP =
+        "amethyst.native_touchscreen_enabled";
     private static final float VIEW_UPGRADE_HB_W = 360.0f;
     private static final float VIEW_UPGRADE_HB_H = 48.0f;
     private static final float TOUCH_VIEW_UPGRADE_HB_W = 420.0f;
     private static final float TOUCH_VIEW_UPGRADE_HB_H = 84.0f;
     private static final float TOUCH_VIEW_UPGRADE_HB_CENTER_Y_OFFSET = -18.0f;
     private static Boolean compendiumUpgradeTouchFixEnabled = null;
+    private static Boolean nativeTouchscreenEnabled = null;
 
     public Hitbox redHb;
     public Hitbox greenHb;
@@ -331,7 +334,8 @@ public class ColorTabBar {
     }
 
     private static boolean isCompendiumUpgradeTouchFixActive() {
-        return Settings.isTouchScreen && isCompendiumUpgradeTouchFixEnabled();
+        return (Settings.isTouchScreen || isNativeTouchscreenEnabled())
+            && isCompendiumUpgradeTouchFixEnabled();
     }
 
     private static boolean isCompendiumUpgradeTouchFixEnabled() {
@@ -366,6 +370,15 @@ public class ColorTabBar {
             return Boolean.FALSE;
         }
         return null;
+    }
+
+    private static boolean isNativeTouchscreenEnabled() {
+        if (nativeTouchscreenEnabled != null) {
+            return nativeTouchscreenEnabled.booleanValue();
+        }
+        Boolean parsed = parseBooleanLike(System.getProperty(NATIVE_TOUCHSCREEN_ENABLED_PROP));
+        nativeTouchscreenEnabled = parsed == null ? Boolean.FALSE : parsed;
+        return nativeTouchscreenEnabled.booleanValue();
     }
 
     public enum CurrentTab {

@@ -90,13 +90,13 @@ object CompatibilitySettings {
     }
 
     @JvmStatic
-    fun isRelicTouchscreenObtainCompatEnabled(context: Context): Boolean {
-        return LauncherConfig.isRelicTouchscreenObtainCompatEnabled(context)
+    fun isNativeTouchscreenAllowlistCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isNativeTouchscreenAllowlistCompatEnabled(context)
     }
 
     @JvmStatic
-    fun setRelicTouchscreenObtainCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setRelicTouchscreenObtainCompatEnabled(context, enabled)
+    fun setNativeTouchscreenAllowlistCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setNativeTouchscreenAllowlistCompatEnabled(context, enabled)
     }
 
     @JvmStatic

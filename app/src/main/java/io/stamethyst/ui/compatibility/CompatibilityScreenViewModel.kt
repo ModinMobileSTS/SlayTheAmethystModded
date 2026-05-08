@@ -21,7 +21,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
-        val relicTouchscreenObtainCompatEnabled: Boolean = true,
+        val nativeTouchscreenAllowlistCompatEnabled: Boolean = true,
         val largeTextureDownscaleCompatEnabled: Boolean = true,
         val textureResidencyManagerCompatEnabled: Boolean = true,
         val texturePressureDownscaleDivisor: Int = 2,
@@ -48,8 +48,8 @@ class CompatibilityScreenViewModel : ViewModel() {
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
-            relicTouchscreenObtainCompatEnabled =
-                CompatibilitySettings.isRelicTouchscreenObtainCompatEnabled(host),
+            nativeTouchscreenAllowlistCompatEnabled =
+                CompatibilitySettings.isNativeTouchscreenAllowlistCompatEnabled(host),
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
             textureResidencyManagerCompatEnabled = CompatibilitySettings.isTextureResidencyManagerCompatEnabled(host),
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
@@ -126,12 +126,12 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(mainMenuPreviewReuseCompatEnabled = enabled)
     }
 
-    fun onRelicTouchscreenObtainCompatToggled(host: Context, enabled: Boolean) {
+    fun onNativeTouchscreenAllowlistCompatToggled(host: Context, enabled: Boolean) {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setRelicTouchscreenObtainCompatEnabled(host, enabled)
-        uiState = uiState.copy(relicTouchscreenObtainCompatEnabled = enabled)
+        CompatibilitySettings.setNativeTouchscreenAllowlistCompatEnabled(host, enabled)
+        uiState = uiState.copy(nativeTouchscreenAllowlistCompatEnabled = enabled)
     }
 
     fun onLargeTextureDownscaleCompatToggled(host: Context, enabled: Boolean) {

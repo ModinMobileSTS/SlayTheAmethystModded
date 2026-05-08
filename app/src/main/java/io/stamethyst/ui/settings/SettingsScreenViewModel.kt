@@ -81,6 +81,7 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.config.TouchMouseInteractionMode
+import io.stamethyst.config.TouchscreenInputMode
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.UiText
@@ -254,7 +255,8 @@ class SettingsScreenViewModel : ViewModel() {
         val gpuResourceDiagEnabled: Boolean = LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED,
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
-        val touchscreenEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCHSCREEN_ENABLED,
+        val touchscreenInputMode: TouchscreenInputMode =
+            GameplaySettingsService.DEFAULT_TOUCHSCREEN_INPUT_MODE,
         val gameplayFontScale: Float = GameplaySettingsService.DEFAULT_FONT_SCALE,
         val gameplayLargerUiEnabled: Boolean = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
         val statusText: String = "",
@@ -2423,14 +2425,14 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onTouchscreenEnabledChanged(host: Activity, enabled: Boolean) {
+    fun onTouchscreenInputModeChanged(host: Activity, mode: TouchscreenInputMode) {
         if (uiState.busy) {
             return
         }
-        if (!saveTouchscreenEnabledSelection(host, enabled)) {
+        if (!saveTouchscreenInputModeSelection(host, mode)) {
             return
         }
-        uiState = uiState.copy(touchscreenEnabled = enabled)
+        uiState = uiState.copy(touchscreenInputMode = mode)
         refreshStatus(host)
     }
 
@@ -2592,6 +2594,7 @@ class SettingsScreenViewModel : ViewModel() {
         val jvm = snapshot.jvm
         val input = snapshot.input
         val diagnostics = snapshot.diagnostics
+        val compatibility = snapshot.compatibility
         val rendererDecision = rendering.rendererDecision
         val mobileGluesSettings = rendering.mobileGluesSettings
         val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
@@ -2654,7 +2657,11 @@ class SettingsScreenViewModel : ViewModel() {
             gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
             gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
             glBridgeSwapHeartbeatDebugEnabled = diagnostics.glBridgeSwapHeartbeatDebugEnabled,
-            touchscreenEnabled = input.touchscreenEnabled,
+            touchscreenInputMode = TouchscreenInputMode.fromSettings(
+                touchscreenEnabled = input.touchscreenEnabled,
+                nativeTouchscreenAllowlistEnabled =
+                    compatibility.nativeTouchscreenAllowlistCompatEnabled
+            ),
             gameplayFontScale = input.fontScale,
             gameplayLargerUiEnabled = input.largerUiEnabled
         )
@@ -3064,8 +3071,12 @@ class SettingsScreenViewModel : ViewModel() {
             input.backBehavior.displayName(host)
         )
         lines += host.getString(
-            R.string.settings_status_touchscreen,
-            toggleStateText(host, input.touchscreenEnabled)
+            R.string.settings_status_touchscreen_mode,
+            TouchscreenInputMode.fromSettings(
+                touchscreenEnabled = input.touchscreenEnabled,
+                nativeTouchscreenAllowlistEnabled =
+                    compatibility.nativeTouchscreenAllowlistCompatEnabled
+            ).displayName(host)
         )
         lines += host.getString(
             R.string.settings_status_gameplay_font_scale,
@@ -3178,10 +3189,6 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_runtime_texture_compat,
             toggleStateText(host, compatibility.runtimeTextureCompatEnabled)
-        )
-        lines += host.getString(
-            R.string.settings_status_relic_touchscreen_obtain_compat,
-            toggleStateText(host, compatibility.relicTouchscreenObtainCompatEnabled)
         )
         lines += host.getString(
             R.string.settings_status_texture_pressure_downscale_divisor,
@@ -3800,15 +3807,15 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.setSustainedPerformanceModeEnabled(host, enabled)
     }
 
-    private fun saveTouchscreenEnabledSelection(host: Activity, enabled: Boolean): Boolean {
+    private fun saveTouchscreenInputModeSelection(host: Activity, mode: TouchscreenInputMode): Boolean {
         return try {
-            GameplaySettingsService.saveTouchscreenEnabled(host, enabled)
+            GameplaySettingsService.saveTouchscreenInputMode(host, mode)
             true
         } catch (error: IOException) {
             showToast(
                 host,
                 UiText.StringResource(
-                    R.string.settings_touchscreen_save_failed,
+                    R.string.settings_touchscreen_mode_save_failed,
                     error.message ?: host.getString(R.string.feedback_unknown_error)
                 ),
                 Toast.LENGTH_SHORT
@@ -4210,6 +4217,17 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.settings_back_behavior_escape)
             BackBehavior.NONE ->
                 host.getString(R.string.settings_back_behavior_none)
+        }
+    }
+
+    private fun TouchscreenInputMode.displayName(host: Activity): String {
+        return when (this) {
+            TouchscreenInputMode.DESKTOP ->
+                host.getString(R.string.settings_touchscreen_mode_desktop)
+            TouchscreenInputMode.HYBRID ->
+                host.getString(R.string.settings_touchscreen_mode_hybrid)
+            TouchscreenInputMode.MOBILE ->
+                host.getString(R.string.settings_touchscreen_mode_mobile)
         }
     }
 

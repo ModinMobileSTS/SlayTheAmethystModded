@@ -91,7 +91,7 @@ internal object SettingsRepository {
         val globalAtlasFilterCompatEnabled: Boolean,
         val modManifestRootCompatEnabled: Boolean,
         val runtimeTextureCompatEnabled: Boolean,
-        val relicTouchscreenObtainCompatEnabled: Boolean,
+        val nativeTouchscreenAllowlistCompatEnabled: Boolean,
         val texturePressureDownscaleDivisor: Int,
         val forceLinearMipmapFilterEnabled: Boolean
     )
@@ -186,8 +186,8 @@ internal object SettingsRepository {
                 modManifestRootCompatEnabled =
                     CompatibilitySettings.isModManifestRootCompatEnabled(context),
                 runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(context),
-                relicTouchscreenObtainCompatEnabled =
-                    CompatibilitySettings.isRelicTouchscreenObtainCompatEnabled(context),
+                nativeTouchscreenAllowlistCompatEnabled =
+                    CompatibilitySettings.isNativeTouchscreenAllowlistCompatEnabled(context),
                 texturePressureDownscaleDivisor =
                     CompatibilitySettings.readTexturePressureDownscaleDivisor(context),
                 forceLinearMipmapFilterEnabled =

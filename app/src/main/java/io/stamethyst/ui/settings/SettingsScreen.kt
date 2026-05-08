@@ -104,6 +104,7 @@ import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.TouchMouseInteractionMode
+import io.stamethyst.config.TouchscreenInputMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
@@ -219,7 +220,7 @@ fun LauncherSettingsScreen(
         onGpuResourceDiagChanged = { enabled -> viewModel.onGpuResourceDiagChanged(activity, enabled) },
         onGdxPadCursorDebugChanged = { enabled -> viewModel.onGdxPadCursorDebugChanged(activity, enabled) },
         onGlBridgeSwapHeartbeatDebugChanged = { enabled -> viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled) },
-        onTouchscreenEnabledChanged = { enabled -> viewModel.onTouchscreenEnabledChanged(activity, enabled) },
+        onTouchscreenInputModeChanged = { mode -> viewModel.onTouchscreenInputModeChanged(activity, mode) },
         onGameplayFontScaleChanged = { value -> viewModel.onGameplayFontScaleChanged(activity, value) },
         onGameplayLargerUiChanged = { enabled -> viewModel.onGameplayLargerUiChanged(activity, enabled) },
         onAutoCheckUpdatesChanged = { enabled ->
@@ -362,7 +363,7 @@ private fun LauncherSettingsScreenPreview() {
             gpuResourceDiagEnabled = false,
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
-            touchscreenEnabled = true,
+            touchscreenInputMode = TouchscreenInputMode.HYBRID,
             gameplayFontScale = 1.50f,
             gameplayLargerUiEnabled = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK\nAmethystRuntimeCompat.jar: OK",
@@ -426,7 +427,7 @@ private fun LauncherSettingsScreenContent(
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
-    onTouchscreenEnabledChanged: (Boolean) -> Unit = {},
+    onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit = {},
     onGameplayFontScaleChanged: (Float) -> Unit = {},
     onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
@@ -557,7 +558,6 @@ private fun LauncherSettingsScreenContent(
                         onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
                         onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
                         onScreenBottomCropChanged = onScreenBottomCropChanged,
-                        onTouchscreenEnabledChanged = onTouchscreenEnabledChanged,
                         onGameplayFontScaleChanged = onGameplayFontScaleChanged,
                         onGameplayLargerUiChanged = onGameplayLargerUiChanged,
                     )
@@ -570,6 +570,7 @@ private fun LauncherSettingsScreenContent(
                         uiState = uiState,
                         onPlayerNameChanged = onPlayerNameChanged,
                         onBackBehaviorChanged = onBackBehaviorChanged,
+                        onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
                         onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
@@ -1855,7 +1856,6 @@ internal fun SettingsPerformanceSection(
     onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     onScreenBottomCropChanged: (Boolean) -> Unit,
-    onTouchscreenEnabledChanged: (Boolean) -> Unit,
     onGameplayFontScaleChanged: (Float) -> Unit,
     onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
@@ -1942,15 +1942,6 @@ internal fun SettingsPerformanceSection(
         disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
         description = stringResource(R.string.settings_crop_screen_bottom_desc),
         onCheckedChange = onScreenBottomCropChanged
-    )
-
-    SwitchSettingRow(
-        checked = uiState.touchscreenEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touchscreen_enabled),
-        disabledText = stringResource(R.string.settings_touchscreen_disabled),
-        description = stringResource(R.string.settings_touchscreen_desc),
-        onCheckedChange = onTouchscreenEnabledChanged
     )
 
     SwitchSettingRow(
@@ -2336,6 +2327,7 @@ private fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
+    onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
@@ -2353,6 +2345,7 @@ private fun SettingsInputSection(
             uiState = uiState,
             onPlayerNameChanged = onPlayerNameChanged,
             onBackBehaviorChanged = onBackBehaviorChanged,
+            onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
             onHapticFeedbackChanged = onHapticFeedbackChanged,
             onShowModFileNameChanged = onShowModFileNameChanged,
             onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
@@ -2377,6 +2370,7 @@ internal fun SettingsInputBasicsSection(
     uiState: SettingsScreenViewModel.UiState,
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
+    onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -2408,6 +2402,17 @@ internal fun SettingsInputBasicsSection(
     Text(
         text = stringResource(R.string.settings_back_behavior_desc),
         style = MaterialTheme.typography.bodySmall
+    )
+
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_touchscreen_mode_title),
+        valueText = uiState.touchscreenInputMode.displayName(),
+        enabled = !uiState.busy,
+        supportingText = uiState.touchscreenInputMode.description(),
+        options = TouchscreenInputMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = onTouchscreenInputModeChanged
     )
 
     SwitchSettingRow(
@@ -3084,6 +3089,28 @@ private fun backBehaviorDisplayName(behavior: BackBehavior): String {
         BackBehavior.NONE ->
             stringResource(R.string.settings_back_behavior_none)
     }
+}
+
+@Composable
+private fun TouchscreenInputMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            TouchscreenInputMode.DESKTOP -> R.string.settings_touchscreen_mode_desktop
+            TouchscreenInputMode.HYBRID -> R.string.settings_touchscreen_mode_hybrid
+            TouchscreenInputMode.MOBILE -> R.string.settings_touchscreen_mode_mobile
+        }
+    )
+}
+
+@Composable
+private fun TouchscreenInputMode.description(): String {
+    return stringResource(
+        when (this) {
+            TouchscreenInputMode.DESKTOP -> R.string.settings_touchscreen_mode_desktop_desc
+            TouchscreenInputMode.HYBRID -> R.string.settings_touchscreen_mode_hybrid_desc
+            TouchscreenInputMode.MOBILE -> R.string.settings_touchscreen_mode_mobile_desc
+        }
+    )
 }
 
 @Composable

@@ -55,6 +55,8 @@ public class SingleCardViewPopup {
     public static boolean enableUpgradeToggle = true;
     private static final String COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP =
         "amethyst.compendium_upgrade_touch_fix_enabled";
+    private static final String NATIVE_TOUCHSCREEN_ENABLED_PROP =
+        "amethyst.native_touchscreen_enabled";
     private static final float DEFAULT_BOTTOM_TOGGLE_W = 250.0f;
     private static final float DEFAULT_BOTTOM_TOGGLE_H = 80.0f;
     private static final float DEFAULT_BOTTOM_TOGGLE_CENTER_Y = 70.0f;
@@ -62,6 +64,7 @@ public class SingleCardViewPopup {
     private static final float TOUCH_BOTTOM_TOGGLE_H = 112.0f;
     private static final float TOUCH_BOTTOM_TOGGLE_CENTER_Y = 96.0f;
     private static Boolean compendiumUpgradeTouchFixEnabled = null;
+    private static Boolean nativeTouchscreenEnabled = null;
     private Hitbox upgradeHb = new Hitbox(getBottomToggleWidth(), getBottomToggleHeight());
     private Hitbox betaArtHb = null;
     private boolean viewBetaArt = false;
@@ -344,7 +347,8 @@ public class SingleCardViewPopup {
     }
 
     private static boolean isCompendiumUpgradeTouchFixActive() {
-        return Settings.isTouchScreen && isCompendiumUpgradeTouchFixEnabled();
+        return (Settings.isTouchScreen || isNativeTouchscreenEnabled())
+            && isCompendiumUpgradeTouchFixEnabled();
     }
 
     private static boolean isCompendiumUpgradeTouchFixEnabled() {
@@ -379,6 +383,15 @@ public class SingleCardViewPopup {
             return Boolean.FALSE;
         }
         return null;
+    }
+
+    private static boolean isNativeTouchscreenEnabled() {
+        if (nativeTouchscreenEnabled != null) {
+            return nativeTouchscreenEnabled.booleanValue();
+        }
+        Boolean parsed = parseBooleanLike(System.getProperty(NATIVE_TOUCHSCREEN_ENABLED_PROP));
+        nativeTouchscreenEnabled = parsed == null ? Boolean.FALSE : parsed;
+        return nativeTouchscreenEnabled.booleanValue();
     }
 
     private void openPrev() {
