@@ -48,6 +48,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -83,6 +85,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -511,6 +514,13 @@ private fun LauncherMainScreenContent(
                     enabledCount = uiState.optionalMods.count { it.enabled },
                     totalCount = uiState.optionalMods.size,
                     onEnabledModsClick = { showEnabledModsDialog = true },
+                    profiles = uiState.modLaunchProfiles,
+                    activeProfileId = uiState.activeModLaunchProfileId,
+                    profileEnabled = actions.isHostAvailable && uiState.controlsEnabled && uiState.storageIssue == null,
+                    onSelectProfile = actions.onSelectModLaunchProfile,
+                    onAddProfile = actions.onAddModLaunchProfile,
+                    onRenameProfile = actions.onRenameModLaunchProfile,
+                    onDeleteProfile = actions.onDeleteModLaunchProfile,
                     gameRunning = uiState.gameProcessRunning,
                     hasStorageIssue = uiState.storageIssue != null
                 )
@@ -1133,11 +1143,7 @@ private fun DragLockStateIcon(dragLocked: Boolean) {
                     scaleX = if (locked) 1f else 1.04f
                     scaleY = if (locked) 1f else 1.04f
                 },
-            tint = if (locked) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
+            tint = MaterialTheme.colorScheme.onSurface,
             contentDescription = stringResource(
                 if (locked) {
                     R.string.main_action_unlock_drag
@@ -1775,6 +1781,13 @@ private fun MainBottomBarSwitcher(
     enabledCount: Int,
     totalCount: Int,
     onEnabledModsClick: () -> Unit,
+    profiles: List<ModLaunchProfile>,
+    activeProfileId: String,
+    profileEnabled: Boolean,
+    onSelectProfile: (String) -> Unit,
+    onAddProfile: (String) -> Unit,
+    onRenameProfile: (String, String) -> Unit,
+    onDeleteProfile: (String) -> Unit,
     gameRunning: Boolean,
     hasStorageIssue: Boolean
 ) {
@@ -1819,6 +1832,13 @@ private fun MainBottomBarSwitcher(
                 enabledCount = enabledCount,
                 totalCount = totalCount,
                 onEnabledModsClick = onEnabledModsClick,
+                profiles = profiles,
+                activeProfileId = activeProfileId,
+                profileEnabled = profileEnabled,
+                onSelectProfile = onSelectProfile,
+                onAddProfile = onAddProfile,
+                onRenameProfile = onRenameProfile,
+                onDeleteProfile = onDeleteProfile,
                 gameRunning = gameRunning,
                 hasStorageIssue = hasStorageIssue
             )
@@ -1837,6 +1857,13 @@ private fun MainBottomFixedActions(
     enabledCount: Int,
     totalCount: Int,
     onEnabledModsClick: () -> Unit,
+    profiles: List<ModLaunchProfile>,
+    activeProfileId: String,
+    profileEnabled: Boolean,
+    onSelectProfile: (String) -> Unit,
+    onAddProfile: (String) -> Unit,
+    onRenameProfile: (String, String) -> Unit,
+    onDeleteProfile: (String) -> Unit,
     gameRunning: Boolean,
     hasStorageIssue: Boolean
 ) {
@@ -1922,6 +1949,16 @@ private fun MainBottomFixedActions(
             }
         }
         }
+        ModLaunchProfileMenu(
+            modifier = Modifier.align(Alignment.TopEnd),
+            profiles = profiles,
+            activeProfileId = activeProfileId,
+            enabled = profileEnabled,
+            onSelectProfile = onSelectProfile,
+            onAddProfile = onAddProfile,
+            onRenameProfile = onRenameProfile,
+            onDeleteProfile = onDeleteProfile
+        )
     }
 }
 
@@ -2063,6 +2100,175 @@ private fun ColumnScope.MainContentSwitcher(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ModLaunchProfileMenu(
+    modifier: Modifier = Modifier,
+    profiles: List<ModLaunchProfile>,
+    activeProfileId: String,
+    enabled: Boolean,
+    onSelectProfile: (String) -> Unit,
+    onAddProfile: (String) -> Unit,
+    onRenameProfile: (String, String) -> Unit,
+    onDeleteProfile: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var creatingProfile by remember { mutableStateOf(false) }
+    var renamingProfile by remember { mutableStateOf<ModLaunchProfile?>(null) }
+    val activeProfileName = profiles.firstOrNull { it.id == activeProfileId }?.displayName()
+        ?: stringResource(R.string.main_mod_launch_profile_default)
+    Box(modifier = modifier) {
+        TextButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.main_mod_launch_profile_button, activeProfileName),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            profiles.forEach { profile ->
+                val profileName = profile.displayName()
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_mod_profile),
+                            contentDescription = null,
+                            tint = if (profile.id == activeProfileId) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = if (profile.id == activeProfileId) {
+                                stringResource(R.string.main_mod_launch_profile_selected_item, profileName)
+                            } else {
+                                profileName
+                            }
+                        )
+                    },
+                    trailingIcon = if (profile.id == DEFAULT_MOD_LAUNCH_PROFILE_ID) {
+                        null
+                    } else {
+                        {
+                            Row {
+                                IconButton(
+                                    onClick = {
+                                        expanded = false
+                                        renamingProfile = profile
+                                    },
+                                    enabled = enabled
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_edit),
+                                        contentDescription = stringResource(
+                                            R.string.main_mod_launch_profile_rename,
+                                            profileName
+                                        )
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        expanded = false
+                                        onDeleteProfile(profile.id)
+                                    },
+                                    enabled = enabled
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_delete),
+                                        contentDescription = stringResource(
+                                            R.string.main_mod_launch_profile_delete,
+                                            profileName
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelectProfile(profile.id)
+                    }
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.main_mod_launch_profile_add)) },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_add_circle),
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    creatingProfile = true
+                }
+            )
+        }
+    }
+    ProfileNameDialog(
+        visible = creatingProfile,
+        title = stringResource(R.string.main_mod_launch_profile_create_title),
+        initialText = "",
+        onDismiss = { creatingProfile = false },
+        onConfirm = { name ->
+            creatingProfile = false
+            onAddProfile(name)
+        }
+    )
+    renamingProfile?.let { profile ->
+        ProfileNameDialog(
+            visible = true,
+            title = stringResource(R.string.main_mod_launch_profile_rename_title),
+            initialText = profile.name,
+            onDismiss = { renamingProfile = null },
+            onConfirm = { name ->
+                renamingProfile = null
+                onRenameProfile(profile.id, name)
+            }
+        )
+    }
+}
+
+@Composable
+private fun ProfileNameDialog(
+    visible: Boolean,
+    title: String,
+    initialText: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    FolderNameDialog(
+        visible = visible,
+        title = title,
+        initialText = initialText,
+        label = stringResource(R.string.main_mod_launch_profile_name_hint),
+        emptyError = stringResource(R.string.main_mod_launch_profile_name_empty),
+        onDismiss = onDismiss,
+        onConfirm = onConfirm
+    )
+}
+
+@Composable
+private fun ModLaunchProfile.displayName(): String {
+    return if (id == DEFAULT_MOD_LAUNCH_PROFILE_ID) {
+        stringResource(R.string.main_mod_launch_profile_default)
+    } else {
+        name
     }
 }
 

@@ -104,6 +104,8 @@ internal fun FolderNameDialog(
     visible: Boolean,
     title: String,
     initialText: String,
+    label: String? = null,
+    emptyError: String? = null,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
@@ -112,8 +114,10 @@ internal fun FolderNameDialog(
     }
     var value by remember(visible, initialText) { mutableStateOf(TextFieldValue(initialText)) }
     val trimmedValue = value.text.trim()
+    val labelText = label ?: stringResource(R.string.main_folder_dialog_name_hint)
+    val emptyErrorText = emptyError ?: stringResource(R.string.main_folder_dialog_name_empty)
     val errorText = if (trimmedValue.isEmpty()) {
-        stringResource(R.string.main_folder_dialog_name_empty)
+        emptyErrorText
     } else {
         null
     }
@@ -125,7 +129,7 @@ internal fun FolderNameDialog(
                 value = value,
                 onValueChange = { value = it },
                 singleLine = true,
-                label = { Text(stringResource(R.string.main_folder_dialog_name_hint)) },
+                label = { Text(labelText) },
                 isError = errorText != null,
                 supportingText = {
                     if (errorText != null) {

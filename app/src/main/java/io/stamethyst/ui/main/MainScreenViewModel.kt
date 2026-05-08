@@ -140,6 +140,8 @@ class MainScreenViewModel : ViewModel() {
         val modSuggestions: Map<String, String> = emptyMap(),
         val readModSuggestionKeys: Set<String> = emptySet(),
         val pendingLaunchUnreadSuggestionModNames: List<String> = emptyList(),
+        val modLaunchProfiles: List<ModLaunchProfile> = emptyList(),
+        val activeModLaunchProfileId: String = "default",
         val modFolders: List<ModFolder> = emptyList(),
         val folderAssignments: Map<String, String> = emptyMap(),
         val folderCollapsed: Map<String, Boolean> = emptyMap(),
@@ -756,6 +758,22 @@ class MainScreenViewModel : ViewModel() {
         if (enabled && modManagementController.clearEnabledNewlyImportedHighlights()) {
             republish(host)
         }
+    }
+
+    fun addModLaunchProfile(host: Activity, name: String) {
+        modManagementController.addModLaunchProfile(host, name)
+    }
+
+    fun renameModLaunchProfile(host: Activity, profileId: String, name: String) {
+        modManagementController.renameModLaunchProfile(host, profileId, name)
+    }
+
+    fun selectModLaunchProfile(host: Activity, profileId: String) {
+        modManagementController.selectModLaunchProfile(host, profileId)
+    }
+
+    fun deleteModLaunchProfile(host: Activity, profileId: String) {
+        modManagementController.deleteModLaunchProfile(host, profileId)
     }
 
     fun setModsSelected(host: Activity, mods: List<ModItemUi>, selected: Boolean) {
@@ -2225,6 +2243,8 @@ class MainScreenViewModel : ViewModel() {
             modSuggestions = currentModSuggestions,
             readModSuggestionKeys = currentReadModSuggestionKeys,
             pendingLaunchUnreadSuggestionModNames = pendingLaunchUnreadSuggestionModNames,
+            modLaunchProfiles = snapshot.modLaunchProfiles,
+            activeModLaunchProfileId = snapshot.activeModLaunchProfileId,
             modFolders = snapshot.modFolders,
             folderAssignments = snapshot.folderAssignments,
             folderCollapsed = snapshot.folderCollapsed,

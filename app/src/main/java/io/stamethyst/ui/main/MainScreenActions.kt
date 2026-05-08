@@ -41,6 +41,10 @@ internal data class MainScreenActions(
     val onAssignModsToFolder: (List<ModItemUi>, String) -> Unit = { _, _ -> },
     val onMoveModsToUnassigned: (List<ModItemUi>) -> Unit = {},
     val onSetModsSelected: (List<ModItemUi>, Boolean) -> Unit = { _, _ -> },
+    val onAddModLaunchProfile: (String) -> Unit = {},
+    val onSelectModLaunchProfile: (String) -> Unit = {},
+    val onRenameModLaunchProfile: (String, String) -> Unit = { _, _ -> },
+    val onDeleteModLaunchProfile: (String) -> Unit = {},
     val onRevealFolderToken: (String) -> Unit = {},
     val onRetryStorageCheck: () -> Unit = {},
     val onDismissCrashRecovery: () -> Unit = {},
@@ -105,6 +109,12 @@ internal fun rememberMainScreenActions(
                 onAssignModsToFolder = { mods, folderId -> viewModel.assignModsToFolder(activity, mods, folderId) },
                 onMoveModsToUnassigned = { mods -> viewModel.moveModsToUnassigned(activity, mods) },
                 onSetModsSelected = { mods, selected -> viewModel.setModsSelected(activity, mods, selected) },
+                onAddModLaunchProfile = { name -> viewModel.addModLaunchProfile(activity, name) },
+                onSelectModLaunchProfile = { profileId -> viewModel.selectModLaunchProfile(activity, profileId) },
+                onRenameModLaunchProfile = { profileId, name ->
+                    viewModel.renameModLaunchProfile(activity, profileId, name)
+                },
+                onDeleteModLaunchProfile = { profileId -> viewModel.deleteModLaunchProfile(activity, profileId) },
                 onRevealFolderToken = { folderTokenId -> viewModel.revealFolderToken(activity, folderTokenId) },
                 onRetryStorageCheck = { viewModel.refresh(activity) },
                 onDismissCrashRecovery = { viewModel.dismissCrashRecovery() },

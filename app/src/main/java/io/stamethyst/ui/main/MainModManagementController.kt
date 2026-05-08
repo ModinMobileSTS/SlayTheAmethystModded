@@ -57,6 +57,8 @@ internal class MainModManagementController(
     data class Snapshot(
         val optionalMods: List<ModItemUi>,
         val requiredMods: List<ModItemUi>,
+        val modLaunchProfiles: List<ModLaunchProfile>,
+        val activeModLaunchProfileId: String,
         val modFolders: List<MainScreenViewModel.ModFolder>,
         val folderAssignments: Map<String, String>,
         val folderCollapsed: Map<String, Boolean>,
@@ -79,6 +81,8 @@ internal class MainModManagementController(
     private var optionalModsWithPendingSelectionDirty = true
     private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
     private var pendingSelectionInitialized = false
+    private val profileStore = ModLaunchProfileStore()
+    private var profileState = ModLaunchProfileStore.State(emptyList(), "default")
     private val folderStateStore = MainFolderStateStore()
     private val modFolders: MutableList<MainScreenViewModel.ModFolder>
         get() = folderStateStore.folders
@@ -138,6 +142,8 @@ internal class MainModManagementController(
         )
         markOptionalModsWithPendingSelectionDirty()
         prunePendingSelectionToInstalled()
+        profileState = profileStore.load(host, pendingEnabledOptionalModIds)
+        profileState = profileStore.sanitizeSelections(host, profileState, collectInstalledOptionalModKeys())
         sanitizeFolderAssignments(optionalMods)
         persistFolderState(host)
     }
@@ -146,6 +152,8 @@ internal class MainModManagementController(
         return Snapshot(
             optionalMods = resolveOptionalModsWithPendingSelection(),
             requiredMods = ArrayList(requiredModsSnapshot),
+            modLaunchProfiles = profileState.profiles,
+            activeModLaunchProfileId = profileState.activeProfileId,
             modFolders = ArrayList(modFolders),
             folderAssignments = LinkedHashMap(folderAssignments),
             folderCollapsed = LinkedHashMap(folderCollapsed),
@@ -159,6 +167,74 @@ internal class MainModManagementController(
 
     fun currentOptionalMods(): List<ModItemUi> {
         return resolveOptionalModsWithPendingSelection()
+    }
+
+    fun addModLaunchProfile(host: Activity, name: String) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) {
+            emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_name_empty))
+            return
+        }
+        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
+        profileState = profileStore.addProfile(host, profileState, pendingEnabledOptionalModIds, trimmedName) ?: return
+        emitSnackbar(host.getString(R.string.main_mod_launch_profile_created, activeProfileName(host)))
+        hostCallbacks.republish(host)
+    }
+
+    fun renameModLaunchProfile(host: Activity, profileId: String, name: String) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) {
+            emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_name_empty))
+            return
+        }
+        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
+        profileState = profileStore.renameProfile(host, profileState, profileId, trimmedName) ?: return
+        emitSnackbar(host.getString(R.string.main_mod_launch_profile_renamed, trimmedName))
+        hostCallbacks.republish(host)
+    }
+
+    fun selectModLaunchProfile(host: Activity, profileId: String) {
+        if (!hostCallbacks.canEditMainScreenState() || profileId == profileState.activeProfileId) {
+            return
+        }
+        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
+        val nextState = profileStore.selectProfile(host, profileState, profileId) ?: return
+        val target = nextState.profiles.firstOrNull { it.id == nextState.activeProfileId } ?: return
+        profileState = nextState
+        pendingEnabledOptionalModIds.clear()
+        pendingEnabledOptionalModIds.addAll(target.enabledModKeys)
+        prunePendingSelectionToInstalled()
+        markOptionalModsWithPendingSelectionDirty()
+        applyPendingSelection(host)
+        emitSnackbar(host.getString(R.string.main_mod_launch_profile_selected, profileDisplayName(host, target)))
+        hostCallbacks.republish(host)
+    }
+
+    fun deleteModLaunchProfile(host: Activity, profileId: String) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        val deletedProfile = profileState.profiles.firstOrNull { it.id == profileId } ?: return
+        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
+        val nextState = profileStore.deleteProfile(host, profileState, profileId) ?: return
+        val activeChanged = nextState.activeProfileId != profileState.activeProfileId
+        profileState = nextState
+        if (activeChanged) {
+            val target = profileState.profiles.firstOrNull { it.id == profileState.activeProfileId } ?: return
+            pendingEnabledOptionalModIds.clear()
+            pendingEnabledOptionalModIds.addAll(target.enabledModKeys)
+            prunePendingSelectionToInstalled()
+            markOptionalModsWithPendingSelectionDirty()
+            applyPendingSelection(host)
+        }
+        emitSnackbar(host.getString(R.string.main_mod_launch_profile_deleted, profileDisplayName(host, deletedProfile)))
+        hostCallbacks.republish(host)
     }
 
     fun applyPendingSelection(host: Activity) {
@@ -295,6 +371,7 @@ internal class MainModManagementController(
         } else {
             batchDisableMods(host, targetMods)
         }
+        persistActiveProfileSelection(host)
         hostCallbacks.republish(host)
     }
 
@@ -315,6 +392,7 @@ internal class MainModManagementController(
         } else {
             batchDisableMods(host, targetMods)
         }
+        persistActiveProfileSelection(host)
         hostCallbacks.republish(host)
     }
 
@@ -811,6 +889,7 @@ internal class MainModManagementController(
                 )
             )
         }
+        persistActiveProfileSelection(host)
         hostCallbacks.republish(host)
     }
 
@@ -829,6 +908,7 @@ internal class MainModManagementController(
         } else {
             batchDisableMods(host, targets)
         }
+        persistActiveProfileSelection(host)
         hostCallbacks.republish(host)
     }
 
@@ -1456,6 +1536,38 @@ internal class MainModManagementController(
         pendingEnabledOptionalModIds.retainAll(installedIds)
         if (pendingEnabledOptionalModIds.size != oldSize) {
             markOptionalModsWithPendingSelectionDirty()
+        }
+    }
+
+    private fun collectInstalledOptionalModKeys(): Set<String> {
+        val installedIds = LinkedHashSet<String>()
+        optionalModsSnapshot.forEach { mod ->
+            val storedId = resolveStoredOptionalModId(mod)
+            if (storedId != null) {
+                installedIds.add(storedId)
+            }
+        }
+        return installedIds
+    }
+
+    private fun persistActiveProfileSelection(host: Activity) {
+        if (profileState.profiles.isEmpty()) {
+            profileState = profileStore.load(host, pendingEnabledOptionalModIds)
+        }
+        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
+    }
+
+    private fun activeProfileName(host: Activity): String {
+        val profile = profileState.profiles.firstOrNull { it.id == profileState.activeProfileId }
+            ?: return ""
+        return profileDisplayName(host, profile)
+    }
+
+    private fun profileDisplayName(host: Activity, profile: ModLaunchProfile): String {
+        return if (profile.id == DEFAULT_MOD_LAUNCH_PROFILE_ID) {
+            host.getString(R.string.main_mod_launch_profile_default)
+        } else {
+            profile.name
         }
     }
 

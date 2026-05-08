@@ -23,4 +23,12 @@ class LauncherConfigGameplayDefaultsTest {
     fun largerUi_isDisabledByDefault() {
         assertFalse(LauncherConfig.DEFAULT_GAMEPLAY_LARGER_UI_ENABLED)
     }
+
+    @Test
+    fun touchscreenInputMode_defaultsToHybrid() {
+        assertEquals(
+            TouchscreenInputMode.HYBRID,
+            LauncherConfig.DEFAULT_TOUCHSCREEN_INPUT_MODE
+        )
+    }
 }
