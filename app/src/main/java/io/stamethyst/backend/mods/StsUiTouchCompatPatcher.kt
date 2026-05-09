@@ -71,13 +71,15 @@ internal object StsUiTouchCompatPatcher {
         STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS to MergeSpec(
             fields = listOf(
                 MemberRef("COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP", "Ljava/lang/String;"),
+                MemberRef("NATIVE_TOUCHSCREEN_ENABLED_PROP", "Ljava/lang/String;"),
                 MemberRef("DEFAULT_BOTTOM_TOGGLE_W", "F"),
                 MemberRef("DEFAULT_BOTTOM_TOGGLE_H", "F"),
                 MemberRef("DEFAULT_BOTTOM_TOGGLE_CENTER_Y", "F"),
                 MemberRef("TOUCH_BOTTOM_TOGGLE_W", "F"),
                 MemberRef("TOUCH_BOTTOM_TOGGLE_H", "F"),
                 MemberRef("TOUCH_BOTTOM_TOGGLE_CENTER_Y", "F"),
-                MemberRef("compendiumUpgradeTouchFixEnabled", "Ljava/lang/Boolean;")
+                MemberRef("compendiumUpgradeTouchFixEnabled", "Ljava/lang/Boolean;"),
+                MemberRef("nativeTouchscreenEnabled", "Ljava/lang/Boolean;")
             ),
             methods = listOf(
                 MemberRef(
@@ -98,18 +100,21 @@ internal object StsUiTouchCompatPatcher {
                 MemberRef("getBottomToggleCenterY", "()F"),
                 MemberRef("isCompendiumUpgradeTouchFixActive", "()Z"),
                 MemberRef("isCompendiumUpgradeTouchFixEnabled", "()Z"),
-                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;")
+                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;"),
+                MemberRef("isNativeTouchscreenEnabled", "()Z")
             )
         ),
         STS_PATCH_COLOR_TAB_BAR_CLASS to MergeSpec(
             fields = listOf(
                 MemberRef("COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP", "Ljava/lang/String;"),
+                MemberRef("NATIVE_TOUCHSCREEN_ENABLED_PROP", "Ljava/lang/String;"),
                 MemberRef("VIEW_UPGRADE_HB_W", "F"),
                 MemberRef("VIEW_UPGRADE_HB_H", "F"),
                 MemberRef("TOUCH_VIEW_UPGRADE_HB_W", "F"),
                 MemberRef("TOUCH_VIEW_UPGRADE_HB_H", "F"),
                 MemberRef("TOUCH_VIEW_UPGRADE_HB_CENTER_Y_OFFSET", "F"),
-                MemberRef("compendiumUpgradeTouchFixEnabled", "Ljava/lang/Boolean;")
+                MemberRef("compendiumUpgradeTouchFixEnabled", "Ljava/lang/Boolean;"),
+                MemberRef("nativeTouchscreenEnabled", "Ljava/lang/Boolean;")
             ),
             methods = listOf(
                 MemberRef("update", "(F)V"),
@@ -120,7 +125,8 @@ internal object StsUiTouchCompatPatcher {
                 MemberRef("getViewUpgradeHitboxCenterYOffset", "()F"),
                 MemberRef("isCompendiumUpgradeTouchFixActive", "()Z"),
                 MemberRef("isCompendiumUpgradeTouchFixEnabled", "()Z"),
-                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;")
+                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;"),
+                MemberRef("isNativeTouchscreenEnabled", "()Z")
             )
         )
     )

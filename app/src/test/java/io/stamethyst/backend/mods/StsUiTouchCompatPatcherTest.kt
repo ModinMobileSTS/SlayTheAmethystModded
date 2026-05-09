@@ -178,6 +178,16 @@ class StsUiTouchCompatPatcherTest {
             methodFingerprint(findMethod(donorBytes, "updateUpgradePreview", "()V")),
             methodFingerprint(findMethod(patchedBytes, "updateUpgradePreview", "()V"))
         )
+        findMethod(patchedBytes, "isNativeTouchscreenEnabled", "()Z")
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "isCompendiumUpgradeTouchFixActive", "()Z"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/screens/SingleCardViewPopup",
+                "isNativeTouchscreenEnabled",
+                "()Z"
+            )
+        )
 
         val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
             entryName = STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS,
@@ -217,6 +227,16 @@ class StsUiTouchCompatPatcherTest {
         assertEquals(
             methodFingerprint(findMethod(donorBytes, "update", "(F)V")),
             methodFingerprint(findMethod(patchedBytes, "update", "(F)V"))
+        )
+        findMethod(patchedBytes, "isNativeTouchscreenEnabled", "()Z")
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "isCompendiumUpgradeTouchFixActive", "()Z"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar",
+                "isNativeTouchscreenEnabled",
+                "()Z"
+            )
         )
 
         val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
@@ -308,6 +328,29 @@ class StsUiTouchCompatPatcherTest {
                 fieldInsn.owner == owner &&
                 fieldInsn.name == name &&
                 fieldInsn.desc == desc
+            ) {
+                return true
+            }
+            current = current.next
+        }
+        return false
+    }
+
+    private fun containsMethodInvocation(
+        method: MethodNode,
+        opcode: Int,
+        owner: String,
+        name: String,
+        desc: String
+    ): Boolean {
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            val methodInsn = current as? MethodInsnNode
+            if (methodInsn != null &&
+                methodInsn.opcode == opcode &&
+                methodInsn.owner == owner &&
+                methodInsn.name == name &&
+                methodInsn.desc == desc
             ) {
                 return true
             }
