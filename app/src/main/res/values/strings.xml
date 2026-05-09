@@ -12,7 +12,7 @@
     <string name="sts_normal_exit">Game process exited unexpectedly, exit code %1$d.</string>
     <string name="sts_signal_exit">Game process crashed and exited due to signal %1$d.</string>
     <string name="sts_oom_exit">OutOfMemoryError detected (JVM heap exhausted). The game automatically returned to the launcher. JVM heap size may be too large or too small; adjust the JVM heap max in Settings.</string>
-    <string name="sts_process_exit_detected">The previous game session ended abnormally and did not return a crash report before the launcher restarted.</string>
+    <string name="sts_process_exit_detected">The previous game session ended abnormally and did not return a crash report before the launcher restarted. This is very likely caused by the device being under too much pressure and unable to handle an overly large mod setup. Reduce the number of mods and try again.</string>
     <string name="sts_process_exit_reason">Android process exit reason: %1$s</string>
     <string name="sts_process_exit_status">Android process exit status: %1$d</string>
     <string name="sts_process_exit_signal">Android exit signal: %1$d</string>
@@ -30,7 +30,7 @@
     <string name="sts_crash_page_capture_title">Crash captured</string>
     <string name="sts_crash_page_guidance_default">It is recommended to troubleshoot the issue first. You can hand the logs to AI analysis to confirm whether the problem comes from the launcher itself or from a mod. If you can confirm that the launcher is the problem, you can use the feedback page to report it to the developer.</string>
     <string name="sts_crash_page_guidance_oom">This run likely exhausted JVM heap memory. Before retrying, consider opening recovery settings and raising the JVM heap max, or trim recently enabled mods if memory pressure stays high.</string>
-    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">The launcher deliberately stopped this launch after the startup preparation process lost contact, so the patch step would not appear to hang forever.\n\nIf desktop-1.0.jar was being patched, do not leave the app, switch to another app, or send it to the background during that patch step. Keep the launcher in the foreground until the patch completes, then try again.</string>
+    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">Do not leave the app, switch to another app, or let the system clean up this app during the patch process. Keep the launcher in the foreground.</string>
     <string name="sts_crash_page_actions_title">Quick actions</string>
     <string name="sts_crash_page_actions_desc">You can retry immediately, or open recovery settings first before starting again. The crash text below supports selection and copying, and is also more convenient for long screenshots.</string>
     <string name="sts_crash_page_action_recovery">Open settings</string>
@@ -52,7 +52,7 @@
     <string name="compat_settings_title">Compatibility settings</string>
     <string name="compat_settings_open">Open compatibility settings</string>
     <string name="compat_runtime_section_title">Runtime compatibility patches</string>
-    <string name="compat_runtime_section_desc">These switches do not modify already imported mod jars. Changes apply to later launches/runtime behavior, so no mod re-import is needed. Some options take effect on the next game launch.</string>
+    <string name="compat_runtime_section_desc">These switches do not modify already imported mod jars. Changes apply to later launches/runtime behavior, so no mod re-import is needed.</string>
     <string name="compat_import_patch_section_title">Import-time mod patching</string>
     <string name="compat_import_patch_section_desc">These switches only affect mods imported from now on. Existing jars are not retroactively rewritten, so re-import the relevant mod if you want the patch to apply.</string>
     <string name="compat_global_atlas_filter_compat_title">Global atlas filter compatibility patch</string>
@@ -78,13 +78,13 @@
     <string name="compat_runtime_texture_compat_title">Runtime texture compatibility patch</string>
     <string name="compat_runtime_texture_compat_desc">Used to fix black blocks caused by dynamically created runtime textures. If you see missing materials/textures, consider enabling it. Pros: continues fixing black blocks not covered during import-time patching. Cons: increases startup CPU/GPU overhead from managed texture scanning, and runtime Linear/Clamp fallback may make some textures blurrier. Default is OFF to prioritize performance.</string>
     <string name="compat_main_menu_preview_reuse_title">Main-menu character preview reuse</string>
-    <string name="compat_main_menu_preview_reuse_desc">When enabled, repeated main-menu preview rebuilds reuse already-instantiated character previews when safe, and modded character-option textures are cached instead of being reloaded every cycle. This reduces repeated return-to-menu churn and makes the related diagnostics easier to read. Disable it if you want behavior closer to the original mod stack while investigating character-select regressions. This takes effect on the next launch.</string>
+    <string name="compat_main_menu_preview_reuse_desc">When enabled, main-menu character previews reuse existing character instances when safe, and cache the button/portrait textures used by modded character options to avoid rebuilding and reloading them every time you return to the main menu. This reduces return-to-menu stutter and makes related diagnostics easier to read. If you are investigating character-select compatibility regressions, temporarily disable it to keep behavior closer to the original mod stack.</string>
     <string name="compat_native_touchscreen_allowlist_title">Native touchscreen compatibility allowlist</string>
     <string name="compat_native_touchscreen_allowlist_desc">When enabled, the launcher stops exposing native touchscreen semantics globally to mods and only re-enables verified vanilla touchscreen confirm flows such as the shop and boss relic confirm paths, while keeping the touch indicator visible. This reduces modded screens getting trapped in untested touchscreen state machines. Disable it if you want to restore the original global native touchscreen semantics. This is a runtime compatibility switch and takes effect on the next launch.</string>
     <string name="compat_large_texture_downscale_title">Large texture fallback downscale</string>
     <string name="compat_large_texture_downscale_desc">When enabled, the runtime applies a generic fallback for oversized texture uploads: large external-mod atlas pages, loose textures, portraits, card art, and other runtime-loaded images can be downscaled automatically, while especially large textures can also be reduced after GPU memory pressure crosses the soft budget. This lowers HarmonyOS/Android compatibility-layer GPU leak kills, but some affected assets may look softer. Default is ON.</string>
     <string name="compat_texture_residency_manager_title">Global texture leak watchdog</string>
-    <string name="compat_texture_residency_manager_desc">When enabled, the runtime uses a lightweight texture leak watchdog instead of aggressive high-frequency residency reclaim. It samples native texture usage over time, leaves the steady-state working set alone, and only performs a conservative reclaim after sustained growth is detected; an emergency fallback runs only when usage grows far beyond the baseline. Core hot UI/battle textures stay excluded, so the main goal is to prevent long-term unmanaged texture growth across mods rather than to force the working set down. This takes effect on the next launch. Default is ON.</string>
+    <string name="compat_texture_residency_manager_desc">When enabled, the runtime uses a lightweight texture leak watchdog that samples native texture usage over time and only performs one conservative reclaim after sustained texture growth is detected. Core high-frequency UI/battle textures are excluded from reclaim. Default is ON.</string>
     <string name="compat_texture_pressure_downscale_divisor_title">Large texture downscale strength</string>
     <string name="compat_texture_pressure_downscale_divisor_desc">Controls the hidden runtime parameter amethyst.gdx.texture_pressure_downscale_divisor. Larger values downscale large mod runtime textures more aggressively, including atlas pages, loose textures, portraits, and card art. This only affects runtime upload size and takes effect on next launch.</string>
     <string name="compat_texture_pressure_downscale_divisor_value">x%1$d</string>
@@ -336,7 +336,7 @@
     <string name="main_folder_move_up">Move up</string>
     <string name="main_folder_move_down">Move down</string>
     <string name="main_import_folder_picker_list_title">Place imported mods</string>
-    <string name="main_import_folder_picker_list_message">Review where each new mod goes. Tap a row to change its folder.</string>
+    <string name="main_import_folder_picker_list_message">Change the folder used for mod categories</string>
     <string name="main_import_folder_picker_unassigned">Uncategorized</string>
     <string name="main_import_folder_picker_item_target_format">Target: %1$s</string>
     <string name="main_import_folder_picker_item_title_format">Choose folder for %1$s</string>
@@ -362,9 +362,9 @@
     <string name="main_mod_priority_badge_format">#%1$d</string>
     <string name="main_mod_suggestion_update_title">Mod notices updated</string>
     <string name="main_mod_suggestion_update_message">The mod notice list was updated. Mods with a circled exclamation mark now have notices you can open from their cards.</string>
-    <string name="main_mod_suggestion_dialog_title_format">%1$s notice</string>
+    <string name="main_mod_suggestion_dialog_title_format">Notice</string>
     <string name="main_mod_patch_badge_content_description">Open import patch details</string>
-    <string name="main_mod_patch_dialog_title_format">%1$s import patches</string>
+    <string name="main_mod_patch_dialog_title_format">Import patches</string>
     <string name="main_mod_patch_section_atlas_title">Atlas filter compatibility</string>
     <string name="main_mod_patch_section_downscale_title">Atlas offline downscale</string>
     <string name="main_mod_patch_section_manifest_title">ModTheSpire.json root fix</string>
@@ -374,11 +374,11 @@
     <string name="main_mod_patch_section_jacketnoanoko_title">JacketNoAnoKo shader compatibility</string>
     <string name="main_mod_priority_adjust">Adjust load priority</string>
     <string name="main_mod_priority_dialog_title_format">%1$s load priority</string>
-    <string name="main_mod_priority_dialog_summary">Lower numbers load earlier. Unset mods keep the default order, and prerequisites may still be pulled earlier to satisfy dependencies.</string>
+    <string name="main_mod_priority_dialog_summary">Lower numbers load earlier. Prerequisites of the current mod are automatically moved before this mod.</string>
     <string name="main_mod_priority_dialog_status_explicit">Explicit priority: #%1$d</string>
     <string name="main_mod_priority_dialog_status_inherited">Current effective priority: #%1$d (inherited from dependent mods)</string>
     <string name="main_mod_priority_dialog_status_explicit_and_effective">Explicit priority: #%1$d. Current effective priority: #%2$d because another earlier mod depends on it.</string>
-    <string name="main_mod_priority_dialog_status_default">No explicit priority. This mod currently follows the default load order.</string>
+    <string name="main_mod_priority_dialog_status_default">No explicit priority is set. The default priority is #11.</string>
     <string name="main_mod_priority_dialog_selected_format">Apply priority: #%1$d</string>
     <string name="main_mod_priority_dialog_clear">Use default</string>
     <string name="main_mod_export">Export</string>
@@ -406,7 +406,7 @@
     <string name="mod_import_dialog_duplicate_replace_existing">Replace existing</string>
     <string name="mod_import_dialog_duplicate_keep_both">Keep both</string>
     <string name="mod_import_dialog_duplicate_replace_options_title">Replace options</string>
-    <string name="mod_import_dialog_duplicate_replace_options_message">Choose how the newly imported mod should inherit metadata from the old file. If no old file exists for that modid, these options are skipped automatically.</string>
+    <string name="mod_import_dialog_duplicate_replace_options_message">Choose import preferences</string>
     <string name="mod_import_dialog_duplicate_replace_options_confirm">Continue replace</string>
     <string name="mod_import_dialog_duplicate_replace_move_to_previous_folder">Move this mod back to the previous folder automatically</string>
     <string name="mod_import_dialog_duplicate_replace_rename_to_previous_file_name">Rename this mod to the old file name automatically</string>
@@ -473,13 +473,9 @@ Patch rule: eligible page images in likely Spine atlases are resampled according
     <string name="mod_import_atlas_downscale_confirm_message_intro">The following mods would trigger offline atlas pre-downscaling during import:
 </string>
     <string name="mod_import_atlas_downscale_confirm_message_item_detail">  Candidate atlas files: %1$d, candidate page images: %2$d</string>
-    <string name="mod_import_atlas_downscale_confirm_message_pros">Pros:
-- lowers runtime memory spikes for heavy animation mods
-- reduces the chance of GPU-memory pressure crashes or kills on the compatibility layer</string>
-    <string name="mod_import_atlas_downscale_confirm_message_cons">Cons:
-- large character art and close-up details can become noticeably blurrier
-- this choice only affects this import; already imported copies are not restored automatically</string>
-    <string name="mod_import_atlas_downscale_confirm_message_outro">Pick a strategy below before importing. The exact number of affected page images depends on the selected strategy and level.</string>
+    <string name="mod_import_atlas_downscale_confirm_message_pros">Pros: 1. Lowers runtime memory spikes for heavy animation mods 2. Reduces crashes or force-kills caused by GPU memory pressure under the compatibility layer.</string>
+    <string name="mod_import_atlas_downscale_confirm_message_cons">Cons: 1. Large character art and details may become noticeably blurry 2. Already imported mods are not automatically restored to the original images; restoring requires re-importing.</string>
+    <string name="mod_import_atlas_downscale_confirm_message_outro">Before continuing the import, choose the downscale strategy and level below. The actual number of processed page images may differ by strategy. If your device has less memory (12 GB or below), downscaling by resolution is recommended. If your device has enough memory, you can try downscaling by percentage so the image quality loss is less noticeable.</string>
     <string name="mod_import_atlas_downscale_confirm_strategy_title">Downscale strategy</string>
     <string name="mod_import_atlas_downscale_confirm_level_title">Strategy level</string>
     <string name="mod_import_atlas_downscale_strategy_percentage">Downscale by percentage</string>
@@ -536,7 +532,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="sts_jar_external_import_notice_title">Imported desktop-1.0.jar</string>
     <string name="sts_jar_external_import_notice_message">The launcher detected that you opened the base game jar from another app and completed the normal desktop-1.0.jar import flow.\n\nSource file: %1$s</string>
     <string name="settings_reimport_sts_jar_title">Re-import desktop-1.0.jar</string>
-    <string name="settings_reimport_sts_jar_desc">You usually don\'t need this unless the imported game jar is broken</string>
+    <string name="settings_reimport_sts_jar_desc">Do not touch this when the game has no problems</string>
     <string name="settings_player_name_title">Player name</string>
     <string name="settings_player_name_desc">Changes the Slay the Spire profile name. Takes effect after you enter the game again.</string>
     <string name="settings_player_name_dialog_title">Set player name</string>
@@ -751,7 +747,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_first_run_steam_cloud_logout_desc">After logging out, cloud saves will be unavailable. You can sign in again later.</string>
     <string name="settings_section_resources_files">Resources and files</string>
     <string name="settings_native_library_market_title">Native library market</string>
-    <string name="settings_native_library_market_desc">Download optional native libraries such as `gdx-video`. Changes take effect on the next game launch.</string>
+    <string name="settings_native_library_market_desc">Download optional native libraries such as `gdx-video`.</string>
     <string name="settings_native_library_market_dialog_title">Native library market</string>
     <string name="settings_native_library_market_dialog_desc">The launcher fetches optional native libraries from the SlayTheAmethystResource market repository through the currently selected mirror source. Installed libraries are saved in a separate directory, so app updates will not overwrite them.</string>
     <string name="settings_native_library_market_empty">No native library packages are currently available from the market metadata.</string>
@@ -782,7 +778,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_experimental_desc">Steam Cloud integration for manual Phase 2 sync. This build supports account login, manifest refresh, manifest viewing, upload planning/conflict review, manual upload of safe local-only changes, full pull for `preferences/` and `saves/`, and the launcher cloud button workflow for checking, syncing, and resolving conflicts.</string>
     <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam Cloud accelerated connection on</string>
     <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam Cloud accelerated connection off</string>
-    <string name="settings_steam_cloud_watt_acceleration_desc">Route Steam Cloud login, Steam Web API, and HTTP file transfer requests through Watt Toolkit Steam forwarding rules. Keep this off if you only want direct Steam connections.</string>
+    <string name="settings_steam_cloud_watt_acceleration_desc">Access Steam through forwarding rules for better speed. If Steam cannot be accessed normally, turn this off and enable an accelerator.</string>
     <string name="settings_steam_cloud_intro">Switch between independent local saves and Steam Cloud saves. Use the launcher cloud button to check status, sync changes, and resolve conflicts.</string>
     <string name="settings_steam_cloud_account_signed_in">Current Steam account</string>
     <string name="settings_steam_cloud_account_not_signed_in">Not signed in</string>
@@ -819,7 +815,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_pull_desc">Back up local saves first, then replace local `preferences/` and `saves/` with the current Steam Cloud manifest.</string>
     <string name="settings_steam_cloud_clear_title">Clear Steam Cloud credentials</string>
     <string name="settings_steam_cloud_clear_desc">Remove the stored account name, refresh token, guard data, and cached manifest.</string>
-    <string name="settings_steam_cloud_login_dialog_desc">Use your Steam account and password once to obtain a refresh token. The password is never stored locally.</string>
+    <string name="settings_steam_cloud_login_dialog_desc">The launcher will not write your password to local storage or upload credentials to a server.</string>
     <string name="settings_steam_cloud_username_label">Steam account name</string>
     <string name="settings_steam_cloud_password_label">Steam password</string>
     <string name="settings_steam_cloud_login_dialog_password_policy">The launcher only stores the refresh token and guard data after a successful login.</string>
@@ -962,7 +958,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_steam_cloud_conflict_card_unknown_device">Unknown device</string>
     <string name="main_steam_cloud_conflict_dialog_title">Choose Steam Cloud progress</string>
     <string name="main_steam_cloud_conflict_dialog_summary">Local-only changes: %1$d\nCloud-only changes: %2$d\nDirect conflicts: %3$d</string>
-    <string name="main_steam_cloud_conflict_dialog_local_desc">Use local progress: overwrite Steam Cloud with the current local `preferences/` and `saves/`, and remove extra cloud-only files.</string>
+    <string name="main_steam_cloud_conflict_dialog_local_desc">Use local progress: overwrite the cloud save with the current local save.</string>
     <string name="main_steam_cloud_conflict_dialog_cloud_desc">Use cloud progress: back up current local saves first, then replace local `preferences/` and `saves/` with Steam Cloud.</string>
     <string name="main_steam_cloud_conflict_dialog_example_paths">Affected files:</string>
     <string name="main_steam_cloud_conflict_dialog_more_paths">...and %1$d more file(s).</string>
@@ -1057,7 +1053,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_target_fps_title">FPS cap</string>
     <string name="settings_sustained_performance_enabled">Sustained Performance Mode: Enabled</string>
     <string name="settings_sustained_performance_disabled">Sustained Performance Mode: Disabled</string>
-    <string name="settings_sustained_performance_desc">Only takes effect when the device supports it. When enabled, the launcher requests Sustained Performance Mode while the game is in the foreground. This usually favors long-session stability over higher short spikes. Off by default. Takes effect the next time you enter the game.</string>
+    <string name="settings_sustained_performance_desc">Only takes effect when the device supports it. When enabled, the launcher requests Sustained Performance Mode while the game is in the foreground. This usually favors long-session stability over higher short spikes. Off by default.</string>
     <string name="settings_system_game_mode_summary">Current: %1$s  |  Declared support: Performance / Battery</string>
     <string name="settings_renderer_backend_title">Graphics backend</string>
     <string name="settings_renderer_auto_enabled">Auto select: Enabled</string>
@@ -1121,15 +1117,15 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_touchscreen_mode_desktop">Desktop mode</string>
     <string name="settings_touchscreen_mode_hybrid">Hybrid mode</string>
     <string name="settings_touchscreen_mode_mobile">Mobile mode</string>
-    <string name="settings_touchscreen_mode_desktop_desc">Use desktop mouse semantics without the native touch indicator or touchscreen confirm paths.</string>
-    <string name="settings_touchscreen_mode_hybrid_desc">Recommended. Keeps touch input and the touch indicator, but exposes native touchscreen semantics only to verified vanilla flows for better mod compatibility.</string>
+    <string name="settings_touchscreen_mode_desktop_desc">Shows the mouse cursor and uses full desktop click behavior. This has the best click compatibility, but some operations are not suitable for mobile.</string>
+    <string name="settings_touchscreen_mode_hybrid_desc">Recommended. Keeps the touch input UI and touch indicator, and enables touchscreen logic only for vanilla screens. This can fix cases where mod buttons cannot be tapped under native touch.</string>
     <string name="settings_touchscreen_mode_mobile_desc">Restores global native touchscreen semantics. Closest to vanilla mobile touch behavior, but more likely to trigger mod UI issues.</string>
     <string name="settings_gameplay_font_scale_title">Text size</string>
     <string name="settings_gameplay_font_scale_value">%1$sx</string>
-    <string name="settings_gameplay_font_scale_desc">Controls the text size multiplier for MTS launches. Takes effect the next time the game launches.</string>
+    <string name="settings_gameplay_font_scale_desc">Controls the text size multiplier.</string>
     <string name="settings_gameplay_larger_ui_enabled">Larger UI: Enabled</string>
     <string name="settings_gameplay_larger_ui_disabled">Larger UI: Disabled</string>
-    <string name="settings_gameplay_larger_ui_desc">Uses the mobile UI\'s larger layout sizing for MTS launches without enabling the native mobile UI. Takes effect the next time the game launches.</string>
+    <string name="settings_gameplay_larger_ui_desc">Uses larger layout sizing. If mods display incorrectly after enabling it, turn this option off.</string>
     <string name="settings_status_loading">Loading status...</string>
     <string name="settings_lwjgl_debug_enabled">LWJGL Debug: Enabled</string>
     <string name="settings_lwjgl_debug_disabled">LWJGL Debug: Disabled</string>
