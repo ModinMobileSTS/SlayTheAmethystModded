@@ -71,6 +71,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,7 +80,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -334,6 +337,7 @@ private fun LauncherMainScreenContent(
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
 ) {
+    val density = LocalDensity.current
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showSteamCloudBottomSheet by remember { mutableStateOf(false) }
     var showSteamCloudLaunchWarning by remember { mutableStateOf(false) }
@@ -352,6 +356,8 @@ private fun LauncherMainScreenContent(
     val steamCloudBottomSheetVisible = showSteamCloudBottomSheet && steamCloudIndicator.visible
     val steamCloudBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var batchEditBarState by remember { mutableStateOf<BatchEditBarState?>(null) }
+    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    val bottomBarContentPadding = with(density) { bottomBarHeightPx.toDp() }
 
     LaunchedEffect(steamCloudIndicator.visible) {
         if (!steamCloudIndicator.visible) {
@@ -465,7 +471,7 @@ private fun LauncherMainScreenContent(
                     MainContentSwitcher(
                         uiState = uiState,
                         showInitializing = showInitializing,
-                        actionBarBottomPadding = 156.dp,
+                        actionBarBottomPadding = bottomBarContentPadding,
                         onBatchEditBarStateChange = { batchEditBarState = it },
                         actions = actions
                     )
@@ -500,6 +506,7 @@ private fun LauncherMainScreenContent(
                 MainBottomBarSwitcher(
                     modifier = Modifier.align(Alignment.BottomCenter),
                     batchEditBarState = batchEditBarState,
+                    onHeightChanged = { bottomBarHeightPx = it },
                     hazeState = hazeState,
                     importEnabled = !uiState.busy && uiState.storageIssue == null,
                     launchEnabled = !uiState.busy &&
@@ -1773,6 +1780,7 @@ private fun NotificationBadge(
 private fun MainBottomBarSwitcher(
     modifier: Modifier = Modifier,
     batchEditBarState: BatchEditBarState?,
+    onHeightChanged: (Int) -> Unit,
     hazeState: HazeState,
     importEnabled: Boolean,
     launchEnabled: Boolean,
@@ -1793,7 +1801,9 @@ private fun MainBottomBarSwitcher(
 ) {
     AnimatedContent(
         targetState = batchEditBarState != null,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .onSizeChanged { onHeightChanged(it.height) },
         transitionSpec = {
             val slideIn = slideInVertically(
                 initialOffsetY = { fullHeight -> fullHeight / 2 },
