@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpireInstrumentPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.megacrit.cardcrawl.blights.AbstractBlight;
+import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.GameCursor;
 import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.relics.AbstractRelic;
@@ -215,6 +216,48 @@ public final class NativeTouchscreenAllowlistPatches {
         method = "update"
     )
     public static class AbstractCampfireOptionUpdatePatch {
+        @SpireInstrumentPatch
+        public static ExprEditor Instrument() {
+            return createTouchscreenFieldEditor(
+                NativeTouchscreenAllowlistPatches.class.getName()
+                    + ".resolveVanillaAllowlistedTouchscreen($proceed())"
+            );
+        }
+    }
+
+    @SpirePatch2(
+        clz = AbstractPlayer.class,
+        method = "updateInput"
+    )
+    public static class AbstractPlayerUpdateInputPatch {
+        @SpireInstrumentPatch
+        public static ExprEditor Instrument() {
+            return createTouchscreenFieldEditor(
+                NativeTouchscreenAllowlistPatches.class.getName()
+                    + ".resolveVanillaAllowlistedTouchscreen($proceed())"
+            );
+        }
+    }
+
+    @SpirePatch2(
+        clz = AbstractPlayer.class,
+        method = "updateSingleTargetInput"
+    )
+    public static class AbstractPlayerUpdateSingleTargetInputPatch {
+        @SpireInstrumentPatch
+        public static ExprEditor Instrument() {
+            return createTouchscreenFieldEditor(
+                NativeTouchscreenAllowlistPatches.class.getName()
+                    + ".resolveVanillaAllowlistedTouchscreen($proceed())"
+            );
+        }
+    }
+
+    @SpirePatch2(
+        clz = AbstractPlayer.class,
+        method = "clickAndDragCards"
+    )
+    public static class AbstractPlayerClickAndDragCardsPatch {
         @SpireInstrumentPatch
         public static ExprEditor Instrument() {
             return createTouchscreenFieldEditor(
