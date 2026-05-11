@@ -23,7 +23,8 @@ data class CallbackBridgeMethod(
     val returnType: String,
     val parameters: List<CallbackBridgeParameter>,
     val androidVisibility: String? = null,
-    val jvmVisibility: String? = null
+    val jvmVisibility: String? = null,
+    val androidCriticalNative: Boolean = false
 )
 
 object CallbackBridgeCodegen {
@@ -64,13 +65,15 @@ object CallbackBridgeCodegen {
             name = "nativeSetUseInputStackQueue",
             returnType = "void",
             parameters = listOf(CallbackBridgeParameter("boolean", "useInputStackQueue")),
-            androidVisibility = "public"
+            androidVisibility = "public",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendChar",
             returnType = "boolean",
             parameters = listOf(CallbackBridgeParameter("char", "codepoint")),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendCharMods",
@@ -79,7 +82,8 @@ object CallbackBridgeCodegen {
                 CallbackBridgeParameter("char", "codepoint"),
                 CallbackBridgeParameter("int", "mods")
             ),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendKey",
@@ -90,7 +94,8 @@ object CallbackBridgeCodegen {
                 CallbackBridgeParameter("int", "action"),
                 CallbackBridgeParameter("int", "mods")
             ),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendCursorPos",
@@ -99,7 +104,8 @@ object CallbackBridgeCodegen {
                 CallbackBridgeParameter("float", "x"),
                 CallbackBridgeParameter("float", "y")
             ),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendMouseButton",
@@ -109,7 +115,8 @@ object CallbackBridgeCodegen {
                 CallbackBridgeParameter("int", "action"),
                 CallbackBridgeParameter("int", "mods")
             ),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendScroll",
@@ -118,7 +125,8 @@ object CallbackBridgeCodegen {
                 CallbackBridgeParameter("double", "xOffset"),
                 CallbackBridgeParameter("double", "yOffset")
             ),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSendScreenSize",
@@ -127,7 +135,8 @@ object CallbackBridgeCodegen {
                 CallbackBridgeParameter("int", "width"),
                 CallbackBridgeParameter("int", "height")
             ),
-            androidVisibility = "private"
+            androidVisibility = "private",
+            androidCriticalNative = true
         ),
         CallbackBridgeMethod(
             name = "nativeSetWindowAttrib",
@@ -271,6 +280,8 @@ object CallbackBridgeCodegen {
                 append(method.androidVisibility ?: "-")
                 append('|')
                 append(method.jvmVisibility ?: "-")
+                append('|')
+                append(method.androidCriticalNative)
                 method.parameters.forEach { parameter ->
                     append('|')
                     append(parameter.type)
@@ -314,7 +325,12 @@ object CallbackBridgeCodegen {
             val parameters = method.parameters.joinToString(", ") { parameter ->
                 "${parameter.type} ${parameter.name}"
             }
-            "    $visibility static native ${method.returnType} ${method.name}($parameters);"
+            val annotation = if (target == CallbackBridgeTarget.ANDROID && method.androidCriticalNative) {
+                "    @CriticalNative\n"
+            } else {
+                ""
+            }
+            "${annotation}    $visibility static native ${method.returnType} ${method.name}($parameters);"
         }.joinToString("\n\n")
         return rendered.trimEnd()
     }

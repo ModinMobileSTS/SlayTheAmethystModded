@@ -22,7 +22,10 @@ static __thread gl_render_window_t* currentBundle;
 static EGLDisplay g_EglDisplay;
 static pthread_mutex_t g_surface_mutex = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_swap_diag_counter = 0;
+static uint32_t g_next_surface_restore_poll_swap = 0;
 static bool g_swap_heartbeat_logging_enabled = false;
+
+#define GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS 30
 
 #ifndef EGL_CONTEXT_LOST
 #define EGL_CONTEXT_LOST 0x300E
@@ -132,15 +135,19 @@ static ANativeWindow* gl_take_queued_or_bridge_surface(gl_render_window_t* bundl
 }
 
 static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const char* reason) {
-    if (bundle == NULL) {
+    if (bundle == NULL || bundle->nativeSurface != NULL) {
         return false;
     }
+
     bool queued = false;
     ANativeWindow* window = pojavAcquireBridgeWindow();
+    if (window == NULL) {
+        return false;
+    }
+
     pthread_mutex_lock(&g_surface_mutex);
     if (pojav_environ != NULL &&
         pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
-        window != NULL &&
         bundle->nativeSurface == NULL) {
         gl_replace_queued_surface_locked(bundle, window);
         bundle->state = STATE_RENDERER_NEW_WINDOW;
@@ -524,8 +531,16 @@ void gl_swap_buffers() {
     }
 
     // If we were forced onto a pbuffer but the Java bridge window is back,
-    // promote back to the on-screen surface automatically.
-    gl_try_restore_main_window_surface(currentBundle, "swap preflight");
+    // promote back to the on-screen surface automatically. Normal surface
+    // changes are delivered by gl_setup_window(); only poll while rendering to
+    // a pbuffer and throttle the poll to avoid a mutex/refcount round-trip on
+    // every frame.
+    if (currentBundle->nativeSurface == NULL &&
+        g_swap_diag_counter >= g_next_surface_restore_poll_swap) {
+        g_next_surface_restore_poll_swap =
+            g_swap_diag_counter + GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS;
+        gl_try_restore_main_window_surface(currentBundle, "swap preflight");
+    }
 
     if(currentBundle->state == STATE_RENDERER_NEW_WINDOW) {
         // Detach everything to destroy the old EGLSurface safely.

@@ -505,11 +505,13 @@ public class LwjglGraphics implements Graphics {
 			try {
 				if (canUseCorePath()) {
 					org.lwjgl.opengl.GL30.glBindFramebuffer(target, remappedFramebuffer);
+					LwjglApplication.noteFramebufferBound(target, framebuffer);
 					return;
 				}
 			} catch (Throwable ignored) {
 			}
 			super.glBindFramebuffer(target, remappedFramebuffer);
+			LwjglApplication.noteFramebufferBound(target, framebuffer);
 		}
 
 		@Override
@@ -719,6 +721,7 @@ public class LwjglGraphics implements Graphics {
 				target,
 				LwjglApplication.remapRequestedFramebufferHandle(framebuffer)
 			);
+			LwjglApplication.noteFramebufferBound(target, framebuffer);
 		}
 	}
 

@@ -1,13 +1,19 @@
 package io.stamethyst.input
 
-internal fun mapViewToWindowCoords(
+internal data class WindowCoords(
+    val x: Float,
+    val y: Float
+)
+
+internal inline fun mapViewToWindowCoords(
     viewX: Float,
     viewY: Float,
     rawViewWidth: Int,
     rawViewHeight: Int,
     windowWidthRaw: Int,
-    windowHeightRaw: Int
-): FloatArray {
+    windowHeightRaw: Int,
+    onMapped: (x: Float, y: Float, windowHeight: Int) -> Unit
+) {
     val viewWidth = maxOf(1, rawViewWidth)
     val viewHeight = maxOf(1, rawViewHeight)
     val windowWidth = maxOf(1, windowWidthRaw)
@@ -26,5 +32,29 @@ internal fun mapViewToWindowCoords(
     } else if (mappedY > windowHeight - 1f) {
         mappedY = windowHeight - 1f
     }
-    return floatArrayOf(mappedX, mappedY)
+    onMapped(mappedX, mappedY, windowHeight)
+}
+
+internal fun mapViewToWindowCoords(
+    viewX: Float,
+    viewY: Float,
+    rawViewWidth: Int,
+    rawViewHeight: Int,
+    windowWidthRaw: Int,
+    windowHeightRaw: Int
+): WindowCoords {
+    var resultX = 0f
+    var resultY = 0f
+    mapViewToWindowCoords(
+        viewX = viewX,
+        viewY = viewY,
+        rawViewWidth = rawViewWidth,
+        rawViewHeight = rawViewHeight,
+        windowWidthRaw = windowWidthRaw,
+        windowHeightRaw = windowHeightRaw
+    ) { mappedX, mappedY, _ ->
+        resultX = mappedX
+        resultY = mappedY
+    }
+    return WindowCoords(resultX, resultY)
 }

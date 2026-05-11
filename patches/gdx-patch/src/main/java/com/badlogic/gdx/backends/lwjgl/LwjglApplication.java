@@ -74,6 +74,7 @@ public class LwjglApplication implements Application {
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
+	private static final String DEFAULT_FBO_REBIND_CACHE_PROP = "amethyst.lwjgl.default_framebuffer_rebind_cache";
 	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
 	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
 	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
@@ -85,9 +86,11 @@ public class LwjglApplication implements Application {
 	private static final String RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP =
 		"amethyst.gdx.runtime_texture_compat_periodic_scan";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
+	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final int VSYNC_SOFTWARE_SYNC_MARGIN_FPS = 1;
+	private static final int GLOBAL_TEXTURE_COMPAT_GROWTH_CHECK_INTERVAL_FRAMES = 30;
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
 		{"glBindFramebufferEXT", "glBindFramebuffer"},
 		{"glDeleteFramebuffersEXT", "glDeleteFramebuffers"},
@@ -113,6 +116,8 @@ public class LwjglApplication implements Application {
 	private static volatile int scaledRenderBackBufferHandle;
 	private static volatile int scaledRenderBackBufferWidth;
 	private static volatile int scaledRenderBackBufferHeight;
+	private static volatile int trackedDrawFramebufferHandle = Integer.MIN_VALUE;
+	private static volatile int trackedReadFramebufferHandle = Integer.MIN_VALUE;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
 	private boolean missingFunctionPointerPatchLogged;
@@ -121,6 +126,7 @@ public class LwjglApplication implements Application {
 	private boolean framebufferExtAliasFailedLogged;
 	private boolean genericFunctionAliasLogged;
 	private boolean genericFunctionAliasFailedLogged;
+	private Object aliasedCapabilities;
 	private boolean inactiveRenderSuppressedLogged;
 	private boolean firstRenderFrameLogged;
 	private boolean defaultFramebufferRebindLogged;
@@ -138,6 +144,7 @@ public class LwjglApplication implements Application {
 	private int globalTextureCompatFailedTotal;
 	private int globalTextureCompatScanTotal;
 	private int globalTextureCompatKnownManagedCount = -1;
+	private long nextGlobalTextureCompatGrowthCheckFrame;
 	private final float configuredRenderScale = readConfiguredRenderScale();
 	private final Set<Texture> globalTextureCompatSeen =
 		Collections.newSetFromMap(new WeakHashMap<Texture, Boolean>());
@@ -419,6 +426,31 @@ public class LwjglApplication implements Application {
 		return overrideHandle != 0 ? overrideHandle : framebuffer;
 	}
 
+	static void noteFramebufferBound (int target, int framebuffer) {
+		int remappedFramebuffer = remapRequestedFramebufferHandle(framebuffer);
+		switch (target) {
+		case org.lwjgl.opengl.GL30.GL_READ_FRAMEBUFFER:
+			trackedReadFramebufferHandle = remappedFramebuffer;
+			break;
+		case org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER:
+			trackedDrawFramebufferHandle = remappedFramebuffer;
+			break;
+		default:
+			trackedDrawFramebufferHandle = remappedFramebuffer;
+			trackedReadFramebufferHandle = remappedFramebuffer;
+			break;
+		}
+	}
+
+	private static boolean isDrawFramebufferKnownDefault () {
+		return trackedDrawFramebufferHandle == 0;
+	}
+
+	private static void invalidateTrackedFramebufferBinding () {
+		trackedDrawFramebufferHandle = Integer.MIN_VALUE;
+		trackedReadFramebufferHandle = Integer.MIN_VALUE;
+	}
+
 	private static void setScaledRenderBackBufferOverride (int handle, int width, int height) {
 		scaledRenderBackBufferHandle = handle;
 		scaledRenderBackBufferWidth = width;
@@ -626,6 +658,7 @@ public class LwjglApplication implements Application {
 			nativeContextGeneration = generation;
 			pendingNativeContextRebind = true;
 			invalidateFramebufferBindCapabilities();
+			invalidateTrackedFramebufferBinding();
 			globalTextureCompatSeen.clear();
 			globalTextureCompatFailureCounts.clear();
 			globalTextureCompatSourceCache.clear();
@@ -674,10 +707,7 @@ public class LwjglApplication implements Application {
 	private boolean ensureGlCapabilities (String phase, boolean forceRecreate) {
 		try {
 			if (!forceRecreate) {
-				GL.getCapabilities();
-				zeroMissingFunctionPointersIfRequested(phase);
-				ensureFramebufferExtFunctionAliases(phase);
-				ensureGenericFunctionAliases(phase);
+				ensureCapabilityAliasesOnce(phase, GL.getCapabilities());
 				return true;
 			}
 		} catch (Throwable ignored) {
@@ -685,9 +715,9 @@ public class LwjglApplication implements Application {
 
 		try {
 			GL.createCapabilities();
-			zeroMissingFunctionPointersIfRequested(phase);
-			ensureFramebufferExtFunctionAliases(phase);
-			ensureGenericFunctionAliases(phase);
+			Object capabilities = GL.getCapabilities();
+			aliasedCapabilities = null;
+			ensureCapabilityAliasesOnce(phase, capabilities);
 			invalidateFramebufferBindCapabilities();
 			return true;
 		} catch (Throwable t) {
@@ -696,6 +726,14 @@ public class LwjglApplication implements Application {
 			}
 			return false;
 		}
+	}
+
+	private void ensureCapabilityAliasesOnce (String phase, Object capabilities) {
+		if (capabilities == null || capabilities == aliasedCapabilities) return;
+		zeroMissingFunctionPointersIfRequested(phase);
+		ensureFramebufferExtFunctionAliases(phase, capabilities);
+		ensureGenericFunctionAliases(phase, capabilities);
+		aliasedCapabilities = capabilities;
 	}
 
 	private void zeroMissingFunctionPointersIfRequested (String phase) {
@@ -824,9 +862,8 @@ public class LwjglApplication implements Application {
 		}
 	}
 
-	private void ensureFramebufferExtFunctionAliases (String phase) {
+	private void ensureFramebufferExtFunctionAliases (String phase, Object capabilities) {
 		try {
-			Object capabilities = GL.getCapabilities();
 			int aliased = 0;
 			for (int i = 0; i < EXT_FRAMEBUFFER_FUNCTION_ALIASES.length; i++) {
 				String[] mapping = EXT_FRAMEBUFFER_FUNCTION_ALIASES[i];
@@ -875,9 +912,8 @@ public class LwjglApplication implements Application {
 		return true;
 	}
 
-	private void ensureGenericFunctionAliases (String phase) {
+	private void ensureGenericFunctionAliases (String phase, Object capabilities) {
 		try {
-			Object capabilities = GL.getCapabilities();
 			Class<?> capabilitiesClass = capabilities.getClass();
 			Field[] declaredFields = capabilitiesClass.getDeclaredFields();
 			ObjectMap<String, Field> fieldsByName = new ObjectMap<String, Field>();
@@ -968,28 +1004,34 @@ public class LwjglApplication implements Application {
 		}
 	}
 
-	private void bindDefaultFramebufferForSwap () {
+	private void bindDefaultFramebufferForSwap (boolean allowBindingCache) {
 		ensureDisplayContextCurrent("pre-swap-fbo-rebind");
+		boolean useBindingCache = allowBindingCache && readBooleanSystemProperty(DEFAULT_FBO_REBIND_CACHE_PROP, true);
+		boolean needsBind = !useBindingCache || !isDrawFramebufferKnownDefault();
 		boolean bound = false;
-		try {
-			if (canUseCoreFramebufferBind()) {
-				org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
-				bound = true;
+		if (needsBind) {
+			try {
+				if (canUseCoreFramebufferBind()) {
+					org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+					bound = true;
+				}
+			} catch (Throwable ignored) {
 			}
-		} catch (Throwable ignored) {
-		}
-		try {
-			if (!bound && canUseExtFramebufferBind()) {
-				org.lwjgl.opengl.EXTFramebufferObject.glBindFramebufferEXT(org.lwjgl.opengl.EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0);
-				bound = true;
+			try {
+				if (!bound && canUseExtFramebufferBind()) {
+					org.lwjgl.opengl.EXTFramebufferObject.glBindFramebufferEXT(org.lwjgl.opengl.EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0);
+					bound = true;
+				}
+			} catch (Throwable ignored) {
 			}
-		} catch (Throwable ignored) {
-		}
-		try {
-			if (!bound && Gdx.gl20 != null) {
-				Gdx.gl20.glBindFramebuffer(GL20.GL_FRAMEBUFFER, 0);
+			try {
+				if (!bound && Gdx.gl20 != null) {
+					Gdx.gl20.glBindFramebuffer(GL20.GL_FRAMEBUFFER, 0);
+					bound = true;
+				}
+			} catch (Throwable ignored) {
 			}
-		} catch (Throwable ignored) {
+			if (bound) noteFramebufferBound(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
 		}
 		try {
 			org.lwjgl.opengl.GL11.glViewport(0, 0, resolvePhysicalDisplayWidth(), resolvePhysicalDisplayHeight());
@@ -1299,6 +1341,9 @@ public class LwjglApplication implements Application {
 
 	private boolean runGlobalTextureCompatOnManagedGrowth (String phase) {
 		if (!shouldEnableGlobalTextureCompat()) return false;
+		long frame = graphics.frameId;
+		if (frame < nextGlobalTextureCompatGrowthCheckFrame) return false;
+		nextGlobalTextureCompatGrowthCheckFrame = frame + GLOBAL_TEXTURE_COMPAT_GROWTH_CHECK_INTERVAL_FRAMES;
 		int managedCount = getManagedTextureCount();
 		if (managedCount < 0) return false;
 
@@ -1647,7 +1692,7 @@ public class LwjglApplication implements Application {
 				graphics.frameId++;
 				GLTexture.noteFrameRendered(graphics.frameId);
 				GLFrameBuffer.noteFrameRendered(graphics.frameId);
-				if ((graphics.frameId % 600) == 0) {
+				if (shouldLogGpuResourceSummary() && (graphics.frameId % 600) == 0) {
 					boolean isCurrent = false;
 					try {
 						isCurrent = Display.isCurrent();
@@ -1682,7 +1727,7 @@ public class LwjglApplication implements Application {
 						// System.out.println("[gdx-patch] Enabling default framebuffer rebind before swap");
 						defaultFramebufferRebindLogged = true;
 					}
-					bindDefaultFramebufferForSwap();
+					bindDefaultFramebufferForSwap(scaledRender != null);
 				}
 				if (Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {
 					org.lwjgl.opengl.GL11.glClearColor(1f, 0f, 0f, 1f);
@@ -1710,10 +1755,14 @@ public class LwjglApplication implements Application {
 		listener.pause();
 		listener.dispose();
 		disposeScaledRenderPipeline();
-		logGpuResourceSummary("application_shutdown");
+		if (shouldLogGpuResourceSummary()) logGpuResourceSummary("application_shutdown");
 		Display.destroy();
 		if (audio != null) audio.dispose();
 		if (graphics.config.forceExit) System.exit(-1);
+	}
+
+	private static boolean shouldLogGpuResourceSummary () {
+		return readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false);
 	}
 
 	private static void logGpuResourceSummary (String reason) {

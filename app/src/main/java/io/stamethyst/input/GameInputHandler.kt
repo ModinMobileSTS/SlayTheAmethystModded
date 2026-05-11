@@ -215,24 +215,29 @@ class GameInputHandler(
 
     private fun moveCursor(x: Float, y: Float) {
         if (!isInputDispatchReady()) return
-        val mapped = mapToWindowCoords(x, y)
-        val targetWindowHeight = getTargetWindowHeight().coerceAtLeast(1)
-        val rawCursorY = (targetWindowHeight - 1f - mapped[1]).coerceIn(0f, targetWindowHeight - 1f)
-        CallbackBridge.sendCursorPos(mapped[0], rawCursorY)
+        mapToWindowCoords(x, y) { mappedX, mappedY, windowHeight ->
+            val rawCursorY = (windowHeight - 1f - mappedY).coerceIn(0f, windowHeight - 1f)
+            CallbackBridge.sendCursorPos(mappedX, rawCursorY)
+        }
     }
 
-    private fun mapToWindowCoords(viewX: Float, viewY: Float): FloatArray {
+    private inline fun mapToWindowCoords(
+        viewX: Float,
+        viewY: Float,
+        onMapped: (x: Float, y: Float, windowHeight: Int) -> Unit
+    ) {
         val rawViewWidth = getRenderViewWidth()
         val rawViewHeight = getRenderViewHeight()
         val targetWindowWidth = getTargetWindowWidth()
         val targetWindowHeight = getTargetWindowHeight()
-        return mapViewToWindowCoords(
+        mapViewToWindowCoords(
             viewX = viewX,
             viewY = viewY,
             rawViewWidth = rawViewWidth,
             rawViewHeight = rawViewHeight,
             windowWidthRaw = targetWindowWidth,
-            windowHeightRaw = targetWindowHeight
+            windowHeightRaw = targetWindowHeight,
+            onMapped = onMapped
         )
     }
 
