@@ -165,7 +165,24 @@ public abstract class GLTexture implements Disposable {
 		TEXTURE_RESIDENCY_RESTORE_GRACE_FRAMES,
 		TEXTURE_RESIDENCY_RESTORE_GRACE_MIN_MILLIS_FLOOR
 	);
+	private static final String GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES_PROP =
+		"amethyst.gdx.gpu_guardian_sync_restore_max_bytes";
+	private static final long GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES = readLongSystemProperty(
+		GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES_PROP,
+		4L * 1024L * 1024L,
+		0L,
+		64L * 1024L * 1024L
+	);
+	private static final String GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES_PROP =
+		"amethyst.gdx.gpu_guardian_sync_restore_budget_bytes_per_frame";
+	private static final long GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES = readLongSystemProperty(
+		GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES_PROP,
+		4L * 1024L * 1024L,
+		0L,
+		64L * 1024L * 1024L
+	);
 	private static final int TEXTURE_LIVE_SOURCE_SUMMARY_LIMIT = 4;
+
 	private static final int GL_TEXTURE_2D_ENUM = 0x0DE1;
 	private static final int GL_TEXTURE_BINDING_2D_ENUM = 0x8069;
 	private static final int GL_TEXTURE_CUBE_MAP_ENUM = 0x8513;
@@ -255,7 +272,11 @@ public abstract class GLTexture implements Disposable {
 	private static volatile long textureResidencyLowWaterBytes = -1L;
 	private static volatile int textureResidencyGrowthStrikes;
 	private static volatile int textureResidencyEmergencyStrikes;
+	private static volatile int guardianTextureSweepCursor = 0;
+	private static volatile long guardianRestoreBudgetFrame = -1L;
+	private static volatile long guardianRestoreBudgetBytesUsed;
 	private static final ThreadLocal<IntBuffer> GL_INT_QUERY_BUFFER = new ThreadLocal<IntBuffer>() {
+
 		@Override
 		protected IntBuffer initialValue () {
 			return ByteBuffer.allocateDirect(Integer.SIZE / 8).order(ByteOrder.nativeOrder()).asIntBuffer();
@@ -284,7 +305,9 @@ public abstract class GLTexture implements Disposable {
 	private int residencyRestoreFailureCount;
 	private volatile GLFrameBuffer<?> frameBufferTextureOwner;
 	private boolean handleReclaimPending;
+	private boolean guardianReclaimPending;
 	private boolean permanentlyDisposed;
+
 
 	public abstract int getWidth ();
 
@@ -436,18 +459,23 @@ public abstract class GLTexture implements Disposable {
 	protected void delete () {
 		permanentlyDisposed = true;
 		handleReclaimPending = false;
+		guardianReclaimPending = false;
 		releaseHandle("delete", true);
 	}
 
+
 	public final int releaseHandleForReuse (String reason) {
 		handleReclaimPending = true;
+		guardianReclaimPending = isGuardianReclaimReason(reason);
 		return releaseHandle(reason, true);
 	}
 
 	public final int invalidateHandleForReuse (String reason) {
 		handleReclaimPending = true;
+		guardianReclaimPending = isGuardianReclaimReason(reason);
 		return releaseHandle(reason, false);
 	}
+
 
 	public final void restoreHandleForReuse (int newHandle, String reason) {
 		if (newHandle == 0) {
@@ -462,7 +490,9 @@ public abstract class GLTexture implements Disposable {
 			onTextureHandleUpdated(debugTextureId, oldHandle, newHandle, reason);
 		}
 		handleReclaimPending = false;
+		guardianReclaimPending = false;
 		lastRestoreFrame = currentFrameId >= 0L ? currentFrameId : lastRestoreFrame;
+
 		lastRestoreTimeNanos = nowMonotonicNanos();
 	}
 
@@ -646,6 +676,80 @@ public abstract class GLTexture implements Disposable {
 		}
 	}
 
+	public static long[] reclaimGuardianTextures (
+		Application app,
+		long frameId,
+		long minIdleFrames,
+		long minBytes,
+		int maxChecks,
+		int maxReclaims,
+		long maxBytes
+	) {
+		if (TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) {
+			logTextureResidencySkipForRamSaverIfNeeded();
+			return emptyGuardianSweepStats();
+		}
+		if (Gdx.gl == null || app == null || frameId < 0L) return emptyGuardianSweepStats();
+		noteFrameRendered(frameId);
+		Array<Texture> managedTextures = getManagedTextures(app);
+		if (managedTextures == null || managedTextures.size == 0) return emptyGuardianSweepStats();
+		int size = managedTextures.size;
+		int index = normalizeGuardianSweepCursor(guardianTextureSweepCursor, size);
+		int startIndex = index;
+		int checked = 0;
+		int candidates = 0;
+		int reclaimed = 0;
+		long reclaimedBytes = 0L;
+		Map<String, Integer> protectReasonCounts = GPU_RESOURCE_DIAG_ENABLED ? new HashMap<String, Integer>() : null;
+		int currentTexture2DBinding = getCurrentTextureBinding(GL_TEXTURE_2D_ENUM);
+		int boundedMaxChecks = Math.max(1, Math.min(size, maxChecks));
+		int boundedMaxReclaims = Math.max(1, maxReclaims);
+		long boundedMaxBytes = Math.max(0L, maxBytes);
+		long minIdleNanos = minimumIdleDurationNanos(true, minIdleFrames);
+		while (checked < boundedMaxChecks && reclaimed < boundedMaxReclaims) {
+			GLTexture texture = managedTextures.get(index);
+			checked++;
+			if (texture == null) {
+				recordGuardianProtectReason(protectReasonCounts, "null_texture");
+			} else {
+				String protectReason = texture.resolveTextureGuardianProtectReason(minIdleNanos, minBytes, currentTexture2DBinding);
+				if (protectReason == null) {
+					candidates++;
+					long candidateBytes = texture.captureTrackedHandleBytes();
+					if (candidateBytes > 0L
+						&& (boundedMaxBytes == 0L || reclaimedBytes + candidateBytes <= boundedMaxBytes)
+						&& texture.reclaimForGuardianSweep(minIdleNanos, minBytes, currentTexture2DBinding)) {
+						reclaimed++;
+						reclaimedBytes += candidateBytes;
+					}
+				} else {
+					recordGuardianProtectReason(protectReasonCounts, protectReason);
+				}
+			}
+			index = nextGuardianSweepIndex(index, size);
+		}
+		guardianTextureSweepCursor = index;
+		if (GPU_RESOURCE_DIAG_ENABLED && checked > 0) {
+			System.out.println("[gdx-diag] GLTexture guardian_texture_sweep frame=" + frameId
+				+ " managedTextures=" + size
+				+ " cursor=" + startIndex
+				+ " checked=" + checked
+				+ " candidates=" + candidates
+				+ " reclaimed=" + reclaimed
+				+ " reclaimedBytes=" + reclaimedBytes
+				+ " protectReasons=" + summarizeGuardianProtectReasons(protectReasonCounts));
+		}
+		return guardianSweepStats(checked, candidates, reclaimed, reclaimedBytes);
+	}
+
+	private static long[] emptyGuardianSweepStats () {
+		return guardianSweepStats(0, 0, 0, 0L);
+	}
+
+	private static long[] guardianSweepStats (long checked, long candidates, long reclaimed, long reclaimedBytes) {
+		return new long[] {checked, candidates, reclaimed, reclaimedBytes};
+	}
+
 	public static void reclaimIdleTextures (Application app, long frameId) {
 		if (TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) {
 			logTextureResidencySkipForRamSaverIfNeeded();
@@ -797,8 +901,22 @@ public abstract class GLTexture implements Disposable {
 		Texture texture = (Texture)this;
 		TextureData data = safeGetTextureData(texture);
 		if (!isResidencyReloadableTexture(texture, data)) return;
+		long restoreBytes = estimateTextureRestoreBytes(data);
+		if (guardianReclaimPending && !tryAcquireGuardianRestoreBudget(restoreBytes)) {
+			if (GPU_RESOURCE_DIAG_ENABLED) {
+				System.out.println("[gdx-diag] GLTexture guardian_restore_deferred id=" + debugTextureId
+					+ " reason=" + (reason == null ? "unknown" : reason)
+					+ " owner=" + getResidencyOwnerKeyForLog()
+					+ " source=" + getResidencySourceSampleForLog()
+					+ " bytes=" + restoreBytes
+					+ " maxSyncBytes=" + GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES
+					+ " frameBudgetBytes=" + GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES);
+			}
+			return;
+		}
 
 		int newHandle = 0;
+
 		try {
 			newHandle = Gdx.gl.glGenTexture();
 			if (newHandle == 0) return;
@@ -828,9 +946,11 @@ public abstract class GLTexture implements Disposable {
 		} catch (Throwable t) {
 			residencyRestoreFailureCount++;
 			TEXTURE_RESIDENCY_RESTORE_FAILURES.incrementAndGet();
+			guardianReclaimPending = true;
 			if (glHandle != 0) {
 				releaseHandle("texture_residency_restore_failed", true);
 			} else if (newHandle != 0) {
+
 				try {
 					Gdx.gl.glDeleteTexture(newHandle);
 				} catch (Throwable ignored) {
@@ -864,12 +984,51 @@ public abstract class GLTexture implements Disposable {
 		return true;
 	}
 
+	private boolean reclaimForGuardianSweep (
+		long minIdleNanos,
+		long minBytes,
+		int currentTexture2DBinding
+	) {
+		String protectReason = resolveTextureGuardianProtectReason(minIdleNanos, minBytes, currentTexture2DBinding);
+		if (protectReason != null) return false;
+		long reclaimedBytes = captureTrackedHandleBytes();
+		if (releaseHandleForReuse("guardian_pressure") == 0) return false;
+		residencyReleaseCount++;
+		TEXTURE_RESIDENCY_RECLAIMS.incrementAndGet();
+		TEXTURE_RESIDENCY_RECLAIMED_BYTES.addAndGet(reclaimedBytes);
+		if (GPU_RESOURCE_DIAG_ENABLED) {
+			System.out.println("[gdx-diag] GLTexture guardian_reclaim id=" + debugTextureId
+				+ " owner=" + getResidencyOwnerKeyForLog()
+				+ " source=" + getResidencySourceSampleForLog()
+				+ " bytes=" + reclaimedBytes
+				+ " releases=" + residencyReleaseCount);
+		}
+		return true;
+	}
+
 	private String resolveTextureResidencyProtectReason (long minIdleNanos, long minBytes, int currentTexture2DBinding) {
+		String commonReason = resolveTextureReusableProtectReason(minIdleNanos, minBytes, currentTexture2DBinding);
+		if (commonReason != null) return commonReason;
+		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED) return "disabled";
+		if (!isResidencyWatchdogOwnerEligible()) return "owner_not_eligible";
+		Texture texture = (Texture)this;
+		TextureData data = safeGetTextureData(texture);
+		if (isResidencyWatchdogSourceExcluded(data)) return "excluded_hot_path";
+		return null;
+	}
+
+	private String resolveTextureGuardianProtectReason (long minIdleNanos, long minBytes, int currentTexture2DBinding) {
+		String commonReason = resolveTextureReusableProtectReason(minIdleNanos, minBytes, currentTexture2DBinding);
+		if (commonReason != null) return commonReason;
+		if (!isGuardianOwnerEligible()) return "owner_not_eligible";
+		return null;
+	}
+
+	private String resolveTextureReusableProtectReason (long minIdleNanos, long minBytes, int currentTexture2DBinding) {
 		if (TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER) {
 			logTextureResidencySkipForRamSaverIfNeeded();
 			return "disabled_for_ramsaver";
 		}
-		if (!TEXTURE_RESIDENCY_MANAGER_ENABLED) return "disabled";
 		if (permanentlyDisposed) return "disposed";
 		if (!(this instanceof Texture)) return "not_texture";
 		if (!isManaged()) return "not_managed";
@@ -879,9 +1038,8 @@ public abstract class GLTexture implements Disposable {
 		TextureData data = safeGetTextureData(texture);
 		if (!isResidencyReloadableTexture(texture, data)) return "not_reloadable";
 		if (GLFrameBuffer.isFrameBufferTexture(this)) return "framebuffer_owner";
-		if (!isResidencyWatchdogOwnerEligible()) return "owner_not_eligible";
-		if (isResidencyWatchdogSourceExcluded(data)) return "excluded_hot_path";
 		if (captureTrackedHandleBytes() < minBytes) return "below_min_bytes";
+		if (isGuardianRestoreTooLarge(data)) return "restore_too_large";
 		if (currentTexture2DBinding == glHandle) return "currently_bound";
 		if (getIdleDurationNanos() < minIdleNanos) return "recently_used";
 		if (lastRestoreFrame >= 0L && getRestoreAgeNanos() < TEXTURE_RESIDENCY_RESTORE_GRACE_NANOS) {
@@ -914,7 +1072,87 @@ public abstract class GLTexture implements Disposable {
 			|| ownerKey.startsWith("stslib<-");
 	}
 
+	private boolean isGuardianOwnerEligible () {
+		String ownerKey = getResidencyOwnerKeyForLog();
+		return ownerKey.startsWith("external<-")
+			|| ownerKey.startsWith("downfall<-");
+	}
+
+	private static boolean isGuardianReclaimReason (String reason) {
+		return reason != null && reason.startsWith("guardian_");
+	}
+
+	private static long estimateTextureRestoreBytes (TextureData data) {
+		if (data == null) return 0L;
+		long estimatedBytes = estimateTextureBytes(data.getWidth(), data.getHeight(), data.getFormat());
+		if (data.useMipMaps()) {
+			estimatedBytes = Math.max(estimatedBytes, (estimatedBytes * 4L) / 3L);
+		}
+		return Math.max(0L, estimatedBytes);
+	}
+
+	private static boolean isGuardianRestoreTooLarge (TextureData data) {
+		long restoreBytes = estimateTextureRestoreBytes(data);
+		return GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES <= 0L
+			|| GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES <= 0L
+			|| restoreBytes > GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES
+			|| restoreBytes > GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES;
+	}
+
+	private static boolean tryAcquireGuardianRestoreBudget (long restoreBytes) {
+		long safeRestoreBytes = Math.max(0L, restoreBytes);
+		if (GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES <= 0L || GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES <= 0L) return false;
+		if (safeRestoreBytes > GPU_GUARDIAN_SYNC_RESTORE_MAX_BYTES) return false;
+		long frameId = currentFrameId;
+		if (guardianRestoreBudgetFrame != frameId) {
+			guardianRestoreBudgetFrame = frameId;
+			guardianRestoreBudgetBytesUsed = 0L;
+		}
+		if (guardianRestoreBudgetBytesUsed > GPU_GUARDIAN_SYNC_RESTORE_BUDGET_BYTES - safeRestoreBytes) return false;
+		guardianRestoreBudgetBytesUsed += safeRestoreBytes;
+		return true;
+	}
+
+	private static void recordGuardianProtectReason (Map<String, Integer> counts, String reason) {
+		if (counts == null) return;
+		String key = reason == null || reason.length() == 0 ? "unknown" : reason;
+		Integer count = counts.get(key);
+		counts.put(key, count == null ? Integer.valueOf(1) : Integer.valueOf(count.intValue() + 1));
+	}
+
+	private static String summarizeGuardianProtectReasons (Map<String, Integer> counts) {
+		if (counts == null || counts.isEmpty()) return "none";
+		StringBuilder builder = new StringBuilder(128);
+		int emitted = 0;
+		while (emitted < 6) {
+			String bestKey = null;
+			int bestCount = -1;
+			for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+				String key = entry.getKey();
+				if (key == null || containsGuardianProtectSummaryKey(builder, key)) continue;
+				Integer count = entry.getValue();
+				int safeCount = count == null ? 0 : count.intValue();
+				if (safeCount > bestCount || (safeCount == bestCount && bestKey != null && key.compareTo(bestKey) < 0)) {
+					bestKey = key;
+					bestCount = safeCount;
+				}
+			}
+			if (bestKey == null) break;
+			if (emitted > 0) builder.append("|");
+			builder.append(bestKey).append(":").append(bestCount);
+			emitted++;
+		}
+		return builder.length() == 0 ? "none" : builder.toString();
+	}
+
+	private static boolean containsGuardianProtectSummaryKey (StringBuilder builder, String key) {
+		if (builder == null || key == null || builder.length() == 0) return false;
+		String summary = builder.toString();
+		return summary.equals(key) || summary.startsWith(key + ":") || summary.indexOf("|" + key + ":") >= 0;
+	}
+
 	private boolean isResidencyWatchdogSourceExcluded (TextureData data) {
+
 		String sourcePath = resolveTextureSourcePath(data);
 		String normalizedSourcePath = normalizeTextureSourcePath(sourcePath);
 		return containsAnyPathSegment(
@@ -935,6 +1173,7 @@ public abstract class GLTexture implements Disposable {
 
 	private long captureTrackedHandleBytes () {
 		if (glHandle == 0) return Math.max(0L, residencyLastKnownBytes);
+		refreshResidencySnapshotFromHandle(glHandle);
 		Long trackedBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(glHandle);
 		long bytes = trackedBytes == null ? 0L : trackedBytes.longValue();
 		if (bytes > 0L) {
@@ -942,6 +1181,7 @@ public abstract class GLTexture implements Disposable {
 		}
 		return bytes > 0L ? bytes : Math.max(0L, residencyLastKnownBytes);
 	}
+
 
 	private long refreshResidencyTrackedBytesFromHandle () {
 		long trackedBytes = captureTrackedHandleBytes();
@@ -952,6 +1192,10 @@ public abstract class GLTexture implements Disposable {
 	}
 
 	private void captureResidencySnapshot (int handle) {
+		refreshResidencySnapshotFromHandle(handle);
+	}
+
+	private void refreshResidencySnapshotFromHandle (int handle) {
 		if (handle == 0) return;
 		Long trackedBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(handle);
 		if (trackedBytes != null && trackedBytes.longValue() > 0L) {
@@ -970,6 +1214,7 @@ public abstract class GLTexture implements Disposable {
 			residencyLastKnownOwnerSample = ownerSample;
 		}
 	}
+
 
 	private String getLastUseReasonForLog () {
 		return lastUseReason == null || lastUseReason.length() == 0 ? "unknown" : lastUseReason;
@@ -1067,6 +1312,19 @@ public abstract class GLTexture implements Disposable {
 			lowWaterBytes,
 			triggerBytes
 		);
+	}
+
+	private static int normalizeGuardianSweepCursor (int cursor, int size) {
+		if (size <= 0) return 0;
+		if (cursor < 0) return 0;
+		if (cursor >= size) return cursor % size;
+		return cursor;
+	}
+
+	private static int nextGuardianSweepIndex (int index, int size) {
+		if (size <= 1) return 0;
+		int next = index + 1;
+		return next >= size ? 0 : next;
 	}
 
 	private static int compareResidencyCandidates (GLTexture left, GLTexture right, long frameId) {

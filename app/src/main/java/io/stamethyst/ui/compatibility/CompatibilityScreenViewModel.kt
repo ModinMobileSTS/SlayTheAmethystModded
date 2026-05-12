@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.config.GpuResourceGuardianMode
 
 @Stable
 class CompatibilityScreenViewModel : ViewModel() {
@@ -22,15 +23,16 @@ class CompatibilityScreenViewModel : ViewModel() {
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
         val nativeTouchscreenAllowlistCompatEnabled: Boolean = true,
-        val largeTextureDownscaleCompatEnabled: Boolean = true,
-        val textureResidencyManagerCompatEnabled: Boolean = true,
+        val largeTextureDownscaleCompatEnabled: Boolean = false,
+        val textureResidencyManagerCompatEnabled: Boolean = false,
         val texturePressureDownscaleDivisor: Int = 2,
+        val gpuResourceGuardianMode: GpuResourceGuardianMode = GpuResourceGuardianMode.SAFE,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val hinaCharacterRenderCompatEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
-        val fboManagerCompatEnabled: Boolean = true,
-        val fboIdleReclaimCompatEnabled: Boolean = true,
-        val fboPressureDownscaleCompatEnabled: Boolean = true
+        val fboManagerCompatEnabled: Boolean = false,
+        val fboIdleReclaimCompatEnabled: Boolean = false,
+        val fboPressureDownscaleCompatEnabled: Boolean = false
     )
 
     var uiState by mutableStateOf(UiState())
@@ -53,6 +55,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
             textureResidencyManagerCompatEnabled = CompatibilitySettings.isTextureResidencyManagerCompatEnabled(host),
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
+            gpuResourceGuardianMode = CompatibilitySettings.readGpuResourceGuardianMode(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             hinaCharacterRenderCompatEnabled = CompatibilitySettings.isHinaCharacterRenderCompatEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
@@ -135,19 +138,13 @@ class CompatibilityScreenViewModel : ViewModel() {
     }
 
     fun onLargeTextureDownscaleCompatToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setLargeTextureDownscaleCompatEnabled(host, enabled)
-        uiState = uiState.copy(largeTextureDownscaleCompatEnabled = enabled)
+        CompatibilitySettings.setLargeTextureDownscaleCompatEnabled(host, false)
+        uiState = uiState.copy(largeTextureDownscaleCompatEnabled = false)
     }
 
     fun onTextureResidencyManagerCompatToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setTextureResidencyManagerCompatEnabled(host, enabled)
-        uiState = uiState.copy(textureResidencyManagerCompatEnabled = enabled)
+        CompatibilitySettings.setTextureResidencyManagerCompatEnabled(host, false)
+        uiState = uiState.copy(textureResidencyManagerCompatEnabled = false)
     }
 
     fun onTexturePressureDownscaleDivisorChanged(host: Context, divisor: Int) {
@@ -156,6 +153,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.saveTexturePressureDownscaleDivisor(host, divisor)
         uiState = uiState.copy(texturePressureDownscaleDivisor = divisor)
+    }
+
+    fun onGpuResourceGuardianModeChanged(host: Context, mode: GpuResourceGuardianMode) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.saveGpuResourceGuardianMode(host, mode)
+        uiState = uiState.copy(gpuResourceGuardianMode = mode)
     }
 
     fun onForceLinearMipmapFilterToggled(host: Context, enabled: Boolean) {
@@ -183,26 +188,17 @@ class CompatibilityScreenViewModel : ViewModel() {
     }
 
     fun onFboManagerCompatToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setFboManagerCompatEnabled(host, enabled)
-        uiState = uiState.copy(fboManagerCompatEnabled = enabled)
+        CompatibilitySettings.setFboManagerCompatEnabled(host, false)
+        uiState = uiState.copy(fboManagerCompatEnabled = false)
     }
 
     fun onFboIdleReclaimCompatToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setFboIdleReclaimCompatEnabled(host, enabled)
-        uiState = uiState.copy(fboIdleReclaimCompatEnabled = enabled)
+        CompatibilitySettings.setFboIdleReclaimCompatEnabled(host, false)
+        uiState = uiState.copy(fboIdleReclaimCompatEnabled = false)
     }
 
     fun onFboPressureDownscaleCompatToggled(host: Context, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.setFboPressureDownscaleCompatEnabled(host, enabled)
-        uiState = uiState.copy(fboPressureDownscaleCompatEnabled = enabled)
+        CompatibilitySettings.setFboPressureDownscaleCompatEnabled(host, false)
+        uiState = uiState.copy(fboPressureDownscaleCompatEnabled = false)
     }
 }

@@ -105,6 +105,7 @@ object LauncherConfig {
         "compat_texture_residency_manager"
     private const val PREF_KEY_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR =
         "compat_texture_pressure_downscale_divisor"
+    private const val PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE = "compat_gpu_resource_guardian_mode"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_HINA_CHARACTER_RENDER_COMPAT =
         "compat_hina_character_render"
@@ -214,6 +215,7 @@ object LauncherConfig {
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
+    val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.SAFE
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
@@ -878,28 +880,22 @@ object LauncherConfig {
     }
 
     fun isLargeTextureDownscaleCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT,
-            DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED
-        )
+        return false
     }
 
     fun setLargeTextureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT, enabled)
+            putBoolean(PREF_KEY_LARGE_TEXTURE_DOWNSCALE_COMPAT, false)
         }
     }
 
     fun isTextureResidencyManagerCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_TEXTURE_RESIDENCY_MANAGER_COMPAT,
-            DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED
-        )
+        return false
     }
 
     fun setTextureResidencyManagerCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_TEXTURE_RESIDENCY_MANAGER_COMPAT, enabled)
+            putBoolean(PREF_KEY_TEXTURE_RESIDENCY_MANAGER_COMPAT, false)
         }
     }
 
@@ -922,6 +918,21 @@ object LauncherConfig {
                     MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR
                 )
             )
+        }
+    }
+
+    fun readGpuResourceGuardianMode(context: Context): GpuResourceGuardianMode {
+        val persisted = prefs(context).getString(
+            PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE,
+            DEFAULT_GPU_RESOURCE_GUARDIAN_MODE.persistedValue
+        )
+        return GpuResourceGuardianMode.fromPersistedValue(persisted)
+            ?: DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
+    }
+
+    fun saveGpuResourceGuardianMode(context: Context, mode: GpuResourceGuardianMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE, mode.persistedValue)
         }
     }
 
@@ -959,41 +970,32 @@ object LauncherConfig {
     }
 
     fun isFboManagerCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_FBO_MANAGER_COMPAT,
-            DEFAULT_FBO_MANAGER_COMPAT_ENABLED
-        )
+        return false
     }
 
     fun setFboManagerCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_FBO_MANAGER_COMPAT, enabled)
+            putBoolean(PREF_KEY_FBO_MANAGER_COMPAT, false)
         }
     }
 
     fun isFboIdleReclaimCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_FBO_IDLE_RECLAIM_COMPAT,
-            DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED
-        )
+        return false
     }
 
     fun setFboIdleReclaimCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_FBO_IDLE_RECLAIM_COMPAT, enabled)
+            putBoolean(PREF_KEY_FBO_IDLE_RECLAIM_COMPAT, false)
         }
     }
 
     fun isFboPressureDownscaleCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT,
-            DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED
-        )
+        return false
     }
 
     fun setFboPressureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
-            putBoolean(PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT, enabled)
+            putBoolean(PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT, false)
         }
     }
 

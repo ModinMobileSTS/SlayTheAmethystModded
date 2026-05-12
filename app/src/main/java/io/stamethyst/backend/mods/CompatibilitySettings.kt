@@ -1,6 +1,7 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
+import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 
 object CompatibilitySettings {
@@ -127,6 +128,16 @@ object CompatibilitySettings {
     @JvmStatic
     fun saveTexturePressureDownscaleDivisor(context: Context, divisor: Int) {
         LauncherConfig.saveTexturePressureDownscaleDivisor(context, divisor)
+    }
+
+    @JvmStatic
+    fun readGpuResourceGuardianMode(context: Context): GpuResourceGuardianMode {
+        return LauncherConfig.readGpuResourceGuardianMode(context)
+    }
+
+    @JvmStatic
+    fun saveGpuResourceGuardianMode(context: Context, mode: GpuResourceGuardianMode) {
+        LauncherConfig.saveGpuResourceGuardianMode(context, mode)
     }
 
     @JvmStatic

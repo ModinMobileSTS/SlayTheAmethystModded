@@ -242,6 +242,10 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "texturePressureDownscaleDivisor" to formatTexturePressureDownscaleDivisor(
                             CompatibilitySettings.readTexturePressureDownscaleDivisor(context)
                         ),
+                        "gpuResourceGuardianMode" to formatPersistedEnum(
+                            CompatibilitySettings.readGpuResourceGuardianMode(context).name,
+                            CompatibilitySettings.readGpuResourceGuardianMode(context).persistedValue
+                        ),
                         "forceLinearMipmapFilter" to formatBoolean(
                             CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
                         ),
@@ -272,6 +276,10 @@ internal object LauncherSettingsDiagnosticsFormatter {
 
     private fun formatTexturePressureDownscaleDivisor(value: Int): String {
         return "x$value"
+    }
+
+    private fun formatPersistedEnum(name: String, persistedValue: String): String {
+        return "$name ($persistedValue)"
     }
 
     private fun formatThemeMode(themeMode: LauncherThemeMode): String {

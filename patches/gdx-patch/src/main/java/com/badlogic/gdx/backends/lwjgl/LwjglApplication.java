@@ -87,6 +87,7 @@ public class LwjglApplication implements Application {
 		"amethyst.gdx.runtime_texture_compat_periodic_scan";
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
+	private static final String GPU_LEAK_INJECTOR_MODE_PROP = "amethyst.gdx.debug_leak_injector";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final int VSYNC_SOFTWARE_SYNC_MARGIN_FPS = 1;
@@ -116,6 +117,13 @@ public class LwjglApplication implements Application {
 	private static volatile int scaledRenderBackBufferHandle;
 	private static volatile int scaledRenderBackBufferWidth;
 	private static volatile int scaledRenderBackBufferHeight;
+	private static volatile Method gpuLeakInjectorAfterFrameMethod;
+	private static volatile boolean gpuLeakInjectorLookupAttempted;
+	private static volatile boolean gpuLeakInjectorUnavailableLogged;
+	private static volatile Method gpuResourceGuardianAfterRenderMethod;
+	private static volatile Method gpuResourceGuardianSummaryMethod;
+	private static volatile boolean gpuResourceGuardianLookupAttempted;
+	private static volatile boolean gpuResourceGuardianUnavailableLogged;
 	private static volatile int trackedDrawFramebufferHandle = Integer.MIN_VALUE;
 	private static volatile int trackedReadFramebufferHandle = Integer.MIN_VALUE;
 	private boolean contextRecoveryLogged;
@@ -1718,6 +1726,8 @@ public class LwjglApplication implements Application {
 				} finally {
 					finishScaledRenderFrame(scaledRender, physicalWidth, physicalHeight);
 				}
+				callGpuLeakInjectorAfterFrame(graphics.frameId);
+				callGpuResourceGuardianAfterRender(Gdx.app, graphics.frameId);
 				GLTexture.reclaimIdleTextures(Gdx.app, graphics.frameId);
 				GLFrameBuffer.reclaimIdleFrameBuffers(Gdx.app, graphics.frameId);
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;
@@ -1772,11 +1782,102 @@ public class LwjglApplication implements Application {
 			+ " heapUsedMb=" + toMegabytes(usedBytes)
 			+ " heapCommittedMb=" + toMegabytes(runtime.totalMemory())
 			+ " heapMaxMb=" + toMegabytes(runtime.maxMemory()) + " "
+			+ getGpuResourceGuardianSummary() + " "
 			+ GLTexture.getDebugStatusSummary() + " "
 			+ GLFrameBuffer.getDebugStatusSummary());
 	}
 
+	private static void callGpuLeakInjectorAfterFrame (long frameId) {
+		if (!isGpuLeakInjectorEnabled()) return;
+		Method afterFrame = getGpuLeakInjectorAfterFrameMethod();
+		if (afterFrame == null) return;
+		try {
+			afterFrame.invoke(null, frameId);
+		} catch (Throwable t) {
+			if (!gpuLeakInjectorUnavailableLogged && shouldLogGpuResourceSummary()) {
+				gpuLeakInjectorUnavailableLogged = true;
+				System.out.println("[gdx-diag] GpuLeakInjector unavailable error=" + t);
+			}
+		}
+	}
+
+	private static boolean isGpuLeakInjectorEnabled () {
+		String mode = System.getProperty(GPU_LEAK_INJECTOR_MODE_PROP);
+		if (mode == null) return false;
+		mode = mode.trim();
+		return "texture".equalsIgnoreCase(mode) || "both".equalsIgnoreCase(mode);
+	}
+
+	private static Method getGpuLeakInjectorAfterFrameMethod () {
+		if (gpuLeakInjectorLookupAttempted) return gpuLeakInjectorAfterFrameMethod;
+		gpuLeakInjectorLookupAttempted = true;
+		try {
+			Class<?> injectorClass = Class.forName("com.badlogic.gdx.graphics.GpuLeakInjector");
+			gpuLeakInjectorAfterFrameMethod = injectorClass.getMethod("afterFrame", long.class);
+		} catch (ClassNotFoundException ignored) {
+			gpuLeakInjectorAfterFrameMethod = null;
+		} catch (Throwable t) {
+			gpuLeakInjectorAfterFrameMethod = null;
+			if (!gpuLeakInjectorUnavailableLogged && shouldLogGpuResourceSummary()) {
+				gpuLeakInjectorUnavailableLogged = true;
+				System.out.println("[gdx-diag] GpuLeakInjector unavailable error=" + t);
+			}
+		}
+		return gpuLeakInjectorAfterFrameMethod;
+	}
+
+	private static void callGpuResourceGuardianAfterRender (Application app, long frameId) {
+		Method afterRender = getGpuResourceGuardianAfterRenderMethod();
+		if (afterRender == null) return;
+		try {
+			afterRender.invoke(null, app, frameId);
+		} catch (Throwable t) {
+			if (!gpuResourceGuardianUnavailableLogged && shouldLogGpuResourceSummary()) {
+				gpuResourceGuardianUnavailableLogged = true;
+				System.out.println("[gdx-diag] GpuResourceGuardian unavailable error=" + t);
+			}
+		}
+	}
+
+	private static Method getGpuResourceGuardianAfterRenderMethod () {
+		ensureGpuResourceGuardianMethodsResolved();
+		return gpuResourceGuardianAfterRenderMethod;
+	}
+
+	private static String getGpuResourceGuardianSummary () {
+		ensureGpuResourceGuardianMethodsResolved();
+		Method summaryMethod = gpuResourceGuardianSummaryMethod;
+		if (summaryMethod == null) return "guardianUnavailable";
+		try {
+			Object result = summaryMethod.invoke(null);
+			return result == null ? "guardianUnavailable" : String.valueOf(result);
+		} catch (Throwable t) {
+			return "guardianUnavailable:" + t.getClass().getSimpleName();
+		}
+	}
+
+	private static void ensureGpuResourceGuardianMethodsResolved () {
+		if (gpuResourceGuardianLookupAttempted) return;
+		gpuResourceGuardianLookupAttempted = true;
+		try {
+			Class<?> guardianClass = Class.forName("com.badlogic.gdx.graphics.GpuResourceGuardian");
+			gpuResourceGuardianAfterRenderMethod = guardianClass.getMethod("afterRender", Application.class, long.class);
+			gpuResourceGuardianSummaryMethod = guardianClass.getMethod("getDebugStatusSummary");
+		} catch (ClassNotFoundException ignored) {
+			gpuResourceGuardianAfterRenderMethod = null;
+			gpuResourceGuardianSummaryMethod = null;
+		} catch (Throwable t) {
+			gpuResourceGuardianAfterRenderMethod = null;
+			gpuResourceGuardianSummaryMethod = null;
+			if (!gpuResourceGuardianUnavailableLogged && shouldLogGpuResourceSummary()) {
+				gpuResourceGuardianUnavailableLogged = true;
+				System.out.println("[gdx-diag] GpuResourceGuardian unavailable error=" + t);
+			}
+		}
+	}
+
 	private static long toMegabytes (long bytes) {
+
 		if (bytes <= 0L) return 0L;
 		return bytes / (1024L * 1024L);
 	}

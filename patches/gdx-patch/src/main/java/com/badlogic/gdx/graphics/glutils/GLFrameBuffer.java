@@ -30,6 +30,7 @@ import com.badlogic.gdx.Application.ApplicationType;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.backends.lwjgl.LwjglApplication;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.GL30;
 import com.badlogic.gdx.graphics.GLTexture;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
@@ -225,6 +226,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private static volatile long lastFrameBufferManagerSweepFrame = -1L;
 	private static volatile int lastFrameBufferIdleSweepCursor = 0;
 	private static volatile int lastFrameBufferManagerSweepCursor = 0;
+	private static volatile int guardianFrameBufferSweepCursor = 0;
 	private static volatile int frameBufferManagerOverBudgetSweepCount = 0;
 	private static volatile long lastFrameBufferPressureReclaimFrame = -1L;
 	private final static ThreadLocal<IntBuffer> GL_INT_QUERY_BUFFER = new ThreadLocal<IntBuffer>() {
@@ -966,12 +968,42 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		return resolveManagerProtectReason() == null;
 	}
 
+	private boolean isEligibleForGuardianReclaim (
+		long frameId,
+		int currentlyBoundFramebuffer,
+		long minIdleFrames,
+		long minBytes
+	) {
+		if (disposed || buildInProgress || !nativeResourcesAllocated) return false;
+		if (framebufferHandle == 0 || framebufferHandle == currentlyBoundFramebuffer) return false;
+		if (isReclaimSuppressed(frameId)) return false;
+		if (estimatedNativeBytes < minBytes) return false;
+		if (getIdleFrames(frameId) < minIdleFrames) return false;
+		if (getBuildAgeFrames(frameId) < minIdleFrames) return false;
+		return resolveManagerProtectReason() == null;
+	}
+
 	private boolean reclaimForPressure (long frameId) {
 		long reclaimedBytes = estimatedNativeBytes;
 		if (reclaimedBytes <= 0L) return false;
 		if (!releaseNativeResources("manager_pressure", false, true)) return false;
 		FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMS.incrementAndGet();
 		FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMED_BYTES.addAndGet(reclaimedBytes);
+		return true;
+	}
+
+	private boolean reclaimForGuardian (long frameId) {
+		long reclaimedBytes = estimatedNativeBytes;
+		if (reclaimedBytes <= 0L) return false;
+		if (!releaseNativeResources("guardian_pressure", false, true)) return false;
+		FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMS.incrementAndGet();
+		FRAMEBUFFER_MANAGER_PRESSURE_RECLAIMED_BYTES.addAndGet(reclaimedBytes);
+		if (GPU_RESOURCE_DIAG_ENABLED) {
+			System.out.println("[gdx-diag] GLFrameBuffer guardian_reclaim id=" + debugFrameBufferId
+				+ " owner=" + getFrameBufferOwnerKey()
+				+ " idleFrames=" + getIdleFrames(frameId)
+				+ " bytes=" + reclaimedBytes);
+		}
 		return true;
 	}
 
@@ -1161,6 +1193,55 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private static void unregisterFrameBufferTextureOwner (GLTexture texture, GLFrameBuffer<?> owner) {
 		if (texture == null) return;
 		texture.clearFrameBufferTextureOwner(owner);
+	}
+
+	public static long[] reclaimGuardianFrameBuffers (
+		Application app,
+		long frameId,
+		long minIdleFrames,
+		long minBytes,
+		int maxChecks,
+		int maxReclaims,
+		long maxBytes
+	) {
+		if (Gdx.gl20 == null || app == null || frameId < 0L) return emptyGuardianSweepStats();
+		Array<GLFrameBuffer> bufferArray = buffers.get(app);
+		if (bufferArray == null || bufferArray.size == 0) return emptyGuardianSweepStats();
+		int currentlyBoundFramebuffer = getCurrentFramebufferBinding(Gdx.gl20);
+		int size = bufferArray.size;
+		int index = normalizeSweepCursor(guardianFrameBufferSweepCursor, size);
+		int boundedMaxChecks = Math.max(1, Math.min(size, maxChecks));
+		int boundedMaxReclaims = Math.max(1, maxReclaims);
+		long boundedMaxBytes = Math.max(0L, maxBytes);
+		int checked = 0;
+		int candidates = 0;
+		int reclaimed = 0;
+		long reclaimedBytes = 0L;
+		while (checked < boundedMaxChecks && reclaimed < boundedMaxReclaims) {
+			GLFrameBuffer candidate = bufferArray.get(index);
+			checked++;
+			if (candidate != null && candidate.isEligibleForGuardianReclaim(frameId, currentlyBoundFramebuffer, minIdleFrames, minBytes)) {
+				candidates++;
+				long candidateBytes = candidate.estimatedNativeBytes;
+				if (candidateBytes > 0L
+					&& (boundedMaxBytes == 0L || reclaimedBytes + candidateBytes <= boundedMaxBytes)
+					&& candidate.reclaimForGuardian(frameId)) {
+					reclaimed++;
+					reclaimedBytes += candidateBytes;
+				}
+			}
+			index = nextSweepIndex(index, size);
+		}
+		guardianFrameBufferSweepCursor = index;
+		return guardianSweepStats(checked, candidates, reclaimed, reclaimedBytes);
+	}
+
+	private static long[] emptyGuardianSweepStats () {
+		return guardianSweepStats(0, 0, 0, 0L);
+	}
+
+	private static long[] guardianSweepStats (long checked, long candidates, long reclaimed, long reclaimedBytes) {
+		return new long[] {checked, candidates, reclaimed, reclaimedBytes};
 	}
 
 	public static void reclaimIdleFrameBuffers (Application app, long frameId) {

@@ -2,6 +2,7 @@ package io.stamethyst.backend.launch
 
 import android.content.Context
 import android.os.Build
+import io.stamethyst.BuildConfig
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.render.RendererBackendResolver
@@ -23,6 +24,24 @@ object StsLaunchSpec {
     private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 80
     private const val DEFAULT_ACTIVE_PROCESSOR_COUNT = 3
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
+    private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
+    private val DEBUG_GPU_GUARDIAN_PROPERTY_KEYS = setOf(
+        "amethyst.gdx.debug_leak_injector",
+        "amethyst.gdx.debug_leak_interval_frames",
+        "amethyst.gdx.debug_leak_max_bytes",
+        "amethyst.gdx.debug_leak_texture_size",
+        "amethyst.gdx.gpu_guardian_soft_budget_bytes",
+        "amethyst.gdx.gpu_guardian_hard_budget_bytes",
+        "amethyst.gdx.gpu_guardian_watch_growth_bytes",
+        "amethyst.gdx.gpu_guardian_pressure_growth_bytes",
+        "amethyst.gdx.gpu_guardian_sweep_interval_frames",
+        "amethyst.gdx.gpu_guardian_cooldown_frames",
+        "amethyst.gdx.gpu_guardian_texture_min_idle_frames",
+        "amethyst.gdx.gpu_guardian_texture_min_bytes",
+        "amethyst.gdx.gpu_guardian_texture_max_checks_per_sweep",
+        "amethyst.gdx.gpu_guardian_texture_max_reclaims_per_sweep",
+        "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep"
+    )
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS = "mts"
     // Legacy alias kept only so old debug scripts still resolve to the single MTS mode.
@@ -314,6 +333,10 @@ object StsLaunchSpec {
                 CompatibilitySettings.readTexturePressureDownscaleDivisor(context)
         )
         args.add(
+            "-Damethyst.gdx.gpu_resource_guardian=" +
+                CompatibilitySettings.readGpuResourceGuardianMode(context).persistedValue
+        )
+        args.add(
             "-Damethyst.gdx.force_linear_mipmap_filter=" +
                 if (CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)) "true" else "false"
         )
@@ -353,6 +376,7 @@ object StsLaunchSpec {
             "-Damethyst.gdx.gpu_resource_diag=" +
                 if (LauncherConfig.isGpuResourceDiagEnabled(context)) "true" else "false"
         )
+        addDebugGpuGuardianTestProperties(context, args)
         val bridgeDelegateMainClass = if (isMtsLaunchMode(launchMode)) {
             "com.evacipated.cardcrawl.modthespire.Loader"
         } else {
@@ -433,6 +457,29 @@ object StsLaunchSpec {
             builder.append(value)
         }
         return builder.toString()
+    }
+
+    private fun addDebugGpuGuardianTestProperties(context: Context, args: MutableList<String>) {
+        if (BuildConfig.BUILD_TYPE != "debug") {
+            return
+        }
+        val prefs = context.getSharedPreferences(DEBUG_GPU_GUARDIAN_TEST_PREFS, Context.MODE_PRIVATE)
+        for (key in DEBUG_GPU_GUARDIAN_PROPERTY_KEYS) {
+            val value = prefs.getString(key, null)?.trim().orEmpty()
+            if (value.isEmpty() || !isSafeJvmPropertyValue(value)) {
+                continue
+            }
+            args.add("-D$key=$value")
+        }
+    }
+
+    private fun isSafeJvmPropertyValue(value: String): Boolean {
+        if (value.length > 128) {
+            return false
+        }
+        return value.all { char ->
+            char.isLetterOrDigit() || char == '_' || char == '-' || char == '.'
+        }
     }
 
     private fun addCacioBootClasspath(args: MutableList<String>, cacioDir: File) {

@@ -123,6 +123,8 @@ private enum class SteamCloudConflictResolutionChoice {
     USE_CLOUD,
 }
 
+private const val STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS = 5
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherMainScreen(
@@ -1281,7 +1283,18 @@ private fun SteamCloudBottomSheetContent(
     val tint = steamCloudIndicatorTint(indicator.state)
     val title = steamCloudActionBarTitle(indicator.state)
     val summary = steamCloudActionBarSummary(indicator)
-    var retryCountdownSeconds by remember(indicator.state, indicator.errorSummary) { mutableStateOf(5) }
+    var retryCountdownSeconds by remember(indicator.state, indicator.errorSummary) {
+        mutableStateOf(STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS)
+    }
+    val autoRetryInProgress = indicator.state ==
+        MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED && autoRetryError
+    val retryProgressFraction = if (autoRetryInProgress) {
+        (STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS - retryCountdownSeconds)
+            .coerceIn(0, STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS) /
+            STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS.toFloat()
+    } else {
+        0f
+    }
     val progressFraction = indicator.progressPercent
         ?.coerceIn(0, 100)
         ?.div(100f)
@@ -1289,6 +1302,11 @@ private fun SteamCloudBottomSheetContent(
         targetValue = progressFraction ?: 0f,
         animationSpec = tween(durationMillis = 360),
         label = "steam_cloud_indicator_progress"
+    )
+    val animatedRetryProgress by animateFloatAsState(
+        targetValue = retryProgressFraction,
+        animationSpec = tween(durationMillis = 360),
+        label = "steam_cloud_auto_retry_progress"
     )
     val conflictCardSummaries = remember(indicator.plan) {
         indicator.plan?.takeIf { it.conflicts.isNotEmpty() }?.let {
@@ -1300,8 +1318,8 @@ private fun SteamCloudBottomSheetContent(
         if (indicator.state != MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED || !autoRetryError) {
             return@LaunchedEffect
         }
-        retryCountdownSeconds = 5
-        repeat(5) {
+        retryCountdownSeconds = STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS
+        repeat(STEAM_CLOUD_AUTO_RETRY_DELAY_SECONDS) {
             delay(1000)
             retryCountdownSeconds = (retryCountdownSeconds - 1).coerceAtLeast(0)
         }
@@ -1359,6 +1377,13 @@ private fun SteamCloudBottomSheetContent(
             } else {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+        }
+
+        if (autoRetryInProgress) {
+            LinearProgressIndicator(
+                progress = { animatedRetryProgress },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         if (indicator.progressCurrentPath.isNotBlank()) {
