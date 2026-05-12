@@ -24,6 +24,9 @@ class LaunchPreparationProcessService : Service() {
         const val RESULT_SUCCESS = 2
         const val RESULT_FAILURE = 3
         const val RESULT_CANCELLED = 4
+        const val RESULT_HEARTBEAT = 5
+
+        private const val HEARTBEAT_INTERVAL_MS = 5_000L
 
         const val EXTRA_PROGRESS = "io.stamethyst.extra.PROGRESS"
         const val EXTRA_MESSAGE = "io.stamethyst.extra.MESSAGE"
@@ -113,6 +116,7 @@ class LaunchPreparationProcessService : Service() {
     ) {
         var lastLoggedProgressPercent = Int.MIN_VALUE
         var lastLoggedProgressMessage = ""
+        val heartbeatThread = startHeartbeatThread(resultReceiver)
         try {
             LaunchPreparationService.prepare(applicationContext, launchMode) { percent, message ->
                 if (Thread.currentThread().isInterrupted) {
@@ -152,6 +156,7 @@ class LaunchPreparationProcessService : Service() {
                 errorBundle(terminalResult.throwable)
             )
         } finally {
+            heartbeatThread.interrupt()
             if (Thread.currentThread() === workerThread) {
                 workerThread = null
             }
@@ -160,9 +165,34 @@ class LaunchPreparationProcessService : Service() {
         }
     }
 
+    private fun startHeartbeatThread(resultReceiver: ResultReceiver): Thread {
+        val thread = Thread(
+            {
+                while (!Thread.currentThread().isInterrupted && !terminalResultSent.get()) {
+                    try {
+                        Thread.sleep(HEARTBEAT_INTERVAL_MS)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                    if (!terminalResultSent.get()) {
+                        runCatching {
+                            resultReceiver.send(RESULT_HEARTBEAT, Bundle.EMPTY)
+                        }
+                    }
+                }
+            },
+            "STS-Prep-Heartbeat"
+        )
+        thread.isDaemon = true
+        thread.start()
+        return thread
+    }
+
     private fun extractResultReceiver(intent: Intent): ResultReceiver? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_RESULT_RECEIVER, ResultReceiver::class.java)
+
         } else {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra(EXTRA_RESULT_RECEIVER)

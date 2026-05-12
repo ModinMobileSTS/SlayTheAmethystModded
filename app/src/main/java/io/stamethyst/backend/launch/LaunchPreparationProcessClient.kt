@@ -5,8 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import android.os.ResultReceiver
+
 import android.os.SystemClock
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import java.io.IOException
@@ -92,13 +93,19 @@ internal object LaunchPreparationProcessClient {
         throwIfCancelled()
         val appContext = context.applicationContext
         val startedAtMs = SystemClock.uptimeMillis()
-        val lastSignalAtMs = AtomicLong(startedAtMs)
+        val lastHeartbeatAtMs = AtomicLong(startedAtMs)
+
         val latch = CountDownLatch(1)
         val resultRef = AtomicReference<PreparationResult?>()
-        val receiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
+        val receiverThread = HandlerThread("STS-Prep-ResultReceiver").apply { start() }
+        val receiver = object : ResultReceiver(Handler(receiverThread.looper)) {
             override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
-                lastSignalAtMs.set(SystemClock.uptimeMillis())
+
                 when (resultCode) {
+                    LaunchPreparationProcessService.RESULT_HEARTBEAT -> {
+                        lastHeartbeatAtMs.set(SystemClock.uptimeMillis())
+                    }
+
                     LaunchPreparationProcessService.RESULT_PROGRESS -> {
                         progressCallback?.onProgress(
                             resultData?.getInt(LaunchPreparationProcessService.EXTRA_PROGRESS) ?: 0,
@@ -114,6 +121,7 @@ internal object LaunchPreparationProcessClient {
                     }
 
                     LaunchPreparationProcessService.RESULT_CANCELLED -> {
+
                         if (resultRef.compareAndSet(null, PreparationResult.Cancelled)) {
                             latch.countDown()
                         }
@@ -151,7 +159,7 @@ internal object LaunchPreparationProcessClient {
                     break
                 }
                 val now = SystemClock.uptimeMillis()
-                if (now - lastSignalAtMs.get() >= PREP_PROCESS_STALL_TIMEOUT_MS) {
+                if (now - lastHeartbeatAtMs.get() >= PREP_PROCESS_STALL_TIMEOUT_MS) {
                     MemoryDiagnosticsLogger.logEvent(
                         context = appContext,
                         event = "launch_preparation_wait_timeout",
@@ -159,11 +167,12 @@ internal object LaunchPreparationProcessClient {
                             "launchMode" to launchMode,
                             "reason" to PREP_PROCESS_FAILURE_REASON_STALLED,
                             "elapsedMs" to now - startedAtMs,
-                            "lastSignalAgeMs" to now - lastSignalAtMs.get(),
+                            "lastHeartbeatAgeMs" to now - lastHeartbeatAtMs.get(),
                             "prepProcessRunning" to isPrepProcessRunning(appContext)
                         ),
                         includeMemorySnapshot = false
                     )
+
                     cancel(appContext)
                     throw buildPrepProcessFailure(
                         PREP_PROCESS_FAILURE_REASON_STALLED
@@ -188,11 +197,12 @@ internal object LaunchPreparationProcessClient {
                             "launchMode" to launchMode,
                             "reason" to PREP_PROCESS_FAILURE_REASON_MISSING,
                             "elapsedMs" to now - startedAtMs,
-                            "lastSignalAgeMs" to now - lastSignalAtMs.get(),
+                            "lastHeartbeatAgeMs" to now - lastHeartbeatAtMs.get(),
                             "prepProcessMissingDurationMs" to now - prepProcessMissingSinceMs,
                             "prepProcessRunning" to false
                         ),
                         includeMemorySnapshot = false
+
                     )
                     cancel(appContext)
                     throw buildPrepProcessFailure(
@@ -208,6 +218,8 @@ internal object LaunchPreparationProcessClient {
         } catch (throwable: Throwable) {
             cancel(appContext)
             throw throwable
+        } finally {
+            receiverThread.quitSafely()
         }
 
         when (val result = resultRef.get()) {
