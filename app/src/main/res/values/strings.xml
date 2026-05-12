@@ -353,6 +353,8 @@
     <string name="main_import_folder_picker_skip">Keep all Uncategorized</string>
     <string name="main_import_folder_picker_confirm">Apply</string>
     <string name="main_mod_new_import_badge">New</string>
+    <string name="main_mod_favorite_badge">Liked</string>
+    <string name="main_mod_favorite_badge_content_description">Special favorite mod</string>
     <string name="main_mod_move_folder_dialog_title_format">Move %1$s to folder</string>
     <string name="main_mod_move_folder_current_format">%1$s (current)</string>
     <string name="main_batch_move_dialog_title_format">Move %1$d selected mods to folder</string>
@@ -391,6 +393,8 @@
     <string name="main_mod_priority_dialog_status_default">No explicit priority is set. The default priority is #11.</string>
     <string name="main_mod_priority_dialog_selected_format">Apply priority: #%1$d</string>
     <string name="main_mod_priority_dialog_clear">Use default</string>
+    <string name="main_mod_favorite_add">Add to special favorites</string>
+    <string name="main_mod_favorite_remove">Remove from special favorites</string>
     <string name="main_mod_export">Export</string>
     <string name="main_mod_share">Share</string>
     <string name="main_mod_rename">Rename file</string>
@@ -674,6 +678,8 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_mod_export_failed">Failed to export mod: %1$s</string>
     <string name="main_mod_share_busy">Preparing mod share...</string>
     <string name="main_mod_rename_busy">Renaming mod file...</string>
+    <string name="main_mod_favorite_added">Added to special favorites</string>
+    <string name="main_mod_favorite_removed">Removed from special favorites</string>
     <string name="main_folder_deleted">Deleted %1$s</string>
     <string name="main_folder_empty">Folder is empty</string>
     <string name="main_folder_unassigned_empty_snackbar">The uncategorized folder is empty</string>

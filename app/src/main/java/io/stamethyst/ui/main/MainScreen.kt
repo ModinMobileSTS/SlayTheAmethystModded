@@ -2107,6 +2107,7 @@ private fun ColumnScope.MainContentSwitcher(
                     callbacks = ModFolderSectionCallbacks(
                         onToggleMod = actions.onToggleMod,
                         onSetPriority = actions.onSetPriority,
+                        onSetModFavorite = actions.onSetModFavorite,
                         onDeleteMod = actions.onDeleteMod,
                         onDeleteMods = actions.onDeleteMods,
                         onExportMod = actions.onExportMod,

@@ -66,7 +66,8 @@ internal class MainModManagementController(
         val dependencyFolderCollapsed: Boolean,
         val dragLocked: Boolean,
         val unassignedFolderName: String,
-        val unassignedFolderOrder: Int
+        val unassignedFolderOrder: Int,
+        val favoriteModKeys: Set<String>
     )
 
     private data class DependencyEnableResult(
@@ -84,6 +85,7 @@ internal class MainModManagementController(
     private val profileStore = ModLaunchProfileStore()
     private var profileState = ModLaunchProfileStore.State(emptyList(), "default")
     private val folderStateStore = MainFolderStateStore()
+    private val favoriteModKeys = LinkedHashSet<String>()
     private val modFolders: MutableList<MainScreenViewModel.ModFolder>
         get() = folderStateStore.folders
     private val folderAssignments: MutableMap<String, String>
@@ -122,6 +124,8 @@ internal class MainModManagementController(
 
     fun refresh(host: Activity, storageAccessible: Boolean) {
         folderStateStore.reload(host)
+        favoriteModKeys.clear()
+        favoriteModKeys.addAll(FavoriteModStore.loadFavoriteKeys(host))
         if (!storageAccessible) {
             return
         }
@@ -161,7 +165,8 @@ internal class MainModManagementController(
             dependencyFolderCollapsed = dependencyFolderCollapsed,
             dragLocked = dragLocked,
             unassignedFolderName = unassignedFolderName,
-            unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size)
+            unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size),
+            favoriteModKeys = LinkedHashSet(favoriteModKeys)
         )
     }
 
@@ -258,6 +263,25 @@ internal class MainModManagementController(
         if (NewlyImportedModHighlightStore.clearAll()) {
             markOptionalModsWithPendingSelectionDirty()
         }
+    }
+
+    fun setModFavorite(host: Activity, mod: ModItemUi, favorite: Boolean) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        val favoriteKey = resolveStoredOptionalModId(mod) ?: return
+        if (!FavoriteModStore.setFavorite(host, favoriteKey, favorite)) {
+            return
+        }
+        if (favorite) {
+            favoriteModKeys.add(favoriteKey)
+            emitSnackbar(host.getString(R.string.main_mod_favorite_added))
+        } else {
+            favoriteModKeys.remove(favoriteKey)
+            emitSnackbar(host.getString(R.string.main_mod_favorite_removed))
+        }
+        markOptionalModsWithPendingSelectionDirty()
+        hostCallbacks.republish(host)
     }
 
     fun suggestNextFolderName(): String {
@@ -1458,7 +1482,8 @@ internal class MainModManagementController(
         optionalModsWithPendingSelectionCache = optionalModsSnapshot.map { mod ->
             mod.copy(
                 enabled = isPendingOptionalModEnabled(mod),
-                newlyImported = NewlyImportedModHighlightStore.contains(mod.storagePath)
+                newlyImported = NewlyImportedModHighlightStore.contains(mod.storagePath),
+                favorite = isFavoriteMod(mod)
             )
         }
         optionalModsWithPendingSelectionDirty = false
@@ -1468,6 +1493,11 @@ internal class MainModManagementController(
     private fun isPendingOptionalModEnabled(mod: ModItemUi): Boolean {
         val storedId = resolveStoredOptionalModId(mod)
         return storedId != null && pendingEnabledOptionalModIds.contains(storedId)
+    }
+
+    private fun isFavoriteMod(mod: ModItemUi): Boolean {
+        val storedId = resolveStoredOptionalModId(mod)
+        return storedId != null && favoriteModKeys.contains(storedId)
     }
 
     private fun setPendingOptionalModEnabled(mod: ModItemUi, enabled: Boolean) {

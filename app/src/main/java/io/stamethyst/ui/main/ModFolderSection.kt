@@ -140,7 +140,11 @@ internal fun ModFolderSection(
     val folderIds = remember(folders) { folders.map { it.id }.toSet() }
     val foldersById = remember(folders) { folders.associateBy { it.id } }
     val modsByFolderId = remember(filteredMods, folderAssignments, folderIds) {
-        filteredMods.groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
+        filteredMods
+            .groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
+            .mapValues { (_, modsInFolder) ->
+                modsInFolder.sortedBy { if (it.favorite) 0 else 1 }
+            }
     }
     val unassignedMods = remember(modsByFolderId) { modsByFolderId[null].orEmpty() }
     val optionalModSuggestionInfoByStoragePath = remember(filteredMods, uiState.modSuggestions) {
@@ -982,6 +986,9 @@ internal fun ModFolderSection(
                                     },
                                     onSetPriority = { item, priority ->
                                         latestCallbacks.value.onSetPriority(item, priority)
+                                    },
+                                    onSetFavorite = { item, favorite ->
+                                        latestCallbacks.value.onSetModFavorite(item, favorite)
                                     },
                                     onDeleteMod = { pendingDeleteMod = it },
                                     onExportMod = { latestCallbacks.value.onExportMod(it) },

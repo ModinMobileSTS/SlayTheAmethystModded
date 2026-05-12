@@ -150,6 +150,7 @@ class MainScreenViewModel : ViewModel() {
         val dragLocked: Boolean = false,
         val unassignedFolderName: String = DEFAULT_UNASSIGNED_FOLDER_NAME,
         val unassignedFolderOrder: Int = 0,
+        val favoriteModKeys: Set<String> = emptySet(),
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
     )
 
@@ -785,6 +786,10 @@ class MainScreenViewModel : ViewModel() {
 
     fun onSetPriority(host: Activity, mod: ModItemUi, priority: Int?) {
         modManagementController.onSetPriority(host, mod, priority)
+    }
+
+    fun onSetModFavorite(host: Activity, mod: ModItemUi, favorite: Boolean) {
+        modManagementController.setModFavorite(host, mod, favorite)
     }
 
     fun onLaunch(host: Activity) {
@@ -2253,6 +2258,7 @@ class MainScreenViewModel : ViewModel() {
             dragLocked = snapshot.dragLocked,
             unassignedFolderName = snapshot.unassignedFolderName,
             unassignedFolderOrder = snapshot.unassignedFolderOrder,
+            favoriteModKeys = snapshot.favoriteModKeys,
             steamCloudIndicator = currentSteamCloudIndicator,
         )
     }

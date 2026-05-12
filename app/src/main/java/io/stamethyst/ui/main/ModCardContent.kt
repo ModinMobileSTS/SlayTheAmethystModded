@@ -96,6 +96,10 @@ internal fun ModCardBodyContent(
                         onClick = onImportPatchClick
                     )
                 }
+                if (mod.favorite) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    FavoriteBadge()
+                }
                 if (mod.newlyImported) {
                     Spacer(modifier = Modifier.width(6.dp))
                     NewImportBadge()
@@ -205,6 +209,23 @@ private fun ModImportPatchIcon(
         }
     }
 }
+
+@Composable
+private fun FavoriteBadge() {
+    Surface(
+        color = FavoritePink,
+        contentColor = Color.White,
+        shape = RoundedCornerShape(999.dp)
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_favorite_heart),
+            contentDescription = stringResource(R.string.main_mod_favorite_badge_content_description),
+            modifier = Modifier.padding(4.dp).size(12.dp)
+        )
+    }
+}
+
+private val FavoritePink = Color(0xFFE85D9E)
 
 @Composable
 private fun NewImportBadge() {

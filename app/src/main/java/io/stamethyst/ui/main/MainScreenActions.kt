@@ -24,6 +24,7 @@ internal data class MainScreenActions(
     val onRenameModFile: (ModItemUi, String) -> Unit = { _, _ -> },
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
+    val onSetModFavorite: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onMarkModSuggestionRead: (ModItemUi, String) -> Unit = { _, _ -> },
     val onSetFolderSelected: (String, Boolean) -> Unit = { _, _ -> },
     val onSetUnassignedSelected: (Boolean) -> Unit = {},
@@ -89,6 +90,9 @@ internal fun rememberMainScreenActions(
                 onToggleMod = { mod, checked -> viewModel.onToggleMod(activity, mod, checked) },
                 onSetPriority = { mod, priority ->
                     viewModel.onSetPriority(activity, mod, priority)
+                },
+                onSetModFavorite = { mod, favorite ->
+                    viewModel.onSetModFavorite(activity, mod, favorite)
                 },
                 onMarkModSuggestionRead = { mod, suggestionText ->
                     viewModel.markModSuggestionRead(activity, mod, suggestionText)

@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
@@ -66,11 +67,13 @@ internal data class ModCardDragStartInfo(
 private val MOD_DRAG_HANDLE_SLOT_WIDTH = 28.dp
 private val MOD_BATCH_CHECKBOX_SLOT_WIDTH = 48.dp
 private val MOD_ENABLE_CHECKBOX_SLOT_WIDTH = 48.dp
+private val FavoriteCardBorderColor = Color(0xFFF2A8CB)
 
 @Stable
 internal data class ModCardCallbacks(
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
+    val onSetFavorite: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onDeleteMod: (ModItemUi) -> Unit = {},
     val onExportMod: (ModItemUi) -> Unit = {},
     val onShareMod: (ModItemUi) -> Unit = {},
@@ -234,6 +237,8 @@ internal fun ModCard(
                 if (batchSelected || mod.newlyImported) 2.dp else 1.dp,
                 if (batchSelected) {
                     MaterialTheme.colorScheme.primary
+                } else if (mod.favorite) {
+                    FavoriteCardBorderColor
                 } else if (mod.newlyImported) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
@@ -402,6 +407,8 @@ internal fun ModCard(
         visible = showActionsDialog,
         controlsEnabled = fileActionsEnabled,
         onDismiss = { showActionsDialog = false },
+        favorite = mod.favorite,
+        onFavoriteChange = { favorite -> callbacks.onSetFavorite(mod, favorite) },
         onEditPriority = { showPriorityDialog = true },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },

@@ -57,6 +57,8 @@ internal fun ModActionsDialog(
     visible: Boolean,
     controlsEnabled: Boolean,
     onDismiss: () -> Unit,
+    favorite: Boolean,
+    onFavoriteChange: (Boolean) -> Unit,
     onEditPriority: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
@@ -89,6 +91,19 @@ internal fun ModActionsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    ModActionDialogListItem(
+                        text = stringResource(
+                            if (favorite) {
+                                R.string.main_mod_favorite_remove
+                            } else {
+                                R.string.main_mod_favorite_add
+                            }
+                        ),
+                        enabled = controlsEnabled
+                    ) {
+                        onDismiss()
+                        onFavoriteChange(!favorite)
+                    }
                     ModActionDialogListItem(
                         text = stringResource(R.string.main_mod_priority_adjust),
                         enabled = controlsEnabled
