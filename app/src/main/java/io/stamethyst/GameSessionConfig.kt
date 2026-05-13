@@ -22,6 +22,7 @@ internal data class GameSessionConfig(
     val backBehavior: BackBehavior,
     val manualDismissBootOverlay: Boolean,
     val forceJvmCrash: Boolean,
+    val forceRuntimeCrash: Boolean,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
     val mirrorJvmLogsToLogcat: Boolean,
@@ -77,6 +78,7 @@ internal data class GameSessionConfig(
                     LauncherConfig.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
                 ),
                 forceJvmCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_JVM_CRASH, false),
+                forceRuntimeCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_RUNTIME_CRASH, false),
                 showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(context),
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),

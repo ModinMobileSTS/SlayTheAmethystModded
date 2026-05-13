@@ -20,7 +20,6 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.LauncherActivity
 import io.stamethyst.R
 import io.stamethyst.StsGameActivity
-import io.stamethyst.backend.crash.LatestLogCleanShutdownDetector
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
@@ -28,6 +27,7 @@ import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.CrashReturnPayload
+import io.stamethyst.backend.launch.ExpectedGameExitNotice
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.launch.LauncherReturnAction
 import io.stamethyst.backend.launch.LauncherReturnActionResolver
@@ -1135,6 +1135,7 @@ class MainScreenViewModel : ViewModel() {
             LauncherReturnAction.ExpectedBackExit -> {
                 GameLaunchReturnTracker.terminateTrackedGameProcess(host, includeCached = true)
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(host, launchStartedAtMs)
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
                 clearLaunchInFlightState()
                 dismissCrashRecovery()
@@ -1144,6 +1145,7 @@ class MainScreenViewModel : ViewModel() {
 
             LauncherReturnAction.ExpectedCleanShutdown -> {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(host, launchStartedAtMs)
                 if (intent != null) {
                     clearCrashExtras(intent)
                 }
@@ -1155,12 +1157,14 @@ class MainScreenViewModel : ViewModel() {
 
             LauncherReturnAction.HeapPressureWarning -> {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(host, launchStartedAtMs)
                 dismissCrashRecovery()
                 maybeShowHeapPressureDialog(host, intent ?: return false)
             }
 
             is LauncherReturnAction.ExplicitCrash -> {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(host, launchStartedAtMs)
                 clearCrashExtras(intent ?: return false)
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
                 showCrashRecovery(
@@ -1174,6 +1178,7 @@ class MainScreenViewModel : ViewModel() {
 
             is LauncherReturnAction.ProcessExitCrash -> {
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
+                ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(host, launchStartedAtMs)
                 ProcessExitInfoCapture.markLatestInterestingProcessExitInfoHandled(host, launchStartedAtMs)
                 val detail = buildProcessExitCrashDetail(host, action.summary)
                 val code = action.summary.status.takeIf { it != 0 } ?: -1
@@ -1194,14 +1199,10 @@ class MainScreenViewModel : ViewModel() {
         launchStartedAtMs: Long,
         allowProcessExitCrashFallback: Boolean
     ): LauncherReturnSnapshot {
-        val cleanShutdownSummary = LatestLogCleanShutdownDetector.detect(host)
-        val expectedCleanShutdown =
-            LatestLogCleanShutdownDetector.shouldSuppressCrashReport(cleanShutdownSummary)
-        val explicitCrash = if (expectedCleanShutdown) {
-            null
-        } else {
-            buildExplicitCrashPayload(intent)
-        }
+        val explicitCrash = buildExplicitCrashPayload(intent)
+        val expectedCleanShutdown = explicitCrash == null &&
+            LatestLogCrashDetector.detect(host) == null &&
+            ExpectedGameExitNotice.isExpectedGameExitRecent(host, launchStartedAtMs)
         val processExitCrash = if (allowProcessExitCrashFallback && !expectedCleanShutdown && explicitCrash == null) {
             ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(host, launchStartedAtMs)
         } else {
@@ -1348,6 +1349,10 @@ class MainScreenViewModel : ViewModel() {
     private fun maybeLaunchFromDebugExtra(host: Activity, intent: Intent) {
         val debugLaunchMode = intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_LAUNCH_MODE)
         val forceJvmCrash = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_FORCE_JVM_CRASH, false)
+        val forceRuntimeCrash = intent.getBooleanExtra(
+            LauncherActivity.EXTRA_DEBUG_FORCE_RUNTIME_CRASH,
+            false
+        )
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA &&
             !StsLaunchSpec.isMtsLaunchMode(debugLaunchMode)
         ) {
@@ -1361,6 +1366,7 @@ class MainScreenViewModel : ViewModel() {
             host,
             debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA,
             forceJvmCrash = forceJvmCrash,
+            forceRuntimeCrash = forceRuntimeCrash,
         )
     }
 
@@ -1393,12 +1399,14 @@ class MainScreenViewModel : ViewModel() {
         host: Activity,
         launchMode: String,
         forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean = false,
     ) {
         if (GameLaunchReturnTracker.isGameProcessRunning(host, includeCached = true)) {
             cleanupResidualGameProcessAndLaunch(
                 host = host,
                 launchMode = launchMode,
                 forceJvmCrash = forceJvmCrash,
+                forceRuntimeCrash = forceRuntimeCrash,
             )
             return
         }
@@ -1406,6 +1414,7 @@ class MainScreenViewModel : ViewModel() {
             host = host,
             launchMode = launchMode,
             forceJvmCrash = forceJvmCrash,
+            forceRuntimeCrash = forceRuntimeCrash,
         )
     }
 
@@ -1413,6 +1422,7 @@ class MainScreenViewModel : ViewModel() {
         host: Activity,
         launchMode: String,
         forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean,
     ) {
         setBusy(
             busy = true,
@@ -1437,6 +1447,7 @@ class MainScreenViewModel : ViewModel() {
                     host = host,
                     launchMode = launchMode,
                     forceJvmCrash = forceJvmCrash,
+                    forceRuntimeCrash = forceRuntimeCrash,
                 )
             }
         }
@@ -1446,6 +1457,7 @@ class MainScreenViewModel : ViewModel() {
         host: Activity,
         launchMode: String,
         forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean = false,
     ) {
         if (GameLaunchReturnTracker.isGameProcessRunning(host, includeCached = true)) {
             notifyResidualGameProcessCleanupFailed(host)
@@ -1513,6 +1525,7 @@ class MainScreenViewModel : ViewModel() {
                 backBehavior = backBehavior,
                 manualDismissBootOverlay = manualDismissBootOverlay,
                 forceJvmCrash = forceJvmCrash,
+                forceRuntimeCrash = forceRuntimeCrash,
             )
             return
         }
@@ -1523,6 +1536,7 @@ class MainScreenViewModel : ViewModel() {
             backBehavior = backBehavior,
             manualDismissBootOverlay = manualDismissBootOverlay,
             forceJvmCrash = forceJvmCrash,
+            forceRuntimeCrash = forceRuntimeCrash,
         )
     }
 
@@ -1532,6 +1546,7 @@ class MainScreenViewModel : ViewModel() {
         backBehavior: BackBehavior,
         manualDismissBootOverlay: Boolean,
         forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean,
     ) {
         launchGameActivityInternal(
             host = host,
@@ -1539,6 +1554,7 @@ class MainScreenViewModel : ViewModel() {
             backBehavior = backBehavior,
             manualDismissBootOverlay = manualDismissBootOverlay,
             forceJvmCrash = forceJvmCrash,
+            forceRuntimeCrash = forceRuntimeCrash,
         )
     }
 
@@ -1547,9 +1563,11 @@ class MainScreenViewModel : ViewModel() {
         launchMode: String,
         backBehavior: BackBehavior,
         manualDismissBootOverlay: Boolean,
-        forceJvmCrash: Boolean
+        forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean
     ) {
         val launchStartedAtMs = GameLaunchReturnTracker.markGameLaunchStarted(host)
+        ExpectedGameExitNotice.clearExpectedGameExit(host)
         if (LauncherPreferences.isLogcatCaptureEnabled(host)) {
             LogcatCaptureProcessClient.startCapture(host, launchStartedAtMs)
         } else {
@@ -1561,7 +1579,8 @@ class MainScreenViewModel : ViewModel() {
                 launchMode,
                 backBehavior,
                 manualDismissBootOverlay,
-                forceJvmCrash
+                forceJvmCrash,
+                forceRuntimeCrash
             )
             clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
@@ -1758,6 +1777,7 @@ class MainScreenViewModel : ViewModel() {
         backBehavior: BackBehavior,
         manualDismissBootOverlay: Boolean,
         forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean,
     ) {
         var proceed = false
         val dialog = AlertDialog.Builder(host)
@@ -1779,6 +1799,7 @@ class MainScreenViewModel : ViewModel() {
                     backBehavior = backBehavior,
                     manualDismissBootOverlay = manualDismissBootOverlay,
                     forceJvmCrash = forceJvmCrash,
+                    forceRuntimeCrash = forceRuntimeCrash,
                 )
             }
         }

@@ -92,6 +92,7 @@ internal class GameSessionCoordinator(
         rendererDecision = config.rendererDecision,
         renderScale = config.renderScale,
         forceJvmCrash = config.forceJvmCrash,
+        forceRuntimeCrash = config.forceRuntimeCrash,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
             bootOverlayController.updateProgress(

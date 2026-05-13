@@ -31,6 +31,7 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
+        const val EXTRA_FORCE_RUNTIME_CRASH = "io.stamethyst.force_runtime_crash"
 
         @JvmStatic
         fun launch(
@@ -38,7 +39,8 @@ class StsGameActivity : AppCompatActivity() {
             launchMode: String,
             backBehavior: BackBehavior,
             manualDismissBootOverlay: Boolean,
-            forceJvmCrash: Boolean = false
+            forceJvmCrash: Boolean = false,
+            forceRuntimeCrash: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
@@ -49,6 +51,7 @@ class StsGameActivity : AppCompatActivity() {
             )
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
             intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
+            intent.putExtra(EXTRA_FORCE_RUNTIME_CRASH, forceRuntimeCrash)
             context.startActivity(intent)
         }
     }
@@ -382,7 +385,8 @@ class StsGameActivity : AppCompatActivity() {
             "sessionToken" to launchGuardToken,
             "launchMode" to launchMode,
             "manualDismissBootOverlay" to intent?.getBooleanExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, false),
-            "forceJvmCrash" to intent?.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false)
+            "forceJvmCrash" to intent?.getBooleanExtra(EXTRA_FORCE_JVM_CRASH, false),
+            "forceRuntimeCrash" to intent?.getBooleanExtra(EXTRA_FORCE_RUNTIME_CRASH, false)
         )
     }
 }

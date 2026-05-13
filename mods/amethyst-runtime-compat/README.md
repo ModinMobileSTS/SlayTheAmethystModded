@@ -52,6 +52,12 @@ Clears stale `Hitbox.clicked` and `Hitbox.clickStarted` state when common confir
 16. `MainMenuTouchLayoutCompatPatches`
 Restores the large-button and large name-edit visuals that the vanilla main menu normally uses for touch/mobile presentation, but only inside the main menu's own layout branches. In `vanilla_allowlist` mode this keeps the home-screen buttons, name-edit hitbox, and save-slot prompt from shrinking back to desktop sizing just because global touchscreen semantics were hidden from mods, while still avoiding a full main-menu touchscreen interaction rollback. This addresses the symptom where enabling the native touchscreen compatibility allowlist makes the title-screen options noticeably smaller than before. Type: compatibility workaround implemented by `MainMenuTouchLayoutCompatPatches`.
 
+17. `ExpectedGameExitPatches`
+Writes the launcher's expected-exit marker before vanilla main-menu Quit and LibGDX `LwjglApplication.exit()` paths continue into native teardown. This addresses the symptom where an intentional game exit reaches `application_shutdown` but Android still records a native `SIGABRT` such as `FORTIFY: pthread_mutex_lock called on a destroyed mutex`, causing the launcher to show a crash recovery page on the next return. Type: crash-report false-positive fix implemented by `ExpectedGameExitPatches` and `ExpectedGameExitMarker`.
+
+18. `DebugRuntimeCrashPatches`
+Adds a debug-only runtime crash trigger controlled by the launcher's `amethyst.debug.force_runtime_crash` system property so device verification can confirm expected-exit suppression does not hide real gameplay/update crashes. It is inert in normal release configuration because the launcher only forwards the property from debug preferences. Type: diagnostic hook implemented by `DebugRuntimeCrashPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

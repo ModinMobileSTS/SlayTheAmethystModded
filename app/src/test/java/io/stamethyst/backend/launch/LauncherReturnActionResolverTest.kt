@@ -12,7 +12,8 @@ class LauncherReturnActionResolverTest {
                 explicitCrash = CrashReturnPayload(code = -1, isSignal = false, detail = "boom"),
                 processExitCrash = sampleProcessExitSummary(),
                 heapPressureWarning = true,
-                expectedBackExitRecent = true
+                expectedBackExitRecent = true,
+                expectedCleanShutdown = true
             )
         )
 

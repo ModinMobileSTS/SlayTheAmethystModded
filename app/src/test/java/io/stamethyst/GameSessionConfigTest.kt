@@ -46,6 +46,7 @@ class GameSessionConfigTest {
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             forceJvmCrash = false,
+            forceRuntimeCrash = false,
             showFloatingMouseWindow = false,
             showGamePerformanceOverlay = false,
             mirrorJvmLogsToLogcat = false,

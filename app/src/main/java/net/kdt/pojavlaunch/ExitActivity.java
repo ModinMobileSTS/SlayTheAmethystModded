@@ -15,9 +15,9 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import io.stamethyst.backend.crash.LatestLogCrashDetector;
-import io.stamethyst.backend.crash.LatestLogCleanShutdownDetector;
 import io.stamethyst.backend.crash.LatestLogCrashSummary;
 import io.stamethyst.backend.launch.BackExitNotice;
+import io.stamethyst.backend.launch.ExpectedGameExitNotice;
 import io.stamethyst.backend.launch.LauncherReturnCoordinator;
 
 public class ExitActivity extends AppCompatActivity {
@@ -52,17 +52,17 @@ public class ExitActivity extends AppCompatActivity {
             );
             return;
         }
-        if (LatestLogCleanShutdownDetector.shouldSuppressCrashReport(
-                LatestLogCleanShutdownDetector.detect(context)
-        )) {
-            return;
-        }
         LatestLogCrashSummary logCrash = LatestLogCrashDetector.detect(context);
         String crashDetail = normalizeDetail(detail);
         if ((crashDetail == null || crashDetail.isEmpty()) && logCrash != null) {
             crashDetail = logCrash.getDetail();
         }
         if (code == 0 && logCrash == null) {
+            ExpectedGameExitNotice.markExpectedGameExit(context, "native_exit_zero");
+            return;
+        }
+        if (logCrash == null && ExpectedGameExitNotice.isExpectedGameExitRecent(context, 0L)) {
+            ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(context, 0L);
             return;
         }
         Intent intent = new Intent(context, ExitActivity.class);

@@ -17,6 +17,7 @@ object RuntimePaths {
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
+    private const val EXPECTED_GAME_EXIT_MARKER_FILE_NAME = ".expected_game_exit_marker"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
@@ -139,6 +140,9 @@ object RuntimePaths {
 
     @JvmStatic
     fun lastExitMarker(context: Context): File = File(stsRoot(context), ".last_exit_marker")
+
+    @JvmStatic
+    fun expectedGameExitMarker(context: Context): File = File(stsRoot(context), EXPECTED_GAME_EXIT_MARKER_FILE_NAME)
 
     @JvmStatic
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)

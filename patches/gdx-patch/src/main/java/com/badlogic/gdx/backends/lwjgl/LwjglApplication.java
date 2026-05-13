@@ -18,6 +18,7 @@ package com.badlogic.gdx.backends.lwjgl;
 
 import java.awt.Canvas;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
@@ -88,6 +89,7 @@ public class LwjglApplication implements Application {
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
 	private static final String GPU_LEAK_INJECTOR_MODE_PROP = "amethyst.gdx.debug_leak_injector";
+	private static final String EXPECTED_EXIT_MARKER_PROP = "amethyst.expected_exit_marker";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final int VSYNC_SOFTWARE_SYNC_MARGIN_FPS = 1;
@@ -1936,6 +1938,7 @@ public class LwjglApplication implements Application {
 	}
 
 	public void stop () {
+		writeExpectedExitMarker("lwjgl_application_stop");
 		running = false;
 		try {
 			mainLoopThread.join();
@@ -2032,12 +2035,33 @@ public class LwjglApplication implements Application {
 
 	@Override
 	public void exit () {
+		writeExpectedExitMarker("lwjgl_application_exit");
 		postRunnable(new Runnable() {
 			@Override
 			public void run () {
 				running = false;
 			}
 		});
+	}
+
+	private static void writeExpectedExitMarker (String source) {
+		String markerPath = System.getProperty(EXPECTED_EXIT_MARKER_PROP, "").trim();
+		if (markerPath.length() == 0) return;
+		File markerFile = new File(markerPath);
+		File parent = markerFile.getParentFile();
+		if (parent != null && !parent.exists() && !parent.mkdirs()) return;
+		String content = "timestampMs=" + System.currentTimeMillis() + "\nsource=" + source + "\n";
+		try {
+			FileOutputStream output = new FileOutputStream(markerFile, false);
+			try {
+				output.write(content.getBytes(StandardCharsets.UTF_8));
+				output.flush();
+				output.getFD().sync();
+			} finally {
+				output.close();
+			}
+		} catch (Throwable ignored) {
+		}
 	}
 
 	@Override

@@ -59,7 +59,8 @@ object StsLaunchSpec {
             javaHome = javaHome,
             launchMode = LAUNCH_MODE_VANILLA,
             rendererDecision = resolveRendererDecision(context),
-            forceJvmCrash = false
+            forceJvmCrash = false,
+            forceRuntimeCrash = false
         )
     }
 
@@ -70,7 +71,8 @@ object StsLaunchSpec {
             javaHome = javaHome,
             launchMode = launchMode,
             rendererDecision = resolveRendererDecision(context),
-            forceJvmCrash = false
+            forceJvmCrash = false,
+            forceRuntimeCrash = false
         )
     }
 
@@ -81,7 +83,8 @@ object StsLaunchSpec {
         launchMode: String,
         rendererDecision: RendererDecision,
         renderScaleOverride: Float? = null,
-        forceJvmCrash: Boolean = false
+        forceJvmCrash: Boolean = false,
+        forceRuntimeCrash: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -172,6 +175,7 @@ object StsLaunchSpec {
         )
         args.add("-Duser.home=${stsHome.absolutePath}")
         args.add("-Duser.dir=${stsRoot.absolutePath}")
+        args.add("-Damethyst.expected_exit_marker=${RuntimePaths.expectedGameExitMarker(context).absolutePath}")
         val touchscreenInputMode = LauncherConfig.readTouchscreenInputMode(context)
         args.add(
             "-Damethyst.touchscreen_enabled=" +
@@ -385,6 +389,7 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.delegate=$bridgeDelegateMainClass")
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
+        args.add("-Damethyst.debug.force_runtime_crash=${if (BuildConfig.BUILD_TYPE == "debug" && forceRuntimeCrash) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
