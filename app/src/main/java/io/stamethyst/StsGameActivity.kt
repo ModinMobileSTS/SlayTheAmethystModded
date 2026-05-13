@@ -87,6 +87,7 @@ class StsGameActivity : AppCompatActivity() {
         }
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         MemoryDiagnosticsLogger.logEvent(
@@ -297,11 +298,6 @@ class StsGameActivity : AppCompatActivity() {
             return
         }
         bootOverlayKeepScreenOn = enabled
-        if (enabled) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
