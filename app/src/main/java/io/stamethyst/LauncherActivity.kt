@@ -20,14 +20,13 @@ import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
-import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.main.MainScreenViewModel
+import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
-import io.stamethyst.ui.settings.InvalidModImportFailure
 import io.stamethyst.ui.settings.JarImportInspectionService
 import io.stamethyst.ui.settings.SettingsFileService
 import io.stamethyst.ui.settings.SettingsScreenViewModel
@@ -64,13 +63,6 @@ class LauncherActivity : AppCompatActivity() {
         )
     }
 
-    private data class ModImportPreview(
-        val uri: Uri,
-        val displayName: String,
-        val manifest: ModJarSupport.ModManifestInfo?,
-        val parseError: String?
-    )
-
     private sealed interface IncomingJarIntentTarget {
         data class StsJar(
             val uri: Uri,
@@ -78,7 +70,7 @@ class LauncherActivity : AppCompatActivity() {
         ) : IncomingJarIntentTarget
 
         data class ModJar(
-            val preview: ModImportPreview
+            val uri: Uri
         ) : IncomingJarIntentTarget
     }
 
@@ -468,7 +460,7 @@ class LauncherActivity : AppCompatActivity() {
                 }
                 when (target) {
                     is IncomingJarIntentTarget.StsJar -> importExternalStsJar(target)
-                    is IncomingJarIntentTarget.ModJar -> showModImportDialog(target.preview)
+                    is IncomingJarIntentTarget.ModJar -> startExternalModImport(target.uri)
                 }
             }
         }.start()
@@ -482,33 +474,24 @@ class LauncherActivity : AppCompatActivity() {
             return IncomingJarIntentTarget.StsJar(uri = uri, displayName = displayName)
         }
         val tempJar = File(cacheDir, "import-preview-${System.nanoTime()}.jar")
-        var previewDisplayName = displayName
-        var manifest: ModJarSupport.ModManifestInfo? = null
-        var parseError: String? = null
         try {
             val preparedDisplayName = JarImportInspectionService.prepareImportedJar(this, uri, tempJar)
-            previewDisplayName = preparedDisplayName
             if (StsJarValidator.isValid(tempJar)) {
                 return IncomingJarIntentTarget.StsJar(uri = uri, displayName = preparedDisplayName)
             }
-            val inspection = JarImportInspectionService.inspectPreparedModJar(this, tempJar, preparedDisplayName)
-            manifest = inspection.manifest
-            parseError = inspection.parseError
-        } catch (error: Throwable) {
-            parseError = error.message ?: error.javaClass.simpleName
+        } catch (_: Throwable) {
         } finally {
             if (tempJar.exists()) {
                 tempJar.delete()
             }
         }
-        return IncomingJarIntentTarget.ModJar(
-            ModImportPreview(
-                uri = uri,
-                displayName = previewDisplayName,
-                manifest = manifest,
-                parseError = parseError
-            )
-        )
+        return IncomingJarIntentTarget.ModJar(uri = uri)
+    }
+
+    private fun startExternalModImport(uri: Uri) {
+        dismissImportLoadingDialog()
+        ModImportRequestBus.requestImport(listOf(uri))
+        finishPendingJarIntentFlow()
     }
 
     private fun importExternalStsJar(target: IncomingJarIntentTarget.StsJar) {
@@ -529,43 +512,6 @@ class LauncherActivity : AppCompatActivity() {
             mainViewModel.refresh(this)
             showExternalStsImportNoticeDialog(target.displayName)
         }
-    }
-
-    private fun showModImportDialog(preview: ModImportPreview) {
-        dismissImportLoadingDialog()
-        val previousDialog = pendingImportDialog
-        pendingImportDialog = null
-        previousDialog?.dismiss()
-        val dialog = if (preview.manifest != null) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.main_import_mods)
-                .setMessage(buildModImportDialogMessage(preview))
-                .setNegativeButton(R.string.main_folder_dialog_cancel, null)
-                .setPositiveButton(R.string.mod_import_confirm_dialog_action_import) { _, _ ->
-                    settingsViewModel.onModJarsPicked(this, listOf(preview.uri)) {
-                        mainViewModel.refresh(this)
-                    }
-                }
-                .create()
-        } else {
-            val failure = InvalidModImportFailure(
-                displayName = preview.displayName,
-                reason = preview.parseError.orEmpty()
-            )
-            AlertDialog.Builder(this)
-                .setTitle(R.string.mod_import_dialog_invalid_title)
-                .setMessage(SettingsFileService.buildInvalidModImportMessage(this, listOf(failure)))
-                .setPositiveButton(android.R.string.ok, null)
-                .create()
-        }
-        dialog.setOnDismissListener {
-            if (pendingImportDialog === dialog) {
-                pendingImportDialog = null
-                finishPendingJarIntentFlow()
-            }
-        }
-        pendingImportDialog = dialog
-        dialog.show()
     }
 
     private fun showUnsupportedExternalImportDialog() {
@@ -743,41 +689,4 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildModImportDialogMessage(preview: ModImportPreview): String {
-        val manifest = preview.manifest
-        val builder = StringBuilder()
-        builder.append(getString(R.string.mod_import_preview_file_label, preview.displayName))
-        if (manifest != null) {
-            val name = manifest.name.ifBlank { manifest.modId.ifBlank { preview.displayName } }
-            val modId = manifest.modId.ifBlank { getString(R.string.main_mod_unknown_version) }
-            val version = manifest.version.ifBlank { getString(R.string.main_mod_unknown_version) }
-            val description = manifest.description.ifBlank { getString(R.string.main_mod_no_description) }
-            val dependencies = manifest.dependencies
-                .asSequence()
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-                .toList()
-
-            builder.append("\n\n").append(getString(R.string.mod_import_preview_name_label, name))
-            builder.append("\n").append(getString(R.string.main_mod_modid_format, modId))
-            builder.append("\n").append(getString(R.string.main_mod_version_format, version))
-            builder.append("\n").append(getString(R.string.mod_import_preview_description_label, description))
-            if (dependencies.isNotEmpty()) {
-                builder.append(
-                    "\n" + getString(
-                        R.string.main_mod_dependencies_format,
-                        dependencies.joinToString(", ")
-                    )
-                )
-            }
-        } else {
-            val error = preview.parseError
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-                ?: getString(R.string.mod_import_error_unknown)
-            builder.append("\n\n").append(getString(R.string.mod_import_preview_manifest_read_failed, error))
-        }
-        return builder.toString()
-    }
 }

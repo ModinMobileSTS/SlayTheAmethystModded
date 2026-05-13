@@ -106,6 +106,7 @@ import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.icon.Settings
+import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
@@ -144,9 +145,7 @@ fun LauncherMainScreen(
     val importModsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
-        if (hostActivity != null) {
-            viewModel.onModJarsPicked(hostActivity, uris)
-        }
+        ModImportRequestBus.requestImport(uris.orEmpty())
     }
     val exportModLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/java-archive")

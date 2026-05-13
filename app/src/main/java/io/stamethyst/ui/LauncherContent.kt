@@ -65,6 +65,7 @@ import io.stamethyst.ui.feedback.LauncherFeedbackSubscriptionsScreen
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.main.LauncherMainScreen
 import io.stamethyst.ui.main.MainScreenViewModel
+import io.stamethyst.ui.modimport.ModImportHost
 import io.stamethyst.ui.quickstart.QuickStartScreen
 import io.stamethyst.ui.settings.LauncherFirstRunSetupScreen
 import io.stamethyst.ui.settings.LauncherDeveloperSettingsScreen
@@ -345,6 +346,12 @@ fun LauncherContent(
                         progressPercent = blockingBusyProgressPercent
                     )
                 }
+                ModImportHost(
+                    onImportCompleted = {
+                        mainViewModel.refresh(activity)
+                        settingsViewModel.refreshStatus(activity)
+                    }
+                )
                 SnackbarHost(
                     hostState = transientNoticeHostState,
                     snackbar = { snackbarData ->
