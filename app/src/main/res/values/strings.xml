@@ -294,6 +294,12 @@
     <string name="main_launch_unread_suggestions_message_outro">It is recommended to open the circled exclamation mark on each mod card and read the notice first. You can cancel this launch, or continue anyway.</string>
     <string name="main_launch_unread_suggestions_cancel">Cancel launch</string>
     <string name="main_launch_unread_suggestions_continue">Launch anyway</string>
+    <string name="main_launch_enabled_mod_size_warning_title">Enabled mods are too large</string>
+    <string name="main_launch_enabled_mod_size_warning_message">The currently enabled mods total about %1$s, which is above the %2$s warning threshold. This mod load is heavy and is very likely to put excessive pressure on this device.
+
+Do you still want to continue?</string>
+    <string name="main_launch_enabled_mod_size_warning_cancel">Cancel launch</string>
+    <string name="main_launch_enabled_mod_size_warning_continue">Continue anyway</string>
     <string name="main_launch_game_already_running">The game process is still running. Return to that session or wait for it to exit before starting again.</string>
     <string name="main_launch_game_cleanup_busy">Killing leftover game process...</string>
     <string name="main_launch_game_cleanup_failed">The previous game process did not exit fully. Please wait a moment and try again.</string>

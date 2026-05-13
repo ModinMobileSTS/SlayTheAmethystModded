@@ -294,6 +294,12 @@
     <string name="main_launch_unread_suggestions_message_outro">建议先点开模组卡片右侧的圆圈感叹号查看注意事项。你可以取消本次启动，或忽略这些提示继续启动游戏。</string>
     <string name="main_launch_unread_suggestions_cancel">取消启动</string>
     <string name="main_launch_unread_suggestions_continue">仍要启动</string>
+    <string name="main_launch_enabled_mod_size_warning_title">警告</string>
+    <string name="main_launch_enabled_mod_size_warning_message">当前启用模组总大小约为 %1$s，大型模组过多模组，很有可能给设备带来过大压力，造成崩溃卡顿等问题。
+
+是否仍要继续？</string>
+    <string name="main_launch_enabled_mod_size_warning_cancel">取消启动</string>
+    <string name="main_launch_enabled_mod_size_warning_continue">仍要继续</string>
     <string name="main_launch_game_already_running">检测到游戏进程仍在运行，请先返回当前游戏会话或等待其退出后再重新启动。</string>
     <string name="main_launch_game_cleanup_busy">正在杀死残余游戏进程…</string>
     <string name="main_launch_game_cleanup_failed">未能完全杀死上一轮游戏进程，请稍后再试。</string>

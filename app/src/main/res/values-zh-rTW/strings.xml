@@ -294,6 +294,12 @@
     <string name="main_launch_unread_suggestions_message_outro">建議先點開模組卡片右側的圓圈感嘆號檢視注意事項。你可以取消本次啟動，或忽略這些提示繼續啟動遊戲。</string>
     <string name="main_launch_unread_suggestions_cancel">取消啟動</string>
     <string name="main_launch_unread_suggestions_continue">仍要啟動</string>
+    <string name="main_launch_enabled_mod_size_warning_title">啟用模組體積過大</string>
+    <string name="main_launch_enabled_mod_size_warning_message">目前啟用模組總大小約為 %1$s，已超過 %2$s 警告閾值。目前啟用模組壓力過大，很有可能給裝置帶來過大壓力。
+
+是否仍要繼續？</string>
+    <string name="main_launch_enabled_mod_size_warning_cancel">取消啟動</string>
+    <string name="main_launch_enabled_mod_size_warning_continue">仍要繼續</string>
     <string name="main_launch_game_already_running">檢測到遊戲程序仍在執行，請先返回當前遊戲會話或等待其退出後再重新啟動。</string>
     <string name="main_launch_game_cleanup_busy">正在殺死殘餘遊戲程序…</string>
     <string name="main_launch_game_cleanup_failed">未能完全殺死上一輪遊戲程序，請稍後再試。</string>

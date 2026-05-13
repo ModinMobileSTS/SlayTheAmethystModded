@@ -1458,6 +1458,7 @@ class MainScreenViewModel : ViewModel() {
         launchMode: String,
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean = false,
+        skipEnabledModSizeWarning: Boolean = false,
     ) {
         if (GameLaunchReturnTracker.isGameProcessRunning(host, includeCached = true)) {
             notifyResidualGameProcessCleanupFailed(host)
@@ -1480,6 +1481,19 @@ class MainScreenViewModel : ViewModel() {
                 showMtsLaunchValidationDialog(host, invalidMods)
                 clearLaunchInFlightState()
                 return
+            }
+            if (!skipEnabledModSizeWarning) {
+                val enabledModTotalBytes = calculateEnabledOptionalModTotalBytes(optionalMods)
+                if (enabledModTotalBytes > ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES) {
+                    showEnabledModSizeLaunchDialog(
+                        host = host,
+                        launchMode = launchMode,
+                        forceJvmCrash = forceJvmCrash,
+                        forceRuntimeCrash = forceRuntimeCrash,
+                        totalBytes = enabledModTotalBytes,
+                    )
+                    return
+                }
             }
         }
         try {
@@ -1809,6 +1823,67 @@ class MainScreenViewModel : ViewModel() {
             }
         }
         dialog.show()
+    }
+
+    private fun calculateEnabledOptionalModTotalBytes(optionalMods: List<ModItemUi>): Long {
+        return optionalMods.asSequence()
+            .filter { mod -> mod.enabled && mod.installed && !mod.required }
+            .map { mod -> File(mod.storagePath) }
+            .filter { file -> file.isFile }
+            .sumOf { file -> file.length().coerceAtLeast(0L) }
+    }
+
+    private fun showEnabledModSizeLaunchDialog(
+        host: Activity,
+        launchMode: String,
+        forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean,
+        totalBytes: Long,
+    ) {
+        var proceed = false
+        val dialog = AlertDialog.Builder(host)
+            .setTitle(R.string.main_launch_enabled_mod_size_warning_title)
+            .setMessage(
+                host.getString(
+                    R.string.main_launch_enabled_mod_size_warning_message,
+                    formatByteSizeForLaunchWarning(totalBytes),
+                    formatByteSizeForLaunchWarning(ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES)
+                )
+            )
+            .setNegativeButton(R.string.main_launch_enabled_mod_size_warning_cancel, null)
+            .setPositiveButton(R.string.main_launch_enabled_mod_size_warning_continue, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                proceed = true
+                dialog.dismiss()
+                prepareAndLaunch(
+                    host = host,
+                    launchMode = launchMode,
+                    forceJvmCrash = forceJvmCrash,
+                    forceRuntimeCrash = forceRuntimeCrash,
+                    skipEnabledModSizeWarning = true,
+                )
+            }
+        }
+        dialog.setOnDismissListener {
+            if (!proceed) {
+                clearLaunchInFlightState()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun formatByteSizeForLaunchWarning(bytes: Long): String {
+        val mib = bytes.toDouble() / BYTES_PER_MIB.toDouble()
+        return if (mib >= 1024.0) {
+            String.format(Locale.US, "%.1f GB", mib / 1024.0)
+        } else {
+            String.format(Locale.US, "%.0f MB", mib)
+        }
     }
 
     private fun notifyResidualGameProcessCleanupFailed(host: Activity) {
@@ -2375,6 +2450,8 @@ class MainScreenViewModel : ViewModel() {
 
     companion object {
         private const val STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS = 60_000L
+        private const val BYTES_PER_MIB = 1024L * 1024L
+        private const val ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES = 1024L * BYTES_PER_MIB
         private val DEFAULT_UNASSIGNED_FOLDER_NAME: String = if (Locale.getDefault().language.startsWith("zh")) {
             "未分类"
         } else {
