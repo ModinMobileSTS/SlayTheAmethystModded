@@ -58,6 +58,9 @@ Writes the launcher's expected-exit marker before vanilla main-menu Quit and Lib
 18. `DebugRuntimeCrashPatches`
 Adds a debug-only runtime crash trigger controlled by the launcher's `amethyst.debug.force_runtime_crash` system property so device verification can confirm expected-exit suppression does not hide real gameplay/update crashes. It is inert in normal release configuration because the launcher only forwards the property from debug preferences. Type: diagnostic hook implemented by `DebugRuntimeCrashPatches`.
 
+19. `TouchscreenSingleTargetCancelPatches`
+Cancels the current combat targeted-card selection when a native touchscreen blank tap or release would otherwise promote an already selected targeted card into the base game's single-target mode or directly call `playCard()` with no hovered monster, and also cleans up any blank click/release that still returns from `AbstractPlayer.updateSingleTargetInput` in target-selection mode. This addresses the symptom where cards such as `Strike` can remain stuck in midair after tapping the card and then tapping empty combat space under the launcher's default hybrid touchscreen setting; tapping a monster is not intercepted and still continues through the original target/play-card path. Type: gameplay/runtime fix implemented by `TouchscreenSingleTargetCancelPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

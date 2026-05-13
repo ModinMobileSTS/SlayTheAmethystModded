@@ -11,6 +11,8 @@ import java.util.ArrayList
 import java.util.zip.ZipFile
 
 object ModJarSupport {
+    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.22"
+
     class ModManifestInfo(
         @JvmField val modId: String,
         @JvmField val normalizedModId: String,
@@ -85,6 +87,13 @@ object ModJarSupport {
         val modId = ModJarManifestParser.normalizeModId(resolveModId(jarFile))
         if (ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT != modId) {
             throw IOException("Invalid AmethystRuntimeCompat.jar: modid is $modId")
+        }
+        val version = readModManifest(jarFile).version.trim()
+        if (version != EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION) {
+            throw IOException(
+                "Invalid AmethystRuntimeCompat.jar: version is $version, " +
+                    "expected $EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION"
+            )
         }
     }
 
