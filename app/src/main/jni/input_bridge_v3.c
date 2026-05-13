@@ -598,6 +598,17 @@ void noncritical_send_mouse_button(__attribute__((unused)) JNIEnv* env, __attrib
     critical_send_mouse_button(button, action, mods);
 }
 
+void critical_set_mouse_button_state(jint button, jboolean down) {
+    if (button < 0 || button > 7 || pojav_environ->mouseDownBuffer == NULL) {
+        return;
+    }
+    pojav_environ->mouseDownBuffer[button] = down ? 1 : 0;
+}
+
+void noncritical_set_mouse_button_state(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jint button, jboolean down) {
+    critical_set_mouse_button_state(button, down);
+}
+
 void critical_send_screen_size(jint width, jint height) {
     if (!isValidScreenSize(width, height)) {
         ;
@@ -791,6 +802,7 @@ const static JNINativeMethod critical_fcns[] = {
         {"nativeSendKey", "(IIII)V", critical_send_key},
         {"nativeSendCursorPos", "(FF)V", critical_send_cursor_pos},
         {"nativeSendMouseButton", "(III)V", critical_send_mouse_button},
+        {"nativeSetMouseButtonState", "(IZ)V", critical_set_mouse_button_state},
         {"nativeSendScroll", "(DD)V", critical_send_scroll},
         {"nativeSendScreenSize", "(II)V", critical_send_screen_size}
 };
@@ -802,6 +814,7 @@ const static JNINativeMethod noncritical_fcns[] = {
         {"nativeSendKey", "(IIII)V", noncritical_send_key},
         {"nativeSendCursorPos", "(FF)V", noncritical_send_cursor_pos},
         {"nativeSendMouseButton", "(III)V", noncritical_send_mouse_button},
+        {"nativeSetMouseButtonState", "(IZ)V", noncritical_set_mouse_button_state},
         {"nativeSendScroll", "(DD)V", noncritical_send_scroll},
         {"nativeSendScreenSize", "(II)V", noncritical_send_screen_size}
 };

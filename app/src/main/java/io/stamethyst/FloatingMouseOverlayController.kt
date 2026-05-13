@@ -336,6 +336,10 @@ internal class FloatingMouseOverlayController(
         touchPressedButton = -1
     }
 
+    fun clearTouchButtonState() {
+        touchPressedButton = -1
+    }
+
     fun hideSoftKeyboard() {
         val hadKeyboardSession =
             builtInKeyboardController?.isVisible() == true ||

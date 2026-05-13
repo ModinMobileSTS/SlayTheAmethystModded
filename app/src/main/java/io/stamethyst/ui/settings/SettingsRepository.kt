@@ -60,6 +60,7 @@ internal object SettingsRepository {
         val manualDismissBootOverlay: Boolean,
         val showFloatingMouseWindow: Boolean,
         val touchMouseInteractionMode: TouchMouseInteractionMode,
+        val touchDoubleClickAsRightClick: Boolean,
         val builtInSoftKeyboardEnabled: Boolean,
         val hapticFeedbackEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
@@ -149,6 +150,7 @@ internal object SettingsRepository {
                 manualDismissBootOverlay = LauncherPreferences.readManualDismissBootOverlay(context),
                 showFloatingMouseWindow = LauncherPreferences.readShowFloatingMouseWindow(context),
                 touchMouseInteractionMode = LauncherPreferences.readTouchMouseInteractionMode(context),
+                touchDoubleClickAsRightClick = LauncherPreferences.readTouchDoubleClickAsRightClick(context),
                 builtInSoftKeyboardEnabled =
                     LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
                 hapticFeedbackEnabled = LauncherPreferences.isHapticFeedbackEnabled(context),

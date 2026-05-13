@@ -47,6 +47,8 @@ object LauncherConfig {
         "built_in_soft_keyboard_enabled"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
+    private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
+        "touch_double_click_as_right_click"
     private const val PREF_KEY_TOUCHSCREEN_ENABLED = "touchscreen_enabled"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_RENDERER_SELECTION_MODE = "renderer_selection_mode"
@@ -175,6 +177,7 @@ object LauncherConfig {
     const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
     const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
+    const val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK = false
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
     const val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED = true
@@ -409,6 +412,19 @@ object LauncherConfig {
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK, enabled)
+        }
+    }
+
+    fun readTouchDoubleClickAsRightClick(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK,
+            DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK
+        )
+    }
+
+    fun saveTouchDoubleClickAsRightClick(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK, enabled)
         }
     }
 

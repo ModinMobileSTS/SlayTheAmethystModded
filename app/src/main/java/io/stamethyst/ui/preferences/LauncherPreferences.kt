@@ -71,6 +71,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_HAPTIC_FEEDBACK_ENABLED
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+    val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK: Boolean
+        get() = LauncherConfig.DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK
     val DEFAULT_SHOW_MOD_FILE_NAME: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_MOD_FILE_NAME
     val DEFAULT_MOBILE_HUD_ENABLED: Boolean
@@ -199,6 +201,14 @@ object LauncherPreferences {
 
     fun saveAutoSwitchLeftAfterRightClick(context: Context, enabled: Boolean) {
         LauncherConfig.saveAutoSwitchLeftAfterRightClick(context, enabled)
+    }
+
+    fun readTouchDoubleClickAsRightClick(context: Context): Boolean {
+        return LauncherConfig.readTouchDoubleClickAsRightClick(context)
+    }
+
+    fun saveTouchDoubleClickAsRightClick(context: Context, enabled: Boolean) {
+        LauncherConfig.saveTouchDoubleClickAsRightClick(context, enabled)
     }
 
     fun readRenderSurfaceBackend(context: Context): RenderSurfaceBackend {

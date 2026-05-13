@@ -323,6 +323,9 @@ fun LauncherFirstRunSetupScreen(
                                 onTouchMouseInteractionModeChanged = { mode ->
                                     viewModel.onTouchMouseInteractionModeChanged(activity, mode)
                                 },
+                                onTouchDoubleClickAsRightClickChanged = { enabled ->
+                                    viewModel.onTouchDoubleClickAsRightClickChanged(activity, enabled)
+                                },
                             )
                         }
 
@@ -574,6 +577,7 @@ private fun FirstRunInputStep(
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
+    onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
 ) {
     SettingsSectionCard(
         title = stringResource(R.string.settings_section_input)
@@ -619,6 +623,14 @@ private fun FirstRunInputStep(
                     optionLabel = { mode -> mode.displayName() },
                     optionDescription = { mode -> mode.description() },
                     onOptionSelected = onTouchMouseInteractionModeChanged,
+                )
+                SwitchSettingRow(
+                    checked = uiState.touchDoubleClickAsRightClick,
+                    enabled = !uiState.busy,
+                    enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
+                    disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+                    description = stringResource(R.string.settings_first_run_input_double_click_desc),
+                    onCheckedChange = onTouchDoubleClickAsRightClickChanged,
                 )
             }
         }

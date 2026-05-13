@@ -230,6 +230,8 @@ class SettingsScreenViewModel : ViewModel() {
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val touchMouseInteractionMode: TouchMouseInteractionMode =
             LauncherPreferences.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE,
+        val touchDoubleClickAsRightClick: Boolean =
+            LauncherPreferences.DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK,
         val builtInSoftKeyboardEnabled: Boolean =
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
         val hapticFeedbackEnabled: Boolean = LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED,
@@ -2255,6 +2257,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onTouchDoubleClickAsRightClickChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(touchDoubleClickAsRightClick = enabled)
+        saveTouchDoubleClickAsRightClickSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onBuiltInSoftKeyboardChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -2637,6 +2648,7 @@ class SettingsScreenViewModel : ViewModel() {
             manualDismissBootOverlay = input.manualDismissBootOverlay,
             showFloatingMouseWindow = input.showFloatingMouseWindow,
             touchMouseInteractionMode = input.touchMouseInteractionMode,
+            touchDoubleClickAsRightClick = input.touchDoubleClickAsRightClick,
             builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
             hapticFeedbackEnabled = input.hapticFeedbackEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
@@ -3613,6 +3625,10 @@ class SettingsScreenViewModel : ViewModel() {
         mode: TouchMouseInteractionMode
     ) {
         LauncherPreferences.saveTouchMouseInteractionMode(host, mode)
+    }
+
+    private fun saveTouchDoubleClickAsRightClickSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.saveTouchDoubleClickAsRightClick(host, enabled)
     }
 
     private fun saveBuiltInSoftKeyboardSelection(host: Activity, enabled: Boolean) {

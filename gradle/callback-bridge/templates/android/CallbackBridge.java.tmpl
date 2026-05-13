@@ -67,6 +67,10 @@ __CALLBACK_BRIDGE_CONSTANTS__
         sendMouseKeycode(button, getCurrentMods(), status);
     }
 
+    public static void setMouseButtonState(int button, boolean down) {
+        nativeSetMouseButtonState(button, down);
+    }
+
     public static void sendMouseKeycode(int button, int modifiers, boolean isDown) {
         nativeSendMouseButton(button, isDown ? 1 : 0, modifiers);
     }

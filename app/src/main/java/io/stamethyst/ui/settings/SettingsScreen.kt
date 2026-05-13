@@ -115,6 +115,7 @@ import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.openBasicTutorial
+import io.stamethyst.ui.modimport.ModImportRequestBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -190,6 +191,9 @@ fun LauncherSettingsScreen(
         onShowFloatingMouseWindowChanged = { enabled -> viewModel.onShowFloatingMouseWindowChanged(activity, enabled) },
         onTouchMouseInteractionModeChanged = { mode ->
             viewModel.onTouchMouseInteractionModeChanged(activity, mode)
+        },
+        onTouchDoubleClickAsRightClickChanged = { enabled ->
+            viewModel.onTouchDoubleClickAsRightClickChanged(activity, enabled)
         },
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
@@ -412,6 +416,7 @@ private fun LauncherSettingsScreenContent(
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit = {},
+    onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
@@ -573,6 +578,7 @@ private fun LauncherSettingsScreenContent(
                         onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
                         onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
                         onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
+                        onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
                         onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
@@ -2330,6 +2336,7 @@ private fun SettingsInputSection(
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
+    onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
@@ -2346,6 +2353,7 @@ private fun SettingsInputSection(
             onPlayerNameChanged = onPlayerNameChanged,
             onBackBehaviorChanged = onBackBehaviorChanged,
             onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
+            onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
             onHapticFeedbackChanged = onHapticFeedbackChanged,
             onShowModFileNameChanged = onShowModFileNameChanged,
             onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
@@ -2359,6 +2367,7 @@ private fun SettingsInputSection(
             uiState = uiState,
             onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
             onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
+            onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
             onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
             onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
         )
@@ -2371,6 +2380,7 @@ internal fun SettingsInputBasicsSection(
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
+    onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -2526,6 +2536,7 @@ internal fun SettingsFloatingMouseSection(
     uiState: SettingsScreenViewModel.UiState,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
+    onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
 ) {
@@ -2547,6 +2558,15 @@ internal fun SettingsFloatingMouseSection(
         optionLabel = { mode -> mode.displayName() },
         optionDescription = { mode -> mode.description() },
         onOptionSelected = onTouchMouseInteractionModeChanged
+    )
+
+    SwitchSettingRow(
+        checked = uiState.touchDoubleClickAsRightClick,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
+        disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+        description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
+        onCheckedChange = onTouchDoubleClickAsRightClickChanged
     )
 
     SwitchSettingRow(
@@ -2951,7 +2971,7 @@ fun SettingsEffectsHandler(
         viewModel.onJarPicked(activity, uri)
     }
     val importModsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        viewModel.onModJarsPicked(activity, uris)
+        ModImportRequestBus.requestImport(uris.orEmpty())
     }
     val importSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.onSavesArchivePicked(activity, uri)

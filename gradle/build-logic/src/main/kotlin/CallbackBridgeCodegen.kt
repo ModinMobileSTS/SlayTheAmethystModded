@@ -119,6 +119,16 @@ object CallbackBridgeCodegen {
             androidCriticalNative = true
         ),
         CallbackBridgeMethod(
+            name = "nativeSetMouseButtonState",
+            returnType = "void",
+            parameters = listOf(
+                CallbackBridgeParameter("int", "button"),
+                CallbackBridgeParameter("boolean", "down")
+            ),
+            androidVisibility = "private",
+            androidCriticalNative = true
+        ),
+        CallbackBridgeMethod(
             name = "nativeSendScroll",
             returnType = "void",
             parameters = listOf(

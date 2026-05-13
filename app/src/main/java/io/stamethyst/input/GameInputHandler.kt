@@ -3,9 +3,12 @@ package io.stamethyst.input
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import io.stamethyst.FloatingMouseOverlayController
 import io.stamethyst.StsGameActivity
@@ -30,6 +33,9 @@ class GameInputHandler(
     private val getTargetWindowHeight: () -> Int
 ) {
     companion object {
+        private const val TOUCH_RIGHT_CLICK_LONG_PRESS_TIMEOUT_MS = 500L
+        private const val TOUCH_RIGHT_CLICK_RELEASE_DELAY_MS = 50L
+
         internal fun isGamepadKeyEventSource(
             keyCode: Int,
             eventSource: Int,
@@ -89,15 +95,29 @@ class GameInputHandler(
 
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var gamepadDirectInputEnableAttempted = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val touchMoveSlopPx = ViewConfiguration.get(activity).scaledTouchSlop.toFloat()
 
     private var floatingMouseController: FloatingMouseOverlayController? = null
+    private var touchDoubleClickAsRightClick = false
+    private var pendingLongPressRightClick: Runnable? = null
+    private var pendingRightClickRelease: Runnable? = null
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var touchMovedBeyondTapSlop = false
+    private var touchPressDispatched = false
+    private var touchRightPressDispatched = false
+    private var touchLeftClickCancelled = false
+    private var touchGestureConsumed = false
 
     fun initFloatingMouseControls(
         host: FrameLayout,
         autoSwitchLeftAfterRightClick: Boolean,
+        touchDoubleClickAsRightClick: Boolean,
         touchMouseInteractionMode: TouchMouseInteractionMode,
         builtInSoftKeyboardEnabled: Boolean
     ) {
+        this.touchDoubleClickAsRightClick = touchDoubleClickAsRightClick
         floatingMouseController = FloatingMouseOverlayController(
             activity = activity,
             isNativeInputDispatchReady = isInputDispatchReady,
@@ -113,6 +133,14 @@ class GameInputHandler(
     fun onDestroy() {
         resetGamepadState()
         hideSoftKeyboard()
+        cancelPendingLongPressRightClick()
+        cancelPendingRightClickRelease()
+        if (touchRightPressDispatched) {
+            CallbackBridge.sendMouseButton(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt(), false)
+        }
+        if (touchPressDispatched) {
+            releaseTouchButtonIfNeeded()
+        }
         floatingMouseController?.onDestroy()
         floatingMouseController = null
     }
@@ -145,7 +173,11 @@ class GameInputHandler(
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = event.getPointerId(0)
                 moveCursor(event.getX(0), event.getY(0))
-                if (shouldDispatchTouchButtons()) {
+                if (touchDoubleClickAsRightClick) {
+                    val x = event.getX(0)
+                    val y = event.getY(0)
+                    beginTouchGesture(x, y)
+                } else if (shouldDispatchTouchButtons()) {
                     pressTouchButtonIfNeeded()
                 } else {
                     releaseTouchButtonIfNeeded()
@@ -157,7 +189,9 @@ class GameInputHandler(
                 val downIndex = event.actionIndex
                 activePointerId = event.getPointerId(downIndex)
                 moveCursor(event.getX(downIndex), event.getY(downIndex))
-                if (shouldDispatchTouchButtons()) {
+                if (touchDoubleClickAsRightClick) {
+                    beginTouchGesture(event.getX(downIndex), event.getY(downIndex))
+                } else if (shouldDispatchTouchButtons()) {
                     pressTouchButtonIfNeeded()
                 } else {
                     releaseTouchButtonIfNeeded()
@@ -173,6 +207,9 @@ class GameInputHandler(
                 }
                 if (pointerIndex >= 0) {
                     moveCursor(event.getX(pointerIndex), event.getY(pointerIndex))
+                    if (touchDoubleClickAsRightClick && !touchRightPressDispatched) {
+                        updateTouchGesture(event.getX(pointerIndex), event.getY(pointerIndex))
+                    }
                     return true
                 }
                 return false
@@ -184,8 +221,12 @@ class GameInputHandler(
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                releaseTouchButtonIfNeeded()
-                resetTouchState()
+                if (touchDoubleClickAsRightClick) {
+                    finishTouchGesture()
+                } else {
+                    releaseTouchButtonIfNeeded()
+                    resetTouchState()
+                }
                 return true
             }
 
@@ -208,8 +249,12 @@ class GameInputHandler(
             }
         }
         if (remaining <= 0) {
-            releaseTouchButtonIfNeeded()
-            resetTouchState()
+            if (touchDoubleClickAsRightClick) {
+                finishTouchGesture()
+            } else {
+                releaseTouchButtonIfNeeded()
+                resetTouchState()
+            }
         }
     }
 
@@ -249,12 +294,135 @@ class GameInputHandler(
         floatingMouseController?.releaseTouchButtonIfNeeded()
     }
 
+    private fun cancelDispatchedLeftTouchPress() {
+        if (!touchPressDispatched) {
+            return
+        }
+        CallbackBridge.setMouseButtonState(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_LEFT.toInt(), false)
+        floatingMouseController?.clearTouchButtonState()
+        touchPressDispatched = false
+    }
+
     private fun shouldDispatchTouchButtons(): Boolean {
         return floatingMouseController?.isTouchMouseLockEnabled() != true
     }
 
     private fun resetTouchState() {
         activePointerId = MotionEvent.INVALID_POINTER_ID
+    }
+
+    private fun beginTouchGesture(x: Float, y: Float) {
+        cancelPendingLongPressRightClick()
+        touchDownX = x
+        touchDownY = y
+        touchMovedBeyondTapSlop = false
+        touchPressDispatched = false
+        touchRightPressDispatched = false
+        touchLeftClickCancelled = false
+        touchGestureConsumed = false
+        if (!shouldDispatchTouchButtons()) {
+            releaseTouchButtonIfNeeded()
+            return
+        }
+        pressTouchButtonIfNeeded()
+        touchPressDispatched = true
+        scheduleLongPressRightClick()
+    }
+
+    private fun updateTouchGesture(x: Float, y: Float) {
+        if (touchGestureConsumed) {
+            return
+        }
+        if (!shouldDispatchTouchButtons()) {
+            return
+        }
+        if (!touchMovedBeyondTapSlop && distanceSquared(x, y, touchDownX, touchDownY) > touchMoveSlopPx * touchMoveSlopPx) {
+            touchMovedBeyondTapSlop = true
+            cancelPendingLongPressRightClick()
+        }
+    }
+
+    private fun finishTouchGesture() {
+        cancelPendingLongPressRightClick()
+        if (touchGestureConsumed) {
+            activePointerId = MotionEvent.INVALID_POINTER_ID
+            return
+        }
+        if (touchRightPressDispatched) {
+            CallbackBridge.sendMouseButton(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt(), false)
+            clearTouchGestureState()
+            return
+        }
+
+        if (!shouldDispatchTouchButtons()) {
+            releaseTouchButtonIfNeeded()
+            resetTouchState()
+            return
+        }
+
+        if (touchPressDispatched) {
+            releaseTouchButtonIfNeeded()
+            clearTouchGestureState()
+            return
+        }
+    }
+
+    private fun clearTouchGestureState() {
+        activePointerId = MotionEvent.INVALID_POINTER_ID
+        touchMovedBeyondTapSlop = false
+        touchPressDispatched = false
+        touchRightPressDispatched = false
+        touchLeftClickCancelled = false
+        touchGestureConsumed = false
+    }
+
+    private fun scheduleLongPressRightClick() {
+        cancelPendingLongPressRightClick()
+        val runnable = Runnable {
+            pendingLongPressRightClick = null
+            if (!isInputDispatchReady() || touchMovedBeyondTapSlop || touchRightPressDispatched) {
+                return@Runnable
+            }
+            cancelDispatchedLeftTouchPress()
+            touchLeftClickCancelled = true
+            touchGestureConsumed = true
+            touchRightPressDispatched = true
+            CallbackBridge.sendMouseButton(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt(), true)
+            scheduleRightClickRelease()
+        }
+        pendingLongPressRightClick = runnable
+        mainHandler.postDelayed(runnable, TOUCH_RIGHT_CLICK_LONG_PRESS_TIMEOUT_MS)
+    }
+
+    private fun cancelPendingLongPressRightClick() {
+        val runnable = pendingLongPressRightClick ?: return
+        mainHandler.removeCallbacks(runnable)
+        pendingLongPressRightClick = null
+    }
+
+    private fun scheduleRightClickRelease() {
+        cancelPendingRightClickRelease()
+        val runnable = Runnable {
+            pendingRightClickRelease = null
+            if (touchRightPressDispatched) {
+                CallbackBridge.sendMouseButton(LwjglGlfwKeycode.GLFW_MOUSE_BUTTON_RIGHT.toInt(), false)
+                touchRightPressDispatched = false
+            }
+        }
+        pendingRightClickRelease = runnable
+        mainHandler.postDelayed(runnable, TOUCH_RIGHT_CLICK_RELEASE_DELAY_MS)
+    }
+
+    private fun cancelPendingRightClickRelease() {
+        val runnable = pendingRightClickRelease ?: return
+        mainHandler.removeCallbacks(runnable)
+        pendingRightClickRelease = null
+    }
+
+    private fun distanceSquared(x1: Float, y1: Float, x2: Float, y2: Float): Float {
+        val dx = x1 - x2
+        val dy = y1 - y2
+        return dx * dx + dy * dy
     }
 
     // ==================== Mouse/Generic Motion ====================

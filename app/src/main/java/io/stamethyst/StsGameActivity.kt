@@ -282,6 +282,7 @@ class StsGameActivity : AppCompatActivity() {
         inputHandler.initFloatingMouseControls(
             host = host,
             autoSwitchLeftAfterRightClick = sessionConfig.autoSwitchLeftAfterRightClick,
+            touchDoubleClickAsRightClick = sessionConfig.touchDoubleClickAsRightClick,
             touchMouseInteractionMode = sessionConfig.touchMouseInteractionMode,
             builtInSoftKeyboardEnabled = sessionConfig.builtInSoftKeyboardEnabled
         )
