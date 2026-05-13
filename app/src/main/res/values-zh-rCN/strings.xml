@@ -295,7 +295,7 @@
     <string name="main_launch_unread_suggestions_cancel">取消启动</string>
     <string name="main_launch_unread_suggestions_continue">仍要启动</string>
     <string name="main_launch_enabled_mod_size_warning_title">警告</string>
-    <string name="main_launch_enabled_mod_size_warning_message">当前启用模组总大小约为 %1$s，大型模组过多模组，很有可能给设备带来过大压力，造成崩溃卡顿等问题。
+    <string name="main_launch_enabled_mod_size_warning_message">当前启用模组总大小约为 %1$s，大型模组过多时，很有可能给设备带来过大压力，造成崩溃卡顿等问题。
 
 是否仍要继续？</string>
     <string name="main_launch_enabled_mod_size_warning_cancel">取消启动</string>

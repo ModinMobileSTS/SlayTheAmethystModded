@@ -295,7 +295,7 @@
     <string name="main_launch_unread_suggestions_cancel">取消啟動</string>
     <string name="main_launch_unread_suggestions_continue">仍要啟動</string>
     <string name="main_launch_enabled_mod_size_warning_title">啟用模組體積過大</string>
-    <string name="main_launch_enabled_mod_size_warning_message">目前啟用模組總大小約為 %1$s，已超過 %2$s 警告閾值。目前啟用模組壓力過大，很有可能給裝置帶來過大壓力。
+    <string name="main_launch_enabled_mod_size_warning_message">目前啟用模組總大小約為 %1$s，大型模組過多時，很有可能給裝置帶來過大壓力。
 
 是否仍要繼續？</string>
     <string name="main_launch_enabled_mod_size_warning_cancel">取消啟動</string>

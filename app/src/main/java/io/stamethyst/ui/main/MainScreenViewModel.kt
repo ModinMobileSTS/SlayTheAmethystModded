@@ -1846,8 +1846,7 @@ class MainScreenViewModel : ViewModel() {
             .setMessage(
                 host.getString(
                     R.string.main_launch_enabled_mod_size_warning_message,
-                    formatByteSizeForLaunchWarning(totalBytes),
-                    formatByteSizeForLaunchWarning(ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES)
+                    formatByteSizeForLaunchWarning(totalBytes)
                 )
             )
             .setNegativeButton(R.string.main_launch_enabled_mod_size_warning_cancel, null)
