@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import io.stamethyst.R
 import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.backend.mods.DuplicateZipNormalizationResult
 import io.stamethyst.backend.mods.DuplicateZipEntryNormalizer
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModJarSupport
@@ -145,9 +146,10 @@ internal object ModImportPlanner {
         val inspectionFile = File(source.file.parentFile, "inspect-${source.index}.jar")
         return try {
             copyFile(source.file, inspectionFile)
-            ZipFile(inspectionFile).use { /* jar readability check */ }
-
-            val duplicatePlan = runDuplicateZipPlan(context, inspectionFile)
+            val duplicatePlan = buildDuplicateZipPlan(
+                context = context,
+                result = normalizeAndValidateInspectionJar(inspectionFile)
+            )
             val manifestRootPlan = runManifestRootPlan(context, inspectionFile)
             val manifest = try {
                 ModJarSupport.readModManifest(inspectionFile)
@@ -261,8 +263,16 @@ internal object ModImportPlanner {
         }
     }
 
-    private fun runDuplicateZipPlan(context: Context, inspectionFile: File): ImportPatchPlan? {
+    internal fun normalizeAndValidateInspectionJar(inspectionFile: File): DuplicateZipNormalizationResult {
         val result = DuplicateZipEntryNormalizer.normalizeInPlaceIfNeeded(inspectionFile)
+        ZipFile(inspectionFile).use { /* jar readability check */ }
+        return result
+    }
+
+    private fun buildDuplicateZipPlan(
+        context: Context,
+        result: DuplicateZipNormalizationResult
+    ): ImportPatchPlan? {
         if (!result.changed) {
             return null
         }
