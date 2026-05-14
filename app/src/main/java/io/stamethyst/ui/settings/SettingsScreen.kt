@@ -1464,6 +1464,12 @@ internal fun SettingsSectionCard(
     }
 }
 
+private enum class SettingsResourceOperationGroup {
+    MODS,
+    SAVES,
+    LOGS,
+}
+
 @Composable
 private fun SettingsImportSection(
     busy: Boolean,
@@ -1480,6 +1486,15 @@ private fun SettingsImportSection(
     val uriHandler = LocalUriHandler.current
     val getNewModsProjectUrl = stringResource(R.string.main_get_new_mods_dialog_url)
     var showGetNewModsDialog by rememberSaveable { mutableStateOf(false) }
+    var visibleOperationGroup by rememberSaveable {
+        mutableStateOf<SettingsResourceOperationGroup?>(null)
+    }
+
+    val openGetNewMods = {
+        if (!openWorkshopDownloader(context)) {
+            showGetNewModsDialog = true
+        }
+    }
 
     GetNewModsDialog(
         visible = showGetNewModsDialog,
@@ -1489,46 +1504,37 @@ private fun SettingsImportSection(
             uriHandler.openUri(getNewModsProjectUrl)
         }
     )
+    SettingsResourceOperationDialog(
+        group = visibleOperationGroup,
+        busy = busy,
+        onDismiss = { visibleOperationGroup = null },
+        onGetNewMods = openGetNewMods,
+        onImportMods = onImportMods,
+        onExportMods = onExportMods,
+        onImportSaves = onImportSaves,
+        onExportSaves = onExportSaves,
+        onExportLogs = onExportLogs,
+        onExportLogsToFile = onExportLogsToFile,
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
-            title = stringResource(R.string.main_get_new_mods),
+            title = stringResource(R.string.settings_mod_operations),
+            supportingText = stringResource(R.string.settings_mod_operations_desc),
             enabled = !busy,
-            onClick = {
-                if (!openWorkshopDownloader(context)) {
-                    showGetNewModsDialog = true
-                }
-            }
+            onClick = { visibleOperationGroup = SettingsResourceOperationGroup.MODS }
         )
         SettingsActionListItem(
-            title = stringResource(R.string.main_import_mods),
+            title = stringResource(R.string.settings_save_operations),
+            supportingText = stringResource(R.string.settings_save_operations_desc),
             enabled = !busy,
-            onClick = onImportMods
+            onClick = { visibleOperationGroup = SettingsResourceOperationGroup.SAVES }
         )
         SettingsActionListItem(
-            title = stringResource(R.string.settings_export_all_mods),
+            title = stringResource(R.string.settings_log_operations),
+            supportingText = stringResource(R.string.settings_log_operations_desc),
             enabled = !busy,
-            onClick = onExportMods
-        )
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_import_saves),
-            enabled = !busy,
-            onClick = onImportSaves
-        )
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_export_saves),
-            enabled = !busy,
-            onClick = onExportSaves
-        )
-        SettingsActionListItem(
-            title = stringResource(R.string.sts_share_crash_report),
-            enabled = !busy,
-            onClick = onExportLogs
-        )
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_export_error_logs),
-            enabled = !busy,
-            onClick = onExportLogsToFile
+            onClick = { visibleOperationGroup = SettingsResourceOperationGroup.LOGS }
         )
         SettingsActionListItem(
             title = stringResource(R.string.settings_reimport_sts_jar_title),
@@ -1543,6 +1549,91 @@ private fun SettingsImportSection(
             onClick = onOpenNativeLibraryMarket
         )
     }
+}
+
+@Composable
+private fun SettingsResourceOperationDialog(
+    group: SettingsResourceOperationGroup?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onGetNewMods: () -> Unit,
+    onImportMods: () -> Unit,
+    onExportMods: () -> Unit,
+    onImportSaves: () -> Unit,
+    onExportSaves: () -> Unit,
+    onExportLogs: () -> Unit,
+    onExportLogsToFile: () -> Unit,
+) {
+    val visibleGroup = group ?: return
+    val titleRes = when (visibleGroup) {
+        SettingsResourceOperationGroup.MODS -> R.string.settings_mod_operations
+        SettingsResourceOperationGroup.SAVES -> R.string.settings_save_operations
+        SettingsResourceOperationGroup.LOGS -> R.string.settings_log_operations
+    }
+
+    fun runOperation(operation: () -> Unit) {
+        onDismiss()
+        operation()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(titleRes)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (visibleGroup) {
+                    SettingsResourceOperationGroup.MODS -> {
+                        SettingsActionListItem(
+                            title = stringResource(R.string.main_get_new_mods),
+                            enabled = !busy,
+                            onClick = { runOperation(onGetNewMods) }
+                        )
+                        SettingsActionListItem(
+                            title = stringResource(R.string.main_import_mods),
+                            enabled = !busy,
+                            onClick = { runOperation(onImportMods) }
+                        )
+                        SettingsActionListItem(
+                            title = stringResource(R.string.settings_export_all_mods),
+                            enabled = !busy,
+                            onClick = { runOperation(onExportMods) }
+                        )
+                    }
+
+                    SettingsResourceOperationGroup.SAVES -> {
+                        SettingsActionListItem(
+                            title = stringResource(R.string.settings_import_saves),
+                            enabled = !busy,
+                            onClick = { runOperation(onImportSaves) }
+                        )
+                        SettingsActionListItem(
+                            title = stringResource(R.string.settings_export_saves),
+                            enabled = !busy,
+                            onClick = { runOperation(onExportSaves) }
+                        )
+                    }
+
+                    SettingsResourceOperationGroup.LOGS -> {
+                        SettingsActionListItem(
+                            title = stringResource(R.string.sts_share_crash_report),
+                            enabled = !busy,
+                            onClick = { runOperation(onExportLogs) }
+                        )
+                        SettingsActionListItem(
+                            title = stringResource(R.string.settings_export_error_logs),
+                            enabled = !busy,
+                            onClick = { runOperation(onExportLogsToFile) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(text = stringResource(android.R.string.cancel))
+            }
+        }
+    )
 }
 
 private fun openWorkshopDownloader(context: Context): Boolean {

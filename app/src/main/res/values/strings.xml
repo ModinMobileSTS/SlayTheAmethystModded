@@ -1182,6 +1182,12 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_feedback_entry_new">Report new issue</string>
     <string name="settings_feedback_entry_subscriptions">Issues I follow</string>
     <string name="settings_feedback_entry_issue_browser">Follow new issues</string>
+    <string name="settings_mod_operations">Mod operations</string>
+    <string name="settings_mod_operations_desc">Get new mods, import mods, or export all mods</string>
+    <string name="settings_save_operations">Save operations</string>
+    <string name="settings_save_operations_desc">Import or export save archives</string>
+    <string name="settings_log_operations">Log operations</string>
+    <string name="settings_log_operations_desc">Share error logs or export error logs</string>
     <string name="settings_export_all_mods">Export all mods</string>
     <string name="settings_import_saves">Import saves</string>
     <string name="settings_export_saves">Export saves</string>
