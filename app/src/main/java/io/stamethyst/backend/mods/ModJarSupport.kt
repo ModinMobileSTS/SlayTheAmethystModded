@@ -11,7 +11,7 @@ import java.util.ArrayList
 import java.util.zip.ZipFile
 
 object ModJarSupport {
-    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.23"
+    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.24"
 
     class ModManifestInfo(
         @JvmField val modId: String,
