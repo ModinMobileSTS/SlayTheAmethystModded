@@ -1318,6 +1318,8 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_save_imported_to_target">Imported %1$d save files to %2$s</string>
     <string name="settings_save_imported_with_backup_to_target">Imported %1$d save files to %2$s (backup: %3$s)</string>
     <string name="settings_save_import_failed">Save import failed: %1$s</string>
+    <string name="settings_save_import_failed_dialog_title">Save import failed</string>
+    <string name="settings_save_import_failed_dialog_message">Save import failed: %1$s\n\nIf you are importing a save archive from another launcher build or a third-party source, the failure is likely caused by an incompatible data format and needs manual handling. Export a save archive from this launcher first, open that archive with MT Manager or another archive tool, then replace the exported files with your save files using the same data layout. For example, replace the files in the exported archive preferences folder with the files from the preferences folder you want to import. After replacing all required files, import the modified archive with the launcher.</string>
     <string name="settings_busy_exporting_save_archive">Exporting save archive...</string>
     <string name="settings_save_exported">Save archive exported (%1$d files)</string>
     <string name="settings_save_export_failed_prefix">Save export failed</string>

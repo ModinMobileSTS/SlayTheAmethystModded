@@ -2795,13 +2795,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
-                    showToast(
-                        host,
-                        UiText.StringResource(
-                            R.string.settings_save_import_failed,
-                            error.message ?: error.javaClass.simpleName
-                        )
-                    )
+                    showSaveImportFailedDialog(host, error)
                     refreshStatus(host)
                 }
             }
@@ -2916,6 +2910,22 @@ class SettingsScreenViewModel : ViewModel() {
         AlertDialog.Builder(host)
             .setTitle(R.string.settings_steam_cloud_auto_enabled_title)
             .setMessage(R.string.settings_steam_cloud_auto_enabled_message)
+            .setPositiveButton(R.string.common_action_confirm, null)
+            .show()
+    }
+
+    private fun showSaveImportFailedDialog(host: Activity, error: Throwable) {
+        if (host.isFinishing || host.isDestroyed) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.settings_save_import_failed_dialog_title)
+            .setMessage(
+                host.getString(
+                    R.string.settings_save_import_failed_dialog_message,
+                    resolveThrowableMessage(host, error)
+                )
+            )
             .setPositiveButton(R.string.common_action_confirm, null)
             .show()
     }
