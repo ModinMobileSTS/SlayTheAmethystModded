@@ -321,16 +321,6 @@ internal class SurfaceViewHost(
             requestedHeight = height,
             requestedGeneration = surfaceGeneration
         )
-        if (lastAppliedGeneration == this.surfaceGeneration &&
-            lastAppliedBufferWidth == width &&
-            lastAppliedBufferHeight == height
-        ) {
-            return RenderSurfaceHost.BufferSizeApplyResult(
-                handled = false,
-                changedSurfaceGeometry = false,
-                detail = "$detailPrefix duplicate"
-            )
-        }
         val view = surfaceView
         val frame = holder.surfaceFrame
         val viewWidth = view?.width ?: 0
@@ -339,14 +329,31 @@ internal class SurfaceViewHost(
         val frameHeight = frame?.height() ?: 0
         val matchesViewBounds = requestedMatchesSize(width, height, viewWidth, viewHeight)
         val matchesSurfaceFrame = requestedMatchesSize(width, height, frameWidth, frameHeight)
-        if (matchesViewBounds || matchesSurfaceFrame) {
+        if (lastAppliedGeneration == this.surfaceGeneration &&
+            lastAppliedBufferWidth == width &&
+            lastAppliedBufferHeight == height &&
+            matchesSurfaceFrame
+        ) {
+            return RenderSurfaceHost.BufferSizeApplyResult(
+                handled = false,
+                changedSurfaceGeometry = false,
+                detail = "$detailPrefix duplicate"
+            )
+        }
+        if (shouldSuppressFixedSize(
+                requestedWidth = width,
+                requestedHeight = height,
+                frameWidth = frameWidth,
+                frameHeight = frameHeight
+            )
+        ) {
             lastAppliedGeneration = this.surfaceGeneration
             lastAppliedBufferWidth = width
             lastAppliedBufferHeight = height
-            val suppressionReason = when {
-                matchesViewBounds && matchesSurfaceFrame -> "fixed_size_suppressed_view_and_frame_match"
-                matchesViewBounds -> "fixed_size_suppressed_view_match"
-                else -> "fixed_size_suppressed_frame_match"
+            val suppressionReason = if (matchesViewBounds) {
+                "fixed_size_suppressed_view_and_frame_match"
+            } else {
+                "fixed_size_suppressed_frame_match"
             }
             return RenderSurfaceHost.BufferSizeApplyResult(
                 handled = true,
@@ -415,5 +422,35 @@ internal class SurfaceViewHost(
             actualHeight > 0 &&
             requestedWidth == actualWidth &&
             requestedHeight == actualHeight
+    }
+
+    companion object {
+        internal fun shouldSuppressFixedSize(
+            requestedWidth: Int,
+            requestedHeight: Int,
+            frameWidth: Int,
+            frameHeight: Int
+        ): Boolean {
+            return requestedMatchesSize(
+                requestedWidth = requestedWidth,
+                requestedHeight = requestedHeight,
+                actualWidth = frameWidth,
+                actualHeight = frameHeight
+            )
+        }
+
+        private fun requestedMatchesSize(
+            requestedWidth: Int,
+            requestedHeight: Int,
+            actualWidth: Int,
+            actualHeight: Int
+        ): Boolean {
+            return requestedWidth > 0 &&
+                requestedHeight > 0 &&
+                actualWidth > 0 &&
+                actualHeight > 0 &&
+                requestedWidth == actualWidth &&
+                requestedHeight == actualHeight
+        }
     }
 }

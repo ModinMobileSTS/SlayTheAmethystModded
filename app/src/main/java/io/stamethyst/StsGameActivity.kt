@@ -3,6 +3,7 @@ package io.stamethyst
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -176,6 +177,28 @@ class StsGameActivity : AppCompatActivity() {
             renderSurfaceManager.applyImmersiveMode()
         }
         sessionCoordinator.onWindowFocusChanged(hasFocus)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::renderSurfaceManager.isInitialized) {
+            renderSurfaceManager.onWindowConfigurationChanged("window_configuration")
+        }
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode)
+        if (::renderSurfaceManager.isInitialized) {
+            renderSurfaceManager.onWindowConfigurationChanged("multi_window_mode")
+        }
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        if (::renderSurfaceManager.isInitialized) {
+            renderSurfaceManager.onWindowConfigurationChanged("multi_window_mode")
+        }
     }
 
     override fun onLowMemory() {

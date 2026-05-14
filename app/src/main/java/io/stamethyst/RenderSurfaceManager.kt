@@ -52,9 +52,14 @@ class RenderSurfaceManager(
     private var postBootSurfaceSoftRefreshAttempts = 0
     private var postBootSurfaceSoftRefreshDeferrals = 0
     private var postBootSurfaceSoftRefreshInFlight = false
+    private var forceNextBufferApply = false
 
     private val foregroundResyncRunnable = Runnable {
         applyQueuedResync()
+    }
+    private val windowConfigurationResyncRetryRunnable = Runnable {
+        forceNextBufferApply = true
+        requestForegroundResync("window_configuration_retry")
     }
     private val postBootSurfaceSoftRefreshRunnable = Runnable {
         performPostBootSurfaceSoftRefresh()
@@ -164,6 +169,7 @@ class RenderSurfaceManager(
     fun onDestroy() {
         if (::renderView.isInitialized) {
             renderView.removeCallbacks(foregroundResyncRunnable)
+            renderView.removeCallbacks(windowConfigurationResyncRetryRunnable)
             renderView.removeCallbacks(postBootSurfaceSoftRefreshRunnable)
         }
         refreshRateController.sync(
@@ -196,6 +202,25 @@ class RenderSurfaceManager(
 
     fun resyncAfterForeground() {
         requestForegroundResync("legacy_foreground")
+    }
+
+    fun onWindowConfigurationChanged(reason: String) {
+        if (!::renderView.isInitialized) {
+            return
+        }
+        applyImmersiveMode()
+        renderRoot?.let { root ->
+            ViewCompat.requestApplyInsets(root)
+            applyViewportLayout()
+        }
+        state.rememberPhysicalSize(renderView.width, renderView.height)
+        forceNextBufferApply = true
+        requestForegroundResync(reason)
+        renderView.removeCallbacks(windowConfigurationResyncRetryRunnable)
+        renderView.postDelayed(
+            windowConfigurationResyncRetryRunnable,
+            SURFACE_VIEW_CONFIGURATION_RETRY_MS
+        )
     }
 
     fun requestForegroundResync(reason: String) {
@@ -320,7 +345,13 @@ class RenderSurfaceManager(
         val reasons = resyncScheduler.drain()
         val reasonSummary = reasons.joinToString("+").ifBlank { "unspecified" }
         lastResyncReasonSummary = reasonSummary
-        val plan = buildApplyPlan(renderView.width, renderView.height)
+        val forceBufferApply = forceNextBufferApply
+        forceNextBufferApply = false
+        val plan = buildApplyPlan(
+            viewWidth = renderView.width,
+            viewHeight = renderView.height,
+            forceBufferApply = forceBufferApply
+        )
         var anyApplied = false
 
         if (plan.shouldApplyBufferSize && renderHost.currentSurface != null) {
@@ -540,11 +571,22 @@ class RenderSurfaceManager(
         }
     }
 
-    private fun buildApplyPlan(viewWidth: Int, viewHeight: Int): RenderSurfaceState.ApplyPlan {
-        return state.buildApplyPlan(
-            viewWidth = viewWidth,
-            viewHeight = viewHeight
-        )
+    private fun buildApplyPlan(
+        viewWidth: Int,
+        viewHeight: Int,
+        forceBufferApply: Boolean = false
+    ): RenderSurfaceState.ApplyPlan {
+        return if (forceBufferApply) {
+            state.buildForcedApplyPlan(
+                viewWidth = viewWidth,
+                viewHeight = viewHeight
+            )
+        } else {
+            state.buildApplyPlan(
+                viewWidth = viewWidth,
+                viewHeight = viewHeight
+            )
+        }
     }
 
     private fun resolveVirtualResolution() = VirtualResolutionPolicy.resolve(
@@ -745,6 +787,7 @@ class RenderSurfaceManager(
     companion object {
         private const val SURFACE_VIEW_STARTUP_RESYNC_DEBOUNCE_MS = 16L
         private const val SURFACE_VIEW_STABLE_RESYNC_DEBOUNCE_MS = 48L
+        private const val SURFACE_VIEW_CONFIGURATION_RETRY_MS = 160L
         private const val POST_BOOT_SURFACE_SOFT_REFRESH_DELAY_MS = 220L
         private const val POST_BOOT_SURFACE_SOFT_REFRESH_HIDDEN_MS = 32L
         private const val POST_BOOT_SURFACE_SOFT_REFRESH_RETRY_DELAY_MS = 160L
@@ -767,7 +810,10 @@ class RenderSurfaceManager(
                 "viewport_layout",
                 "resume",
                 "focus",
-                "legacy_foreground" -> SURFACE_VIEW_STABLE_RESYNC_DEBOUNCE_MS
+                "legacy_foreground",
+                "window_configuration",
+                "multi_window_mode",
+                "window_configuration_retry" -> SURFACE_VIEW_STABLE_RESYNC_DEBOUNCE_MS
 
                 else -> 0L
             }

@@ -34,6 +34,20 @@ class RenderSurfaceStateTest {
     }
 
     @Test
+    fun buildForcedApplyPlan_reappliesBufferForSameSizeAndGeneration() {
+        val state = RenderSurfaceState()
+        state.markSurfaceAvailable(generation = 1, width = 1920, height = 1080)
+        val firstPlan = state.buildApplyPlan(viewWidth = 1920, viewHeight = 1080)
+        state.recordBufferApply(firstPlan, applied = true, incrementsHolderResize = true)
+        state.recordWindowSizeDispatch(firstPlan, dispatched = true)
+
+        val forcedPlan = state.buildForcedApplyPlan(viewWidth = 1920, viewHeight = 1080)
+
+        assertTrue(forcedPlan.shouldApplyBufferSize)
+        assertFalse(forcedPlan.shouldDispatchWindowSize)
+    }
+
+    @Test
     fun buildApplyPlan_reappliesBufferOnNewSurfaceGeneration_withoutRedispatchingWindowSize() {
         val state = RenderSurfaceState()
         state.markSurfaceAvailable(generation = 1, width = 1920, height = 1080)

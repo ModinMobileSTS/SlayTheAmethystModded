@@ -29,6 +29,13 @@ class RenderSurfaceManagerPolicyTest {
                 reason = "surface_available"
             )
         )
+        assertEquals(
+            48L,
+            RenderSurfaceManager.resolveForegroundResyncDelayMs(
+                useTextureViewSurface = false,
+                reason = "window_configuration"
+            )
+        )
     }
 
     @Test
@@ -78,6 +85,35 @@ class RenderSurfaceManagerPolicyTest {
                 bridgeSurfaceReady = true,
                 hasCurrentSurface = true,
                 reason = "layout"
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldSkipSurfaceViewSteadyStateResync(
+                useTextureViewSurface = false,
+                pendingSurfaceReadyCallback = false,
+                bridgeSurfaceReady = true,
+                hasCurrentSurface = true,
+                reason = "window_configuration"
+            )
+        )
+    }
+
+    @Test
+    fun surfaceViewFixedSizePolicy_doesNotSuppressWhenSurfaceFrameIsStale() {
+        assertFalse(
+            SurfaceViewHost.shouldSuppressFixedSize(
+                requestedWidth = 2400,
+                requestedHeight = 1080,
+                frameWidth = 1200,
+                frameHeight = 540
+            )
+        )
+        assertTrue(
+            SurfaceViewHost.shouldSuppressFixedSize(
+                requestedWidth = 2400,
+                requestedHeight = 1080,
+                frameWidth = 2400,
+                frameHeight = 1080
             )
         )
     }

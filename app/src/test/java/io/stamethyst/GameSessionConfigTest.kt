@@ -53,6 +53,7 @@ class GameSessionConfigTest {
             touchMouseInteractionMode = TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP,
             builtInSoftKeyboardEnabled = true,
             autoSwitchLeftAfterRightClick = false,
+            touchDoubleClickAsRightClick = false,
             requestedRenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             rendererDecision = RendererDecision(
                 selectionMode = RendererSelectionMode.AUTO,

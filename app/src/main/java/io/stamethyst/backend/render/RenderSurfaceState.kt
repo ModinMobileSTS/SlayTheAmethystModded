@@ -120,6 +120,11 @@ internal class RenderSurfaceState {
         )
     }
 
+    fun buildForcedApplyPlan(viewWidth: Int = 0, viewHeight: Int = 0): ApplyPlan {
+        val plan = buildApplyPlan(viewWidth, viewHeight)
+        return plan.copy(shouldApplyBufferSize = true)
+    }
+
     fun buildApplyPlan(
         viewWidth: Int = 0,
         viewHeight: Int = 0,

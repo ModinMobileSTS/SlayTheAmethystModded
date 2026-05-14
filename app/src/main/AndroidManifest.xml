@@ -41,7 +41,15 @@
             android:enableOnBackInvokedCallback="true"
             android:process=":game"
             android:screenOrientation="sensorLandscape"
-            tools:targetApi="33" />
+            tools:targetApi="33">
+
+            <layout
+                android:defaultWidth="1280dp"
+                android:defaultHeight="720dp"
+                android:minWidth="640dp"
+                android:minHeight="360dp"
+                android:gravity="center" />
+        </activity>
 
         <activity
             android:name="io.stamethyst.backend.file_interactive.SafExportActivity"
