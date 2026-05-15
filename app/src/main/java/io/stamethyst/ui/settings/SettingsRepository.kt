@@ -6,6 +6,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
+import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererBackendResolver
@@ -16,6 +17,7 @@ import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
@@ -45,7 +47,8 @@ internal object SettingsRepository {
         val rendererSelectionMode: RendererSelectionMode,
         val manualRendererBackend: RendererBackend,
         val mobileGluesSettings: MobileGluesSettings,
-        val rendererDecision: RendererDecision
+        val rendererDecision: RendererDecision,
+        val gpuResourceGuardianMode: GpuResourceGuardianMode
     )
 
     data class JvmSnapshot(
@@ -137,7 +140,8 @@ internal object SettingsRepository {
                 rendererSelectionMode = rendererSelectionMode,
                 manualRendererBackend = manualRendererBackend,
                 mobileGluesSettings = mobileGluesSettings,
-                rendererDecision = rendererDecision
+                rendererDecision = rendererDecision,
+                gpuResourceGuardianMode = LauncherPreferences.readGpuResourceGuardianMode(context)
             ),
             jvm = JvmSnapshot(
                 heapMaxMb = heapMaxMb,
@@ -208,6 +212,150 @@ internal object SettingsRepository {
         )
     }
 
+    fun resetLauncherSettingsToDefaults(context: Context) {
+        LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
+        LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
+        LauncherPreferences.savePlayerName(context, LauncherPreferences.DEFAULT_PLAYER_NAME)
+        RenderScaleService.reset(context)
+        LauncherPreferences.saveTargetFps(context, LauncherPreferences.DEFAULT_TARGET_FPS)
+        LauncherPreferences.saveVirtualResolutionMode(
+            context,
+            LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE
+        )
+        LauncherPreferences.saveRenderSurfaceBackend(
+            context,
+            LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND
+        )
+        LauncherPreferences.saveRendererSelectionMode(
+            context,
+            LauncherPreferences.DEFAULT_RENDERER_SELECTION_MODE
+        )
+        LauncherPreferences.saveManualRendererBackend(
+            context,
+            LauncherPreferences.DEFAULT_MANUAL_RENDERER_BACKEND
+        )
+        LauncherPreferences.saveMobileGluesSettings(context, defaultMobileGluesSettings())
+        MobileGluesConfigFile.syncFromLauncherPreferences(context)
+        LauncherPreferences.saveBackBehavior(context, LauncherPreferences.DEFAULT_BACK_BEHAVIOR)
+        LauncherPreferences.saveManualDismissBootOverlay(
+            context,
+            LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
+        )
+        LauncherPreferences.saveShowFloatingMouseWindow(
+            context,
+            LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+        )
+        LauncherPreferences.saveTouchMouseInteractionMode(
+            context,
+            LauncherPreferences.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE
+        )
+        LauncherPreferences.saveTouchDoubleClickAsRightClick(
+            context,
+            LauncherPreferences.DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK
+        )
+        LauncherPreferences.setBuiltInSoftKeyboardEnabled(
+            context,
+            LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
+        )
+        LauncherPreferences.setHapticFeedbackEnabled(
+            context,
+            LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED
+        )
+        LauncherPreferences.saveAutoSwitchLeftAfterRightClick(
+            context,
+            LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
+        )
+        LauncherPreferences.saveShowModFileName(
+            context,
+            LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME
+        )
+        LauncherPreferences.saveMobileHudEnabled(
+            context,
+            LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED
+        )
+        LauncherPreferences.saveCompendiumUpgradeTouchFixEnabled(
+            context,
+            LauncherPreferences.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED
+        )
+        LauncherPreferences.setDisplayCutoutAvoidanceEnabled(
+            context,
+            LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT
+        )
+        LauncherPreferences.setScreenBottomCropEnabled(
+            context,
+            LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM
+        )
+        LauncherPreferences.setGamePerformanceOverlayEnabled(
+            context,
+            LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
+        )
+        LauncherPreferences.setSustainedPerformanceModeEnabled(
+            context,
+            LauncherPreferences.DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED
+        )
+        LauncherPreferences.setLwjglDebugEnabled(context, LauncherPreferences.DEFAULT_LWJGL_DEBUG)
+        LauncherPreferences.setPreloadAllJreLibrariesEnabled(
+            context,
+            LauncherPreferences.DEFAULT_PRELOAD_ALL_JRE_LIBRARIES
+        )
+        LauncherPreferences.setLogcatCaptureEnabled(
+            context,
+            LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED
+        )
+        LauncherPreferences.setLauncherLogcatCaptureEnabled(
+            context,
+            LauncherPreferences.DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED
+        )
+        LauncherPreferences.setJvmLogcatMirrorEnabled(
+            context,
+            LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED
+        )
+        LauncherPreferences.setGpuResourceDiagEnabled(
+            context,
+            LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED
+        )
+        LauncherPreferences.resetGpuResourceGuardianMode(context)
+        LauncherPreferences.setGdxPadCursorDebugEnabled(
+            context,
+            LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG
+        )
+        LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(
+            context,
+            LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
+        )
+        LauncherPreferences.saveJvmHeapMaxMb(context, LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB)
+        LauncherPreferences.setJvmCompressedPointersEnabled(
+            context,
+            LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED
+        )
+        LauncherPreferences.setJvmStringDeduplicationEnabled(
+            context,
+            LauncherPreferences.DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED
+        )
+        GameplaySettingsService.saveTouchscreenInputMode(
+            context,
+            GameplaySettingsService.DEFAULT_TOUCHSCREEN_INPUT_MODE
+        )
+        GameplaySettingsService.saveFontScale(context, GameplaySettingsService.DEFAULT_FONT_SCALE)
+        GameplaySettingsService.saveLargerUiEnabled(
+            context,
+            GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED
+        )
+        LauncherPreferences.setAutoCheckUpdatesEnabled(
+            context,
+            LauncherPreferences.DEFAULT_AUTO_CHECK_UPDATES_ENABLED
+        )
+        LauncherPreferences.savePreferredUpdateMirrorId(
+            context,
+            LauncherPreferences.DEFAULT_PREFERRED_UPDATE_MIRROR_ID
+        )
+        LauncherPreferences.setSteamCloudWattAccelerationEnabled(
+            context,
+            LauncherPreferences.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
+        )
+        CompatibilitySettings.resetToDefaults(context)
+    }
+
     private fun buildUpdateStatusSummary(context: Context): String {
         val lastCheckedAtMs = LauncherPreferences.readLastUpdateCheckAtMs(context)
         if (lastCheckedAtMs <= 0L) {
@@ -263,6 +411,22 @@ internal object SettingsRepository {
         }
 
         return lines.joinToString("\n")
+    }
+
+    private fun defaultMobileGluesSettings(): MobileGluesSettings {
+        return MobileGluesSettings(
+            anglePolicy = LauncherPreferences.DEFAULT_MOBILEGLUES_ANGLE_POLICY,
+            noErrorPolicy = LauncherPreferences.DEFAULT_MOBILEGLUES_NO_ERROR_POLICY,
+            multidrawMode = LauncherPreferences.DEFAULT_MOBILEGLUES_MULTIDRAW_MODE,
+            extComputeShaderEnabled = LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_COMPUTE_SHADER_ENABLED,
+            extTimerQueryEnabled = LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_TIMER_QUERY_ENABLED,
+            extDirectStateAccessEnabled =
+                LauncherPreferences.DEFAULT_MOBILEGLUES_EXT_DIRECT_STATE_ACCESS_ENABLED,
+            glslCacheSizePreset = LauncherPreferences.DEFAULT_MOBILEGLUES_GLSL_CACHE_SIZE_PRESET,
+            angleDepthClearFixMode = LauncherPreferences.DEFAULT_MOBILEGLUES_ANGLE_DEPTH_CLEAR_FIX_MODE,
+            customGlVersion = LauncherPreferences.DEFAULT_MOBILEGLUES_CUSTOM_GL_VERSION,
+            fsr1QualityPreset = LauncherPreferences.DEFAULT_MOBILEGLUES_FSR1_QUALITY_PRESET
+        )
     }
 
     private fun resolveUpdateSourceDisplayName(sourceId: String?): String? {

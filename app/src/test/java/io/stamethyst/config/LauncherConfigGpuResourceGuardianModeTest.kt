@@ -5,10 +5,26 @@ import org.junit.Test
 
 class LauncherConfigGpuResourceGuardianModeTest {
     @Test
-    fun gpuResourceGuardian_defaultsSafe() {
+    fun gpuResourceGuardian_highMemoryDefaultSafe() {
         assertEquals(
             GpuResourceGuardianMode.SAFE,
-            LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
+            LauncherConfig.resolveDefaultGpuResourceGuardianMode(13L * 1024L * 1024L * 1024L)
+        )
+    }
+
+    @Test
+    fun gpuResourceGuardian_lowMemoryDefaultAggressive() {
+        assertEquals(
+            GpuResourceGuardianMode.AGGRESSIVE,
+            LauncherConfig.resolveDefaultGpuResourceGuardianMode(12L * 1024L * 1024L * 1024L)
+        )
+    }
+
+    @Test
+    fun gpuResourceGuardian_unknownMemoryDefaultSafe() {
+        assertEquals(
+            GpuResourceGuardianMode.SAFE,
+            LauncherConfig.resolveDefaultGpuResourceGuardianMode(-1L)
         )
     }
 
@@ -24,6 +40,13 @@ class LauncherConfigGpuResourceGuardianModeTest {
             GpuResourceGuardianMode.DIAGNOSTIC,
             GpuResourceGuardianMode.fromPersistedValue("diagnostic")
         )
+        assertEquals(GpuResourceGuardianMode.LEGACY, GpuResourceGuardianMode.fromPersistedValue("legacy"))
+    }
+
+    @Test
+    fun runtimePropertyValue_mapsLegacyToOff() {
+        assertEquals("off", GpuResourceGuardianMode.LEGACY.runtimePropertyValue)
+        assertEquals("safe", GpuResourceGuardianMode.SAFE.runtimePropertyValue)
     }
 
     @Test

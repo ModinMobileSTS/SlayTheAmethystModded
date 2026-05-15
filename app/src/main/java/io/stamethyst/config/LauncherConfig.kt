@@ -1,5 +1,6 @@
 package io.stamethyst.config
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
@@ -142,6 +143,8 @@ object LauncherConfig {
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
+    private const val GPU_RESOURCE_GUARDIAN_AGGRESSIVE_MAX_MEMORY_BYTES =
+        12L * 1024L * 1024L * 1024L
 
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
@@ -219,6 +222,8 @@ object LauncherConfig {
     const val MIN_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.SAFE
+    val DEFAULT_LOW_MEMORY_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode =
+        GpuResourceGuardianMode.AGGRESSIVE
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
@@ -896,7 +901,7 @@ object LauncherConfig {
     }
 
     fun isLargeTextureDownscaleCompatEnabled(context: Context): Boolean {
-        return false
+        return isLegacyGpuResourceModeEnabled(context)
     }
 
     fun setLargeTextureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
@@ -906,7 +911,7 @@ object LauncherConfig {
     }
 
     fun isTextureResidencyManagerCompatEnabled(context: Context): Boolean {
-        return false
+        return isLegacyGpuResourceModeEnabled(context)
     }
 
     fun setTextureResidencyManagerCompatEnabled(context: Context, enabled: Boolean) {
@@ -938,18 +943,43 @@ object LauncherConfig {
     }
 
     fun readGpuResourceGuardianMode(context: Context): GpuResourceGuardianMode {
-        val persisted = prefs(context).getString(
-            PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE,
-            DEFAULT_GPU_RESOURCE_GUARDIAN_MODE.persistedValue
-        )
+        val persisted = prefs(context).getString(PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE, null)
         return GpuResourceGuardianMode.fromPersistedValue(persisted)
-            ?: DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
+            ?: resolveDefaultGpuResourceGuardianMode(context)
     }
 
     fun saveGpuResourceGuardianMode(context: Context, mode: GpuResourceGuardianMode) {
         prefs(context).edit {
             putString(PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE, mode.persistedValue)
         }
+    }
+
+    fun resetGpuResourceGuardianMode(context: Context) {
+        prefs(context).edit {
+            remove(PREF_KEY_GPU_RESOURCE_GUARDIAN_MODE)
+        }
+    }
+
+    fun resolveDefaultGpuResourceGuardianMode(context: Context): GpuResourceGuardianMode {
+        return resolveDefaultGpuResourceGuardianMode(readTotalMemoryBytes(context))
+    }
+
+    fun resolveDefaultGpuResourceGuardianMode(totalMemoryBytes: Long): GpuResourceGuardianMode {
+        return if (totalMemoryBytes > 0L && totalMemoryBytes <= GPU_RESOURCE_GUARDIAN_AGGRESSIVE_MAX_MEMORY_BYTES) {
+            DEFAULT_LOW_MEMORY_GPU_RESOURCE_GUARDIAN_MODE
+        } else {
+            DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
+        }
+    }
+
+    private fun readTotalMemoryBytes(context: Context): Long {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return -1L
+        val memoryInfo = ActivityManager.MemoryInfo()
+        return runCatching {
+            activityManager.getMemoryInfo(memoryInfo)
+            memoryInfo.totalMem
+        }.getOrDefault(-1L)
     }
 
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
@@ -986,7 +1016,7 @@ object LauncherConfig {
     }
 
     fun isFboManagerCompatEnabled(context: Context): Boolean {
-        return false
+        return isLegacyGpuResourceModeEnabled(context)
     }
 
     fun setFboManagerCompatEnabled(context: Context, enabled: Boolean) {
@@ -996,7 +1026,7 @@ object LauncherConfig {
     }
 
     fun isFboIdleReclaimCompatEnabled(context: Context): Boolean {
-        return false
+        return isLegacyGpuResourceModeEnabled(context)
     }
 
     fun setFboIdleReclaimCompatEnabled(context: Context, enabled: Boolean) {
@@ -1006,13 +1036,17 @@ object LauncherConfig {
     }
 
     fun isFboPressureDownscaleCompatEnabled(context: Context): Boolean {
-        return false
+        return isLegacyGpuResourceModeEnabled(context)
     }
 
     fun setFboPressureDownscaleCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT, false)
         }
+    }
+
+    private fun isLegacyGpuResourceModeEnabled(context: Context): Boolean {
+        return readGpuResourceGuardianMode(context) == GpuResourceGuardianMode.LEGACY
     }
 
     fun isLwjglDebugEnabled(context: Context): Boolean {

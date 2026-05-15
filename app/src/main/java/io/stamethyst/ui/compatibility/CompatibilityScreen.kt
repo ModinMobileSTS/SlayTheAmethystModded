@@ -31,7 +31,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
-import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
@@ -76,9 +75,6 @@ fun LauncherCompatibilityScreen(
         onTexturePressureDownscaleDivisorChanged = { divisor ->
             viewModel.onTexturePressureDownscaleDivisorChanged(context, divisor)
         },
-        onGpuResourceGuardianModeChanged = { mode ->
-            viewModel.onGpuResourceGuardianModeChanged(context, mode)
-        },
         onForceLinearMipmapFilterToggled = { enabled -> viewModel.onForceLinearMipmapFilterToggled(context, enabled) },
         onHinaCharacterRenderCompatToggled = { enabled ->
             viewModel.onHinaCharacterRenderCompatToggled(context, enabled)
@@ -97,7 +93,6 @@ fun LauncherCompatibilityScreen(
         },
     )
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview(showBackground = true)
 @Composable
@@ -117,7 +112,6 @@ private fun LauncherCompatibilityScreenPreview() {
             largeTextureDownscaleCompatEnabled = true,
             textureResidencyManagerCompatEnabled = true,
             texturePressureDownscaleDivisor = 2,
-            gpuResourceGuardianMode = GpuResourceGuardianMode.SAFE,
             forceLinearMipmapFilterEnabled = true,
             hinaCharacterRenderCompatEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,
@@ -145,7 +139,6 @@ private fun LauncherCompatibilityScreenContent(
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
     onTextureResidencyManagerCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
-    onGpuResourceGuardianModeChanged: (GpuResourceGuardianMode) -> Unit = {},
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onHinaCharacterRenderCompatToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
@@ -216,7 +209,7 @@ private fun LauncherCompatibilityScreenContent(
                 CompatibilitySwitchRow(
                     title = stringResource(R.string.compat_large_texture_downscale_title),
                     description = stringResource(R.string.compat_large_texture_downscale_desc),
-                    checked = false,
+                    checked = uiState.largeTextureDownscaleCompatEnabled,
                     enabled = false,
                     onCheckedChange = onLargeTextureDownscaleCompatToggled
                 )
@@ -224,7 +217,7 @@ private fun LauncherCompatibilityScreenContent(
                 CompatibilitySwitchRow(
                     title = stringResource(R.string.compat_texture_residency_manager_title),
                     description = stringResource(R.string.compat_texture_residency_manager_desc),
-                    checked = false,
+                    checked = uiState.textureResidencyManagerCompatEnabled,
                     enabled = false,
                     onCheckedChange = onTextureResidencyManagerCompatToggled
                 )
@@ -247,17 +240,6 @@ private fun LauncherCompatibilityScreenContent(
                         texturePressureDownscaleDivisorOptionDescription(context, divisor)
                     },
                     onOptionSelected = onTexturePressureDownscaleDivisorChanged
-                )
-
-                SettingsDropdownField(
-                    label = stringResource(R.string.compat_gpu_resource_guardian_title),
-                    valueText = gpuResourceGuardianModeLabel(context, uiState.gpuResourceGuardianMode),
-                    enabled = !uiState.busy,
-                    supportingText = stringResource(R.string.compat_gpu_resource_guardian_desc),
-                    options = GpuResourceGuardianMode.entries,
-                    optionLabel = { mode -> gpuResourceGuardianModeLabel(context, mode) },
-                    optionDescription = { mode -> gpuResourceGuardianModeDescription(context, mode) },
-                    onOptionSelected = onGpuResourceGuardianModeChanged
                 )
 
                 CompatibilitySwitchRow(
@@ -287,7 +269,7 @@ private fun LauncherCompatibilityScreenContent(
                 CompatibilitySwitchRow(
                     title = stringResource(R.string.compat_fbo_manager_title),
                     description = stringResource(R.string.compat_fbo_manager_desc),
-                    checked = false,
+                    checked = uiState.fboManagerCompatEnabled,
                     enabled = false,
                     onCheckedChange = onFboManagerCompatToggled
                 )
@@ -295,7 +277,7 @@ private fun LauncherCompatibilityScreenContent(
                 CompatibilitySwitchRow(
                     title = stringResource(R.string.compat_fbo_idle_reclaim_title),
                     description = stringResource(R.string.compat_fbo_idle_reclaim_desc),
-                    checked = false,
+                    checked = uiState.fboIdleReclaimCompatEnabled,
                     enabled = false,
                     onCheckedChange = onFboIdleReclaimCompatToggled
                 )
@@ -303,7 +285,7 @@ private fun LauncherCompatibilityScreenContent(
                 CompatibilitySwitchRow(
                     title = stringResource(R.string.compat_fbo_pressure_downscale_title),
                     description = stringResource(R.string.compat_fbo_pressure_downscale_desc),
-                    checked = false,
+                    checked = uiState.fboPressureDownscaleCompatEnabled,
                     enabled = false,
                     onCheckedChange = onFboPressureDownscaleCompatToggled
                 )
@@ -439,30 +421,4 @@ private fun texturePressureDownscaleDivisorOptionDescription(
         scaledSize,
         scaledSize
     )
-}
-
-private fun gpuResourceGuardianModeLabel(
-    context: Context,
-    mode: GpuResourceGuardianMode
-): String {
-    val resId = when (mode) {
-        GpuResourceGuardianMode.OFF -> R.string.compat_gpu_resource_guardian_mode_off
-        GpuResourceGuardianMode.SAFE -> R.string.compat_gpu_resource_guardian_mode_safe
-        GpuResourceGuardianMode.AGGRESSIVE -> R.string.compat_gpu_resource_guardian_mode_aggressive
-        GpuResourceGuardianMode.DIAGNOSTIC -> R.string.compat_gpu_resource_guardian_mode_diagnostic
-    }
-    return context.getString(resId)
-}
-
-private fun gpuResourceGuardianModeDescription(
-    context: Context,
-    mode: GpuResourceGuardianMode
-): String {
-    val resId = when (mode) {
-        GpuResourceGuardianMode.OFF -> R.string.compat_gpu_resource_guardian_mode_off_desc
-        GpuResourceGuardianMode.SAFE -> R.string.compat_gpu_resource_guardian_mode_safe_desc
-        GpuResourceGuardianMode.AGGRESSIVE -> R.string.compat_gpu_resource_guardian_mode_aggressive_desc
-        GpuResourceGuardianMode.DIAGNOSTIC -> R.string.compat_gpu_resource_guardian_mode_diagnostic_desc
-    }
-    return context.getString(resId)
 }

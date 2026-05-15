@@ -4,7 +4,14 @@ enum class GpuResourceGuardianMode(val persistedValue: String) {
     OFF("off"),
     SAFE("safe"),
     AGGRESSIVE("aggressive"),
-    DIAGNOSTIC("diagnostic");
+    DIAGNOSTIC("diagnostic"),
+    LEGACY("legacy");
+
+    val runtimePropertyValue: String
+        get() = when (this) {
+            LEGACY -> OFF.persistedValue
+            else -> persistedValue
+        }
 
     companion object {
         fun fromPersistedValue(value: String?): GpuResourceGuardianMode? {

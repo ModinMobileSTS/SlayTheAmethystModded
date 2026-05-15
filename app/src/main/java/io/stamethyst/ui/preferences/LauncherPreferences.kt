@@ -13,6 +13,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -101,6 +102,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED
     val DEFAULT_GPU_RESOURCE_DIAG_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_DIAG_ENABLED
+    val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode
+        get() = LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
     val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
@@ -379,6 +382,18 @@ object LauncherPreferences {
 
     fun setGpuResourceDiagEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setGpuResourceDiagEnabled(context, enabled)
+    }
+
+    fun readGpuResourceGuardianMode(context: Context): GpuResourceGuardianMode {
+        return LauncherConfig.readGpuResourceGuardianMode(context)
+    }
+
+    fun saveGpuResourceGuardianMode(context: Context, mode: GpuResourceGuardianMode) {
+        LauncherConfig.saveGpuResourceGuardianMode(context, mode)
+    }
+
+    fun resetGpuResourceGuardianMode(context: Context) {
+        LauncherConfig.resetGpuResourceGuardianMode(context)
     }
 
     fun isGdxPadCursorDebugEnabled(context: Context): Boolean {

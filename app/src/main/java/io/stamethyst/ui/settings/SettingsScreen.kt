@@ -99,6 +99,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
@@ -163,6 +164,9 @@ fun LauncherSettingsScreen(
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onVirtualResolutionModeChanged = { mode ->
             viewModel.onVirtualResolutionModeChanged(activity, mode)
+        },
+        onGpuResourceGuardianModeChanged = { mode ->
+            viewModel.onGpuResourceGuardianModeChanged(activity, mode)
         },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
@@ -323,6 +327,9 @@ fun LauncherDeveloperSettingsScreen(
         onGlBridgeSwapHeartbeatDebugChanged = { enabled ->
             viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled)
         },
+        onResetLauncherSettingsToDefaults = {
+            viewModel.onResetLauncherSettingsToDefaults(activity)
+        },
     )
 }
 
@@ -404,6 +411,7 @@ private fun LauncherSettingsScreenContent(
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Int) -> Unit = {},
     onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
+    onGpuResourceGuardianModeChanged: (GpuResourceGuardianMode) -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onRenderSurfaceBackendChanged: (RenderSurfaceBackend) -> Unit = {},
@@ -561,6 +569,7 @@ private fun LauncherSettingsScreenContent(
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
                         onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
+                        onGpuResourceGuardianModeChanged = onGpuResourceGuardianModeChanged,
                         onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
                         onScreenBottomCropChanged = onScreenBottomCropChanged,
                         onGameplayFontScaleChanged = onGameplayFontScaleChanged,
@@ -1252,6 +1261,7 @@ internal fun SettingsUpdateSection(
             }
         )
     }
+
 }
 
 @Composable
@@ -1727,6 +1737,7 @@ private fun LauncherDeveloperSettingsScreenContent(
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
+    onResetLauncherSettingsToDefaults: () -> Unit = {},
 ) {
     val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
     Scaffold(
@@ -1820,7 +1831,63 @@ private fun LauncherDeveloperSettingsScreenContent(
                     )
                 }
             }
+
+            item {
+                SettingsSectionCard(title = stringResource(R.string.settings_reset_defaults_section_title)) {
+                    SettingsResetDefaultsSection(
+                        busy = uiState.busy,
+                        onResetLauncherSettingsToDefaults = onResetLauncherSettingsToDefaults
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun SettingsResetDefaultsSection(
+    busy: Boolean,
+    onResetLauncherSettingsToDefaults: () -> Unit,
+) {
+    var showConfirmDialog by rememberSaveable { mutableStateOf(false) }
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_reset_defaults_title),
+        supportingText = stringResource(R.string.settings_reset_defaults_summary),
+        enabled = !busy,
+        onClick = { showConfirmDialog = true }
+    )
+
+    if (showConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = { Text(stringResource(R.string.settings_reset_defaults_confirm_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_reset_defaults_confirm_message),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                HapticTextButton(
+                    enabled = !busy,
+                    onClick = {
+                        showConfirmDialog = false
+                        onResetLauncherSettingsToDefaults()
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_reset_defaults_confirm_action))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    enabled = !busy,
+                    onClick = { showConfirmDialog = false }
+                ) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -1951,6 +2018,7 @@ internal fun SettingsPerformanceSection(
     onRenderScaleSelected: (Float) -> Unit,
     onTargetFpsSelected: (Int) -> Unit,
     onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
+    onGpuResourceGuardianModeChanged: (GpuResourceGuardianMode) -> Unit,
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     onScreenBottomCropChanged: (Boolean) -> Unit,
     onGameplayFontScaleChanged: (Float) -> Unit,
@@ -1959,6 +2027,7 @@ internal fun SettingsPerformanceSection(
     val view = LocalView.current
     var showTargetFpsDialog by rememberSaveable { mutableStateOf(false) }
     var showVirtualResolutionModeDialog by rememberSaveable { mutableStateOf(false) }
+    var showGpuResourceGuardianModeDialog by rememberSaveable { mutableStateOf(false) }
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
@@ -2020,6 +2089,17 @@ internal fun SettingsPerformanceSection(
     )
     Text(
         text = virtualResolutionModeDescription(uiState.virtualResolutionMode),
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_gpu_resource_guardian_title),
+        supportingText = gpuResourceGuardianModeDisplayName(uiState.gpuResourceGuardianMode),
+        enabled = !uiState.busy,
+        onClick = { showGpuResourceGuardianModeDialog = true }
+    )
+    Text(
+        text = stringResource(R.string.settings_gpu_resource_guardian_desc),
         style = MaterialTheme.typography.bodySmall
     )
 
@@ -2138,6 +2218,38 @@ internal fun SettingsPerformanceSection(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showVirtualResolutionModeDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+
+    if (showGpuResourceGuardianModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showGpuResourceGuardianModeDialog = false },
+            title = { Text(stringResource(R.string.settings_gpu_resource_guardian_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GpuResourceGuardianMode.entries.forEach { mode ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.gpuResourceGuardianMode == mode,
+                            enabled = !uiState.busy,
+                            text = gpuResourceGuardianModeDisplayName(mode),
+                            onSelect = {
+                                onGpuResourceGuardianModeChanged(mode)
+                                showGpuResourceGuardianModeDialog = false
+                            }
+                        )
+                        Text(
+                            text = gpuResourceGuardianModeDescription(mode),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 48.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showGpuResourceGuardianModeDialog = false }) {
                     Text(stringResource(R.string.main_folder_dialog_confirm))
                 }
             }
@@ -2463,6 +2575,7 @@ private fun SettingsInputSection(
             onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
         )
     }
+
 }
 
 @Composable
@@ -2620,6 +2733,7 @@ internal fun SettingsInputBasicsSection(
             }
         )
     }
+
 }
 
 @Composable
@@ -3160,6 +3274,34 @@ private fun virtualResolutionModeDescription(mode: VirtualResolutionMode): Strin
         VirtualResolutionMode.RATIO_16_9 ->
             stringResource(R.string.settings_virtual_resolution_mode_desc_16_9)
     }
+}
+
+@Composable
+private fun gpuResourceGuardianModeDisplayName(mode: GpuResourceGuardianMode): String {
+    return stringResource(
+        when (mode) {
+            GpuResourceGuardianMode.OFF -> R.string.settings_gpu_resource_guardian_mode_off
+            GpuResourceGuardianMode.SAFE -> R.string.settings_gpu_resource_guardian_mode_safe
+            GpuResourceGuardianMode.AGGRESSIVE -> R.string.settings_gpu_resource_guardian_mode_aggressive
+            GpuResourceGuardianMode.DIAGNOSTIC -> R.string.settings_gpu_resource_guardian_mode_diagnostic
+            GpuResourceGuardianMode.LEGACY -> R.string.settings_gpu_resource_guardian_mode_legacy
+        }
+    )
+}
+
+@Composable
+private fun gpuResourceGuardianModeDescription(mode: GpuResourceGuardianMode): String {
+    return stringResource(
+        when (mode) {
+            GpuResourceGuardianMode.OFF -> R.string.settings_gpu_resource_guardian_mode_off_desc
+            GpuResourceGuardianMode.SAFE -> R.string.settings_gpu_resource_guardian_mode_safe_desc
+            GpuResourceGuardianMode.AGGRESSIVE ->
+                R.string.settings_gpu_resource_guardian_mode_aggressive_desc
+            GpuResourceGuardianMode.DIAGNOSTIC ->
+                R.string.settings_gpu_resource_guardian_mode_diagnostic_desc
+            GpuResourceGuardianMode.LEGACY -> R.string.settings_gpu_resource_guardian_mode_legacy_desc
+        }
+    )
 }
 
 @Composable

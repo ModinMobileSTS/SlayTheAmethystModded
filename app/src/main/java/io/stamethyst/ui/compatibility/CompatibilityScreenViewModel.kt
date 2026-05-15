@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.mods.CompatibilitySettings
-import io.stamethyst.config.GpuResourceGuardianMode
 
 @Stable
 class CompatibilityScreenViewModel : ViewModel() {
@@ -26,7 +25,6 @@ class CompatibilityScreenViewModel : ViewModel() {
         val largeTextureDownscaleCompatEnabled: Boolean = false,
         val textureResidencyManagerCompatEnabled: Boolean = false,
         val texturePressureDownscaleDivisor: Int = 2,
-        val gpuResourceGuardianMode: GpuResourceGuardianMode = GpuResourceGuardianMode.SAFE,
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val hinaCharacterRenderCompatEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
@@ -55,7 +53,6 @@ class CompatibilityScreenViewModel : ViewModel() {
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
             textureResidencyManagerCompatEnabled = CompatibilitySettings.isTextureResidencyManagerCompatEnabled(host),
             texturePressureDownscaleDivisor = CompatibilitySettings.readTexturePressureDownscaleDivisor(host),
-            gpuResourceGuardianMode = CompatibilitySettings.readGpuResourceGuardianMode(host),
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             hinaCharacterRenderCompatEnabled = CompatibilitySettings.isHinaCharacterRenderCompatEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
@@ -153,14 +150,6 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.saveTexturePressureDownscaleDivisor(host, divisor)
         uiState = uiState.copy(texturePressureDownscaleDivisor = divisor)
-    }
-
-    fun onGpuResourceGuardianModeChanged(host: Context, mode: GpuResourceGuardianMode) {
-        if (uiState.busy) {
-            return
-        }
-        CompatibilitySettings.saveGpuResourceGuardianMode(host, mode)
-        uiState = uiState.copy(gpuResourceGuardianMode = mode)
     }
 
     fun onForceLinearMipmapFilterToggled(host: Context, enabled: Boolean) {

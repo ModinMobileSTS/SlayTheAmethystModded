@@ -73,6 +73,7 @@ import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
@@ -216,6 +217,8 @@ class SettingsScreenViewModel : ViewModel() {
         },
         val rendererFallbackText: String? = null,
         val surfaceBackendForcedByRenderer: Boolean = false,
+        val gpuResourceGuardianMode: GpuResourceGuardianMode =
+            LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
@@ -2001,6 +2004,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onGpuResourceGuardianModeChanged(host: Activity, mode: GpuResourceGuardianMode) {
+        if (uiState.busy || uiState.gpuResourceGuardianMode == mode) {
+            return
+        }
+        uiState = uiState.copy(gpuResourceGuardianMode = mode)
+        saveGpuResourceGuardianModeSelection(host, mode)
+        refreshStatus(host)
+    }
+
     fun onMobileGluesAnglePolicyChanged(host: Activity, policy: MobileGluesAnglePolicy) {
         if (uiState.busy || uiState.mobileGluesAnglePolicy == policy) {
             return
@@ -2491,6 +2503,53 @@ class SettingsScreenViewModel : ViewModel() {
         _effects.tryEmit(Effect.OpenFeedback)
     }
 
+    fun onResetLauncherSettingsToDefaults(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        setBusy(true, UiText.StringResource(R.string.settings_busy_reset_defaults))
+        executor.execute {
+            try {
+                SettingsRepository.resetLauncherSettingsToDefaults(host)
+                if (LauncherPreferences.DEFAULT_LOGCAT_CAPTURE_ENABLED) {
+                    LogcatCaptureProcessClient.startCapture(host, System.currentTimeMillis())
+                } else {
+                    LogcatCaptureProcessClient.stopAndClearCapture(host)
+                }
+                if (LauncherPreferences.DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED) {
+                    LauncherLogcatCaptureProcessClient.startCapture(host)
+                } else {
+                    LauncherLogcatCaptureProcessClient.stopAndClearCapture(host)
+                }
+                host.runOnUiThread {
+                    nativeLibraryMarketCatalog = emptyList()
+                    LauncherThemeController.apply(LauncherPreferences.DEFAULT_THEME_MODE)
+                    syncThemeAppearance(host)
+                    syncStoredUpdateState(host)
+                    uiState = uiState.copy(
+                        nativeLibraryMarketPackages = emptyList(),
+                        nativeLibraryMarketErrorText = null
+                    )
+                    showToast(host, UiText.StringResource(R.string.settings_reset_defaults_succeeded))
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_reset_defaults_failed,
+                            error.message ?: error.javaClass.simpleName
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                    refreshStatus(host)
+                }
+            }
+        }
+    }
+
     fun onJarPicked(
         host: Activity,
         uri: Uri?,
@@ -2641,6 +2700,7 @@ class SettingsScreenViewModel : ViewModel() {
             rendererBackendOptions = rendererBackendOptions,
             rendererFallbackText = rendererDecision.fallbackSummary(host),
             surfaceBackendForcedByRenderer = rendererDecision.surfaceBackendForced,
+            gpuResourceGuardianMode = rendering.gpuResourceGuardianMode,
             selectedJvmHeapMaxMb = jvm.heapMaxMb,
             compressedPointersEnabled = jvm.compressedPointersEnabled,
             stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
@@ -3075,6 +3135,10 @@ class SettingsScreenViewModel : ViewModel() {
                 )
             }
         }
+        lines += host.getString(
+            R.string.settings_status_gpu_resource_guardian,
+            rendering.gpuResourceGuardianMode.displayName(host)
+        )
         lines += host.getString(
             R.string.settings_status_jvm_heap,
             jvm.heapStartMb,
@@ -3716,6 +3780,10 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveManualRendererBackend(host, backend)
     }
 
+    private fun saveGpuResourceGuardianModeSelection(host: Activity, mode: GpuResourceGuardianMode) {
+        LauncherPreferences.saveGpuResourceGuardianMode(host, mode)
+    }
+
     private fun persistMobileGluesSettings(
         host: Activity,
         @StringRes failureMessageResId: Int,
@@ -4282,6 +4350,21 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.settings_renderer_selection_mode_auto)
             RendererSelectionMode.MANUAL ->
                 host.getString(R.string.settings_renderer_selection_mode_manual)
+        }
+    }
+
+    private fun GpuResourceGuardianMode.displayName(host: Activity): String {
+        return when (this) {
+            GpuResourceGuardianMode.OFF ->
+                host.getString(R.string.settings_gpu_resource_guardian_mode_off)
+            GpuResourceGuardianMode.SAFE ->
+                host.getString(R.string.settings_gpu_resource_guardian_mode_safe)
+            GpuResourceGuardianMode.AGGRESSIVE ->
+                host.getString(R.string.settings_gpu_resource_guardian_mode_aggressive)
+            GpuResourceGuardianMode.DIAGNOSTIC ->
+                host.getString(R.string.settings_gpu_resource_guardian_mode_diagnostic)
+            GpuResourceGuardianMode.LEGACY ->
+                host.getString(R.string.settings_gpu_resource_guardian_mode_legacy)
         }
     }
 }

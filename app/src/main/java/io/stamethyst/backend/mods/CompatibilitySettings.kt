@@ -6,6 +6,53 @@ import io.stamethyst.config.LauncherConfig
 
 object CompatibilitySettings {
     @JvmStatic
+    fun resetToDefaults(context: Context) {
+        setGlobalAtlasFilterCompatEnabled(context, true)
+        setModManifestRootCompatEnabled(context, true)
+        setFrierenModCompatEnabled(context, true)
+        setDownfallImportCompatEnabled(context, true)
+        setVupShionModCompatEnabled(context, true)
+        setFragmentShaderPrecisionCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED
+        )
+        setRuntimeTextureCompatEnabled(context, false)
+        setMainMenuPreviewReuseCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED
+        )
+        setNativeTouchscreenAllowlistCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED
+        )
+        setLargeTextureDownscaleCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED
+        )
+        setTextureResidencyManagerCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED
+        )
+        saveTexturePressureDownscaleDivisor(
+            context,
+            LauncherConfig.DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR
+        )
+        LauncherConfig.resetGpuResourceGuardianMode(context)
+        setForceLinearMipmapFilterEnabled(context, true)
+        setHinaCharacterRenderCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED
+        )
+        setNonRenderableFboFormatCompatEnabled(context, true)
+        setFboManagerCompatEnabled(context, LauncherConfig.DEFAULT_FBO_MANAGER_COMPAT_ENABLED)
+        setFboIdleReclaimCompatEnabled(context, LauncherConfig.DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED)
+        setFboPressureDownscaleCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED
+        )
+    }
+
+    @JvmStatic
     fun isGlobalAtlasFilterCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isGlobalAtlasFilterCompatEnabled(context)
     }

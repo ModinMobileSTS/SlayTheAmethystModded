@@ -338,7 +338,7 @@ object StsLaunchSpec {
         )
         args.add(
             "-Damethyst.gdx.gpu_resource_guardian=" +
-                CompatibilitySettings.readGpuResourceGuardianMode(context).persistedValue
+                LauncherConfig.readGpuResourceGuardianMode(context).runtimePropertyValue
         )
         args.add(
             "-Damethyst.gdx.force_linear_mipmap_filter=" +

@@ -139,6 +139,10 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         ),
                         "render.manualBackend" to formatRendererBackend(
                             LauncherConfig.readManualRendererBackend(context)
+                        ),
+                        "gpuResourceGuardianMode" to formatPersistedEnum(
+                            LauncherConfig.readGpuResourceGuardianMode(context).name,
+                            LauncherConfig.readGpuResourceGuardianMode(context).persistedValue
                         )
                     )
                 ),
@@ -241,10 +245,6 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         ),
                         "texturePressureDownscaleDivisor" to formatTexturePressureDownscaleDivisor(
                             CompatibilitySettings.readTexturePressureDownscaleDivisor(context)
-                        ),
-                        "gpuResourceGuardianMode" to formatPersistedEnum(
-                            CompatibilitySettings.readGpuResourceGuardianMode(context).name,
-                            CompatibilitySettings.readGpuResourceGuardianMode(context).persistedValue
                         ),
                         "forceLinearMipmapFilter" to formatBoolean(
                             CompatibilitySettings.isForceLinearMipmapFilterEnabled(context)
