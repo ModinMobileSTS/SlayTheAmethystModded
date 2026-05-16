@@ -4212,11 +4212,21 @@ class SettingsScreenViewModel : ViewModel() {
         if (cause is CancellationException) {
             return host.getString(R.string.settings_steam_cloud_login_cancelled_summary)
         }
+        if (isSteamCloudAuthWatchdogDisconnect(message)) {
+            return host.getString(R.string.settings_steam_cloud_login_guard_wait_timeout_summary)
+        }
         return if (message.isNotEmpty()) {
             message
         } else {
             cause.javaClass.simpleName
         }
+    }
+
+    private fun isSteamCloudAuthWatchdogDisconnect(message: String): Boolean {
+        val normalized = message.lowercase(Locale.US)
+        return normalized.contains("steam disconnected") &&
+            normalized.contains("steam auth completion") &&
+            normalized.contains("watchdog")
     }
 
     private fun formatSettingsTimestamp(timestampMs: Long): String {

@@ -1011,6 +1011,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_challenge_email_code_desc">Enter the email code sent by Steam.</string>
     <string name="settings_steam_cloud_challenge_email_code_desc_with_hint">Enter the email code sent by Steam to %1$s.</string>
     <string name="settings_steam_cloud_challenge_code_incorrect">That code was not accepted. Enter the latest code and try again.</string>
+    <string name="settings_steam_cloud_challenge_timeout_warning">Complete this step within about %1$d seconds, or Steam may close the login connection.</string>
     <string name="settings_steam_cloud_challenge_device_code_label">2FA code</string>
     <string name="settings_steam_cloud_challenge_email_code_label">Email code</string>
     <string name="settings_steam_cloud_open_steam_action">Go to Steam</string>
@@ -1039,6 +1040,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_login_auto_enable_failed">Steam Cloud login succeeded, but the launcher could not switch to Steam Cloud saves automatically: %1$s. You can change it manually in Settings > Cloud save settings.</string>
     <string name="settings_steam_cloud_login_cancelled">Steam Cloud login cancelled.</string>
     <string name="settings_steam_cloud_login_failed">Steam Cloud login failed: %1$s</string>
+    <string name="settings_steam_cloud_login_guard_wait_timeout_summary">Steam Guard verification waited too long. Steam closed the login connection; sign in again and enter the latest code or approve the prompt quickly.</string>
     <string name="settings_steam_cloud_manifest_refresh_succeeded">Steam Cloud manifest refreshed: %1$d files.</string>
     <string name="settings_steam_cloud_manifest_refresh_failed">Steam Cloud manifest refresh failed: %1$s</string>
     <string name="settings_steam_cloud_manifest_missing">No cached Steam Cloud manifest is available yet.</string>

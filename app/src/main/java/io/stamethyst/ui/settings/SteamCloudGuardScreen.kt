@@ -58,7 +58,9 @@ import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
 import java.util.Locale
+import kotlinx.coroutines.delay
 
+private const val STEAM_GUARD_WEBSOCKET_WATCHDOG_SECONDS = 30
 private const val STEAM_GUARD_CODE_LENGTH = 5
 private const val STEAM_ANDROID_PACKAGE = "com.valvesoftware.android.steam.community"
 
@@ -128,11 +130,37 @@ fun LauncherSteamCloudGuardScreen(
                 .padding(16.dp)
         ) {
             if (challenge != null) {
+                val challengeKey = "${challenge.kind.name}:${challenge.previousCodeWasIncorrect}:${challenge.emailHint}"
+                var remainingSeconds by rememberSaveable(challengeKey) {
+                    mutableStateOf(STEAM_GUARD_WEBSOCKET_WATCHDOG_SECONDS)
+                }
+
+                LaunchedEffect(challengeKey) {
+                    remainingSeconds = STEAM_GUARD_WEBSOCKET_WATCHDOG_SECONDS
+                    while (remainingSeconds > 0) {
+                        delay(1000L)
+                        remainingSeconds -= 1
+                    }
+                }
+
                 SettingsSectionCard(title = steamCloudChallengeTitle(challenge)) {
                     Text(
                         text = steamCloudChallengeDescription(challenge),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.settings_steam_cloud_challenge_timeout_warning,
+                            remainingSeconds
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (remainingSeconds <= 10) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                     if (challenge.previousCodeWasIncorrect &&
                         challenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION
