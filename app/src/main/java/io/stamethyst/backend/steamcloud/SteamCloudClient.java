@@ -17,6 +17,7 @@ import java.io.StringWriter;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -86,6 +87,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final long RPC_TIMEOUT_MS = 90_000L;
     private static final long DOWNLOAD_TIMEOUT_MS = 60_000L;
     private static final long CALLBACK_POLL_TIMEOUT_MS = 250L;
+    private static final int DOWNLOAD_MAX_ATTEMPTS = 4;
+    private static final long[] DOWNLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
     private static final int BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS = 7;
     private static final long[] BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
     private static final long[] BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS =
@@ -436,6 +439,44 @@ public final class SteamCloudClient implements AutoCloseable {
         long expectedRawSize,
         String expectedSha1
     ) throws Exception {
+        for (int attempt = 1; attempt <= DOWNLOAD_MAX_ATTEMPTS; attempt++) {
+            try {
+                return downloadFileOnce(appId, remotePath, outputFile, expectedRawSize, expectedSha1);
+            } catch (Exception error) {
+                if (!isRetryableDownloadException(error) || attempt >= DOWNLOAD_MAX_ATTEMPTS) {
+                    Log.e(TAG, "Steam Cloud file download failed for " + remotePath + '.', error);
+                    throw error;
+                }
+
+                long delayMs = downloadRetryDelayMs(attempt);
+                Log.w(
+                    TAG,
+                    "Steam Cloud download failed transiently for "
+                        + remotePath
+                        + ": "
+                        + sanitizeSingleLine(error.getMessage())
+                        + "; retrying attempt "
+                        + (attempt + 1)
+                        + "/"
+                        + DOWNLOAD_MAX_ATTEMPTS
+                        + " after "
+                        + delayMs
+                        + "ms.",
+                    error
+                );
+                sleepBeforeRetry(delayMs);
+            }
+        }
+        throw new IllegalStateException("Steam Cloud download failed without completing: " + remotePath);
+    }
+
+    private DownloadResult downloadFileOnce(
+        int appId,
+        String remotePath,
+        File outputFile,
+        long expectedRawSize,
+        String expectedSha1
+    ) throws Exception {
         long startedAtNs = System.nanoTime();
         long rpcMs = 0L;
         long httpMs = 0L;
@@ -444,96 +485,98 @@ public final class SteamCloudClient implements AutoCloseable {
         long compressedBytesCount = 0L;
         long rawBytesCount = 0L;
         boolean decompressed = false;
+        Log.i(TAG, "Downloading Steam Cloud file: " + remotePath);
+        long rpcStartedAtNs = System.nanoTime();
+        FileDownloadInfo info = waitForStageWithRetries(
+            () -> steamCloud.clientFileDownload(appId, remotePath),
+            RPC_TIMEOUT_MS,
+            "ClientFileDownload"
+        );
+        rpcMs = elapsedMillis(rpcStartedAtNs);
+
+        if (info.getUrlHost().isEmpty()) {
+            throw new IllegalStateException("Steam returned an empty download host for " + remotePath);
+        }
+
+        String scheme = info.getUseHttps() ? "https://" : "http://";
+        String url = scheme + info.getUrlHost() + info.getUrlPath();
+        Request.Builder requestBuilder = new Request.Builder().url(url);
+        for (HttpHeaders header : info.getRequestHeaders()) {
+            requestBuilder.addHeader(header.getName(), header.getValue());
+        }
+
+        byte[] compressedBytes;
+        long httpStartedAtNs = System.nanoTime();
         try {
-            Log.i(TAG, "Downloading Steam Cloud file: " + remotePath);
-            long rpcStartedAtNs = System.nanoTime();
-            FileDownloadInfo info = waitForStage(
-                steamCloud.clientFileDownload(appId, remotePath),
-                RPC_TIMEOUT_MS,
-                "ClientFileDownload"
-            );
-            rpcMs = elapsedMillis(rpcStartedAtNs);
-
-            if (info.getUrlHost().isEmpty()) {
-                throw new IllegalStateException("Steam returned an empty download host for " + remotePath);
-            }
-
-            String scheme = info.getUseHttps() ? "https://" : "http://";
-            String url = scheme + info.getUrlHost() + info.getUrlPath();
-            Request.Builder requestBuilder = new Request.Builder().url(url);
-            for (HttpHeaders header : info.getRequestHeaders()) {
-                requestBuilder.addHeader(header.getName(), header.getValue());
-            }
-
-            byte[] compressedBytes;
-            long httpStartedAtNs = System.nanoTime();
             try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
                 if (!response.isSuccessful()) {
-                    throw new IOException("HTTP " + response.code() + " when downloading " + remotePath);
+                    throw new HttpStatusIOException(response.code(), "downloading", remotePath);
                 }
                 if (response.body() == null) {
                     throw new IOException("Steam returned an empty response body for " + remotePath);
                 }
                 compressedBytes = response.body().bytes();
             }
-            httpMs = elapsedMillis(httpStartedAtNs);
-            compressedBytesCount = compressedBytes.length;
-
-            byte[] rawBytes = compressedBytes;
-            if (info.getRawFileSize() != info.getFileSize()) {
-                long unzipStartedAtNs = System.nanoTime();
-                rawBytes = maybeUnzip(compressedBytes, remotePath);
-                unzipMs = elapsedMillis(unzipStartedAtNs);
-                decompressed = true;
+        } catch (IOException error) {
+            if (error instanceof HttpStatusIOException) {
+                throw error;
             }
-            rawBytesCount = rawBytes.length;
-            validateDownloadedBytes(rawBytes, expectedRawSize, expectedSha1, remotePath);
-
-            File parent = outputFile.getParentFile();
-            ensureDirectoryExists(parent, "output directory");
-            long writeStartedAtNs = System.nanoTime();
-            try (FileOutputStream outputStream = new FileOutputStream(outputFile, false)) {
-                outputStream.write(rawBytes);
-            }
-            writeMs = elapsedMillis(writeStartedAtNs);
-            long totalMs = elapsedMillis(startedAtNs);
-            Log.i(
-                TAG,
-                "Downloaded Steam Cloud file: "
-                    + remotePath
-                    + " totalMs="
-                    + totalMs
-                    + " rpcMs="
-                    + rpcMs
-                    + " httpMs="
-                    + httpMs
-                    + " unzipMs="
-                    + unzipMs
-                    + " writeMs="
-                    + writeMs
-                    + " compressedBytes="
-                    + compressedBytesCount
-                    + " rawBytes="
-                    + rawBytesCount
-                    + " output="
-                    + outputFile.getAbsolutePath()
-            );
-            return new DownloadResult(
-                remotePath,
-                outputFile.getAbsolutePath(),
-                compressedBytesCount,
-                rawBytesCount,
-                decompressed,
-                rpcMs,
-                httpMs,
-                unzipMs,
-                writeMs,
-                totalMs
-            );
-        } catch (Exception error) {
-            Log.e(TAG, "Steam Cloud file download failed for " + remotePath + '.', error);
-            throw error;
+            throw new HttpTransferIOException("HTTP transfer failed when downloading " + remotePath, error);
         }
+        httpMs = elapsedMillis(httpStartedAtNs);
+        compressedBytesCount = compressedBytes.length;
+
+        byte[] rawBytes = compressedBytes;
+        if (info.getRawFileSize() != info.getFileSize()) {
+            long unzipStartedAtNs = System.nanoTime();
+            rawBytes = maybeUnzip(compressedBytes, remotePath);
+            unzipMs = elapsedMillis(unzipStartedAtNs);
+            decompressed = true;
+        }
+        rawBytesCount = rawBytes.length;
+        validateDownloadedBytes(rawBytes, expectedRawSize, expectedSha1, remotePath);
+
+        File parent = outputFile.getParentFile();
+        ensureDirectoryExists(parent, "output directory");
+        long writeStartedAtNs = System.nanoTime();
+        try (FileOutputStream outputStream = new FileOutputStream(outputFile, false)) {
+            outputStream.write(rawBytes);
+        }
+        writeMs = elapsedMillis(writeStartedAtNs);
+        long totalMs = elapsedMillis(startedAtNs);
+        Log.i(
+            TAG,
+            "Downloaded Steam Cloud file: "
+                + remotePath
+                + " totalMs="
+                + totalMs
+                + " rpcMs="
+                + rpcMs
+                + " httpMs="
+                + httpMs
+                + " unzipMs="
+                + unzipMs
+                + " writeMs="
+                + writeMs
+                + " compressedBytes="
+                + compressedBytesCount
+                + " rawBytes="
+                + rawBytesCount
+                + " output="
+                + outputFile.getAbsolutePath()
+        );
+        return new DownloadResult(
+            remotePath,
+            outputFile.getAbsolutePath(),
+            compressedBytesCount,
+            rawBytesCount,
+            decompressed,
+            rpcMs,
+            httpMs,
+            unzipMs,
+            writeMs,
+            totalMs
+        );
     }
 
     public UploadBatch beginUploadBatch(int appId, List<String> remotePaths) throws Exception {
@@ -1267,6 +1310,36 @@ public final class SteamCloudClient implements AutoCloseable {
         return false;
     }
 
+    private static boolean isRetryableDownloadException(Throwable error) {
+        if (Thread.currentThread().isInterrupted()) {
+            return false;
+        }
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof InterruptedException) {
+                return false;
+            }
+            if (current instanceof HttpStatusIOException) {
+                return isRetryableHttpStatus(((HttpStatusIOException) current).statusCode);
+            }
+            if (current instanceof HttpTransferIOException || current instanceof SocketTimeoutException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isRetryableHttpStatus(int statusCode) {
+        return statusCode == 408
+            || statusCode == 429
+            || (statusCode >= 500 && statusCode <= 599);
+    }
+
+    private static long downloadRetryDelayMs(int attempt) {
+        return DOWNLOAD_RETRY_DELAYS_MS[Math.min(attempt - 1, DOWNLOAD_RETRY_DELAYS_MS.length - 1)];
+    }
+
     private static boolean isRetryableBeginHttpUploadResult(EResult result) {
         return isRetryableSteamCloudResult(result)
             || result == EResult.TooManyPending;
@@ -1775,6 +1848,21 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public long getTotalMs() {
             return totalMs;
+        }
+    }
+
+    private static final class HttpStatusIOException extends IOException {
+        private final int statusCode;
+
+        private HttpStatusIOException(int statusCode, String operation, String remotePath) {
+            super("HTTP " + statusCode + " when " + operation + " " + remotePath);
+            this.statusCode = statusCode;
+        }
+    }
+
+    private static final class HttpTransferIOException extends IOException {
+        private HttpTransferIOException(String message, IOException cause) {
+            super(message, cause);
         }
     }
 

@@ -8,8 +8,10 @@ import org.junit.Test;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.net.SocketTimeoutException;
 
 public final class SteamCloudClientTest {
     @Test
@@ -97,6 +99,25 @@ public final class SteamCloudClientTest {
         Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 4));
     }
 
+    @Test
+    public void isRetryableDownloadException_retriesTransientHttpFailuresOnly() throws Exception {
+        Assert.assertTrue(invokeIsRetryableDownloadException(newHttpStatusIOException(503)));
+        Assert.assertTrue(invokeIsRetryableDownloadException(newHttpStatusIOException(500)));
+        Assert.assertTrue(invokeIsRetryableDownloadException(newHttpStatusIOException(429)));
+        Assert.assertTrue(invokeIsRetryableDownloadException(new SocketTimeoutException("timeout")));
+        Assert.assertFalse(invokeIsRetryableDownloadException(newHttpStatusIOException(404)));
+        Assert.assertFalse(invokeIsRetryableDownloadException(new IOException("Steam returned an empty response body")));
+        Assert.assertFalse(invokeIsRetryableDownloadException(new InterruptedException()));
+    }
+
+    @Test
+    public void downloadRetryDelayMs_usesShortTransientBackoff() throws Exception {
+        Assert.assertEquals(2_000L, invokeDownloadRetryDelayMs(1));
+        Assert.assertEquals(5_000L, invokeDownloadRetryDelayMs(2));
+        Assert.assertEquals(10_000L, invokeDownloadRetryDelayMs(3));
+        Assert.assertEquals(10_000L, invokeDownloadRetryDelayMs(10));
+    }
+
     private static void invokeValidateDownloadedBytes(
         byte[] rawBytes,
         long expectedRawSize,
@@ -131,6 +152,35 @@ public final class SteamCloudClientTest {
         );
         method.setAccessible(true);
         return (long) method.invoke(null, result, attempt);
+    }
+
+    private static boolean invokeIsRetryableDownloadException(Throwable error) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "isRetryableDownloadException",
+            Throwable.class
+        );
+        method.setAccessible(true);
+        return (boolean) method.invoke(null, error);
+    }
+
+    private static long invokeDownloadRetryDelayMs(int attempt) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "downloadRetryDelayMs",
+            int.class
+        );
+        method.setAccessible(true);
+        return (long) method.invoke(null, attempt);
+    }
+
+    private static IOException newHttpStatusIOException(int statusCode) throws Exception {
+        Class<?> type = Class.forName("io.stamethyst.backend.steamcloud.SteamCloudClient$HttpStatusIOException");
+        Constructor<?> constructor = type.getDeclaredConstructor(int.class, String.class, String.class);
+        constructor.setAccessible(true);
+        return (IOException) constructor.newInstance(
+            statusCode,
+            "downloading",
+            "%GameInstall%preferences/STSPlayer"
+        );
     }
 
     private static final class SequencedDirectoryFile extends File {
