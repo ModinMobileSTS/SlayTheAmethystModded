@@ -379,6 +379,7 @@ internal object ModImportExecutor {
         var patchedFilterLines = 0
         var downscaledAtlasEntries = 0
         var downscaledAtlasPageEntries = 0
+        var downscaledAtlasRuntimeMemorySavedMb = 0
         var patchedManifestRootEntries = 0
         var patchedManifestRootPrefix = ""
         var patchedFrieren = false
@@ -400,6 +401,8 @@ internal object ModImportExecutor {
                 AtlasOfflineDownscalePatchModule.id -> {
                     downscaledAtlasEntries += result.metrics["patchedAtlasEntries"] ?: 0
                     downscaledAtlasPageEntries += result.metrics["downscaledPageEntries"] ?: 0
+                    downscaledAtlasRuntimeMemorySavedMb +=
+                        result.metrics["estimatedRuntimeBytesSavedMb"] ?: 0
                 }
                 ManifestRootPatchModule.id -> {
                     patchedManifestRootEntries += result.metrics["patchedFileEntries"] ?: 0
@@ -427,6 +430,7 @@ internal object ModImportExecutor {
             patchedFilterLines = patchedFilterLines,
             downscaledAtlasEntries = downscaledAtlasEntries,
             downscaledAtlasPageEntries = downscaledAtlasPageEntries,
+            downscaledAtlasRuntimeMemorySavedMb = downscaledAtlasRuntimeMemorySavedMb,
             patchedManifestRootEntries = patchedManifestRootEntries,
             patchedManifestRootPrefix = patchedManifestRootPrefix,
             patchedFrierenAntiPirateMethod = patchedFrieren,

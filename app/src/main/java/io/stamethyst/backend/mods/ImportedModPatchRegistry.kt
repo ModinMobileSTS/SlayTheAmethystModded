@@ -20,6 +20,8 @@ internal object ImportedModPatchRegistry {
     private const val JSON_KEY_PATCHED_FILTER_LINES = "patchedFilterLines"
     private const val JSON_KEY_DOWNSCALED_ATLAS_ENTRIES = "downscaledAtlasEntries"
     private const val JSON_KEY_DOWNSCALED_ATLAS_PAGE_ENTRIES = "downscaledAtlasPageEntries"
+    private const val JSON_KEY_DOWNSCALED_ATLAS_RUNTIME_MEMORY_SAVED_MB =
+        "downscaledAtlasRuntimeMemorySavedMb"
     private const val JSON_KEY_PATCHED_MANIFEST_ROOT_ENTRIES = "patchedManifestRootEntries"
     private const val JSON_KEY_PATCHED_MANIFEST_ROOT_PREFIX = "patchedManifestRootPrefix"
     private const val JSON_KEY_PATCHED_FRIEREN_ANTI_PIRATE_METHOD =
@@ -164,6 +166,8 @@ internal object ImportedModPatchRegistry {
             patchedFilterLines = optInt(JSON_KEY_PATCHED_FILTER_LINES),
             downscaledAtlasEntries = optInt(JSON_KEY_DOWNSCALED_ATLAS_ENTRIES),
             downscaledAtlasPageEntries = optInt(JSON_KEY_DOWNSCALED_ATLAS_PAGE_ENTRIES),
+            downscaledAtlasRuntimeMemorySavedMb =
+                optInt(JSON_KEY_DOWNSCALED_ATLAS_RUNTIME_MEMORY_SAVED_MB),
             patchedManifestRootEntries = optInt(JSON_KEY_PATCHED_MANIFEST_ROOT_ENTRIES),
             patchedManifestRootPrefix = optString(JSON_KEY_PATCHED_MANIFEST_ROOT_PREFIX).trim(),
             patchedFrierenAntiPirateMethod =
@@ -194,6 +198,10 @@ internal object ImportedModPatchRegistry {
             put(JSON_KEY_PATCHED_FILTER_LINES, patchedFilterLines)
             put(JSON_KEY_DOWNSCALED_ATLAS_ENTRIES, downscaledAtlasEntries)
             put(JSON_KEY_DOWNSCALED_ATLAS_PAGE_ENTRIES, downscaledAtlasPageEntries)
+            put(
+                JSON_KEY_DOWNSCALED_ATLAS_RUNTIME_MEMORY_SAVED_MB,
+                downscaledAtlasRuntimeMemorySavedMb
+            )
             put(JSON_KEY_PATCHED_MANIFEST_ROOT_ENTRIES, patchedManifestRootEntries)
             put(JSON_KEY_PATCHED_MANIFEST_ROOT_PREFIX, patchedManifestRootPrefix)
             put(

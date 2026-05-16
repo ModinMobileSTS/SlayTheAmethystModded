@@ -202,7 +202,11 @@ internal object AtlasOfflineDownscalePatchModule : ImportPatchModule {
             applicable = true,
             details = listOf(
                 context.getString(R.string.mod_import_patch_atlas_downscale_candidate_files, result.patchedAtlasEntries),
-                context.getString(R.string.mod_import_patch_atlas_downscale_candidate_pages, result.downscaledPageEntries)
+                context.getString(R.string.mod_import_patch_atlas_downscale_candidate_pages, result.downscaledPageEntries),
+                context.getString(
+                    R.string.mod_import_patch_atlas_downscale_detail_saved_memory,
+                    formatRuntimeMemorySaved(result.estimatedRuntimeBytesSaved)
+                )
             )
         )
     }
@@ -232,13 +236,32 @@ internal object AtlasOfflineDownscalePatchModule : ImportPatchModule {
             details = listOf(
                 context.getString(R.string.mod_import_patch_atlas_downscale_detail_files, result.patchedAtlasEntries),
                 context.getString(R.string.mod_import_patch_atlas_downscale_detail_pages, result.downscaledPageEntries),
-                context.getString(R.string.mod_import_patch_atlas_downscale_detail_strategy, strategy.mode.name, strategy.value)
+                context.getString(R.string.mod_import_patch_atlas_downscale_detail_strategy, strategy.mode.name, strategy.value),
+                context.getString(
+                    R.string.mod_import_patch_atlas_downscale_detail_saved_memory,
+                    formatRuntimeMemorySaved(result.estimatedRuntimeBytesSaved)
+                )
             ),
             metrics = mapOf(
                 "patchedAtlasEntries" to result.patchedAtlasEntries,
-                "downscaledPageEntries" to result.downscaledPageEntries
+                "downscaledPageEntries" to result.downscaledPageEntries,
+                "estimatedRuntimeBytesSavedMb" to bytesToWholeMegabytes(result.estimatedRuntimeBytesSaved)
             )
         )
+    }
+
+    private fun formatRuntimeMemorySaved(bytes: Long): String {
+        val mb = bytes.toDouble() / (1024.0 * 1024.0)
+        return if (mb >= 10.0) {
+            String.format(java.util.Locale.US, "%.0f MB", mb)
+        } else {
+            String.format(java.util.Locale.US, "%.1f MB", mb)
+        }
+    }
+
+    private fun bytesToWholeMegabytes(bytes: Long): Int {
+        if (bytes <= 0L) return 0
+        return (bytes / (1024L * 1024L)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 }
 

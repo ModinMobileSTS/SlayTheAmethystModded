@@ -63,6 +63,7 @@ internal data class ModImportResult(
     val patchedFilterLines: Int,
     val downscaledAtlasEntries: Int = 0,
     val downscaledAtlasPageEntries: Int = 0,
+    val downscaledAtlasRuntimeMemorySavedMb: Int = 0,
     val patchedManifestRootEntries: Int = 0,
     val patchedManifestRootPrefix: String = "",
     val patchedFrierenAntiPirateMethod: Boolean = false,
@@ -158,7 +159,8 @@ internal data class ModImportAtlasDownscalePreview(
     val modId: String,
     val modName: String,
     val downscaledAtlasEntries: Int,
-    val downscaledAtlasPageEntries: Int
+    val downscaledAtlasPageEntries: Int,
+    val downscaledAtlasRuntimeMemorySavedMb: Int = 0
 ) {
     val willDownscale: Boolean
         get() = downscaledAtlasPageEntries > 0
@@ -489,6 +491,7 @@ internal object SettingsFileService {
             }
             var downscaledAtlasEntries = 0
             var downscaledAtlasPageEntries = 0
+            var downscaledAtlasRuntimeMemorySavedMb = 0
             if (importAtlasDownscaleStrategy != null) {
                 val patchResult = ModAtlasOfflineDownscalePatcher.patchOversizedAtlasPagesInPlace(
                     tempFile,
@@ -496,6 +499,8 @@ internal object SettingsFileService {
                 )
                 downscaledAtlasEntries = patchResult.patchedAtlasEntries
                 downscaledAtlasPageEntries = patchResult.downscaledPageEntries
+                downscaledAtlasRuntimeMemorySavedMb =
+                    bytesToWholeMegabytes(patchResult.estimatedRuntimeBytesSaved)
             }
             var patchedFrierenAntiPirateMethod = false
             if (CompatibilitySettings.isFrierenModCompatEnabled(host)
@@ -572,6 +577,7 @@ internal object SettingsFileService {
                 patchedFilterLines = patchedFilterLines,
                 downscaledAtlasEntries = downscaledAtlasEntries,
                 downscaledAtlasPageEntries = downscaledAtlasPageEntries,
+                downscaledAtlasRuntimeMemorySavedMb = downscaledAtlasRuntimeMemorySavedMb,
                 patchedManifestRootEntries = patchedManifestRootEntries,
                 patchedManifestRootPrefix = patchedManifestRootPrefix,
                 patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
@@ -671,6 +677,9 @@ internal object SettingsFileService {
                                 existing.downscaledAtlasEntries + result.downscaledAtlasEntries,
                             downscaledAtlasPageEntries =
                                 existing.downscaledAtlasPageEntries + result.downscaledAtlasPageEntries,
+                            downscaledAtlasRuntimeMemorySavedMb =
+                                existing.downscaledAtlasRuntimeMemorySavedMb +
+                                    result.downscaledAtlasRuntimeMemorySavedMb,
                             patchedManifestRootEntries = existing.patchedManifestRootEntries + result.patchedManifestRootEntries,
                             patchedManifestRootPrefix = if (existing.patchedManifestRootPrefix.isNotBlank()) {
                                 existing.patchedManifestRootPrefix
@@ -751,7 +760,10 @@ internal object SettingsFileService {
                     downscaledAtlasEntries =
                         existing.downscaledAtlasEntries + preview.downscaledAtlasEntries,
                     downscaledAtlasPageEntries =
-                        existing.downscaledAtlasPageEntries + preview.downscaledAtlasPageEntries
+                        existing.downscaledAtlasPageEntries + preview.downscaledAtlasPageEntries,
+                    downscaledAtlasRuntimeMemorySavedMb =
+                        existing.downscaledAtlasRuntimeMemorySavedMb +
+                            preview.downscaledAtlasRuntimeMemorySavedMb
                 )
             }
         }
@@ -1120,7 +1132,10 @@ internal object SettingsFileService {
                     downscaledAtlasEntries =
                         existing.downscaledAtlasEntries + result.downscaledAtlasEntries,
                     downscaledAtlasPageEntries =
-                        existing.downscaledAtlasPageEntries + result.downscaledAtlasPageEntries
+                        existing.downscaledAtlasPageEntries + result.downscaledAtlasPageEntries,
+                    downscaledAtlasRuntimeMemorySavedMb =
+                        existing.downscaledAtlasRuntimeMemorySavedMb +
+                            result.downscaledAtlasRuntimeMemorySavedMb
                 )
             }
         }
@@ -1145,7 +1160,8 @@ internal object SettingsFileService {
                     context.getString(
                         R.string.mod_import_atlas_downscale_message_item_detail,
                         result.downscaledAtlasEntries,
-                        result.downscaledAtlasPageEntries
+                        result.downscaledAtlasPageEntries,
+                        formatRuntimeMemorySaved(result.downscaledAtlasRuntimeMemorySavedMb)
                     )
                 )
                 append('\n')
@@ -1177,7 +1193,8 @@ internal object SettingsFileService {
                     context.getString(
                         R.string.mod_import_atlas_downscale_confirm_message_item_detail,
                         preview.downscaledAtlasEntries,
-                        preview.downscaledAtlasPageEntries
+                        preview.downscaledAtlasPageEntries,
+                        formatRuntimeMemorySaved(preview.downscaledAtlasRuntimeMemorySavedMb)
                     )
                 )
                 append('\n')
@@ -1495,7 +1512,8 @@ internal object SettingsFileService {
                 detail = context.getString(
                     R.string.mod_import_atlas_downscale_message_item_detail,
                     patchInfo.downscaledAtlasEntries,
-                    patchInfo.downscaledAtlasPageEntries
+                    patchInfo.downscaledAtlasPageEntries,
+                    formatRuntimeMemorySaved(patchInfo.downscaledAtlasRuntimeMemorySavedMb)
                 ),
                 rule = context.getString(R.string.mod_import_atlas_downscale_message_rule)
             )
@@ -1788,7 +1806,9 @@ internal object SettingsFileService {
                 modId = modId,
                 modName = manifest.name.trim().ifBlank { modId },
                 downscaledAtlasEntries = patchResult.patchedAtlasEntries,
-                downscaledAtlasPageEntries = patchResult.downscaledPageEntries
+                downscaledAtlasPageEntries = patchResult.downscaledPageEntries,
+                downscaledAtlasRuntimeMemorySavedMb =
+                    bytesToWholeMegabytes(patchResult.estimatedRuntimeBytesSaved)
             )
         } catch (_: Throwable) {
             null
@@ -1807,6 +1827,7 @@ internal object SettingsFileService {
             patchedFilterLines = patchedFilterLines,
             downscaledAtlasEntries = downscaledAtlasEntries,
             downscaledAtlasPageEntries = downscaledAtlasPageEntries,
+            downscaledAtlasRuntimeMemorySavedMb = downscaledAtlasRuntimeMemorySavedMb,
             patchedManifestRootEntries = patchedManifestRootEntries,
             patchedManifestRootPrefix = patchedManifestRootPrefix,
             patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
@@ -2313,6 +2334,19 @@ internal object SettingsFileService {
         percent: Int
     ) {
         progressCallback?.onProgress(percent.coerceIn(0, 100))
+    }
+
+    private fun bytesToWholeMegabytes(bytes: Long): Int {
+        if (bytes <= 0L) return 0
+        return (bytes / (1024L * 1024L)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    private fun formatRuntimeMemorySaved(megabytes: Int): String {
+        return if (megabytes > 0) {
+            "$megabytes MB"
+        } else {
+            "<1 MB"
+        }
     }
 
 }

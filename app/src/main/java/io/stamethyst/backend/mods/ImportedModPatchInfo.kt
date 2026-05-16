@@ -7,6 +7,7 @@ internal data class ImportedModPatchInfo(
     val patchedFilterLines: Int = 0,
     val downscaledAtlasEntries: Int = 0,
     val downscaledAtlasPageEntries: Int = 0,
+    val downscaledAtlasRuntimeMemorySavedMb: Int = 0,
     val patchedManifestRootEntries: Int = 0,
     val patchedManifestRootPrefix: String = "",
     val patchedFrierenAntiPirateMethod: Boolean = false,

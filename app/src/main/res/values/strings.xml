@@ -490,12 +490,12 @@ Patch rule: rewrite filter lines containing mipmap to Linear,Linear.</string>
     <string name="mod_import_atlas_downscale_message_none">No atlas page images needed offline preprocessing in this import.</string>
     <string name="mod_import_atlas_downscale_message_intro">The following mods had oversized atlas page images preprocessed during import:
 </string>
-    <string name="mod_import_atlas_downscale_message_item_detail">  Rewritten atlas files: %1$d, downscaled page images: %2$d</string>
+    <string name="mod_import_atlas_downscale_message_item_detail">  Rewritten atlas files: %1$d, downscaled page images: %2$d, estimated runtime texture memory saved: %3$s</string>
     <string name="mod_import_atlas_downscale_message_rule">
 Patch rule: eligible page images in likely Spine atlases are resampled according to the selected offline pre-downscale strategy, and the related atlas coordinate fields are rewritten to match.</string>
     <string name="mod_import_atlas_downscale_confirm_message_intro">The following mods would trigger offline atlas pre-downscaling during import:
 </string>
-    <string name="mod_import_atlas_downscale_confirm_message_item_detail">  Candidate atlas files: %1$d, candidate page images: %2$d</string>
+    <string name="mod_import_atlas_downscale_confirm_message_item_detail">  Candidate atlas files: %1$d, candidate page images: %2$d, estimated runtime texture memory saved: %3$s</string>
     <string name="mod_import_atlas_downscale_confirm_message_pros">Pros: 1. Lowers runtime memory spikes for heavy animation mods 2. Reduces crashes or force-kills caused by GPU memory pressure under the compatibility layer.</string>
     <string name="mod_import_atlas_downscale_confirm_message_cons">Cons: 1. Large character art and details may become noticeably blurry 2. Already imported mods are not automatically restored to the original images; restoring requires re-importing.</string>
     <string name="mod_import_atlas_downscale_confirm_message_outro">Before continuing the import, choose the downscale strategy and level below. The actual number of processed page images may differ by strategy. If your device has less memory (12 GB or below), downscaling by resolution is recommended. If your device has enough memory, you can try downscaling by percentage so the image quality loss is less noticeable.</string>
@@ -589,7 +589,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="mod_import_patch_category_mod_specific">Mod-specific</string>
     <string name="mod_import_patch_category_safety">Safety</string>
     <string name="mod_import_block_archive_detail">Compressed archives must be extracted before importing mod jars.</string>
-    <string name="mod_import_block_unsupported_detail">Selected file is not a .jar file.</string>
+    <string name="mod_import_block_unsupported_detail">Selected file is not a readable mod jar.</string>
     <string name="mod_import_block_modthespire_core_detail">ModTheSpire is a launcher-managed core component.</string>
     <string name="mod_import_block_manifest_read_failed">Could not read ModTheSpire.json</string>
     <string name="mod_import_block_missing_modid_detail">ModTheSpire.json did not contain a usable modid.</string>
@@ -636,6 +636,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="mod_import_patch_atlas_downscale_detail_files">Rewritten atlas files: %1$d</string>
     <string name="mod_import_patch_atlas_downscale_detail_pages">Downscaled page images: %1$d</string>
     <string name="mod_import_patch_atlas_downscale_detail_strategy">Strategy: %1$s %2$d</string>
+    <string name="mod_import_patch_atlas_downscale_detail_saved_memory">Estimated runtime texture memory saved: %1$s</string>
     <string name="mod_import_patch_frieren_title">FrierenMod startup compatibility</string>
     <string name="mod_import_patch_frieren_summary">Remove FrierenMod desktop anti-piracy startup block on Android.</string>
     <string name="mod_import_patch_frieren_applied">Patched FrierenMod anti-piracy startup method.</string>
