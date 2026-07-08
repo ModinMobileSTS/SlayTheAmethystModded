@@ -751,6 +751,10 @@ private fun Project.registerHarnessTasks() {
     val noStopAfterSmoke = readGradleProperty("noStopAfterSmoke", "false")
     val startupCacheHitRuns = readGradleProperty("startupCacheHitRuns", "1")
     val startupCacheNoClear = readGradleProperty("startupCacheNoClear", "false")
+    val cloudSyncRelativePath = readGradleProperty("cloudSyncRelativePath", "saves/.amethyst-cloud-sync-harness.txt")
+    val cloudSyncPayload = readGradleProperty("cloudSyncPayload")
+    val cloudSyncSourceFile = readGradleProperty("cloudSyncSourceFile")
+    val cloudSyncPullIntervalSeconds = readGradleProperty("cloudSyncPullIntervalSeconds", "10")
 
     fun registerHarnessExecTask(
         taskName: String,
@@ -765,7 +769,7 @@ private fun Project.registerHarnessTasks() {
             val taskLaunchMode = if (forceAutoplay) "mts" else launchMode
             val taskTimeoutSeconds = if (taskAutoplay) {
                 autoplayHarnessTimeoutSeconds
-            } else if (command == "startup-cache-profile") {
+            } else if (command == "startup-cache-profile" || command == "steam-cloud-sync") {
                 autoplayHarnessTimeoutSeconds
             } else {
                 harnessTimeoutSeconds
@@ -829,6 +833,21 @@ private fun Project.registerHarnessTasks() {
             }
             if (command == "smoke" && harnessSkipInstall.toBooleanStrictOrNull() == true) {
                 args.add("-SkipInstall")
+            }
+            if (command == "steam-cloud-sync") {
+                args.add("-SkipInstall")
+                args.add("-CloudSyncRelativePath")
+                args.add(cloudSyncRelativePath)
+                args.add("-CloudSyncPullIntervalSeconds")
+                args.add(cloudSyncPullIntervalSeconds)
+                if (cloudSyncPayload.isNotEmpty()) {
+                    args.add("-CloudSyncPayload")
+                    args.add(cloudSyncPayload)
+                }
+                if (cloudSyncSourceFile.isNotEmpty()) {
+                    args.add("-CloudSyncSourceFile")
+                    args.add(cloudSyncSourceFile)
+                }
             }
             if (noStopAfterSmoke.toBooleanStrictOrNull() == true) {
                 args.add("-NoStopAfterSmoke")
@@ -900,6 +919,11 @@ private fun Project.registerHarnessTasks() {
         taskName = "stsHarnessStartupCacheProfile",
         command = "startup-cache-profile",
         taskDescription = "Run a cache-build launch followed by cache-hit launches and summarize startup timings."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessSteamCloudSync",
+        command = "steam-cloud-sync",
+        taskDescription = "Modify a device-side save marker, open the launcher, poll Steam Cloud diagnostics, export logs, and stop."
     )
 }
 

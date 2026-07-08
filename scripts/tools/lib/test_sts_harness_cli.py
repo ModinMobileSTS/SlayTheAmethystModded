@@ -58,5 +58,28 @@ class StartupCacheProfileCliTest(unittest.TestCase):
         self.assertTrue(args.no_clear_startup_cache)
 
 
+class SteamCloudSyncCliTest(unittest.TestCase):
+    def test_steam_cloud_sync_command_in_choices(self):
+        parser = create_parser()
+        command_actions = [action for action in parser._actions if action.dest == "command"]
+        self.assertEqual(len(command_actions), 1)
+        self.assertIn("steam-cloud-sync", command_actions[0].choices)
+
+    def test_steam_cloud_sync_options(self):
+        parser = create_parser()
+        args = parser.parse_args([
+            "-Command", "steam-cloud-sync",
+            "-CloudSyncRelativePath", "saves/test-sync.txt",
+            "-CloudSyncPayload", "hello",
+            "-CloudSyncSourceFile", ".\\agent-tmp\\sync-payload.txt",
+            "-CloudSyncPullIntervalSeconds", "15",
+        ])
+        self.assertEqual(args.command, "steam-cloud-sync")
+        self.assertEqual(args.cloud_sync_relative_path, "saves/test-sync.txt")
+        self.assertEqual(args.cloud_sync_payload, "hello")
+        self.assertEqual(args.cloud_sync_source_file, ".\\agent-tmp\\sync-payload.txt")
+        self.assertEqual(args.cloud_sync_pull_interval_seconds, 15)
+
+
 if __name__ == "__main__":
     unittest.main()

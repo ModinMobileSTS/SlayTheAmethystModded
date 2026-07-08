@@ -268,6 +268,10 @@ object StsLaunchSpec {
                 if (cardPlayOptimizationMode.tapInspectEnabled) "true" else "false"
         )
         args.add(
+            "-Damethyst.runtime_compat.touchscreen_card_tap_play=" +
+                if (cardPlayOptimizationMode.tapPlayEnabled) "true" else "false"
+        )
+        args.add(
             "-Damethyst.runtime_compat.touchscreen_cursor_warp_cleanup=" +
                 if (cardPlayOptimizationMode.optimizationEnabled) "true" else "false"
         )

@@ -7,6 +7,7 @@ from .sts_harness import (
     AUTOPLAY_MODES,
     AUTOPLAY_SAVE_MODES,
     COMMANDS,
+    DEFAULT_CLOUD_SYNC_RELATIVE_PATH,
     LAUNCH_MODES,
     Harness,
     HarnessOptions,
@@ -103,6 +104,38 @@ def create_parser() -> argparse.ArgumentParser:
         help="For startup-cache-profile, reuse existing startup cache instead of clearing it before the build phase.",
     )
     parser.add_argument(
+        "-CloudSyncRelativePath",
+        "--cloud-sync-relative-path",
+        dest="cloud_sync_relative_path",
+        default=DEFAULT_CLOUD_SYNC_RELATIVE_PATH,
+        help=(
+            "For steam-cloud-sync, device-relative path under sts/ to modify before opening the launcher. "
+            "Defaults to a harness-owned marker file under sts/saves/."
+        ),
+    )
+    parser.add_argument(
+        "-CloudSyncPayload",
+        "--cloud-sync-payload",
+        dest="cloud_sync_payload",
+        default="",
+        help="For steam-cloud-sync, inline UTF-8 payload to write to the target device file before launch.",
+    )
+    parser.add_argument(
+        "-CloudSyncSourceFile",
+        "--cloud-sync-source-file",
+        dest="cloud_sync_source_file",
+        default="",
+        help="For steam-cloud-sync, local UTF-8 file to copy to the target device path before launch.",
+    )
+    parser.add_argument(
+        "-CloudSyncPullIntervalSeconds",
+        "--cloud-sync-pull-interval-seconds",
+        dest="cloud_sync_pull_interval_seconds",
+        type=int,
+        default=10,
+        help="For steam-cloud-sync, seconds between periodic Steam Cloud/log snapshots pulled from the device.",
+    )
+    parser.add_argument(
         "-Mods",
         "--mods",
         dest="mods",
@@ -179,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     if timeout_seconds is None:
         autoplay_like = (
             args.autoplay
-            or args.command in {"single-room", "startup-cache-profile"}
+            or args.command in {"single-room", "startup-cache-profile", "steam-cloud-sync"}
             or args.autoplay_mode == "single_room"
         )
         timeout_seconds = 300 if autoplay_like else 120
@@ -215,5 +248,9 @@ def main(argv: list[str] | None = None) -> int:
         redefine_class_file=args.redefine_class_file,
         cache_hit_runs=args.cache_hit_runs,
         no_clear_startup_cache=args.no_clear_startup_cache,
+        cloud_sync_relative_path=args.cloud_sync_relative_path,
+        cloud_sync_payload=args.cloud_sync_payload,
+        cloud_sync_source_file=args.cloud_sync_source_file,
+        cloud_sync_pull_interval_seconds=args.cloud_sync_pull_interval_seconds,
     )
     return Harness(options).run()

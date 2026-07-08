@@ -1178,7 +1178,7 @@
     <string name="settings_category_launcher_title">启动器</string>
     <string name="settings_category_launcher_subtitle">新手教程、外观、更新和基础设置引导</string>
     <string name="settings_category_game_title">游戏</string>
-    <string name="settings_category_game_subtitle">渲染、输入与交互、资源与文件</string>
+    <string name="settings_category_game_subtitle">渲染、输入与交互</string>
     <string name="settings_category_market_cloud_title">市场与云存档</string>
     <string name="settings_category_market_cloud_subtitle">Steam 云存档和市场下载设置</string>
     <string name="settings_feedback_logs_title">文件与反馈</string>
@@ -1452,6 +1452,7 @@
     <string name="main_steam_cloud_action_retry">重试</string>
     <string name="main_steam_cloud_action_retry_auto">重试（%1$d 秒）</string>
     <string name="main_steam_cloud_action_cancel_upload">取消上传</string>
+    <string name="main_steam_cloud_action_background_upload">后台上传</string>
     <string name="main_steam_cloud_action_start_without_sync">直接开始游戏</string>
     <string name="main_steam_cloud_launch_warning_title">跳过云同步并开始游戏？</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud 同步失败，无法确认云端是否有更新进度。现在开始游戏会使用当前本地存档，云存档可能会在下次成功同步前保持不同步。</string>
@@ -1491,6 +1492,7 @@
     <string name="main_steam_cloud_conflict_confirm_local_action">覆盖云端</string>
     <string name="main_steam_cloud_conflict_confirm_cloud_action">替换本地</string>
     <string name="main_steam_cloud_conflict_confirm_cancel">取消</string>
+    <string name="main_steam_cloud_background_upload_hint">现在直接开始游戏，剩余的本地进度会在后台继续上传到 Steam Cloud。</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">以下本地文件路径不受支持，未加入上传计划：%1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">以下本地文件无法映射到 Steam 云存档路径：%1$s</string>
     <string name="main_steam_cloud_warning_baseline_required">当前还没有已保存的 Steam 云存档同步基线。在你先完整拉取一次云存档前，双方都已存在的文件会被视为冲突。</string>
@@ -1509,6 +1511,7 @@
     <string name="main_steam_cloud_progress_requesting_upload_slot">正在请求 Steam Cloud 上传地址…</string>
     <string name="main_steam_cloud_progress_preparing_auto_sync">正在应用云存档变更…</string>
     <string name="main_steam_cloud_progress_preparing_local_override">正在准备使用本地进度覆盖云存档…</string>
+    <string name="main_steam_cloud_progress_preparing_background_local_override">正在准备后台上传，游戏会直接开始…</string>
     <string name="main_steam_cloud_progress_preparing_cloud_override">正在准备使用云存档覆盖本地进度…</string>
     <string name="main_steam_cloud_progress_uploading">正在上传本地进度… %1$d/%2$d</string>
     <string name="main_steam_cloud_progress_downloading">正在下载云进度… %1$d/%2$d</string>
@@ -1520,6 +1523,7 @@
     <string name="main_steam_cloud_local_override_succeeded">云存档已改为跟随本地进度：上传 %1$d 个文件，删除 %2$d 个云端文件。</string>
     <string name="main_steam_cloud_cloud_override_succeeded">本地存档已改为跟随云存档：应用 %1$d 个文件。</string>
     <string name="main_steam_cloud_auto_sync_succeeded">云存档变更已同步。</string>
+    <string name="main_steam_cloud_sync_completed_toast">云存档同步已完成。</string>
     <string name="main_steam_cloud_override_failed">云存档同步失败：%1$s</string>
     <string name="settings_steam_cloud_login_cancelled_summary">用户已取消。</string>
     <string name="settings_steam_cloud_phase0_title">Steam Cloud Phase 0</string>
@@ -1965,9 +1969,11 @@
     <string name="settings_card_play_optimization_title">出牌优化选项</string>
     <string name="settings_card_play_optimization_release_pop_back">松手时弹回卡片</string>
     <string name="settings_card_play_optimization_release_keep_open">松手时保持卡牌弹出</string>
+    <string name="settings_card_play_optimization_tap_then_target">单击选牌，再点目标出牌</string>
     <string name="settings_card_play_optimization_vanilla">原版行为</string>
     <string name="settings_card_play_optimization_release_pop_back_desc">默认。手指离开后不继续保留手牌悬停，点按只会短暂展示，然后让卡片自然收回。</string>
     <string name="settings_card_play_optimization_release_keep_open_desc">短按手牌后会保持该卡片浮起方便阅读，直到点击另一张卡或战斗空白处。</string>
+    <string name="settings_card_play_optimization_tap_then_target_desc">短按手牌后会保持该卡片浮起并选中。指向牌可再点敌人打出，非指向牌可再次点击该牌直接打出。</string>
     <string name="settings_card_play_optimization_vanilla_desc">关闭启动器的战斗卡牌触控优化，使用游戏原版行为。</string>
     <string name="settings_touch_indicator_enabled">触摸小圆点：显示</string>
     <string name="settings_touch_indicator_disabled">触摸小圆点：隐藏</string>

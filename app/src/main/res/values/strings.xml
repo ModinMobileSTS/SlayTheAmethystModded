@@ -1453,6 +1453,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_action_retry">Retry</string>
     <string name="main_steam_cloud_action_retry_auto">Retry (%1$ds)</string>
     <string name="main_steam_cloud_action_cancel_upload">Cancel upload</string>
+    <string name="main_steam_cloud_action_background_upload">Upload in background</string>
     <string name="main_steam_cloud_action_start_without_sync">Start game</string>
     <string name="main_steam_cloud_launch_warning_title">Start without Steam Cloud sync?</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud sync failed, so your latest cloud progress could not be verified. Starting now uses the current local saves and may leave cloud progress out of date until the next successful sync.</string>
@@ -1492,6 +1493,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_conflict_confirm_local_action">Overwrite cloud</string>
     <string name="main_steam_cloud_conflict_confirm_cloud_action">Replace local</string>
     <string name="main_steam_cloud_conflict_confirm_cancel">Cancel</string>
+    <string name="main_steam_cloud_background_upload_hint">Start the game now and keep syncing local progress to Steam Cloud in the background.</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">A local file path is unsupported and was not added to the upload plan: %1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">A local file could not be mapped to a Steam Cloud path: %1$s</string>
     <string name="main_steam_cloud_warning_baseline_required">No previous Steam Cloud sync baseline is saved yet. Files that already exist on both sides will be treated as conflicts until you complete one full pull.</string>
@@ -1510,6 +1512,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_progress_requesting_upload_slot">Requesting Steam Cloud upload slot…</string>
     <string name="main_steam_cloud_progress_preparing_auto_sync">Applying Steam Cloud changes…</string>
     <string name="main_steam_cloud_progress_preparing_local_override">Preparing to overwrite Steam Cloud with local progress…</string>
+    <string name="main_steam_cloud_progress_preparing_background_local_override">Preparing background upload so the game can start immediately…</string>
     <string name="main_steam_cloud_progress_preparing_cloud_override">Preparing to overwrite local progress with Steam Cloud…</string>
     <string name="main_steam_cloud_progress_uploading">Uploading local progress… %1$d/%2$d</string>
     <string name="main_steam_cloud_progress_downloading">Downloading cloud progress… %1$d/%2$d</string>
@@ -1521,6 +1524,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_local_override_succeeded">Steam Cloud now follows local progress: %1$d file(s) uploaded, %2$d remote file(s) removed.</string>
     <string name="main_steam_cloud_cloud_override_succeeded">Local saves now follow Steam Cloud: %1$d file(s) applied.</string>
     <string name="main_steam_cloud_auto_sync_succeeded">Steam Cloud changes were synced.</string>
+    <string name="main_steam_cloud_sync_completed_toast">Steam Cloud sync completed.</string>
     <string name="main_steam_cloud_override_failed">Steam Cloud sync failed: %1$s</string>
     <string name="settings_steam_cloud_login_cancelled_summary">Cancelled by user.</string>
     <string name="settings_steam_cloud_phase0_title">Steam Cloud Phase 0</string>
@@ -1667,9 +1671,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_card_play_optimization_title">Card play optimization</string>
     <string name="settings_card_play_optimization_release_pop_back">Pop card back on release</string>
     <string name="settings_card_play_optimization_release_keep_open">Keep card popped out on release</string>
+    <string name="settings_card_play_optimization_tap_then_target">Tap card, then tap target</string>
     <string name="settings_card_play_optimization_vanilla">Vanilla behavior</string>
     <string name="settings_card_play_optimization_release_pop_back_desc">Default. Hand cards stop hovering after the finger lifts, so a tap inspects briefly and then returns the card.</string>
     <string name="settings_card_play_optimization_release_keep_open_desc">A short tap keeps that hand card floated for reading until another card or blank combat space is tapped.</string>
+    <string name="settings_card_play_optimization_tap_then_target_desc">A short tap keeps the card selected and floated. Tap a monster to play targeted cards, or tap the selected card again to play non-target cards.</string>
     <string name="settings_card_play_optimization_vanilla_desc">Disables the launcher card-play touch optimizations and uses the original game behavior.</string>
     <string name="settings_touch_indicator_enabled">Touch indicator: Shown</string>
     <string name="settings_touch_indicator_disabled">Touch indicator: Hidden</string>

@@ -1451,6 +1451,7 @@
     <string name="main_steam_cloud_action_retry">重試</string>
     <string name="main_steam_cloud_action_retry_auto">重試（%1$d 秒）</string>
     <string name="main_steam_cloud_action_cancel_upload">取消上傳</string>
+    <string name="main_steam_cloud_action_background_upload">背景上傳</string>
     <string name="main_steam_cloud_action_start_without_sync">直接開始遊戲</string>
     <string name="main_steam_cloud_launch_warning_title">跳過雲同步並開始遊戲？</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud 同步失敗，無法確認雲端是否有更新進度。現在開始遊戲會使用當前本地存檔，雲存檔可能會在下次成功同步前保持不同步。</string>
@@ -1490,6 +1491,7 @@
     <string name="main_steam_cloud_conflict_confirm_local_action">覆蓋雲端</string>
     <string name="main_steam_cloud_conflict_confirm_cloud_action">替換本地</string>
     <string name="main_steam_cloud_conflict_confirm_cancel">取消</string>
+    <string name="main_steam_cloud_background_upload_hint">現在直接開始遊戲，剩餘的本地進度會在背景繼續上傳到 Steam Cloud。</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">以下本地檔案路徑不受支援，未加入上傳計劃：%1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">以下本地檔案無法對映到 Steam 雲存檔路徑：%1$s</string>
     <string name="main_steam_cloud_warning_baseline_required">當前還沒有已儲存的 Steam 雲存檔同步基線。在你先完整拉取一次雲存檔前，雙方都已存在的檔案會被視為衝突。</string>
@@ -1508,6 +1510,7 @@
     <string name="main_steam_cloud_progress_requesting_upload_slot">正在請求 Steam Cloud 上傳地址…</string>
     <string name="main_steam_cloud_progress_preparing_auto_sync">正在應用雲存檔變更…</string>
     <string name="main_steam_cloud_progress_preparing_local_override">正在準備使用本地進度覆蓋雲存檔…</string>
+    <string name="main_steam_cloud_progress_preparing_background_local_override">正在準備背景上傳，遊戲會直接開始…</string>
     <string name="main_steam_cloud_progress_preparing_cloud_override">正在準備使用雲存檔覆蓋本地進度…</string>
     <string name="main_steam_cloud_progress_uploading">正在上傳本地進度… %1$d/%2$d</string>
     <string name="main_steam_cloud_progress_downloading">正在下載雲進度… %1$d/%2$d</string>
@@ -1519,6 +1522,7 @@
     <string name="main_steam_cloud_local_override_succeeded">雲存檔已改為跟隨本地進度：上傳 %1$d 個檔案，刪除 %2$d 個雲端檔案。</string>
     <string name="main_steam_cloud_cloud_override_succeeded">本地存檔已改為跟隨雲存檔：應用 %1$d 個檔案。</string>
     <string name="main_steam_cloud_auto_sync_succeeded">雲存檔變更已同步。</string>
+    <string name="main_steam_cloud_sync_completed_toast">雲存檔同步已完成。</string>
     <string name="main_steam_cloud_override_failed">雲存檔同步失敗：%1$s</string>
     <string name="settings_steam_cloud_login_cancelled_summary">使用者已取消。</string>
     <string name="settings_steam_cloud_phase0_title">Steam Cloud Phase 0</string>

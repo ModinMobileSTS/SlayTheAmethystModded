@@ -181,6 +181,8 @@ private fun CardPlayOptimizationMode.displayNameResId(): Int {
             R.string.settings_card_play_optimization_release_pop_back
         CardPlayOptimizationMode.RELEASE_KEEP_OPEN ->
             R.string.settings_card_play_optimization_release_keep_open
+        CardPlayOptimizationMode.TAP_CARD_THEN_TARGET ->
+            R.string.settings_card_play_optimization_tap_then_target
         CardPlayOptimizationMode.VANILLA ->
             R.string.settings_card_play_optimization_vanilla
     }

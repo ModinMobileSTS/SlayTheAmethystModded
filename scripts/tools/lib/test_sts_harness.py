@@ -371,6 +371,238 @@ class StartupCacheProfileTest(unittest.TestCase):
         self.assertIn("files/mts_patch_cache", private_script)
 
 
+class SteamCloudSyncTest(unittest.TestCase):
+    def _make_options(self, **overrides):
+        values = dict(
+            command="steam-cloud-sync",
+            launch_mode="mts_basemod",
+            device_serial="",
+            out_dir="",
+            timeout_seconds=300,
+            poll_interval_seconds=2,
+            force_jvm_crash=False,
+            force_runtime_crash=False,
+            autoplay=False,
+            skip_install=True,
+            no_stop_after_smoke=False,
+            mods=[],
+            mod_list_file="",
+            enable_all_mods=False,
+            disable_all_mods=False,
+        )
+        values.update(overrides)
+        return HarnessOptions(**values)
+
+    def test_command_is_registered(self):
+        self.assertIn("steam-cloud-sync", COMMANDS)
+
+    def test_run_command_routes_to_steam_cloud_sync(self):
+        harness = Harness(self._make_options())
+        out = Path(tempfile.mkdtemp())
+        try:
+            harness.result = {"artifacts": {}}
+            harness.harness_steam_cloud_sync = MagicMock(return_value=0)
+            exit_code = harness.run_command(out)
+            self.assertEqual(exit_code, 0)
+            harness.harness_steam_cloud_sync.assert_called_once_with(out)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+    def test_resolve_device_storage_root_shell(self):
+        harness = Harness(self._make_options())
+        storage_root = harness.resolve_device_storage_root(
+            {"root": "/sdcard/Android/data/io.test/files/sts", "accessMode": "shell"}
+        )
+        self.assertEqual(storage_root["root"], "/sdcard/Android/data/io.test/files")
+        self.assertEqual(storage_root["accessMode"], "shell")
+
+    def test_resolve_device_storage_root_run_as(self):
+        harness = Harness(self._make_options())
+        storage_root = harness.resolve_device_storage_root(
+            {"root": "files/sts", "accessMode": "run-as"}
+        )
+        self.assertEqual(storage_root["root"], "files")
+        self.assertEqual(storage_root["accessMode"], "run-as")
+
+    def test_parse_steam_cloud_summary(self):
+        text = "\n".join([
+            "Steam Cloud diagnostics summary",
+            "",
+            "Outcome: SUCCESS",
+            "Operation: manual_push",
+            "Account: test-user",
+            "Started At: 2026-07-08 10:00:00",
+            "Completed At: 2026-07-08 10:00:05",
+            "Duration Ms: 5000",
+            "Failure Summary: <none>",
+            "Current Stage: upload_complete",
+        ])
+        parsed = Harness.parse_steam_cloud_summary(text)
+        self.assertEqual(parsed["outcome"], "SUCCESS")
+        self.assertEqual(parsed["operation"], "manual_push")
+        self.assertEqual(parsed["account"], "test-user")
+        self.assertEqual(parsed["durationMs"], 5000)
+        self.assertEqual(parsed["currentStage"], "upload_complete")
+
+    def test_parse_steam_cloud_push_summary(self):
+        text = "\n".join([
+            "Steam Cloud push summary",
+            "",
+            "Completed At: 2026-07-08 10:00:05",
+            "Uploaded Files: 2",
+            "Uploaded Bytes: 4096",
+            "Deleted Remote Files: 1",
+            "Remote Files After Push: 9",
+        ])
+        parsed = Harness.parse_steam_cloud_push_summary(text)
+        self.assertEqual(parsed["uploadedFiles"], 2)
+        self.assertEqual(parsed["uploadedBytes"], 4096)
+        self.assertEqual(parsed["deletedRemoteFiles"], 1)
+        self.assertEqual(parsed["remoteFilesAfterPush"], 9)
+
+    def test_harness_logs_falls_back_to_adb_export(self):
+        harness = Harness(self._make_options())
+        harness.result = {"artifacts": {}}
+        harness.gradle = MagicMock(side_effect=RuntimeError("gradle failed"))
+        harness.resolve_device_sts_root = MagicMock(
+            return_value={"root": "/sdcard/Android/data/io.test/files/sts", "accessMode": "shell"}
+        )
+        harness.resolve_device_storage_root = MagicMock(
+            return_value={"root": "/sdcard/Android/data/io.test/files", "accessMode": "shell"}
+        )
+        harness.collect_remote_text_snapshot = MagicMock(
+            side_effect=lambda root_info, relative_path, local_path, **kwargs: {
+                "relativePath": relative_path,
+                "state": {"exists": False},
+                "artifact": str(local_path),
+            }
+        )
+        out = Path(tempfile.mkdtemp())
+        try:
+            harness.harness_logs(out)
+            self.assertIn("logsGradleError", harness.result["artifacts"])
+            summary_path = Path(harness.result["artifacts"]["logsFallbackSummary"])
+            self.assertTrue(summary_path.is_file())
+            exported_paths = [
+                call.args[1]
+                for call in harness.collect_remote_text_snapshot.call_args_list
+            ]
+            self.assertIn("steam-cloud/last-operation-summary.txt", exported_paths)
+            self.assertIn("steam-cloud/push-summary.txt", exported_paths)
+            self.assertIn("latest.log", exported_paths)
+            self.assertIn("boot_bridge_events.log", exported_paths)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+
+class HarnessAdbLaunchTest(unittest.TestCase):
+    def _make_options(self, **overrides):
+        values = dict(
+            command="start",
+            launch_mode="mts_basemod",
+            device_serial="",
+            out_dir="",
+            timeout_seconds=120,
+            poll_interval_seconds=2,
+            force_jvm_crash=False,
+            force_runtime_crash=False,
+            autoplay=False,
+            skip_install=False,
+            no_stop_after_smoke=False,
+            mods=[],
+            mod_list_file="",
+            enable_all_mods=False,
+            disable_all_mods=False,
+        )
+        values.update(overrides)
+        return HarnessOptions(**values)
+
+    def test_effective_debug_launch_mode_maps_mts_basemod_to_mts(self):
+        harness = Harness(self._make_options(launch_mode="mts_basemod"))
+        self.assertEqual(harness.effective_debug_launch_mode(), "mts")
+        harness = Harness(self._make_options(launch_mode="vanilla"))
+        self.assertEqual(harness.effective_debug_launch_mode(), "vanilla")
+
+    def test_harness_start_uses_direct_adb_launch(self):
+        harness = Harness(self._make_options())
+        harness.application_id = "io.test"
+        harness.adb = MagicMock(return_value=MagicMock(exit_code=0, output=""))
+
+        harness.harness_start()
+
+        adb_args = harness.adb.call_args.args[0]
+        self.assertEqual(adb_args[:4], ["shell", "am", "start", "-n"])
+        self.assertIn("io.test/.LauncherActivity", adb_args)
+        self.assertIn("io.stamethyst.debug_launch_mode", adb_args)
+        self.assertIn("mts", adb_args)
+
+    def test_harness_start_for_steam_cloud_sync_opens_launcher_without_debug_launch(self):
+        harness = Harness(self._make_options(command="steam-cloud-sync"))
+        harness.application_id = "io.test"
+        harness.adb = MagicMock(return_value=MagicMock(exit_code=0, output=""))
+
+        harness.harness_start()
+
+        adb_args = harness.adb.call_args.args[0]
+        self.assertEqual(adb_args, ["shell", "am", "start", "-n", "io.test/.LauncherActivity"])
+
+    def test_harness_stop_uses_direct_adb_force_stop(self):
+        harness = Harness(self._make_options(command="stop"))
+        harness.application_id = "io.test"
+        harness.adb = MagicMock(return_value=MagicMock(exit_code=0, output=""))
+
+        harness.harness_stop()
+
+        self.assertEqual(harness.adb.call_args.args[0], ["shell", "am", "force-stop", "io.test"])
+
+    def test_harness_status_treats_steamcloud_process_as_running(self):
+        harness = Harness(self._make_options(command="status"))
+        harness.application_id = "io.test"
+        harness.resolved_device_serial = "device-1"
+        harness.resolve_device_sts_root = MagicMock(return_value={"root": "files/sts", "accessMode": "run-as"})
+        harness.read_remote_sts_text = MagicMock(return_value="")
+        harness.desktop_jar_patch_snapshot = MagicMock(return_value={"inProgress": False})
+        harness.package_version_info = MagicMock(return_value={"versionName": None, "versionCode": None})
+        harness.process_pid_text = MagicMock(
+            side_effect=lambda name: "1234" if name == "io.test:steamcloud" else ""
+        )
+
+        status = harness.harness_status()
+
+        self.assertEqual(status["observedState"], "STEAM_CLOUD_SYNC_RUNNING")
+        self.assertEqual(status["processes"]["steamcloud"], "1234")
+
+
+class HarnessLogcatCrashDetectionTest(unittest.TestCase):
+    def test_ignores_unrelated_native_crash_near_app_logs(self):
+        text = "\n".join(
+            [
+                "07-08 16:40:19.144 I ActivityTaskManager: START cmp=io.test/.LauncherActivity",
+                "07-08 16:41:17.555 F libc    : Fatal signal 11 (SIGSEGV), code 1, fault addr 0x0 in tid 22299 (lshal), pid 22299 (lshal)",
+                "07-08 16:41:17.603 I DEBUG   : pid: 22299, tid: 22299, name: lshal  >>> /system/bin/lshal <<<",
+                "07-08 16:41:17.630 D WindowManager: Task{7292ccf A=10492:io.test}",
+            ]
+        )
+
+        crash = Harness.find_harness_logcat_crash(text, "io.test")
+
+        self.assertIsNone(crash)
+
+    def test_detects_steamcloud_native_crash(self):
+        text = "\n".join(
+            [
+                "07-08 16:40:23.760 I SteamCloud: operation_begin operation=plan_upload",
+                "07-08 16:40:24.100 F libc    : Fatal signal 11 (SIGSEGV), code 1, fault addr 0x0 in tid 19948 (steamcloud), pid 19948 (steamcloud)",
+                "07-08 16:40:24.150 I DEBUG   : pid: 19948, tid: 19948, name: steamcloud  >>> io.test:steamcloud <<<",
+            ]
+        )
+
+        crash = Harness.find_harness_logcat_crash(text, "io.test")
+
+        self.assertIsNotNone(crash)
+        self.assertEqual(crash["marker"], "Fatal signal")
+
+
 class JarLibraryDirTest(unittest.TestCase):
     def test_jar_library_dir_returns_correct_path(self):
         options = HarnessOptions(

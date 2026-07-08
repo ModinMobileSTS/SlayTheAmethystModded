@@ -3,6 +3,7 @@ package io.stamethyst.compatmod.touch;
 import io.stamethyst.compatmod.core.CompatRuntimeState;
 import com.badlogic.gdx.Input;
 import com.megacrit.cardcrawl.cards.AbstractCard;
+import com.megacrit.cardcrawl.cards.CardQueueItem;
 import com.megacrit.cardcrawl.cards.CardGroup;
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
@@ -12,11 +13,14 @@ import com.megacrit.cardcrawl.helpers.Hitbox;
 import com.megacrit.cardcrawl.helpers.input.InputHelper;
 import com.megacrit.cardcrawl.monsters.AbstractMonster;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
+import com.megacrit.cardcrawl.vfx.ThoughtBubble;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -45,6 +49,7 @@ public final class TouchscreenCardInputRuntime {
     private static boolean cursorWarpSuppressionLogged;
     private static boolean idleCardHoverCleanupLogged;
     private static boolean tapInspectLogged;
+    private static boolean tapPlayLogged;
     private static boolean targetAssistHoverLogged;
     private static boolean reflectionFailureLogged;
     private static File cardHoldStateFile;
@@ -55,6 +60,12 @@ public final class TouchscreenCardInputRuntime {
     private static boolean cardHoldRightClickGuardEnabled;
     private static Field touchscreenInspectCountField;
     private static boolean touchscreenInspectCountFieldResolved;
+    private static Field hoveredMonsterField;
+    private static boolean hoveredMonsterFieldResolved;
+    private static Method playCardMethod;
+    private static boolean playCardMethodResolved;
+    private static Method energyTipMethod;
+    private static boolean energyTipMethodResolved;
 
     private TouchscreenCardInputRuntime() {
     }
@@ -155,6 +166,47 @@ public final class TouchscreenCardInputRuntime {
         }
     }
 
+    public static boolean tryConsumeTapPlayInput(AbstractPlayer player) {
+        if (!isCardTapPlayActive() || !InputHelper.justClickedLeft || player == null) {
+            return false;
+        }
+
+        syncTouchInspect(player);
+        AbstractCard selectedCard = inspectedTouchCard;
+        if (selectedCard == null) {
+            return false;
+        }
+        if (!isCardInPlayerHand(player, selectedCard)) {
+            clearTouchInspect();
+            return false;
+        }
+        if (player.isDraggingCard || player.inSingleTargetMode) {
+            return false;
+        }
+
+        AbstractCard touchedCard = getTouchedHandCard(player);
+        if (touchedCard == selectedCard) {
+            InputHelper.justClickedLeft = false;
+            if (isTargetedCard(selectedCard)) {
+                return true;
+            }
+            return playSelectedTapCard(player, selectedCard, null);
+        }
+        if (touchedCard != null) {
+            return false;
+        }
+        if (!isTargetedCard(selectedCard)) {
+            return false;
+        }
+
+        AbstractMonster monster = findTapPlayMonster();
+        if (monster == null) {
+            return false;
+        }
+        InputHelper.justClickedLeft = false;
+        return playSelectedTapCard(player, selectedCard, monster);
+    }
+
     public static void afterTouchscreenTapInspect(AbstractPlayer player) {
         if (!isCardTapInspectActive()) {
             clearTapInspectCandidate();
@@ -236,6 +288,25 @@ public final class TouchscreenCardInputRuntime {
         }
         card.drawScale = drawScale;
         card.targetDrawScale = 1.0f;
+    }
+
+    public static void afterHandRefreshLayoutForTouchInspect(CardGroup group) {
+        if (!isCardTapInspectActive() || group == null) {
+            return;
+        }
+        AbstractPlayer player = AbstractDungeon.player;
+        AbstractCard card = inspectedTouchCard;
+        if (player == null || card == null || player.hand != group) {
+            return;
+        }
+        if (!isCardInPlayerHand(player, card)) {
+            clearTouchInspectForPlayer(player, false);
+            return;
+        }
+        if (player.isDraggingCard || player.inSingleTargetMode || player.isHoveringDropZone) {
+            return;
+        }
+        applyTouchInspectHoverLayout(player, card, false);
     }
 
     public static boolean shouldCancelUnconfirmedDropPlay(AbstractPlayer player) {
@@ -398,6 +469,11 @@ public final class TouchscreenCardInputRuntime {
             && CompatRuntimeState.isTouchscreenCardTapInspectEnabled();
     }
 
+    private static boolean isCardTapPlayActive() {
+        return isNativeTouchscreenCardInputActive()
+            && CompatRuntimeState.isTouchscreenCardTapPlayEnabled();
+    }
+
     private static boolean isTargetAssistActive() {
         return isNativeTouchscreenCardInputActive()
             && CompatRuntimeState.isTouchscreenTargetAssistEnabled();
@@ -411,9 +487,7 @@ public final class TouchscreenCardInputRuntime {
     private static boolean shouldSuppressIdleCardHover() {
         return isNativeTouchscreenCardInputActive()
             && CompatRuntimeState.isTouchscreenIdleCardHoverCleanupEnabled()
-            && !InputHelper.isMouseDown
-            && !InputHelper.justClickedLeft
-            && !InputHelper.justReleasedClickLeft;
+            && !isAnyTouchMouseButtonInteractionActive();
     }
 
     private static void startGesture(AbstractPlayer player, AbstractCard card) {
@@ -496,8 +570,7 @@ public final class TouchscreenCardInputRuntime {
         player.toHover = null;
         player.isDraggingCard = false;
         player.isHoveringDropZone = false;
-        animateCardToNaturalHover(card);
-        card.hover();
+        applyTouchInspectHoverLayout(player, card, true);
         logTapInspectOnce();
     }
 
@@ -518,6 +591,37 @@ public final class TouchscreenCardInputRuntime {
             return;
         }
         animateCardToNaturalHover(tapInspectCard);
+    }
+
+    private static boolean playSelectedTapCard(
+        AbstractPlayer player,
+        AbstractCard card,
+        AbstractMonster monster
+    ) {
+        if (player == null || card == null) {
+            return true;
+        }
+
+        clearTapInspectCandidate();
+        clearTouchInspect();
+        clearHoveredMonster(player);
+        player.hoveredCard = card;
+        if (!card.canUse(player, monster)) {
+            showTapPlayCantUse(player, card);
+            player.releaseCard();
+            return true;
+        }
+
+        player.isDraggingCard = false;
+        player.isHoveringDropZone = false;
+        player.inSingleTargetMode = false;
+        setHoveredMonster(player, monster);
+        if (!invokePlayCard(player)) {
+            playCardFallback(player, card, monster);
+        }
+        clearHoveredMonster(player);
+        logTapPlayOnce(card, monster);
+        return true;
     }
 
     private static void syncTouchInspect(AbstractPlayer player) {
@@ -568,6 +672,26 @@ public final class TouchscreenCardInputRuntime {
         }
     }
 
+    private static void applyTouchInspectHoverLayout(
+        AbstractPlayer player,
+        AbstractCard card,
+        boolean triggerHover
+    ) {
+        if (player == null || player.hand == null || card == null) {
+            return;
+        }
+        player.hoveredCard = card;
+        player.toHover = null;
+        animateCardToNaturalHover(card);
+        if (triggerHover) {
+            card.hover();
+        }
+        try {
+            player.hand.hoverCardPush(card);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
     private static boolean isTouchInspectCard(AbstractCard card) {
         return card != null
             && inspectedTouchCard == card
@@ -585,6 +709,10 @@ public final class TouchscreenCardInputRuntime {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private static AbstractMonster findTapPlayMonster() {
+        return findLiveMonsterNearInput(isTargetAssistActive() ? getTargetAssistPadding() : 0.0f);
     }
 
     private static void animateCardToNaturalHover(AbstractCard card) {
@@ -607,10 +735,17 @@ public final class TouchscreenCardInputRuntime {
         if (player.isDraggingCard || player.inSingleTargetMode || player.isHoveringDropZone) {
             return false;
         }
+        return isAnyTouchMouseButtonInteractionActive()
+            || isTouchInspectCard(card);
+    }
+
+    private static boolean isAnyTouchMouseButtonInteractionActive() {
         return InputHelper.isMouseDown
             || InputHelper.justClickedLeft
             || InputHelper.justReleasedClickLeft
-            || isTouchInspectCard(card);
+            || InputHelper.isMouseDown_R
+            || InputHelper.justClickedRight
+            || InputHelper.justReleasedClickRight;
     }
 
     private static void clearGesture() {
@@ -815,6 +950,147 @@ public final class TouchscreenCardInputRuntime {
         }
     }
 
+    private static void showTapPlayCantUse(AbstractPlayer player, AbstractCard card) {
+        if (player == null || card == null) {
+            return;
+        }
+        String message = card.cantUseMessage;
+        if (message != null && message.length() > 0) {
+            try {
+                AbstractDungeon.effectList.add(
+                    new ThoughtBubble(player.dialogX, player.dialogY, 3.0f, message, true)
+                );
+            } catch (RuntimeException ignored) {
+            }
+        }
+        invokeEnergyTip(player, card);
+    }
+
+    private static void playCardFallback(
+        AbstractPlayer player,
+        AbstractCard card,
+        AbstractMonster monster
+    ) {
+        InputHelper.justClickedLeft = false;
+        player.hoverEnemyWaitTimer = 1.0f;
+        card.unhover();
+        if (!isCardQueued(card)) {
+            AbstractDungeon.actionManager.cardQueue.add(new CardQueueItem(card, monster));
+        }
+        player.hoveredCard = null;
+        player.isDraggingCard = false;
+    }
+
+    private static boolean isCardQueued(AbstractCard card) {
+        if (card == null || AbstractDungeon.actionManager == null) {
+            return false;
+        }
+        for (CardQueueItem item : AbstractDungeon.actionManager.cardQueue) {
+            if (item.card == card) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean invokePlayCard(AbstractPlayer player) {
+        Method method = getPlayCardMethod();
+        if (method == null || player == null) {
+            return false;
+        }
+        try {
+            method.invoke(player);
+            return true;
+        } catch (IllegalAccessException e) {
+            logReflectionFailureOnce("playCard", e);
+            return false;
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            logReflectionFailureOnce("playCard", cause);
+            return false;
+        } catch (RuntimeException e) {
+            logReflectionFailureOnce("playCard", e);
+            return false;
+        }
+    }
+
+    private static void invokeEnergyTip(AbstractPlayer player, AbstractCard card) {
+        Method method = getEnergyTipMethod();
+        if (method == null || player == null || card == null) {
+            return;
+        }
+        try {
+            method.invoke(player, card);
+        } catch (IllegalAccessException e) {
+            logReflectionFailureOnce("energyTip", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            logReflectionFailureOnce("energyTip", cause);
+        } catch (RuntimeException e) {
+            logReflectionFailureOnce("energyTip", e);
+        }
+    }
+
+    private static Method getPlayCardMethod() {
+        if (!playCardMethodResolved) {
+            playCardMethodResolved = true;
+            playCardMethod = findMethod(AbstractPlayer.class, "playCard");
+        }
+        return playCardMethod;
+    }
+
+    private static Method getEnergyTipMethod() {
+        if (!energyTipMethodResolved) {
+            energyTipMethodResolved = true;
+            energyTipMethod = findMethod(AbstractPlayer.class, "energyTip", AbstractCard.class);
+        }
+        return energyTipMethod;
+    }
+
+    private static Method findMethod(Class<?> type, String name, Class<?>... parameterTypes) {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                Method method = current.getDeclaredMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            } catch (RuntimeException e) {
+                logReflectionFailureOnce(name, e);
+                return null;
+            }
+        }
+        logReflectionFailureOnce(name, new NoSuchMethodException(name));
+        return null;
+    }
+
+    private static void setHoveredMonster(AbstractPlayer player, AbstractMonster monster) {
+        Field field = getHoveredMonsterField();
+        if (field == null || player == null) {
+            return;
+        }
+        try {
+            field.set(player, monster);
+        } catch (IllegalAccessException e) {
+            logReflectionFailureOnce("hoveredMonster", e);
+        } catch (RuntimeException e) {
+            logReflectionFailureOnce("hoveredMonster", e);
+        }
+    }
+
+    private static void clearHoveredMonster(AbstractPlayer player) {
+        setHoveredMonster(player, null);
+    }
+
+    private static Field getHoveredMonsterField() {
+        if (!hoveredMonsterFieldResolved) {
+            hoveredMonsterFieldResolved = true;
+            hoveredMonsterField = findField(AbstractPlayer.class, "hoveredMonster");
+        }
+        return hoveredMonsterField;
+    }
+
     private static void logCursorWarpSuppressionOnce() {
         if (cursorWarpSuppressionLogged) {
             return;
@@ -842,6 +1118,19 @@ public final class TouchscreenCardInputRuntime {
         tapInspectLogged = true;
         System.out.println(
             "[amethyst-runtime-compat] touchscreen card tap preserved inspect-only hand-card hover"
+        );
+    }
+
+    private static void logTapPlayOnce(AbstractCard card, AbstractMonster monster) {
+        if (tapPlayLogged) {
+            return;
+        }
+        tapPlayLogged = true;
+        System.out.println(
+            "[amethyst-runtime-compat] touchscreen tap-play engaged card="
+                + describeCard(card)
+                + " target="
+                + describeMonster(monster)
         );
     }
 
@@ -882,5 +1171,18 @@ public final class TouchscreenCardInputRuntime {
             return monster.name;
         }
         return monster.getClass().getName();
+    }
+
+    private static String describeCard(AbstractCard card) {
+        if (card == null) {
+            return "<null>";
+        }
+        if (card.cardID != null) {
+            return card.cardID;
+        }
+        if (card.name != null) {
+            return card.name;
+        }
+        return card.getClass().getName();
     }
 }

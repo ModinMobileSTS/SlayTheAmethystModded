@@ -91,7 +91,8 @@
         <service
             android:name="io.stamethyst.backend.steamcloud.SteamCloudSyncProcessService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            android:process=":steamcloud" />
 
         <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"

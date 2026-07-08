@@ -63,6 +63,7 @@ Harness commands:
 - `set-mods`: replace the enabled optional mod selection by writing `enabled_mods.txt`.
 - `smoke`: install when needed, clear runtime signals, start, wait for an expected state, capture screenshot/logs, and stop unless requested otherwise.
 - `startup-cache-profile`: run one cache-build launch and then one or more cache-hit launches, exporting per-run logs and a startup timing summary.
+- `steam-cloud-sync`: modify a device-side `sts/` file, open the launcher to trigger Steam Cloud sync, poll Steam Cloud diagnostics/runtime logs into per-interval snapshots, export the full log bundle, and stop the app.
 
 Common harness options:
 
@@ -81,6 +82,10 @@ Common harness options:
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
 - `-CacheHitRuns <count>`: for `startup-cache-profile`, number of cache-hit launches after the cache-build launch. Defaults to `1`.
 - `-NoClearStartupCache`: for `startup-cache-profile`, reuse the existing startup cache instead of clearing it before the first run.
+- `-CloudSyncRelativePath <path>`: for `steam-cloud-sync`, device-relative path under `sts/` to modify before opening the launcher. Defaults to `saves/.amethyst-cloud-sync-harness.txt`.
+- `-CloudSyncPayload <text>`: for `steam-cloud-sync`, inline UTF-8 payload to write to the target file before launch.
+- `-CloudSyncSourceFile <path>`: for `steam-cloud-sync`, local UTF-8 file to copy to the target device file before launch. Put ad hoc payload files under `agent-tmp/`.
+- `-CloudSyncPullIntervalSeconds <seconds>`: for `steam-cloud-sync`, interval between pulling Steam Cloud summaries and runtime logs into `polls/<n>/`. Defaults to `10`.
 
 Mod selection options for `set-mods`:
 
@@ -106,11 +111,13 @@ python scripts/tools/main.py sts-harness -Command smoke -Autoplay
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 python scripts/tools/main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
 python scripts/tools/main.py sts-harness -Command startup-cache-profile -LaunchMode mts_basemod -CacheHitRuns 2 -SkipInstall
+python scripts/tools/main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay -DisableCardObtainEffectOwnershipCompat
 ```
 
 Harness output is always written to `result.json`. The `mods` and `set-mods` commands add `deviceMods`; `set-mods` also adds `modSelection`. Autoplay now also logs and auto-resolves `CardRewardScreen` discovery/card reward pages. `single-room` writes the pushed spec to `artifacts.singleRoomSpec`, waits for a `[amethyst-autoplay] single_room result ...` line in `latest.log`, stores it at `statusSnapshot.latestLog.singleRoomResult`, exports logs, and then stops the app.
 `startup-cache-profile` writes a top-level `startupCacheProfile` summary and a `startup-cache-profile-summary.json` artifact. Each phase also gets its own subdirectory with `result.json`, logs, logcat, cache state before/after, detected cache mode, and extracted timing evidence from `latest.log`.
+`steam-cloud-sync` writes a safe marker file under `sts/saves/` by default instead of touching real character saves, starts a harness-owned `adb logcat` capture, opens `LauncherActivity` without the debug launch extra so the normal Steam Cloud refresh/sync path runs before game launch, and periodically stores `steam-cloud/last-operation-summary.txt`, `steam-cloud/push-summary.txt`, `steam-cloud/pull-summary.txt`, `steam-cloud/manifest.json`, `steam-cloud/sync-baseline.json`, `sts/latest.log`, and `sts/boot_bridge_events.log` under `polls/<n>/snapshot.json`. Success requires a new `last-operation-summary.txt` with `Outcome: SUCCESS` and `Operation: manual_push` or `force_push`. Final log export tries `:app:stsPullLogs` first and falls back to direct adb collection under `logs-fallback/summary.json` if Gradle log export is unavailable.
 
 Implementation files:
 

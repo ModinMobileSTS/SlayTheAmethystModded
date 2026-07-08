@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -1892,6 +1893,11 @@ private fun LauncherMainScreenContent(
                 onLaunchAfterError = { showSteamCloudLaunchWarning = true },
                 onCancelCheck = actions.onCancelSteamCloudCheck,
                 onCancelSync = actions.onCancelSteamCloudSync,
+                onBackgroundUploadAndLaunch = {
+                    showSteamCloudBottomSheet = false
+                    showSteamCloudLaunchWarning = false
+                    actions.onBackgroundSteamCloudSyncAndLaunch()
+                },
                 onUseLocal = {
                     pendingSteamCloudConflictChoice = SteamCloudConflictResolutionChoice.USE_LOCAL
                 },
@@ -1916,6 +1922,12 @@ private fun LauncherMainScreenContent(
                     SteamCloudConflictResolutionChoice.USE_CLOUD ->
                         requestSteamCloudNetworkAction(SteamCloudNetworkPromptAction.USE_CLOUD)
                 }
+            },
+            onBackgroundUploadAndLaunch = {
+                pendingSteamCloudConflictChoice = null
+                showSteamCloudBottomSheet = false
+                showSteamCloudLaunchWarning = false
+                actions.onBackgroundUseLocalSteamCloudProgressAndLaunch()
             },
         )
     }
@@ -2371,6 +2383,13 @@ private fun Int.floorMod(modulus: Int): Int {
     return ((this % modulus) + modulus) % modulus
 }
 
+internal fun shouldShowSteamCloudBackgroundUploadAction(
+    indicator: MainScreenViewModel.SteamCloudIndicatorUi,
+): Boolean {
+    return indicator.state == MainScreenViewModel.SteamCloudIndicatorState.SYNCING &&
+        indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
+}
+
 private const val BOTTOM_BAR_SWITCH_ANIMATION_MS = 220
 
 @Composable
@@ -2379,10 +2398,13 @@ private fun SteamCloudConflictConfirmationDialog(
     plan: SteamCloudUploadPlan?,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    onBackgroundUploadAndLaunch: () -> Unit,
 ) {
     val localChangeCount = plan?.uploadCandidates?.size ?: 0
     val cloudOnlyChangeCount = plan?.remoteOnlyChanges?.size ?: 0
     val directConflictCount = plan?.conflicts?.size ?: 0
+    val showBackgroundUploadAction =
+        choice == SteamCloudConflictResolutionChoice.USE_LOCAL && plan != null
     val titleRes = when (choice) {
         SteamCloudConflictResolutionChoice.USE_LOCAL ->
             R.string.main_steam_cloud_conflict_confirm_local_title
@@ -2406,18 +2428,77 @@ private fun SteamCloudConflictConfirmationDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(titleRes)) },
         text = {
-            Text(
-                text = stringResource(
-                    messageRes,
-                    localChangeCount,
-                    cloudOnlyChangeCount,
-                    directConflictCount,
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(
+                        messageRes,
+                        localChangeCount,
+                        cloudOnlyChangeCount,
+                        directConflictCount,
+                    )
                 )
-            )
+                AnimatedVisibility(
+                    visible = showBackgroundUploadAction,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                        slideInVertically(
+                            animationSpec = tween(durationMillis = 220),
+                            initialOffsetY = { it / 3 },
+                        ) +
+                        scaleIn(
+                            animationSpec = tween(durationMillis = 220),
+                            initialScale = 0.96f,
+                        ),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
+                        slideOutVertically(
+                            animationSpec = tween(durationMillis = 180),
+                            targetOffsetY = { it / 4 },
+                        ) +
+                        scaleOut(
+                            animationSpec = tween(durationMillis = 180),
+                            targetScale = 0.98f,
+                        ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.main_steam_cloud_background_upload_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         },
         confirmButton = {
-            Button(onClick = onConfirm) {
-                Text(text = stringResource(confirmRes))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AnimatedVisibility(
+                    visible = showBackgroundUploadAction,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                        slideInVertically(
+                            animationSpec = tween(durationMillis = 220),
+                            initialOffsetY = { it / 2 },
+                        ) +
+                        scaleIn(
+                            animationSpec = tween(durationMillis = 220),
+                            initialScale = 0.94f,
+                        ),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
+                        slideOutVertically(
+                            animationSpec = tween(durationMillis = 180),
+                            targetOffsetY = { it / 3 },
+                        ) +
+                        scaleOut(
+                            animationSpec = tween(durationMillis = 180),
+                            targetScale = 0.98f,
+                        ),
+                ) {
+                    OutlinedButton(onClick = onBackgroundUploadAndLaunch) {
+                        Text(text = stringResource(R.string.main_steam_cloud_action_background_upload))
+                    }
+                }
+                Button(onClick = onConfirm) {
+                    Text(text = stringResource(confirmRes))
+                }
             }
         },
         dismissButton = {
@@ -3012,6 +3093,7 @@ private fun SteamCloudBottomSheetContent(
     onLaunchAfterError: () -> Unit,
     onCancelCheck: () -> Unit,
     onCancelSync: () -> Unit,
+    onBackgroundUploadAndLaunch: () -> Unit,
     onUseLocal: () -> Unit,
     onUseCloud: () -> Unit,
     autoRetryState: SteamCloudAutoRetryUiState,
@@ -3046,6 +3128,7 @@ private fun SteamCloudBottomSheetContent(
             buildSteamCloudConflictCardSummaries(it)
         }
     }
+    val showBackgroundUploadAction = shouldShowSteamCloudBackgroundUploadAction(indicator)
 
     Column(
         modifier = Modifier
@@ -3222,12 +3305,77 @@ private fun SteamCloudBottomSheetContent(
 
             MainScreenViewModel.SteamCloudIndicatorState.SYNCING -> {
                 if (indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD) {
-                    OutlinedButton(
-                        onClick = onCancelSync,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = stringResource(R.string.main_steam_cloud_action_cancel_upload))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        AnimatedVisibility(
+                            visible = showBackgroundUploadAction,
+                            enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                                slideInVertically(
+                                    animationSpec = tween(durationMillis = 220),
+                                    initialOffsetY = { it / 3 },
+                                ) +
+                                scaleIn(
+                                    animationSpec = tween(durationMillis = 220),
+                                    initialScale = 0.96f,
+                                ),
+                            exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
+                                slideOutVertically(
+                                    animationSpec = tween(durationMillis = 180),
+                                    targetOffsetY = { it / 4 },
+                                ) +
+                                scaleOut(
+                                    animationSpec = tween(durationMillis = 180),
+                                    targetScale = 0.98f,
+                                ),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.main_steam_cloud_background_upload_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AnimatedVisibility(
+                                visible = showBackgroundUploadAction,
+                                modifier = Modifier.weight(1f),
+                                enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                                    slideInVertically(
+                                        animationSpec = tween(durationMillis = 220),
+                                        initialOffsetY = { it / 2 },
+                                    ) +
+                                    scaleIn(
+                                        animationSpec = tween(durationMillis = 220),
+                                        initialScale = 0.94f,
+                                    ),
+                                exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
+                                    slideOutVertically(
+                                        animationSpec = tween(durationMillis = 180),
+                                        targetOffsetY = { it / 3 },
+                                    ) +
+                                    scaleOut(
+                                        animationSpec = tween(durationMillis = 180),
+                                        targetScale = 0.98f,
+                                    ),
+                            ) {
+                                Button(
+                                    onClick = onBackgroundUploadAndLaunch,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(text = stringResource(R.string.main_steam_cloud_action_background_upload))
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = onCancelSync,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(text = stringResource(R.string.main_steam_cloud_action_cancel_upload))
+                            }
+                        }
                     }
                 }
             }

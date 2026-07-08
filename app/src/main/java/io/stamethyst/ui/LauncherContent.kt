@@ -82,6 +82,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
+import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
@@ -146,6 +147,45 @@ private const val PAGE_TRANSITION_DURATION_MS = 420
 private const val DOCK_VISIBILITY_ANIMATION_MS = 220
 private const val QUARK_BROWSER_PACKAGE_NAME = "com.quark.browser"
 internal const val LAUNCHER_DOCK_ITEM_TAG_PREFIX = "launcher_dock_item_"
+
+internal data class SteamCloudMainRefreshTrackerState(
+    val observedRefreshTokenConfigured: Boolean,
+    val observedSaveMode: SteamCloudSaveMode,
+    val pendingRefreshOnMain: Boolean = false,
+)
+
+internal data class SteamCloudMainRefreshPlan(
+    val nextState: SteamCloudMainRefreshTrackerState,
+    val shouldRefreshMain: Boolean,
+    val shouldForceSyncIndicator: Boolean,
+)
+
+internal fun planSteamCloudMainRefresh(
+    route: Route?,
+    state: SteamCloudMainRefreshTrackerState,
+    refreshTokenConfigured: Boolean,
+    saveMode: SteamCloudSaveMode,
+): SteamCloudMainRefreshPlan {
+    val stateChanged =
+        state.observedRefreshTokenConfigured != refreshTokenConfigured ||
+            state.observedSaveMode != saveMode
+    val pendingRefreshOnMain = state.pendingRefreshOnMain || stateChanged
+    val shouldRefreshMain = pendingRefreshOnMain && route == Route.Main
+    val shouldForceSyncIndicator =
+        shouldRefreshMain &&
+            refreshTokenConfigured &&
+            saveMode == SteamCloudSaveMode.STEAM_CLOUD
+    return SteamCloudMainRefreshPlan(
+        nextState = SteamCloudMainRefreshTrackerState(
+            observedRefreshTokenConfigured = refreshTokenConfigured,
+            observedSaveMode = saveMode,
+            pendingRefreshOnMain = if (shouldRefreshMain) false else pendingRefreshOnMain,
+        ),
+        shouldRefreshMain = shouldRefreshMain,
+        shouldForceSyncIndicator = shouldForceSyncIndicator,
+    )
+}
+
 private val LauncherDockRoutes = listOf(
     Route.Main,
     Route.Mods,
@@ -181,6 +221,14 @@ fun LauncherContent(
     val workshopSubscriptionsViewModel: WorkshopViewModel = viewModel(key = "workshop-subscriptions")
     val currentRoute = navigator.backStack.lastOrNull() as? Route
     val rootRoute = navigator.backStack.firstOrNull() as? Route
+    var steamCloudMainRefreshTrackerState by remember {
+        mutableStateOf(
+            SteamCloudMainRefreshTrackerState(
+                observedRefreshTokenConfigured = settingsUiState.steamCloudRefreshTokenConfigured,
+                observedSaveMode = settingsUiState.steamCloudSaveMode,
+            )
+        )
+    }
     val initialDockPage = initialRoute.launcherDockIndex() ?: 0
     val dockPagerState = rememberPagerState(initialPage = initialDockPage) {
         LauncherDockRoutes.size
@@ -320,6 +368,29 @@ fun LauncherContent(
         activity,
     ) {
         refreshWorkshopSteamAuth()
+    }
+
+    LaunchedEffect(
+        currentRoute,
+        settingsUiState.steamCloudRefreshTokenConfigured,
+        settingsUiState.steamCloudSaveMode,
+        activity,
+    ) {
+        val refreshPlan = planSteamCloudMainRefresh(
+            route = currentRoute,
+            state = steamCloudMainRefreshTrackerState,
+            refreshTokenConfigured = settingsUiState.steamCloudRefreshTokenConfigured,
+            saveMode = settingsUiState.steamCloudSaveMode,
+        )
+        if (steamCloudMainRefreshTrackerState != refreshPlan.nextState) {
+            steamCloudMainRefreshTrackerState = refreshPlan.nextState
+        }
+        if (refreshPlan.shouldRefreshMain) {
+            mainViewModel.refresh(activity)
+            if (refreshPlan.shouldForceSyncIndicator) {
+                mainViewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
+            }
+        }
     }
 
     LaunchedEffect(currentRoute) {

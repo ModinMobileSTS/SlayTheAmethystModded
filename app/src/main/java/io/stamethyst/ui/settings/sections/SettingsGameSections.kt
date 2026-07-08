@@ -641,6 +641,8 @@ private fun CardPlayOptimizationMode.displayName(): String {
                 R.string.settings_card_play_optimization_release_pop_back
             CardPlayOptimizationMode.RELEASE_KEEP_OPEN ->
                 R.string.settings_card_play_optimization_release_keep_open
+            CardPlayOptimizationMode.TAP_CARD_THEN_TARGET ->
+                R.string.settings_card_play_optimization_tap_then_target
             CardPlayOptimizationMode.VANILLA ->
                 R.string.settings_card_play_optimization_vanilla
         }
@@ -656,6 +658,8 @@ private fun CardPlayOptimizationMode.description(): String {
                 R.string.settings_card_play_optimization_release_pop_back_desc
             CardPlayOptimizationMode.RELEASE_KEEP_OPEN ->
                 R.string.settings_card_play_optimization_release_keep_open_desc
+            CardPlayOptimizationMode.TAP_CARD_THEN_TARGET ->
+                R.string.settings_card_play_optimization_tap_then_target_desc
             CardPlayOptimizationMode.VANILLA ->
                 R.string.settings_card_play_optimization_vanilla_desc
         }

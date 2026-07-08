@@ -32,6 +32,8 @@ public final class CompatRuntimeState {
         "amethyst.runtime_compat.touchscreen_card_gesture";
     private static final String TOUCHSCREEN_CARD_TAP_INSPECT_PROP =
         "amethyst.runtime_compat.touchscreen_card_tap_inspect";
+    private static final String TOUCHSCREEN_CARD_TAP_PLAY_PROP =
+        "amethyst.runtime_compat.touchscreen_card_tap_play";
     private static final String TOUCHSCREEN_CURSOR_WARP_CLEANUP_PROP =
         "amethyst.runtime_compat.touchscreen_cursor_warp_cleanup";
     private static final String TOUCHSCREEN_TARGET_ASSIST_PROP =
@@ -84,6 +86,8 @@ public final class CompatRuntimeState {
         readBooleanSystemProperty(TOUCHSCREEN_CARD_GESTURE_PROP, true);
     private static final boolean TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_CARD_TAP_INSPECT_PROP, false);
+    private static final boolean TOUCHSCREEN_CARD_TAP_PLAY_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_CARD_TAP_PLAY_PROP, false);
     private static final boolean TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_CURSOR_WARP_CLEANUP_PROP, true);
     private static final boolean TOUCHSCREEN_TARGET_ASSIST_ENABLED =
@@ -169,6 +173,8 @@ public final class CompatRuntimeState {
                     + Boolean.toString(TOUCHSCREEN_CARD_GESTURE_ENABLED)
                     + " touchCardTapInspect="
                     + Boolean.toString(TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED)
+                    + " touchCardTapPlay="
+                    + Boolean.toString(TOUCHSCREEN_CARD_TAP_PLAY_ENABLED)
                     + " touchCursorWarpCleanup="
                     + Boolean.toString(TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED)
                     + " touchTargetAssist="
@@ -289,6 +295,10 @@ public final class CompatRuntimeState {
 
     public static boolean isTouchscreenCardTapInspectEnabled() {
         return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED;
+    }
+
+    public static boolean isTouchscreenCardTapPlayEnabled() {
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_CARD_TAP_PLAY_ENABLED;
     }
 
     public static boolean isTouchscreenCursorWarpCleanupEnabled() {

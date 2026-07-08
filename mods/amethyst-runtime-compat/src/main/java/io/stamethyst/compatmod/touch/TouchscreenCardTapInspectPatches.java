@@ -5,6 +5,7 @@ import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePostfixPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.megacrit.cardcrawl.cards.AbstractCard;
+import com.megacrit.cardcrawl.cards.CardGroup;
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.helpers.Hitbox;
 
@@ -155,6 +156,17 @@ public final class TouchscreenCardTapInspectPatches {
                     );
                 }
             };
+        }
+    }
+
+    @SpirePatch2(
+        clz = CardGroup.class,
+        method = "refreshHandLayout"
+    )
+    public static class CardGroupRefreshHandLayoutPatch {
+        @SpirePostfixPatch
+        public static void after(CardGroup __instance) {
+            TouchscreenCardInputRuntime.afterHandRefreshLayoutForTouchInspect(__instance);
         }
     }
 }

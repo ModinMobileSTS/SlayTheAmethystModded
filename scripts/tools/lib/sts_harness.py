@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -38,6 +39,7 @@ COMMANDS = (
     "hotreload",
     "single-room",
     "startup-cache-profile",
+    "steam-cloud-sync",
 )
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
 AGENT_COMMANDS = ("attach", "detach", "list", "status")
@@ -65,6 +67,8 @@ STARTUP_CACHE_EVIDENCE_PATTERNS = (
     "LazyCustomCardImage",
     "LazyStartupCardDescription",
 )
+DEFAULT_CLOUD_SYNC_RELATIVE_PATH = "saves/.amethyst-cloud-sync-harness.txt"
+STEAM_CLOUD_SUCCESS_OPERATIONS = {"manual_push", "force_push"}
 
 
 def repo_root() -> Path:
@@ -224,6 +228,10 @@ class HarnessOptions:
     redefine_class_file: str = ""
     cache_hit_runs: int = 1
     no_clear_startup_cache: bool = False
+    cloud_sync_relative_path: str = DEFAULT_CLOUD_SYNC_RELATIVE_PATH
+    cloud_sync_payload: str = ""
+    cloud_sync_source_file: str = ""
+    cloud_sync_pull_interval_seconds: int = 10
 
 
 class Harness:
@@ -403,6 +411,9 @@ class Harness:
             return [f"-PdeviceSerial={self.resolved_device_serial}"]
         return []
 
+    def effective_debug_launch_mode(self) -> str:
+        return "mts" if self.options.launch_mode == "mts_basemod" else self.options.launch_mode
+
     def harness_install(self) -> None:
         self.gradle([":app:assembleDebug"])
         apk_root = self.repo_root / "app" / "build" / "outputs" / "apk" / "debug"
@@ -414,33 +425,130 @@ class Harness:
         self.adb(["install", "-r", str(apk)], timeout_seconds=180)
 
     def harness_start(self) -> None:
+        launcher_component = f"{self.application_id or ''}/.LauncherActivity"
+        if self.options.command == "steam-cloud-sync":
+            self.adb(
+                ["shell", "am", "start", "-n", launcher_component],
+                timeout_seconds=30,
+            )
+            return
         single_room_device_spec = ""
         if self.options.autoplay_mode == "single_room":
             single_room_device_spec = self.ensure_single_room_device_spec()
         args = [
-            ":app:stsStart",
-            f"-PlaunchMode={self.options.launch_mode}",
-            f"-PforceJvmCrash={str(self.options.force_jvm_crash).lower()}",
-            f"-PforceRuntimeCrash={str(self.options.force_runtime_crash).lower()}",
-            f"-Pautoplay={str(self.options.autoplay).lower()}",
-            f"-PautoplaySaveMode={self.options.autoplay_save_mode}",
-            f"-PautoplayMode={self.options.autoplay_mode}",
-            f"-PautoplaySingleRoomSpec={single_room_device_spec}",
-            "-PdisableCardObtainEffectOwnershipCompat="
-            + str(self.options.disable_card_obtain_effect_ownership_compat).lower(),
-            *self.gradle_device_properties(),
+            "shell",
+            "am",
+            "start",
+            "-n",
+            launcher_component,
+            "--es",
+            "io.stamethyst.debug_launch_mode",
+            self.effective_debug_launch_mode(),
+            "--ez",
+            "io.stamethyst.debug_force_jvm_crash",
+            str(self.options.force_jvm_crash).lower(),
+            "--ez",
+            "io.stamethyst.debug_force_runtime_crash",
+            str(self.options.force_runtime_crash).lower(),
+            "--ez",
+            "io.stamethyst.debug_autoplay",
+            str(self.options.autoplay).lower(),
+            "--es",
+            "io.stamethyst.debug_autoplay_save_mode",
+            self.options.autoplay_save_mode,
+            "--es",
+            "io.stamethyst.debug_autoplay_mode",
+            self.options.autoplay_mode,
         ]
-        self.gradle(args)
+        if single_room_device_spec:
+            args.extend(
+                [
+                    "--es",
+                    "io.stamethyst.debug_autoplay_single_room_spec",
+                    single_room_device_spec,
+                ]
+            )
+        args.extend(
+            [
+                "--ez",
+                "io.stamethyst.debug_disable_card_obtain_effect_ownership_compat",
+                str(self.options.disable_card_obtain_effect_ownership_compat).lower(),
+            ]
+        )
+        self.adb(args, timeout_seconds=30)
 
     def harness_stop(self) -> None:
-        self.gradle([":app:stsStop", *self.gradle_device_properties()])
+        self.adb(["shell", "am", "force-stop", self.application_id or ""], timeout_seconds=20)
 
     def harness_logs(self, output_directory: Path) -> None:
         output_directory.mkdir(parents=True, exist_ok=True)
-        self.gradle([":app:stsPullLogs", f"-PlogsDir={output_directory}", *self.gradle_device_properties()])
+        try:
+            self.gradle([":app:stsPullLogs", f"-PlogsDir={output_directory}", *self.gradle_device_properties()])
+        except Exception as exc:
+            self.result["artifacts"]["logsGradleError"] = str(exc)
+            self.harness_logs_via_adb(output_directory)
+            return
         archives = sorted(output_directory.glob("sts-jvm-logs-export-*.zip"), key=lambda item: item.stat().st_mtime, reverse=True)
         if archives:
             self.result["artifacts"]["logsZip"] = str(archives[0])
+
+    def harness_logs_via_adb(self, output_directory: Path) -> Path:
+        sts_root = self.resolve_device_sts_root()
+        storage_root = self.resolve_device_storage_root(sts_root)
+        fallback_dir = output_directory / "logs-fallback"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        files = {
+            "lastOperationSummary": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/last-operation-summary.txt",
+                fallback_dir / "steam-cloud" / "last-operation-summary.txt",
+                parser=self.parse_steam_cloud_summary,
+            ),
+            "pushSummary": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/push-summary.txt",
+                fallback_dir / "steam-cloud" / "push-summary.txt",
+                parser=self.parse_steam_cloud_push_summary,
+            ),
+            "pullSummary": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/pull-summary.txt",
+                fallback_dir / "steam-cloud" / "pull-summary.txt",
+            ),
+            "manifest": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/manifest.json",
+                fallback_dir / "steam-cloud" / "manifest.json",
+            ),
+            "baseline": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/sync-baseline.json",
+                fallback_dir / "steam-cloud" / "sync-baseline.json",
+            ),
+            "latestLog": self.collect_remote_text_snapshot(
+                sts_root,
+                "latest.log",
+                fallback_dir / "sts" / "latest.log",
+                tail_lines=400,
+            ),
+            "bootBridgeEvents": self.collect_remote_text_snapshot(
+                sts_root,
+                "boot_bridge_events.log",
+                fallback_dir / "sts" / "boot_bridge_events.log",
+            ),
+        }
+        summary = {
+            "collectedAt": utc_timestamp(),
+            "storageRoots": {"sts": sts_root, "storage": storage_root},
+            "files": files,
+        }
+        summary_path = fallback_dir / "summary.json"
+        summary_path.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self.result["artifacts"]["logsFallbackSummary"] = str(summary_path)
+        return summary_path
 
     def harness_screenshot(self, output_directory: Path) -> Path:
         output_directory.mkdir(parents=True, exist_ok=True)
@@ -578,32 +686,48 @@ class Harness:
             return {"root": "files/sts", "accessMode": "run-as"}
         return {"root": candidates[0], "accessMode": "shell"}
 
-    def read_remote_sts_text(
+    def resolve_device_storage_root(self, sts_root: dict[str, Any] | None = None) -> dict[str, Any]:
+        sts_root = sts_root or self.resolve_device_sts_root()
+        sts_root_path = str(sts_root["root"]).rstrip("/")
+        storage_root = posixpath.dirname(sts_root_path) if sts_root_path else ""
+        if not storage_root:
+            raise RuntimeError(f"Could not derive storage root from STS root: {sts_root_path}")
+        return {"root": storage_root, "accessMode": sts_root["accessMode"]}
+
+    @staticmethod
+    def remote_root_path(root_info: dict[str, Any], relative_path: str) -> str:
+        trimmed = relative_path.strip().lstrip("/")
+        root_path = str(root_info["root"]).rstrip("/")
+        return root_path if not trimmed else f"{root_path}/{trimmed}"
+
+    def read_remote_root_text(
         self,
-        sts_root: dict[str, Any],
+        root_info: dict[str, Any],
         relative_path: str,
         tail_lines: int = 0,
         *,
         timeout_seconds: int = 5,
     ) -> str:
-        trimmed = relative_path.lstrip("/")
-        root_path = str(sts_root["root"])
-        remote_path = root_path if not trimmed else f"{root_path}/{trimmed}"
+        remote_path = self.remote_root_path(root_info, relative_path)
         quoted = quote_android_shell(remote_path)
         script = f"if [ -f {quoted} ]; then tail -n {tail_lines} {quoted}; fi" if tail_lines > 0 else f"if [ -f {quoted} ]; then cat {quoted}; fi"
-        if sts_root["accessMode"] == "run-as":
-            return self.adb(["exec-out", "run-as", self.application_id or "", "sh", "-c", script], timeout_seconds=timeout_seconds, allow_failure=True).output
+        if root_info["accessMode"] == "run-as":
+            return self.adb(
+                ["exec-out", "run-as", self.application_id or "", "sh", "-c", script],
+                timeout_seconds=timeout_seconds,
+                allow_failure=True,
+            ).output
         return self.adb_shell_script(script, timeout_seconds=timeout_seconds, allow_failure=True).output
 
-    def remote_sts_root_script(
+    def remote_root_script(
         self,
-        sts_root: dict[str, Any],
+        root_info: dict[str, Any],
         script: str,
         *,
         timeout_seconds: int = 5,
         allow_failure: bool = True,
     ) -> CommandResult:
-        if sts_root["accessMode"] == "run-as":
+        if root_info["accessMode"] == "run-as":
             return self.adb(
                 ["exec-out", "run-as", self.application_id or "", "sh", "-c", script],
                 timeout_seconds=timeout_seconds,
@@ -611,10 +735,8 @@ class Harness:
             )
         return self.adb_shell_script(script, timeout_seconds=timeout_seconds, allow_failure=allow_failure)
 
-    def remote_sts_path_state(self, sts_root: dict[str, Any], relative_path: str) -> dict[str, Any]:
-        trimmed = relative_path.lstrip("/")
-        root_path = str(sts_root["root"])
-        remote_path = root_path if not trimmed else f"{root_path}/{trimmed}"
+    def remote_root_path_state(self, root_info: dict[str, Any], relative_path: str) -> dict[str, Any]:
+        remote_path = self.remote_root_path(root_info, relative_path)
         quoted = quote_android_shell(remote_path)
         state_script = f"""if [ -e {quoted} ]; then
   echo exists=1
@@ -635,34 +757,65 @@ else
   echo exists=0
 fi
 """
-        result = self.remote_sts_root_script(sts_root, state_script)
-        exists = False
-        item_type = None
-        bytes_value = None
-        mtime_epoch_seconds = None
-        for line in result.output.splitlines():
-            trimmed_line = line.strip()
-            if trimmed_line == "exists=1":
-                exists = True
-            elif trimmed_line.startswith("type="):
-                item_type = trimmed_line[len("type=") :]
-            elif trimmed_line.startswith("bytes="):
-                try:
-                    bytes_value = int(trimmed_line[len("bytes=") :])
-                except ValueError:
-                    pass
-            elif trimmed_line.startswith("mtimeEpochSeconds="):
-                try:
-                    mtime_epoch_seconds = int(trimmed_line[len("mtimeEpochSeconds=") :])
-                except ValueError:
-                    pass
-        return {
-            "relativePath": relative_path,
-            "exists": exists,
-            "type": item_type,
-            "bytes": bytes_value,
-            "mtimeEpochSeconds": mtime_epoch_seconds,
-        }
+        result = self.remote_root_script(root_info, state_script)
+        return self.parse_remote_path_state_output(relative_path, result.output)
+
+    def write_remote_root_text(
+        self,
+        root_info: dict[str, Any],
+        relative_path: str,
+        text: str,
+        *,
+        timeout_seconds: int = 10,
+    ) -> None:
+        trimmed = relative_path.strip().lstrip("/")
+        if not trimmed:
+            raise ValueError("relative device path must not be empty")
+        remote_path = self.remote_root_path(root_info, trimmed)
+        parent_dir = posixpath.dirname(remote_path)
+        quoted_parent = quote_android_shell(parent_dir)
+        quoted_remote_path = quote_android_shell(remote_path)
+        normalized_text = text.replace("\r\n", "\n")
+        heredoc_token = "__STS_HARNESS_EOF__"
+        while heredoc_token in normalized_text:
+            heredoc_token += "_X"
+        script = (
+            f"mkdir -p {quoted_parent} || exit 1\n"
+            f"cat <<'{heredoc_token}' > {quoted_remote_path}\n"
+            f"{normalized_text}\n"
+            f"{heredoc_token}\n"
+        )
+        result = self.remote_root_script(root_info, script, timeout_seconds=timeout_seconds, allow_failure=False)
+        if result.exit_code != 0:
+            raise RuntimeError(f"Failed to write device file: {remote_path}")
+
+    def read_remote_sts_text(
+        self,
+        sts_root: dict[str, Any],
+        relative_path: str,
+        tail_lines: int = 0,
+        *,
+        timeout_seconds: int = 5,
+    ) -> str:
+        return self.read_remote_root_text(sts_root, relative_path, tail_lines=tail_lines, timeout_seconds=timeout_seconds)
+
+    def remote_sts_root_script(
+        self,
+        sts_root: dict[str, Any],
+        script: str,
+        *,
+        timeout_seconds: int = 5,
+        allow_failure: bool = True,
+    ) -> CommandResult:
+        return self.remote_root_script(
+            sts_root,
+            script,
+            timeout_seconds=timeout_seconds,
+            allow_failure=allow_failure,
+        )
+
+    def remote_sts_path_state(self, sts_root: dict[str, Any], relative_path: str) -> dict[str, Any]:
+        return self.remote_root_path_state(sts_root, relative_path)
 
     @staticmethod
     def parse_remote_path_state_output(relative_path: str, text: str | None) -> dict[str, Any]:
@@ -835,6 +988,218 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         ]
         return "\n".join(lines)
 
+    @staticmethod
+    def parse_summary_key_values(text: str | None) -> dict[str, str]:
+        values: dict[str, str] = {}
+        for line in (text or "").splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            values[key.strip()] = value.strip()
+        return values
+
+    @classmethod
+    def parse_steam_cloud_summary(cls, text: str | None) -> dict[str, Any]:
+        values = cls.parse_summary_key_values(text)
+        return {
+            "outcome": values.get("Outcome", ""),
+            "operation": values.get("Operation", ""),
+            "account": values.get("Account", ""),
+            "startedAt": values.get("Started At", ""),
+            "completedAt": values.get("Completed At", ""),
+            "durationMs": cls.parse_optional_int(values.get("Duration Ms")),
+            "failureSummary": values.get("Failure Summary", ""),
+            "currentStage": values.get("Current Stage", ""),
+        }
+
+    @classmethod
+    def parse_steam_cloud_push_summary(cls, text: str | None) -> dict[str, Any]:
+        values = cls.parse_summary_key_values(text)
+        return {
+            "completedAt": values.get("Completed At", ""),
+            "uploadedFiles": cls.parse_optional_int(values.get("Uploaded Files")),
+            "uploadedBytes": cls.parse_optional_int(values.get("Uploaded Bytes")),
+            "deletedRemoteFiles": cls.parse_optional_int(values.get("Deleted Remote Files")),
+            "remoteFilesAfterPush": cls.parse_optional_int(values.get("Remote Files After Push")),
+        }
+
+    @staticmethod
+    def parse_optional_int(value: str | None) -> int | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def remote_path_state_changed(before: dict[str, Any] | None, after: dict[str, Any] | None) -> bool:
+        before = before or {}
+        after = after or {}
+        keys = ("exists", "type", "bytes", "mtimeEpochSeconds")
+        return any(before.get(key) != after.get(key) for key in keys)
+
+    def build_cloud_sync_payload_text(self) -> str:
+        source_file = self.options.cloud_sync_source_file.strip()
+        if source_file:
+            path = self.resolve_repo_path(source_file)
+            if not path.is_file():
+                raise RuntimeError(f"Cloud sync source file not found: {path}")
+            self.result["artifacts"]["cloudSyncSourceFile"] = str(path)
+            text = path.read_text(encoding="utf-8")
+        elif self.options.cloud_sync_payload.strip():
+            text = self.options.cloud_sync_payload
+        else:
+            text = "\n".join(
+                [
+                    "# Managed by SlayTheAmethyst harness.",
+                    f"updatedAtUtc={utc_timestamp()}",
+                    f"deviceSerial={self.resolved_device_serial}",
+                    f"launchMode={self.options.launch_mode}",
+                    "",
+                ]
+            )
+        if not text.endswith("\n"):
+            text += "\n"
+        return text
+
+    def collect_remote_text_snapshot(
+        self,
+        root_info: dict[str, Any],
+        relative_path: str,
+        local_path: Path,
+        *,
+        tail_lines: int = 0,
+        parser: Any = None,
+    ) -> dict[str, Any]:
+        state = self.remote_root_path_state(root_info, relative_path)
+        text = self.read_remote_root_text(root_info, relative_path, tail_lines=tail_lines, timeout_seconds=10)
+        artifact = ""
+        if state.get("exists") and state.get("type") == "file":
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_text(text, encoding="utf-8")
+            artifact = str(local_path)
+        record: dict[str, Any] = {
+            "relativePath": relative_path,
+            "state": state,
+            "artifact": artifact,
+        }
+        if parser is not None:
+            record["parsed"] = parser(text)
+        return record
+
+    def collect_steam_cloud_snapshot(
+        self,
+        storage_root: dict[str, Any],
+        sts_root: dict[str, Any],
+        output_directory: Path,
+        *,
+        trigger_relative_path: str,
+        status_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        output_directory.mkdir(parents=True, exist_ok=True)
+        steam_cloud_files = {
+            "lastOperationSummary": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/last-operation-summary.txt",
+                output_directory / "steam-cloud" / "last-operation-summary.txt",
+                parser=self.parse_steam_cloud_summary,
+            ),
+            "pushSummary": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/push-summary.txt",
+                output_directory / "steam-cloud" / "push-summary.txt",
+                parser=self.parse_steam_cloud_push_summary,
+            ),
+            "pullSummary": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/pull-summary.txt",
+                output_directory / "steam-cloud" / "pull-summary.txt",
+            ),
+            "manifest": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/manifest.json",
+                output_directory / "steam-cloud" / "manifest.json",
+            ),
+            "baseline": self.collect_remote_text_snapshot(
+                storage_root,
+                "steam-cloud/sync-baseline.json",
+                output_directory / "steam-cloud" / "sync-baseline.json",
+            ),
+        }
+        runtime_files = {
+            "latestLog": self.collect_remote_text_snapshot(
+                sts_root,
+                "latest.log",
+                output_directory / "sts" / "latest.log",
+                tail_lines=400,
+            ),
+            "bootBridgeEvents": self.collect_remote_text_snapshot(
+                sts_root,
+                "boot_bridge_events.log",
+                output_directory / "sts" / "boot_bridge_events.log",
+            ),
+            "triggerFile": self.collect_remote_text_snapshot(
+                sts_root,
+                trigger_relative_path,
+                output_directory / "sts" / trigger_relative_path.replace("/", os.sep),
+            ),
+        }
+        snapshot = {
+            "collectedAt": utc_timestamp(),
+            "storageRoots": {"sts": sts_root, "storage": storage_root},
+            "statusSnapshot": status_snapshot,
+            "steamCloud": steam_cloud_files,
+            "runtime": runtime_files,
+        }
+        snapshot_path = output_directory / "snapshot.json"
+        snapshot_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        snapshot["artifact"] = str(snapshot_path)
+        return snapshot
+
+    def evaluate_steam_cloud_snapshot(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        baseline_last_operation_text: str,
+        baseline_last_operation_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        last_operation = snapshot.get("steamCloud", {}).get("lastOperationSummary", {})
+        last_operation_state = last_operation.get("state", {}) if isinstance(last_operation, dict) else {}
+        last_operation_artifact = last_operation.get("artifact", "") if isinstance(last_operation, dict) else ""
+        last_operation_text = ""
+        if last_operation_artifact:
+            last_operation_text = Path(last_operation_artifact).read_text(encoding="utf-8", errors="replace")
+        parsed = last_operation.get("parsed", {}) if isinstance(last_operation, dict) else {}
+        is_new_last_operation = self.remote_path_state_changed(baseline_last_operation_state, last_operation_state)
+        if last_operation_text.strip() != baseline_last_operation_text.strip():
+            is_new_last_operation = True
+        if not is_new_last_operation:
+            return {"complete": False, "failed": False, "reason": "no-new-summary"}
+        outcome = str(parsed.get("outcome", "")).strip().upper()
+        operation = str(parsed.get("operation", "")).strip().lower()
+        if outcome == "FAILED":
+            return {
+                "complete": False,
+                "failed": True,
+                "reason": "summary-failed",
+                "summary": parsed,
+            }
+        if outcome == "SUCCESS" and operation in STEAM_CLOUD_SUCCESS_OPERATIONS:
+            push_summary = snapshot.get("steamCloud", {}).get("pushSummary", {})
+            push_parsed = push_summary.get("parsed", {}) if isinstance(push_summary, dict) else {}
+            return {
+                "complete": True,
+                "failed": False,
+                "reason": "summary-success",
+                "summary": parsed,
+                "pushSummary": push_parsed,
+            }
+        return {"complete": False, "failed": False, "reason": "summary-not-finished", "summary": parsed}
+
     def ensure_single_room_device_spec(self) -> str:
         if self.options.single_room_device_spec.strip():
             return self.options.single_room_device_spec.strip()
@@ -956,12 +1321,31 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             'Exception in thread "LWJGL Application"',
             "java.lang.OutOfMemoryError",
         )
-        package_needles = (
-            package_name,
-            f"{package_name}:game",
-            f"{package_name}:diag",
-            f"Process: {package_name}",
-            f">>> {package_name}",
+        process_names = tuple(
+            name
+            for name in (
+                package_name,
+                f"{package_name}:game" if package_name else "",
+                f"{package_name}:steamcloud" if package_name else "",
+                f"{package_name}:diag" if package_name else "",
+                f"{package_name}:logcat" if package_name else "",
+            )
+            if name
+        )
+        package_needles = process_names + tuple(f"Process: {name}" for name in process_names) + tuple(
+            f">>> {name}" for name in process_names
+        )
+        strong_package_needles = (
+            tuple(f"Process: {name}" for name in process_names)
+            + tuple(f"Cmdline: {name}" for name in process_names)
+            + tuple(f"Cmd line: {name}" for name in process_names)
+            + tuple(f">>> {name}" for name in process_names)
+        )
+        generic_crash_markers = (
+            "FATAL EXCEPTION",
+            "Fatal signal",
+            "AndroidRuntime",
+            "java.lang.OutOfMemoryError",
         )
         for index, line in enumerate(lines):
             marker_matched = None
@@ -986,18 +1370,21 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             end = min(len(lines) - 1, index + 90)
             window_text = "\n".join(lines[start : end + 1])
             package_matched = any(text_contains(window_text, needle) for needle in package_needles)
+            strong_package_matched = any(text_contains(window_text, needle) for needle in strong_package_needles)
             runtime_log_marker = marker_matched in (
                 "Game crashed.",
                 "Game body patch failed before launch",
                 "Exception occurred in CardCrawlGame render method!",
                 'Exception in thread "LWJGL Application"',
             )
+            if marker_matched in generic_crash_markers and not strong_package_matched:
+                continue
             if not package_matched and not runtime_log_marker:
                 continue
             return {
                 "marker": marker_matched,
                 "line": line.strip(),
-                "packageMatched": package_matched,
+                "packageMatched": package_matched or strong_package_matched,
                 "excerpt": limit_text(window_text, 5000),
             }
         return None
@@ -1098,6 +1485,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         package_name = self.application_id or ""
         launcher_pid = self.process_pid_text(package_name)
         game_pid = self.process_pid_text(f"{package_name}:game")
+        steamcloud_pid = self.process_pid_text(f"{package_name}:steamcloud")
         diag_pid = self.process_pid_text(f"{package_name}:diag")
         logcat_pid = self.process_pid_text(f"{package_name}:logcat")
 
@@ -1122,6 +1510,8 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             observed_state = "PATCHING_DESKTOP_JAR"
         elif game_pid.strip():
             observed_state = "RUNNING_WITHOUT_TERMINAL_EVENT"
+        elif steamcloud_pid.strip():
+            observed_state = "STEAM_CLOUD_SYNC_RUNNING"
         elif launcher_pid.strip():
             observed_state = "LAUNCHER_RUNNING"
 
@@ -1145,6 +1535,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             "processes": {
                 "launcher": launcher_pid,
                 "game": game_pid,
+                "steamcloud": steamcloud_pid,
                 "diag": diag_pid,
                 "logcat": logcat_pid,
             },
@@ -2016,6 +2407,8 @@ fi
             return self.run_smoke(resolved_out_dir)
         elif command == "startup-cache-profile":
             return self.harness_startup_cache_profile(resolved_out_dir)
+        elif command == "steam-cloud-sync":
+            return self.harness_steam_cloud_sync(resolved_out_dir)
         return 0
 
     def run_smoke(self, resolved_out_dir: Path) -> int:
@@ -2122,6 +2515,200 @@ fi
         self.set_result_success(success, status["observedState"], message)
         return 0 if success else 1
 
+    def harness_steam_cloud_sync(self, resolved_out_dir: Path) -> int:
+        sync_result: dict[str, Any] = {
+            "triggerRelativePath": self.options.cloud_sync_relative_path.strip() or DEFAULT_CLOUD_SYNC_RELATIVE_PATH,
+            "pullIntervalSeconds": max(1, int(self.options.cloud_sync_pull_interval_seconds)),
+            "polls": [],
+        }
+        self.result["steamCloudSync"] = sync_result
+
+        if not self.options.skip_install:
+            self.harness_install()
+
+        trigger_relative_path = sync_result["triggerRelativePath"]
+        payload_text = self.build_cloud_sync_payload_text()
+        payload_artifact = resolved_out_dir / "cloud-sync-trigger.txt"
+        payload_artifact.write_text(payload_text, encoding="utf-8")
+        self.result["artifacts"]["cloudSyncTriggerPayload"] = str(payload_artifact)
+        sync_result["payloadBytes"] = len(payload_text.encode("utf-8"))
+
+        status: dict[str, Any] | None = None
+        final_snapshot: dict[str, Any] | None = None
+        logcat_capture: LogcatCapture | None = None
+        logcat_since = ""
+        start_requested = False
+        saw_running = False
+        poll_index = 0
+
+        sts_root = self.resolve_device_sts_root()
+        storage_root = self.resolve_device_storage_root(sts_root)
+        sync_result["storageRoots"] = {"sts": sts_root, "storage": storage_root}
+        baseline_last_operation_state = self.remote_root_path_state(storage_root, "steam-cloud/last-operation-summary.txt")
+        baseline_last_operation_text = self.read_remote_root_text(
+            storage_root,
+            "steam-cloud/last-operation-summary.txt",
+            timeout_seconds=10,
+        )
+        sync_result["before"] = {
+            "triggerFile": self.remote_sts_path_state(sts_root, trigger_relative_path),
+            "lastOperationSummary": {
+                "state": baseline_last_operation_state,
+                "artifact": "",
+            },
+            "pushSummary": {
+                "state": self.remote_root_path_state(storage_root, "steam-cloud/push-summary.txt"),
+                "artifact": "",
+            },
+        }
+        before_summary_path = resolved_out_dir / "before" / "steam-cloud" / "last-operation-summary.txt"
+        if baseline_last_operation_text:
+            before_summary_path.parent.mkdir(parents=True, exist_ok=True)
+            before_summary_path.write_text(baseline_last_operation_text, encoding="utf-8")
+            sync_result["before"]["lastOperationSummary"]["artifact"] = str(before_summary_path)
+        before_push_text = self.read_remote_root_text(storage_root, "steam-cloud/push-summary.txt", timeout_seconds=10)
+        before_push_path = resolved_out_dir / "before" / "steam-cloud" / "push-summary.txt"
+        if before_push_text:
+            before_push_path.parent.mkdir(parents=True, exist_ok=True)
+            before_push_path.write_text(before_push_text, encoding="utf-8")
+            sync_result["before"]["pushSummary"]["artifact"] = str(before_push_path)
+
+        try:
+            self.harness_stop()
+            self.clear_runtime_signals()
+            self.write_remote_root_text(sts_root, trigger_relative_path, payload_text, timeout_seconds=15)
+            sync_result["afterWrite"] = {
+                "triggerFile": self.remote_sts_path_state(sts_root, trigger_relative_path),
+            }
+            logcat_since = self.device_logcat_timestamp()
+            try:
+                logcat_capture = self.start_logcat_capture(resolved_out_dir, logcat_since)
+            except Exception as exc:
+                self.result["artifacts"]["harnessLogcatError"] = str(exc)
+            self.harness_start()
+            start_requested = True
+
+            safe_timeout = max(1, self.options.timeout_seconds)
+            safe_poll = max(0.25, self.options.poll_interval_seconds)
+            pull_interval = max(1, int(self.options.cloud_sync_pull_interval_seconds))
+            started_monotonic = time.monotonic()
+            deadline = started_monotonic + safe_timeout
+            next_pull_at = started_monotonic
+            completion: dict[str, Any] | None = None
+
+            while True:
+                logcat_text = None
+                logcat_path = ""
+                if logcat_capture is not None:
+                    logcat_path = str(logcat_capture.log_path)
+                    logcat_text = read_local_text_tail(logcat_capture.log_path, max_bytes=262144)
+                status = self.harness_status(logcat_text, logcat_path)
+                self.result["statusSnapshot"] = status
+                if status["observedState"] not in ("NOT_RUNNING",):
+                    saw_running = True
+                if status["observedState"] in ("FAIL", "CRASH_MARKER", "LOGCAT_CRASH"):
+                    completion = {
+                        "complete": False,
+                        "failed": True,
+                        "reason": f"runtime-{status['observedState'].lower()}",
+                    }
+                    break
+                if saw_running and status["observedState"] == "NOT_RUNNING":
+                    completion = {
+                        "complete": False,
+                        "failed": True,
+                        "reason": "launcher-exited",
+                    }
+                    break
+
+                now = time.monotonic()
+                if now >= next_pull_at:
+                    poll_index += 1
+                    poll_dir = resolved_out_dir / "polls" / f"{poll_index:03d}"
+                    snapshot = self.collect_steam_cloud_snapshot(
+                        storage_root,
+                        sts_root,
+                        poll_dir,
+                        trigger_relative_path=trigger_relative_path,
+                        status_snapshot=status,
+                    )
+                    evaluation = self.evaluate_steam_cloud_snapshot(
+                        snapshot,
+                        baseline_last_operation_text=baseline_last_operation_text,
+                        baseline_last_operation_state=baseline_last_operation_state,
+                    )
+                    poll_record = {
+                        "index": poll_index,
+                        "elapsedMs": int((now - started_monotonic) * 1000),
+                        "artifactDir": str(poll_dir),
+                        "statusSnapshot": status,
+                        "evaluation": evaluation,
+                        "snapshot": snapshot,
+                    }
+                    sync_result["polls"].append(poll_record)
+                    final_snapshot = snapshot
+                    if evaluation.get("failed"):
+                        completion = evaluation
+                        break
+                    if evaluation.get("complete"):
+                        completion = evaluation
+                        break
+                    next_pull_at = now + pull_interval
+
+                if now >= deadline:
+                    completion = {"complete": False, "failed": True, "reason": "timeout"}
+                    break
+                time.sleep(safe_poll)
+
+            sync_result["completion"] = completion
+            final_snapshot = self.collect_steam_cloud_snapshot(
+                storage_root,
+                sts_root,
+                resolved_out_dir / "final",
+                trigger_relative_path=trigger_relative_path,
+                status_snapshot=status,
+            )
+            sync_result["finalSnapshot"] = final_snapshot
+            try:
+                self.harness_logs(resolved_out_dir)
+            except Exception as exc:
+                self.result["artifacts"]["logsError"] = str(exc)
+        finally:
+            if start_requested:
+                try:
+                    self.harness_stop()
+                except Exception as exc:
+                    self.result["artifacts"]["stopError"] = str(exc)
+            if logcat_capture is not None:
+                self.stop_logcat_capture(logcat_capture)
+                self.update_status_harness_logcat(self.result.get("statusSnapshot"), logcat_capture.log_path)
+            elif logcat_since.strip():
+                try:
+                    logcat_path = self.harness_logcat_dump(resolved_out_dir, logcat_since)
+                    self.update_status_harness_logcat(self.result.get("statusSnapshot"), logcat_path)
+                except Exception as exc:
+                    self.result["artifacts"].setdefault("harnessLogcatError", str(exc))
+
+        completion = sync_result.get("completion") or {}
+        success = bool(completion.get("complete"))
+        if success:
+            summary = completion.get("summary", {})
+            push_summary = completion.get("pushSummary", {})
+            uploaded_files = push_summary.get("uploadedFiles")
+            message = f"Steam Cloud sync completed via {summary.get('operation', '<unknown>')}."
+            if uploaded_files is not None:
+                message = f"{message} Uploaded files: {uploaded_files}."
+            self.set_result_success(True, "STEAM_CLOUD_SYNC_COMPLETE", message)
+            return 0
+
+        failure_reason = str(completion.get("reason", "unknown"))
+        observed_state = (status or {}).get("observedState", "STEAM_CLOUD_SYNC_FAILED")
+        message = f"Steam Cloud sync did not complete: {failure_reason}."
+        if self.result["artifacts"].get("logsZip"):
+            message = f"{message} Logs zip: {self.result['artifacts']['logsZip']}"
+        self.set_result_success(False, observed_state, message)
+        return 1
+
     def run(self) -> int:
         resolved_out_dir = self.resolved_out_dir()
         resolved_out_dir.mkdir(parents=True, exist_ok=True)
@@ -2158,11 +2745,17 @@ fi
                 "cacheHitRuns": self.options.cache_hit_runs,
                 "clearBeforeBuild": not self.options.no_clear_startup_cache,
             },
+            "steamCloudSyncOptions": {
+                "relativePath": self.options.cloud_sync_relative_path,
+                "pullIntervalSeconds": self.options.cloud_sync_pull_interval_seconds,
+                "sourceFile": self.options.cloud_sync_source_file,
+            },
             "timeoutSeconds": self.options.timeout_seconds,
             "artifacts": {"outDir": str(resolved_out_dir), "resultJson": str(result_path)},
             "statusSnapshot": None,
             "deviceMods": None,
             "modSelection": None,
+            "steamCloudSync": None,
             "operations": [],
             "error": None,
         }
