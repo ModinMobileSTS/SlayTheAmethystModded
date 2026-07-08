@@ -74,6 +74,7 @@ import kotlinx.coroutines.withContext
 internal data class SteamCloudSettingsActions(
     val onOpenSteamCloudLogin: () -> Unit,
     val onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
+    val onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit,
     val onOpenSteamCloudSaveSettings: () -> Unit,
     val onClearSteamCloudCredentials: () -> Unit,
     val onClearSteamCloudNetworkCache: () -> Unit,
@@ -141,6 +142,18 @@ internal fun SettingsSteamCloudSection(
             disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
             description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
             onCheckedChange = actions.onSteamCloudWattAccelerationChanged,
+        )
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
+            disabledText = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
+            description = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_desc),
+            onCheckedChange = actions.onSteamCloudAutoLaunchAfterSyncChanged,
         )
     )
 

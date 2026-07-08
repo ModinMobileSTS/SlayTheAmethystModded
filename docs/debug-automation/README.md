@@ -23,6 +23,7 @@ Harness commands must write `result.json` under the selected output directory. T
 - `statusSnapshot`: for `doctor`, `status`, `logs`, and `smoke`; includes `observedState`, optional `runtimeSignalState`, process pids, runtime storage root, desktop jar patch artifact state, boot bridge event summary, latest log tail summary, harness logcat crash summary, and package version.
 - `deviceMods`: for `mods` and `set-mods`; includes required mods, optional mods in `sts/mods_library`, legacy runtime mods in `sts/mods`, raw `enabled_mods.txt` tokens, enabled optional mods, and `.mts_mod_file_list`.
 - `modSelection`: for `set-mods`; includes requested tokens and the exact optional mod storage paths written to `enabled_mods.txt`.
+- `steamCloudSync`: for `steam-cloud-sync`; includes trigger-file metadata, periodic poll snapshots, final Steam Cloud summaries, and the completion decision.
 - `operations`: every native command invoked, with exit code, timestamps, duration, command line, and output tail.
 
 Observed runtime states are intentionally limited to signals the project actually emits:
@@ -33,9 +34,10 @@ Observed runtime states are intentionally limited to signals the project actuall
 - `LOGCAT_CRASH`: harness-captured logcat contains an Android fatal exception, native fatal signal, or mirrored game crash marker for the app before project runtime files reported a terminal state.
 - `PROCESS_EXITED`: the `:game` process was observed and then disappeared before a terminal boot bridge or crash marker was captured.
 - `RUNNING_WITHOUT_TERMINAL_EVENT`: the `:game` process is alive but no terminal boot event has been observed.
+- `STEAM_CLOUD_SYNC_RUNNING`: the `:steamcloud` background process is alive while no launcher/game terminal state is visible.
 - `PATCHING_DESKTOP_JAR`: the launcher process is alive and `desktop-1.0.jar.patching.tmp` or `.patching.backup` is present, so the app is still repairing the game jar before starting `:game`.
 - `LAUNCHER_RUNNING`: the launcher process is alive but no game process or terminal event is visible.
-- `NOT_RUNNING`: no tracked launcher/game process is visible and no terminal event was found.
+- `NOT_RUNNING`: no tracked launcher/game/steamcloud process is visible and no terminal event was found.
 - `ERROR`: harness execution failed before a valid state could be produced.
 
 The boot bridge event format is:
@@ -67,6 +69,7 @@ python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemo
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
+python .\scripts\tools\main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
 ```
 
 macOS/Linux:
@@ -96,6 +99,10 @@ Common options:
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
 - `-CacheHitRuns <count>`: for `startup-cache-profile`, number of cache-hit launches after the cache-build launch. Defaults to `1`.
 - `-NoClearStartupCache`: for `startup-cache-profile`, reuse the existing startup cache instead of clearing it before the first run.
+- `-CloudSyncRelativePath <path>`: for `steam-cloud-sync`, device-relative path under `sts/` to modify before opening the launcher. Defaults to `saves/.amethyst-cloud-sync-harness.txt`.
+- `-CloudSyncPayload <text>`: for `steam-cloud-sync`, inline UTF-8 payload to write to the target device file before launch.
+- `-CloudSyncSourceFile <path>`: for `steam-cloud-sync`, local UTF-8 file to copy to the target device path before launch. Put ad hoc payload files under `agent-tmp/`.
+- `-CloudSyncPullIntervalSeconds <seconds>`: for `steam-cloud-sync`, interval between pulling Steam Cloud summaries and runtime logs into `polls/<n>/`. Defaults to `10`.
 - `-Mods <tokens>`: comma- or newline-separated optional mod ids, jar names, display names, launch ids, or storage paths for `set-mods`; repeatable.
 - `-ModListFile <path>`: local UTF-8 file with one optional mod token per line for `set-mods`; blank lines and `#` comments are ignored.
 - `-EnableAllMods`: enable every optional mod currently found in `sts/mods_library`.
@@ -110,6 +117,8 @@ Autoplay randomly handles `CardRewardScreen` discovery/card reward choice pages 
 `single-room` is a harness-owned autoplay run mode. The harness writes or forwards a properties spec, pushes it to the device when needed, starts MTS autoplay with `autoplayMode=single_room`, waits until the runtime logs `[amethyst-autoplay] single_room result ...`, copies that parsed line into `statusSnapshot.latestLog.singleRoomResult`, exports logs, and stops the app. Success is reported as `SINGLE_ROOM_COMPLETE`; crashes and boot failures still use the normal `LOGCAT_CRASH`, `CRASH_MARKER`, or `FAIL` paths.
 
 `startup-cache-profile` is a harness-owned startup timing run. By default it clears launcher/MTS startup caches, runs one MTS launch that rebuilds the cache, force-stops the app, then runs one cache-hit launch. Pass `-CacheHitRuns` to collect more hit samples or `-NoClearStartupCache` to profile an existing cache. The top-level `result.json` stores `startupCacheProfile`; each phase has its own subdirectory with `result.json`, logs, logcat, cache state before/after, detected cache mode, and extracted timing evidence from `latest.log`.
+
+`steam-cloud-sync` is a harness-owned Steam Cloud upload validation flow. By default it writes a safe marker file under `sts/saves/` instead of touching real character saves, starts a harness-owned `adb logcat` capture, and opens `LauncherActivity` without `io.stamethyst.debug_launch_mode` so the normal Steam Cloud refresh/sync route runs before game launch. It periodically pulls `steam-cloud/last-operation-summary.txt`, `steam-cloud/push-summary.txt`, `steam-cloud/pull-summary.txt`, `steam-cloud/manifest.json`, `steam-cloud/sync-baseline.json`, `sts/latest.log`, and `sts/boot_bridge_events.log` into `polls/<n>/snapshot.json`. Success is reported only after a new `last-operation-summary.txt` records `Outcome: SUCCESS` with `Operation: manual_push` or `force_push`; any new `Outcome: FAILED` summary, launcher crash, or timeout fails the run.
 
 ## Gradle Harness Tasks
 
@@ -129,6 +138,7 @@ Windows:
 .\gradlew.bat :app:stsHarnessAutoplaySmoke
 .\gradlew.bat :app:stsHarnessSingleRoom
 .\gradlew.bat :app:stsHarnessStartupCacheProfile
+.\gradlew.bat :app:stsHarnessSteamCloudSync
 ```
 
 macOS/Linux:
@@ -157,6 +167,10 @@ Gradle properties:
 - `-PsingleRoomSpecFile=<local-properties-path>`
 - `-PstartupCacheHitRuns=<count>`
 - `-PstartupCacheNoClear=true`
+- `-PcloudSyncRelativePath=<sts-relative-path>`
+- `-PcloudSyncPayload=<inline-text>`
+- `-PcloudSyncSourceFile=<local-text-path>`
+- `-PcloudSyncPullIntervalSeconds=<seconds>`
 - `-PforceJvmCrash=true`
 - `-PforceRuntimeCrash=true`
 - `-PnoStopAfterSmoke=true`
@@ -170,13 +184,16 @@ Example:
 .\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Cultist -PsingleRoomCards=Strike_R,Defend_R,Bash -PharnessOutDir=debug-artifacts\harness\single-room
 .\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Looter -PsingleRoomCards=Strike_R -PdisableCardObtainEffectOwnershipCompat=true -PharnessOutDir=debug-artifacts\harness\card-obtain-ownership-unpatched
 .\gradlew.bat :app:stsHarnessStartupCacheProfile -PdeviceSerial=emulator-5554 -PstartupCacheHitRuns=2 -PharnessSkipInstall=true -PharnessOutDir=debug-artifacts\harness\startup-cache-profile
+.\gradlew.bat :app:stsHarnessSteamCloudSync -PdeviceSerial=emulator-5554 -PcloudSyncPullIntervalSeconds=15 -PharnessOutDir=debug-artifacts\harness\steam-cloud-sync
 ```
 
 `:app:stsHarnessAutoplaySmoke` and `:app:stsHarnessSmoke -Pautoplay=true` default to a 300-second harness timeout so first-run desktop jar patching can finish; pass `-PharnessTimeoutSeconds=<seconds>` to override it.
 
+`:app:stsHarnessSteamCloudSync` always forwards `-SkipInstall` and assumes the target build is already installed on the device. Use the Python harness directly if the sync test also needs to rebuild/reinstall first.
+
 ## Low-Level Gradle Tasks
 
-The original adb-backed tasks remain available and are used by the harness:
+The original adb-backed Gradle tasks remain available for direct use. The Python harness now drives start/stop through direct `adb` calls so command flows do not depend on Gradle task availability; log export still tries `:app:stsPullLogs` first and then falls back to direct `adb` collection of the key Steam Cloud/runtime files if that task fails.
 
 Unix/macOS:
 
@@ -203,11 +220,11 @@ Options:
 - `-PforceRuntimeCrash=true`.
 - `-Pautoplay=true` and `-PautoplaySaveMode=fresh|continue` for debug autoplay starts.
 
-`stsStart` sends `io.stamethyst.debug_launch_mode` to `LauncherActivity`. The launcher then follows the normal route through `MainScreenViewModel`, main-process desktop jar patching when MTS needs it, `StsGameActivity`, launch preparation, and `JvmLaunchController`.
+`stsStart` sends `io.stamethyst.debug_launch_mode` to `LauncherActivity`. The launcher then follows the normal debug route through `MainScreenViewModel`, main-process desktop jar patching when MTS needs it, `StsGameActivity`, launch preparation, and `JvmLaunchController`. `steam-cloud-sync` intentionally does not use this extra, because it must let the launcher run the pre-game Steam Cloud check/sync path.
 
 ## `stsPullLogs` Output
 
-`stsPullLogs` writes one zip bundle named `sts-jvm-logs-export-<timestamp>.zip`.
+`stsPullLogs` writes one zip bundle named `sts-jvm-logs-export-<timestamp>.zip`. If this Gradle task fails during a Python harness run, the harness writes `artifacts.logsGradleError` and collects a fallback bundle under `logs-fallback/summary.json`.
 
 The task resolves the same runtime root as the app:
 

@@ -139,6 +139,7 @@ python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemo
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
+python .\scripts\tools\main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
 ```
 
 也可以通过 Gradle 调用同一套 harness：
@@ -148,6 +149,7 @@ python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomChara
 .\gradlew.bat :app:stsHarnessSmoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke
 .\gradlew.bat :app:stsHarnessSingleRoom
+.\gradlew.bat :app:stsHarnessSteamCloudSync
 ```
 
 低层设备调试命令：
@@ -172,6 +174,10 @@ python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomChara
 - `-PsingleRoomMonster=<id>`
 - `-PsingleRoomCards=<逗号分隔的卡牌 id>`
 - `-PsingleRoomSpecFile=<本地 properties 文件>`
+- `-PcloudSyncRelativePath=<sts 相对路径>`
+- `-PcloudSyncPayload=<内联文本>`
+- `-PcloudSyncSourceFile=<本地文本文件>`
+- `-PcloudSyncPullIntervalSeconds=<秒>`
 - `-PpythonExecutable=<python-command>`
 
 `smoke` 会额外保存 harness 侧 logcat；如果游戏在写出 JVM 日志前崩溃，`result.json` 会报告 `LOGCAT_CRASH` 并在 `artifacts.harnessLogcat` 指向完整错误日志。Autoplay smoke 默认等待 300 秒，以便首次修补 `desktop-1.0.jar`；默认 `autoplaySaveMode=fresh` 会清理旧存档并开新局，传 `continue` 时会保留存档并优先继续上次运行。主进程修补失败会作为 `FAIL` 结果写入 `result.json`。
@@ -180,9 +186,13 @@ Autoplay 会随机处理 `CardRewardScreen` 发现/奖励选牌页，日志中�
 
 `single-room` 会启动一次可配置的单房间战斗，支持模组人物、模组卡牌和 BaseMod/原版 encounter id；玩家死亡或怪物全灭后退出，并把 `latest.log` 中的单房间结果解析到 `statusSnapshot.latestLog.singleRoomResult`。
 
+`steam-cloud-sync` 会默认修改 `sts/saves/.amethyst-cloud-sync-harness.txt` 这个 harness 自己的标记文件，而不是直接改真实角色存档；随后不带 debug launch extra 打开启动器，走正常 Steam Cloud 刷新/上传链路，并按间隔把 `steam-cloud/last-operation-summary.txt`、`push-summary.txt`、`manifest.json`、`sync-baseline.json`、`sts/latest.log`、`sts/boot_bridge_events.log` 等内容拉回到 `polls/<n>/snapshot.json`。只有看到新的 `Outcome: SUCCESS` 且 `Operation: manual_push` 或 `force_push` 才会判成功；最终日志导出会先尝试 `:app:stsPullLogs`，失败时退回 adb 直拉关键文件。
+
 更多文档：
 
 - [英文版 README](./docs/README.en.md)
+- [系统架构设计图集（技术汇报版）](./docs/system-architecture-report.md)
+- [架构总览](./docs/architecture-overview.md)
 - [调试自动化指南](./docs/debug-automation/README.md)
 - [发布自动化指南](./docs/release-automation/README.md)
 - [后端启动链路说明](./docs/backend-startup-chain.md)

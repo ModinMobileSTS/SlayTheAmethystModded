@@ -1284,6 +1284,8 @@
     <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam 加速连接已开启</string>
     <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam 加速连接已关闭</string>
     <string name="settings_steam_cloud_watt_acceleration_desc">通过转发规则访问 Steam，速度会更快。如果出现无法正常访问 Steam，请关闭此项并开启加速器。</string>
+    <string name="settings_steam_cloud_auto_launch_after_sync_title">同步后自动进入游戏</string>
+    <string name="settings_steam_cloud_auto_launch_after_sync_desc">当一次启动正在等待 Steam Cloud 结果时，如果云端已是最新，或剩余上传可以转到后台继续执行，就自动进入游戏。</string>
     <string name="settings_steam_cloud_clear_network_cache_title">清除 Steam Cloud 网络缓存</string>
     <string name="settings_steam_cloud_clear_network_cache_desc">删除缓存的 Steam CM 节点和服务器列表，不清除登录、存档配置或同步基线。</string>
     <string name="settings_steam_cloud_intro">可以在独立本地存档和 Steam 云存档之间切换；云存档的检查、同步和冲突处理都通过启动器完成。</string>

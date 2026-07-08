@@ -215,6 +215,9 @@ fun LauncherSettingsMarketCloudScreen(
         onSteamCloudWattAccelerationChanged = { enabled ->
             viewModel.onSteamCloudWattAccelerationChanged(activity, enabled)
         },
+        onSteamCloudAutoLaunchAfterSyncChanged = { enabled ->
+            viewModel.onSteamCloudAutoLaunchAfterSyncChanged(activity, enabled)
+        },
         onOpenSteamCloudSaveSettings = { navigator.push(Route.SteamCloudSaveSettings) },
         onClearSteamCloudCredentials = { viewModel.onClearSteamCloudCredentials(activity) },
         onClearSteamCloudNetworkCache = { viewModel.onClearSteamCloudNetworkCache(activity) },

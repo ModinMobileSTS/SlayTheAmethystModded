@@ -154,6 +154,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_AUTO_CHECK_UPDATES_ENABLED
     val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
+    val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED
     val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS: Int
         get() = LauncherConfig.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS
     val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS: Int
@@ -599,6 +601,14 @@ object LauncherPreferences {
 
     fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamCloudWattAccelerationEnabled(context, enabled)
+    }
+
+    fun isSteamCloudAutoLaunchAfterSyncEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamCloudAutoLaunchAfterSyncEnabled(context)
+    }
+
+    fun setSteamCloudAutoLaunchAfterSyncEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamCloudAutoLaunchAfterSyncEnabled(context, enabled)
     }
 
     fun readWorkshopMaxConcurrentDownloads(context: Context): Int {

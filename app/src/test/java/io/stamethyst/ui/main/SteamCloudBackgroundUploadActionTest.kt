@@ -39,4 +39,45 @@ class SteamCloudBackgroundUploadActionTest {
             )
         )
     }
+
+    @Test
+    fun shouldAutoLaunchAfterSteamCloudUpdate_onlyForBackgroundUploadOrUpToDate() {
+        assertTrue(
+            shouldAutoLaunchAfterSteamCloudUpdate(
+                MainScreenViewModel.SteamCloudIndicatorUi(
+                    visible = true,
+                    state = MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE,
+                )
+            )
+        )
+
+        assertTrue(
+            shouldAutoLaunchAfterSteamCloudUpdate(
+                MainScreenViewModel.SteamCloudIndicatorUi(
+                    visible = true,
+                    state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
+                    syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+                )
+            )
+        )
+
+        assertFalse(
+            shouldAutoLaunchAfterSteamCloudUpdate(
+                MainScreenViewModel.SteamCloudIndicatorUi(
+                    visible = true,
+                    state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
+                    syncDirection = SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL,
+                )
+            )
+        )
+
+        assertFalse(
+            shouldAutoLaunchAfterSteamCloudUpdate(
+                MainScreenViewModel.SteamCloudIndicatorUi(
+                    visible = true,
+                    state = MainScreenViewModel.SteamCloudIndicatorState.CONFLICT,
+                )
+            )
+        )
+    }
 }

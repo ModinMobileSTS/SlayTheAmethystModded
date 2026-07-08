@@ -25,6 +25,11 @@ class LauncherConfigGameplayDefaultsTest {
     }
 
     @Test
+    fun steamCloudAutoLaunchAfterSync_isDisabledByDefault() {
+        assertFalse(LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED)
+    }
+
+    @Test
     fun touchscreenInputMode_defaultsToHybrid() {
         assertEquals(
             TouchscreenInputMode.HYBRID,

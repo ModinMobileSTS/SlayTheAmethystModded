@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -2390,6 +2391,13 @@ internal fun shouldShowSteamCloudBackgroundUploadAction(
         indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
 }
 
+internal fun shouldAutoLaunchAfterSteamCloudUpdate(
+    indicator: MainScreenViewModel.SteamCloudIndicatorUi,
+): Boolean {
+    return indicator.state == MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE ||
+        shouldShowSteamCloudBackgroundUploadAction(indicator)
+}
+
 private const val BOTTOM_BAR_SWITCH_ANIMATION_MS = 220
 
 @Composable
@@ -3334,10 +3342,19 @@ private fun SteamCloudBottomSheetContent(
                             )
                         }
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateContentSize(animationSpec = tween(durationMillis = 220)),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            OutlinedButton(
+                                onClick = onCancelSync,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(text = stringResource(R.string.main_steam_cloud_action_cancel_upload))
+                            }
                             AnimatedVisibility(
                                 visible = showBackgroundUploadAction,
                                 modifier = Modifier.weight(1f),
@@ -3367,13 +3384,6 @@ private fun SteamCloudBottomSheetContent(
                                 ) {
                                     Text(text = stringResource(R.string.main_steam_cloud_action_background_upload))
                                 }
-                            }
-                            OutlinedButton(
-                                onClick = onCancelSync,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(text = stringResource(R.string.main_steam_cloud_action_cancel_upload))
                             }
                         }
                     }
