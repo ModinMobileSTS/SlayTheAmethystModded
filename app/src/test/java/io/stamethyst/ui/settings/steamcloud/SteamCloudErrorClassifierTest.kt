@@ -14,6 +14,8 @@ import io.stamethyst.ui.settings.services.*
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletionException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SteamCloudErrorClassifierTest {
@@ -91,6 +93,33 @@ class SteamCloudErrorClassifierTest {
             SteamCloudErrorKind.AUTH_WATCHDOG_DISCONNECT,
             SteamCloudErrorClassifier.classify(error)
         )
+    }
+
+    @Test
+    fun retryWithoutGuardData_treatsInvalidCredentialsAsRetryable() {
+        val error = CompletionException(
+            RuntimeException("Steam 登录失败: 账号名或密码错误 (EResult=5)")
+        )
+
+        assertTrue(shouldRetrySteamCloudCredentialLoginWithoutGuardData(error))
+    }
+
+    @Test
+    fun retryWithoutGuardData_treatsInvalidAuthParametersAsRetryable() {
+        val error = CompletionException(
+            RuntimeException("Steam 登录失败: Steam 拒绝了当前认证请求参数 (EResult=8)")
+        )
+
+        assertTrue(shouldRetrySteamCloudCredentialLoginWithoutGuardData(error))
+    }
+
+    @Test
+    fun retryWithoutGuardData_ignoresGuardWaitTimeout() {
+        val error = CompletionException(
+            RuntimeException("Timed out waiting for Steam auth completion after 240000ms.")
+        )
+
+        assertFalse(shouldRetrySteamCloudCredentialLoginWithoutGuardData(error))
     }
 }
 

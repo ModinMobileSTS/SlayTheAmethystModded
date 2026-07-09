@@ -11,10 +11,14 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.util.Collections;
+import java.util.List;
 
 public final class SteamCloudClientTest {
     @Test
@@ -189,6 +193,64 @@ public final class SteamCloudClientTest {
     }
 
     @Test
+    public void isJavaSteamTransportAbortLog_detectsWatchdogAndInactiveSession() {
+        Assert.assertTrue(SteamCloudClient.isJavaSteamTransportAbortLog(
+            "ERROR",
+            "in.dragonbra.javasteam.networking.steam3.WebSocketConnection",
+            "Watchdog: No response for 30 seconds. Disconnecting from steam",
+            null
+        ));
+        Assert.assertTrue(SteamCloudClient.isJavaSteamTransportAbortLog(
+            "ERROR",
+            "in.dragonbra.javasteam.networking.steam3.WebSocketConnection",
+            "Client or Session is no longer active",
+            null
+        ));
+        Assert.assertFalse(SteamCloudClient.isJavaSteamTransportAbortLog(
+            "DEBUG",
+            "in.dragonbra.javasteam.networking.steam3.WebSocketConnection",
+            "Disconnect called: false",
+            null
+        ));
+    }
+
+    @Test
+    public void pushReconnectRetryCandidate_acceptsBeginAppUploadBatchUnexpectedDisconnect() throws Exception {
+        SteamCloudClient.DiagnosticsSnapshot diagnostics = newDiagnosticsSnapshot(
+            "BeginAppUploadBatch",
+            "unexpected",
+            Collections.emptyList()
+        );
+
+        Assert.assertTrue(invokeIsReconnectRetryCandidate(
+            new IllegalStateException("Steam disconnected (unexpected) during BeginAppUploadBatch."),
+            diagnostics
+        ));
+    }
+
+    @Test
+    public void pushReconnectRetryCandidate_acceptsHttpPutSocketAbortAfterUploadSlot() throws Exception {
+        SteamCloudClient.DiagnosticsSnapshot diagnostics = newDiagnosticsSnapshot(
+            "CompleteAppUploadBatch",
+            "unexpected",
+            Collections.singletonList(
+                "upload_file failed remotePath=%GameInstall%preferences/STSSeenCards.backUp "
+                    + "batchId=7134522280144150877 startedUpload=true "
+                    + "error=java.net.SocketException: Software caused connection abort"
+            )
+        );
+
+        Assert.assertTrue(invokeIsReconnectRetryCandidate(
+            new IllegalStateException(
+                "Steam Cloud upload failed for %GameInstall%preferences/STSSeenCards.backUp: "
+                    + "SocketException: Software caused connection abort",
+                new SocketException("Software caused connection abort")
+            ),
+            diagnostics
+        ));
+    }
+
+    @Test
     public void resolveSteamId64FromAuthSession_readsCredentialsAuthSessionField() {
         String steamId64 = "76561198883607238";
 
@@ -305,6 +367,80 @@ public final class SteamCloudClientTest {
             "downloading",
             "%GameInstall%preferences/STSPlayer"
         );
+    }
+
+    private static SteamCloudClient.DiagnosticsSnapshot newDiagnosticsSnapshot(
+        String currentStage,
+        String disconnectedDescription,
+        List<String> diagnosticEventLines
+    ) throws Exception {
+        Constructor<SteamCloudClient.DiagnosticsSnapshot> constructor =
+            SteamCloudClient.DiagnosticsSnapshot.class.getDeclaredConstructor(
+                String.class,
+                String.class,
+                boolean.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                boolean.class,
+                boolean.class,
+                String.class,
+                String.class,
+                List.class,
+                List.class,
+                List.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                long.class,
+                long.class
+            );
+        constructor.setAccessible(true);
+        return constructor.newInstance(
+            currentStage,
+            "WEB_SOCKET",
+            true,
+            "OK",
+            disconnectedDescription,
+            "103.28.54.102:27020 [WEB_SOCKET]",
+            "Steam server list",
+            "<not evaluated>",
+            "<not requested>",
+            false,
+            false,
+            "<none>",
+            "<none>",
+            Collections.emptyList(),
+            Collections.emptyList(),
+            diagnosticEventLines,
+            "enabled",
+            "",
+            "76561198883607238",
+            "76561198883607238",
+            1L,
+            1L
+        );
+    }
+
+    private static boolean invokeIsReconnectRetryCandidate(
+        Throwable error,
+        SteamCloudClient.DiagnosticsSnapshot diagnostics
+    ) throws Exception {
+        Class<?> coordinatorType = Class.forName("io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator");
+        Field instanceField = coordinatorType.getDeclaredField("INSTANCE");
+        instanceField.setAccessible(true);
+        Object coordinator = instanceField.get(null);
+        Method method = coordinatorType.getDeclaredMethod(
+            "isReconnectRetryCandidate",
+            Throwable.class,
+            SteamCloudClient.DiagnosticsSnapshot.class
+        );
+        method.setAccessible(true);
+        return (boolean) method.invoke(coordinator, error, diagnostics);
     }
 
     private static final class FakeCredentialsAuthSession {

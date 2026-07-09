@@ -54,6 +54,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBlacklist
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBaseline
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
+import io.stamethyst.backend.steamcloud.reusableGuardDataForCredentials
 import io.stamethyst.backend.steam.SteamStsJarDownloadPhase
 import io.stamethyst.backend.steam.SteamStsJarDownloadProgress
 import io.stamethyst.backend.steam.SteamAnonymousDepotAccessException
@@ -1438,9 +1439,28 @@ class SettingsScreenViewModel : ViewModel() {
         pendingSteamCloudLoginCancellationHandle = cancellationHandle
         val loginTask = FutureTask<Unit> {
             try {
-                val existingGuardData = runCatching {
-                    SteamCloudAuthStore.readAuthMaterial(host)?.guardData.orEmpty()
-                }.getOrDefault("")
+                val savedAuthMaterial = runCatching {
+                    SteamCloudAuthStore.readAuthMaterial(host)
+                }.getOrNull()
+                val existingGuardData = reusableGuardDataForCredentials(
+                    savedAccountName = savedAuthMaterial?.accountName.orEmpty(),
+                    savedGuardData = savedAuthMaterial?.guardData.orEmpty(),
+                    requestedUsername = normalizedUsername,
+                )
+                val authenticateWithGuardData = { guardData: String ->
+                    SteamCloudAuthCoordinator.authenticateWithCredentials(
+                        context = host,
+                        username = normalizedUsername,
+                        password = password,
+                        existingGuardData = guardData,
+                        prompt = buildSteamCloudAuthPrompt(
+                            host = host,
+                            cancellationHandle = cancellationHandle,
+                            loginGeneration = loginGeneration,
+                        ),
+                        cancellationHandle = cancellationHandle,
+                    )
+                }
                 val hadIncompleteAuth = runCatching {
                     val snapshot = SteamCloudAuthStore.readSnapshot(host)
                     snapshot.refreshTokenConfigured && !snapshot.isComplete
@@ -1450,18 +1470,21 @@ class SettingsScreenViewModel : ViewModel() {
                     runCatching { SteamCloudManifestStore.clear(host) }
                     runCatching { SteamCloudBaselineStore.clear(host) }
                 }
-                val authResult = SteamCloudAuthCoordinator.authenticateWithCredentials(
-                    context = host,
-                    username = normalizedUsername,
-                    password = password,
-                    existingGuardData = existingGuardData,
-                    prompt = buildSteamCloudAuthPrompt(
-                        host = host,
-                        cancellationHandle = cancellationHandle,
-                        loginGeneration = loginGeneration,
-                    ),
-                    cancellationHandle = cancellationHandle,
-                )
+                var retriedWithoutGuardData = false
+                val authResult = try {
+                    authenticateWithGuardData(existingGuardData)
+                } catch (error: Throwable) {
+                    val shouldRetryWithoutGuardData =
+                        existingGuardData.isNotBlank() &&
+                            !cancellationHandle.isCancelled &&
+                            shouldRetrySteamCloudCredentialLoginWithoutGuardData(error)
+                    if (!shouldRetryWithoutGuardData) {
+                        throw error
+                    }
+                    retriedWithoutGuardData = true
+                    runCatching { SteamCloudAuthStore.clearGuardData(host) }
+                    authenticateWithGuardData("")
+                }
                 SteamCloudAuthStore.recordAuthSuccess(
                     host,
                     authResult.accountName,
@@ -1475,6 +1498,14 @@ class SettingsScreenViewModel : ViewModel() {
                     "SteamID64 resolved: ${if (authResult.steamId64.isBlank()) "no" else "yes"}",
                     "Resolved SteamID64 value: ${authResult.steamId64.ifBlank { "<blank>" }}",
                 )
+                if (existingGuardData.isNotBlank()) {
+                    loginDiagnosticsExtraLines +=
+                        "Stored guard data reused for credential login: yes"
+                }
+                if (retriedWithoutGuardData) {
+                    loginDiagnosticsExtraLines +=
+                        "Stored guard data was cleared and the credential login was retried without it after Steam rejected the remembered device state."
+                }
                 if (authResult.steamId64.isNotBlank()) {
                     val profileResult = runCatching {
                         SteamCloudProfileService.fetchProfile(host, authResult.steamId64)

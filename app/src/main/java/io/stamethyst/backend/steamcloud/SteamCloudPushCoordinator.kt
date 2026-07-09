@@ -6,6 +6,7 @@ import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
+import java.net.SocketException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -393,7 +394,11 @@ internal object SteamCloudPushCoordinator {
                 }
             }
             val failureDiagnostics = client.snapshotDiagnostics()
-            if (allowReconnectRetry && uploadedFileCount == 0 && isReconnectRetryCandidate(error, failureDiagnostics)) {
+            if (allowReconnectRetry &&
+                uploadedFileCount == 0 &&
+                shouldContinue() &&
+                isReconnectRetryCandidate(error, failureDiagnostics)
+            ) {
                 SteamCloudNetworkEnvironment.clearNetworkCache(host)
                 client.close()
                 return pushLocalChanges(
@@ -686,7 +691,11 @@ internal object SteamCloudPushCoordinator {
                 }
             }
             val failureDiagnostics = client.snapshotDiagnostics()
-            if (allowReconnectRetry && uploadedFileCount == 0 && isReconnectRetryCandidate(error, failureDiagnostics)) {
+            if (allowReconnectRetry &&
+                uploadedFileCount == 0 &&
+                shouldContinue() &&
+                isReconnectRetryCandidate(error, failureDiagnostics)
+            ) {
                 SteamCloudNetworkEnvironment.clearNetworkCache(host)
                 client.close()
                 return overwriteRemoteWithLocal(
@@ -878,20 +887,48 @@ internal object SteamCloudPushCoordinator {
             .orEmpty()
             .lowercase(Locale.US)
             .let { stage ->
-                stage.contains("beginhttpupload") || stage.contains("getappfilechangelist")
+                stage.contains("beginappuploadbatch") ||
+                    stage.contains("beginhttpupload") ||
+                    stage.contains("commithttpupload") ||
+                    stage.contains("completeappuploadbatch") ||
+                    stage.contains("getappfilechangelist")
             }
         var sawReconnectFailure = diagnostics?.disconnectedDescription
             .orEmpty()
             .lowercase(Locale.US)
-            .contains("unexpected")
+            .let { description ->
+                description.contains("unexpected") || description.contains("transport abort")
+            }
+        diagnostics?.diagnosticEventLines.orEmpty().forEach { eventLine ->
+            val normalized = eventLine.lowercase(Locale.US)
+            sawReconnectableStage = sawReconnectableStage ||
+                normalized.contains("begin_app_upload_batch") ||
+                normalized.contains("begin_http_upload") ||
+                normalized.contains("http_upload") ||
+                normalized.contains("upload_file failed") ||
+                normalized.contains("getappfilechangelist")
+            sawReconnectFailure = sawReconnectFailure ||
+                normalized.contains("disconnected_callback reason=unexpected") ||
+                normalized.contains("transport_abort_log") ||
+                normalized.contains("software caused connection abort") ||
+                normalized.contains("connection reset") ||
+                normalized.contains("broken pipe")
+        }
         var current: Throwable? = error
         while (current != null) {
             val normalized = current.message.orEmpty().lowercase(Locale.US)
             sawReconnectableStage = sawReconnectableStage ||
+                normalized.contains("beginappuploadbatch") ||
                 normalized.contains("beginhttpupload") ||
+                normalized.contains("commithttpupload") ||
+                normalized.contains("completeappuploadbatch") ||
                 normalized.contains("getappfilechangelist")
             if ((normalized.contains("steam disconnected") && normalized.contains("unexpected")) ||
-                normalized.contains("client or session is no longer active")
+                normalized.contains("client or session is no longer active") ||
+                normalized.contains("software caused connection abort") ||
+                normalized.contains("connection reset") ||
+                normalized.contains("broken pipe") ||
+                current is SocketException
             ) {
                 sawReconnectFailure = true
             }

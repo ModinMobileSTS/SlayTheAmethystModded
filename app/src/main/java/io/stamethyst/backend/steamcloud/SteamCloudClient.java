@@ -150,6 +150,22 @@ public final class SteamCloudClient implements AutoCloseable {
         }
     }
 
+    private void reportTransportAbortFromJavaSteamLog(JavaSteamLogEntry entry) {
+        if (entry == null || shuttingDown.get() || !running.get() || disconnectedFuture.isDone()) {
+            return;
+        }
+        disconnectedDescription = "unexpected transport abort";
+        recordDiagnosticEvent("transport_abort_log " + entry.describe());
+        IllegalStateException error = new IllegalStateException(
+            buildDisconnectFailureMessage(disconnectedDescription)
+                + " JavaSteam log: "
+                + entry.describe()
+        );
+        disconnectedFuture.completeExceptionally(error);
+        connectedFuture.completeExceptionally(error);
+        loggedOnFuture.completeExceptionally(error);
+    }
+
     public SteamCloudClient(Context context) {
         applyProxySystemProperties();
 
@@ -2531,7 +2547,7 @@ public final class SteamCloudClient implements AutoCloseable {
         }
     }
 
-    private static final class JavaSteamLogCollector implements LogListener {
+    private final class JavaSteamLogCollector implements LogListener {
         private static final int MAX_ENTRIES = 48;
 
         private final Object lock = new Object();
@@ -2571,6 +2587,9 @@ public final class SteamCloudClient implements AutoCloseable {
                 Log.e(TAG, "JavaSteam [" + level + "] " + entry.describe(), error);
             } else {
                 Log.d(TAG, "JavaSteam [" + level + "] " + entry.describe());
+            }
+            if (isJavaSteamTransportAbortLog(level, entry.sourceClass, entry.message, error)) {
+                reportTransportAbortFromJavaSteamLog(entry);
             }
         }
 
@@ -2612,6 +2631,29 @@ public final class SteamCloudClient implements AutoCloseable {
                 return new ArrayList<>(lastErrorEntry.stackTraceLines);
             }
         }
+    }
+
+    static boolean isJavaSteamTransportAbortLog(
+        String level,
+        String sourceClass,
+        String message,
+        Throwable error
+    ) {
+        String normalized = (
+            sanitizeSingleLine(level)
+                + ' '
+                + sanitizeSingleLine(sourceClass)
+                + ' '
+                + sanitizeSingleLine(message)
+                + ' '
+                + describeThrowable(error)
+        ).toLowerCase(Locale.ROOT);
+        if (!normalized.contains("javasteam")) {
+            return false;
+        }
+        return normalized.contains("watchdog: no response")
+            || normalized.contains("client or session is no longer active")
+            || normalized.contains("an error occurred while receiving data");
     }
 
     private static final class JavaSteamLogEntry {

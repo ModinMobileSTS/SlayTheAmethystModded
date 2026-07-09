@@ -136,4 +136,18 @@ internal object SteamCloudErrorClassifier {
     }
 }
 
+internal fun shouldRetrySteamCloudCredentialLoginWithoutGuardData(error: Throwable): Boolean {
+    if (SteamCloudErrorClassifier.classify(error) == SteamCloudErrorKind.INVALID_CREDENTIALS) {
+        return true
+    }
+    val normalized = SteamCloudErrorClassifier.meaningfulCause(error)
+        .message
+        .orEmpty()
+        .trim()
+        .lowercase(Locale.US)
+    return normalized.contains("eresult=8") ||
+        normalized.contains("认证请求参数") ||
+        normalized.contains("authentication request parameters")
+}
+
 

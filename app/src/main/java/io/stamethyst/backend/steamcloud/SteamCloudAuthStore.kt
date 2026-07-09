@@ -161,6 +161,14 @@ internal object SteamCloudAuthStore {
         }
     }
 
+    fun clearGuardData(context: Context) {
+        writeSafely(context, "clear Steam Cloud guard data") { prefs ->
+            prefs.edit()
+                .remove(KEY_GUARD_DATA)
+                .apply()
+        }
+    }
+
     fun clear(context: Context) {
         clearEncryptedPrefs(context.applicationContext)
     }
@@ -262,4 +270,23 @@ internal object SteamCloudAuthStore {
         }
         return getLong(key, 0L).takeIf { it > 0L }
     }
+}
+
+internal fun reusableGuardDataForCredentials(
+    savedAccountName: String,
+    savedGuardData: String,
+    requestedUsername: String,
+): String {
+    val normalizedGuardData = savedGuardData.trim()
+    if (normalizedGuardData.isBlank()) {
+        return ""
+    }
+    val normalizedSavedAccountName = savedAccountName.trim()
+    val normalizedRequestedUsername = requestedUsername.trim()
+    if (normalizedSavedAccountName.isBlank() || normalizedRequestedUsername.isBlank()) {
+        return ""
+    }
+    return normalizedGuardData.takeIf {
+        normalizedSavedAccountName.equals(normalizedRequestedUsername, ignoreCase = true)
+    }.orEmpty()
 }

@@ -1924,12 +1924,6 @@ private fun LauncherMainScreenContent(
                         requestSteamCloudNetworkAction(SteamCloudNetworkPromptAction.USE_CLOUD)
                 }
             },
-            onBackgroundUploadAndLaunch = {
-                pendingSteamCloudConflictChoice = null
-                showSteamCloudBottomSheet = false
-                showSteamCloudLaunchWarning = false
-                actions.onBackgroundUseLocalSteamCloudProgressAndLaunch()
-            },
         )
     }
 
@@ -2406,13 +2400,10 @@ private fun SteamCloudConflictConfirmationDialog(
     plan: SteamCloudUploadPlan?,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
-    onBackgroundUploadAndLaunch: () -> Unit,
 ) {
     val localChangeCount = plan?.uploadCandidates?.size ?: 0
     val cloudOnlyChangeCount = plan?.remoteOnlyChanges?.size ?: 0
     val directConflictCount = plan?.conflicts?.size ?: 0
-    val showBackgroundUploadAction =
-        choice == SteamCloudConflictResolutionChoice.USE_LOCAL && plan != null
     val titleRes = when (choice) {
         SteamCloudConflictResolutionChoice.USE_LOCAL ->
             R.string.main_steam_cloud_conflict_confirm_local_title
@@ -2445,68 +2436,11 @@ private fun SteamCloudConflictConfirmationDialog(
                         directConflictCount,
                     )
                 )
-                AnimatedVisibility(
-                    visible = showBackgroundUploadAction,
-                    enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
-                        slideInVertically(
-                            animationSpec = tween(durationMillis = 220),
-                            initialOffsetY = { it / 3 },
-                        ) +
-                        scaleIn(
-                            animationSpec = tween(durationMillis = 220),
-                            initialScale = 0.96f,
-                        ),
-                    exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
-                        slideOutVertically(
-                            animationSpec = tween(durationMillis = 180),
-                            targetOffsetY = { it / 4 },
-                        ) +
-                        scaleOut(
-                            animationSpec = tween(durationMillis = 180),
-                            targetScale = 0.98f,
-                        ),
-                ) {
-                    Text(
-                        text = stringResource(R.string.main_steam_cloud_background_upload_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         },
         confirmButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AnimatedVisibility(
-                    visible = showBackgroundUploadAction,
-                    enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
-                        slideInVertically(
-                            animationSpec = tween(durationMillis = 220),
-                            initialOffsetY = { it / 2 },
-                        ) +
-                        scaleIn(
-                            animationSpec = tween(durationMillis = 220),
-                            initialScale = 0.94f,
-                        ),
-                    exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
-                        slideOutVertically(
-                            animationSpec = tween(durationMillis = 180),
-                            targetOffsetY = { it / 3 },
-                        ) +
-                        scaleOut(
-                            animationSpec = tween(durationMillis = 180),
-                            targetScale = 0.98f,
-                        ),
-                ) {
-                    OutlinedButton(onClick = onBackgroundUploadAndLaunch) {
-                        Text(text = stringResource(R.string.main_steam_cloud_action_background_upload))
-                    }
-                }
-                Button(onClick = onConfirm) {
-                    Text(text = stringResource(confirmRes))
-                }
+            Button(onClick = onConfirm) {
+                Text(text = stringResource(confirmRes))
             }
         },
         dismissButton = {
