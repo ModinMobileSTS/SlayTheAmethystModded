@@ -1,24 +1,42 @@
 services:
+  # Map external TCP 12332 to host TCP 11010 and external UDP 12333 to host UDP 22020.
   online-service:
     image: ghcr.io/modinmobilests/slaytheamethyst-online-service:latest
     container_name: sts-online-service
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3001:3001/tcp"
+      - "22020:22020/udp"
+      - "11010:11010/tcp"
+      - "11010:11010/udp"
     environment:
       HOST: 0.0.0.0
       PORT: 3001
-      PUBLIC_BASE_URL: http://localhost:3001
       PRESENCE_DB_PATH: /app/data/presence.sqlite
       PRESENCE_HEARTBEAT_INTERVAL_SECONDS: 30
       PRESENCE_OFFLINE_TIMEOUT_SECONDS: 90
-      QQ_GROUP_NUMBER: 1029305387
-      PRESENCE_PANEL_TOKEN: change-me
-      EASYTIER_ENABLED: "false"
+      PRESENCE_PANEL_TOKEN: ${PRESENCE_PANEL_TOKEN:?Set PRESENCE_PANEL_TOKEN in .env}
+      PUBLIC_BASE_URL: https://heartbeat.nas.apricityx.top:23163
+      QQ_GROUP_NUMBER: 1051836431
+      EASYTIER_ENABLED: "true"
+      EASYTIER_ROOM_API_BASE_URL: https://heartbeat.nas.apricityx.top:23163
+      EASYTIER_WEB_CONSOLE_API_BASE_URL: https://heartbeat.nas.apricityx.top:23163
+      EASYTIER_CONFIG_SERVER_URL: udp://frp-dry.com:12333
       EASYTIER_CONFIG_SERVER_SCHEME: udp
       EASYTIER_CONFIG_SERVER_PORT: 22020
+      EASYTIER_ENTRY_NODE_URL: tcp://frp-dog.com:12332
       EASYTIER_ENTRY_NODE_SCHEME: tcp
       EASYTIER_ENTRY_NODE_PORT: 11010
+      EASYTIER_MANAGED: "true"
+      EASYTIER_MANAGED_AUTO_START: "true"
+      EASYTIER_MANAGED_RESTART_ON_EXIT: "true"
+      EASYTIER_RUNTIME_DATA_DIR: /app/data/easytier-runtime
+      EASYTIER_WEB_EMBED_DISABLE_WEB: "true"
+      EASYTIER_SHARED_NODE_NETWORK_NAME: sts-online-shared-node
+      EASYTIER_SHARED_NODE_NETWORK_SECRET: ${EASYTIER_SHARED_NODE_NETWORK_SECRET:?Set EASYTIER_SHARED_NODE_NETWORK_SECRET in .env}
+      EASYTIER_SHARED_NODE_INSTANCE_NAME: sts-online-shared-node
+      EASYTIER_SHARED_NODE_HOSTNAME: sts-online-shared-node
+      EASYTIER_SHARED_NODE_RPC_PORTAL: 127.0.0.1:15888
       LOG_LEVEL: info
     volumes:
       - online-service-data:/app/data
