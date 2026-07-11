@@ -10,6 +10,13 @@ async function main() {
     host: config.host,
     port: config.port
   });
+  if (config.easyTierManagedAutoStart) {
+    try {
+      await server.startEasyTierRuntime();
+    } catch (error) {
+      server.log.warn({ error }, 'Failed to auto start EasyTier runtime');
+    }
+  }
 }
 
 main().catch((error) => {

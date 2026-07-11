@@ -92,7 +92,7 @@ function createApp(config) {
       .json({
         ok: false,
         error: 'presence_moved',
-        message: 'Presence cloud-control moved to the standalone presence-service.'
+        message: 'Presence cloud-control moved to the standalone online-service.'
       });
   });
 

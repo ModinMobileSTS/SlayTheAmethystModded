@@ -1,4 +1,4 @@
-name: Publish Presence Service Image
+name: Publish Online Service Image
 
 on:
   workflow_dispatch:
@@ -6,9 +6,9 @@ on:
     branches:
       - main
     paths:
-      - presence-service/**
+      - online-service/**
       - docker-compose.yaml
-      - .github/workflows/publish-presence-service.yml
+      - .github/workflows/publish-online-service.yml
 
 permissions:
   contents: read
@@ -34,10 +34,10 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./presence-service
+          context: ./online-service
           push: true
           tags: |
-            ghcr.io/modinmobilests/slaytheamethyst-presence-service:latest
-            ghcr.io/modinmobilests/slaytheamethyst-presence-service:${{ github.sha }}
+            ghcr.io/modinmobilests/slaytheamethyst-online-service:latest
+            ghcr.io/modinmobilests/slaytheamethyst-online-service:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

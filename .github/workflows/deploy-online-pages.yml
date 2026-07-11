@@ -1,4 +1,4 @@
-name: Deploy Presence Pages
+name: Deploy Online Pages
 
 on:
   workflow_dispatch:
@@ -9,12 +9,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: presence-pages
+  group: online-pages
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build and deploy static presence panel
+    name: Build and deploy static online panel
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: presence-service/package-lock.json
+          cache-dependency-path: online-service/package-lock.json
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -44,7 +44,7 @@ jobs:
           npm config set fetch-retry-mintimeout 20000
           npm config set fetch-retry-maxtimeout 120000
 
-          deps_root="$RUNNER_TEMP/presence-pages-deps"
+          deps_root="$RUNNER_TEMP/online-pages-deps"
           rm -rf "$deps_root"
           mkdir -p "$deps_root"
 
@@ -59,30 +59,30 @@ jobs:
             echarts@5.6.0 \
             @mdi/font@7.4.47
 
-          echo "PRESENCE_PAGES_DEPS=$deps_root" >> "$GITHUB_ENV"
+          echo "ONLINE_PAGES_DEPS=$deps_root" >> "$GITHUB_ENV"
 
       - name: Build Pages artifact
         shell: bash
         run: |
           set -euo pipefail
 
-          pages_root="$RUNNER_TEMP/presence-pages"
+          pages_root="$RUNNER_TEMP/online-pages"
           rm -rf "$pages_root"
           mkdir -p "$pages_root/vendor" "$pages_root/fonts" "$pages_root/vendor/fonts"
 
-          cp presence-service/src/client/app.js "$pages_root/app.js"
-          cp presence-service/src/client/styles.css "$pages_root/styles.css"
-          cp presence-service/src/client/index.html "$pages_root/index.html"
+          cp online-service/src/client/app.js "$pages_root/app.js"
+          cp online-service/src/client/styles.css "$pages_root/styles.css"
+          cp online-service/src/client/index.html "$pages_root/index.html"
 
           perl -0pi -e 's#/presence/vendor/#./vendor/#g; s#/presence/fonts/#./fonts/#g; s#/presence/#./#g' "$pages_root/index.html"
 
-          cp "$PRESENCE_PAGES_DEPS/node_modules/vue/dist/vue.global.prod.js" "$pages_root/vue.global.prod.js"
-          cp "$PRESENCE_PAGES_DEPS/node_modules/vuetify/dist/vuetify.min.js" "$pages_root/vendor/vuetify.min.js"
-          cp "$PRESENCE_PAGES_DEPS/node_modules/vuetify/dist/vuetify.min.css" "$pages_root/vendor/vuetify.min.css"
-          cp "$PRESENCE_PAGES_DEPS/node_modules/echarts/dist/echarts.min.js" "$pages_root/vendor/echarts.min.js"
-          cp "$PRESENCE_PAGES_DEPS/node_modules/@mdi/font/css/materialdesignicons.min.css" "$pages_root/vendor/materialdesignicons.min.css"
-          cp "$PRESENCE_PAGES_DEPS"/node_modules/@mdi/font/fonts/materialdesignicons-webfont.* "$pages_root/fonts/"
-          cp "$PRESENCE_PAGES_DEPS"/node_modules/@mdi/font/fonts/materialdesignicons-webfont.* "$pages_root/vendor/fonts/"
+          cp "$ONLINE_PAGES_DEPS/node_modules/vue/dist/vue.global.prod.js" "$pages_root/vue.global.prod.js"
+          cp "$ONLINE_PAGES_DEPS/node_modules/vuetify/dist/vuetify.min.js" "$pages_root/vendor/vuetify.min.js"
+          cp "$ONLINE_PAGES_DEPS/node_modules/vuetify/dist/vuetify.min.css" "$pages_root/vendor/vuetify.min.css"
+          cp "$ONLINE_PAGES_DEPS/node_modules/echarts/dist/echarts.min.js" "$pages_root/vendor/echarts.min.js"
+          cp "$ONLINE_PAGES_DEPS/node_modules/@mdi/font/css/materialdesignicons.min.css" "$pages_root/vendor/materialdesignicons.min.css"
+          cp "$ONLINE_PAGES_DEPS"/node_modules/@mdi/font/fonts/materialdesignicons-webfont.* "$pages_root/fonts/"
+          cp "$ONLINE_PAGES_DEPS"/node_modules/@mdi/font/fonts/materialdesignicons-webfont.* "$pages_root/vendor/fonts/"
 
           if ! grep -qi "<html" "$pages_root/index.html"; then
             echo "Presence panel entrypoint does not look like HTML." >&2
@@ -97,7 +97,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ${{ runner.temp }}/presence-pages
+          path: ${{ runner.temp }}/online-pages
 
       - name: Deploy to GitHub Pages
         id: deployment

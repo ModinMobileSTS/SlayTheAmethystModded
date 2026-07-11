@@ -1,7 +1,7 @@
 services:
-  presence-service:
-    image: ghcr.io/modinmobilests/slaytheamethyst-presence-service:latest
-    container_name: sts-presence-service
+  online-service:
+    image: ghcr.io/modinmobilests/slaytheamethyst-online-service:latest
+    container_name: sts-online-service
     restart: unless-stopped
     ports:
       - "3001:3001"
@@ -14,9 +14,14 @@ services:
       PRESENCE_OFFLINE_TIMEOUT_SECONDS: 90
       QQ_GROUP_NUMBER: 1029305387
       PRESENCE_PANEL_TOKEN: change-me
+      EASYTIER_ENABLED: "false"
+      EASYTIER_CONFIG_SERVER_SCHEME: udp
+      EASYTIER_CONFIG_SERVER_PORT: 22020
+      EASYTIER_ENTRY_NODE_SCHEME: tcp
+      EASYTIER_ENTRY_NODE_PORT: 11010
       LOG_LEVEL: info
     volumes:
-      - presence-data:/app/data
+      - online-service-data:/app/data
 
 volumes:
-  presence-data:
+  online-service-data:

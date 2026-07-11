@@ -4,7 +4,7 @@ This Worker stores legacy game presence data in Cloudflare D1. It is an
 internal storage component, not the Android client's heartbeat entrypoint.
 
 Heartbeat/presence via Tencent SCF is deprecated. Current Android builds should
-load cloud-control from `../presence-service` and send game or launcher presence
+load cloud-control from `../online-service` and send game or launcher presence
 to `heartbeat.wsUrl`, which resolves to `GET /api/presence/ws` on the standalone
 presence service. Do not point clients at this Worker, and do not use Tencent
 SCF as a heartbeat relay.
@@ -114,7 +114,7 @@ PRESENCE_PANEL_TOKEN=...
 ```
 
 These SCF heartbeat settings are deprecated for current clients. New clients
-must use the standalone `presence-service` `/cloud-control.json` response and
+must use the standalone `online-service` `/cloud-control.json` response and
 connect to `heartbeat.wsUrl`.
 
 The Worker also coalesces duplicate heartbeats server-side: it only updates `presence_sessions.last_seen_at_ms` when the previous stored heartbeat is at least roughly one configured heartbeat interval old, with a 60-second grace window. That protects D1 if older clients still send 240-second heartbeats.

@@ -203,7 +203,7 @@ flowchart LR
     CloudFunction --> DiagnosticsRepo["GitHub Release 诊断资产仓库"]
     CloudFunction --> Mail["SMTP 邮件通知"]
 
-    PresenceFeature --> PresenceService["presence-service<br/>Fastify + WebSocket + SQLite"]
+    PresenceFeature --> PresenceService["online-service<br/>Fastify + WebSocket + SQLite"]
 
     UpdateFeature --> GitHubReleases["GitHub Releases / Mirror / 资源市场"]
 

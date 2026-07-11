@@ -5,7 +5,7 @@ client.
 
 Presence heartbeats, online count, and the operator panel have moved out of this
 cloud function. The standalone implementation now lives in
-`../presence-service` and uses:
+`../online-service` and uses:
 
 ```text
 Android app -> Fastify WebSocket -> SQLite3
@@ -24,7 +24,7 @@ SCF is only responsible for:
 - fetching feedback issue lists or state used by the launcher;
 - relaying GitHub webhook events for feedback mail notifications.
 
-New clients should read cloud-control from `presence-service` and report game or
+New clients should read cloud-control from `online-service` and report game or
 launcher presence to `heartbeat.wsUrl`.
 
 ## Endpoint
@@ -51,7 +51,7 @@ SCF exposes no heartbeat/presence endpoint.
 
 `GET /cloud-control.json` remains as a compatibility pointer only. It no longer
 serves or owns presence heartbeat settings. If `CLOUD_CONTROL_CONFIG_URL` is
-configured, SCF redirects to the `presence-service` `/cloud-control.json`; if it
+configured, SCF redirects to the `online-service` `/cloud-control.json`; if it
 is not configured, SCF returns `410 presence_moved`.
 
 ## What It Does

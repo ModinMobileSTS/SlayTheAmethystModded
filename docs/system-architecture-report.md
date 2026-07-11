@@ -75,7 +75,7 @@ flowchart LR
 
 - 玩家通过 Android 启动器完成启动、模组管理、Workshop 浏览下载、Steam Cloud 登录与同步、反馈提交。
 - 启动器直接与 Steam 相关服务交互，用于 Workshop 内容访问与 Steam Cloud 相关能力。
-- Presence 已迁移到独立的 `presence-service`，通过 WebSocket 上报状态并提供面板。
+- Presence 已迁移到独立的 `online-service`，通过 WebSocket 上报状态并提供面板。
 - 反馈链路使用独立的 `cloud-function` 中继，再写入 GitHub Issues 和诊断资产仓库。
 - 更新与外部资源获取依赖 GitHub Releases、镜像与原生库资源市场。
 
@@ -91,7 +91,7 @@ flowchart LR
     end
 
     subgraph Cloud["云侧与外部平台"]
-        Presence["presence-service<br/>状态上报与面板推送"]:::container
+        Presence["online-service<br/>状态上报与面板推送"]:::container
         FeedbackRelay["cloud-function<br/>反馈与诊断中继"]:::container
         Steam["Steam 平台<br/>Workshop / CDN / Steam Cloud"]:::external
         GitHubIssues["GitHub Issues"]:::external
@@ -120,7 +120,7 @@ flowchart LR
 | --- | --- |
 | `Android App` | 提供 UI、配置、启动准备、模组导入、Workshop、反馈、Presence、更新、Steam Cloud 等能力 |
 | `Device Runtime Environment` | 在设备端承载嵌入式 Java 运行时、Boot Bridge、ModTheSpire、patched `desktop-1.0.jar`、兼容补丁与附加 Mod |
-| `presence-service` | 接收在线状态 WebSocket，上报与推送面板统计 |
+| `online-service` | 接收在线状态 WebSocket，上报与推送面板统计 |
 | `cloud-function` | 反馈包上传、Issue 创建/同步、诊断资产持久化、邮件通知 |
 
 ## 5. 视图三：Android 部署与进程图
@@ -365,7 +365,7 @@ flowchart TB
 - `app/build.gradle.kts`
 - `gradle/build-logic/src/main/kotlin/StsAndroidAppBuildPlugin.kt`
 - `docs/backend-startup-chain.md`
-- `presence-service/README.md`
+- `online-service/README.md`
 - `cloud-function/README.md`
 - `cloudflare-presence-worker/README.md`
 - `agent-connector/README.md`

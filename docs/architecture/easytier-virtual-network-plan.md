@@ -66,7 +66,7 @@
 
 ### 2.1 服务命名决策
 
-当前仓库里已经存在 `presence-service/`，它负责：
+当前仓库里已经存在 `online-service/`，它负责：
 
 - App Presence WebSocket 上报
 - 在线分布 / 数据看板
@@ -80,10 +80,10 @@
 - 房间 / 会话 API
 - EasyTier 服务器侧整合能力
 
-为避免一次性迁移面过大，建议把“服务命名”和“仓库目录重命名”拆成两步：
+这部分命名迁移现已完成，当前仓库统一使用：
 
-1. 先把部署产物、容器名、镜像名、面板标题统一改为 `online-service`
-2. 再在独立提交中处理 `presence-service/` 目录、workflow 文件名、包名与文档引用
+1. 服务目录：`online-service/`
+2. 部署产物、容器名、镜像名、面板标题：`online-service`
 
 ## 3. 产品目标与范围
 
@@ -122,7 +122,7 @@ flowchart LR
         Runtime["EasyTier Runtime"]
     end
 
-    subgraph Online["online-service（原 presence-service）"]
+    subgraph Online["online-service"]
         Http["Fastify API<br/>Presence / Panel / Stats / Room API"]
         Console["easytier-web-embed"]
         ConfigSvc["Configuration Delivery Service"]
@@ -158,7 +158,7 @@ flowchart LR
 
 ### 4.1 控制面拆分
 
-建议拆成两层，但这两层都收敛到同一个 `online-service` 容器中，而不是额外再开一套独立 Docker 服务：
+建议拆成两层，但这两层都收敛到同一个 `online-service` 服务实例中，而不是额外再开一套独立服务：
 
 1. `EasyTier 控制面`
    - 负责节点注册、配置分发、单服务器入网与转发能力。
@@ -169,19 +169,21 @@ flowchart LR
    - 建议单独做 `Room API / Session API`。
    - 不建议把房间业务逻辑全部塞进 EasyTier Console 本身，而是由 `online-service` 的 Fastify 层承载。
 
-### 4.2 单容器整合模型
+### 4.2 单服务整合模型
 
-这里的“合并进一个 Docker 容器”建议理解为“单容器、多进程”，而不是把所有能力硬揉成一个二进制：
+开发阶段当前以 Windows 普通启动为准，不强依赖 Docker。
+这里的“合并进一个服务实例”在开发态应理解为“Node 主进程 + EasyTier 子进程”，发布阶段再打包为“单容器、多进程”：
 
 - `Fastify + WebSocket + SQLite` 继续负责 Presence、面板、在线统计、Room API
-- `easytier-web-embed` 作为容器内子进程提供 EasyTier 控制面
-- 单个 EasyTier server 进程作为容器内子进程提供入网 / 转发能力
-- 通过统一 entrypoint、supervisor 或进程守护脚本管理生命周期
+- `easytier-web-embed` 作为 Node 托管子进程提供 EasyTier 控制面
+- 单个 EasyTier server 进程作为 Node 托管子进程提供入网 / 转发能力
+- 开发阶段通过本地普通启动与 runtime API 管理生命周期
+- 发布阶段再通过统一 entrypoint、supervisor 或进程守护脚本管理容器内多进程生命周期
 
 这样做的好处：
 
-1. 复用现有 `presence-service` 的 Node/Fastify 代码和发布流程。
-2. 容器外部只暴露一个统一服务概念，即 `online-service`。
+1. 复用现有 `online-service` 的 Node/Fastify 代码和发布流程。
+2. 对外只暴露一个统一服务概念，即 `online-service`。
 3. 数据看板、在线统计、房间 API 与 EasyTier 会话可共享一套状态存储和诊断出口。
 
 需要明确的代价：
@@ -439,30 +441,34 @@ app/src/main/java/io/stamethyst/ui/settings/
 
 目标：
 
-- 将现有 `presence-service` 升级并改名为 `online-service`，在同一个 Docker 容器中同时承载在线统计看板、Room API 与 EasyTier 服务器侧能力。
+- 基于现有 `online-service` 继续扩展，由同一个服务实例同时承载在线统计看板、Room API 与 EasyTier 服务器侧能力。
 
 工作项：
 
 - 设计并落地新的服务名：
   - 运行时服务名：`online-service`
   - 推荐镜像名：`ghcr.io/modinmobilests/slaytheamethyst-online-service`
-- 在现有 Node/Fastify 服务容器中合并 EasyTier 服务器侧组件：
+- 在现有 Node/Fastify 服务中合并 EasyTier 服务器侧组件：
   - `Fastify API + Presence + Panel + Stats + Room API`
   - `easytier-web-embed`
   - 单个 EasyTier server 进程
-- 增加统一 entrypoint / supervisor，管理多进程启动、退出和重启策略
+- 开发阶段先实现本地普通启动与 runtime API：
+  - `Node` 主进程直接托管 `easytier-web-embed`
+  - `Node` 主进程直接托管单个 EasyTier server 进程
+  - 通过管理接口观察、启动、停止与重启子进程
+- 发布阶段再增加统一 entrypoint / supervisor，管理容器内多进程启动、退出和重启策略
 - 开通配置分发端口、单服务器入口端口与 HTTPS 入口
 - 统一日志、健康检查、监控和崩溃恢复
 - 明确域名、TLS、端口暴露与防火墙规则
 - 将“客户端连接地址从云控获取”纳入服务器阶段：
   - `online-service` 对外提供固定域名和端口
-  - `docs/cloud-control/cloud-control.json` 与远端云控文件都写入 `easyTier.entryNodeUrl`
+  - `app/src/main/assets/cloud-control.json` 与远端云控文件都写入 `easyTier.entryNodeUrl`
   - 启动器只通过 `CloudControlConfig` 读取连接地址
 - 准备命名迁移清单：
-  - `presence-service/package.json`
-  - `presence-service/src/server/app.js`
-  - `.github/workflows/publish-presence-service.yml`
-  - GHCR `slaytheamethyst-presence-service`
+  - `online-service/package.json`
+  - `online-service/src/server/app.js`
+  - `.github/workflows/publish-online-service.yml`
+  - GHCR `slaytheamethyst-online-service`
 
 推荐部署方式：
 
@@ -472,6 +478,12 @@ app/src/main/java/io/stamethyst/ui/settings/
    - `online.example.com:11010`
 
 当前方案明确只在这一台服务器上部署 `online-service`。
+
+开发阶段约束：
+
+- Windows 本地开发不要求 Docker。
+- 先确保 `online-service` 可通过 `npm start` 普通启动，并能在本机托管 EasyTier 子进程。
+- Dockerfile、Compose、GHCR 相关调整留到发布阶段统一收口。
 
 安全注意：
 
@@ -614,7 +626,7 @@ app/src/main/java/io/stamethyst/ui/settings/
 如果按“最稳妥、最少返工”的顺序做，建议：
 
 1. 先做 Phase 0，确认 Android 接法。
-2. 再做 Phase 1，先把统一的 `online-service` 单服务器容器和云控地址下发链路跑稳。
+2. 再做 Phase 1，先把统一的 `online-service` 单服务器实例和云控地址下发链路跑稳。
 3. 接着做 Phase 2，把服务与状态链路搭出来。
 4. 然后做 Phase 3，让用户能用。
 5. 最后做 Phase 4，把共享网络收敛到房间化和 ACL。

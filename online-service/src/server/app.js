@@ -5,11 +5,21 @@ const path = require('path');
 const Fastify = require('fastify');
 const websocket = require('@fastify/websocket');
 
-const { DEFAULT_QQ_GROUP_NUMBER, loadConfig, firstNonEmpty } = require('./config');
+const {
+  DEFAULT_QQ_GROUP_NUMBER,
+  DEFAULT_EASYTIER_CONFIG_SERVER_PORT,
+  DEFAULT_EASYTIER_CONFIG_SERVER_SCHEME,
+  DEFAULT_EASYTIER_ENTRY_NODE_PORT,
+  DEFAULT_EASYTIER_ENTRY_NODE_SCHEME,
+  loadConfig,
+  firstNonEmpty
+} = require('./config');
 const { openDatabase } = require('./db');
+const { LanStore } = require('./lan');
 const { HOUR_MS, PresenceStore, httpError, resolveStatsWindowSeconds } = require('./presence');
+const { EasyTierRuntimeManager } = require('./runtime');
 
-const SERVICE_NAME = 'sts-presence-service';
+const SERVICE_NAME = 'sts-online-service';
 const CLIENT_DIR = path.resolve(__dirname, '../client');
 const VUE_SCRIPT_PATH = path.join(
   path.dirname(require.resolve('vue/package.json')),
@@ -27,6 +37,8 @@ async function buildServer(config = loadConfig()) {
   });
   const database = await openDatabase(config.dbPath);
   const store = new PresenceStore(database, config);
+  const lanStore = new LanStore(database, config);
+  const easyTierRuntime = new EasyTierRuntimeManager(config, fastify.log);
   const panelSockets = new Map();
   const timers = new Set();
   let snapshotBroadcastTimer = null;
@@ -41,14 +53,16 @@ async function buildServer(config = loadConfig()) {
     ok: true,
     service: SERVICE_NAME,
     now: new Date().toISOString(),
-    panel: '/presence',
+    panel: '/online',
+    panelLegacy: '/presence',
     websocket: '/api/presence/ws'
   }));
 
   fastify.get('/healthz', async (_request, _reply) => ({
     ok: true,
     service: SERVICE_NAME,
-    storageBackend: 'sqlite3'
+    storageBackend: 'sqlite3',
+    easyTierRuntime: easyTierRuntime.getHealthSummary()
   }));
 
   fastify.get('/cloud-control.json', async (request, reply) => {
@@ -66,7 +80,110 @@ async function buildServer(config = loadConfig()) {
       panelTokenConfigured: Boolean(resolvePresencePanelToken(config)),
       heartbeatIntervalSeconds: config.presenceHeartbeatIntervalSeconds,
       offlineTimeoutSeconds: config.presenceOfflineTimeoutSeconds,
-      heartbeatWsUrl: cloudControl.heartbeat.wsUrl
+      heartbeatWsUrl: cloudControl.heartbeat.wsUrl,
+      easyTier: cloudControl.easyTier,
+      easyTierRuntime: easyTierRuntime.getHealthSummary()
+    };
+  });
+
+  fastify.get('/api/easytier/runtime/status', async (request, reply) => {
+    enforcePresencePanelAccess(request, config);
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...easyTierRuntime.getStatus()
+    };
+  });
+
+  fastify.post('/api/easytier/runtime/start', async (request, reply) => {
+    enforcePresencePanelAccess(request, config);
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await easyTierRuntime.start())
+    };
+  });
+
+  fastify.post('/api/easytier/runtime/stop', async (request, reply) => {
+    enforcePresencePanelAccess(request, config);
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await easyTierRuntime.stop())
+    };
+  });
+
+  fastify.post('/api/easytier/runtime/restart', async (request, reply) => {
+    enforcePresencePanelAccess(request, config);
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await easyTierRuntime.restart())
+    };
+  });
+
+  fastify.post('/api/lan/session/start', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const baseUrl = config.publicBaseUrl || buildRequestBaseUrl(config, request);
+    return {
+      ok: true,
+      ...(await lanStore.startSession(request.body || {}, {
+        easyTier: buildEasyTierCloudControlResponse(config, baseUrl)
+      }))
+    };
+  });
+
+  fastify.post('/api/lan/rooms', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const baseUrl = config.publicBaseUrl || buildRequestBaseUrl(config, request);
+    return {
+      ok: true,
+      ...(await lanStore.createRoom(request.body || {}, {
+        easyTier: buildEasyTierCloudControlResponse(config, baseUrl)
+      }))
+    };
+  });
+
+  fastify.get('/api/lan/rooms', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.listRooms(request.query || {}))
+    };
+  });
+
+  fastify.post('/api/lan/rooms/:roomId/action', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.updateRoom(
+        request.params && request.params.roomId,
+        request.body || {}
+      ))
+    };
+  });
+
+  fastify.post('/api/lan/session/stop', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.stopSession(request.body || {}))
+    };
+  });
+
+  fastify.get('/api/lan/session/status', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.getSessionStatus(request.query || {}))
+    };
+  });
+
+  fastify.get('/api/lan/rooms/:roomId', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.getRoomInfo(request.params && request.params.roomId))
     };
   });
 
@@ -215,7 +332,9 @@ async function buildServer(config = loadConfig()) {
   });
 
   fastify.get('/presence', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
+  fastify.get('/online', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
   fastify.get('/api/presence/panel', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
+  fastify.get('/api/online/panel', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
   fastify.get('/presence/app.js', async (_request, reply) => sendClientFile(reply, 'app.js', 'application/javascript; charset=utf-8'));
   fastify.get('/presence/styles.css', async (_request, reply) => sendClientFile(reply, 'styles.css', 'text/css; charset=utf-8'));
   fastify.get('/favicon.ico', async (_request, reply) => sendLauncherIcon(reply));
@@ -310,8 +429,13 @@ async function buildServer(config = loadConfig()) {
       }
     }
     panelSockets.clear();
+    await easyTierRuntime.stop();
     await database.close();
   });
+
+  fastify.decorate('easyTierRuntimeManager', easyTierRuntime);
+  fastify.decorate('startEasyTierRuntime', async () => easyTierRuntime.start());
+  fastify.decorate('stopEasyTierRuntime', async () => easyTierRuntime.stop());
 
   function schedulePanelSnapshotBroadcast() {
     if (snapshotBroadcastTimer) {
@@ -396,8 +520,67 @@ function buildCloudControlResponse(config, request) {
     },
     qqGroup: {
       number: firstNonEmpty(config.qqGroupNumber, DEFAULT_QQ_GROUP_NUMBER)
-    }
+    },
+    easyTier: buildEasyTierCloudControlResponse(config, baseUrl)
   };
+}
+
+function buildEasyTierCloudControlResponse(config, baseUrl) {
+  return {
+    enabled: Boolean(config.easyTierEnabled),
+    roomApiBaseUrl: firstNonEmpty(
+      config.easyTierRoomApiBaseUrl,
+      config.easyTierEnabled ? baseUrl : ''
+    ),
+    webConsoleApiBaseUrl: firstNonEmpty(
+      config.easyTierWebConsoleApiBaseUrl,
+      config.easyTierEnabled ? baseUrl : ''
+    ),
+    configServerUrl: firstNonEmpty(
+      config.easyTierConfigServerUrl,
+      config.easyTierEnabled
+        ? buildEasyTierEndpointUrl(
+          baseUrl,
+          config.easyTierConfigServerScheme || DEFAULT_EASYTIER_CONFIG_SERVER_SCHEME,
+          config.easyTierConfigServerPort || DEFAULT_EASYTIER_CONFIG_SERVER_PORT
+        )
+        : ''
+    ),
+    entryNodeUrl: firstNonEmpty(
+      config.easyTierEntryNodeUrl,
+      config.easyTierEnabled
+        ? buildEasyTierEndpointUrl(
+          baseUrl,
+          config.easyTierEntryNodeScheme || DEFAULT_EASYTIER_ENTRY_NODE_SCHEME,
+          config.easyTierEntryNodePort || DEFAULT_EASYTIER_ENTRY_NODE_PORT
+        )
+        : ''
+    ),
+    connectTimeoutSeconds: config.easyTierConnectTimeoutSeconds,
+    statusPollIntervalSeconds: config.easyTierStatusPollIntervalSeconds,
+    allowSharedCommunityNetwork: Boolean(config.easyTierAllowSharedCommunityNetwork),
+    defaultMode: firstNonEmpty(config.easyTierDefaultMode, 'room')
+  };
+}
+
+function buildEasyTierEndpointUrl(baseUrl, scheme, port) {
+  const host = extractHostname(baseUrl);
+  if (!host) {
+    return '';
+  }
+  return `${scheme}://${formatEndpointHost(host)}:${port}`;
+}
+
+function extractHostname(baseUrl) {
+  try {
+    return new URL(baseUrl).hostname || '';
+  } catch (_error) {
+    return '';
+  }
+}
+
+function formatEndpointHost(host) {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
 function buildRequestBaseUrl(config, request) {

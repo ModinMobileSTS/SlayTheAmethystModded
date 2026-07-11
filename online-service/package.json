@@ -1,12 +1,12 @@
 {
-  "name": "sts-presence-service",
+  "name": "sts-online-service",
   "version": "1.0.0",
   "private": true,
-  "description": "Standalone Fastify/Vue3/SQLite presence service for SlayTheAmethyst",
+  "description": "Standalone Fastify/Vue3/SQLite online service for SlayTheAmethyst",
   "main": "src/server/index.js",
   "scripts": {
     "start": "node src/server/index.js",
-    "check": "node --check src/server/index.js && node --check src/server/app.js && node --check src/server/config.js && node --check src/server/db.js && node --check src/server/presence.js",
+    "check": "node --check src/server/index.js && node --check src/server/app.js && node --check src/server/config.js && node --check src/server/db.js && node --check src/server/lan.js && node --check src/server/presence.js && node --check src/server/runtime.js",
     "test": "node --test"
   },
   "engines": {
