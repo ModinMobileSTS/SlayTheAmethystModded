@@ -12,7 +12,7 @@ import java.util.ArrayList
 import java.util.zip.ZipFile
 
 object ModJarSupport {
-    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.30"
+    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.33"
     private const val EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION = "1.0.0"
     private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.3"
 

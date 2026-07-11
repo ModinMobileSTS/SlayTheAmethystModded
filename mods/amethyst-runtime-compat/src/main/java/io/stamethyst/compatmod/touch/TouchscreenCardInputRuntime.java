@@ -186,10 +186,11 @@ public final class TouchscreenCardInputRuntime {
 
         AbstractCard touchedCard = getTouchedHandCard(player);
         if (touchedCard == selectedCard) {
-            InputHelper.justClickedLeft = false;
             if (isTargetedCard(selectedCard)) {
-                return true;
+                clearTouchInspect();
+                return false;
             }
+            InputHelper.justClickedLeft = false;
             return playSelectedTapCard(player, selectedCard, null);
         }
         if (touchedCard != null) {
@@ -348,6 +349,12 @@ public final class TouchscreenCardInputRuntime {
             player.releaseCard();
         }
         clearGesture();
+    }
+
+    public static void cancelTargetedCardSelectionOnRelease(AbstractPlayer player) {
+        playCancelSound();
+        clearHoveredMonster(player);
+        releaseSelectedCard(player);
     }
 
     public static void refreshSelectedCardHoldStateForAndroidBridge(AbstractPlayer player) {
