@@ -14,7 +14,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
@@ -43,11 +42,6 @@ fun FrostedGlassChrome(
     val materialStyle = HazeMaterials.ultraThin()
     Surface(
         modifier = modifier
-            .shadow(
-                elevation = shadowElevation,
-                shape = shape,
-                clip = false,
-            )
             .clip(shape)
             .hazeEffect(
                 state = hazeState,
@@ -67,7 +61,8 @@ fun FrostedGlassChrome(
             null
         },
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        // Keep content out of Modifier.shadow's graphics layer before haze on Android 10.
+        shadowElevation = shadowElevation,
     ) {
         Box(
             modifier = Modifier
