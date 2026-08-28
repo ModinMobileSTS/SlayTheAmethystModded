@@ -22,6 +22,7 @@ import org.json.JSONObject
 
 object ComponentInstaller {
     private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
+    private const val AFFECTED_LWJGL_BRIDGE_VERSION_V158 = "18bc219264fdc7621d8ff1966c85df9172cffc27"
     private const val LONG_OPERATION_HEARTBEAT_INTERVAL_MS = 5_000L
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
     private const val BUNDLED_RUNTIME_NATIVE_ASSET_DIR = "components/bundled_runtime_natives"
@@ -50,6 +51,13 @@ object ComponentInstaller {
             get() = markerMatches && missingComponents.isEmpty()
     }
 
+    private data class ComponentRemediationState(
+        val reasons: List<String>
+    ) {
+        val required: Boolean
+            get() = reasons.isNotEmpty()
+    }
+
     @Throws(IOException::class)
     private fun throwIfInterrupted() {
         if (Thread.currentThread().isInterrupted) {
@@ -67,11 +75,13 @@ object ComponentInstaller {
     fun arePackagedComponentsCurrent(context: Context): Boolean {
         RuntimePaths.ensureBaseDirs(context)
         val resources = RuntimeResourceProvider(context)
-        return evaluatePackagedComponentsState(
+        val packagedComponentsCurrent = evaluatePackagedComponentsState(
             context = context,
             resources = resources,
             expectedMarker = resolvePackagedComponentsMarker(context)
         ).current
+        return packagedComponentsCurrent &&
+            !evaluateHotfix3RemediationState(context, resources).required
     }
 
     @JvmStatic
@@ -87,7 +97,8 @@ object ComponentInstaller {
             resources = resources,
             expectedMarker = resolvePackagedComponentsMarker(context)
         )
-        val packagedComponentsCurrent = packagedComponentsState.current
+        val remediationState = evaluateHotfix3RemediationState(context, resources)
+        val packagedComponentsCurrent = packagedComponentsState.current && !remediationState.required
         logDiagnostic(
             context = context,
             event = "component_install_state_resolved",
@@ -98,9 +109,25 @@ object ComponentInstaller {
                 "installedMarker" to packagedComponentsState.installedMarker,
                 "markerMatches" to packagedComponentsState.markerMatches,
                 "markerFile" to buildFileState(packagedComponentsState.markerFile),
-                "missingComponents" to packagedComponentsState.missingComponents
+                "missingComponents" to packagedComponentsState.missingComponents,
+                "hotfix3RemediationRequired" to remediationState.required,
+                "hotfix3RemediationReasons" to remediationState.reasons
             )
         )
+
+        if (remediationState.required) {
+            logDiagnostic(
+                context = context,
+                event = "component_install_hotfix3_remediation_started",
+                extras = linkedMapOf<String, Any?>(
+                    "reasons" to remediationState.reasons,
+                    "lwjglDir" to buildFileState(RuntimePaths.lwjglDir(context)),
+                    "gdxPatchJar" to buildFileState(RuntimePaths.gdxPatchJar(context)),
+                    "lwjgl2InjectorJar" to buildFileState(RuntimePaths.lwjgl2InjectorJar(context))
+                )
+            )
+            MtsStartupCacheCoordinator.clear(context)
+        }
 
         throwIfInterrupted()
         if (packagedComponentsCurrent) {
@@ -144,6 +171,15 @@ object ComponentInstaller {
             forceReplaceExisting = !packagedComponentsCurrent,
             progressCallback = progressCallback
         )
+        if (remediationState.required) {
+            logDiagnostic(
+                context = context,
+                event = "component_install_hotfix3_remediation_completed",
+                extras = linkedMapOf<String, Any?>(
+                    "reasons" to remediationState.reasons
+                )
+            )
+        }
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -792,6 +828,100 @@ object ComponentInstaller {
             }
         }
         return missing
+    }
+
+    private fun evaluateHotfix3RemediationState(
+        context: Context,
+        resources: RuntimeResourceProvider
+    ): ComponentRemediationState {
+        return ComponentRemediationState(
+            reasons = collectHotfix3RemediationReasons(context, resources)
+        )
+    }
+
+    private fun collectHotfix3RemediationReasons(
+        context: Context,
+        resources: RuntimeResourceProvider
+    ): List<String> {
+        val reasons = ArrayList<String>()
+        if (isAffectedLwjglBridgeVersion(readTextFile(File(RuntimePaths.lwjglDir(context), "version")))) {
+            reasons += "affected_lwjgl3_v1.5.8"
+        }
+        if (!isCriticalComponentFileCurrent(
+                resources,
+                "components/gdx_patch/gdx-patch.jar",
+                RuntimePaths.gdxPatchJar(context)
+            )
+        ) {
+            reasons += "stale_gdx_patch"
+        }
+        if (!isCriticalComponentFileCurrent(
+                resources,
+                "components/lwjgl2_methods_injector/version",
+                File(RuntimePaths.lwjgl2InjectorDir(context), "version")
+            )
+        ) {
+            reasons += "stale_lwjgl2_injector_version"
+        }
+        if (!isCriticalComponentFileCurrent(
+                resources,
+                "components/lwjgl2_methods_injector/lwjgl2_methods_injector.jar",
+                RuntimePaths.lwjgl2InjectorJar(context)
+            )
+        ) {
+            reasons += "stale_lwjgl2_injector_jar"
+        }
+        return reasons
+    }
+
+    internal fun isAffectedLwjglBridgeVersion(version: String?): Boolean {
+        return version?.trim() == AFFECTED_LWJGL_BRIDGE_VERSION_V158
+    }
+
+    private fun readTextFile(file: File): String? {
+        return runCatching {
+            file.takeIf(File::isFile)?.readText(StandardCharsets.UTF_8)?.trim()
+        }.getOrNull()
+    }
+
+    private fun isCriticalComponentFileCurrent(
+        resources: RuntimeResourceProvider,
+        assetPath: String,
+        installedFile: File
+    ): Boolean {
+        if (!installedFile.isFile || installedFile.length() <= 0L) {
+            return false
+        }
+        return runCatching {
+            resources.open(assetPath).use { expected ->
+                FileInputStream(installedFile).use { installed ->
+                    streamsHaveSameBytes(expected, installed)
+                }
+            }
+        }.getOrElse { false }
+    }
+
+    internal fun streamsHaveSameBytes(
+        left: java.io.InputStream,
+        right: java.io.InputStream
+    ): Boolean {
+        val leftBuffer = ByteArray(8192)
+        val rightBuffer = ByteArray(8192)
+        while (true) {
+            val leftRead = left.read(leftBuffer)
+            val rightRead = right.read(rightBuffer)
+            if (leftRead != rightRead) {
+                return false
+            }
+            if (leftRead < 0) {
+                return true
+            }
+            for (index in 0 until leftRead) {
+                if (leftBuffer[index] != rightBuffer[index]) {
+                    return false
+                }
+            }
+        }
     }
 
     @Throws(IOException::class)

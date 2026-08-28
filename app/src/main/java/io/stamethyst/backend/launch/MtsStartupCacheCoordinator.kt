@@ -8,4 +8,10 @@ internal object MtsStartupCacheCoordinator {
         MtsClasspathWarmupCoordinator.invalidateCache(context)
         MtsPatchCacheCoordinator.invalidate(context)
     }
+
+    @JvmStatic
+    fun clear(context: Context) {
+        MtsClasspathWarmupCoordinator.invalidateCache(context)
+        MtsPatchCacheCoordinator.clear(context)
+    }
 }

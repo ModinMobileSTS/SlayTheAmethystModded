@@ -1,5 +1,6 @@
 package io.stamethyst.backend.launch
 
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -83,6 +84,43 @@ class ComponentInstallerLwjglBridgeTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun hotfix3Remediation_detectsTheBadV158LwjglBridgeVersion() {
+        assertTrue(
+            ComponentInstaller.isAffectedLwjglBridgeVersion(
+                "18bc219264fdc7621d8ff1966c85df9172cffc27"
+            )
+        )
+        assertFalse(
+            ComponentInstaller.isAffectedLwjglBridgeVersion(
+                "fb99c2f281d742efda85bcbd3d3ce18b8c25ac5c"
+            )
+        )
+        assertFalse(ComponentInstaller.isAffectedLwjglBridgeVersion(null))
+    }
+
+    @Test
+    fun streamComparison_detectsStaleCriticalComponentBytes() {
+        assertTrue(
+            ComponentInstaller.streamsHaveSameBytes(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 2, 3))
+            )
+        )
+        assertFalse(
+            ComponentInstaller.streamsHaveSameBytes(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 2, 4))
+            )
+        )
+        assertFalse(
+            ComponentInstaller.streamsHaveSameBytes(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 2))
+            )
+        )
     }
 
     private fun writeFile(root: File, name: String, contents: String): File {
