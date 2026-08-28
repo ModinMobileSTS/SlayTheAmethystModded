@@ -9,6 +9,13 @@ import org.junit.Test
 
 class SteamAchievementSyncServiceTest {
     @Test
+    fun shouldAutoSyncRuntimeAchievementRequest_requiresEnabledSyncAndAuthentication() {
+        assertFalse(shouldAutoSyncRuntimeAchievementRequest(syncEnabled = false, authenticated = true))
+        assertFalse(shouldAutoSyncRuntimeAchievementRequest(syncEnabled = true, authenticated = false))
+        assertTrue(shouldAutoSyncRuntimeAchievementRequest(syncEnabled = true, authenticated = true))
+    }
+
+    @Test
     fun parseRequest_readsRuntimeAchievementArrayAndDeduplicates() {
         val request = SteamAchievementSyncService.parseRequest(
             "{\"type\":\"achievement_sync\",\"achievements\":[\"shrug_it_off\",\"unknown\",\"shrug_it_off\"]}"

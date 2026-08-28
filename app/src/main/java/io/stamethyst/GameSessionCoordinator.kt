@@ -26,7 +26,9 @@ import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
+import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
+import io.stamethyst.backend.steamcloud.shouldAutoSyncRuntimeAchievementRequest
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -1230,6 +1232,17 @@ internal class GameSessionCoordinator(
         }
         if (LauncherConfig.isAchievementUnlockNotificationEnabled(activity)) {
             inGameAchievementOverlayController.enqueue(request.achievementIds)
+        }
+        val syncEnabled = LauncherConfig.isSteamAchievementSyncEnabled(activity)
+        val authenticated = SteamCloudAuthStore.readAuthMaterial(activity) != null
+        if (!shouldAutoSyncRuntimeAchievementRequest(syncEnabled, authenticated)) {
+            val reason = if (!syncEnabled) "disabled" else "not_authenticated"
+            AchievementSyncLogStore.append(
+                activity,
+                "sync_skipped",
+                "source=runtime request=${request.id} reason=$reason",
+            )
+            return
         }
         SteamAchievementSyncService.syncRequestAsync(activity.applicationContext, request) { error ->
             if (error != null) {

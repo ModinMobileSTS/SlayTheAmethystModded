@@ -331,3 +331,8 @@ object SteamAchievementSyncService {
     private fun isValidSteamId64(value: String): Boolean =
         value.trim().toULongOrNull()?.let { it > 0uL } == true
 }
+
+internal fun shouldAutoSyncRuntimeAchievementRequest(
+    syncEnabled: Boolean,
+    authenticated: Boolean,
+): Boolean = syncEnabled && authenticated
