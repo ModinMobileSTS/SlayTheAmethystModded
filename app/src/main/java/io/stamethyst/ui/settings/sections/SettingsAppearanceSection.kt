@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -339,6 +340,14 @@ internal fun BootOverlayCustomImageDialogContent(
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
+    val configuration = LocalConfiguration.current
+    val previewAspectRatio = maxOf(
+        configuration.screenWidthDp,
+        configuration.screenHeightDp
+    ).toFloat() / minOf(
+        configuration.screenWidthDp,
+        configuration.screenHeightDp
+    ).coerceAtLeast(1)
     Column(
         modifier = modifier.verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -347,7 +356,7 @@ internal fun BootOverlayCustomImageDialogContent(
             config = config,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(16f / 9f)
+                .aspectRatio(previewAspectRatio)
         )
         BootOverlayImageModeSelector(
             mode = config.mode,
@@ -1187,4 +1196,3 @@ internal fun ThemeColorSwatch(
             .border(width = 2.dp, color = borderColor, shape = CircleShape)
     )
 }
-
