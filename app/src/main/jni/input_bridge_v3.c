@@ -83,7 +83,6 @@ static POJAV_alListenerf_fn pojav_alListenerf = NULL;
 static POJAV_alGetListenerf_fn pojav_alGetListenerf = NULL;
 static void* pojav_openal_handle = NULL;
 static bool pojav_openal_resolved = false;
-static bool pojav_openal_resolution_attempted = false;
 static bool pojav_openal_no_context_logged = false;
 static bool pojav_openal_symbols_unavailable_logged = false;
 static bool pojav_openal_reset_failed_logged = false;
@@ -136,11 +135,6 @@ static bool resolveOpenalSymbols(void) {
     if (pojav_openal_resolved) {
         return true;
     }
-    if (pojav_openal_resolution_attempted) {
-        return false;
-    }
-    pojav_openal_resolution_attempted = true;
-
     resolveOpenalSymbolsFromHandle(RTLD_DEFAULT);
 
     if (pojav_alcGetCurrentContext == NULL ||
@@ -1069,22 +1063,28 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudio
                 completedGeneration,
                 memory_order_release
         );
-        if (!result) {
-            queueAudioRecoveryCommand();
-        }
         return result ? JNI_TRUE : JNI_FALSE;
     }
 
+    return JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRecovery(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
     int requestedGeneration = atomic_load_explicit(
             &pojav_audio_recovery_requested_generation,
             memory_order_acquire
     );
-    if (completedGeneration < requestedGeneration) {
-        return JNI_FALSE;
+    int completedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_completed_generation,
+            memory_order_acquire
+    );
+    if (requestedGeneration > completedGeneration) {
+        return;
     }
-
     queueAudioRecoveryCommand();
-    return JNI_FALSE;
 }
 const static JNINativeMethod critical_fcns[] = {
         {"nativeSetUseInputStackQueue", "(Z)V", critical_set_stackqueue},

@@ -212,6 +212,12 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeRequestAudioRecovery",
+            returnType = "void",
+            parameters = emptyList(),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeRecoverAudioOutput",
             returnType = "boolean",
             parameters = emptyList(),

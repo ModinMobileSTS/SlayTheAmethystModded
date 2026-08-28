@@ -1037,6 +1037,8 @@ internal class GameSessionCoordinator(
         }
         if (pendingAudioDeviceRecovery && recoverRuntimeAudioOutput()) {
             pendingAudioDeviceRecovery = false
+        } else if (pendingAudioDeviceRecovery) {
+            requestRuntimeAudioRecovery()
         }
         setRuntimeAudioMuted(false)
     }
@@ -1408,6 +1410,7 @@ internal class GameSessionCoordinator(
         if (forceMuteFirst) {
             setRuntimeAudioMuted(true)
         }
+        requestRuntimeAudioRecovery()
         restoreForegroundAudioIfNeeded()
         scheduleForegroundAudioRestoreRetries()
     }
@@ -1430,6 +1433,16 @@ internal class GameSessionCoordinator(
             CallbackBridge.nativeRecoverAudioOutput()
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    private fun requestRuntimeAudioRecovery() {
+        if (!jvmLaunchController.runtimeLifecycleReady) {
+            return
+        }
+        try {
+            CallbackBridge.nativeRequestAudioRecovery()
+        } catch (_: Throwable) {
         }
     }
 }
