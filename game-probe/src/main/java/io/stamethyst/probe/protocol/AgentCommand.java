@@ -9,6 +9,7 @@ public enum AgentCommand {
     UNSUBSCRIBE,
     QUIT,
     OBSERVE,
+    READY,
     EXEC,
     PERF_START,
     PERF_STOP,

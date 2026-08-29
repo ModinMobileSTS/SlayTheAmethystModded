@@ -232,6 +232,15 @@ public class AgentSessionTest {
     }
 
     @Test
+    public void readyReturnsErrorWhenBaseModNotLoaded() throws Exception {
+        BufferedReader serverReader = startSession();
+        writer.println("READY");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("ERROR "));
+        assertTrue(response, response.contains("DevConsole not loaded"));
+    }
+
+    @Test
     public void consoleUsesCapturedGameClassLoader() throws Exception {
         GameProbe.GAME_CLASSLOADER = new ClassLoader(null) {
             @Override

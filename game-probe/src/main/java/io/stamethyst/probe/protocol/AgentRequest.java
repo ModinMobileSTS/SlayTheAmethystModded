@@ -31,6 +31,7 @@ public class AgentRequest {
                 case LIST:
                 case QUIT:
                 case OBSERVE:
+                case READY:
                     return new AgentRequest(cmd, null, null, null);
                 case DETACH:
                     throw new IllegalArgumentException("DETACH requires a target agent ID");

@@ -56,6 +56,14 @@ class TestAgentClient(unittest.TestCase):
         state = client.observe()
         self.assertEqual(state, {"mode": "GAMEPLAY"})
 
+    def test_ready_uses_explicit_console_handshake(self):
+        client = self._mock_client("READY")
+        self.assertTrue(client.ready())
+
+    def test_ready_rejects_console_not_loaded(self):
+        client = self._mock_client("ERROR BaseMod DevConsole not loaded")
+        self.assertFalse(client.ready())
+
     def test_execute_returns_result(self):
         client = self._mock_client(
             'RESULT {"queued":true,"command":"PLAY_CARD"}')
