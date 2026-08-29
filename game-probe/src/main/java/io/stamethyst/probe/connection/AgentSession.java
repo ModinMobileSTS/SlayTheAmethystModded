@@ -263,15 +263,21 @@ public class AgentSession implements Runnable {
             // fall through to commands-map approach
         }
 
-        Class<?> consoleCommandClass = ReflectionUtil.forName("basemod.devcommands.ConsoleCommand");
+        String[] tokens = commandText.split("\\s+");
+        String commandName = tokens[0];
+        Class<?> consoleCommandClass = findConsoleCommandClass(commandName);
         if (consoleCommandClass != null) {
             try {
                 Method executeMethod = consoleCommandClass.getMethod("execute", String[].class);
-                executeMethod.invoke(null, (Object) commandText.split("\\s+"));
+                executeMethod.invoke(null, (Object) tokens);
                 return "ok";
             } catch (NoSuchMethodException e) {
                 // fall through to legacy commands-map approach
             }
+        }
+
+        if (ReflectionUtil.forName("basemod.devcommands.ConsoleCommand") != null) {
+            throw new RuntimeException("unknown console command: " + commandName);
         }
 
         Field commandsField = devConsoleClass.getDeclaredField("commands");
@@ -282,8 +288,6 @@ public class AgentSession implements Runnable {
         }
         java.util.Map<?, ?> commands = (java.util.Map<?, ?>) commandsObj;
 
-        String[] tokens = commandText.split("\\s+");
-        String commandName = tokens[0];
         String[] args = new String[tokens.length - 1];
         System.arraycopy(tokens, 1, args, 0, args.length);
 
@@ -295,6 +299,37 @@ public class AgentSession implements Runnable {
         Method execMethod = consoleCommand.getClass().getMethod("execute", String[].class);
         execMethod.invoke(consoleCommand, (Object) args);
         return "ok";
+    }
+
+    private Class<?> findConsoleCommandClass(String commandName) {
+        String className = "basemod.devcommands.ConsoleCommand";
+        Class<?> resolved = ReflectionUtil.forName(className);
+        if (registryContains(resolved, commandName)) {
+            return resolved;
+        }
+
+        Instrumentation inst = instrumentation != null ? instrumentation : GameProbe.getInstrumentation();
+        if (inst != null) {
+            for (Class<?> loaded : inst.getAllLoadedClasses()) {
+                if (className.equals(loaded.getName()) && loaded != resolved
+                    && registryContains(loaded, commandName)) {
+                    return loaded;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean registryContains(Class<?> consoleCommandClass, String commandName) {
+        if (consoleCommandClass == null) return false;
+        try {
+            Field rootField = consoleCommandClass.getDeclaredField("root");
+            rootField.setAccessible(true);
+            Object root = rootField.get(null);
+            return root instanceof Map && ((Map<?, ?>) root).containsKey(commandName);
+        } catch (ReflectiveOperationException e) {
+            return false;
+        }
     }
 
     private static String escapeJson(String s) {
