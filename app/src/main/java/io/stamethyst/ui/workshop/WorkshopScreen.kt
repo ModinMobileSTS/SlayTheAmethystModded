@@ -12,6 +12,9 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -199,11 +202,23 @@ internal fun WorkshopScreen(
         headerBaseHeightPx
     }
     val headerPlaceholderHeight = if (useFloatingHeader && state.listMode == WorkshopListMode.Browse) 250.dp else 102.dp
-    val headerMeasuredHeight = if (effectiveHeaderHeightPx == 0) {
+    val headerContentHeight = if (effectiveHeaderHeightPx == 0) {
         headerPlaceholderHeight
     } else {
         with(density) { effectiveHeaderHeightPx.toDp() }
     }
+    val showHeaderLoadProgress = useFloatingHeader &&
+        state.listMode == WorkshopListMode.Browse &&
+        state.browseLoading
+    // One animation owns the progress row's height. The row renders at this height and the list inset
+    // adds the same value, so both move together. Deriving the inset from the row's measured size
+    // instead would put the list a frame behind the header and read as a stutter.
+    val headerProgressHeight by animateDpAsState(
+        targetValue = if (showHeaderLoadProgress) workshopLoadProgressBarHeight() else 0.dp,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "workshopHeaderProgressHeight",
+    )
+    val headerMeasuredHeight = headerContentHeight + headerProgressHeight
     val headerContentTopInset = headerMeasuredHeight + 16.dp
     val refreshIndicatorTopInset = headerMeasuredHeight + 8.dp
     val pullToRefreshState = rememberPullToRefreshState()
@@ -433,12 +448,17 @@ internal fun WorkshopScreen(
                 contentPadding = PaddingValues(0.dp),
                 onHeightChanged = {
                     if (!headerCollapsed) {
+                        // Subtract the animating progress row so the cached card height stays stable.
+                        // Folding a transient height in here would leave a gap above the list after
+                        // loading ends, and would also feed layout back into layout.
+                        val progressHeightPx = with(density) { headerProgressHeight.roundToPx() }
+                        val cardHeightWithoutProgress = (it - progressHeightPx).coerceAtLeast(0)
                         when {
                             headerSearchHistoryExpanded -> {
-                                headerSearchExpandedHeightPx = it
+                                headerSearchExpandedHeightPx = cardHeightWithoutProgress
                             }
                             headerBaseHeightPx == 0 || headerSearchExpandedHeightPx == 0 -> {
-                                headerBaseHeightPx = maxOf(headerBaseHeightPx, it)
+                                headerBaseHeightPx = maxOf(headerBaseHeightPx, cardHeightWithoutProgress)
                             }
                         }
                     }
@@ -492,6 +512,12 @@ internal fun WorkshopScreen(
                     }
                 } else {
                     null
+                },
+                footerContent = {
+                    WorkshopLoadProgressBar(
+                        progress = state.loadProgress,
+                        revealHeight = headerProgressHeight,
+                    )
                 },
             )
         }

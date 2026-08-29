@@ -20,6 +20,7 @@ import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.RuntimeTextureAtlasDownscaleQuality
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -50,6 +51,7 @@ object LauncherConfig {
     private const val PREF_KEY_TOUCH_MOUSE_NEW_INTERACTION = "touch_mouse_new_interaction"
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
+    private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -196,6 +198,17 @@ object LauncherConfig {
         "steam_cloud_watt_acceleration_enabled"
     private const val PREF_KEY_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED =
         "steam_cloud_auto_launch_after_sync_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED =
+        "steam_cloud_background_launch_requested"
+    private const val PREF_KEY_STEAM_GAME_PRESENCE_ENABLED =
+        "steam_game_presence_enabled"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_PREFIX = "steam_rich_presence_prefix"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_CHARACTER =
+        "steam_rich_presence_show_character"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_FLOOR = "steam_rich_presence_show_floor"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ASCENSION =
+        "steam_rich_presence_show_ascension"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ACT = "steam_rich_presence_show_act"
     private const val PREF_KEY_WORKSHOP_MAX_CONCURRENT_DOWNLOADS =
         "workshop_max_concurrent_downloads"
     private const val PREF_KEY_WORKSHOP_DOWNLOAD_THREADS = "workshop_download_threads"
@@ -215,6 +228,10 @@ object LauncherConfig {
         "enabled_mod_size_warning_dismissed"
     private const val PREF_KEY_LAST_WORKSHOP_UPDATE_CHECK_AT_MS = "last_workshop_update_check_at_ms"
     private const val PREF_KEY_STEAM_CLOUD_SAVE_MODE = "steam_cloud_save_mode"
+    private const val PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING =
+        "steam_cloud_independent_switch_pending"
+    private const val PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID =
+        "steam_cloud_pending_profile_steam_id"
     private const val PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS =
         "steam_cloud_sync_blacklist_paths"
     private const val PREF_KEY_PREFERRED_UPDATE_MIRROR_ID = "preferred_update_mirror_id"
@@ -227,6 +244,12 @@ object LauncherConfig {
     private const val PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED = "basic_tutorial_notice_dismissed"
     private const val PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED =
         "developer_settings_warning_dismissed"
+    private const val PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE =
+        "steam_achievement_debug_mode"
+    private const val PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED =
+        "steam_achievement_sync_enabled"
+    private const val PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED =
+        "achievement_unlock_notification_enabled"
     private const val PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL =
         "use_local_test_cloud_control"
     private const val PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL =
@@ -241,6 +264,7 @@ object LauncherConfig {
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
+    const val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED = true
     const val DEFAULT_TARGET_FPS = 90
     val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 240)
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
@@ -288,6 +312,15 @@ object LauncherConfig {
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode =
         TouchMouseInteractionMode.OPEN_MENU_ON_TAP
     const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
+    val DEFAULT_FLOATING_TOOL_BUTTONS: Set<String> = emptySet()
+    val FLOATING_TOOL_BUTTON_IDS: List<String> = listOf(
+        "ctrl",
+        "shift",
+        "tab",
+        "alt",
+        "lock",
+        "wheel",
+    )
     const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK = false
@@ -317,6 +350,7 @@ object LauncherConfig {
     const val DEFAULT_WATT_ACCELERATION_ENABLED = true
     const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED = false
+    const val DEFAULT_STEAM_GAME_PRESENCE_ENABLED = false
     const val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
     const val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
     const val MAX_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 4
@@ -580,6 +614,42 @@ object LauncherConfig {
         }
     }
 
+    fun isSteamAchievementDebugModeEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE, false)
+    }
+
+    fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE, enabled)
+        }
+    }
+
+    fun isSteamAchievementSyncEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED,
+            false,
+        )
+    }
+
+    fun setSteamAchievementSyncEnabled(context: Context, enabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED, enabled)
+        }
+    }
+
+    fun isAchievementUnlockNotificationEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED,
+            DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED,
+        )
+    }
+
+    fun setAchievementUnlockNotificationEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED, enabled)
+        }
+    }
+
     fun isLocalTestCloudControlEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL, false)
     }
@@ -701,6 +771,21 @@ object LauncherConfig {
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED, enabled)
+        }
+    }
+
+    fun readFloatingToolButtons(context: Context): Set<String> {
+        val stored = prefs(context).getStringSet(PREF_KEY_FLOATING_TOOL_BUTTONS, null)
+            ?: return DEFAULT_FLOATING_TOOL_BUTTONS
+        return stored.intersect(FLOATING_TOOL_BUTTON_IDS.toSet())
+    }
+
+    fun saveFloatingToolButtons(context: Context, buttons: Set<String>) {
+        prefs(context).edit {
+            putStringSet(
+                PREF_KEY_FLOATING_TOOL_BUTTONS,
+                buttons.intersect(FLOATING_TOOL_BUTTON_IDS.toSet()).toSet()
+            )
         }
     }
 
@@ -1183,8 +1268,11 @@ object LauncherConfig {
     }
 
     fun resolveJvmHeapStartMb(heapMaxMb: Int): Int {
-        val normalizedMax = normalizeJvmHeapMaxMb(heapMaxMb)
-        return normalizedMax.coerceAtMost(DEFAULT_JVM_HEAP_MAX_MB)
+        // Xms follows Xmx so G1 commits the full heap at startup.
+        // The old coerceAtMost(512) kept Xms at 512 MB regardless of the
+        // user setting, causing G1 to never expand past 512 MB committed
+        // even when Xmx was set to 1024 MB+.
+        return normalizeJvmHeapMaxMb(heapMaxMb)
     }
 
     fun readJvmHeapMaxMb(context: Context): Int {
@@ -1217,16 +1305,14 @@ object LauncherConfig {
 
     fun isGamePerformanceDeepDiagnosticsEnabled(context: Context): Boolean {
         return resolveGamePerformanceDeepDiagnosticsEnabled(
-            showPerformanceOverlay = isGamePerformanceOverlayEnabled(context),
             gpuResourceDiagEnabled = isGpuResourceDiagEnabled(context)
         )
     }
 
     fun resolveGamePerformanceDeepDiagnosticsEnabled(
-        showPerformanceOverlay: Boolean,
         gpuResourceDiagEnabled: Boolean
     ): Boolean {
-        return showPerformanceOverlay && gpuResourceDiagEnabled
+        return gpuResourceDiagEnabled
     }
 
     fun isSustainedPerformanceModeEnabled(context: Context): Boolean {
@@ -1952,6 +2038,57 @@ object LauncherConfig {
         }
     }
 
+    fun isSteamCloudBackgroundLaunchRequested(context: Context): Boolean =
+        prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED,
+            false,
+        )
+
+    fun setSteamCloudBackgroundLaunchRequested(context: Context, requested: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED, requested)
+        }
+    }
+
+    fun isSteamGamePresenceEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_GAME_PRESENCE_ENABLED,
+            DEFAULT_STEAM_GAME_PRESENCE_ENABLED,
+        )
+    }
+
+    fun setSteamGamePresenceEnabled(context: Context, enabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_GAME_PRESENCE_ENABLED, enabled)
+        }
+    }
+
+    fun readRichPresenceDisplayPreferences(context: Context): RichPresenceDisplayPreferences {
+        val preferences = prefs(context, crossProcess = true)
+        return RichPresenceDisplayPreferences(
+            prefix = RichPresencePrefix.fromPersistedValue(
+                preferences.getString(PREF_KEY_STEAM_RICH_PRESENCE_PREFIX, null),
+            ),
+            showCharacter = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_CHARACTER, true),
+            showFloor = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_FLOOR, true),
+            showAscension = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ASCENSION, false),
+            showAct = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ACT, false),
+        )
+    }
+
+    fun saveRichPresenceDisplayPreferences(
+        context: Context,
+        settings: RichPresenceDisplayPreferences,
+    ) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putString(PREF_KEY_STEAM_RICH_PRESENCE_PREFIX, settings.prefix.persistedValue)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_CHARACTER, settings.showCharacter)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_FLOOR, settings.showFloor)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ASCENSION, settings.showAscension)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ACT, settings.showAct)
+        }
+    }
+
     fun normalizeWorkshopMaxConcurrentDownloads(value: Int): Int {
         return value.coerceIn(MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS, MAX_WORKSHOP_MAX_CONCURRENT_DOWNLOADS)
     }
@@ -2093,7 +2230,7 @@ object LauncherConfig {
 
     fun readSteamCloudSaveMode(context: Context): SteamCloudSaveMode {
         return SteamCloudSaveMode.fromPersistedValue(
-            prefs(context).getString(
+            prefs(context, crossProcess = true).getString(
                 PREF_KEY_STEAM_CLOUD_SAVE_MODE,
                 DEFAULT_STEAM_CLOUD_SAVE_MODE.persistedValue
             )
@@ -2101,13 +2238,67 @@ object LauncherConfig {
     }
 
     fun saveSteamCloudSaveMode(context: Context, mode: SteamCloudSaveMode) {
-        prefs(context).edit {
-            putString(PREF_KEY_STEAM_CLOUD_SAVE_MODE, mode.persistedValue)
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putString(PREF_KEY_STEAM_CLOUD_SAVE_MODE, mode.persistedValue)
+                    .commit()
+            ) { "Failed to persist Steam Cloud save mode." }
+        }
+    }
+
+    fun isSteamCloudIndependentSwitchPending(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING,
+            false,
+        )
+    }
+
+    fun readSteamCloudPendingProfileSteamId(context: Context): String {
+        return prefs(context, crossProcess = true)
+            .getString(PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID, "")
+            ?.trim()
+            .orEmpty()
+    }
+
+    fun saveSteamCloudIndependentSwitchPending(
+        context: Context,
+        pending: Boolean,
+        cloudProfileSteamId: String = "",
+    ) {
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putBoolean(PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING, pending)
+                    .putString(
+                        PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID,
+                        cloudProfileSteamId.trim().takeIf { pending }.orEmpty(),
+                    )
+                    .commit()
+            ) { "Failed to persist deferred Steam Cloud profile switch state." }
+        }
+    }
+
+    internal fun completeSteamCloudIndependentSwitch(context: Context) {
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putString(
+                        PREF_KEY_STEAM_CLOUD_SAVE_MODE,
+                        SteamCloudSaveMode.INDEPENDENT.persistedValue,
+                    )
+                    .putBoolean(PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING, false)
+                    .remove(PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID)
+                    .commit()
+            ) { "Failed to persist completed Steam Cloud profile switch." }
         }
     }
 
     fun readSteamCloudSyncBlacklistPaths(context: Context): Set<String> {
-        val preferences = prefs(context)
+        val preferences = prefs(context, crossProcess = true)
         if (!preferences.contains(PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS)) {
             return LinkedHashSet(DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS)
         }
@@ -2117,13 +2308,18 @@ object LauncherConfig {
     }
 
     fun saveSteamCloudSyncBlacklistPaths(context: Context, localRelativePaths: Set<String>) {
-        prefs(context).edit {
-            putStringSet(
-                PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
-                LinkedHashSet(
-                    SteamCloudSyncBlacklist.normalizeLocalRelativePaths(localRelativePaths)
-                )
-            )
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putStringSet(
+                        PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
+                        LinkedHashSet(
+                            SteamCloudSyncBlacklist.normalizeLocalRelativePaths(localRelativePaths)
+                        )
+                    )
+                    .commit()
+            ) { "Failed to persist Steam Cloud sync blacklist." }
         }
     }
 

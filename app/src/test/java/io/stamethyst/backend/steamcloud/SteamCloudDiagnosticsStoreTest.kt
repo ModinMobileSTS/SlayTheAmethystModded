@@ -8,6 +8,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,6 +77,55 @@ class SteamCloudDiagnosticsStoreTest {
             assertTrue(text.contains("Exception Chain:"))
             assertTrue(text.contains("Full Exception Stack:"))
             assertTrue(text.contains("Caused by: java.io.IOException: root network failure"))
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun gamePresenceSummary_usesInternalStorageAndReplacesEarlierStatus() {
+        val roots = TestRoots.create("steam-game-presence-diagnostics")
+        try {
+            SteamGamePresenceDiagnosticsStore.writeSummary(
+                roots.context,
+                "START_REQUESTED",
+                "test-user",
+                7_000L,
+                7_000L,
+                false,
+                false,
+                null,
+                null,
+                "foreground_service_start_requested",
+            )
+            val summary = SteamGamePresenceDiagnosticsStore.summaryFile(roots.context)
+            assertEquals(
+                File(roots.context.filesDir, "steam-game-presence/last-operation-summary.txt"),
+                summary,
+            )
+
+            SteamGamePresenceDiagnosticsStore.writeSummary(
+                roots.context,
+                "STARTED",
+                "test-user",
+                7_000L,
+                8_000L,
+                false,
+                false,
+                null,
+                null,
+                "foreground_service_started",
+            )
+
+            val text = summary.readText(StandardCharsets.UTF_8)
+            assertTrue(text.contains("Outcome: STARTED"))
+            assertTrue(text.contains("Summary file: ${summary.absolutePath}"))
+            assertFalse(text.contains("Outcome: START_REQUESTED"))
+
+            val events = SteamGamePresenceDiagnosticsStore.eventLogFile(roots.context)
+                .readText(StandardCharsets.UTF_8)
+            assertTrue(events.contains("outcome=START_REQUESTED"))
+            assertTrue(events.contains("outcome=STARTED"))
         } finally {
             roots.rootDir.deleteRecursively()
         }

@@ -8,6 +8,7 @@ option java_multiple_files = true;
 message CMsgProtoBufHeader {
   optional fixed64 steamid = 1;
   optional int32 client_sessionid = 2;
+  optional uint32 routing_appid = 3;
   optional fixed64 jobid_source = 10 [default = 18446744073709551615];
   optional fixed64 jobid_target = 11 [default = 18446744073709551615];
   optional string target_job_name = 12;

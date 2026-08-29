@@ -129,12 +129,14 @@ import io.stamethyst.ui.settings.native_library.LauncherNativeLibraryMarketScree
 import io.stamethyst.ui.settings.core.LauncherSettingsAboutScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsFeedbackScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsGameScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsPerformanceScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsLauncherScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsMarketCloudScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsWorkshopAutoImportDefaultsScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudGuardScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginScreen
+import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginMethodScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSaveSettingsScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSyncBlacklistSettingsScreen
 import io.stamethyst.ui.settings.core.SettingsEffectsHandler
@@ -400,7 +402,11 @@ fun LauncherContent(
         if (refreshPlan.shouldRefreshMain) {
             mainViewModel.refresh(activity)
             if (refreshPlan.shouldForceSyncIndicator) {
-                mainViewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
+                mainViewModel.syncSteamCloudIndicatorIfNeeded(
+                    host = activity,
+                    force = true,
+                    userInitiated = false,
+                )
             }
         }
     }
@@ -728,6 +734,13 @@ fun LauncherContent(
                             )
                         }
 
+                        entry<Route.SettingsPerformance> {
+                            LauncherSettingsPerformanceScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
                         entry<Route.SettingsMarketCloud> {
                             LauncherSettingsMarketCloudScreen(
                                 viewModel = settingsViewModel,
@@ -837,7 +850,9 @@ fun LauncherContent(
                             LauncherSteamCloudLoginScreen(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
-                                challengeRoute = Route.QuickStartSteamGuard,
+                                challengeRoute = Route.QuickStartSteamMethod,
+                                guardRoute = Route.QuickStartSteamGuard,
+                                loginRoute = Route.QuickStartSteamLogin,
                                 onLoginCompleted = {
                                     navigator.resetRoot(Route.QuickStartSteamDownload)
                                 },
@@ -849,6 +864,22 @@ fun LauncherContent(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
                                 onLoginCompleted = ::handleSteamCloudLoginCompleted,
+                            )
+                        }
+
+                        entry<Route.SteamCloudLoginMethod> {
+                            LauncherSteamCloudLoginMethodScreen(
+                                viewModel = settingsViewModel,
+                                guardRoute = Route.SteamCloudGuard,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.QuickStartSteamMethod> {
+                            LauncherSteamCloudLoginMethodScreen(
+                                viewModel = settingsViewModel,
+                                guardRoute = Route.QuickStartSteamGuard,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
 
@@ -1521,17 +1552,19 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.Workshop -> Route.Workshop
         Route.WorkshopSubscriptions -> Route.Workshop
         Route.Settings -> Route.Settings
-        Route.SettingsLauncher,
-        Route.SettingsGame,
-        Route.SettingsMarketCloud,
+         Route.SettingsLauncher,
+         Route.SettingsGame,
+         Route.SettingsPerformance,
+         Route.SettingsMarketCloud,
         Route.SettingsWorkshopAutoImportDefaults,
         Route.SettingsFeedback,
         Route.SettingsAbout -> Route.Settings
         Route.CrashRecovery,
         is Route.WorkshopDetail,
         Route.WorkshopDownloadCenter,
-        Route.SteamCloudLogin,
-        Route.SteamCloudGuard,
+         Route.SteamCloudLogin,
+         Route.SteamCloudLoginMethod,
+         Route.SteamCloudGuard,
         Route.SteamCloudSaveSettings,
         Route.SteamCloudSyncBlacklistSettings,
         is Route.BaiduTranslationCredentials,
@@ -1541,8 +1574,9 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.MobileGluesSettings,
         Route.QuickStart,
         Route.QuickStartAutoImport,
-        Route.QuickStartSteamLogin,
-        Route.QuickStartSteamGuard,
+         Route.QuickStartSteamLogin,
+         Route.QuickStartSteamMethod,
+         Route.QuickStartSteamGuard,
         Route.QuickStartSteamDownload,
         Route.QuickStartJarImport,
         Route.FirstRunSetup,

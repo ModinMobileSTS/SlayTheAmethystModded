@@ -13,6 +13,8 @@ import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
+import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.utils.JREUtils
@@ -40,6 +42,8 @@ class JvmLaunchController(
     private val autoplayMode: AutoplayMode,
     private val autoplaySingleRoomSpecPath: String,
     private val autoplayChoiceDelayMs: Long,
+    private val autoplaySingleRoomBenchMode: Boolean = false,
+    private val performanceDeepDiagnostics: Boolean,
     private val cardObtainEffectOwnershipCompatEnabled: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
@@ -69,7 +73,8 @@ class JvmLaunchController(
         private const val LOGCAT_TAG = "STS-JVM"
         private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
             "amethyst.gdx.active_refresh_rate",
-            "amethyst.gdx.frame_profiler",
+            "amethyst.gdx.frame_ring",
+            "amethyst.gdx.frame_hud",
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",
             "amethyst.bridge.heap_snapshot",
@@ -79,9 +84,7 @@ class JvmLaunchController(
             "amethyst.mts.patch_cache.jar",
             "amethyst.mts.patch_cache.marker",
             "amethyst.mts.patch_cache.package_dir",
-            "amethyst.mts.patch_cache.expected",
-            "amethyst.runtime_compat.loadout_class_scan_cache",
-            "amethyst.loadout.scan_cache_dir"
+            "amethyst.mts.patch_cache.expected"
         )
     }
 
@@ -201,7 +204,16 @@ class JvmLaunchController(
 
         val launchThread = Thread({
             val threadStartedAtMs = SystemClock.elapsedRealtime()
+            var liveSaveLease: SteamCloudLiveSaveLease.Lease? = null
+            var launchExitCode: Int? = null
+            var launchFailure: Throwable? = null
             try {
+                throwIfCancelled()
+                if (LauncherConfig.isSteamCloudIndependentSwitchPending(activity)) {
+                    SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(activity)
+                }
+                throwIfCancelled()
+                liveSaveLease = SteamCloudLiveSaveLease.acquireForGame(activity)
                 throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(activity)
                 val resolvedJavaHome = measureStartupStep("resolve_java_home") {
@@ -338,6 +350,13 @@ class JvmLaunchController(
                     JREUtils.chdir(RuntimePaths.stsRoot(activity).absolutePath)
                 }
 
+                // ModTheSpire can load Settings before LWJGL enters its main loop. Rewrite the
+                // fixed fullscreen-priority canvas after chdir, immediately before JVM launch, so
+                // DisplayConfig.readConfig cannot observe an old/default window size.
+                measureStartupStep("sync_display_config_before_jvm") {
+                    onSurfaceSizeSync()
+                }
+
                 throwIfCancelled()
                 measureStartupStep("input_bridge_ready") {
                     CallbackBridge.nativeSetUseInputStackQueue(true)
@@ -367,7 +386,9 @@ class JvmLaunchController(
                             autoplayMode,
                             autoplaySingleRoomSpecPath,
                             autoplayChoiceDelayMs,
-                            cardObtainEffectOwnershipCompatEnabled
+                            autoplaySingleRoomBenchMode,
+                            cardObtainEffectOwnershipCompatEnabled,
+                            performanceDeepDiagnostics
                         )
                     )
                     args
@@ -419,13 +440,21 @@ class JvmLaunchController(
                 }
 
                 throwIfCancelled()
-                val exitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
-                onLaunchComplete(exitCode)
+                launchExitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
 
             } catch (t: Throwable) {
                 runtimeLifecycleReady = false
-                onLaunchFailed(t)
+                launchFailure = t
             } finally {
+                runCatching { liveSaveLease?.close() }
+                    .onFailure { cleanupError ->
+                        val currentFailure = launchFailure
+                        if (currentFailure == null) {
+                            launchFailure = cleanupError
+                        } else {
+                            currentFailure.addSuppressed(cleanupError)
+                        }
+                    }
                 runtimeLifecycleReady = false
                 runtimeMemorySnapshot = null
                 peakRuntimeMemorySnapshot = null
@@ -436,6 +465,12 @@ class JvmLaunchController(
                 stopBootBridgeEventMonitor()
                 jvmLaunchThread = null
                 lastLoggedHeapPressureBucket = -1
+            }
+            val failure = launchFailure
+            if (failure != null) {
+                onLaunchFailed(failure)
+            } else {
+                onLaunchComplete(requireNotNull(launchExitCode))
             }
         }, "STS-JVM-Thread")
 
@@ -1023,8 +1058,6 @@ class JvmLaunchController(
     private fun logPerformanceLaunchAudit(launchArgs: List<String>) {
         val extras = LinkedHashMap<String, String>()
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(activity)
-        val performanceDeepDiagnostics =
-            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(activity)
         extras["launchMode"] = launchMode
         extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
         extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()

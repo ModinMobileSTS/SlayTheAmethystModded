@@ -4,7 +4,7 @@ import android.content.Context
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.fs.FileTreeCleaner
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
@@ -455,13 +455,13 @@ object ExternalResourcePackService {
         progressCallback: StartupProgressCallback?,
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
     ) {
-        val downloadClients = GithubAcceleratedHttp.createClientPair(
+        val downloadClients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,
             followRedirects = true
         )
-        val probeClients = GithubAcceleratedHttp.createClientPair(
+        val probeClients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = PROBE_CONNECT_TIMEOUT_MS,
             readTimeoutMs = PROBE_READ_TIMEOUT_MS,

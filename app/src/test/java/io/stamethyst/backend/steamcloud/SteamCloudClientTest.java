@@ -1,26 +1,135 @@
 package io.stamethyst.backend.steamcloud;
 
 import in.dragonbra.javasteam.enums.EResult;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient;
 import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
 import in.dragonbra.javasteam.types.SteamID;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.Collections;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public final class SteamCloudClientTest {
+    @Test
+    public void requireFullFileChangelist_rejectsDeltaResponse() {
+        IOException error = Assert.assertThrows(
+            IOException.class,
+            () -> SteamCloudClient.requireFullFileChangelist(true, 42L)
+        );
+
+        Assert.assertTrue(error.getMessage().contains("delta"));
+        Assert.assertTrue(error.getMessage().contains("42"));
+    }
+
+    @Test
+    public void requireFullFileChangelist_acceptsFullResponse() throws Exception {
+        SteamCloudClient.requireFullFileChangelist(false, 42L);
+    }
+
+    @Test
+    public void requireMatchingSteamIdentity_rejectsMismatchedAccount() {
+        Assert.assertThrows(
+            IOException.class,
+            () -> SteamCloudClient.requireMatchingSteamIdentity("76561198000000001", 76561198000000002L)
+        );
+    }
+
+    @Test
+    public void requireMatchingSteamIdentity_acceptsExpectedAccount() throws Exception {
+        SteamCloudClient.requireMatchingSteamIdentity("76561198000000001", 76561198000000001L);
+    }
+
+    @Test
+    public void requireMatchingSteamIdentity_allowsLegacyCallerWithoutSavedIdentity() throws Exception {
+        SteamCloudClient.requireMatchingSteamIdentity("", 76561198000000001L);
+    }
+
+    @Test
+    public void buildClientDeleteFileRequest_marksAutosaveDeletionExplicitAndBatched() {
+        SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request request =
+            SteamCloudClient.buildClientDeleteFileRequest(
+                646570,
+                "%GameInstall%saves/1_IRONCLAD.autosave",
+                123L
+            );
+
+        Assert.assertEquals(646570, request.getAppid());
+        Assert.assertEquals("%GameInstall%saves/1_IRONCLAD.autosave", request.getFilename());
+        Assert.assertTrue(request.getIsExplicitDelete());
+        Assert.assertEquals(123L, request.getUploadBatchId());
+    }
+
+    @Test
+    public void buildClientDeleteFileRequest_rejectsMissingBatchId() {
+        Assert.assertThrows(
+            IllegalArgumentException.class,
+            () -> SteamCloudClient.buildClientDeleteFileRequest(
+                646570,
+                "%GameInstall%saves/1_IRONCLAD.autosave",
+                0L
+            )
+        );
+    }
+
+    @Test
+    public void requireIndexedChangelistValue_rejectsOutOfRangeIndex() {
+        Assert.assertThrows(
+            IOException.class,
+            () -> SteamCloudClient.requireIndexedChangelistValue("path prefix", 2, 1, index -> "prefix")
+        );
+    }
+
+    @Test
+    public void requireKnownPersistState_acceptsKnownDefaultAndRejectsUnknownWireValue() throws Exception {
+        SteammessagesCloudSteamclient.CCloud_AppFileInfo defaultState =
+            SteammessagesCloudSteamclient.CCloud_AppFileInfo.newBuilder().build();
+        Assert.assertTrue(SteamCloudClient.requireKnownPersistState(defaultState).contains("Persisted"));
+
+        SteammessagesCloudSteamclient.CCloud_AppFileInfo unknownState =
+            SteammessagesCloudSteamclient.CCloud_AppFileInfo.parseFrom(new byte[] { 40, 99 });
+        Assert.assertThrows(
+            IOException.class,
+            () -> SteamCloudClient.requireKnownPersistState(unknownState)
+        );
+    }
+
+    @Test
+    public void createUploadSnapshot_usesDedicatedDirectory() throws Exception {
+        File root = Files.createTempDirectory("steam-cloud-upload-snapshot-test").toFile();
+        File source = new File(root, "preferences/STSPlayer");
+        File snapshotDirectory = new File(root, "launcher/steam-cloud/upload-snapshots");
+        source.getParentFile().mkdirs();
+        Files.write(source.toPath(), "save".getBytes(StandardCharsets.UTF_8));
+        File snapshot = null;
+        try {
+            snapshot = SteamCloudClient.createUploadSnapshot(source, snapshotDirectory);
+            Assert.assertEquals(snapshotDirectory.getCanonicalFile(), snapshot.getParentFile().getCanonicalFile());
+            Assert.assertArrayEquals(Files.readAllBytes(source.toPath()), Files.readAllBytes(snapshot.toPath()));
+        } finally {
+            if (snapshot != null) {
+                snapshot.delete();
+            }
+            root.delete();
+        }
+    }
+
     @Test
     public void ensureDirectoryExists_toleratesConcurrentCreationRace() throws Exception {
         SteamCloudClient.ensureDirectoryExists(
@@ -91,8 +200,120 @@ public final class SteamCloudClientTest {
     }
 
     @Test
+    public void downloadLimits_defaultsToBoundedValues() {
+        SteamCloudClient.DownloadLimits limits = SteamCloudClient.DownloadLimits.defaults();
+
+        Assert.assertEquals(
+            SteamCloudClient.DEFAULT_MAX_COMPRESSED_DOWNLOAD_BYTES,
+            limits.getMaxCompressedDownloadBytes()
+        );
+        Assert.assertEquals(
+            SteamCloudClient.DEFAULT_MAX_RAW_DOWNLOAD_BYTES,
+            limits.getMaxRawDownloadBytes()
+        );
+    }
+
+    @Test
+    public void downloadLimits_rejectsNegativeValues() {
+        Assert.assertThrows(
+            IllegalArgumentException.class,
+            () -> new SteamCloudClient.DownloadLimits(-1L, 1L)
+        );
+        Assert.assertThrows(
+            IllegalArgumentException.class,
+            () -> new SteamCloudClient.DownloadLimits(1L, -1L)
+        );
+    }
+
+    @Test
+    public void copyToFile_enforcesConfiguredLimitBeforeWritingPastIt() throws Exception {
+        File directory = Files.createTempDirectory("steam-cloud-client-test").toFile();
+        File target = new File(directory, "download.tmp");
+        try {
+            InvocationTargetException error = Assert.assertThrows(
+                InvocationTargetException.class,
+                () -> invokeCopyToFile(
+                    "too-large".getBytes(StandardCharsets.UTF_8),
+                    target,
+                    3L,
+                    "test download"
+                )
+            );
+
+            Assert.assertTrue(error.getCause() instanceof IOException);
+            Assert.assertTrue(error.getCause().getMessage().contains("limit=3"));
+            Assert.assertTrue(target.length() <= 3L);
+        } finally {
+            target.delete();
+            directory.delete();
+        }
+    }
+
+    @Test
+    public void maybeUnzip_acceptsOneSafeFileEntry() throws Exception {
+        File directory = Files.createTempDirectory("steam-cloud-client-test").toFile();
+        File compressed = new File(directory, "download.zip");
+        File raw = new File(directory, "download.raw");
+        try {
+            writeZip(compressed, new String[] { "payload.dat" }, new byte[][] { "abc".getBytes(StandardCharsets.UTF_8) });
+
+            Assert.assertEquals(
+                3L,
+                invokeMaybeUnzip(compressed, raw, "remote/path", 10L)
+            );
+            Assert.assertArrayEquals(
+                "abc".getBytes(StandardCharsets.UTF_8),
+                Files.readAllBytes(raw.toPath())
+            );
+        } finally {
+            compressed.delete();
+            raw.delete();
+            directory.delete();
+        }
+    }
+
+    @Test
+    public void maybeUnzip_rejectsUnsafeAndMultipleEntries() throws Exception {
+        File directory = Files.createTempDirectory("steam-cloud-client-test").toFile();
+        File unsafeZip = new File(directory, "unsafe.zip");
+        File multipleZip = new File(directory, "multiple.zip");
+        File raw = new File(directory, "download.raw");
+        try {
+            writeZip(
+                unsafeZip,
+                new String[] { "../escape.dat" },
+                new byte[][] { "abc".getBytes(StandardCharsets.UTF_8) }
+            );
+            InvocationTargetException unsafeError = Assert.assertThrows(
+                InvocationTargetException.class,
+                () -> invokeMaybeUnzip(unsafeZip, raw, "remote/path", 10L)
+            );
+            Assert.assertTrue(unsafeError.getCause() instanceof IOException);
+            Assert.assertTrue(unsafeError.getCause().getMessage().contains("unsafe entry path"));
+
+            writeZip(
+                multipleZip,
+                new String[] { "first.dat", "second.dat" },
+                new byte[][] { "a".getBytes(StandardCharsets.UTF_8), "b".getBytes(StandardCharsets.UTF_8) }
+            );
+            InvocationTargetException multipleError = Assert.assertThrows(
+                InvocationTargetException.class,
+                () -> invokeMaybeUnzip(multipleZip, raw, "remote/path", 10L)
+            );
+            Assert.assertTrue(multipleError.getCause() instanceof IOException);
+            Assert.assertTrue(multipleError.getCause().getMessage().contains("multiple entries"));
+        } finally {
+            unsafeZip.delete();
+            multipleZip.delete();
+            raw.delete();
+            directory.delete();
+        }
+    }
+
+    @Test
     public void isRetryableBeginHttpUploadResult_retriesTooManyPending() throws Exception {
         Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.TooManyPending));
+        Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.DuplicateRequest));
         Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.Timeout));
         Assert.assertFalse(invokeIsRetryableBeginHttpUploadResult(EResult.AccessDenied));
     }
@@ -104,6 +325,12 @@ public final class SteamCloudClientTest {
         Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.OK, 0L));
         Assert.assertFalse(invokeIsRetryableBeginAppUploadBatchResult(EResult.OK, 1L));
         Assert.assertFalse(invokeIsRetryableBeginAppUploadBatchResult(EResult.AccessDenied, 0L));
+    }
+
+    @Test
+    public void isRetryableBeginAppUploadBatchResult_recognizesSteamCode108AsTooManyPending() throws Exception {
+        Assert.assertEquals(108, EResult.TooManyPending.code());
+        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.from(108), 0L));
     }
 
     @Test
@@ -120,6 +347,8 @@ public final class SteamCloudClientTest {
         Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 1));
         Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 2));
         Assert.assertEquals(120_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 7));
+        Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.DuplicateRequest, 1));
+        Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.DuplicateRequest, 2));
         Assert.assertEquals(2_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 1));
         Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 4));
     }
@@ -290,6 +519,56 @@ public final class SteamCloudClientTest {
         method.invoke(null, rawBytes, expectedRawSize, expectedSha1, remotePath);
     }
 
+    private static long invokeCopyToFile(
+        byte[] input,
+        File target,
+        long maxBytes,
+        String description
+    ) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "copyToFile",
+            java.io.InputStream.class,
+            File.class,
+            long.class,
+            String.class
+        );
+        method.setAccessible(true);
+        return (long) method.invoke(
+            null,
+            new ByteArrayInputStream(input),
+            target,
+            maxBytes,
+            description
+        );
+    }
+
+    private static long invokeMaybeUnzip(
+        File compressed,
+        File raw,
+        String remotePath,
+        long maxRawBytes
+    ) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "maybeUnzip",
+            File.class,
+            File.class,
+            String.class,
+            long.class
+        );
+        method.setAccessible(true);
+        return (long) method.invoke(null, compressed, raw, remotePath, maxRawBytes);
+    }
+
+    private static void writeZip(File target, String[] names, byte[][] contents) throws IOException {
+        try (ZipOutputStream output = new ZipOutputStream(new FileOutputStream(target))) {
+            for (int index = 0; index < names.length; index++) {
+                output.putNextEntry(new ZipEntry(names[index]));
+                output.write(contents[index]);
+                output.closeEntry();
+            }
+        }
+    }
+
     private static boolean invokeIsRetryableBeginHttpUploadResult(EResult result) throws Exception {
         Method method = SteamCloudClient.class.getDeclaredMethod(
             "isRetryableBeginHttpUploadResult",
@@ -397,7 +676,9 @@ public final class SteamCloudClientTest {
                 String.class,
                 String.class,
                 long.class,
-                long.class
+                long.class,
+                boolean.class,
+                int.class
             );
         constructor.setAccessible(true);
         return constructor.newInstance(
@@ -422,7 +703,9 @@ public final class SteamCloudClientTest {
             "76561198883607238",
             "76561198883607238",
             1L,
-            1L
+            1L,
+            false,
+            0
         );
     }
 

@@ -87,53 +87,15 @@ public class LwjglHotLoopConfigTest {
 		assertFalse(LwjglHotLoopConfig.GPU_RESOURCE_SUMMARY_LOG_ENABLED);
 	}
 
-	// ---- fitVirtualSize: live-resize fitting logic for multi-window ----
-
-	private static final float ASPECT_16_9 = 16f / 9f;
-
 	@Test
-	public void fitVirtualSize_noAspect_returnsLivePhysicalDimension () {
-		assertEquals(800, LwjglHotLoopConfig.fitVirtualSize(800, 450, 1280, 720, 0f, true));
-		assertEquals(450, LwjglHotLoopConfig.fitVirtualSize(800, 450, 1280, 720, 0f, false));
+	public void physicalSizeSource_prefersAndroidSurfaceBridgeOverStaleDisplaySize () {
+		assertEquals(1728, LwjglHotLoopConfig.preferLivePhysicalSize(1728, 2400, 2400));
+		assertEquals(1080, LwjglHotLoopConfig.preferLivePhysicalSize(1080, 1080, 1080));
 	}
 
 	@Test
-	public void fitVirtualSize_sameAsLaunch_returnsSameSize () {
-		assertEquals(1280, LwjglHotLoopConfig.fitVirtualSize(1280, 720, 1280, 720, ASPECT_16_9, true));
-		assertEquals(720,  LwjglHotLoopConfig.fitVirtualSize(1280, 720, 1280, 720, ASPECT_16_9, false));
-	}
-
-	@Test
-	public void fitVirtualSize_widerThanLaunch_clampsToLaunchBudget () {
-		// Physical surface is now wider than at launch (e.g. small window was dragged to fullscreen).
-		// Result must stay at the launch-time cap, not upscale.
-		assertEquals(1280, LwjglHotLoopConfig.fitVirtualSize(1920, 1080, 1280, 720, ASPECT_16_9, true));
-		assertEquals(720,  LwjglHotLoopConfig.fitVirtualSize(1920, 1080, 1280, 720, ASPECT_16_9, false));
-	}
-
-	@Test
-	public void fitVirtualSize_narrowerThanLaunch_fitsAspectInSurface () {
-		// Physical surface shrank to 640x360; virtual should shrink proportionally.
-		int w = LwjglHotLoopConfig.fitVirtualSize(640, 360, 1280, 720, ASPECT_16_9, true);
-		int h = LwjglHotLoopConfig.fitVirtualSize(640, 360, 1280, 720, ASPECT_16_9, false);
-		assertTrue("width must not exceed physical", w <= 640);
-		assertTrue("height must not exceed physical", h <= 360);
-		assertTrue("width must be positive", w >= 1);
-		assertTrue("height must be positive", h >= 1);
-		// Aspect should be preserved to within 1px rounding.
-		float aspect = (float)w / (float)h;
-		assertEquals(ASPECT_16_9, aspect, 0.02f);
-	}
-
-	@Test
-	public void fitVirtualSize_tallSurface_fitsHeightFirst () {
-		// Surface is taller than wide — fitted box is constrained by width, not height.
-		int w = LwjglHotLoopConfig.fitVirtualSize(400, 800, 1280, 720, ASPECT_16_9, true);
-		int h = LwjglHotLoopConfig.fitVirtualSize(400, 800, 1280, 720, ASPECT_16_9, false);
-		assertTrue("width must not exceed physical", w <= 400);
-		assertTrue("height must not exceed physical", h <= 800);
-		// For a 16:9 box inside a 400x800 portrait window, width 400 → height ~225 fits fine.
-		assertEquals(400, w);
-		assertEquals(225, h);
+	public void physicalSizeSource_fallsBackWhenAndroidSurfaceIsUnavailable () {
+		assertEquals(2400, LwjglHotLoopConfig.preferLivePhysicalSize(0, 2400, 1080));
+		assertEquals(1080, LwjglHotLoopConfig.preferLivePhysicalSize(0, 0, 1080));
 	}
 }

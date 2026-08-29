@@ -111,32 +111,28 @@ internal class RenderSurfaceState {
         }
     }
 
-    fun buildApplyPlan(viewWidth: Int = 0, viewHeight: Int = 0): ApplyPlan {
-        return buildApplyPlan(
-            viewWidth = viewWidth,
-            viewHeight = viewHeight,
-            windowWidth = resolvePhysicalWidth(viewWidth),
-            windowHeight = resolvePhysicalHeight(viewHeight)
-        )
-    }
-
-    fun buildForcedApplyPlan(viewWidth: Int = 0, viewHeight: Int = 0): ApplyPlan {
-        val plan = buildApplyPlan(viewWidth, viewHeight)
+    fun buildForcedApplyPlan(
+        viewWidth: Int = 0,
+        viewHeight: Int = 0,
+        virtualWidth: Int,
+        virtualHeight: Int
+    ): ApplyPlan {
+        val plan = buildApplyPlan(viewWidth, viewHeight, virtualWidth, virtualHeight)
         return plan.copy(shouldApplyBufferSize = true)
     }
 
     fun buildApplyPlan(
         viewWidth: Int = 0,
         viewHeight: Int = 0,
-        windowWidth: Int,
-        windowHeight: Int
+        virtualWidth: Int,
+        virtualHeight: Int
     ): ApplyPlan {
         val physicalWidth = resolvePhysicalWidth(viewWidth)
         val physicalHeight = resolvePhysicalHeight(viewHeight)
-        // Keep the Android surface at physical size. Internal resolution scaling is now
-        // handled inside the libGDX patch with an offscreen FBO before swap.
-        val bufferWidth = physicalWidth
-        val bufferHeight = physicalHeight
+        // The Android compositor upscales this fixed game buffer to the live View bounds.
+        // Keeping this independent from freeform resizing means the game never receives a resize.
+        val bufferWidth = virtualWidth.coerceAtLeast(1)
+        val bufferHeight = virtualHeight.coerceAtLeast(1)
         surfaceBufferWidth = bufferWidth
         surfaceBufferHeight = bufferHeight
         val shouldApplyBufferSize = hasActiveSurface &&
@@ -150,8 +146,8 @@ internal class RenderSurfaceState {
             physicalHeight = physicalHeight,
             bufferWidth = bufferWidth,
             bufferHeight = bufferHeight,
-            windowWidth = windowWidth.coerceAtLeast(1),
-            windowHeight = windowHeight.coerceAtLeast(1),
+            windowWidth = bufferWidth,
+            windowHeight = bufferHeight,
             shouldApplyBufferSize = shouldApplyBufferSize,
             shouldDispatchWindowSize = shouldDispatchWindowSize
         )

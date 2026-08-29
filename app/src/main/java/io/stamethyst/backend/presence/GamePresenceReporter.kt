@@ -76,7 +76,6 @@ object GamePresenceReporter {
                 return
             }
             running = true
-            GamePresenceStateMarker.markLauncherActive(context)
             CloudControlConfig.addListener(cloudControlListener)
             if (CloudControlConfig.isStartupRefreshCompleted()) {
                 sendHeartbeat(force = true)
@@ -295,7 +294,6 @@ object GamePresenceReporter {
 
         override fun onActivityResumed(activity: Activity) {
             if (activity is LauncherActivity) {
-                GamePresenceStateMarker.markLauncherActive(activity)
                 sendHeartbeat(force = true)
             }
         }

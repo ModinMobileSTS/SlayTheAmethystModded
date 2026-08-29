@@ -5,6 +5,22 @@ import org.junit.Test
 
 class VirtualResolutionPolicyTest {
     @Test
+    fun fullscreenCanvas_normalizesPortraitPanelForLandscapeGame() {
+        assertEquals(
+            FullscreenCanvasSize(width = 2400, height = 1080),
+            FullscreenCanvasResolution.normalizeLandscape(width = 1080, height = 2400)
+        )
+    }
+
+    @Test
+    fun fullscreenCanvas_keepsLandscapePanelDimensions() {
+        assertEquals(
+            FullscreenCanvasSize(width = 2400, height = 1080),
+            FullscreenCanvasResolution.normalizeLandscape(width = 2400, height = 1080)
+        )
+    }
+
+    @Test
     fun resolve_fullscreenFill_usesAvailablePhysicalSize() {
         val resolution = VirtualResolutionPolicy.resolve(
             physicalWidth = 2400,

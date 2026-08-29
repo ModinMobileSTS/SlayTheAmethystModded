@@ -1,0 +1,30 @@
+{
+  "heartbeat": {
+    "intervalSeconds": 30,
+    "wsUrl": "wss://slay.apricityx.top:12334/api/presence/ws"
+  },
+  "qqGroup": {
+    "number": "1051836431"
+  },
+  "easyTier": {
+    "enabled": true,
+    "minimumOnlineLobbyCompatibleVersion": "1.5.5",
+    "roomApiBaseUrl": "https://slay.apricityx.top:12334/",
+    "webConsoleApiBaseUrl": "https://slay.apricityx.top:12334/",
+    "configServerUrl": "udp://frp-dry.com:12333",
+    "entryNodeUrl": "tcp://frp-dog.com:12332",
+    "connectTimeoutSeconds": 12,
+    "statusPollIntervalSeconds": 5,
+    "allowSharedCommunityNetwork": false,
+    "defaultMode": "room"
+  },
+  "steam": {
+    "depotKeys": [
+      {
+        "appId": 646570,
+        "depotId": 646571,
+        "keyHex": "af36e1914da16f3e4556bedf7e46a76646b670c91bb6e1d3cca380e16ceb2df6"
+      }
+    ]
+  }
+}

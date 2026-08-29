@@ -28,6 +28,9 @@ internal object NativeLibraryPathResolver {
     ): String {
         val directories = LinkedHashSet<String>()
         addRuntimeLibraryDirectories(directories, javaHome)
+        // Core runtime libraries shipped in the APK must win over optional external
+        // directories. The latter can contain stale or market-provided libraries from a
+        // different LWJGL generation.
         addDirectory(directories, File(appNativeLibraryDir))
         collectAdditionalSearchDirectories(context).forEach { directory ->
             addDirectory(directories, directory)

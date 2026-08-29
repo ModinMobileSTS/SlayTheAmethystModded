@@ -232,6 +232,10 @@ class StsUiTouchCompatPatcherTest {
             methodFingerprint(findMethod(donorBytes, "update", "(F)V")),
             methodFingerprint(findMethod(patchedBytes, "update", "(F)V"))
         )
+        assertEquals(
+            methodFingerprint(findMethod(donorBytes, "toggleViewUpgrade", "()V")),
+            methodFingerprint(findMethod(patchedBytes, "toggleViewUpgrade", "()V"))
+        )
         assertFalse(
             classHasMethod(
                 patchedBytes,

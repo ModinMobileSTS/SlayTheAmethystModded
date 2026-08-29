@@ -68,6 +68,7 @@ internal fun SimpleMarkdownCard(
     markdown: String,
     modifier: Modifier = Modifier,
     containerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    textSelectable: Boolean = false,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -78,7 +79,8 @@ internal fun SimpleMarkdownCard(
         SimpleMarkdownContent(
             title = title,
             markdown = markdown,
-            modifier = Modifier.padding(12.dp)
+            modifier = Modifier.padding(12.dp),
+            textSelectable = textSelectable,
         )
     }
 }

@@ -41,6 +41,7 @@ class HarnessRunTest(unittest.TestCase):
         args = gradle.call_args.args[1]
         self.assertIn("-PdeviceSerial=localhost:15555", args)
         self.assertNotIn("-PandroidDeviceSerial=localhost:15555", args)
+        self.assertEqual(gradle.call_args.kwargs["timeout_seconds"], 30)
 
     @patch("scripts.tools.harness.run.ensure_single_room_device_spec")
     @patch("scripts.tools.harness.run.gradle")
@@ -58,6 +59,20 @@ class HarnessRunTest(unittest.TestCase):
             gradle.call_args.args[1],
         )
         ensure_spec.assert_called_once_with(ctx, Path("debug-artifacts/harness/test"))
+
+    @patch("scripts.tools.harness.run.gradle")
+    def test_perf_start_uses_clean_autoplay_task(self, gradle):
+        ctx = self._ctx()
+        ctx.options.autoplay = True
+        ctx.options.command = "perf-bench"
+
+        run_start(ctx, use_autoplay_task=True)
+
+        args = gradle.call_args.args[1]
+        self.assertEqual(args[0], ":app:stsStartAutoplay")
+        self.assertIn("-Pautoplay=true", args)
+        self.assertIn("-PperformanceDeepDiagnostics=true", args)
+        self.assertEqual(gradle.call_args.kwargs["timeout_seconds"], 120)
 
 
 if __name__ == "__main__":

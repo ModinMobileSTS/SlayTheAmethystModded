@@ -209,13 +209,28 @@ def adb_shell_script(
     return adb(ctx, ["shell", script], timeout_seconds=timeout_seconds, allow_failure=allow_failure)
 
 
-def gradle(ctx: HarnessContext, arguments: list[str] | tuple[str, ...]) -> CommandResult:
+def gradle(
+    ctx: HarnessContext,
+    arguments: list[str] | tuple[str, ...],
+    *,
+    timeout_seconds: int = 0,
+) -> CommandResult:
     if not ctx.gradle_wrapper:
         raise RuntimeError("Harness is not initialized.")
     gradle_args = [*arguments, "--stacktrace", "--console=plain"]
     if os.name == "nt":
         command_processor = os.environ.get("COMSPEC") or "cmd.exe"
-        return run_native(ctx, command_processor, ["/c", str(ctx.gradle_wrapper), *gradle_args])
+        return run_native(
+            ctx,
+            command_processor,
+            ["/c", str(ctx.gradle_wrapper), *gradle_args],
+            timeout_seconds=timeout_seconds,
+        )
     if not os.access(ctx.gradle_wrapper, os.X_OK):
-        return run_native(ctx, "bash", [str(ctx.gradle_wrapper), *gradle_args])
-    return run_native(ctx, ctx.gradle_wrapper, gradle_args)
+        return run_native(
+            ctx,
+            "bash",
+            [str(ctx.gradle_wrapper), *gradle_args],
+            timeout_seconds=timeout_seconds,
+        )
+    return run_native(ctx, ctx.gradle_wrapper, gradle_args, timeout_seconds=timeout_seconds)

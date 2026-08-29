@@ -47,12 +47,20 @@ data class WorkshopModUi(
     val localJarPath: String = "",
     val localPreviewImagePath: String = "",
     val downloadProgressPercent: Int? = null,
+    /**
+     * True when the item is on [io.stamethyst.backend.workshop.WorkshopDownloadBlocklist].
+     * The launcher manages these itself, so the mod page must not offer download actions.
+     */
+    val downloadBlocked: Boolean = false,
 )
 
 enum class WorkshopModState {
+    NotDownloaded,
     ImportedUnpatched,
     ImportedPatched,
+    Queued,
     Downloading,
+    Cancelling,
     DownloadPaused,
     DownloadFailed,
     NonStandardDownloaded,

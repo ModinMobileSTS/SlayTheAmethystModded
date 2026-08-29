@@ -1,9 +1,12 @@
 {
   "modid": "ramsaver",
   "name": "Ram Saver",
-  "author_list": ["Alchyr","Apricityx"],
-"description": "Reduces how much RAM Slay the Spire uses. Primarily aimed at managing when images are loaded. Results in more frequent texture loading.",
-  "version": "0.3.1-amethyst.3",
+  "author_list": [
+    "Alchyr",
+    "Apricityx"
+  ],
+  "description": "Reduces how much RAM Slay the Spire uses. Primarily aimed at managing when images are loaded. Results in more frequent texture loading.",
+  "version": "0.3.1-amethyst.5",
   "sts_version": "12-18-2022",
   "mts_version": "3.30.0",
   "dependencies": [],

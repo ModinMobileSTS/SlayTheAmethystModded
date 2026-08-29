@@ -9,7 +9,8 @@ import java.nio.charset.StandardCharsets
 internal class RollingTextLogWriter(
     private val baseFile: File,
     private val maxBytesPerFile: Long,
-    private val maxFiles: Int
+    private val maxFiles: Int,
+    appendExisting: Boolean = false
 ) : Closeable {
     private var output: OutputStream? = null
     private var currentBytes: Long = 0L
@@ -22,7 +23,7 @@ internal class RollingTextLogWriter(
         if (parent != null && !parent.exists()) {
             parent.mkdirs()
         }
-        openFreshOutput()
+        openOutput(appendExisting)
     }
 
     @Synchronized
@@ -37,6 +38,14 @@ internal class RollingTextLogWriter(
         }
         output?.write(bytes)
         currentBytes += bytes.size.toLong()
+    }
+
+    @Synchronized
+    fun flush() {
+        if (isClosed) {
+            return
+        }
+        output?.flush()
     }
 
     @Synchronized
@@ -69,12 +78,12 @@ internal class RollingTextLogWriter(
         } else if (baseFile.exists()) {
             baseFile.delete()
         }
-        openFreshOutput()
+        openOutput(false)
     }
 
-    private fun openFreshOutput() {
-        output = FileOutputStream(baseFile, false)
-        currentBytes = 0L
+    private fun openOutput(append: Boolean) {
+        output = FileOutputStream(baseFile, append)
+        currentBytes = if (append) baseFile.length() else 0L
     }
 
     private fun closeCurrentOutputLocked() {

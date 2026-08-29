@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import io.stamethyst.BuildConfig
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.SerialName
@@ -826,6 +827,50 @@ internal class EasyTierRoomApiClient(
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-        internal fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder().build()
+        /**
+         * Connect budget for the Room API. Deliberately shorter than the 5s status poll interval so
+         * a stalled connect cannot outlive the tick that scheduled it.
+         *
+         * OkHttp's default is 10s, which is longer than the poll interval: a single unreachable
+         * connect stretched one iteration past the next, so the effective renewal cadence drifted
+         * far beyond the 90s server lease and the session expired while the client thought it was
+         * still polling.
+         */
+        private const val CONNECT_TIMEOUT_SECONDS = 4L
+
+        /** Read budget. The Room API only returns small JSON documents, so this is generous. */
+        private const val READ_TIMEOUT_SECONDS = 8L
+
+        private const val WRITE_TIMEOUT_SECONDS = 8L
+
+        /**
+         * Hard ceiling on a whole call including retries and redirects. OkHttp has no call timeout
+         * by default, so without this a request that keeps making slow progress can outlive several
+         * poll intervals even when the individual connect/read budgets are respected.
+         */
+        private const val CALL_TIMEOUT_SECONDS = 12L
+
+        /**
+         * Single shared client for every Room API call.
+         *
+         * This must stay a singleton. Constructing a client per call gave each request its own
+         * connection pool, so the 5s poll loop reopened a TCP+TLS connection every tick while the
+         * server held the previous one for its 72s keep-alive window. Each polling device therefore
+         * accumulated roughly a dozen idle server sockets instead of reusing one, which is what
+         * saturated the upstream tunnel and turned ordinary polls into connect timeouts.
+         */
+        private val sharedClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                // Keep-alive is the point of sharing the client; the pool default is kept so idle
+                // connections are reused across poll iterations.
+                .retryOnConnectionFailure(true)
+                .build()
+        }
+
+        internal fun defaultHttpClient(): OkHttpClient = sharedClient
     }
 }

@@ -8,7 +8,7 @@ from typing import Callable
 from scripts.tools.connector.client import Stream
 
 _TYPE_NOT_PRESENT = "TypeNotPresentException"
-_STREAMING_COMMANDS = {"monitor", "watch", "trace"}
+_STREAMING_COMMANDS = {"monitor", "watch", "trace", "stack"}
 _PROMPT = re.compile(rb"\[arthas@[^\]\r\n]+\]\$ ?")
 
 

@@ -64,8 +64,17 @@ internal val ALLOWED_PARENT_BACKEND_CLASSES: MutableSet<String> = HashSet()
 internal val REQUIRED_GDX_CLASSES: Set<String> = HashSet(
     listOf(
         "com/badlogic/gdx/Application.class",
-        "com/badlogic/gdx/graphics/g2d/Batch.class",
         "com/badlogic/gdx/utils/Disposable.class"
+    )
+)
+
+// Batch and its method descriptor types must be resolved by MTSClassLoader
+// together with SpriteBatch. In particular, Texture is replaced by Ram Saver
+// and must never be supplied by the parent API classpath.
+internal val GDX_MTS_OWNED_CLASSES: Set<String> = HashSet(
+    listOf(
+        "com/badlogic/gdx/graphics/g2d/Batch.class",
+        "com/badlogic/gdx/graphics/Texture.class"
     )
 )
 
@@ -89,6 +98,12 @@ internal const val STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglHotLoopConfig.class"
 internal const val STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglFramePacerSchedule.class"
+internal const val STS_PATCH_FRAME_RING_BUFFER_CLASS =
+    "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer.class"
+internal const val STS_PATCH_FRAME_RING_BUFFER_PREFIX =
+    "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer$"
+internal const val STS_PATCH_SPRITE_BATCH_CLASS =
+    "com/badlogic/gdx/graphics/g2d/SpriteBatch.class"
 internal const val STS_PATCH_PIXEL_SCALE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/PixelScaleCompat.class"
 internal const val STS_PATCH_LWJGL_INPUT_CLASS =
@@ -182,6 +197,8 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_LWJGL_APPLICATION_CLASS,
         STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS,
         STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS,
+        STS_PATCH_FRAME_RING_BUFFER_CLASS,
+        STS_PATCH_SPRITE_BATCH_CLASS,
         "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",
         STS_PATCH_PIXEL_SCALE_CLASS,
         STS_PATCH_LWJGL_INPUT_CLASS,

@@ -2,7 +2,7 @@ package io.stamethyst.backend.feedback
 
 import android.content.Context
 import io.stamethyst.BuildConfig
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
@@ -691,7 +691,7 @@ object FeedbackIssueSyncService {
     }
 
     private fun createGithubClients(context: Context): GithubRequestClients {
-        return GithubAcceleratedHttp.createClientPair(
+        return WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

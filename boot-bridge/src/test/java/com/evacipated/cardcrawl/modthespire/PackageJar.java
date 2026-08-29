@@ -18,6 +18,13 @@ public final class PackageJar {
     public static boolean observedPackageFlag = false;
     public static String observedUserDir = null;
     public static String forcedPackageDir = null;
+    /**
+     * When set, packageJar reports that Amethyst's fast writer produced the main jar,
+     * like the patched MTS class does. The jar written below deliberately omits the
+     * compiled-class overrides, so a store() that honours the takeover flag leaves
+     * them absent — a store() that wrongly re-runs its serial merge makes them appear.
+     */
+    public static java.lang.Runnable onPackageJarStart = null;
 
     private PackageJar() {
     }
@@ -39,6 +46,7 @@ public final class PackageJar {
         observedPackageFlag = false;
         observedUserDir = null;
         forcedPackageDir = null;
+        onPackageJarStart = null;
     }
 
     public static void packageJar(MTSClassPool classPool, String outputPath) throws Exception {
@@ -47,6 +55,9 @@ public final class PackageJar {
         observedOutJarSize = outJarClasses == null ? -1 : outJarClasses.size();
         observedPackageFlag = Loader.PACKAGE;
         observedUserDir = System.getProperty("user.dir");
+        if (onPackageJarStart != null) {
+            onPackageJarStart.run();
+        }
         JarOutputStream output = new JarOutputStream(new FileOutputStream(outputPath));
         try {
             output.putNextEntry(new JarEntry("com/example/Patched.class"));

@@ -31,7 +31,6 @@ internal object SaveArchiveLayout {
     private val supportedTopLevelDirSet = supportedTopLevelDirs
         .map { it.lowercase(Locale.ROOT) }
         .toSet()
-
     fun existingSourceDirectories(stsRoot: File): List<File> {
         return supportedTopLevelDirs
             .asSequence()
@@ -58,6 +57,18 @@ internal object SaveArchiveLayout {
             return null
         }
         return relativePath
+    }
+
+    fun normalizeImportTargetPath(importablePath: String): String? {
+        val topLevelDir = topLevelDirectory(importablePath) ?: return null
+        val targetTopLevelDir = supportedTopLevelDirs.firstOrNull { it == topLevelDir }
+            ?: supportedTopLevelDirs.firstOrNull { it.equals(topLevelDir, ignoreCase = true) }
+            ?: return null
+        return if ('/' in importablePath) {
+            targetTopLevelDir + "/" + importablePath.substringAfter('/')
+        } else {
+            targetTopLevelDir
+        }
     }
 
     fun topLevelDirectory(path: String): String? {
@@ -121,5 +132,3 @@ internal object SaveArchiveLayout {
         return -1
     }
 }
-
-

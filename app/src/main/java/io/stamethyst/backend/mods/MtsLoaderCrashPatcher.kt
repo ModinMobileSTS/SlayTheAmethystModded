@@ -107,10 +107,15 @@ internal object MtsLoaderCrashPatcher {
     private const val PACKAGE_FIELD_DESC = "Z"
     private const val LOADER_WINDOW_FIELD_NAME = "ex"
 
+    private const val LWJGL3_ENABLED_FIELD_NAME = "LWJGL3_ENABLED"
+    private const val LWJGL3_ENABLED_FIELD_DESC = "Z"
+
     private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$loaderPatchV3"
     private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V4 = "amethyst\$loaderPatchV4"
     private const val AMETHYST_PATCHER_PATCH_MARKER_METHOD_NAME = "amethyst\$patcherPatchV1"
     private const val AMETHYST_PATCHER_PATCH_MARKER_METHOD_DESC = "()I"
+    private const val AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_NAME = "amethyst\$lwjgl3DisableGuardV1"
+    private const val AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_DESC = "()I"
 
     private val SWALLOWED_FAILURE_TYPES = setOf(
         "com/evacipated/cardcrawl/modthespire/MissingDependencyException",
@@ -253,6 +258,7 @@ internal object MtsLoaderCrashPatcher {
             hasOutJarPrimingHook(runModsMethod) &&
             hasPatchCacheStoreHook(runModsMethod) &&
             hasCloseWindowNullGuard(classNode) &&
+            hasLwjgl3DisableGuard(classNode) &&
             hasCurrentPatchMarker(classNode)
     }
 
@@ -371,6 +377,11 @@ internal object MtsLoaderCrashPatcher {
         if (!alreadyHasCloseWindowNullGuard) {
             insertCloseWindowNullGuard(closeWindowMethod)
         }
+        val alreadyHasLwjgl3DisableGuard = hasLwjgl3DisableGuard(classNode)
+        if (!alreadyHasLwjgl3DisableGuard) {
+            insertLwjgl3DisableGuard(runModsMethod)
+            insertLwjgl3DisableMarker(classNode)
+        }
         val alreadyHasCurrentPatchMarker = hasCurrentPatchMarker(classNode)
         if (!alreadyHasCurrentPatchMarker) {
             insertCurrentPatchMarker(classNode)
@@ -382,6 +393,7 @@ internal object MtsLoaderCrashPatcher {
             !removedLegacyPatchCacheStoreHook &&
             alreadyHasPatchCacheStoreHook &&
             alreadyHasCloseWindowNullGuard &&
+            alreadyHasLwjgl3DisableGuard &&
             alreadyHasCurrentPatchMarker
         ) {
             return loaderBytes
@@ -673,6 +685,47 @@ internal object MtsLoaderCrashPatcher {
         )
         runModsMethod.instructions.insert(compilePatchesCall, after)
         runModsMethod.maxStack = maxOf(runModsMethod.maxStack, 2)
+    }
+
+    private fun insertLwjgl3DisableGuard(runModsMethod: MethodNode) {
+        val instructions = InsnList()
+        instructions.add(InsnNode(Opcodes.ICONST_0))
+        instructions.add(
+            FieldInsnNode(
+                Opcodes.PUTSTATIC,
+                LOADER_OWNER,
+                LWJGL3_ENABLED_FIELD_NAME,
+                LWJGL3_ENABLED_FIELD_DESC
+            )
+        )
+        runModsMethod.instructions.insert(instructions)
+        runModsMethod.maxStack = maxOf(runModsMethod.maxStack, 1)
+    }
+
+    private fun insertLwjgl3DisableMarker(classNode: ClassNode) {
+        classNode.methods.removeAll { method ->
+            method.name == AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_NAME &&
+                method.desc == AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_DESC
+        }
+        val marker = MethodNode(
+            Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
+            AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_NAME,
+            AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_DESC,
+            null,
+            null
+        )
+        marker.instructions.add(InsnNode(Opcodes.ICONST_1))
+        marker.instructions.add(InsnNode(Opcodes.IRETURN))
+        marker.maxStack = 1
+        marker.maxLocals = 0
+        classNode.methods.add(marker)
+    }
+
+    private fun hasLwjgl3DisableGuard(classNode: ClassNode): Boolean {
+        return classNode.methods.any { method ->
+            method.name == AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_NAME &&
+                method.desc == AMETHYST_LWJGL3_DISABLE_MARKER_METHOD_DESC
+        }
     }
 
     private fun insertCurrentPatchMarker(classNode: ClassNode) {

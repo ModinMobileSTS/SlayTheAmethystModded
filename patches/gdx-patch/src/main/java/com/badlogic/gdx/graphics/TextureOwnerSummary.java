@@ -101,9 +101,6 @@ final class TextureOwnerSummary {
 
 	private static String classifyCoreOwnerPrefix (String className) {
 		if (className == null || className.length() == 0) return null;
-		if (className.indexOf("com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline") >= 0) {
-			return "core";
-		}
 		if (!className.startsWith("com.megacrit.cardcrawl.")) return null;
 		return "core";
 	}

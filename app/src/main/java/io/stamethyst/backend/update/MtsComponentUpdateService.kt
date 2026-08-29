@@ -1,7 +1,7 @@
 package io.stamethyst.backend.update
 
 import android.content.Context
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.launch.ComponentInstaller
 import io.stamethyst.backend.launch.MtsStartupCacheCoordinator
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
@@ -61,7 +61,7 @@ object MtsComponentUpdateService {
             throw IOException("Failed to create ${targetParent.absolutePath}")
         }
 
-        val clients = GithubAcceleratedHttp.createClientPair(
+        val clients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

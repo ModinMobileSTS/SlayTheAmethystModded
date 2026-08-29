@@ -47,8 +47,6 @@ import com.badlogic.gdx.utils.SharedLibraryLoader;
 /** An implementation of the {@link Graphics} interface based on Lwjgl.
  * @author mzechner */
 public class LwjglGraphics implements Graphics {
-	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
-
 	/** The suppored OpenGL extensions */
 	static Array<String> extensions;
 	static GLVersion glVersion;
@@ -97,7 +95,7 @@ public class LwjglGraphics implements Graphics {
 			return Math.max(1, canvas.getHeight());
 		int configured = LwjglHotLoopConfig.virtualHeight();
 		if (configured > 0) return configured;
-		return scaledLogicalSize((int)(Display.getHeight() * PixelScaleCompat.factor()));
+		return Math.max(1, (int)(Display.getHeight() * PixelScaleCompat.factor()));
 	}
 
 	public int getWidth () {
@@ -105,7 +103,7 @@ public class LwjglGraphics implements Graphics {
 			return Math.max(1, canvas.getWidth());
 		int configured = LwjglHotLoopConfig.virtualWidth();
 		if (configured > 0) return configured;
-		return scaledLogicalSize((int)(Display.getWidth() * PixelScaleCompat.factor()));
+		return Math.max(1, (int)(Display.getWidth() * PixelScaleCompat.factor()));
 	}
 
 	@Override
@@ -116,27 +114,6 @@ public class LwjglGraphics implements Graphics {
 	@Override
 	public int getBackBufferHeight () {
 		return getHeight();
-	}
-
-	private static int scaledLogicalSize (int physicalSize) {
-		if (physicalSize <= 0) return 1;
-		float scale = readConfiguredRenderScale();
-		if (scale >= 0.999f) return physicalSize;
-		return Math.max(1, Math.round(physicalSize * scale));
-	}
-
-	private static float readConfiguredRenderScale () {
-		String configured = System.getProperty(RENDER_SCALE_PROP);
-		if (configured == null) return 1f;
-		try {
-			float parsed = Float.parseFloat(configured.trim());
-			if (Float.isNaN(parsed) || Float.isInfinite(parsed)) return 1f;
-			if (parsed < 0.1f) return 0.1f;
-			if (parsed > 1f) return 1f;
-			return parsed;
-		} catch (Throwable ignored) {
-			return 1f;
-		}
 	}
 
 	public boolean isGL20Available () {
@@ -488,16 +465,15 @@ public class LwjglGraphics implements Graphics {
 
 		@Override
 		public void glBindFramebuffer (int target, int framebuffer) {
-			int remappedFramebuffer = LwjglApplication.remapRequestedFramebufferHandle(framebuffer);
 			try {
 				if (canUseCorePath()) {
-					org.lwjgl.opengl.GL30.glBindFramebuffer(target, remappedFramebuffer);
+					org.lwjgl.opengl.GL30.glBindFramebuffer(target, framebuffer);
 					LwjglApplication.noteFramebufferBound(target, framebuffer);
 					return;
 				}
 			} catch (Throwable ignored) {
 			}
-			super.glBindFramebuffer(target, remappedFramebuffer);
+			super.glBindFramebuffer(target, framebuffer);
 			LwjglApplication.noteFramebufferBound(target, framebuffer);
 		}
 
@@ -710,10 +686,7 @@ public class LwjglGraphics implements Graphics {
 	private static class LwjglGL30FboBindCompat extends LwjglGL30 {
 		@Override
 		public void glBindFramebuffer (int target, int framebuffer) {
-			super.glBindFramebuffer(
-				target,
-				LwjglApplication.remapRequestedFramebufferHandle(framebuffer)
-			);
+			super.glBindFramebuffer(target, framebuffer);
 			LwjglApplication.noteFramebufferBound(target, framebuffer);
 		}
 

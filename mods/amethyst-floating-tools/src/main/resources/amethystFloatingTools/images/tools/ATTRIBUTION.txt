@@ -1,5 +1,4 @@
 Amethyst Floating Tools icon set.
-Composed and recolored for this mod from local Pillow drawings plus Game-icons.net symbols.
-Game-icons.net symbols are licensed under CC BY 3.0: https://game-icons.net/about.html
-Keyboard and mouse symbols by Delapouite; padlock reference by Lorc.
-Side panel tab and arrow are copied from Loadout's default SidePanelTab.png and SidePanelArrow.png assets.
+The ten tool glyphs (online, mouse, keyboard, add_key, ctrl, shift, tab, alt,
+lock, wheel) are original work for this mod, drawn from vector primitives by
+tools/generate_icons.py. Run that script to regenerate them.

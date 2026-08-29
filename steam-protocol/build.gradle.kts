@@ -14,6 +14,7 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    testImplementation(libs.junit4)
 }
 
 protobuf {

@@ -11,6 +11,7 @@ import io.stamethyst.ui.settings.services.*
 import io.stamethyst.ui.settings.steamcloud.*
 
 import android.view.HapticFeedbackConstants
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -52,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,9 +67,8 @@ import io.stamethyst.ui.resolve
 internal data class SettingsSwitchSpec(
     val checked: Boolean,
     val enabled: Boolean,
-    val enabledText: String,
-    val disabledText: String,
-    val description: String,
+    val title: String,
+    val description: String? = null,
     val chipText: String? = null,
     val onCheckedChange: (Boolean) -> Unit,
 )
@@ -121,6 +124,37 @@ internal fun SettingsSectionCard(
     title: String,
     content: @Composable () -> Unit,
 ) {
+    SettingsSectionCard(title = title, iconResId = null, trailingAction = null, content = content)
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    @DrawableRes iconResId: Int?,
+    content: @Composable () -> Unit,
+) {
+    SettingsSectionCard(title = title, iconResId = iconResId, trailingAction = null, content = content)
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    trailingAction: (@Composable () -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    SettingsSectionCard(title = title, iconResId = null, trailingAction = trailingAction, content = content)
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    @DrawableRes iconResId: Int? = null,
+    trailingAction: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -134,7 +168,44 @@ internal fun SettingsSectionCard(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            if (trailingAction != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (iconResId != null) {
+                        Icon(
+                            painter = painterResource(iconResId),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    trailingAction()
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (iconResId != null) {
+                        Icon(
+                            painter = painterResource(iconResId),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(text = title, style = MaterialTheme.typography.titleMedium)
+                }
+            }
             HorizontalDivider()
             content()
         }
@@ -147,8 +218,7 @@ internal fun SettingsSwitchItem(spec: SettingsSwitchSpec) {
     SwitchSettingRow(
         checked = spec.checked,
         enabled = spec.enabled,
-        enabledText = spec.enabledText,
-        disabledText = spec.disabledText,
+        title = spec.title,
         description = spec.description,
         onCheckedChange = spec.onCheckedChange,
         chipText = spec.chipText,
@@ -220,14 +290,12 @@ internal fun <T> SettingsChoiceDialogItem(spec: SettingsChoiceSpec<T>) {
 internal fun SwitchSettingRow(
     checked: Boolean,
     enabled: Boolean,
-    enabledText: String,
-    disabledText: String,
-    description: String,
+    title: String,
+    description: String?,
     onCheckedChange: (Boolean) -> Unit,
     chipText: String? = null,
 ) {
     val view = LocalView.current
-    val title = if (checked) enabledText else disabledText
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -257,10 +325,12 @@ internal fun SwitchSettingRow(
             }
         }
     }
-    Text(
-        text = description,
-        style = MaterialTheme.typography.bodySmall
-    )
+    description?.let { value ->
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 }
 
 
@@ -552,5 +622,3 @@ internal fun performTapHapticFeedback(view: android.view.View) {
 internal fun performHapticFeedback(view: android.view.View, feedbackConstant: Int) {
     LauncherHaptics.perform(view, feedbackConstant)
 }
-
-

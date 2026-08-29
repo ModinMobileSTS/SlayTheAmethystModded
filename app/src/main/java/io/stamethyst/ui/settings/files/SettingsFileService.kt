@@ -23,11 +23,15 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import io.stamethyst.R
+import io.stamethyst.backend.diag.DiagnosticsArchiveBuilder
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
+import io.stamethyst.backend.steamcloud.SteamCloudStagedPathReplacement
+import io.stamethyst.backend.steamcloud.SteamCloudStagedPathStore
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.ui.main.ModAliasStore
@@ -82,6 +86,10 @@ internal object SettingsFileService {
         return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
     }
 
+    fun buildPerformanceLogExportFileName(): String {
+        return DiagnosticsArchiveBuilder.buildPerformanceExportFileName()
+    }
+
     fun buildModsExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-mods-export-${formatter.format(Date())}.zip"
@@ -96,6 +104,11 @@ internal object SettingsFileService {
     @Throws(IOException::class)
     fun exportJvmLogBundle(host: Activity, uri: Uri): Int {
         return DiagnosticsProcessClient.exportJvmLogBundle(host, uri)
+    }
+
+    @Throws(IOException::class)
+    fun exportPerformanceLogBundle(host: Activity, uri: Uri): Int {
+        return DiagnosticsProcessClient.exportPerformanceLogBundle(host, uri)
     }
 
     @Throws(IOException::class)
@@ -473,25 +486,72 @@ internal object SettingsFileService {
         uri: Uri,
         targetRoot: File = RuntimePaths.stsRoot(host),
     ): SaveImportResult {
-        if (!targetRoot.exists() && !targetRoot.mkdirs()) {
-            throw IOException("Failed to create save root: ${targetRoot.absolutePath}")
+        val transactionParent = targetRoot.parentFile
+            ?: throw IOException("Save root parent is unavailable: ${targetRoot.absolutePath}")
+        if (!transactionParent.isDirectory && !transactionParent.mkdirs()) {
+            throw IOException("Failed to create save root parent: ${transactionParent.absolutePath}")
         }
-
-        val scanResult = scanSaveArchive(host, uri)
-        if (scanResult.importableFiles <= 0) {
-            throw IOException("Archive did not contain importable save files")
-        }
-
-        val backupLabel = backupExistingSavesToDownloads(host, targetRoot)
-        clearExistingSaveTargets(targetRoot, scanResult.targetTopLevelDirs)
-        val importedFiles = extractSaveArchive(host, uri, targetRoot)
-        if (importedFiles <= 0) {
-            throw IOException("Archive did not contain importable save files")
-        }
-        return SaveImportResult(
-            importedFiles = importedFiles,
-            backupLabel = backupLabel
+        val transactionRoot = File(
+            transactionParent,
+            ".save-import-${System.currentTimeMillis()}-${System.nanoTime()}",
         )
+        val archiveFile = File(transactionRoot, "source.zip")
+        val stagingRoot = File(transactionRoot, "staging")
+        val rollbackRoot = File(transactionRoot, "rollback")
+        if (!transactionRoot.mkdirs()) {
+            throw IOException("Failed to create save import transaction directory: ${transactionRoot.absolutePath}")
+        }
+
+        var preserveRecoveryData = false
+        try {
+            copyUriToFile(host, uri, archiveFile)
+            val scanResult = scanSaveArchive(archiveFile)
+            if (scanResult.importableFiles <= 0) {
+                throw IOException("Archive did not contain importable save files")
+            }
+            if (!stagingRoot.mkdirs()) {
+                throw IOException("Failed to create save import staging directory: ${stagingRoot.absolutePath}")
+            }
+            val extracted = extractSaveArchive(archiveFile, stagingRoot)
+            if (extracted.importableFiles <= 0 || extracted != scanResult) {
+                throw IOException(
+                    "Save archive changed while importing " +
+                        "(expected ${scanResult.importableFiles} files in " +
+                        "${scanResult.targetTopLevelDirs.sorted()}, extracted " +
+                        "${extracted.importableFiles} files in ${extracted.targetTopLevelDirs.sorted()})"
+                )
+            }
+
+            val applyImport = {
+                val backupLabel = backupExistingSavesToDownloads(host, targetRoot)
+                SteamCloudStagedPathStore.apply(
+                    replacements = scanResult.targetTopLevelDirs.map { directoryName ->
+                        SteamCloudStagedPathReplacement(
+                            stagedPath = File(stagingRoot, directoryName),
+                            targetPath = File(targetRoot, directoryName),
+                        )
+                    },
+                    rollbackRoot = rollbackRoot,
+                )
+                SaveImportResult(importedFiles = extracted.importableFiles, backupLabel = backupLabel)
+            }
+
+            return if (targetRoot.canonicalFile == RuntimePaths.stsRoot(host).canonicalFile) {
+                SteamCloudLiveSaveLease.runMutation(host, applyImport)
+            } else {
+                applyImport()
+            }
+        } catch (error: Throwable) {
+            preserveRecoveryData = error is io.stamethyst.backend.steamcloud.SteamCloudReconciliationException &&
+                error.recoveryDataPreserved
+            throw error
+        } finally {
+            stagingRoot.deleteRecursively()
+            if (!preserveRecoveryData) {
+                rollbackRoot.deleteRecursively()
+                transactionRoot.deleteRecursively()
+            }
+        }
     }
 
     @Throws(IOException::class)
@@ -514,17 +574,15 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    private fun scanSaveArchive(host: Activity, uri: Uri): SaveArchiveScanResult {
+    private fun scanSaveArchive(archiveFile: File): SaveArchiveScanResult {
         var importableFiles = 0
         val targetTopLevelDirs = LinkedHashSet<String>()
-        host.contentResolver.openInputStream(uri).use { rawInput ->
-            if (rawInput == null) {
-                throw IOException("Unable to open selected archive")
-            }
+        FileInputStream(archiveFile).use { rawInput ->
             java.util.zip.ZipInputStream(rawInput).use { zipInput ->
                 while (true) {
                     val entry = zipInput.nextEntry ?: break
                     val importablePath = SaveArchiveLayout.resolveImportablePath(entry.name)
+                        ?.let(SaveArchiveLayout::normalizeImportTargetPath)
                     if (importablePath.isNullOrEmpty()) {
                         continue
                     }
@@ -657,35 +715,23 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    private fun clearExistingSaveTargets(stsRoot: File, targetTopLevelDirs: Set<String>) {
-        for (folderName in targetTopLevelDirs) {
-            val target = File(stsRoot, folderName)
-            if (!target.exists()) {
-                continue
-            }
-            if (!target.deleteRecursively()) {
-                throw IOException("Failed to clear old save path: ${target.absolutePath}")
-            }
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun extractSaveArchive(host: Activity, uri: Uri, stsRoot: File): Int {
+    private fun extractSaveArchive(archiveFile: File, stsRoot: File): SaveArchiveScanResult {
         val rootCanonical = stsRoot.canonicalPath
         var importedFiles = 0
+        val targetTopLevelDirs = LinkedHashSet<String>()
 
-        host.contentResolver.openInputStream(uri).use { rawInput ->
-            if (rawInput == null) {
-                throw IOException("Unable to open selected archive")
-            }
+        FileInputStream(archiveFile).use { rawInput ->
             java.util.zip.ZipInputStream(rawInput).use { zipInput ->
                 val buffer = ByteArray(8192)
                 while (true) {
                     val entry = zipInput.nextEntry ?: break
                     val importablePath = SaveArchiveLayout.resolveImportablePath(entry.name)
+                        ?.let(SaveArchiveLayout::normalizeImportTargetPath)
                     if (importablePath.isNullOrEmpty()) {
                         continue
                     }
+                    SaveArchiveLayout.topLevelDirectory(importablePath)
+                        ?.let(targetTopLevelDirs::add)
 
                     val output = File(stsRoot, importablePath)
                     val outputCanonical = output.canonicalPath
@@ -720,7 +766,10 @@ internal object SettingsFileService {
                 }
             }
         }
-        return importedFiles
+        return SaveArchiveScanResult(
+            importableFiles = importedFiles,
+            targetTopLevelDirs = targetTopLevelDirs,
+        )
     }
 
     private fun collectModExportSources(host: Activity): List<ModExportSource> {
@@ -977,5 +1026,3 @@ internal object SettingsFileService {
     }
 
 }
-
-

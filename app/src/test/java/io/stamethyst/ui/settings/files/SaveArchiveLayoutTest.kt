@@ -56,6 +56,22 @@ class SaveArchiveLayoutTest {
     }
 
     @Test
+    fun normalizeImportTargetPath_canonicalizesOnlyCaseVariants() {
+        assertEquals(
+            "preferences/BetaPreferences",
+            SaveArchiveLayout.normalizeImportTargetPath("Preferences/BetaPreferences")
+        )
+        assertEquals(
+            "sendToDevs/logs/SlayTheSpire.log",
+            SaveArchiveLayout.normalizeImportTargetPath("sendToDevs/logs/SlayTheSpire.log")
+        )
+        assertEquals(
+            "sendtodevs/logs/SlayTheSpire.log",
+            SaveArchiveLayout.normalizeImportTargetPath("sendtodevs/logs/SlayTheSpire.log")
+        )
+    }
+
+    @Test
     fun resolveImportablePath_rejectsLegacyFlatPreferenceFiles() {
         assertNull(SaveArchiveLayout.resolveImportablePath("sts/BetaPreferences"))
         assertNull(SaveArchiveLayout.resolveImportablePath("BetaPreferences"))
@@ -79,5 +95,4 @@ class SaveArchiveLayoutTest {
         }
     }
 }
-
 

@@ -10,6 +10,8 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -29,7 +31,6 @@ public class MtsPatchCacheStoreTest {
     private static final String PROP_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROP_EXPECTED = "amethyst.mts.patch_cache.expected";
     private static final String PROP_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
-    private static final String PROP_SCAN_CACHE_DIR = "amethyst.loadout.scan_cache_dir";
     private static final String PROP_MIN_FREE_BYTES = "amethyst.mts.patch_cache.min_free_bytes";
 
     @Test
@@ -407,6 +408,134 @@ public class MtsPatchCacheStoreTest {
     }
 
     @Test
+    public void packageJarFastPath_foldsCompiledClassOverridesIntoMainJar() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-fold-overrides-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File baseJar = new File(root, "base.jar");
+            File modJar = new File(root, "Example Mod.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            writeJar(modJar, "example/ExampleMod.class", "mod");
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("example", modJar.toURI().toURL())
+            };
+
+            // The OUTJAR snapshot carries the pre-merge bytes for a patched base-game
+            // class; the compiled override must win over it, and a class no source jar
+            // contains must still be appended.
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            entries.add(new PackageJar.Entry(
+                    "com/megacrit/cardcrawl/helpers/CardLibrary.class",
+                    "snapshot-version".getBytes("UTF-8"),
+                    null
+            ));
+            entries.add(new PackageJar.Entry("example/ExampleMod.class", "example"));
+
+            Map<String, byte[]> overrides = new LinkedHashMap<String, byte[]>();
+            overrides.put(
+                    "com/megacrit/cardcrawl/helpers/CardLibrary.class",
+                    "override-version".getBytes("UTF-8")
+            );
+            overrides.put("com/megacrit/brand/New.class", "brand-new".getBytes("UTF-8"));
+            MtsPatchCacheStore.pendingCompiledClassOverrides = overrides;
+            assertFalse(MtsPatchCacheStore.lastPackageJarFastPathTookOver);
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                    new MTSClassPool(),
+                    entries,
+                    openOutput,
+                    new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+            ));
+
+            assertTrue(MtsPatchCacheStore.lastPackageJarFastPathTookOver);
+            File cachedJar = new File(root, "desktop-1.0-modded.jar");
+            assertArrayEquals(
+                    "compiled override must replace the snapshot's OUTJAR bytes",
+                    "override-version".getBytes("UTF-8"),
+                    readJarEntry(cachedJar, "com/megacrit/cardcrawl/helpers/CardLibrary.class")
+            );
+            assertArrayEquals(
+                    "override with no source entry must be appended",
+                    "brand-new".getBytes("UTF-8"),
+                    readJarEntry(cachedJar, "com/megacrit/brand/New.class")
+            );
+            assertArrayEquals(
+                    "entries without an override keep their source bytes",
+                    "base".getBytes("UTF-8"),
+                    readJarEntry(cachedJar, "base/Base.class")
+            );
+
+            // Overrides belong to the main jar only: mod package jars are untouched.
+            File packageJarFile = new File(root, "package/Example Mod-modded.jar");
+            assertTrue(packageJarFile.isFile());
+            assertArrayEquals(
+                    "mod".getBytes("UTF-8"),
+                    readJarEntry(packageJarFile, "example/ExampleMod.class")
+            );
+            assertFalse(hasJarEntry(packageJarFile, "com/megacrit/brand/New.class"));
+        } finally {
+            MtsPatchCacheStore.pendingCompiledClassOverrides = null;
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void store_skipsMergeRewriteWhenFastPathTookOver() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-store-skip-merge-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            ByteArrayMapClassPath compiledClasses = new ByteArrayMapClassPath();
+            byte[] patchedCardLibrary = "patched-card-library".getBytes("UTF-8");
+            compiledClasses.addClass(
+                    "com.megacrit.cardcrawl.helpers.CardLibrary",
+                    null,
+                    patchedCardLibrary
+            );
+
+            // The stub reports the takeover from inside packageJar, matching the real
+            // patched MTS call order: store() clears the flag before invoking, the fast
+            // writer sets it during the invocation, and store() reads it afterwards.
+            // The stub's jar omits the override entry, so a skipped merge leaves it
+            // absent while a wrongly re-run merge would add it.
+            PackageJar.onPackageJarStart = new Runnable() {
+                @Override
+                public void run() {
+                    MtsPatchCacheStore.lastPackageJarFastPathTookOver = true;
+                }
+            };
+
+            MtsPatchCacheStore.store(new MTSClassPool(), compiledClasses);
+
+            File cachedJar = new File(root, "desktop-1.0-modded.jar");
+            assertTrue(cachedJar.isFile());
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+            assertNull(
+                    "merge rewrite must not run again after a fast-path takeover",
+                    readJarEntry(cachedJar, "com/megacrit/cardcrawl/helpers/CardLibrary.class")
+            );
+        } finally {
+            PackageJar.onPackageJarStart = null;
+            MtsPatchCacheStore.pendingCompiledClassOverrides = null;
+            MtsPatchCacheStore.lastPackageJarFastPathTookOver = false;
+            clearCacheProperties();
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void packageJarFastPath_writesEveryModPackageJarInParallel() throws Exception {
         File root = Files.createTempDirectory("mts-patch-cache-parallel-").toFile();
         try {
@@ -667,44 +796,6 @@ public class MtsPatchCacheStoreTest {
     }
 
     @Test
-    public void store_deletesLoadoutScanCachesFromEarlierCacheKeys() throws Exception {
-        File root = Files.createTempDirectory("mts-patch-cache-scan-sweep-").toFile();
-        try {
-            setCacheProperties(root);
-            resetStubTracking();
-            File scanCacheDir = new File(root, "loadout-scan-cache");
-            assertTrue(scanCacheDir.mkdirs());
-            System.setProperty(PROP_SCAN_CACHE_DIR, scanCacheDir.getAbsolutePath());
-
-            // Written under the marker this run is about to commit, so still readable.
-            File current = new File(scanCacheDir, "aaaaaaaaaaaa-power.txt");
-            writeScanCacheFile(current, "mts|expected|SomeMod|1.0.0");
-            // Written under a previous marker: readCacheFile rejects it, so it is dead weight.
-            File stale = new File(scanCacheDir, "bbbbbbbbbbbb-power.txt");
-            writeScanCacheFile(stale, "mts|old-marker|SomeMod|0.9.0");
-            // Truncated past repair, also unusable to the mod.
-            File truncated = new File(scanCacheDir, "cccccccccccc-orb.txt");
-            writeTextFile(truncated, "schema=2\n");
-            // Not a scan cache file at all; must be left alone.
-            File unrelated = new File(scanCacheDir, "notes.bin");
-            writeTextFile(unrelated, "keep me");
-
-            MtsPatchCacheStore.store(new MTSClassPool());
-
-            assertTrue(new File(root, ".mts_patch_cache").isFile());
-            assertTrue(current.isFile());
-            assertFalse(stale.exists());
-            assertFalse(truncated.exists());
-            assertTrue(unrelated.isFile());
-        } finally {
-            System.clearProperty(PROP_SCAN_CACHE_DIR);
-            clearCacheProperties();
-            resetStubTracking();
-            deleteRecursively(root);
-        }
-    }
-
-    @Test
     public void store_skipsBuildAndKeepsPreviousCacheWhenFreeSpaceIsInsufficient() throws Exception {
         File root = Files.createTempDirectory("mts-patch-cache-no-space-").toFile();
         try {
@@ -756,10 +847,6 @@ public class MtsPatchCacheStoreTest {
         }
     }
 
-    private static void writeScanCacheFile(File file, String identity) throws Exception {
-        writeTextFile(file, "schema=2\nkind=power\nidentity=" + identity + "\nsome.Class\n");
-    }
-
     private static void writeTextFile(File file, String content) throws Exception {
         FileOutputStream output = new FileOutputStream(file);
         try {
@@ -786,6 +873,8 @@ public class MtsPatchCacheStoreTest {
         Loader.MODINFOS = new ModInfo[0];
         MTSClassPool.resetTracking();
         PackageJar.resetTracking();
+        MtsPatchCacheStore.pendingCompiledClassOverrides = null;
+        MtsPatchCacheStore.lastPackageJarFastPathTookOver = false;
     }
 
     private static void clearCacheProperties() {

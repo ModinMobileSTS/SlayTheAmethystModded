@@ -150,10 +150,14 @@ final class AutoplaySingleRoomRunner {
             AutoplayDungeonActions.tick();
             return;
         }
-        // Keep the configured room alive for diagnostics. Single-room is a setup harness, not
-        // an implicit autoplay turn loop; callers can inspect the live combat JVM before acting.
-        if (AutoplayConfig.isSingleRoomMode()) {
+        // Keep the configured room alive for diagnostics only when hold mode is explicitly
+        // requested. In bench mode (and default single-room) the autoplay turn loop runs.
+        if (AutoplayConfig.isSingleRoomHoldEnabled()) {
             return;
+        }
+        // In bench mode, keep the player alive so the combat runs to completion.
+        if (AutoplayConfig.isSingleRoomBenchModeEnabled() && player.currentHealth <= 0) {
+            player.currentHealth = Math.max(player.maxHealth, 1);
         }
         if (player.isDead || player.currentHealth <= 0 || AbstractDungeon.screen == AbstractDungeon.CurrentScreen.DEATH) {
             logResult("player_dead", player, room);
@@ -343,6 +347,14 @@ final class AutoplaySingleRoomRunner {
         if (actionManager.turnHasEnded || !actionManager.phase.equals(
             GameActionManager.Phase.WAITING_ON_USER)) {
             return;
+        }
+        // Bench mode: refill energy every tick so all cards remain playable.
+        if (AutoplayConfig.isSingleRoomBenchModeEnabled()) {
+            EnergyPanel.setEnergy(99);
+            if (player.energy != null) {
+                player.energy.energy = 99;
+                player.energy.energyMaster = Math.max(player.energy.energyMaster, 99);
+            }
         }
         AbstractCard playable = pickRandomPlayableCard(player, monsters);
         if (playable != null) {

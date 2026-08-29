@@ -4,9 +4,13 @@ import android.content.Context
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.config.RuntimePaths
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 import java.util.zip.ZipFile
 
 internal object MtsPatchCacheCoordinator {
@@ -20,8 +24,7 @@ internal object MtsPatchCacheCoordinator {
     private const val PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir"
     private const val PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected"
     private const val PROPERTY_GAME_DIR = "amethyst.mts.patch_cache.game_dir"
-    private const val PROPERTY_LOADOUT_SCAN_CACHE_ENABLED = "amethyst.runtime_compat.loadout_class_scan_cache"
-    private const val PROPERTY_LOADOUT_SCAN_CACHE_DIR = "amethyst.loadout.scan_cache_dir"
+    private const val FINGERPRINT_POOL_CAP = 4
 
     @JvmStatic
     fun expectedMarker(context: Context): String = buildCacheMarkerValue(
@@ -31,7 +34,13 @@ internal object MtsPatchCacheCoordinator {
         stsLibJar = RuntimePaths.importedStsLibJar(context),
         bootBridgeJar = RuntimePaths.bootBridgeJar(context),
         gdxPatchJar = RuntimePaths.gdxPatchJar(context),
-        modFileList = RuntimePaths.mtsModFileList(context)
+        modFileList = RuntimePaths.mtsModFileList(context),
+        bundledMods = listOf(
+            RuntimePaths.importedAmethystRuntimeCompatJar(context),
+            RuntimePaths.importedAmethystFloatingToolsJar(context),
+            RuntimePaths.importedRamSaverJar(context)
+        ),
+        gdxPatchDigestCache = RuntimePaths.mtsPatchCacheGdxPatchDigestCache(context)
     )
 
     @JvmStatic
@@ -71,8 +80,7 @@ internal object MtsPatchCacheCoordinator {
             markerFile = RuntimePaths.mtsPatchCacheMarker(context),
             packageDir = RuntimePaths.mtsPatchCachePackageDir(context),
             expectedMarker = expectedMarker,
-            gameDir = RuntimePaths.stsRoot(context),
-            loadoutScanCacheDir = RuntimePaths.mtsPatchCacheLoadoutScanCacheDir(context)
+            gameDir = RuntimePaths.stsRoot(context)
         )
     }
 
@@ -85,8 +93,7 @@ internal object MtsPatchCacheCoordinator {
         markerFile: File,
         packageDir: File,
         expectedMarker: String,
-        gameDir: File,
-        loadoutScanCacheDir: File
+        gameDir: File
     ) {
         args.add("-D$PROPERTY_ENABLED=$enabled")
         args.add("-D$PROPERTY_CURRENT=$cacheCurrent")
@@ -96,8 +103,6 @@ internal object MtsPatchCacheCoordinator {
         args.add("-D$PROPERTY_PACKAGE_DIR=${packageDir.absolutePath}")
         args.add("-D$PROPERTY_EXPECTED=$expectedMarker")
         args.add("-D$PROPERTY_GAME_DIR=${gameDir.absolutePath}")
-        args.add("-D$PROPERTY_LOADOUT_SCAN_CACHE_ENABLED=$enabled")
-        args.add("-D$PROPERTY_LOADOUT_SCAN_CACHE_DIR=${loadoutScanCacheDir.absolutePath}")
     }
 
     internal fun isCacheCurrent(
@@ -149,22 +154,63 @@ internal object MtsPatchCacheCoordinator {
         stsLibJar: File,
         bootBridgeJar: File,
         gdxPatchJar: File,
-        modFileList: File
+        modFileList: File,
+        bundledMods: List<File> = emptyList(),
+        gdxPatchDigestCache: File? = null
     ): String {
-        val rawMarker = buildString {
-            append("schema|7").append('\n')
-            append(jarFingerprint("desktop", desktopJar)).append('\n')
-            append(jarFingerprint("modthespire", mtsJar)).append('\n')
-            append(jarFingerprint("basemod", baseModJar)).append('\n')
-            append(jarFingerprint("stslib", stsLibJar)).append('\n')
-            append(jarFingerprint("bootbridge", bootBridgeJar)).append('\n')
-            append(jarFingerprint("gdxpatch", gdxPatchJar)).append('\n')
-            append(textFileFingerprint("mod_file_list", modFileList)).append('\n')
-            readModFiles(modFileList).forEachIndexed { index, modFile ->
-                append(jarFingerprint("mod[$index]", modFile)).append('\n')
+        val coreLines = listOf(
+            "schema|9",
+            jarFingerprint("desktop", desktopJar),
+            jarFingerprint("modthespire", mtsJar),
+            jarFingerprint("basemod", baseModJar),
+            jarFingerprint("stslib", stsLibJar),
+            jarFingerprint("bootbridge", bootBridgeJar),
+            persistedFileFingerprint("gdxpatch", gdxPatchJar, gdxPatchDigestCache),
+            textFileFingerprint("mod_file_list", modFileList)
+        )
+        val labelledModFiles = readModFiles(modFileList).mapIndexed { index, modFile ->
+            "mod[$index]" to modFile
+        } + bundledMods.mapIndexed { index, modFile ->
+            "bundled[$index]" to modFile
+        }
+        val modFingerprints = fingerprintInParallel(labelledModFiles)
+        return sha256((coreLines + modFingerprints).joinToString(separator = "\n"))
+    }
+
+    /**
+     * Fingerprints every jar on a small fixed pool and returns the results in input order.
+     *
+     * The marker is computed on the launch path before the game process can spawn, and its
+     * per-jar cost is an open plus a central-directory seek against flash storage, so the
+     * serial fan-out over dozens of enabled mods was storage-bound wall time. Work is bound
+     * by storage as much as by CPU, so the pool stays small; the cap mirrors the cache
+     * build's package-jar pool.
+     *
+     * Order is part of the marker value: results are reassembled in input order regardless
+     * of completion order, so the digest stays deterministic across launches.
+     */
+    private fun fingerprintInParallel(labelledFiles: List<Pair<String, File>>): List<String> {
+        if (labelledFiles.isEmpty()) {
+            return emptyList()
+        }
+        val threadCount = minOf(Runtime.getRuntime().availableProcessors(), FINGERPRINT_POOL_CAP, labelledFiles.size)
+        if (threadCount <= 1) {
+            return labelledFiles.map { (label, file) -> jarFingerprint(label, file) }
+        }
+        val pool = Executors.newFixedThreadPool(threadCount)
+        try {
+            return labelledFiles.map { (label, file) ->
+                pool.submit(Callable { jarFingerprint(label, file) })
+            }.map { future ->
+                try {
+                    future.get()
+                } catch (error: ExecutionException) {
+                    throw error.cause ?: error
+                }
             }
-        }.trimEnd()
-        return sha256(rawMarker)
+        } finally {
+            pool.shutdownNow()
+        }
     }
 
     private fun readModFiles(modFileList: File): List<File> {
@@ -215,7 +261,7 @@ internal object MtsPatchCacheCoordinator {
                     digest.update(entry.crc.toString().toByteArray(StandardCharsets.UTF_8))
                     digest.update(SEPARATOR_BYTE)
                 }
-                digest.digest().toHex()
+                digestToHex(digest.digest())
             }
         } catch (_: Throwable) {
             null
@@ -224,6 +270,89 @@ internal object MtsPatchCacheCoordinator {
             return "$label|${file.absolutePath}|${file.length()}|${file.lastModified()}|nozip"
         }
         return "$label|${file.absolutePath}|${file.length()}|$entryDigest"
+    }
+
+    /**
+     * Full-content digest of a launcher-shipped component jar, recorded in a sidecar so a
+     * launch does not re-read every byte of the patch jar.
+     *
+     * The marker deliberately avoids trusting size plus mtime for user mod jars: a mod
+     * rebuilt in place can keep both, which would produce a stale cache hit over mod
+     * bytecode that no longer exists. The GDX patch jar is a different trust domain — it
+     * ships with the launcher and is replaced wholesale by the component installer rather
+     * than edited in place — so its size and mtime identify the installed artifact well
+     * enough to reuse a previously computed digest. Any mismatch recomputes and re-records;
+     * a missing or corrupt sidecar degrades to the old full read with no correctness change.
+     */
+    private fun persistedFileFingerprint(label: String, file: File, digestCache: File?): String {
+        if (!file.isFile) {
+            return "$label|${file.absolutePath}|-1|missing"
+        }
+        val identity = "${file.length()}|${file.lastModified()}"
+        val recorded = digestCache?.let { readRecordedDigest(it, identity) }
+        if (recorded != null) {
+            return "$label|${file.absolutePath}|${file.length()}|$recorded"
+        }
+        val digest = fullFileSha256(file)
+        if (digest != null && digestCache != null) {
+            writeRecordedDigest(digestCache, "$identity|$digest")
+        }
+        return "$label|${file.absolutePath}|${file.length()}|${digest ?: "unreadable"}"
+    }
+
+    private fun readRecordedDigest(digestCache: File, identity: String): String? {
+        return try {
+            val text = digestCache.takeIf(File::isFile)
+                ?.readText(StandardCharsets.UTF_8)
+                ?.trim()
+                .orEmpty()
+            // The recorded line is "<size>|<mtime>|<digest>" and identity already contains
+            // the first two fields joined by '|', so match the prefix instead of splitting:
+            // a split would also cut the identity apart and never compare equal.
+            val prefix = "$identity|"
+            if (!text.startsWith(prefix)) {
+                return null
+            }
+            // The digest is a full SHA-256 hex string; anything else is a corrupt or foreign
+            // sidecar and is treated as absent.
+            val digest = text.substring(prefix.length)
+            if (digest.length == 64) digest else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun writeRecordedDigest(digestCache: File, line: String) {
+        try {
+            val parent = digestCache.parentFile
+            if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
+                return
+            }
+            val tempFile = File(parent, digestCache.name + ".tmp")
+            tempFile.writeText(line, StandardCharsets.UTF_8)
+            if (!tempFile.renameTo(digestCache)) {
+                tempFile.delete()
+            }
+        } catch (_: Throwable) {
+            // Best effort. Losing the sidecar only costs one extra full read on the next launch.
+        }
+    }
+
+    private fun fullFileSha256(file: File): String? {
+        return try {
+            val messageDigest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    messageDigest.update(buffer, 0, count)
+                }
+            }
+            digestToHex(messageDigest.digest())
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun textFileFingerprint(label: String, file: File): String {
@@ -244,7 +373,8 @@ internal object MtsPatchCacheCoordinator {
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(text.toByteArray(StandardCharsets.UTF_8))
-            .toHex()
+            .let(::digestToHex)
 
-    private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
+    private fun digestToHex(bytes: ByteArray): String =
+        bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
 }

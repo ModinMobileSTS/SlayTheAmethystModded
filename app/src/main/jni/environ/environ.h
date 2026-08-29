@@ -51,7 +51,6 @@ struct pojav_environ_s {
     jmethodID method_onDirectInputEnable;
     jmethodID method_glftSetWindowAttrib;
     jmethodID method_glfwSetWindowShouldClose;
-    jmethodID method_internalWindowSizeChanged;
     jmethodID method_internalChangeMonitorSize;
     jclass bridgeClazz;
     jclass vmGlfwClass;
@@ -63,7 +62,6 @@ struct pojav_environ_s {
     JavaVM* dalvikJavaVMPtr;
     long showingWindow;
     bool isInputReady, isCursorEntered, isUseStackQueueCall, shouldUpdateMouse;
-    bool shouldUpdateMonitorSize, monitorSizeConsumed;
     atomic_bool runtimeForeground;
     int savedWidth, savedHeight;
     bool hasAppliedWindowGeometry;

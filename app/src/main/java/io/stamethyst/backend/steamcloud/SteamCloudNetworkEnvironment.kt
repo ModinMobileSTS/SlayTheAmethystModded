@@ -17,13 +17,17 @@ internal object SteamCloudNetworkEnvironment {
     }
 
     fun switchToDirectMode(context: Context) {
-        LauncherConfig.setSteamCloudWattAccelerationEnabled(context, false)
-        clearNetworkCache(context)
+        SteamCloudOperationMutex.runExclusive(context) {
+            LauncherConfig.setSteamCloudWattAccelerationEnabled(context, false)
+            clearNetworkCache(context)
+        }
     }
 
     fun clearNetworkCache(context: Context) {
-        lastCmEndpointFile(context).delete()
-        cmServerListFile(context).delete()
+        SteamCloudOperationMutex.runExclusive(context) {
+            lastCmEndpointFile(context).delete()
+            cmServerListFile(context).delete()
+        }
     }
 
     fun lastCmEndpointFile(context: Context): File =

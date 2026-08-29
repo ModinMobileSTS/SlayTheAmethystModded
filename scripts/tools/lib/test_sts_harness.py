@@ -5,7 +5,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -668,6 +670,21 @@ class ResolvedOutDirTest(unittest.TestCase):
             path = harness.resolved_out_dir()
             self.assertEqual(path.parent, base.resolve())
             self.assertRegex(path.name, r"^\d{8}-\d{6}-\d{6}$")
+
+    def test_run_prints_initialization_failure_to_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            harness = Harness(self._options(out_dir=tmp))
+            stderr = StringIO()
+            with patch.object(
+                harness,
+                "initialize",
+                side_effect=RuntimeError("Requested device is not connected and online: test-device"),
+            ), redirect_stderr(stderr):
+                exit_code = harness.run()
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Harness error [RuntimeError]", stderr.getvalue())
+            self.assertIn("Requested device is not connected", stderr.getvalue())
 
 
 if __name__ == "__main__":

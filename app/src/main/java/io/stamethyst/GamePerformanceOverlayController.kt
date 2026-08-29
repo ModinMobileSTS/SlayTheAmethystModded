@@ -27,7 +27,9 @@ internal class GamePerformanceOverlayController(
     private val overlayView: TextView,
     private val rendererSummary: String,
     private val readJvmRuntimeMemorySnapshot: () -> JvmRuntimeMemorySnapshot?,
-    private val readJvmLaunchStartedElapsedMs: () -> Long
+    private val readJvmLaunchStartedElapsedMs: () -> Long,
+    private val snapshotFile: java.io.File,
+    private val performanceDeepDiagnostics: Boolean
 ) {
     companion object {
         private const val REFRESH_INTERVAL_MS = 1000L
@@ -227,7 +229,8 @@ internal class GamePerformanceOverlayController(
             return
         }
         this.visible = visible
-        overlayView.visibility = if (visible) View.VISIBLE else View.GONE
+        // deep diag 模式时 view 始终隐藏（由 mod 侧浮层替代）
+        overlayView.visibility = if (visible && !performanceDeepDiagnostics) View.VISIBLE else View.GONE
         if (!visible) {
             stopUpdates()
             stopMemorySampler()
@@ -283,22 +286,27 @@ internal class GamePerformanceOverlayController(
         val jvmText = formatJvmMemory(jvmRuntimeMemorySnapshot)
         val gpuEstimatedText = latestGpuEstimatedBytes?.let(::formatMb) ?: "--"
         val totalText = totalMemoryBytes?.let(::formatMb) ?: "--"
-        val guardianReclaimedText = latestGpuGuardianReclaimedBytes?.let(::formatMb) ?: "--"
         val gcText = buildString {
             append(gcEventsPerMinute)
             append("/min")
             gcWarmupAgeSeconds?.let { append("*") }
         }
 
-        overlayView.text = buildString(240) {
-            appendMetric("▣", "渲染", rendererSummary)
-            appendMetric("◷", "FPS", String.format(Locale.US, "%.1f", fps))
-            appendMetric("J", "JVM", jvmText)
-            appendMetric("G", "GPU估算", gpuEstimatedText)
-            appendMetric("Σ", "总计", totalText)
-            appendMetric("R", "守护累计", guardianReclaimedText)
-            appendMetric("↺", "GC", gcText)
+        // deep diag 模式时启动器浮层隐藏，由 mod 侧 FrameHud 渲染统一浮层
+        if (!performanceDeepDiagnostics) {
+            overlayView.text = buildString(240) {
+                appendMetric("▣", "渲染", rendererSummary)
+                appendMetric("◷", "FPS", String.format(Locale.US, "%.1f", fps))
+                appendMetric("J", "JVM", jvmText)
+                appendMetric("G", "GPU估算", gpuEstimatedText)
+                appendMetric("Σ", "总计", totalText)
+                appendMetric("↺", "GC", gcText)
+            }
+        } else {
+            overlayView.text = ""
         }
+        // 每次刷新都写快照，mod 侧 FrameHud 低频读取
+        writeSnapshotFile(fps, jvmText, gpuEstimatedText, totalText, gcText)
     }
 
     private fun startMemorySampler() {
@@ -655,6 +663,24 @@ internal class GamePerformanceOverlayController(
         append(if (labelsExpanded) label else icon)
         append(' ')
         append(value)
+    }
+
+    /**
+     * 写启动器侧性能快照，供 amethyst-frame-probe mod 的 FrameHud 读取。
+     * 格式：key=value;key=value…\n，与 jvm_heap_snapshot.txt 保持一致。
+     * 仅在浮层可见时写入，避免浮层关闭后文件残留误导 mod 侧读取。
+     */
+    private fun writeSnapshotFile(
+        fps: Float,
+        jvmText: String,
+        gpuEstimatedText: String,
+        totalMemText: String,
+        gcText: String
+    ) {
+        try {
+            val line = "renderer=${rendererSummary};fps=${String.format(Locale.US, "%.1f", fps)};jvm=${jvmText};gpu=${gpuEstimatedText};mem=${totalMemText};gc=${gcText}\n"
+            snapshotFile.writeText(line, Charsets.UTF_8)
+        } catch (_: Throwable) {}
     }
 
     private fun applyInsets(view: View, insets: WindowInsetsCompat) {

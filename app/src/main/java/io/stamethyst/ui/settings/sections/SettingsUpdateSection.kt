@@ -55,9 +55,7 @@ internal fun SettingsUpdateSection(
             SettingsSwitchSpec(
                 checked = uiState.autoCheckUpdatesEnabled,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.update_auto_check_enabled),
-                disabledText = stringResource(R.string.update_auto_check_disabled),
-                description = stringResource(R.string.update_auto_check_desc),
+                title = stringResource(R.string.update_auto_check_enabled),
                 onCheckedChange = actions.onAutoCheckUpdatesChanged
             )
         )
@@ -196,5 +194,4 @@ internal fun UpdateHistoryEntryCard(
         }
     }
 }
-
 

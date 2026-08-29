@@ -1,5 +1,9 @@
 # Ram Saver
 
+## Low-overhead GPU diagnostics
+
+`RamSaverDiag` is enabled only by the dedicated `ramsaver.diag.enabled=true` property. Enabling the launcher's Deep performance diagnostics no longer activates Ram Saver duration tracking, render-thread stack capture, slow-event logging, or per-resource lifecycle logging. This addresses the symptom where drawing or shuffling cards becomes visibly slower only while diagnostics are enabled, and prevents that diagnostic overhead from being recorded by the frame probe as a false gameplay stall. GPU texture/FBO counters, byte estimates, source attribution, and periodic summaries remain available; intrusive texture/FBO stack sampling, resource-stall timing, and lifecycle logs require their dedicated properties. The behavior is implemented by `optispire.RamSaverDiag`, with low-overhead defaults in `GLTexture` and `GLFrameBuffer`.
+
 This bundled mod carries Ram Saver's texture-lifetime changes as a launcher-managed ModTheSpire component, so the Android runtime can ship the same RAM-saving behavior and Amethyst-specific diagnostics without requiring a user-imported workshop jar.
 
 ## Included fixes
@@ -84,6 +88,9 @@ Preloads BaseMod's first card-glow FBO/ShapeRenderer setup and Chinese dynamic-v
 
 25. `optispire.patches.FirstCombatLogConsolePrewarm`
 Pre-initializes Swing text-document insertion, the AWT event queue lookup, and ModTheSpire's redirected stdout/stderr console output path during splash/black-screen loading, with a first-monster-room fallback. This addresses first-combat entry hitches where early combat logging such as monster power application can stall the render thread inside `MessageConsole$ConsoleOutputStream.clearBuffer`, `DefaultCaret`, and `Toolkit.getEventQueue` before the battle-start banner is published. Type: performance mitigation implemented by `FirstCombatLogConsolePrewarm`.
+
+26. `optispire.patches.CombatTexturePrewarm`
+Keeps the shared `vfx/vfx.png` atlas resident with the existing combat prewarm set so card animations and other combat effects do not repeatedly materialize the lazy atlas during draw actions. This addresses SpriteBatch flush spikes and render hitches caused by effect-region draws switching between fake and real textures. Type: rendering performance mitigation implemented by `CombatTexturePrewarm`.
 
 ## Maintenance rule
 

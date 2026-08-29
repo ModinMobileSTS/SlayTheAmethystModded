@@ -1,0 +1,23 @@
+[package]
+name = "slay-the-amethyst-online"
+version = "0.1.0"
+edition = "2021"
+description = "Windows system tray companion for Slay the Amethyst EasyTier rooms"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+arboard = "3.6"
+image = { version = "0.25", default-features = false, features = ["png"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
+rfd = "0.17"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tray-icon = "0.24"
+url = "2.5"
+winit = "0.30"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+winres = "0.1"

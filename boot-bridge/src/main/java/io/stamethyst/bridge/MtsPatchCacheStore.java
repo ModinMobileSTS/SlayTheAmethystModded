@@ -3,10 +3,8 @@ package io.stamethyst.bridge;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.Closeable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -51,12 +49,7 @@ public final class MtsPatchCacheStore {
     private static final String PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected";
     private static final String PROPERTY_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
-    private static final String PROPERTY_LOADOUT_SCAN_CACHE_DIR = "amethyst.loadout.scan_cache_dir";
     private static final String PROPERTY_MIN_FREE_BYTES = "amethyst.mts.patch_cache.min_free_bytes";
-    /** Written by LoadoutClassScanCachePatches in the runtime compat mod. */
-    private static final String SCAN_CACHE_FILE_SUFFIX = ".txt";
-    private static final String SCAN_CACHE_IDENTITY_PREFIX = "identity=";
-    private static final int SCAN_CACHE_HEADER_LINES = 3;
     /**
      * The main jar embeds the base game jar and the package jars add roughly another
      * copy spread across mods, so two base-jar equivalents plus headroom for the
@@ -65,8 +58,27 @@ public final class MtsPatchCacheStore {
     private static final long CACHE_BUILD_SIZE_FACTOR = 3L;
     private static final long MIN_CACHE_BUILD_BYTES = 256L * 1024L * 1024L;
     private static final int MAX_PACKAGE_JAR_THREADS = 4;
+    /**
+     * Copy buffer for the fallback merge rewrite. The primary path folds compiled
+     * classes into the first fast write, so this only runs when MTS's own package
+     * writer produced the jar.
+     */
+    private static final int MERGE_COPY_BUFFER_BYTES = 64 * 1024;
     /** Worker count used by the last cache-jar write. Read by tests only. */
     static volatile int lastPackageJarThreadCount = 0;
+    /**
+     * Compiled base-game classes waiting to be folded into the fast main-jar write.
+     * Set by {@link #store} right before it invokes MTS's packageJar and consumed by
+     * {@link #packageJarFastPath} on the same thread. Package-private so tests can
+     * seed it when calling the fast path directly.
+     */
+    static volatile Map<String, byte[]> pendingCompiledClassOverrides = null;
+    /**
+     * Whether the last packageJar invocation wrote the main jar through the fast
+     * writer (and therefore already applied the pending overrides). store() checks
+     * this to skip its serial full-archive merge rewrite.
+     */
+    static volatile boolean lastPackageJarFastPathTookOver = false;
     /** Distinct threads that ran cache-jar tasks in the last write. Read by tests only. */
     static final Set<String> lastCacheJarThreadNames =
             Collections.synchronizedSet(new LinkedHashSet<String>());
@@ -136,6 +148,8 @@ public final class MtsPatchCacheStore {
         if (!Boolean.parseBoolean(System.getProperty(PROPERTY_ENABLED, "false"))) {
             return false;
         }
+        // Any bail-out below must leave store() on its serial merge fallback.
+        lastPackageJarFastPathTookOver = false;
         long startNs = System.nanoTime();
         boolean closedOriginalOutput = false;
         try {
@@ -161,7 +175,14 @@ public final class MtsPatchCacheStore {
                 throw new IllegalStateException("Failed to create cache package dir: " + packageDir.getAbsolutePath());
             }
 
-            int packageThreads = writeFastCacheJars(reflection, snapshots, cachedJar, packageDir);
+            int packageThreads = writeFastCacheJars(
+                    reflection,
+                    snapshots,
+                    cachedJar,
+                    packageDir,
+                    pendingCompiledClassOverrides
+            );
+            lastPackageJarFastPathTookOver = true;
             logStep(
                     "packageJarFastPath entries=" + snapshots.size() +
                             " cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
@@ -237,19 +258,46 @@ public final class MtsPatchCacheStore {
                             " cacheJar=" + cachedJar.getAbsolutePath() +
                             " packageDir=" + packageDir.getAbsolutePath()
             );
+            long collectStartNs = System.nanoTime();
+            // Collected before primeOutJarClasses/packageJar so the overrides can ride
+            // along the first fast main-jar write instead of a second full rewrite.
+            // The compiledClassPath object is untouched by priming, so collecting here
+            // sees exactly what the old post-packageJar collection saw.
+            Map<String, byte[]> compiledOverrides =
+                    collectCompiledClasses(baseJar, compiledClassPath, diagnosticFile);
+            logStep("collectCompiledClasses candidates=" + compiledOverrides.size(), collectStartNs);
+            pendingCompiledClassOverrides = compiledOverrides;
             long primeStartNs = System.nanoTime();
             primeOutJarClasses(classPool, diagnosticFile);
             logStep("primeOutJarClasses", primeStartNs);
             long packageStartNs = System.nanoTime();
-            invokePackageJarInCacheRoot(packageJar, classPool, cachedJar);
+            lastPackageJarFastPathTookOver = false;
+            try {
+                invokePackageJarInCacheRoot(packageJar, classPool, cachedJar);
+            } finally {
+                pendingCompiledClassOverrides = null;
+            }
             logStep(
                     "invokePackageJar cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
                             " packageJars=" + countPackageJars(packageDir),
                     packageStartNs
             );
             long mergeStartNs = System.nanoTime();
-            int mergedCompiledClasses = mergeCompiledClasses(cachedJar, baseJar, compiledClassPath, diagnosticFile);
-            logStep("mergeCompiledClasses merged=" + mergedCompiledClasses, mergeStartNs);
+            int mergedCompiledClasses;
+            if (lastPackageJarFastPathTookOver) {
+                // The fast writer already substituted every override into the main jar
+                // as it wrote it. Re-running the serial merge would re-read and re-write
+                // the whole archive for bytes that are already in place.
+                mergedCompiledClasses = compiledOverrides.size();
+                logStep(
+                        "mergeCompiledClasses skipped, folded into fast write folded=" +
+                                mergedCompiledClasses,
+                        mergeStartNs
+                );
+            } else {
+                mergedCompiledClasses = mergeCompiledClasses(cachedJar, compiledOverrides, diagnosticFile);
+                logStep("mergeCompiledClasses merged=" + mergedCompiledClasses, mergeStartNs);
+            }
             writeDiagnostic(
                     diagnosticFile,
                     "after packageJar cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
@@ -289,9 +337,6 @@ public final class MtsPatchCacheStore {
             long markerWriteStartNs = System.nanoTime();
             writeMarker(markerFile, expectedMarker);
             logStep("writeMarker", markerWriteStartNs);
-            long scanSweepStartNs = System.nanoTime();
-            int sweptScanCacheFiles = deleteStaleLoadoutScanCaches();
-            logStep("sweepLoadoutScanCache deleted=" + sweptScanCacheFiles, scanSweepStartNs);
             log("MTS patch cache is ready: packageJars=" + packageJarCount);
             logStep("store total", storeStartNs);
             deleteIfExists(diagnosticFile);
@@ -313,15 +358,21 @@ public final class MtsPatchCacheStore {
         }
     }
 
+    /**
+     * Fallback merge, used only when MTS's own package writer produced the cached jar
+     * (fast path unavailable or failed). Rewrites the whole archive once so the
+     * compiled base-game class bytes win over whatever the writer embedded.
+     *
+     * <p>The copy stays stream-based on purpose. A raw zip-record-level rewrite would
+     * avoid inflating every entry, but it means hand-parsing local headers and
+     * rebuilding the central directory on the durability-critical artifact; that risk
+     * is not worth taking for a path that now almost never runs.
+     */
     private static int mergeCompiledClasses(
             File cachedJar,
-            File baseJar,
-            Object compiledClassPath,
+            Map<String, byte[]> classes,
             File diagnosticFile
     ) throws Exception {
-        long collectStartNs = System.nanoTime();
-        Map<String, byte[]> classes = collectCompiledClasses(baseJar, compiledClassPath, diagnosticFile);
-        logStep("collectCompiledClasses candidates=" + classes.size(), collectStartNs);
         if (classes.isEmpty()) {
             return 0;
         }
@@ -334,7 +385,7 @@ public final class MtsPatchCacheStore {
             ZipOutputStream output = new ZipOutputStream(new FileOutputStream(tempJar, false));
             output.setLevel(Deflater.NO_COMPRESSION);
             try {
-                byte[] buffer = new byte[8192];
+                byte[] buffer = new byte[MERGE_COPY_BUFFER_BYTES];
                 ZipEntry entry;
                 while ((entry = input.getNextEntry()) != null) {
                     String name = entry.getName();
@@ -510,12 +561,15 @@ public final class MtsPatchCacheStore {
             PackageJarReflection reflection,
             List<EntrySnapshot> entries,
             File cachedJar,
-            File packageDir
+            File packageDir,
+            Map<String, byte[]> compiledOverrides
     ) throws Exception {
         List<Callable<Void>> tasks = new ArrayList<Callable<Void>>();
         // Built on the calling thread: createClassPath() and the Loader/MODINFOS
-        // reflection reads touch MTS statics, so they stay off the workers.
-        tasks.add(mainJarTask(reflection, entries, cachedJar));
+        // reflection reads touch MTS statics, so they stay off the workers. The
+        // overrides map comes from the same thread's store() call and is only read
+        // inside the tasks.
+        tasks.add(mainJarTask(reflection, entries, cachedJar, compiledOverrides));
         tasks.addAll(packageJarTasks(reflection, entries, packageDir));
         return runCacheJarTasks(tasks);
     }
@@ -587,7 +641,8 @@ public final class MtsPatchCacheStore {
     private static Callable<Void> mainJarTask(
             PackageJarReflection reflection,
             final List<EntrySnapshot> entries,
-            final File cachedJar
+            final File cachedJar,
+            final Map<String, byte[]> compiledOverrides
     ) throws Exception {
         final Manifest manifest = new Manifest();
         Attributes attributes = manifest.getMainAttributes();
@@ -610,12 +665,19 @@ public final class MtsPatchCacheStore {
                 String threadName = Thread.currentThread().getName();
                 lastMainJarThreadName = threadName;
                 lastCacheJarThreadNames.add(threadName);
-                writeFastMainJar(manifest, entries, cachedJar, mtsJar, kotlinJar, corePatchesJar, baseGameJar);
+                writeFastMainJar(manifest, entries, cachedJar, mtsJar, kotlinJar, corePatchesJar, baseGameJar, compiledOverrides);
                 return null;
             }
         };
     }
 
+    /**
+     * Writes the merged main jar in one pass. Compiled base-game class bytes carried
+     * in {@code compiledOverrides} are substituted inline wherever a matching entry
+     * appears, and classes that no source jar contains are appended at the end — the
+     * same content and precedence the old post-hoc merge rewrite produced, minus the
+     * second full read and write of the archive.
+     */
     private static void writeFastMainJar(
             Manifest manifest,
             List<EntrySnapshot> entries,
@@ -623,8 +685,13 @@ public final class MtsPatchCacheStore {
             InputStream mtsJar,
             InputStream kotlinJar,
             InputStream corePatchesJar,
-            InputStream baseGameJar
+            InputStream baseGameJar,
+            Map<String, byte[]> compiledOverrides
     ) throws Exception {
+        final Map<String, byte[]> overrides =
+                compiledOverrides == null
+                        ? Collections.<String, byte[]>emptyMap()
+                        : compiledOverrides;
         Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
         Set<String> written = new HashSet<String>();
         FileOutputStream fileOutput = new FileOutputStream(cachedJar, false);
@@ -632,16 +699,32 @@ public final class MtsPatchCacheStore {
             JarOutputStream output = new JarOutputStream(fileOutput, manifest);
             try {
                 output.setLevel(Deflater.NO_COMPRESSION);
-                writeSelectedJarEntries(output, written, entriesByPath, mtsJar, null, "MTS");
-                writeSelectedJarEntries(output, written, entriesByPath, kotlinJar, null, "KOTLIN");
-                writeOutJarEntries(output, written, entries, null);
-                writeSelectedJarEntries(output, written, entriesByPath, corePatchesJar, null, "COREPATCH");
-                writeSelectedJarEntries(output, written, entriesByPath, baseGameJar, null, "BASEGAME");
+                writeSelectedJarEntries(output, written, entriesByPath, mtsJar, null, "MTS", overrides);
+                writeSelectedJarEntries(output, written, entriesByPath, kotlinJar, null, "KOTLIN", overrides);
+                writeOutJarEntries(output, written, entries, null, overrides);
+                writeSelectedJarEntries(output, written, entriesByPath, corePatchesJar, null, "COREPATCH", overrides);
+                writeSelectedJarEntries(output, written, entriesByPath, baseGameJar, null, "BASEGAME", overrides);
+                appendRemainingOverrides(output, written, overrides);
             } finally {
                 output.close();
             }
         } finally {
             fileOutput.close();
+        }
+    }
+
+    /**
+     * Appends override classes that matched no source entry (brand-new classes
+     * introduced by patches). Already-substituted names are skipped by the written
+     * set. Iteration order follows the collection map, so it stays deterministic.
+     */
+    private static void appendRemainingOverrides(
+            JarOutputStream output,
+            Set<String> written,
+            Map<String, byte[]> overrides
+    ) throws Exception {
+        for (Map.Entry<String, byte[]> override : overrides.entrySet()) {
+            writeByteArrayEntry(output, written, override.getKey(), override.getValue());
         }
     }
 
@@ -713,8 +796,8 @@ public final class MtsPatchCacheStore {
             JarOutputStream output = new JarOutputStream(fileOutput);
             try {
                 output.setLevel(Deflater.NO_COMPRESSION);
-                writeOutJarEntries(output, written, entries, jarUrl);
-                writeSelectedJarEntries(output, written, entriesByPath, new FileInputStream(sourceJar), modId, "MOD");
+                writeOutJarEntries(output, written, entries, jarUrl, null);
+                writeSelectedJarEntries(output, written, entriesByPath, new FileInputStream(sourceJar), modId, "MOD", null);
             } finally {
                 output.close();
             }
@@ -767,13 +850,20 @@ public final class MtsPatchCacheStore {
         return byPath;
     }
 
+    /**
+     * Writes one source jar's selected entries into the main jar. When
+     * {@code overrides} is non-null and holds bytes for an entry, those bytes replace
+     * the source's own content — compiled patch classes must win over every original
+     * copy of the class regardless of which section declares it first.
+     */
     private static void writeSelectedJarEntries(
             JarOutputStream output,
             Set<String> written,
             Map<String, EntrySnapshot> entriesByPath,
             InputStream input,
             String modId,
-            String type
+            String type,
+            Map<String, byte[]> overrides
     ) throws Exception {
         if (input == null) {
             return;
@@ -804,7 +894,12 @@ public final class MtsPatchCacheStore {
                     if (!type.equals(expected.type) || !Objects.equals(modId, expected.modId)) {
                         continue;
                     }
-                    writeStreamEntry(output, written, name, jarInput, buffer);
+                    byte[] overrideBytes = overrides == null ? null : overrides.get(name);
+                    if (overrideBytes != null) {
+                        writeByteArrayEntry(output, written, name, overrideBytes);
+                    } else {
+                        writeStreamEntry(output, written, name, jarInput, buffer);
+                    }
                 }
             } finally {
                 jarInput.close();
@@ -818,13 +913,19 @@ public final class MtsPatchCacheStore {
             JarOutputStream output,
             Set<String> written,
             List<EntrySnapshot> entries,
-            URL locationUrl
+            URL locationUrl,
+            Map<String, byte[]> overrides
     ) throws Exception {
         for (EntrySnapshot entry : entries) {
             if (!"OUTJAR".equals(entry.type) || !Objects.equals(locationUrl, entry.locationUrl) || entry.bytes == null) {
                 continue;
             }
-            writeByteArrayEntry(output, written, entry.path, entry.bytes);
+            byte[] overrideBytes = overrides == null ? null : overrides.get(entry.path);
+            if (overrideBytes != null) {
+                writeByteArrayEntry(output, written, entry.path, overrideBytes);
+            } else {
+                writeByteArrayEntry(output, written, entry.path, entry.bytes);
+            }
         }
     }
 
@@ -1441,92 +1542,6 @@ public final class MtsPatchCacheStore {
         }
         long baseJarBytes = baseJar.isFile() ? baseJar.length() : 0L;
         return Math.max(MIN_CACHE_BUILD_BYTES, baseJarBytes * CACHE_BUILD_SIZE_FACTOR);
-    }
-
-    /**
-     * Deletes Loadout class-scan cache files left behind by earlier cache keys.
-     *
-     * The runtime compat mod names these files after a hash of an identity string that
-     * embeds the whole patch cache marker, so every marker change produces a fresh set
-     * of names and orphans the previous one. Nothing else ever removes them: the mod
-     * only replaces the single file it is about to write, and the launcher only wipes
-     * the directory when the user turns the feature off. Left alone the directory grows
-     * without bound on internal storage.
-     *
-     * A rebuild is the right moment to sweep, because the files the new run will write
-     * are the only ones that can still be read: {@code readCacheFile} rejects any file
-     * whose stored identity does not match, so anything not carrying the current marker
-     * is already dead weight.
-     *
-     * Runs after the marker is committed and never throws — this is housekeeping, and a
-     * failure here must not invalidate a cache that is otherwise complete.
-     */
-    private static int deleteStaleLoadoutScanCaches() {
-        try {
-            String scanCacheDir = System.getProperty(PROPERTY_LOADOUT_SCAN_CACHE_DIR, "").trim();
-            if (scanCacheDir.length() == 0) {
-                return 0;
-            }
-            File directory = new File(scanCacheDir);
-            File[] files = directory.isDirectory() ? directory.listFiles() : null;
-            if (files == null) {
-                return 0;
-            }
-            String currentMarker = System.getProperty(PROPERTY_EXPECTED, "").trim();
-            if (currentMarker.length() == 0) {
-                return 0;
-            }
-            int deleted = 0;
-            for (File file : files) {
-                if (!file.isFile() || !file.getName().endsWith(SCAN_CACHE_FILE_SUFFIX)) {
-                    continue;
-                }
-                if (scanCacheIdentityMatchesMarker(file, currentMarker)) {
-                    continue;
-                }
-                if (file.delete()) {
-                    deleted++;
-                }
-            }
-            return deleted;
-        } catch (Throwable error) {
-            log("Failed to sweep stale Loadout scan caches: " + error);
-            return 0;
-        }
-    }
-
-    /**
-     * Reads only the {@code identity=} header line, which the mod writes third. Files
-     * whose identity embeds the current marker are keepers; anything else — including a
-     * file too short or malformed to have a header — is stale.
-     */
-    private static boolean scanCacheIdentityMatchesMarker(File file, String currentMarker) {
-        BufferedReader reader = null;
-        try {
-            reader = new BufferedReader(
-                    new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)
-            );
-            for (int i = 0; i < SCAN_CACHE_HEADER_LINES; i++) {
-                String line = reader.readLine();
-                if (line == null) {
-                    return false;
-                }
-                if (line.startsWith(SCAN_CACHE_IDENTITY_PREFIX)) {
-                    return line.indexOf(currentMarker) >= 0;
-                }
-            }
-            return false;
-        } catch (Throwable ignored) {
-            // Unreadable means unusable to the mod as well, so treat it as stale.
-            return false;
-        } finally {
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException ignored) {
-                }
-            }
-        }
     }
 
     private static Callable<Void> fsyncTask(final File file) {

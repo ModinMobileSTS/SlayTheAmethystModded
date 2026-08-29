@@ -4,10 +4,12 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -16,10 +18,15 @@ internal object RemoteBitmapCacheStore {
     private const val CACHE_SIZE_BYTES = 24 * 1024 * 1024
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 20_000
+    private const val CLIENT_KEY_STEAM = "steam"
+    private const val CLIENT_KEY_WATT = "watt"
 
     private val memoryCache = object : LruCache<String, Bitmap>(CACHE_SIZE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
+
+    /** One client per host family so keep-alive connections survive across images. */
+    private val sharedClients = ConcurrentHashMap<String, OkHttpClient>()
 
     fun load(context: Context, imageUrl: String): Bitmap? {
         val normalizedUrl = imageUrl.trim()
@@ -79,22 +86,30 @@ internal object RemoteBitmapCacheStore {
     private fun cacheDirectory(context: Context): File =
         File(context.applicationContext.filesDir, DIRECTORY_NAME)
 
-    private fun createClient(context: Context, imageUrl: String) =
-        if (isSteamUrl(imageUrl)) {
-            SteamCloudAcceleratedHttp.createClient(
-                context = context,
-                connectTimeoutMs = CONNECT_TIMEOUT_MS.toLong(),
-                readTimeoutMs = READ_TIMEOUT_MS.toLong(),
-                callTimeoutMs = READ_TIMEOUT_MS.toLong() + CONNECT_TIMEOUT_MS.toLong(),
-            )
-        } else {
-            GithubAcceleratedHttp.createClient(
-                context = context,
-                connectTimeoutMs = CONNECT_TIMEOUT_MS,
-                readTimeoutMs = READ_TIMEOUT_MS,
-                followRedirects = true,
-            )
+    private fun createClient(context: Context, imageUrl: String): OkHttpClient {
+        val appContext = context.applicationContext
+        val key = if (isSteamUrl(imageUrl)) CLIENT_KEY_STEAM else CLIENT_KEY_WATT
+        return sharedClients.getOrPut(key) {
+            if (key == CLIENT_KEY_STEAM) {
+                val enabled = SteamCloudAcceleratedHttp.isEnabled(appContext)
+                SteamCloudAcceleratedHttp.createClient(
+                    context = appContext,
+                    connectTimeoutMs = CONNECT_TIMEOUT_MS.toLong(),
+                    readTimeoutMs = READ_TIMEOUT_MS.toLong(),
+                    callTimeoutMs = READ_TIMEOUT_MS.toLong() + CONNECT_TIMEOUT_MS.toLong(),
+                    enabled = enabled,
+                    enabledProvider = { SteamCloudAcceleratedHttp.isEnabled(appContext) },
+                )
+            } else {
+                WattToolkitAcceleratedHttp.createClient(
+                    context = appContext,
+                    connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                    readTimeoutMs = READ_TIMEOUT_MS,
+                    followRedirects = true,
+                )
+            }
         }
+    }
 
     private fun isSteamUrl(imageUrl: String): Boolean {
         val host = imageUrl.toHttpUrlOrNull()?.host?.lowercase() ?: return false

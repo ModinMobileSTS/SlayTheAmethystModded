@@ -8,7 +8,7 @@ internal object SteamCloudDiffPlanner {
         baseline: SteamCloudSyncBaseline?,
     ): SteamCloudUploadPlan {
         val currentLocalByPath = currentLocalEntries.associateBy { it.localRelativePath }
-        val currentRemoteByPath = currentRemoteSnapshot.entries.associateBy { it.localRelativePath }
+        val currentRemoteByPath = currentRemoteSnapshot.entriesForPlanning.associateBy { it.localRelativePath }
         val baselineLocalByPath = baseline?.localEntries?.associateBy { it.localRelativePath }.orEmpty()
         val baselineRemoteByPath = baseline?.remoteEntries?.associateBy { it.localRelativePath }.orEmpty()
         val allPaths = linkedSetOf<String>().apply {
@@ -37,15 +37,19 @@ internal object SteamCloudDiffPlanner {
                 }
 
             if (baseline == null && currentLocal != null && currentRemote != null) {
-                conflicts += SteamCloudConflict(
-                    localRelativePath = localRelativePath,
-                    rootKind = rootKind,
-                    kind = SteamCloudConflictKind.BASELINE_REQUIRED,
-                    currentLocal = currentLocal,
-                    currentRemote = currentRemote,
-                    baselineLocal = null,
-                    baselineRemote = null,
-                )
+                // Without a baseline, only a matching, nonblank SHA-1 can establish that the
+                // local and remote contents are already the same.
+                if (!currentLocalMatchesRemote(currentLocal, currentRemote)) {
+                    conflicts += SteamCloudConflict(
+                        localRelativePath = localRelativePath,
+                        rootKind = rootKind,
+                        kind = SteamCloudConflictKind.BASELINE_REQUIRED,
+                        currentLocal = currentLocal,
+                        currentRemote = currentRemote,
+                        baselineLocal = null,
+                        baselineRemote = null,
+                    )
+                }
                 continue
             }
 
@@ -55,7 +59,10 @@ internal object SteamCloudDiffPlanner {
             when {
                 !localChanged && !remoteChanged -> Unit
                 localChanged && remoteChanged -> {
-                    if (!currentLocalMatchesRemote(currentLocal, currentRemote)) {
+                    if (currentLocal == null && currentRemote?.isTombstone == true) {
+                        // An absent local file and an explicit remote tombstone agree on the
+                        // deletion; there is no file to download or upload.
+                    } else if (!currentLocalMatchesRemote(currentLocal, currentRemote)) {
                         conflicts += SteamCloudConflict(
                             localRelativePath = localRelativePath,
                             rootKind = rootKind,
@@ -70,7 +77,7 @@ internal object SteamCloudDiffPlanner {
 
                 localChanged -> {
                     if (currentLocal == null) {
-                        if (rootKind == SteamCloudRootKind.SAVES && currentRemote != null) {
+                        if (rootKind == SteamCloudRootKind.SAVES && currentRemote?.isLive == true) {
                             remoteDeleteCandidates += SteamCloudRemoteDeleteCandidate(
                                 remotePath = currentRemote.remotePath,
                                 localRelativePath = localRelativePath,
@@ -96,7 +103,9 @@ internal object SteamCloudDiffPlanner {
                         lastModifiedMs = currentLocal.lastModifiedMs,
                         sha256 = currentLocal.sha256,
                         sha1 = currentLocal.sha1,
-                        kind = if (baselineRemote == null && currentRemote == null) {
+                        kind = if (currentRemote?.isTombstone == true ||
+                            (baselineRemote == null && currentRemote == null)
+                        ) {
                             SteamCloudUploadCandidateKind.NEW_FILE
                         } else {
                             SteamCloudUploadCandidateKind.MODIFIED_FILE
@@ -109,6 +118,8 @@ internal object SteamCloudDiffPlanner {
                         localRelativePath = localRelativePath,
                         rootKind = rootKind,
                         kind = when {
+                            currentRemote?.isTombstone == true ->
+                                SteamCloudRemoteOnlyChangeKind.REMOTE_FILE_DELETED
                             baselineRemote == null && currentRemote != null ->
                                 SteamCloudRemoteOnlyChangeKind.NEW_REMOTE_FILE
                             baselineRemote != null && currentRemote == null ->
@@ -116,7 +127,7 @@ internal object SteamCloudDiffPlanner {
                             else ->
                                 SteamCloudRemoteOnlyChangeKind.MODIFIED_REMOTE_FILE
                         },
-                        currentRemote = currentRemote,
+                        currentRemote = currentRemote?.takeIf { it.isLive },
                         baselineRemote = baselineRemote,
                     )
                 }
@@ -140,6 +151,7 @@ internal object SteamCloudDiffPlanner {
             remoteOnlyChanges = remoteOnlyChanges,
             remoteDeleteCandidates = remoteDeleteCandidates,
             warnings = warnings.distinct(),
+            plannedRemoteManifestIdentity = SteamCloudManifestIdentity.compute(currentRemoteSnapshot),
         )
     }
 
@@ -166,14 +178,26 @@ internal object SteamCloudDiffPlanner {
         if (baseline == null || current == null) {
             return true
         }
-        val sha1Changed = baseline.sha1.isNotBlank() &&
-            current.sha1.isNotBlank() &&
-            !baseline.sha1.equals(current.sha1, ignoreCase = true)
-        return baseline.remotePath != current.remotePath
-            || baseline.rawSize != current.rawSize
-            || baseline.timestamp != current.timestamp
-            || baseline.persistState != current.persistState
-            || sha1Changed
+        // Normalize path separators before comparing: Steam can return either '/' or '\' depending
+        // on client/platform, and the baseline may have been written with a different separator.
+        val baselinePath = baseline.remotePath.replace('\\', '/')
+        val currentPath = current.remotePath.replace('\\', '/')
+        if (baselinePath != currentPath) {
+            return true
+        }
+        // persistState change (e.g. deleted marker) always counts as a change.
+        if (!steamCloudPersistStatesMatch(baseline.persistState, current.persistState)) {
+            return true
+        }
+        // When both sides have a SHA-1, that is the authoritative content identity check.
+        val baselineSha1 = baseline.sha1.trim()
+        val currentSha1 = current.sha1.trim()
+        if (baselineSha1.isNotBlank() && currentSha1.isNotBlank()) {
+            return !baselineSha1.equals(currentSha1, ignoreCase = true)
+        }
+        // Size remains a change detector when comparing two remote manifest versions.  It is
+        // intentionally not used as proof that a local file matches a remote file.
+        return baseline.rawSize != current.rawSize
     }
 
     private fun currentLocalMatchesRemote(
@@ -183,10 +207,16 @@ internal object SteamCloudDiffPlanner {
         if (local == null || remote == null) {
             return false
         }
-        if (local.sha1.isBlank() || remote.sha1.isBlank()) {
+        if (!remote.isLive) {
             return false
         }
-        return local.sha1.equals(remote.sha1, ignoreCase = true)
+        // SHA-1 is the only equality signal accepted here; size alone is not proof of equality.
+        val localSha1 = local.sha1.trim()
+        val remoteSha1 = remote.sha1.trim()
+        if (localSha1.isNotBlank() && remoteSha1.isNotBlank()) {
+            return localSha1.equals(remoteSha1, ignoreCase = true)
+        }
+        return false
     }
 
     private fun resolveRootKind(

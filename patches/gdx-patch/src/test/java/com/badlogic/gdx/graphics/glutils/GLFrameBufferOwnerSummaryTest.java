@@ -27,12 +27,6 @@ public class GLFrameBufferOwnerSummaryTest {
 	@Test
 	public void resolveManagerProtectReason_identifiesProtectedPipelines () {
 		assertEquals(
-			"scaled_render_pipeline",
-			FrameBufferOwnerSummary.resolveManagerProtectReason(
-				"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline#beginFrame:1"
-			)
-		);
-		assertEquals(
 			"ApplyScreenPostProcessor",
 			FrameBufferOwnerSummary.resolvePressureDownscaleProtectReason(
 				"basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor#Insert:12"

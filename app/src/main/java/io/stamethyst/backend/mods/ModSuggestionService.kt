@@ -1,7 +1,7 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
@@ -73,7 +73,7 @@ object ModSuggestionService {
         val localeKey = currentLocaleKey(context)
         val cacheFile = RuntimePaths.modSuggestionCacheFile(context, localeKey)
         val existingRawJson = readCacheFile(cacheFile)
-        val clients = GithubAcceleratedHttp.createClientPair(
+        val clients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

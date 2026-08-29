@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.Application.ApplicationType;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.backends.lwjgl.LwjglApplication;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.GL30;
 import com.badlogic.gdx.graphics.GLTexture;
@@ -65,14 +64,17 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	private final static String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
 	private final static String FRAME_PROFILER_RESOURCE_STALL_MS_PROP = "amethyst.gdx.frame_profiler.resource_stall_ms";
 	private final static boolean FRAME_PROFILER_RESOURCE_ENABLED =
-		readBooleanSystemProperty(FRAME_PROFILER_ENABLED_PROP, false)
-			|| readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false);
+		readBooleanSystemProperty(FRAME_PROFILER_ENABLED_PROP, false);
 	private final static long FRAME_PROFILER_RESOURCE_STALL_NANOS =
 		readLongSystemProperty(FRAME_PROFILER_RESOURCE_STALL_MS_PROP, 8L, 1L, 10000L) * 1000000L;
 	private final static String GPU_RESOURCE_DIAG_FBO_STACKS_PROP =
 		"amethyst.gdx.gpu_resource_diag.fbo_stacks";
+	private final static String GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_PROP =
+		"amethyst.gdx.gpu_resource_diag.lifecycle_logs";
+	private final static boolean GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_PROP, false);
 	private final static boolean GPU_RESOURCE_DIAG_FBO_STACKS_ENABLED =
-		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_STACKS_PROP, true);
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_FBO_STACKS_PROP, false);
 	private final static String GPU_RESOURCE_DIAG_FBO_STACK_LIMIT_PROP =
 		"amethyst.gdx.gpu_resource_diag.fbo_stack_limit";
 	private final static int GPU_RESOURCE_DIAG_FBO_STACK_LIMIT =
@@ -1119,13 +1121,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 
 	/** Unbinds the framebuffer, all drawing will be performed to the normal framebuffer from here on. */
 	public void end () {
-		int width = LwjglApplication.getScaledRenderBackBufferWidthOverride();
-		int height = LwjglApplication.getScaledRenderBackBufferHeightOverride();
-		if (width <= 0 || height <= 0) {
-			width = Gdx.graphics.getBackBufferWidth();
-			height = Gdx.graphics.getBackBufferHeight();
-		}
-		end(0, 0, width, height);
+		end(0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
 	}
 
 	/** Unbinds the framebuffer and sets viewport sizes, all drawing will be performed to the normal framebuffer from here on.
@@ -1856,7 +1852,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 		if (nativeBytes > frameBufferNativeBytesPeak) {
 			frameBufferNativeBytesPeak = nativeBytes;
 		}
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLFrameBuffer build id=" + id
 			+ " generation=" + buildGeneration
 			+ " reason=" + reason
@@ -1891,7 +1887,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			FRAMEBUFFERS_NATIVE_BYTES.set(0L);
 			nativeBytes = 0L;
 		}
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLFrameBuffer native_release id=" + id
 			+ " fb=" + framebufferHandle
 			+ " colorTex=" + colorTextureHandle
@@ -1908,7 +1904,7 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 			FRAMEBUFFERS_LIVE.set(0);
 			live = 0;
 		}
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLFrameBuffer dispose id=" + id
 			+ " fb=" + framebufferHandle
 			+ " colorTex=" + colorTextureHandle

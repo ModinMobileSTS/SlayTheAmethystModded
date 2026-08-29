@@ -1,8 +1,6 @@
 package com.badlogic.gdx.graphics.glutils;
 
 final class FrameBufferOwnerSummary {
-	private static final String SCALED_RENDER_PIPELINE_FRAGMENT =
-		"com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline";
 	private static final String APPLY_SCREEN_POST_PROCESSOR_FRAGMENT =
 		"basemod.patches.com.megacrit.cardcrawl.core.CardCrawlGame.ApplyScreenPostProcessor";
 	private static final String[] EFFECT_STACK_FRAGMENTS = {
@@ -25,9 +23,6 @@ final class FrameBufferOwnerSummary {
 	}
 
 	static String resolveManagerProtectReason (String stackKey) {
-		if (containsStackFragment(stackKey, SCALED_RENDER_PIPELINE_FRAGMENT)) {
-			return "scaled_render_pipeline";
-		}
 		if (containsStackFragment(stackKey, APPLY_SCREEN_POST_PROCESSOR_FRAGMENT)) {
 			return "ApplyScreenPostProcessor";
 		}
@@ -130,9 +125,6 @@ final class FrameBufferOwnerSummary {
 
 	private static String classifyCoreOwnerKey (String className) {
 		if (className == null || className.length() == 0) return null;
-		if (className.indexOf("com.badlogic.gdx.backends.lwjgl.LwjglApplication$ScaledRenderPipeline") >= 0) {
-			return "core<-scaled_render_pipeline";
-		}
 		if (!className.startsWith("com.megacrit.cardcrawl.")) return null;
 		if (className.indexOf(".screens.mainMenu.") >= 0 || className.indexOf(".screens.charSelect.") >= 0) {
 			return "core<-menu";

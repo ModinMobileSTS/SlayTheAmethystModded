@@ -24,6 +24,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -52,6 +53,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -190,6 +192,8 @@ internal fun WorkshopDetailScreen(
             )
         }
     val isLoadingChangeNotes = state.detailChangeNotesLoadingId == publishedFileId
+    val detailTopBarProgress = state.detailLoadProgress
+        ?.takeIf { state.detailLoadingId == publishedFileId }
     val canTranslateDetails = selectedDetails?.let { details ->
         details.summary.title.isNotBlank() ||
             details.summary.description.isNotBlank() ||
@@ -252,13 +256,32 @@ internal fun WorkshopDetailScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
-                                text = stringResource(R.string.workshop_detail_subtitle_format, publishedFileId.toString()),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            // While a detail load runs, the subtitle line narrates the pipeline
+                            // step by step; once the load settles the static subtitle returns.
+                            AnimatedContent(
+                                targetState = detailTopBarProgress != null,
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(durationMillis = 180)) togetherWith
+                                        fadeOut(animationSpec = tween(durationMillis = 140)))
+                                        .using(SizeTransform(clip = false))
+                                },
+                                label = "workshop-detail-topbar-progress",
+                            ) { showingProgress ->
+                                if (showingProgress) {
+                                    WorkshopDetailTopBarLoadProgress(progress = detailTopBarProgress)
+                                } else {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.workshop_detail_subtitle_format,
+                                            publishedFileId.toString(),
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     },
                     navigationIcon = {
@@ -1535,6 +1558,7 @@ private fun WorkshopChangeNotesDialog(
                     markdown.isNotBlank() -> SimpleMarkdownCard(
                         title = stringResource(R.string.workshop_change_notes_title),
                         markdown = markdown,
+                        textSelectable = true,
                     )
                     else -> {
                         errorMessage?.let { message ->
@@ -1596,20 +1620,24 @@ private fun DetailModCard(
                     modifier = Modifier.size(112.dp),
                 )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = details.summary.authorName.ifBlank { stringResource(R.string.workshop_unknown_author) },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    SelectionContainer {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = details.summary.authorName.ifBlank { stringResource(R.string.workshop_unknown_author) },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     WorkshopDownloadActionButton(
                         state = downloadState,
                         onClick = onDownload,
@@ -1702,19 +1730,21 @@ private fun DetailMetric(label: String, value: String, modifier: Modifier = Modi
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        SelectionContainer {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -1852,13 +1882,15 @@ private fun DetailDescriptionCard(
                     )
                 }
             }
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = if (expanded) Int.MAX_VALUE else 4,
-                overflow = TextOverflow.Ellipsis,
-            )
+            SelectionContainer {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = if (expanded) Int.MAX_VALUE else 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (isTranslating) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2109,11 +2141,13 @@ private fun CommentItemCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                text = displayedContent,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            SelectionContainer {
+                Text(
+                    text = displayedContent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
     }
 }

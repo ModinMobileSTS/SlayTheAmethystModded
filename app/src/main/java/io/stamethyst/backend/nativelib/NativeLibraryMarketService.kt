@@ -3,7 +3,7 @@ package io.stamethyst.backend.nativelib
 import android.content.Context
 import android.content.res.AssetManager
 import io.stamethyst.backend.fs.FileTreeCleaner
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
@@ -84,7 +84,7 @@ object NativeLibraryMarketService {
         context: Context,
         source: UpdateSource,
     ): List<NativeLibraryMarketCatalogEntry> {
-        val clients = GithubAcceleratedHttp.createClientPair(
+        val clients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,
@@ -173,7 +173,7 @@ object NativeLibraryMarketService {
         )
         prepareCleanDirectory(stagingDir)
         try {
-            val clients = GithubAcceleratedHttp.createClientPair(
+            val clients = WattToolkitAcceleratedHttp.createClientPair(
                 context = context,
                 connectTimeoutMs = CONNECT_TIMEOUT_MS,
                 readTimeoutMs = READ_TIMEOUT_MS,

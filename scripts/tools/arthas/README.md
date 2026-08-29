@@ -98,8 +98,12 @@ agent，不能通过 `load_agent()` 调用。资源包必须包含
 
 1. `ArthasBootstrapCompat.createWithoutNetty()` 构造 Bootstrap
 2. 注册 `BuiltinCommandPack`（禁用列表为空）+ 自定义 `MetaspaceCommand`
-3. 注册 `ClassMetaClassWriterTransformer`（MTS ClassLoader 下 ASM 类型解析）
-4. `ServerSocket(:8099)`，每次 `accept` 创建 `BridgeSession`；加载扁平 `.so` 并注入 profiler
+3. 注册 ByteKit 与 Enhancer transformer，修复 MTS ClassLoader 下的 ASM 类型解析、class resource 读取和重复类重转换
+4. `ServerSocket(:8099)`，每次 `accept` 创建 `BridgeSession`；默认禁用会在部分 Android 内核触发 SIGSEGV 的 async-profiler 原生初始化
+
+MTS 可能同时保留多个同名类副本。bridge 因此关闭 Arthas batch retransform，并在 JVM 仅拒绝其中一个重复副本时保留其他副本的成功增强。`nativeDiagnostics` 默认是 `false`；只有显式传入 `nativeDiagnostics=true` 才会尝试 procfs 和 async-profiler 原生诊断。
+
+深度性能诊断还支持设备端自动执行 core/bridge 两阶段加载。自动模式仅绑定 loopback、保持 `nativeDiagnostics=false`，并将有界 stack/trace 结果写到 `sts/performance/arthas/`；电脑端 `arthas_ensure` 会优先复用该实例。
 
 ## 快速开始
 
@@ -240,9 +244,10 @@ jad -c 3d4eac69 com.megacrit.cardcrawl.cards.AbstractCard
 
 ### 字节码增强与 CommonSuperBridge
 
-ClassLoader 隔离会导致 ASM `getCommonSuperClass()` 失败。`CommonSuperBridge` 经
-`Instrumentation.getAllLoadedClasses()` 全局解析；每连接时对已加载的
-`ClassMetaClassWriter` 做 `retransformClasses`。
+ClassLoader 隔离会导致 ASM `getCommonSuperClass()` 失败，并使 ByteKit 直接调用
+`ClassLoader.getResourceAsStream()` 时找不到 MTS 中已加载类的字节码。`CommonSuperBridge`
+经 `Instrumentation.getAllLoadedClasses()` 定位目标类，再通过 `Class.getResourceAsStream()`
+读取资源；每次连接时会重转换已加载的 `ClassMetaClassWriter` 和 `ClassLoaderUtils`。
 
 若 `watch` / `trace` / `monitor` 报 `Type xxx not present`：断开重连（CLI 自动重试一次）。
 

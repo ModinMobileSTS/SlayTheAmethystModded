@@ -64,11 +64,14 @@ internal object SteamCloudSyncBlacklist {
             return snapshot
         }
         val filteredEntries = snapshot.entries.filterNot { it.localRelativePath in normalizedBlacklist }
+        val filteredTombstoneEntries = snapshot.tombstoneEntries
+            .filterNot { it.localRelativePath in normalizedBlacklist }
         return snapshot.copy(
             fileCount = filteredEntries.size,
             preferencesCount = filteredEntries.count { it.rootKind == SteamCloudRootKind.PREFERENCES },
             savesCount = filteredEntries.count { it.rootKind == SteamCloudRootKind.SAVES },
             entries = filteredEntries,
+            tombstoneEntries = filteredTombstoneEntries,
         )
     }
 

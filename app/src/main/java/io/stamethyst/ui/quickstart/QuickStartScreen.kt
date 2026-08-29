@@ -799,13 +799,7 @@ private fun SteamAccelerationSwitchCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = stringResource(
-                        if (checked) {
-                            R.string.quick_start_steam_acceleration_enabled_title
-                        } else {
-                            R.string.quick_start_steam_acceleration_disabled_title
-                        }
-                    ),
+                    text = stringResource(R.string.quick_start_steam_acceleration_enabled_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )

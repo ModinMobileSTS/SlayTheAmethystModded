@@ -30,17 +30,20 @@ internal object SteamCloudLocalSnapshotCollector {
         rootDir: File,
         sink: MutableList<SteamCloudLocalFileSnapshotEntry>,
     ) {
-        if (!rootDir.isDirectory) {
+        if (!rootDir.exists()) {
             return
         }
-        val files = rootDir.walkTopDown()
-            .filter { it.isFile }
-            .toList()
+        if (!rootDir.isDirectory) {
+            throw IOException("Steam Cloud local root is not a directory: ${rootDir.absolutePath}")
+        }
+        val files = mutableListOf<File>()
+        collectFiles(rootDir, files)
+        files
             .sortedWith(compareBy<File>({ it.relativeTo(rootDir).path.lowercase(Locale.ROOT) }, { it.path }))
-        for (file in files) {
+            .forEach { file ->
             val relativeSuffix = file.relativeTo(rootDir).invariantSeparatorsPath
             if (relativeSuffix.isBlank()) {
-                continue
+                return@forEach
             }
             val fileDigests = digestFile(file)
             sink += SteamCloudLocalFileSnapshotEntry(
@@ -51,6 +54,20 @@ internal object SteamCloudLocalSnapshotCollector {
                 sha256 = fileDigests.sha256,
                 sha1 = fileDigests.sha1,
             )
+        }
+    }
+
+    private fun collectFiles(directory: File, sink: MutableList<File>) {
+        val children = directory.listFiles()
+            ?: throw IOException("Failed to enumerate Steam Cloud local directory: ${directory.absolutePath}")
+        children.forEach { child ->
+            when {
+                child.isDirectory -> collectFiles(child, sink)
+                child.isFile -> sink += child
+                else -> throw IOException(
+                    "Steam Cloud local path disappeared or has an unsupported type: ${child.absolutePath}"
+                )
+            }
         }
     }
 

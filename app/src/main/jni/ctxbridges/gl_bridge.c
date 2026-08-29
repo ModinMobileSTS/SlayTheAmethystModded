@@ -256,7 +256,34 @@ static bool gl_create_context_for_bundle(
     if (bundle == NULL) return false;
     bundle->context = eglCreateContext_p(g_EglDisplay, bundle->config, sharedContext, contextAttributes);
     if (bundle->context == EGL_NO_CONTEXT) {
-        ;
+        EGLint createErr = eglGetError_p();
+        // Some MobileGlues / vendor stacks advertise ES3 in eglChooseConfig but still
+        // fail eglCreateContext with ES3 client attributes. Retry with ES2 so the game
+        // can boot on those devices instead of dying with "No context is current".
+        if (contextAttributes != NULL && contextAttributes[0] == EGL_CONTEXT_CLIENT_VERSION
+                && contextAttributes[1] >= 3) {
+            const EGLint es2ContextAttributes[] = {
+                EGL_CONTEXT_CLIENT_VERSION, 2,
+                EGL_NONE
+            };
+            bundle->context = eglCreateContext_p(
+                    g_EglDisplay,
+                    bundle->config,
+                    sharedContext,
+                    es2ContextAttributes
+            );
+            if (bundle->context != EGL_NO_CONTEXT) {
+                printf("GLBridgeDiag: eglCreateContext ES3 failed err=0x%04x, retried ES2 (%s)\n",
+                        createErr, reason == NULL ? "unknown" : reason);
+                gl_advance_context_generation(reason);
+                return true;
+            }
+            printf("GLBridgeDiag: eglCreateContext failed err=0x%04x, ES2 retry failed err=0x%04x (%s)\n",
+                    createErr, eglGetError_p(), reason == NULL ? "unknown" : reason);
+        } else {
+            printf("GLBridgeDiag: eglCreateContext failed err=0x%04x (%s)\n",
+                    createErr, reason == NULL ? "unknown" : reason);
+        }
         return false;
     }
     gl_advance_context_generation(reason);
@@ -382,12 +409,12 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
             egl_attributes[13] = renderableType;
             num_configs = 0;
             if (eglChooseConfig_p(g_EglDisplay, egl_attributes, NULL, 0, &num_configs) != EGL_TRUE) {
-                ;
+                printf("GLBridgeDiag: eglChooseConfig failed err=0x%04x (ES3 then ES2)\n", eglGetError_p());
                 free(bundle);
                 return NULL;
             }
         } else {
-            ;
+            printf("GLBridgeDiag: eglChooseConfig failed err=0x%04x\n", eglGetError_p());
             free(bundle);
             return NULL;
         }
@@ -398,12 +425,12 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
             requestedContextVersion = 2;
             egl_attributes[13] = renderableType;
             if (eglChooseConfig_p(g_EglDisplay, egl_attributes, NULL, 0, &num_configs) != EGL_TRUE || num_configs == 0) {
-                ;
+                printf("GLBridgeDiag: eglChooseConfig returned no configs err=0x%04x (ES3 then ES2)\n", eglGetError_p());
                 free(bundle);
                 return NULL;
             }
         } else {
-            ;
+            printf("GLBridgeDiag: eglChooseConfig returned no configs err=0x%04x\n", eglGetError_p());
             free(bundle);
             return NULL;
         }

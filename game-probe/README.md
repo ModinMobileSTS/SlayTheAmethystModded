@@ -1,5 +1,9 @@
 # Game Probe
 
+脱机 Arthas 运行时不再打包进 APK。只有独立安装的 `arthas-resource.zip`
+通过启动器完整性校验后，深度诊断才会把 `arthasHome` 传给 game-probe。
+该目录包含 `arthas-core.jar`、`arthas-spy.jar` 和 `arthas-bridge.jar`。
+
 Java agent (`-javaagent`) providing game-specific runtime monitoring and
 control over a TCP line protocol (default port `9099`).  Loads into the
 game JVM via `premain`; also supports `agentmain` attachment.
@@ -60,10 +64,16 @@ Part of the Gradle multi-project build. Produces `game-probe.jar` with
 copies this JAR into `components/game_probe/` in generated runtime assets.
 At launch the game JVM receives `-javaagent:<path>=port=9099`.
 
+When Deep performance diagnostics is enabled, Game Probe loads the three Arthas JARs
+from the separately installed `arthasHome` directory off the startup thread, starts
+the loopback-only bridge on `:8099`, and runs bounded Java-only stack/trace sampling.
+Native profiler diagnostics remain off. Results are written under
+`sts/performance/arthas/` for on-device export.
+
 ## Architecture
 
 ```
-External client (Python/CLI)
+External client (Python/CLI) or offline controller
        │ TCP :9099
        ▼
 AgentConnectionManager — listens on 127.0.0.1
@@ -100,5 +110,5 @@ This is how Arthas (via `arthas-bridge`) is embedded under the same JVM.
 |--------|----------------|
 | `connector/` (Python) | `connect_stream(9099)` → Unix-socket-proxied TCP |
 | `scripts/tools/lib/agent_client.py` | Unified Python client for the above |
-| `arthas-bridge/` (Java) | Loaded via `LOAD_AGENT`, runs on `:8099` |
+| `arthas-bridge/` (Java) | Loaded via `LOAD_AGENT` or offline deep diagnostics, runs on loopback `:8099` |
 | `mods/amethyst-runtime-compat/` | `AutoplayDriver` taps `PlayMonitor` via `Class.forName` |

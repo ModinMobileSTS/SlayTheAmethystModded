@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
@@ -52,6 +55,7 @@ import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.RichPresenceDisplayPreferences
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
@@ -340,7 +344,7 @@ internal fun LauncherSettingsLauncherScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_basic_tutorial_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_basic_tutorial_title), iconResId = R.drawable.ic_settings_tutorial) {
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_basic_tutorial_action),
                     supportingText = stringResource(R.string.settings_basic_tutorial_desc),
@@ -350,7 +354,7 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_appearance_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_appearance_section_title), iconResId = R.drawable.ic_settings_appearance) {
                 SettingsAppearanceSection(
                     uiState = uiState,
                     actions = AppearanceSettingsActions(
@@ -369,7 +373,7 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.update_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.update_section_title), iconResId = R.drawable.ic_settings_update) {
                 SettingsUpdateSection(
                     uiState = uiState,
                     actions = UpdateSettingsActions(
@@ -383,10 +387,9 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_launcher_other_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_launcher_other_section_title), iconResId = R.drawable.ic_settings_other) {
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_first_run_reopen_action),
-                    supportingText = stringResource(R.string.settings_first_run_reopen_desc),
                     enabled = !uiState.busy,
                     onClick = onOpenFirstRunSetup,
                 )
@@ -434,16 +437,6 @@ internal fun LauncherSettingsGameScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onRenderScaleSelected: (Float) -> Unit = {},
-    onTargetFpsSelected: (Int) -> Unit = {},
-    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
-    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
-    onScreenBottomCropChanged: (Boolean) -> Unit = {},
-    onRamSaverEnabledChanged: (Boolean) -> Unit = {},
-    onMtsPatchCacheEnabledChanged: (Boolean) -> Unit = {},
-    onKeepScreenOnTimeoutSelected: (Int) -> Unit = {},
-    onGameplayFontScaleChanged: (Float) -> Unit = {},
-    onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit = {},
@@ -454,9 +447,14 @@ internal fun LauncherSettingsGameScreenContent(
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit = {},
     onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
+    onFloatingToolButtonChanged: (String, Boolean) -> Unit = { _, _ -> },
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
-    onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
+    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
+    onScreenBottomCropChanged: (Boolean) -> Unit = {},
+    onGameplayFontScaleChanged: (Float) -> Unit = {},
+    onGameplayLargerUiChanged: (Boolean) -> Unit = {},
+    onKeepScreenOnTimeoutSelected: (Int) -> Unit = {},
 ) {
     SettingsRouteScaffold(
         modifier = modifier,
@@ -465,7 +463,7 @@ internal fun LauncherSettingsGameScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_player_name_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_player_name_title), iconResId = R.drawable.ic_settings_player) {
                 SettingsPlayerNameAction(
                     uiState = uiState,
                     onPlayerNameChanged = onPlayerNameChanged,
@@ -473,25 +471,7 @@ internal fun LauncherSettingsGameScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
-                SettingsPerformanceSection(
-                    uiState = uiState,
-                    actions = PerformanceSettingsActions(
-                        onRenderScaleSelected = onRenderScaleSelected,
-                        onTargetFpsSelected = onTargetFpsSelected,
-                        onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
-                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
-                        onScreenBottomCropChanged = onScreenBottomCropChanged,
-                        onRamSaverEnabledChanged = onRamSaverEnabledChanged,
-                        onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
-                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
-                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
-                    ),
-                )
-            }
-        }
-        item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_input)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_input), iconResId = R.drawable.ic_settings_input) {
                 SettingsInputSection(
                     uiState = uiState,
                     actions = InputSettingsActions(
@@ -505,11 +485,69 @@ internal fun LauncherSettingsGameScreenContent(
                         onIgnoreLongPressRightClickWhilePlayingCardChanged =
                             onIgnoreLongPressRightClickWhilePlayingCardChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
+                        onFloatingToolButtonChanged = onFloatingToolButtonChanged,
                         onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
-                        onKeepScreenOnTimeoutSelected = onKeepScreenOnTimeoutSelected,
-                        onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                     ),
+                )
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_game_display), iconResId = R.drawable.ic_settings_game_display) {
+                SettingsGameplayDisplaySection(
+                    uiState = uiState,
+                    actions = GameplayDisplaySettingsActions(
+                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
+                        onScreenBottomCropChanged = onScreenBottomCropChanged,
+                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
+                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
+                        onKeepScreenOnTimeoutSelected = onKeepScreenOnTimeoutSelected,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun LauncherSettingsPerformanceScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: SettingsScreenViewModel.UiState,
+    onGoBack: () -> Unit = {},
+    onRenderScaleSelected: (Float) -> Unit = {},
+    onTargetFpsSelected: (Int) -> Unit = {},
+    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
+    onRamSaverEnabledChanged: (Boolean) -> Unit = {},
+    onMtsPatchCacheEnabledChanged: (Boolean) -> Unit = {},
+    onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
+) {
+    SettingsRouteScaffold(
+        modifier = modifier,
+        uiState = uiState,
+        spec = SettingsPerformanceRouteSpec,
+        onGoBack = onGoBack,
+    ) {
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_render), iconResId = R.drawable.ic_settings_render) {
+                SettingsPerformanceSection(
+                    uiState = uiState,
+                    actions = PerformanceSettingsActions(
+                        onRenderScaleSelected = onRenderScaleSelected,
+                        onTargetFpsSelected = onTargetFpsSelected,
+                        onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
+                        onRamSaverEnabledChanged = onRamSaverEnabledChanged,
+                        onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
+                    ),
+                )
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.showGamePerformanceOverlay,
+                        enabled = !uiState.busy,
+                        title = stringResource(R.string.settings_performance_overlay_enabled),
+                        description = stringResource(R.string.settings_performance_overlay_desc),
+                        onCheckedChange = onGamePerformanceOverlayChanged,
+                    )
                 )
             }
         }
@@ -526,6 +564,10 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onOpenSteamCloudLogin: () -> Unit = {},
     onSteamCloudWattAccelerationChanged: (Boolean) -> Unit = {},
     onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit = {},
+    onSteamGamePresenceChanged: (Boolean) -> Unit = {},
+    onRichPresenceDisplayPreferencesChanged: (RichPresenceDisplayPreferences) -> Unit = {},
+    onSteamAchievementSyncChanged: (Boolean) -> Unit = {},
+    onAchievementUnlockNotificationChanged: (Boolean) -> Unit = {},
     onOpenSteamCloudSaveSettings: () -> Unit = {},
     onClearSteamCloudCredentials: () -> Unit = {},
     onClearSteamCloudNetworkCache: () -> Unit = {},
@@ -538,6 +580,45 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onClearWorkshopPreviewCache: () -> Unit = {},
     onOpenBaiduTranslationCredentials: () -> Unit = {},
 ) {
+    val steamActions = SteamCloudSettingsActions(
+        onOpenSteamCloudLogin = onOpenSteamCloudLogin,
+        onSteamCloudWattAccelerationChanged = onSteamCloudWattAccelerationChanged,
+        onSteamCloudAutoLaunchAfterSyncChanged = onSteamCloudAutoLaunchAfterSyncChanged,
+        onSteamGamePresenceChanged = onSteamGamePresenceChanged,
+        onRichPresenceDisplayPreferencesChanged = onRichPresenceDisplayPreferencesChanged,
+        onSteamAchievementSyncChanged = onSteamAchievementSyncChanged,
+        onAchievementUnlockNotificationChanged = onAchievementUnlockNotificationChanged,
+        onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
+        onClearSteamCloudCredentials = onClearSteamCloudCredentials,
+        onClearSteamCloudNetworkCache = onClearSteamCloudNetworkCache,
+    )
+    var showRequiresPurchaseDialog by remember { mutableStateOf(false) }
+    val requiresPurchaseAction: @Composable () -> Unit = {
+        IconButton(onClick = { showRequiresPurchaseDialog = true }) {
+            Icon(
+                painter = painterResource(R.drawable.ic_info_outline),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (showRequiresPurchaseDialog) {
+        AlertDialog(
+            onDismissRequest = { showRequiresPurchaseDialog = false },
+            title = { Text(stringResource(R.string.settings_steam_services_requires_purchase_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_steam_services_requires_purchase_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showRequiresPurchaseDialog = false }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
     SettingsRouteScaffold(
         modifier = modifier,
         uiState = uiState,
@@ -545,22 +626,45 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_title)) {
+            SteamAccountSection(uiState = uiState, actions = steamActions)
+        }
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_steam_services_presence_section_title),
+                iconResId = R.drawable.ic_settings_presence,
+                trailingAction = requiresPurchaseAction,
+            ) {
+                SteamGamePresenceSection(uiState = uiState, actions = steamActions)
+            }
+        }
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_steam_services_achievement_section_title),
+                iconResId = R.drawable.ic_settings_achievement,
+                trailingAction = requiresPurchaseAction,
+            ) {
+                SteamAchievementSection(uiState = uiState, actions = steamActions)
+            }
+        }
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_steam_cloud_title),
+                iconResId = R.drawable.ic_settings_cloud,
+                trailingAction = requiresPurchaseAction,
+            ) {
                 SettingsSteamCloudSection(
                     uiState = uiState,
-                    actions = SteamCloudSettingsActions(
-                        onOpenSteamCloudLogin = onOpenSteamCloudLogin,
-                        onSteamCloudWattAccelerationChanged = onSteamCloudWattAccelerationChanged,
-                        onSteamCloudAutoLaunchAfterSyncChanged = onSteamCloudAutoLaunchAfterSyncChanged,
-                        onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
-                        onClearSteamCloudCredentials = onClearSteamCloudCredentials,
-                        onClearSteamCloudNetworkCache = onClearSteamCloudNetworkCache,
-                    ),
+                    actions = steamActions,
                 )
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_market_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_steam_services_network_section_title), iconResId = R.drawable.ic_settings_network) {
+                SteamNetworkSection(uiState = uiState, actions = steamActions)
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_market_section_title), iconResId = R.drawable.ic_settings_market) {
                 SettingsMarketSection(
                     uiState = uiState,
                     actions = MarketSettingsActions(
@@ -609,11 +713,8 @@ internal fun LauncherSettingsWorkshopAutoImportDefaultsScreenContent(
                     SettingsSwitchSpec(
                         checked = uiState.workshopAutoImportAtlasDownscaleEnabled,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(
+                        title = stringResource(
                             R.string.settings_workshop_auto_import_defaults_atlas_enabled_title
-                        ),
-                        disabledText = stringResource(
-                            R.string.settings_workshop_auto_import_defaults_atlas_disabled_title
                         ),
                         description = stringResource(
                             R.string.settings_workshop_auto_import_defaults_atlas_desc
@@ -690,7 +791,7 @@ internal fun LauncherSettingsFeedbackScreenContent(
             )
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files), iconResId = R.drawable.ic_settings_resources) {
                 SettingsImportSection(
                     busy = uiState.busy,
                     onImportJar = onImportJar,
@@ -732,5 +833,3 @@ internal fun LauncherSettingsAboutScreenContent(
         }
     }
 }
-
-

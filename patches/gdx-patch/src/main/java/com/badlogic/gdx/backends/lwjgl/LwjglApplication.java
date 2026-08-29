@@ -76,21 +76,9 @@ public class LwjglApplication implements Application {
 	private static final String NO_CONTEXT_LOG_MARKER =
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
-	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String ACTIVE_REFRESH_RATE_PROP = "amethyst.gdx.active_refresh_rate";
-	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
-	private static final String FRAME_PROFILER_SLOW_MS_PROP = "amethyst.gdx.frame_profiler.slow_ms";
-	private static final String FRAME_PROFILER_SUMMARY_FRAMES_PROP = "amethyst.gdx.frame_profiler.summary_frames";
-	private static final String FRAME_PROFILER_STACK_PROP = "amethyst.gdx.frame_profiler.stack";
 	private static boolean audioCommandBridgeUnavailable;
-	private static final boolean FRAME_PROFILER_ENABLED = readBooleanSystemProperty(FRAME_PROFILER_ENABLED_PROP, false);
-	private static final int FRAME_PROFILER_SLOW_MS =
-		readIntSystemProperty(FRAME_PROFILER_SLOW_MS_PROP, 33, 1, 10000);
-	private static final int FRAME_PROFILER_SUMMARY_FRAMES =
-		readIntSystemProperty(FRAME_PROFILER_SUMMARY_FRAMES_PROP, 300, 1, 100000);
-	private static final boolean FRAME_PROFILER_STACK_ENABLED =
-		readBooleanSystemProperty(FRAME_PROFILER_STACK_PROP, false);
 	// The LWJGL shim cannot discover the panel refresh rate (its DisplayMode frequency is 0 and
 	// getDesktopDisplayMode() is hardcoded to 60Hz), so the launcher publishes the real value.
 	private static final int LAUNCHER_ACTIVE_REFRESH_RATE =
@@ -124,10 +112,6 @@ public class LwjglApplication implements Application {
 	};
 	private static final String[] FUNCTION_ALIAS_SUFFIXES = {"EXT", "OES", "ARB"};
 	private static volatile boolean noContextDiagnosticsInstalled;
-	private static boolean scaledRenderPresentLogged;
-	private static volatile int scaledRenderBackBufferHandle;
-	private static volatile int scaledRenderBackBufferWidth;
-	private static volatile int scaledRenderBackBufferHeight;
 	private static volatile Method gpuLeakInjectorAfterFrameMethod;
 	private static volatile boolean gpuLeakInjectorLookupAttempted;
 	private static volatile boolean gpuLeakInjectorUnavailableLogged;
@@ -135,9 +119,6 @@ public class LwjglApplication implements Application {
 	private static volatile Method gpuResourceGuardianSummaryMethod;
 	private static volatile boolean gpuResourceGuardianLookupAttempted;
 	private static volatile boolean gpuResourceGuardianUnavailableLogged;
-	private static volatile Method spriteBatchFrameDiagnosticsMethod;
-	private static volatile boolean spriteBatchFrameDiagnosticsLookupAttempted;
-	private static volatile boolean spriteBatchFrameDiagnosticsUnavailableLogged;
 	private static volatile int trackedDrawFramebufferHandle = Integer.MIN_VALUE;
 	private static volatile int trackedReadFramebufferHandle = Integer.MIN_VALUE;
 	private static volatile int trackedViewportX = Integer.MIN_VALUE;
@@ -153,9 +134,6 @@ public class LwjglApplication implements Application {
 	private boolean genericFunctionAliasLogged;
 	private boolean genericFunctionAliasFailedLogged;
 	private Object aliasedCapabilities;
-	private final FrameProfiler frameProfiler = FRAME_PROFILER_ENABLED
-		? new FrameProfiler(FRAME_PROFILER_SLOW_MS, FRAME_PROFILER_SUMMARY_FRAMES, FRAME_PROFILER_STACK_ENABLED)
-		: null;
 	private boolean inactiveRenderSuppressedLogged;
 	private boolean firstRenderFrameLogged;
 	private boolean defaultFramebufferRebindLogged;
@@ -178,14 +156,10 @@ public class LwjglApplication implements Application {
 	private int globalTextureCompatScanTotal;
 	private int globalTextureCompatKnownManagedCount = -1;
 	private long nextGlobalTextureCompatGrowthCheckFrame;
-	private final float configuredRenderScale = readConfiguredRenderScale();
 	private final Set<Texture> globalTextureCompatSeen =
 		Collections.newSetFromMap(new WeakHashMap<Texture, Boolean>());
 	private final Map<Texture, Integer> globalTextureCompatFailureCounts = new WeakHashMap<Texture, Integer>();
 	private final Map<Texture, String> globalTextureCompatSourceCache = new WeakHashMap<Texture, String>();
-	private ScaledRenderPipeline scaledRenderPipeline;
-	private boolean scaledRenderPipelineDisabled;
-	private boolean scaledRenderPipelineLogged;
 	protected final Array<Runnable> runnables = new Array<Runnable>();
 	protected final Array<Runnable> executedRunnables = new Array<Runnable>();
 	protected final SnapshotArray<LifecycleListener> lifecycleListeners = new SnapshotArray<LifecycleListener>(LifecycleListener.class);
@@ -364,121 +338,17 @@ public class LwjglApplication implements Application {
 		mainLoopThread.start();
 	}
 
-	private static float readConfiguredRenderScale () {
-		String configured = System.getProperty(RENDER_SCALE_PROP);
-		if (configured == null) return 1f;
-		try {
-			float parsed = Float.parseFloat(configured.trim());
-			if (Float.isNaN(parsed) || Float.isInfinite(parsed)) return 1f;
-			if (parsed < 0.1f) return 0.1f;
-			if (parsed > 1f) return 1f;
-			return parsed;
-		} catch (Throwable ignored) {
-			return 1f;
-		}
-	}
-
-	private boolean shouldUseScaledRenderPipeline () {
-		if (graphics.canvas != null || scaledRenderPipelineDisabled) return false;
-		if (configuredRenderScale < 0.999f) return true;
-
-		int configuredVirtualWidth = resolveConfiguredVirtualWidth();
-		int configuredVirtualHeight = resolveConfiguredVirtualHeight();
-		if (configuredVirtualWidth <= 0 || configuredVirtualHeight <= 0) return false;
-
-		return configuredVirtualWidth != resolvePhysicalDisplayWidth()
-			|| configuredVirtualHeight != resolvePhysicalDisplayHeight();
-	}
-
-	private ScaledRenderPipeline beginScaledRenderFrame (int screenWidth, int screenHeight) {
-		if (!shouldUseScaledRenderPipeline()) return null;
-		try {
-			if (scaledRenderPipeline == null) {
-				scaledRenderPipeline = new ScaledRenderPipeline(configuredRenderScale);
-			}
-			scaledRenderPipeline.ensureReady(screenWidth, screenHeight, nativeContextGeneration);
-			scaledRenderPipeline.beginFrame();
-			if (!scaledRenderPipelineLogged) {
-				scaledRenderPipelineLogged = true;
-				System.out.println(
-					"[gdx-patch] Offscreen render pipeline active: renderScale=" + configuredRenderScale
-						+ ", virtual=" + screenWidth + "x" + screenHeight
-						+ ", physical=" + resolvePhysicalDisplayWidth() + "x" + resolvePhysicalDisplayHeight());
-			}
-			return scaledRenderPipeline;
-		} catch (Throwable t) {
-			scaledRenderPipelineDisabled = true;
-			disposeScaledRenderPipeline();
-			System.out.println("[gdx-patch] Disabling scaled render pipeline after initialization failure: " + t);
-			return null;
-		}
-	}
-
-	private void finishScaledRenderFrame (ScaledRenderPipeline pipeline, int screenWidth, int screenHeight) {
-		if (pipeline == null) return;
-		try {
-			pipeline.finishFrame(screenWidth, screenHeight);
-		} catch (Throwable t) {
-			scaledRenderPipelineDisabled = true;
-			try {
-				pipeline.abortFrame();
-			} catch (Throwable ignored) {
-			}
-			disposeScaledRenderPipeline();
-			System.out.println("[gdx-patch] Disabling scaled render pipeline after present failure: " + t);
-		}
-	}
-
-	private void disposeScaledRenderPipeline () {
-		if (scaledRenderPipeline == null) return;
-		try {
-			scaledRenderPipeline.dispose();
-		} catch (Throwable ignored) {
-		}
-		scaledRenderPipeline = null;
-	}
-
-	private static int getManagedDefaultFramebufferHandle () {
-		try {
-			return ((Integer)findField(GLFrameBuffer.class, "defaultFramebufferHandle").get(null)).intValue();
-		} catch (Throwable ignored) {
-			return 0;
-		}
-	}
-
-	private static void setManagedDefaultFramebufferHandle (int handle) {
-		try {
-			findField(GLFrameBuffer.class, "defaultFramebufferHandle").set(null, Integer.valueOf(handle));
-		} catch (Throwable ignored) {
-		}
-	}
-
-	public static int getScaledRenderBackBufferWidthOverride () {
-		return scaledRenderBackBufferWidth;
-	}
-
-	public static int getScaledRenderBackBufferHeightOverride () {
-		return scaledRenderBackBufferHeight;
-	}
-
-	static int remapRequestedFramebufferHandle (int framebuffer) {
-		if (framebuffer != 0) return framebuffer;
-		int overrideHandle = scaledRenderBackBufferHandle;
-		return overrideHandle != 0 ? overrideHandle : framebuffer;
-	}
-
 	static void noteFramebufferBound (int target, int framebuffer) {
-		int remappedFramebuffer = remapRequestedFramebufferHandle(framebuffer);
 		switch (target) {
 		case org.lwjgl.opengl.GL30.GL_READ_FRAMEBUFFER:
-			trackedReadFramebufferHandle = remappedFramebuffer;
+			trackedReadFramebufferHandle = framebuffer;
 			break;
 		case org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER:
-			trackedDrawFramebufferHandle = remappedFramebuffer;
+			trackedDrawFramebufferHandle = framebuffer;
 			break;
 		default:
-			trackedDrawFramebufferHandle = remappedFramebuffer;
-			trackedReadFramebufferHandle = remappedFramebuffer;
+			trackedDrawFramebufferHandle = framebuffer;
+			trackedReadFramebufferHandle = framebuffer;
 			break;
 		}
 	}
@@ -503,18 +373,6 @@ public class LwjglApplication implements Application {
 		trackedViewportHeight = Integer.MIN_VALUE;
 	}
 
-	private static void setScaledRenderBackBufferOverride (int handle, int width, int height) {
-		scaledRenderBackBufferHandle = handle;
-		scaledRenderBackBufferWidth = width;
-		scaledRenderBackBufferHeight = height;
-	}
-
-	private static void clearScaledRenderBackBufferOverride () {
-		scaledRenderBackBufferHandle = 0;
-		scaledRenderBackBufferWidth = 0;
-		scaledRenderBackBufferHeight = 0;
-	}
-
 	private static int resolvePhysicalDisplayWidth () {
 		int configured = LwjglHotLoopConfig.physicalWidth();
 		if (configured > 0) return configured;
@@ -533,103 +391,6 @@ public class LwjglApplication implements Application {
 
 	private static int resolveConfiguredVirtualHeight () {
 		return LwjglHotLoopConfig.virtualHeight();
-	}
-
-	private static final class ScaledRenderPipeline {
-		private final float scale;
-		private final Matrix4 projection = new Matrix4();
-		private FrameBuffer frameBuffer;
-		private SpriteBatch batch;
-		private int frameBufferWidth;
-		private int frameBufferHeight;
-		private int contextGeneration = Integer.MIN_VALUE;
-		private int previousDefaultFramebufferHandle;
-		private boolean frameActive;
-
-		ScaledRenderPipeline (float scale) {
-			this.scale = scale;
-		}
-
-		void ensureReady (int screenWidth, int screenHeight, int currentContextGeneration) {
-			int targetWidth = Math.max(1, screenWidth);
-			int targetHeight = Math.max(1, screenHeight);
-			boolean sizeChanged = frameBufferWidth != targetWidth || frameBufferHeight != targetHeight;
-			boolean contextChanged = contextGeneration != currentContextGeneration;
-			if (frameBuffer != null && !sizeChanged && !contextChanged) return;
-			dispose();
-			frameBuffer = new FrameBuffer(Pixmap.Format.RGBA8888, targetWidth, targetHeight, true);
-			frameBuffer.getColorBufferTexture().setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-			batch = new SpriteBatch();
-			frameBufferWidth = targetWidth;
-			frameBufferHeight = targetHeight;
-			contextGeneration = currentContextGeneration;
-		}
-
-		void beginFrame () {
-			if (frameBuffer == null) {
-				throw new IllegalStateException("Scaled framebuffer is not initialized");
-			}
-			previousDefaultFramebufferHandle = getManagedDefaultFramebufferHandle();
-			setManagedDefaultFramebufferHandle(frameBuffer.getFramebufferHandle());
-			frameBuffer.begin();
-			setScaledRenderBackBufferOverride(
-				frameBuffer.getFramebufferHandle(),
-				frameBufferWidth,
-				frameBufferHeight
-			);
-			frameActive = true;
-		}
-
-		void finishFrame (int screenWidth, int screenHeight) {
-			if (!frameActive) return;
-			frameActive = false;
-			clearScaledRenderBackBufferOverride();
-			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
-			// Pair the begin() above with end(...) so BaseMod's nested-FBO bookkeeping
-			// clears its per-framebuffer bound state instead of warning every frame.
-			frameBuffer.end(0, 0, screenWidth, screenHeight);
-			Gdx.gl20.glColorMask(true, true, true, true);
-			Gdx.gl20.glDisable(GL20.GL_DEPTH_TEST);
-			Gdx.gl20.glDisable(GL20.GL_CULL_FACE);
-			Gdx.gl20.glDisable(GL20.GL_SCISSOR_TEST);
-			Gdx.gl20.glDisable(GL20.GL_STENCIL_TEST);
-			projection.setToOrtho2D(0, 0, screenWidth, screenHeight);
-			batch.setProjectionMatrix(projection);
-			batch.disableBlending();
-			batch.begin();
-			if (!scaledRenderPresentLogged) {
-				scaledRenderPresentLogged = true;
-				System.out.println(
-					"[gdx-patch] Scaled present config: uv=0.0,0.0,1.0,1.0");
-			}
-			// Present the offscreen texture as-is. On this MobileGlues path the prior X flip
-			// correction was overcompensating and left the final fullscreen image mirrored.
-			batch.draw(frameBuffer.getColorBufferTexture(), 0, 0, screenWidth, screenHeight, 0f, 0f, 1f, 1f);
-			batch.end();
-		}
-
-		void abortFrame () {
-			if (!frameActive) return;
-			frameActive = false;
-			clearScaledRenderBackBufferOverride();
-			setManagedDefaultFramebufferHandle(previousDefaultFramebufferHandle);
-			frameBuffer.end();
-		}
-
-		void dispose () {
-			abortFrame();
-			if (batch != null) {
-				batch.dispose();
-				batch = null;
-			}
-			if (frameBuffer != null) {
-				frameBuffer.dispose();
-				frameBuffer = null;
-			}
-			frameBufferWidth = 0;
-			frameBufferHeight = 0;
-			contextGeneration = Integer.MIN_VALUE;
-		}
 	}
 
 	// Paces frames by sleeping/parking until the next frame deadline instead of busy-waiting.
@@ -1326,225 +1087,6 @@ public class LwjglApplication implements Application {
 		}
 	}
 
-	private static final class FrameProfiler {
-		private final long slowFrameNanos;
-		private final int summaryFrames;
-		private final boolean stackEnabled;
-		private final long[] frameTimes;
-		private long windowStartFrame = -1L;
-		private int sampleCount;
-		private int slowCount;
-		private long totalNanos;
-		private long maxFrameNanos;
-		private long maxListenerRenderNanos;
-		private long maxDisplayUpdateNanos;
-		private long maxGuardianNanos;
-		private long maxReclaimNanos;
-		private long maxScaledRenderNanos;
-		private volatile Thread stageThread;
-		private volatile String stageName;
-		private volatile long stageFrameId = -1L;
-		private volatile long stageStartNanos;
-		private volatile boolean stageSampleLogged;
-
-		FrameProfiler (int slowFrameMillis, int summaryFrames, boolean stackEnabled) {
-			this.slowFrameNanos = Math.max(1L, slowFrameMillis) * 1000000L;
-			this.summaryFrames = Math.max(1, summaryFrames);
-			this.stackEnabled = stackEnabled;
-			this.frameTimes = new long[this.summaryFrames];
-			if (stackEnabled) startStackSampler();
-		}
-
-		long now () {
-			return System.nanoTime();
-		}
-
-		void enterStage (long frameId, String stage) {
-			if (!stackEnabled) return;
-			stageThread = Thread.currentThread();
-			stageName = stage;
-			stageFrameId = frameId;
-			stageStartNanos = now();
-			stageSampleLogged = false;
-		}
-
-		void exitStage () {
-			if (!stackEnabled) return;
-			stageStartNanos = 0L;
-			stageFrameId = -1L;
-			stageName = null;
-			stageThread = null;
-		}
-
-		void record (
-			long frameId,
-			boolean isActive,
-			int targetFps,
-			FrameProfileSample sample
-		) {
-			long frameNanos = sample.totalNanos();
-			if (windowStartFrame < 0L) windowStartFrame = frameId;
-			if (sampleCount < frameTimes.length) frameTimes[sampleCount] = frameNanos;
-			sampleCount++;
-			totalNanos += frameNanos;
-			maxFrameNanos = Math.max(maxFrameNanos, frameNanos);
-			maxListenerRenderNanos = Math.max(maxListenerRenderNanos, sample.listenerRenderNanos);
-			maxDisplayUpdateNanos = Math.max(maxDisplayUpdateNanos, sample.displayUpdateNanos);
-			maxGuardianNanos = Math.max(maxGuardianNanos, sample.guardianNanos);
-			maxReclaimNanos = Math.max(maxReclaimNanos, sample.textureReclaimNanos + sample.fboReclaimNanos);
-			maxScaledRenderNanos = Math.max(maxScaledRenderNanos, sample.scaledRenderNanos);
-
-			if (frameNanos >= slowFrameNanos) {
-				slowCount++;
-				logSlowFrame(frameId, isActive, targetFps, sample, frameNanos);
-			}
-			if (sampleCount >= summaryFrames) {
-				logSummary(frameId, targetFps);
-				reset(frameId + 1L);
-			}
-		}
-
-		private void logSlowFrame (long frameId, boolean isActive, int targetFps, FrameProfileSample sample, long frameNanos) {
-			Runtime runtime = Runtime.getRuntime();
-			System.out.println("[gdx-frame] slow"
-				+ " frame=" + frameId
-				+ " active=" + isActive
-				+ " targetFps=" + targetFps
-				+ " totalMs=" + toMillis(frameNanos)
-				+ " updateTimeMs=" + toMillis(sample.updateTimeNanos)
-				+ " textureCompatPreMs=" + toMillis(sample.textureCompatPreNanos)
-				+ " scaledBeginMs=" + toMillis(sample.scaledBeginNanos)
-				+ " listenerRenderMs=" + toMillis(sample.listenerRenderNanos)
-				+ " textureCompatPostMs=" + toMillis(sample.textureCompatPostNanos)
-				+ " scaledFinishMs=" + toMillis(sample.scaledRenderNanos)
-				+ " leakInjectorMs=" + toMillis(sample.leakInjectorNanos)
-				+ " guardianMs=" + toMillis(sample.guardianNanos)
-				+ " textureReclaimMs=" + toMillis(sample.textureReclaimNanos)
-				+ " fboReclaimMs=" + toMillis(sample.fboReclaimNanos)
-				+ " defaultFboMs=" + toMillis(sample.defaultFboNanos)
-				+ " displayUpdateMs=" + toMillis(sample.displayUpdateNanos)
-				+ " heapUsedMb=" + ((runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L))
-				+ " heapMaxMb=" + (runtime.maxMemory() / (1024L * 1024L))
-				+ " textureMb=" + (GLTexture.getEstimatedNativeBytes() / (1024L * 1024L))
-				+ " fboMb=" + (GLFrameBuffer.getEstimatedNativeBytes() / (1024L * 1024L))
-				+ " " + (sample.spriteBatchStats == null ? "spriteFlushes=0 textureSwitches=0 maxSpritesInBatch=0" : sample.spriteBatchStats));
-		}
-
-		private void startStackSampler () {
-			Thread sampler = new Thread(new Runnable() {
-				@Override
-				public void run () {
-					while (true) {
-						try {
-							Thread.sleep(5L);
-						} catch (InterruptedException ignored) {
-							return;
-						}
-						long startedAt = stageStartNanos;
-						Thread thread = stageThread;
-						if (startedAt <= 0L || thread == null || stageSampleLogged) continue;
-						long elapsed = now() - startedAt;
-						if (elapsed < slowFrameNanos) continue;
-						stageSampleLogged = true;
-						logThreadStack(
-							"[gdx-frame] stage_stack frame=" + stageFrameId
-								+ " stage=" + stageName
-								+ " elapsedMs=" + toMillis(elapsed),
-							thread
-						);
-					}
-				}
-			}, "STS-GDX-FrameProfiler");
-			sampler.setDaemon(true);
-			sampler.start();
-		}
-
-		private void logSummary (long frameId, int targetFps) {
-			int count = Math.min(sampleCount, frameTimes.length);
-			long[] sorted = new long[count];
-			System.arraycopy(frameTimes, 0, sorted, 0, count);
-			Arrays.sort(sorted);
-			long p50 = percentile(sorted, 50);
-			long p95 = percentile(sorted, 95);
-			long p99 = percentile(sorted, 99);
-			long avg = sampleCount <= 0 ? 0L : totalNanos / sampleCount;
-			System.out.println("[gdx-frame] summary"
-				+ " startFrame=" + windowStartFrame
-				+ " endFrame=" + frameId
-				+ " samples=" + sampleCount
-				+ " targetFps=" + targetFps
-				+ " avgMs=" + toMillis(avg)
-				+ " p50Ms=" + toMillis(p50)
-				+ " p95Ms=" + toMillis(p95)
-				+ " p99Ms=" + toMillis(p99)
-				+ " maxMs=" + toMillis(maxFrameNanos)
-				+ " slow=" + slowCount
-				+ " maxListenerRenderMs=" + toMillis(maxListenerRenderNanos)
-				+ " maxDisplayUpdateMs=" + toMillis(maxDisplayUpdateNanos)
-				+ " maxGuardianMs=" + toMillis(maxGuardianNanos)
-				+ " maxReclaimMs=" + toMillis(maxReclaimNanos)
-				+ " maxScaledRenderMs=" + toMillis(maxScaledRenderNanos));
-		}
-
-		private void reset (long nextStartFrame) {
-			windowStartFrame = nextStartFrame;
-			sampleCount = 0;
-			slowCount = 0;
-			totalNanos = 0L;
-			maxFrameNanos = 0L;
-			maxListenerRenderNanos = 0L;
-			maxDisplayUpdateNanos = 0L;
-			maxGuardianNanos = 0L;
-			maxReclaimNanos = 0L;
-			maxScaledRenderNanos = 0L;
-		}
-
-		private static long percentile (long[] sorted, int percentile) {
-			if (sorted.length == 0) return 0L;
-			int index = (int)Math.ceil((percentile / 100.0) * sorted.length) - 1;
-			if (index < 0) index = 0;
-			if (index >= sorted.length) index = sorted.length - 1;
-			return sorted[index];
-		}
-
-		private static String toMillis (long nanos) {
-			return String.format(java.util.Locale.US, "%.3f", nanos / 1000000.0);
-		}
-
-		private static void logThreadStack (String prefix, Thread thread) {
-			StringBuilder builder = new StringBuilder(prefix);
-			StackTraceElement[] stack = thread.getStackTrace();
-			int emitted = 0;
-			for (int i = 0; i < stack.length && emitted < 24; i++) {
-				builder.append(" | at ").append(stack[i].toString());
-				emitted++;
-			}
-			System.out.println(builder.toString());
-		}
-	}
-
-	private static final class FrameProfileSample {
-		long startNanos;
-		long updateTimeNanos;
-		long textureCompatPreNanos;
-		long scaledBeginNanos;
-		long listenerRenderNanos;
-		long textureCompatPostNanos;
-		long scaledRenderNanos;
-		long leakInjectorNanos;
-		long guardianNanos;
-		long textureReclaimNanos;
-		long fboReclaimNanos;
-		long defaultFboNanos;
-		long displayUpdateNanos;
-		long endNanos;
-		String spriteBatchStats;
-
-		long totalNanos () {
-			return Math.max(0L, endNanos - startNanos);
-		}
-	}
-
 	private boolean shouldRunGlobalTextureCompatScan () {
 		if (!LwjglHotLoopConfig.RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_ENABLED) return false;
 		long frame = graphics.frameId;
@@ -1970,10 +1512,10 @@ public class LwjglApplication implements Application {
 				graphics.config.y = Display.getY();
 				int reportedWidth = graphics.getWidth();
 				int reportedHeight = graphics.getHeight();
-				if (graphics.resize || Display.wasResized()
-					|| reportedWidth != graphics.config.width
-					|| reportedHeight != graphics.config.height) {
+				if (graphics.resize || Display.wasResized()) {
 					graphics.resize = false;
+				}
+				if (reportedWidth != graphics.config.width || reportedHeight != graphics.config.height) {
 					graphics.config.width = reportedWidth;
 					graphics.config.height = reportedHeight;
 					syncVirtualDisplayConfigFile(graphics.config.width, graphics.config.height);
@@ -2012,11 +1554,14 @@ public class LwjglApplication implements Application {
 			int frameRate = isActive ? graphics.config.foregroundFPS : graphics.config.backgroundFPS;
 			if (!runtimeForeground) frameRate = -1;
 			if (shouldRender) {
-				FrameProfileSample frameSample = frameProfiler == null ? null : new FrameProfileSample();
-				long stageStartNanos = 0L;
-				if (frameSample != null) {
-					frameSample.startNanos = frameProfiler.now();
-					stageStartNanos = frameSample.startNanos;
+				// ── FrameRingBuffer timing cursors (no-op when ring disabled) ──────────
+				final boolean ringOn = FrameRingBuffer.ENABLED;
+				long ringStart = 0L, ringStageStart = 0L, ringWallMs = 0L;
+				long ringRenderNs = 0L, ringGuardianNs = 0L, ringReclaimNs = 0L;
+				if (ringOn) {
+					ringStart = System.nanoTime();
+					ringStageStart = ringStart;
+					ringWallMs = System.currentTimeMillis();
 				}
 				if (!firstRenderFrameLogged) {
 					boolean isCurrent = false;
@@ -2030,11 +1575,6 @@ public class LwjglApplication implements Application {
 				}
 				ensureDisplayContextCurrent("render");
 				graphics.updateTime();
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.updateTimeNanos = now - stageStartNanos;
-					stageStartNanos = now;
-				}
 				graphics.frameId++;
 				GLTexture.noteFrameRendered(graphics.frameId);
 				GLFrameBuffer.noteFrameRendered(graphics.frameId);
@@ -2051,79 +1591,30 @@ public class LwjglApplication implements Application {
 				}
 				runGlobalTextureCompatOnManagedGrowth("pre-render");
 				if (shouldRunGlobalTextureCompatScan()) ensureGlobalTextureCompat();
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.textureCompatPreNanos = now - stageStartNanos;
-					stageStartNanos = now;
-				}
 				ensureColorMaskWritable();
-				int physicalWidth = resolvePhysicalDisplayWidth();
-				int physicalHeight = resolvePhysicalDisplayHeight();
-				int renderWidth = graphics.getWidth();
-				int renderHeight = graphics.getHeight();
-				ScaledRenderPipeline scaledRender = beginScaledRenderFrame(renderWidth, renderHeight);
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.scaledBeginNanos = now - stageStartNanos;
-					stageStartNanos = now;
+				listener.render();
+				if (ringOn) {
+					long now = System.nanoTime();
+					ringRenderNs = now - ringStageStart;
+					ringStageStart = now;
 				}
-				try {
-					if (frameSample != null) frameProfiler.enterStage(graphics.frameId, "listener_render");
-					listener.render();
-					if (frameSample != null) frameProfiler.exitStage();
-					if (frameSample != null) {
-						long now = frameProfiler.now();
-						frameSample.listenerRenderNanos = now - stageStartNanos;
-						stageStartNanos = now;
-					}
-					// Catch textures created during listener.render in the same frame.
-					runGlobalTextureCompatOnManagedGrowth("post-render");
-					if (frameSample != null) {
-						long now = frameProfiler.now();
-						frameSample.textureCompatPostNanos = now - stageStartNanos;
-						stageStartNanos = now;
-					}
-				} finally {
-					if (frameSample != null) frameProfiler.enterStage(graphics.frameId, "scaled_finish");
-					finishScaledRenderFrame(scaledRender, physicalWidth, physicalHeight);
-					if (frameSample != null) frameProfiler.exitStage();
-				}
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.scaledRenderNanos = now - stageStartNanos;
-					stageStartNanos = now;
-				}
+				// Catch textures created during listener.render in the same frame.
+				runGlobalTextureCompatOnManagedGrowth("post-render");
 				callGpuLeakInjectorAfterFrame(graphics.frameId);
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.leakInjectorNanos = now - stageStartNanos;
-					stageStartNanos = now;
-				}
-				if (frameSample != null) frameProfiler.enterStage(graphics.frameId, "gpu_guardian");
 				callGpuResourceGuardianAfterRender(Gdx.app, graphics.frameId);
-				if (frameSample != null) frameProfiler.exitStage();
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.guardianNanos = now - stageStartNanos;
-					stageStartNanos = now;
+				if (ringOn) {
+					long now = System.nanoTime();
+					ringGuardianNs = now - ringStageStart;
+					ringStageStart = now;
 				}
-				if (frameSample != null) frameProfiler.enterStage(graphics.frameId, "texture_reclaim");
 				GLTexture.reclaimIdleTextures(Gdx.app, graphics.frameId);
-				if (frameSample != null) frameProfiler.exitStage();
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.textureReclaimNanos = now - stageStartNanos;
-					stageStartNanos = now;
-				}
-				if (frameSample != null) frameProfiler.enterStage(graphics.frameId, "fbo_reclaim");
 				GLFrameBuffer.reclaimIdleFrameBuffers(Gdx.app, graphics.frameId);
-				if (frameSample != null) frameProfiler.exitStage();
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.fboReclaimNanos = now - stageStartNanos;
-					stageStartNanos = now;
+				if (ringOn) {
+					long now = System.nanoTime();
+					ringReclaimNs = now - ringStageStart;
+					ringStageStart = now;
 				}
-				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;
+				boolean forceDefaultFbo = shouldForceDefaultFramebuffer();
 				boolean postRenderClear = shouldPostRenderClear();
 				if (forceDefaultFbo || postRenderClear) {
 					if (forceDefaultFbo && !defaultFramebufferRebindLogged) {
@@ -2131,26 +1622,24 @@ public class LwjglApplication implements Application {
 						// System.out.println("[gdx-patch] Enabling default framebuffer rebind before swap");
 						defaultFramebufferRebindLogged = true;
 					}
-					bindDefaultFramebufferForSwap(scaledRender != null);
+					bindDefaultFramebufferForSwap(false);
 				}
 				if (postRenderClear) {
 					org.lwjgl.opengl.GL11.glClearColor(1f, 0f, 0f, 1f);
 					org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT);
 				}
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.defaultFboNanos = now - stageStartNanos;
-					stageStartNanos = now;
-				}
-				if (frameSample != null) frameProfiler.enterStage(graphics.frameId, "display_update");
 				Display.update(false);
-				if (frameSample != null) frameProfiler.exitStage();
-				if (frameSample != null) {
-					long now = frameProfiler.now();
-					frameSample.displayUpdateNanos = now - stageStartNanos;
-					frameSample.endNanos = now;
-					frameSample.spriteBatchStats = consumeSpriteBatchFrameDiagnostics();
-					frameProfiler.record(graphics.frameId, isActive, frameRate, frameSample);
+				if (ringOn) {
+					long now = System.nanoTime();
+					long swapNs = now - ringStageStart;
+					Runtime rt = Runtime.getRuntime();
+					FrameRingBuffer.record(
+						graphics.frameId, ringWallMs,
+						now - ringStart,
+						ringRenderNs, ringGuardianNs, ringReclaimNs, swapNs,
+						rt.totalMemory() - rt.freeMemory(),
+						SpriteBatch.consumeFlushCount(),
+						SpriteBatch.consumeSwitchCount());
 				}
 			} else {
 				// Sleeps to avoid wasting CPU in an empty loop.
@@ -2171,7 +1660,6 @@ public class LwjglApplication implements Application {
 		}
 		listener.pause();
 		listener.dispose();
-		disposeScaledRenderPipeline();
 		if (shouldLogGpuResourceSummary()) logGpuResourceSummary("application_shutdown");
 		Display.destroy();
 		if (audio != null) audio.dispose();
@@ -2197,30 +1685,6 @@ public class LwjglApplication implements Application {
 		if (audioCommandBridgeUnavailable) return;
 		audioCommandBridgeUnavailable = true;
 		System.out.println("[amethyst-audio-route] event=audio_command_bridge_unavailable error=" + error);
-	}
-
-	private static String consumeSpriteBatchFrameDiagnostics () {
-		Method method = spriteBatchFrameDiagnosticsMethod;
-		if (method == null && !spriteBatchFrameDiagnosticsLookupAttempted) {
-			spriteBatchFrameDiagnosticsLookupAttempted = true;
-			try {
-				method = SpriteBatch.class.getDeclaredMethod("consumeFrameDiagnostics");
-				method.setAccessible(true);
-				spriteBatchFrameDiagnosticsMethod = method;
-			} catch (Throwable ignored) {
-				if (!spriteBatchFrameDiagnosticsUnavailableLogged) {
-					spriteBatchFrameDiagnosticsUnavailableLogged = true;
-					System.out.println("[gdx-frame] SpriteBatch frame diagnostics unavailable on runtime classpath");
-				}
-			}
-		}
-		if (method == null) return "spriteFlushes=unknown textureSwitches=unknown maxSpritesInBatch=unknown";
-		try {
-			Object result = method.invoke(null);
-			return String.valueOf(result);
-		} catch (Throwable ignored) {
-			return "spriteFlushes=unknown textureSwitches=unknown maxSpritesInBatch=unknown";
-		}
 	}
 
 	private static void logGpuResourceSummary (String reason) {

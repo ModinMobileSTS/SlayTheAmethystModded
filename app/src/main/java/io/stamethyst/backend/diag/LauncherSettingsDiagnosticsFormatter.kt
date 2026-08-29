@@ -33,7 +33,7 @@ internal object LauncherSettingsDiagnosticsFormatter {
     }
 
     fun build(snapshot: LauncherSettingsDiagnosticsSnapshot): String = buildString {
-        append("launcherSettings.formatVersion=1\n")
+        append("launcherSettings.formatVersion=2\n")
         append("launcherSettings.snapshotType=resolved_values\n")
         for (section in snapshot.sections) {
             append('\n')
@@ -55,24 +55,18 @@ internal object LauncherSettingsDiagnosticsFormatter {
         return LauncherSettingsDiagnosticsSnapshot(
             sections = listOf(
                 LauncherSettingsDiagnosticsSection(
-                    title = "General",
+                    title = "Launcher / Appearance",
                     entries = listOf(
-                        "player.name" to LauncherConfig.readPlayerName(context),
                         "theme.mode" to formatThemeMode(LauncherConfig.readThemeMode(context)),
                         "bootOverlayStyle" to LauncherConfig.readBootOverlayStyle(context).persistedValue,
                         "bootOverlayAnimation" to
                             LauncherConfig.readBootOverlayAnimation(context).persistedValue,
-                        "back.behavior" to formatBackBehavior(LauncherConfig.readBackBehavior(context)),
-                        "targetFps" to LauncherConfig.readTargetFps(context).toString(),
-                        "render.scale" to LauncherConfig.formatRenderScale(
-                            LauncherConfig.readRenderScale(context)
-                        ),
-                        "manualDismissBootOverlay" to formatBoolean(
-                            LauncherConfig.readManualDismissBootOverlay(context)
-                        ),
-                        "showModFileName" to formatBoolean(
-                            LauncherConfig.readShowModFileName(context)
-                        ),
+                        "showModFileName" to formatBoolean(LauncherConfig.readShowModFileName(context)),
+                    )
+                ),
+                LauncherSettingsDiagnosticsSection(
+                    title = "Launcher / Updates",
+                    entries = listOf(
                         "autoCheckUpdatesEnabled" to formatBoolean(
                             LauncherConfig.isAutoCheckUpdatesEnabled(context)
                         ),
@@ -80,8 +74,36 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     )
                 ),
                 LauncherSettingsDiagnosticsSection(
-                    title = "InputAndUi",
+                    title = "Game / Player name",
                     entries = listOf(
+                        "player.name" to LauncherConfig.readPlayerName(context),
+                    )
+                ),
+                LauncherSettingsDiagnosticsSection(
+                    title = "Game / Rendering",
+                    entries = listOf(
+                        "targetFps" to LauncherConfig.readTargetFps(context).toString(),
+                        "render.scale" to LauncherConfig.formatRenderScale(
+                            LauncherConfig.readRenderScale(context)
+                        ),
+                        "gameplayFontScale" to LauncherConfig.formatGameplayFontScale(
+                            LauncherConfig.readGameplayFontScale(context)
+                        ),
+                        "largerUiEnabled" to formatBoolean(
+                            LauncherConfig.readGameplayLargerUiEnabled(context)
+                        ),
+                        "avoidDisplayCutout" to formatBoolean(
+                            LauncherConfig.isDisplayCutoutAvoidanceEnabled(context)
+                        ),
+                        "cropScreenBottom" to formatBoolean(
+                            LauncherConfig.isScreenBottomCropEnabled(context)
+                        ),
+                    )
+                ),
+                LauncherSettingsDiagnosticsSection(
+                    title = "Game / Input and interaction",
+                    entries = listOf(
+                        "back.behavior" to formatBackBehavior(LauncherConfig.readBackBehavior(context)),
                         "specialKeyInputMode" to
                             LauncherConfig.readSpecialKeyInputMode(context).persistedValue,
                         "showFloatingMouseWindow" to formatBoolean(
@@ -115,28 +137,21 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         } else {
                             "global"
                         },
-                        "gameplayFontScale" to LauncherConfig.formatGameplayFontScale(
-                            LauncherConfig.readGameplayFontScale(context)
-                        ),
-                        "largerUiEnabled" to formatBoolean(
-                            LauncherConfig.readGameplayLargerUiEnabled(context)
-                        ),
-                        "mobileHudEnabled" to formatBoolean(
-                            LauncherConfig.readMobileHudEnabled(context)
-                        ),
-                        "compendiumUpgradeTouchFixEnabled" to formatBoolean(
-                            LauncherConfig.readCompendiumUpgradeTouchFixEnabled(context)
-                        ),
-                        "avoidDisplayCutout" to formatBoolean(
-                            LauncherConfig.isDisplayCutoutAvoidanceEnabled(context)
-                        ),
-                        "cropScreenBottom" to formatBoolean(
-                            LauncherConfig.isScreenBottomCropEnabled(context)
-                        ),
                         "keepScreenOnTimeoutMinutes" to
                             LauncherConfig.readKeepScreenOnTimeoutMinutes(context).toString(),
                         "showGamePerformanceOverlay" to formatBoolean(
                             LauncherConfig.isGamePerformanceOverlayEnabled(context)
+                        ),
+                    )
+                ),
+                LauncherSettingsDiagnosticsSection(
+                    title = "Developer / Runtime",
+                    entries = listOf(
+                        "manualDismissBootOverlay" to formatBoolean(
+                            LauncherConfig.readManualDismissBootOverlay(context)
+                        ),
+                        "compendiumUpgradeTouchFixEnabled" to formatBoolean(
+                            LauncherConfig.readCompendiumUpgradeTouchFixEnabled(context)
                         ),
                         "sustainedPerformanceModeEnabled" to formatBoolean(
                             LauncherConfig.isSustainedPerformanceModeEnabled(context)
@@ -144,7 +159,7 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     )
                 ),
                 LauncherSettingsDiagnosticsSection(
-                    title = "Renderer",
+                    title = "Developer / Advanced rendering",
                     entries = listOf(
                         "render.surfaceBackend" to formatRenderSurfaceBackend(
                             LauncherConfig.readRenderSurfaceBackend(context)
@@ -158,11 +173,19 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "gpuResourceGuardianMode" to formatPersistedEnum(
                             LauncherConfig.readGpuResourceGuardianMode(context).name,
                             LauncherConfig.readGpuResourceGuardianMode(context).persistedValue
+                        ),
+                        "jvm.heapStartMb" to LauncherConfig.resolveJvmHeapStartMb(heapMaxMb).toString(),
+                        "jvm.heapMaxMb" to heapMaxMb.toString(),
+                        "jvm.compressedPointersEnabled" to formatBoolean(
+                            LauncherConfig.isJvmCompressedPointersEnabled(context)
+                        ),
+                        "jvm.stringDeduplicationEnabled" to formatBoolean(
+                            LauncherConfig.isJvmStringDeduplicationEnabled(context)
                         )
                     )
                 ),
                 LauncherSettingsDiagnosticsSection(
-                    title = "MobileGlues",
+                    title = "Developer / MobileGlues",
                     entries = listOf(
                         "anglePolicy" to formatAnglePolicy(mobileGlues.anglePolicy),
                         "noErrorPolicy" to formatNoErrorPolicy(mobileGlues.noErrorPolicy),
@@ -189,16 +212,8 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     )
                 ),
                 LauncherSettingsDiagnosticsSection(
-                    title = "JvmAndDiagnostics",
+                    title = "Developer / Status and logs",
                     entries = listOf(
-                        "jvm.heapStartMb" to LauncherConfig.resolveJvmHeapStartMb(heapMaxMb).toString(),
-                        "jvm.heapMaxMb" to heapMaxMb.toString(),
-                        "jvm.compressedPointersEnabled" to formatBoolean(
-                            LauncherConfig.isJvmCompressedPointersEnabled(context)
-                        ),
-                        "jvm.stringDeduplicationEnabled" to formatBoolean(
-                            LauncherConfig.isJvmStringDeduplicationEnabled(context)
-                        ),
                         "diag.lwjglDebugEnabled" to formatBoolean(
                             LauncherConfig.isLwjglDebugEnabled(context)
                         ),
@@ -223,7 +238,7 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     )
                 ),
                 LauncherSettingsDiagnosticsSection(
-                    title = "Compatibility",
+                    title = "Developer / Compatibility settings",
                     entries = listOf(
                         "globalAtlasFilterCompat" to formatBoolean(
                             ImportPatchRegistry.isEnabled(context, AtlasFilterPatchModule.id)

@@ -238,28 +238,14 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
-    fun resolveGamePerformanceDeepDiagnosticsEnabled_requiresOverlayAndGpuDiagnostics() {
+    fun resolveGamePerformanceDeepDiagnosticsEnabled_ignoresOverlayState() {
         assertFalse(
             LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
-                showPerformanceOverlay = false,
                 gpuResourceDiagEnabled = false
-            )
-        )
-        assertFalse(
-            LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
-                showPerformanceOverlay = true,
-                gpuResourceDiagEnabled = false
-            )
-        )
-        assertFalse(
-            LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
-                showPerformanceOverlay = false,
-                gpuResourceDiagEnabled = true
             )
         )
         assertTrue(
             LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
-                showPerformanceOverlay = true,
                 gpuResourceDiagEnabled = true
             )
         )

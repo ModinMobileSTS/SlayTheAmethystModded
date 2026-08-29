@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import java.io.File
 import java.security.MessageDigest
 import okhttp3.Request
@@ -48,7 +48,7 @@ internal object FeedbackAvatarCacheStore {
             val directory = cacheDirectory(context).apply { mkdirs() }
             val outputFile = cacheFile(context, cacheKey)
             val tempFile = File(directory, "$cacheKey.tmp")
-            val client = GithubAcceleratedHttp.createClient(
+            val client = WattToolkitAcceleratedHttp.createClient(
                 context = context,
                 connectTimeoutMs = CONNECT_TIMEOUT_MS,
                 readTimeoutMs = READ_TIMEOUT_MS,

@@ -71,19 +71,16 @@ internal class WorkshopService(
 
     private val json = Json { ignoreUnknownKeys = true }
     private val identity = WorkshopSteamClientIdentity(context)
-    private val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(client)
-
     /**
      * Steam directory lookups are plain HTTPS to api.steampowered.com, so they keep
-     * acceleration. Only the CM websocket handshake needs the bare [protocolClient];
-     * routing these calls through it left the requests that gate every login and
-     * download unaccelerated.
+     * acceleration. CM websocket sessions use the same client so WATT can route
+     * steamserver.net endpoints too.
      */
     private val directoryHttpClient = client
     private val steamWebSession = WorkshopSteamWebSession(
         context = context,
         directoryClient = directoryHttpClient,
-        protocolClient = protocolClient,
+        cmHttpClient = client,
         identity = identity,
     )
     private val steamLanguagePreference: SteamLanguagePreference
@@ -111,7 +108,7 @@ internal class WorkshopService(
     fun hasSteamAuth(): Boolean = SteamCloudAuthStore.readSnapshot(context).isComplete
 
     fun cancelActiveCalls() {
-        listOf(client, protocolClient, workshopClient, browseDetailClient).forEach { httpClient ->
+        listOf(client, workshopClient, browseDetailClient).forEach { httpClient ->
             httpClient.dispatcher.queuedCalls().forEach { it.cancel() }
             httpClient.dispatcher.runningCalls().forEach { it.cancel() }
         }
@@ -126,16 +123,47 @@ internal class WorkshopService(
 
     fun authSnapshot(): AuthSnapshot = SteamCloudAuthStore.readSnapshot(context)
 
+    /**
+     * Progress session that stage reports are attributed to, or null when nobody is listening.
+     *
+     * The browse pipeline is a plain suspend chain with no progress parameter, so threading a session
+     * id through every private helper would touch unrelated call sites. Keeping it on the instance is
+     * safe because a [WorkshopService] serves one screen and the market runs one browse at a time.
+     */
+    @Volatile
+    private var progressSessionId: Long? = null
+
+    fun beginProgressSession(sessionId: Long?) {
+        progressSessionId = sessionId
+    }
+
+    /**
+     * Closes a stage-report session only when it is still the installed one.
+     *
+     * A detail load that was superseded by a newer load (browse restart, another detail open) must
+     * not tear down the newer load's narration when it finishes.
+     */
+    fun endProgressSession(sessionId: Long) {
+        if (progressSessionId == sessionId) {
+            progressSessionId = null
+        }
+    }
+
+    /**
+     * Fetches one browse page. Card metadata (file size, download count) is intentionally not
+     * backfilled here: the parsed page already carries everything a card needs to render, so the
+     * caller shows it immediately and calls [loadBrowseItemMetadata] afterwards. On the legacy
+     * HTML path that backfill is an extra API round trip, and making the whole list wait for it
+     * was the slowest non-network part of a browse.
+     */
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopBrowseResult = withContext(Dispatchers.IO) {
         val browseStartedAtMs = SystemClock.elapsedRealtime()
         val page = searchWorkshop(query)
         val searchMs = SystemClock.elapsedRealtime() - browseStartedAtMs
-        val enrichStartedAtMs = SystemClock.elapsedRealtime()
-        val items = enrichBrowseMetadata(page.items).take(query.pageSize)
-        val enrichMs = SystemClock.elapsedRealtime() - enrichStartedAtMs
+        val items = page.items.take(query.pageSize)
         Log.i(
             TAG,
-            "perf browse totalMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} searchMs=$searchMs enrichMs=$enrichMs page=${query.page} pageSize=${query.pageSize} rawItems=${page.items.size} items=${items.size} queryLen=${query.searchText.length} sort=${query.sort} time=${query.timeFilter} category=${query.category}",
+            "perf browse totalMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} searchMs=$searchMs page=${query.page} pageSize=${query.pageSize} rawItems=${page.items.size} items=${items.size} queryLen=${query.searchText.length} sort=${query.sort} time=${query.timeFilter} category=${query.category}",
         )
         WorkshopBrowseResult(
             items = items,
@@ -145,6 +173,13 @@ internal class WorkshopService(
             hasNextPage = page.hasNextPage,
         )
     }
+
+    /**
+     * Backfills missing card metadata (file size, subscription count) for items already on
+     * screen. Items the parsed page described completely pass through unchanged.
+     */
+    suspend fun loadBrowseItemMetadata(items: List<WorkshopItemSummary>): List<WorkshopItemSummary> =
+        withContext(Dispatchers.IO) { enrichBrowseMetadata(items) }
 
     suspend fun browseSubscriptions(
         appId: UInt = 646570u,
@@ -162,7 +197,7 @@ internal class WorkshopService(
                 .append(" pageSize=").append(pageSize)
             val protocolResult = SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
             ).getUserFiles(
                 account = account,
                 appId = appId,
@@ -196,7 +231,7 @@ internal class WorkshopService(
             ?: throw WorkshopSteamLoginRequiredException()
         val publishedFileClient = SteamPublishedFileClient(
             directoryClient = SteamDirectoryClient(directoryHttpClient),
-            sessionFactory = { identity.createSession(protocolClient) },
+            sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
         )
         runCatching {
             publishedFileClient.areFilesInSubscriptionList(
@@ -296,7 +331,7 @@ internal class WorkshopService(
         runCatching {
             val publishedFileClient = SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
             )
             publishedFileClient.subscribe(
                 account = account,
@@ -392,7 +427,7 @@ internal class WorkshopService(
         runCatching {
             val publishedFileClient = SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
             )
             publishedFileClient.unsubscribe(
                 account = account,
@@ -491,6 +526,13 @@ internal class WorkshopService(
                         loadLocalizedDetailPageWithCache(
                             publishedFileId = publishedFileId,
                             languageRequestValue = languagePreference.requestValue,
+                            shouldRetryWithoutUsefulContent = {
+                                // A retry costs a full second page download. Only pay it when the
+                                // API payload cannot cover the description gap; missing comment
+                                // context degrades gracefully and stays retriable from the UI.
+                                runCatching { apiDetail.await().first.description.isNullOrBlank() }
+                                    .getOrDefault(true)
+                            },
                         )
                     }.onFailure { error ->
                         Log.w(
@@ -512,8 +554,41 @@ internal class WorkshopService(
                 null
             }
             val (detail, payload) = apiDetail.await()
+            // Dependencies are almost fully described by the API payload (children), so fetch them
+            // while the community page is still downloading instead of after it. The community page
+            // only contributes a few extra required-item ids; those go out as a small follow-up
+            // batch when it actually adds anything.
+            val primaryDependencyIds = if (includeDependencyData) {
+                detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() }.distinct()
+            } else {
+                emptyList()
+            }
+            val depsStartedAtMs = SystemClock.elapsedRealtime()
+            val primaryDependencyDetailsDeferred = if (primaryDependencyIds.isNotEmpty()) {
+                async(Dispatchers.IO) {
+                    loadDependencyDetails(appId, primaryDependencyIds).associateBy { childDetail ->
+                        childDetail.publishedFileId.toULongOrNull()
+                    }
+                }
+            } else {
+                null
+            }
             val communityDetail = localizedDetail?.await()
             val awaitDoneAtMs = SystemClock.elapsedRealtime()
+            // The community page can contribute dependency ids the API payload lacks. Fire that
+            // small follow-up batch now so it overlaps with the primary dependency batch instead
+            // of serializing behind its await.
+            val extraDependencyDetailsDeferred = if (includeDependencyData) {
+                communityDetail?.requiredItemIds.orEmpty()
+                    .filterNot { dependencyId -> dependencyId in primaryDependencyIds }
+                    .distinct()
+                    .takeIf { extraIds -> extraIds.isNotEmpty() }
+                    ?.let { extraIds ->
+                        async(Dispatchers.IO) { loadDependencyDetails(appId, extraIds) }
+                    }
+            } else {
+                null
+            }
             val cardSummary = fallbackSummary?.takeIf { summary ->
                 summary.appId == appId && summary.publishedFileId == publishedFileId
             }
@@ -557,15 +632,17 @@ internal class WorkshopService(
             } else {
                 emptyList()
             }
-            val depsStartedAtMs = SystemClock.elapsedRealtime()
-            val dependencyDetailsById = if (dependencyIds.isNotEmpty()) {
-                loadDependencyDetails(appId, dependencyIds).associateBy { childDetail ->
-                    childDetail.publishedFileId.toULongOrNull()
-                }
-            } else {
-                emptyMap()
-            }
             val depsMs = SystemClock.elapsedRealtime() - depsStartedAtMs
+            val dependencyDetailsById = buildMap<ULong?, PublishedFileDetailsDto> {
+                primaryDependencyDetailsDeferred?.let { deferred -> putAll(deferred.await()) }
+                extraDependencyDetailsDeferred?.let { deferred ->
+                    deferred.await().forEach { childDetail ->
+                        childDetail.publishedFileId.toULongOrNull()?.let { dependencyId ->
+                            putIfAbsent(dependencyId, childDetail)
+                        }
+                    }
+                }
+            }
             val commentThreadContext = communityDetail?.commentThreadContext
                 ?: detail.toCommentThreadContext(publishedFileId)
             val commentCount = communityDetail?.commentCount
@@ -750,6 +827,7 @@ internal class WorkshopService(
     private suspend fun loadLocalizedDetailPageWithRetry(
         publishedFileId: ULong,
         languageRequestValue: String,
+        shouldRetryWithoutUsefulContent: suspend () -> Boolean,
     ): LocalizedWorkshopDetail {
         var lastError: Throwable? = null
         var lastDetail: LocalizedWorkshopDetail? = null
@@ -760,7 +838,11 @@ internal class WorkshopService(
                     languageRequestValue = languageRequestValue,
                 )
             }.onSuccess { detail ->
-                if (detail.hasUsefulContent() || attempt == COMMUNITY_DETAIL_ATTEMPTS - 1) {
+                if (
+                    detail.hasUsefulContent() ||
+                    attempt == COMMUNITY_DETAIL_ATTEMPTS - 1 ||
+                    !shouldRetryWithoutUsefulContent()
+                ) {
                     return detail
                 }
                 lastDetail = detail
@@ -782,6 +864,7 @@ internal class WorkshopService(
     private suspend fun loadLocalizedDetailPageWithCache(
         publishedFileId: ULong,
         languageRequestValue: String,
+        shouldRetryWithoutUsefulContent: suspend () -> Boolean = { true },
     ): LocalizedWorkshopDetail {
         val cacheStartedAtMs = SystemClock.elapsedRealtime()
         val key = CommunityDetailCacheKey(publishedFileId, languageRequestValue)
@@ -826,6 +909,7 @@ internal class WorkshopService(
             val detail = loadLocalizedDetailPageWithRetry(
                 publishedFileId = publishedFileId,
                 languageRequestValue = languageRequestValue,
+                shouldRetryWithoutUsefulContent = shouldRetryWithoutUsefulContent,
             )
             if (detail.hasUsefulContent()) {
                 synchronized(communityDetailCacheLock) {
@@ -1010,7 +1094,7 @@ internal class WorkshopService(
         val account = readSteamAccountSession(identity)
         return WorkshopDownloadEngine.createDefault(
             client = workshopClient,
-            sessionFactory = { identity.createSession(protocolClient) },
+            sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
             sessionConnector = buildSessionConnector(account),
             maxConcurrentChunks = LauncherPreferences.readWorkshopDownloadThreads(context),
             allowPublicCdnFallbackOnSessionFailure = true,
@@ -1132,6 +1216,9 @@ internal class WorkshopService(
         }
             .build()
         val httpStartedAtMs = SystemClock.elapsedRealtime()
+        progressSessionId?.let { sessionId ->
+            WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Connecting)
+        }
         var webFailure: Throwable? = null
         val html = try {
             workshopClient.newCall(
@@ -1153,6 +1240,9 @@ internal class WorkshopService(
         val webPage = html?.let { responseHtml ->
             val httpMs = SystemClock.elapsedRealtime() - httpStartedAtMs
             val parseStartedAtMs = SystemClock.elapsedRealtime()
+            progressSessionId?.let { sessionId ->
+                WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Parsing)
+            }
             val page = WorkshopBrowseParser.parsePage(responseHtml, query.page)
             val parseMs = SystemClock.elapsedRealtime() - parseStartedAtMs
             Log.i(
@@ -1190,7 +1280,7 @@ internal class WorkshopService(
         return runCatching {
             SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
             ).queryFiles(
                 account = account,
                 query = SteamPublishedFileQuery(
@@ -1208,6 +1298,11 @@ internal class WorkshopService(
 
     private suspend fun primeSteamWebSessionIfNeeded() {
         val account = runCatching { readSteamAccountSession(identity) }.getOrNull()
+        if (account != null) {
+            progressSessionId?.let { sessionId ->
+                WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Authenticating)
+            }
+        }
         runCatching {
             steamWebSession.ensurePrimed(
                 account = account,

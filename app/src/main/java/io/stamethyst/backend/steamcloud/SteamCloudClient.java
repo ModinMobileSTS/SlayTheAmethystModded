@@ -7,8 +7,8 @@ import android.util.Log;
 import com.google.protobuf.GeneratedMessage;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,8 +29,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -43,7 +45,14 @@ import java.util.zip.ZipInputStream;
 import java.security.MessageDigest;
 
 import in.dragonbra.javasteam.enums.EResult;
+import in.dragonbra.javasteam.enums.EMsg;
+import in.dragonbra.javasteam.enums.EOSType;
+import in.dragonbra.javasteam.base.ClientMsgProtobuf;
+import in.dragonbra.javasteam.base.IPacketMsg;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver2;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient;
+import in.dragonbra.javasteam.protobufs.steamclient.Enums;
 import in.dragonbra.javasteam.networking.steam3.ProtocolTypes;
 import in.dragonbra.javasteam.rpc.service.Cloud;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesAuthSteamclient.EAuthSessionGuardType;
@@ -60,11 +69,15 @@ import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileInfo;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.FileDownloadInfo;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.HttpHeaders;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud;
+import in.dragonbra.javasteam.steam.handlers.ClientMsgHandler;
+import in.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends;
 import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
 import in.dragonbra.javasteam.steam.handlers.steamuser.SteamUser;
 import in.dragonbra.javasteam.steam.handlers.steamunifiedmessages.SteamUnifiedMessages;
 import in.dragonbra.javasteam.steam.handlers.steamunifiedmessages.callback.ServiceMethodResponse;
 import in.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOnCallback;
+import in.dragonbra.javasteam.steam.handlers.steamuser.callback.PlayingSessionStateCallback;
+import in.dragonbra.javasteam.enums.EPersonaState;
 import in.dragonbra.javasteam.steam.steamclient.SteamClient;
 import in.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager;
 import in.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback;
@@ -72,6 +85,9 @@ import in.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback;
 import in.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration;
 import in.dragonbra.javasteam.types.AsyncJobSingle;
 import in.dragonbra.javasteam.types.SteamID;
+import in.dragonbra.javasteam.types.JobID;
+import in.dragonbra.javasteam.types.KeyValue;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats;
 import in.dragonbra.javasteam.util.log.LogListener;
 import in.dragonbra.javasteam.util.log.LogManager;
 import io.stamethyst.config.RuntimePaths;
@@ -79,6 +95,7 @@ import okhttp3.RequestBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 public final class SteamCloudClient implements AutoCloseable {
     private static final String TAG = "SteamCloudClient";
@@ -98,21 +115,31 @@ public final class SteamCloudClient implements AutoCloseable {
         new long[] { 10_000L, 20_000L, 30_000L, 60_000L, 90_000L, 120_000L };
     private static final int TRANSIENT_RPC_MAX_ATTEMPTS = 4;
     private static final long[] TRANSIENT_RPC_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
+    private static final int COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS = 5;
+    private static final long[] COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L, 20_000L };
     private static final int JAVA_STEAM_LOG_TAIL_LIMIT = 12;
     private static final int JAVA_STEAM_STACKTRACE_LINE_LIMIT = 24;
     private static final int DIAGNOSTIC_EVENT_LIMIT = 96;
+    public static final long DEFAULT_MAX_COMPRESSED_DOWNLOAD_BYTES = 256L * 1024L * 1024L;
+    public static final long DEFAULT_MAX_RAW_DOWNLOAD_BYTES = 512L * 1024L * 1024L;
+    private static final int IO_BUFFER_SIZE = 8192;
     private static final String OUTPUT_DIR_NAME = "steam-cloud";
+    private static final String UPLOAD_SNAPSHOT_DIR_NAME = "upload-snapshots";
     private static final String LAST_CM_ENDPOINT_FILE_NAME = "last-websocket-cm-endpoint.txt";
     private static final String CM_SERVER_LIST_FILE_NAME = "steam-cm-server-list.bin";
 
     private final SteamClient steamClient;
     private final CallbackManager callbackManager;
     private final SteamUser steamUser;
+    private final SteamFriends steamFriends;
     private final SteamCloud steamCloud;
     private final Cloud cloudService;
     private final OkHttpClient httpClient;
     private final OkHttpClient protocolHttpClient;
+    private final SteamCloudProtocolClient protocolClient;
     private final File lastCmEndpointFile;
+    private final File uploadSnapshotDir;
+    private final DownloadLimits downloadLimits;
     private final boolean wattAccelerationEnabled;
     private final EnumSet<ProtocolTypes> protocolTypes = EnumSet.of(ProtocolTypes.WEB_SOCKET);
     private final JavaSteamLogCollector javaSteamLogCollector;
@@ -137,6 +164,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile String steamClientSteamId64 = "";
     private volatile long cmServerSelectionMs = -1L;
     private volatile long cmConnectWaitMs = -1L;
+    private volatile boolean playingSessionBlocked;
+    private volatile int playingSessionAppId;
     private final Object diagnosticEventsLock = new Object();
     private final ArrayDeque<String> diagnosticEvents = new ArrayDeque<>();
     private Thread callbackThread;
@@ -168,13 +197,30 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public SteamCloudClient(Context context) {
+        this(context, DownloadLimits.defaults());
+    }
+
+    public SteamCloudClient(Context context, DownloadLimits downloadLimits) {
+        this(context, downloadLimits, true);
+    }
+
+    /**
+     * @param useSharedCmSession when true (the default), the CM transport is the
+     *     process-wide shared session from {@code SharedSteamCmSessions}; closing
+     *     this client then only releases the borrowed handle. The credential
+     *     login flow passes {@code false} to keep its dedicated diagnostics
+     *     transport isolated from the shared connection.
+     */
+    public SteamCloudClient(Context context, DownloadLimits downloadLimits, boolean useSharedCmSession) {
         applyProxySystemProperties();
+        this.downloadLimits = Objects.requireNonNull(downloadLimits, "downloadLimits");
 
         File outputDir = new File(RuntimePaths.storageRoot(context), OUTPUT_DIR_NAME);
         if (!outputDir.isDirectory()) {
             outputDir.mkdirs();
         }
         lastCmEndpointFile = new File(outputDir, LAST_CM_ENDPOINT_FILE_NAME);
+        uploadSnapshotDir = new File(outputDir, UPLOAD_SNAPSHOT_DIR_NAME);
 
         wattAccelerationEnabled = SteamCloudAcceleratedHttp.isEnabled(context);
         httpClient = SteamCloudAcceleratedHttp.createClient(
@@ -183,65 +229,25 @@ public final class SteamCloudClient implements AutoCloseable {
             DOWNLOAD_TIMEOUT_MS,
             DOWNLOAD_TIMEOUT_MS
         );
-        protocolHttpClient = SteamCloudAcceleratedHttp.createProtocolClient(httpClient);
+        protocolHttpClient = httpClient;
+        protocolClient = new SteamCloudProtocolClient(
+            httpClient,
+            SteamCloudAcceleratedHttp.createWebSocketFactory(context, httpClient),
+            useSharedCmSession
+                ? io.stamethyst.backend.workshop.SharedSteamCmSessions.forProcess(context).asCmSession()
+                : null
+        );
         Log.i(TAG, "Steam Cloud Watt acceleration: " + (wattAccelerationEnabled ? "enabled" : "disabled") + '.');
 
-        File cmServerListFile = new File(outputDir, CM_SERVER_LIST_FILE_NAME);
-        SteamConfiguration steamConfiguration = SteamConfiguration.create(builder -> {
-            builder.withHttpClient(protocolHttpClient);
-            builder.withConnectionTimeout(CONNECT_TIMEOUT_MS);
-            builder.withProtocolTypes(protocolTypes);
-            builder.withServerListProvider(new FileServerListProvider(cmServerListFile));
-        });
-
-        javaSteamLogCollector = new JavaSteamLogCollector();
-        LogManager.addListener(javaSteamLogCollector);
-        steamClient = new SteamClient(steamConfiguration);
-        callbackManager = new CallbackManager(steamClient);
-        steamUser = requireNonNull(steamClient.getHandler(SteamUser.class), "SteamUser handler");
-        steamCloud = requireNonNull(steamClient.getHandler(SteamCloud.class), "SteamCloud handler");
-        SteamUnifiedMessages unifiedMessages = requireNonNull(
-            steamClient.getHandler(SteamUnifiedMessages.class),
-            "SteamUnifiedMessages handler"
-        );
-        cloudService = unifiedMessages.createService(Cloud.class);
-
-        callbackManager.subscribe(ConnectedCallback.class, callback -> {
-            connectedCallbackReceived = true;
-            recordDiagnosticEvent("connected_callback received stage=" + currentStage);
-            Log.i(TAG, "Connected to Steam.");
-            connectedFuture.complete(null);
-        });
-        callbackManager.subscribe(DisconnectedCallback.class, callback -> {
-            String reason = callback.isUserInitiated() ? "user initiated" : "unexpected";
-            disconnectedDescription = reason;
-            recordDiagnosticEvent("disconnected_callback reason=" + reason + " stage=" + currentStage);
-            Log.i(TAG, "Disconnected from Steam (" + reason + ") during " + currentStage + '.');
-            if (!shuttingDown.get()) {
-                IllegalStateException error = new IllegalStateException(buildDisconnectFailureMessage(reason));
-                disconnectedFuture.completeExceptionally(error);
-                connectedFuture.completeExceptionally(error);
-                loggedOnFuture.completeExceptionally(error);
-            }
-        });
-        callbackManager.subscribe(LoggedOnCallback.class, callback -> {
-            loggedOnResultDescription = String.valueOf(callback.getResult());
-            SteamID steamID = callback.getClientSteamID();
-            currentSteamId64 = steamID == null ? "" : String.valueOf(steamID.convertToUInt64());
-            loggedOnCallbackSteamId64 = currentSteamId64;
-            SteamID clientSteamId = steamClient.getSteamID();
-            steamClientSteamId64 = clientSteamId == null ? "" : String.valueOf(clientSteamId.convertToUInt64());
-            recordDiagnosticEvent(
-                "logged_on_callback result="
-                    + callback.getResult()
-                    + " callbackSteamIdResolved="
-                    + !isBlank(loggedOnCallbackSteamId64)
-                    + " clientSteamIdResolved="
-                    + !isBlank(steamClientSteamId64)
-            );
-            Log.i(TAG, "Steam logon result: " + callback.getResult());
-            loggedOnFuture.complete(callback);
-        });
+        // JavaSteam's internal Ktor websocket cannot be given the accelerated OkHttp transport.
+        // Keep all CM traffic on the protocol client created above.
+        steamClient = null;
+        callbackManager = null;
+        steamUser = null;
+        steamFriends = null;
+        steamCloud = null;
+        cloudService = null;
+        javaSteamLogCollector = null;
     }
 
     public void beginOperationDiagnostics(String operation, String accountName, boolean hasGuardData) {
@@ -258,6 +264,8 @@ public final class SteamCloudClient implements AutoCloseable {
         disconnectedDescription = "<not observed>";
         cmServerSelectionMs = -1L;
         cmConnectWaitMs = -1L;
+        playingSessionBlocked = false;
+        playingSessionAppId = 0;
         synchronized (diagnosticEventsLock) {
             diagnosticEvents.clear();
         }
@@ -287,74 +295,17 @@ public final class SteamCloudClient implements AutoCloseable {
     public void start() throws Exception {
         try {
             running.set(true);
-            recordDiagnosticEvent("callback_thread starting");
-            callbackThread = new Thread(() -> {
-                while (running.get()) {
-                    try {
-                        callbackManager.runWaitCallbacks(CALLBACK_POLL_TIMEOUT_MS);
-                    } catch (Throwable error) {
-                        if (shuttingDown.get() || !running.get()) {
-                            break;
-                        }
-                        recordDiagnosticEvent("callback_loop_failed " + describeThrowable(error));
-                        Log.e(TAG, "Steam callback loop failed unexpectedly.", error);
-                        connectedFuture.completeExceptionally(error);
-                        loggedOnFuture.completeExceptionally(error);
-                        disconnectedFuture.completeExceptionally(error);
-                        break;
-                    }
-                }
-            }, "steam-cloud-client-callbacks");
-            callbackThread.setDaemon(true);
-            callbackThread.start();
-            recordDiagnosticEvent("callback_thread started");
-
-            PreparedServerRecord preparedServerRecord;
-            long serverSelectionStartedAtNs = System.nanoTime();
-            try {
-                recordDiagnosticEvent("cm_server_selection begin");
-                preparedServerRecord = selectWebSocketServerRecord();
-            } finally {
-                cmServerSelectionMs = elapsedMillis(serverSelectionStartedAtNs);
-                recordDiagnosticEvent("cm_server_selection end durationMs=" + cmServerSelectionMs);
-            }
-            ServerRecord serverRecord = preparedServerRecord == null ? null : preparedServerRecord.serverRecord;
-            if (serverRecord == null) {
-                throw new IllegalStateException(
-                    "Steam server list returned no websocket CM candidate, and no fallback websocket endpoint was available."
-                );
-            }
-
-            candidateSourceDescription = preparedServerRecord.candidateSourceDescription;
-            resolvedServerDescription = describeServerRecord(serverRecord);
-            recordDiagnosticEvent(
-                "cm_connect begin endpoint="
-                    + resolvedServerDescription
-                    + " source="
-                    + candidateSourceDescription
-            );
-            Log.i(
-                TAG,
-                "Connecting to Steam websocket CM endpoint="
-                    + resolvedServerDescription
-                    + " source="
-                    + candidateSourceDescription
-            );
-            long connectStartedAtNs = System.nanoTime();
-            try {
-                steamClient.connect(serverRecord);
-                waitForStage(connectedFuture, CONNECT_TIMEOUT_MS, "Steam connect");
-            } finally {
-                cmConnectWaitMs = elapsedMillis(connectStartedAtNs);
-                recordDiagnosticEvent("cm_connect wait_finished durationMs=" + cmConnectWaitMs);
-            }
-            persistResolvedWebSocketEndpoint(serverRecord);
-            recordDiagnosticEvent("cm_connect endpoint_persisted");
+            candidateSourceDescription = "Steam directory via accelerated OkHttp";
+            recordDiagnosticEvent("cm_protocol_ready transport=OkHttp accelerated=" + wattAccelerationEnabled);
         } catch (Exception error) {
             recordDiagnosticEvent("cm_connect failed " + describeThrowable(error));
             Log.e(TAG, "Steam connect failed during " + currentStage + '.', error);
             throw error;
         }
+    }
+
+    private void startSteamConnection(ServerRecord serverRecord) {
+        throw new UnsupportedOperationException("JavaSteam CM transport is disabled; use the accelerated protocol client.");
     }
 
     public AuthMaterial authenticateWithCredentials(
@@ -363,88 +314,9 @@ public final class SteamCloudClient implements AutoCloseable {
         String guardData,
         AuthPrompt prompt
     ) throws Exception {
-        try {
-            String inputDiagnostics = buildCredentialsInputDiagnostics(username, password, guardData);
-            recordDiagnosticEvent(
-                "credentials_auth begin " + inputDiagnostics
-            );
-            Log.i(
-                TAG,
-                "Starting credentials auth. " + inputDiagnostics
-            );
-            AuthSessionDetails details = new AuthSessionDetails();
-            details.username = username;
-            details.password = password;
-            details.guardData = guardData;
-            details.persistentSession = true;
-            details.authenticator = new PromptAuthenticator(prompt);
-
-            AuthSession authSession = waitForStage(
-                steamClient.getAuthentication().beginAuthSessionViaCredentials(details),
-                AUTH_START_TIMEOUT_MS,
-                "Steam auth session start"
-            );
-            String authSessionSteamId64 = resolveSteamId64FromAuthSession(authSession);
-            credentialsAuthSteamId64 = authSessionSteamId64;
-            if (!isBlank(authSessionSteamId64)) {
-                currentSteamId64 = authSessionSteamId64;
-            }
-            recordDiagnosticEvent(
-                "credentials_auth session_started steamIdResolved="
-                    + !isBlank(authSessionSteamId64)
-                    + " steamId64="
-                    + (isBlank(authSessionSteamId64) ? "<blank>" : authSessionSteamId64)
-            );
-            maybeValidateSupportedChallenges(authSession);
-
-            AuthPollResult pollResult = waitForStage(
-                authSession.pollingWaitForResult(),
-                AUTH_POLL_TIMEOUT_MS,
-                "Steam auth completion"
-            );
-
-            String effectiveGuardData = pollResult.getNewGuardData() != null
-                ? pollResult.getNewGuardData()
-                : guardData;
-            guardDataUpdated = !isBlank(pollResult.getNewGuardData());
-            recordDiagnosticEvent(
-                "credentials_auth completed account="
-                    + pollResult.getAccountName()
-                    + " refreshTokenReceived="
-                    + !isBlank(pollResult.getRefreshToken())
-                    + " refreshTokenLength="
-                    + (pollResult.getRefreshToken() == null ? 0 : pollResult.getRefreshToken().length())
-                    + " guardDataUpdated="
-                    + guardDataUpdated
-            );
-            Log.i(
-                TAG,
-                "Credentials auth completed for account="
-                    + pollResult.getAccountName()
-                    + " refreshTokenLength="
-                    + (pollResult.getRefreshToken() == null ? 0 : pollResult.getRefreshToken().length())
-                    + " guardDataUpdated="
-                    + guardDataUpdated
-            );
-
-            return new AuthMaterial(
-                pollResult.getAccountName(),
-                pollResult.getRefreshToken(),
-                effectiveGuardData,
-                authSessionSteamId64
-            );
-        } catch (Exception error) {
-            recordDiagnosticEvent(
-                "credentials_auth failed "
-                    + describeAuthenticationResult(error)
-                    + " "
-                    + buildCredentialsInputDiagnostics(username, password, guardData)
-                    + " "
-                    + describeThrowable(error)
-            );
-            Log.e(TAG, "Credentials auth failed during " + currentStage + '.', error);
-            throw error;
-        }
+        throw new UnsupportedOperationException(
+            "Credential authentication uses SteamCloudAuthCoordinator's accelerated protocol flow."
+        );
     }
 
     public void logOnWithRefreshToken(String accountName, String refreshToken) throws Exception {
@@ -468,26 +340,16 @@ public final class SteamCloudClient implements AutoCloseable {
                 "Logging on with refresh token for account="
                     + (isBlank(accountName) ? "<unknown>" : accountName.trim())
             );
-            LogOnDetails details = new LogOnDetails();
-            details.setUsername(accountName);
-            details.setAccessToken(refreshToken);
-            details.setShouldRememberPassword(true);
-            details.setLoginID(149);
-            applySteamId64ToLogOnDetails(details, steamId64);
-            steamUser.logOn(details);
-
-            LoggedOnCallback callback = waitForStage(loggedOnFuture, LOGON_TIMEOUT_MS, "Steam logon");
-            if (callback.getResult() != EResult.OK) {
-                throw new IllegalStateException("Steam logon failed: " + callback.getResult());
-            }
-            SteamID steamID = callback.getClientSteamID();
-            if (steamID != null) {
-                currentSteamId64 = String.valueOf(steamID.convertToUInt64());
-            } else if (steamClient.getSteamID() != null) {
-                currentSteamId64 = String.valueOf(steamClient.getSteamID().convertToUInt64());
-            }
-            SteamID clientSteamId = steamClient.getSteamID();
-            steamClientSteamId64 = clientSteamId == null ? "" : String.valueOf(clientSteamId.convertToUInt64());
+            long startedAtNs = System.nanoTime();
+            long resolvedSteamId = protocolClient.logOn(accountName, refreshToken, steamId64);
+            requireMatchingSteamIdentity(steamId64, resolvedSteamId);
+            cmConnectWaitMs = elapsedMillis(startedAtNs);
+            currentSteamId64 = String.valueOf(resolvedSteamId);
+            loggedOnCallbackSteamId64 = currentSteamId64;
+            steamClientSteamId64 = currentSteamId64;
+            connectedCallbackReceived = true;
+            loggedOnResultDescription = "OK";
+            resolvedServerDescription = "Steam directory websocket CM";
             recordDiagnosticEvent(
                 "refresh_token_logon completed steamIdResolved="
                     + !isBlank(currentSteamId64)
@@ -503,6 +365,292 @@ public final class SteamCloudClient implements AutoCloseable {
 
     public String getCurrentSteamId64() {
         return currentSteamId64;
+    }
+
+    static void requireMatchingSteamIdentity(String expectedSteamId64, long resolvedSteamId) throws IOException {
+        String resolved = String.valueOf(resolvedSteamId);
+        if (resolvedSteamId <= 0L ||
+            (!isBlank(expectedSteamId64) && !resolved.equals(expectedSteamId64.trim()))) {
+            throw new IOException(
+                "Authenticated Steam account does not match the saved Steam Cloud account identity."
+            );
+        }
+    }
+
+    public static final class UserStatsResult {
+        public static final class AchievementDefinition {
+            public final int achievementId;
+            public final String apiName;
+            public final String displayName;
+            public final String description;
+            public final String icon;
+            public final String iconGray;
+
+            AchievementDefinition(
+                int achievementId,
+                String apiName,
+                String displayName,
+                String description,
+                String icon,
+                String iconGray
+            ) {
+                this.achievementId = achievementId;
+                this.apiName = apiName;
+                this.displayName = displayName;
+                this.description = description;
+                this.icon = icon;
+                this.iconGray = iconGray;
+            }
+        }
+
+        public static final class AchievementStatTarget {
+            public final int statId;
+            public final int bitIndex;
+            public final int mask;
+
+            AchievementStatTarget(int statId, int bitIndex) {
+                this.statId = statId;
+                this.bitIndex = bitIndex;
+                this.mask = 1 << bitIndex;
+            }
+        }
+
+        public final List<AchievementDefinition> definitions;
+        public final int crcStats;
+        public final Map<Integer, Integer> statValues;
+        public final Map<String, AchievementStatTarget> achievementStatTargets;
+
+        UserStatsResult(
+            List<AchievementDefinition> definitions,
+            int crcStats,
+            Map<Integer, Integer> statValues,
+            Map<String, AchievementStatTarget> achievementStatTargets
+        ) {
+            this.definitions = definitions;
+            this.crcStats = crcStats;
+            this.statValues = statValues;
+            this.achievementStatTargets = achievementStatTargets;
+        }
+    }
+
+    /** Reads current-user achievement state directly from the logged-in CM session. */
+    public UserStatsResult getUserStats(long appId, long steamId64, long timeoutMs) throws Exception {
+        try {
+            SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse response =
+                protocolClient.getUserStats(appId, steamId64, timeoutMs);
+            if (response.hasEresult() && response.getEresult() != EResult.OK.code()) {
+                throw new IllegalStateException("Steam CM GetUserStats failed: " + response.getEresult());
+            }
+            KeyValue schema = parseSchema(response.hasSchema() ? response.getSchema().toByteArray() : null);
+            Map<Integer, Integer> statValues = new LinkedHashMap<>();
+            for (SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse.Stats stat : response.getStatsList()) {
+                statValues.put(stat.getStatId(), stat.getStatValue());
+            }
+            return new UserStatsResult(
+                schema == null ? Collections.emptyList() : parseAchievementSchema(schema),
+                response.getCrcStats(),
+                Collections.unmodifiableMap(statValues),
+                schema == null ? Collections.emptyMap() : parseAchievementStatTargets(schema)
+            );
+        } catch (Exception error) { throw error; }
+    }
+
+    /**
+     * Sends exactly one client-stat mutation through the authenticated CM session.
+     * Callers must derive the stat ID from the server-provided schema and verify the result by
+     * reading the state again; Steam can reject a stat as invalid or out of date.
+     */
+    public void storeUserStat(
+        long appId,
+        long steamId64,
+        int crcStats,
+        int statId,
+        int statValue,
+        long timeoutMs
+    ) throws Exception {
+        SteammessagesClientserverUserstats.CMsgClientStoreUserStatsResponse response =
+            protocolClient.storeUserStat(appId, steamId64, crcStats, statId, statValue, timeoutMs);
+        if (response.hasEresult() && response.getEresult() != EResult.OK.code()) {
+            throw new IllegalStateException("Steam CM StoreUserStats failed: " + response.getEresult());
+        }
+        if (response.getStatsOutOfDate()) {
+            throw new IllegalStateException("Steam CM StoreUserStats rejected stale statistics.");
+        }
+        if (response.getStatsFailedValidationCount() > 0) {
+            throw new IllegalStateException(
+                "Steam CM StoreUserStats validation failed for stat "
+                    + response.getStatsFailedValidation(0).getStatId()
+            );
+        }
+    }
+
+    private static List<UserStatsResult.AchievementDefinition> parseAchievementSchema(byte[] bytes) {
+        KeyValue root = parseSchema(bytes);
+        return root == null ? Collections.emptyList() : parseAchievementSchema(root);
+    }
+
+    private static KeyValue parseSchema(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return null;
+        KeyValue root = new KeyValue();
+        try {
+            return root.tryReadAsBinary(new ByteArrayInputStream(bytes)) ? root : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    static List<UserStatsResult.AchievementDefinition> parseAchievementSchema(KeyValue root) {
+        List<UserStatsResult.AchievementDefinition> result = new ArrayList<>();
+        collectAchievementDefinitions(root, false, result);
+        return result;
+    }
+
+    static Map<String, UserStatsResult.AchievementStatTarget> parseAchievementStatTargets(KeyValue root) {
+        Map<String, UserStatsResult.AchievementStatTarget> result = new LinkedHashMap<>();
+        collectAchievementStatContainers(root, result);
+        return Collections.unmodifiableMap(result);
+    }
+
+    private static void collectAchievementStatContainers(
+        KeyValue node,
+        Map<String, UserStatsResult.AchievementStatTarget> result
+    ) {
+        if ("stats".equalsIgnoreCase(node.getName())) {
+            for (KeyValue stat : node.getChildren()) {
+                int statId = parseNonNegativeInt(stat.getName());
+                KeyValue bits = stat.get("bits");
+                if (statId < 0 || bits == KeyValue.INVALID) continue;
+                for (KeyValue bit : bits.getChildren()) {
+                    int bitIndex = parseNonNegativeInt(bit.getName());
+                    String apiName = firstNonBlank(
+                        value(bit, "name"),
+                        value(bit, "display", "name", "english")
+                    );
+                    if (bitIndex >= 0 && bitIndex <= 30 && !apiName.isEmpty()) {
+                        result.put(
+                            apiName.toLowerCase(Locale.ROOT),
+                            new UserStatsResult.AchievementStatTarget(statId, bitIndex)
+                        );
+                    }
+                }
+            }
+        }
+        for (KeyValue child : node.getChildren()) {
+            collectAchievementStatContainers(child, result);
+        }
+    }
+
+    private static void collectAchievementDefinitions(
+        KeyValue node,
+        boolean insideAchievements,
+        List<UserStatsResult.AchievementDefinition> result
+    ) {
+        boolean isAchievementsContainer = "achievements".equalsIgnoreCase(node.getName());
+        if ("achievement".equalsIgnoreCase(node.getName()) || insideAchievements) {
+            KeyValue id = node.get("id");
+            KeyValue apiName = node.get("name");
+            KeyValue displayName = node.get("displayName");
+            int achievementId = id == KeyValue.INVALID
+                ? parseNonNegativeInt(node.getName())
+                : id.asInteger(-1);
+            String apiNameValue = apiName == KeyValue.INVALID ? "" : safeTrim(apiName.asString());
+            if (achievementId >= 0 && !apiNameValue.isEmpty()) {
+                result.add(new UserStatsResult.AchievementDefinition(
+                    achievementId,
+                    apiNameValue,
+                    displayName == KeyValue.INVALID ? "" : displayName.asString(),
+                    value(node, "description"),
+                    value(node, "icon"),
+                    value(node, "icongray")
+                ));
+            }
+        }
+        for (KeyValue child : node.getChildren()) {
+            collectAchievementDefinitions(child, isAchievementsContainer, result);
+        }
+    }
+
+    private static int parseNonNegativeInt(String value) {
+        if (value == null) return -1;
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 0 ? parsed : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    private static String value(KeyValue node, String name) {
+        KeyValue child = node.get(name);
+        return child == KeyValue.INVALID ? "" : nullToEmpty(child.getValue());
+    }
+
+    private static String value(KeyValue node, String... path) {
+        KeyValue current = node;
+        for (String part : path) {
+            current = current.get(part);
+            if (current == KeyValue.INVALID) return "";
+        }
+        return nullToEmpty(current.getValue());
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            String normalized = safeTrim(value);
+            if (!normalized.isEmpty()) return normalized;
+        }
+        return "";
+    }
+
+    private static String safeTrim(String value) {
+        return nullToEmpty(value).trim();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    /**
+     * Sends the undocumented CM game-state message used by third-party Steam clients.
+     * A zero AppID clears the current game state.
+     */
+    public void setGamePlayedAppId(long appId) {
+        protocolClient.sendGamesPlayed(appId);
+        playingSessionAppId = (int) appId;
+        recordDiagnosticEvent("games_played_sent appId=" + appId + " emsg=5410");
+        Log.i(TAG, "Published Steam games-played state AppID=" + appId + ".");
+    }
+
+    public void setPersonaOnline() {
+        protocolClient.sendPersonaOnline();
+        recordDiagnosticEvent("persona_state_sent state=Online");
+        Log.i(TAG, "Published Steam persona state Online.");
+    }
+
+    public boolean isCmSessionActive() {
+        return protocolClient.isSessionActive();
+    }
+
+    public void setRichPresence(Map<String, String> kvPairs) {
+        protocolClient.sendRichPresence(kvPairs);
+        recordDiagnosticEvent("rich_presence_sent keys=" + kvPairs.size());
+        Log.i(TAG, "Published Steam rich presence (" + kvPairs.size() + " keys).");
+    }
+
+    private static EOSType androidOsType() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return EOSType.Android9;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return EOSType.Android8;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return EOSType.Android7;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return EOSType.Android6;
+        }
+        return EOSType.AndroidUnknown;
     }
 
     static String resolveSteamId64FromAuthSession(Object authSession) {
@@ -559,32 +707,40 @@ public final class SteamCloudClient implements AutoCloseable {
     public List<RemoteFileRecord> listFiles(int appId) throws Exception {
         try {
             Log.i(TAG, "Requesting Steam Cloud manifest for AppID " + appId + '.');
-            AppFileChangeList changeList = waitForStage(
-                steamCloud.getAppFileListChange(appId),
-                RPC_TIMEOUT_MS,
-                "GetAppFileChangelist"
+            SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Response changeList =
+                protocolClient.getAppFileChangelist(appId);
+            requireFullFileChangelist(
+                changeList.getIsOnlyDelta(),
+                changeList.getCurrentChangeNumber()
             );
 
             List<RemoteFileRecord> entries = new ArrayList<>();
-            for (AppFileInfo file : changeList.getFiles()) {
-                String pathPrefix = "";
-                if (file.getPathPrefixIndex() >= 0 && file.getPathPrefixIndex() < changeList.getPathPrefixes().size()) {
-                    pathPrefix = changeList.getPathPrefixes().get(file.getPathPrefixIndex());
-                }
-
+            for (SteammessagesCloudSteamclient.CCloud_AppFileInfo file : changeList.getFilesList()) {
+                String pathPrefix = requireIndexedChangelistValue(
+                    "path prefix",
+                    file.getPathPrefixIndex(),
+                    changeList.getPathPrefixesCount(),
+                    index -> changeList.getPathPrefixes(index)
+                );
                 String machineName = "";
-                if (file.getMachineNameIndex() >= 0 && file.getMachineNameIndex() < changeList.getMachineNames().size()) {
-                    machineName = changeList.getMachineNames().get(file.getMachineNameIndex());
+                if (file.hasMachineNameIndex()) {
+                    machineName = requireIndexedChangelistValue(
+                        "machine name",
+                        file.getMachineNameIndex(),
+                        changeList.getMachineNamesCount(),
+                        index -> changeList.getMachineNames(index)
+                    );
                 }
+                String persistState = requireKnownPersistState(file);
 
-                String remotePath = joinRemotePath(pathPrefix, file.getFilename());
+                String remotePath = joinRemotePath(pathPrefix, file.getFileName());
                 entries.add(new RemoteFileRecord(
                     remotePath,
                     file.getRawFileSize(),
-                    file.getTimestamp().toInstant().toEpochMilli(),
+                    TimeUnit.SECONDS.toMillis(file.getTimeStamp()),
                     machineName,
-                    file.getPersistState().name(),
-                    bytesToHex(file.getShaFile())
+                    persistState,
+                    bytesToHex(file.getShaFile().toByteArray())
                 ));
             }
 
@@ -595,6 +751,47 @@ public final class SteamCloudClient implements AutoCloseable {
             Log.e(TAG, "Steam Cloud manifest request failed during " + currentStage + '.', error);
             throw error;
         }
+    }
+
+    static void requireFullFileChangelist(boolean isOnlyDelta, long currentChangeNumber) throws IOException {
+        if (isOnlyDelta) {
+            throw new IOException(
+                "Steam Cloud returned a delta file changelist (changeNumber="
+                    + currentChangeNumber
+                    + "); a full manifest is required for synchronization."
+            );
+        }
+    }
+
+    static String requireIndexedChangelistValue(
+        String fieldName,
+        int index,
+        int valueCount,
+        java.util.function.IntFunction<String> valueAt
+    ) throws IOException {
+        if (index < 0 || index >= valueCount) {
+            throw new IOException(
+                "Steam Cloud manifest is incomplete: invalid " + fieldName + " index " + index + "."
+            );
+        }
+        return valueAt.apply(index);
+    }
+
+    static String requireKnownPersistState(
+        SteammessagesCloudSteamclient.CCloud_AppFileInfo file
+    ) throws IOException {
+        if (!file.hasPersistState() &&
+            file.getUnknownFields().hasField(
+                SteammessagesCloudSteamclient.CCloud_AppFileInfo.PERSIST_STATE_FIELD_NUMBER
+            )) {
+            throw new IOException("Steam Cloud manifest is incomplete: file persist state is unknown.");
+        }
+        Enums.ECloudStoragePersistState persistState = file.getPersistState();
+        if (persistState == null ||
+            Enums.ECloudStoragePersistState.forNumber(persistState.getNumber()) != persistState) {
+            throw new IOException("Steam Cloud manifest is incomplete: file persist state is unknown.");
+        }
+        return persistState.name();
     }
 
     public DownloadResult downloadFile(int appId, String remotePath, File outputFile) throws Exception {
@@ -608,6 +805,7 @@ public final class SteamCloudClient implements AutoCloseable {
         long expectedRawSize,
         String expectedSha1
     ) throws Exception {
+        outputFile = outputFile.getAbsoluteFile();
         for (int attempt = 1; attempt <= DOWNLOAD_MAX_ATTEMPTS; attempt++) {
             try {
                 return downloadFileOnce(appId, remotePath, outputFile, expectedRawSize, expectedSha1);
@@ -654,98 +852,144 @@ public final class SteamCloudClient implements AutoCloseable {
         long compressedBytesCount = 0L;
         long rawBytesCount = 0L;
         boolean decompressed = false;
+        File compressedTempFile = null;
+        File rawTempFile = null;
         Log.i(TAG, "Downloading Steam Cloud file: " + remotePath);
         long rpcStartedAtNs = System.nanoTime();
-        FileDownloadInfo info = waitForStageWithRetries(
-            () -> steamCloud.clientFileDownload(appId, remotePath),
-            RPC_TIMEOUT_MS,
-            "ClientFileDownload"
-        );
+        SteammessagesCloudSteamclient.CCloud_ClientFileDownload_Response info =
+            protocolClient.clientFileDownload(appId, remotePath);
         rpcMs = elapsedMillis(rpcStartedAtNs);
 
         if (info.getUrlHost().isEmpty()) {
             throw new IllegalStateException("Steam returned an empty download host for " + remotePath);
         }
+        if (info.getFileSize() > downloadLimits.getMaxCompressedDownloadBytes()) {
+            throw new DownloadLimitIOException(
+                "Steam Cloud compressed download exceeds the configured limit for " + remotePath
+                    + ": declared=" + info.getFileSize()
+                    + " limit=" + downloadLimits.getMaxCompressedDownloadBytes()
+            );
+        }
+        if (info.getRawFileSize() > downloadLimits.getMaxRawDownloadBytes()) {
+            throw new DownloadLimitIOException(
+                "Steam Cloud raw download exceeds the configured limit for " + remotePath
+                    + ": declared=" + info.getRawFileSize()
+                    + " limit=" + downloadLimits.getMaxRawDownloadBytes()
+            );
+        }
 
         String scheme = info.getUseHttps() ? "https://" : "http://";
         String url = scheme + info.getUrlHost() + info.getUrlPath();
         Request.Builder requestBuilder = new Request.Builder().url(url);
-        for (HttpHeaders header : info.getRequestHeaders()) {
+        for (SteammessagesCloudSteamclient.CCloud_ClientFileDownload_Response.HTTPHeaders header : info.getRequestHeadersList()) {
             requestBuilder.addHeader(header.getName(), header.getValue());
         }
 
-        byte[] compressedBytes;
-        long httpStartedAtNs = System.nanoTime();
-        try {
-            try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
-                if (!response.isSuccessful()) {
-                    throw new HttpStatusIOException(response.code(), "downloading", remotePath);
-                }
-                if (response.body() == null) {
-                    throw new IOException("Steam returned an empty response body for " + remotePath);
-                }
-                compressedBytes = response.body().bytes();
-            }
-        } catch (IOException error) {
-            if (error instanceof HttpStatusIOException) {
-                throw error;
-            }
-            throw new HttpTransferIOException("HTTP transfer failed when downloading " + remotePath, error);
-        }
-        httpMs = elapsedMillis(httpStartedAtNs);
-        compressedBytesCount = compressedBytes.length;
-
-        byte[] rawBytes = compressedBytes;
-        if (info.getRawFileSize() != info.getFileSize()) {
-            long unzipStartedAtNs = System.nanoTime();
-            rawBytes = maybeUnzip(compressedBytes, remotePath);
-            unzipMs = elapsedMillis(unzipStartedAtNs);
-            decompressed = true;
-        }
-        rawBytesCount = rawBytes.length;
-        validateDownloadedBytes(rawBytes, expectedRawSize, expectedSha1, remotePath);
-
         File parent = outputFile.getParentFile();
         ensureDirectoryExists(parent, "output directory");
-        long writeStartedAtNs = System.nanoTime();
-        try (FileOutputStream outputStream = new FileOutputStream(outputFile, false)) {
-            outputStream.write(rawBytes);
+        try {
+            compressedTempFile = File.createTempFile("steam-cloud-", ".compressed", parent);
+            rawTempFile = File.createTempFile("steam-cloud-", ".raw", parent);
+
+            long httpStartedAtNs = System.nanoTime();
+            try {
+                try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+                    if (!response.isSuccessful()) {
+                        throw new HttpStatusIOException(response.code(), "downloading", remotePath);
+                    }
+                    ResponseBody responseBody = response.body();
+                    if (responseBody == null) {
+                        throw new IOException("Steam returned an empty response body for " + remotePath);
+                    }
+                    long contentLength = responseBody.contentLength();
+                    if (contentLength > downloadLimits.getMaxCompressedDownloadBytes()) {
+                        throw new DownloadLimitIOException(
+                            "Steam Cloud compressed download exceeds the configured limit for " + remotePath
+                                + ": declared=" + contentLength
+                                + " limit=" + downloadLimits.getMaxCompressedDownloadBytes()
+                        );
+                    }
+                    compressedBytesCount = copyToFile(
+                        responseBody.byteStream(),
+                        compressedTempFile,
+                        downloadLimits.getMaxCompressedDownloadBytes(),
+                        "compressed download for " + remotePath
+                    );
+                }
+            } catch (IOException error) {
+                if (error instanceof HttpStatusIOException || error instanceof DownloadLimitIOException) {
+                    throw error;
+                }
+                throw new HttpTransferIOException("HTTP transfer failed when downloading " + remotePath, error);
+            }
+
+            httpMs = elapsedMillis(httpStartedAtNs);
+            decompressed = info.getRawFileSize() != info.getFileSize();
+            long unzipStartedAtNs = System.nanoTime();
+            if (decompressed) {
+                rawBytesCount = maybeUnzip(
+                    compressedTempFile,
+                    rawTempFile,
+                    remotePath,
+                    downloadLimits.getMaxRawDownloadBytes()
+                );
+            } else {
+                rawBytesCount = copyFileWithLimit(
+                    compressedTempFile,
+                    rawTempFile,
+                    downloadLimits.getMaxRawDownloadBytes(),
+                    "raw download for " + remotePath
+                );
+            }
+            unzipMs = elapsedMillis(unzipStartedAtNs);
+            validateDownloadedFile(rawTempFile, expectedRawSize, expectedSha1, remotePath);
+
+            long writeStartedAtNs = System.nanoTime();
+            SteamCloudAtomicFileStore.replaceFile(rawTempFile, outputFile);
+            writeMs = elapsedMillis(writeStartedAtNs);
+            rawTempFile = null;
+            long totalMs = elapsedMillis(startedAtNs);
+            Log.i(
+                TAG,
+                "Downloaded Steam Cloud file: "
+                    + remotePath
+                    + " totalMs="
+                    + totalMs
+                    + " rpcMs="
+                    + rpcMs
+                    + " httpMs="
+                    + httpMs
+                    + " unzipMs="
+                    + unzipMs
+                    + " writeMs="
+                    + writeMs
+                    + " compressedBytes="
+                    + compressedBytesCount
+                    + " rawBytes="
+                    + rawBytesCount
+                    + " output="
+                    + outputFile.getAbsolutePath()
+            );
+            return new DownloadResult(
+                remotePath,
+                outputFile.getAbsolutePath(),
+                compressedBytesCount,
+                rawBytesCount,
+                decompressed,
+                rpcMs,
+                httpMs,
+                unzipMs,
+                writeMs,
+                totalMs
+            );
+        } finally {
+            if (compressedTempFile != null) {
+                compressedTempFile.delete();
+            }
+            if (rawTempFile != null) {
+                rawTempFile.delete();
+            }
         }
-        writeMs = elapsedMillis(writeStartedAtNs);
-        long totalMs = elapsedMillis(startedAtNs);
-        Log.i(
-            TAG,
-            "Downloaded Steam Cloud file: "
-                + remotePath
-                + " totalMs="
-                + totalMs
-                + " rpcMs="
-                + rpcMs
-                + " httpMs="
-                + httpMs
-                + " unzipMs="
-                + unzipMs
-                + " writeMs="
-                + writeMs
-                + " compressedBytes="
-                + compressedBytesCount
-                + " rawBytes="
-                + rawBytesCount
-                + " output="
-                + outputFile.getAbsolutePath()
-        );
-        return new DownloadResult(
-            remotePath,
-            outputFile.getAbsolutePath(),
-            compressedBytesCount,
-            rawBytesCount,
-            decompressed,
-            rpcMs,
-            httpMs,
-            unzipMs,
-            writeMs,
-            totalMs
-        );
     }
 
     public UploadBatch beginUploadBatch(int appId, List<String> remotePaths) throws Exception {
@@ -774,18 +1018,18 @@ public final class SteamCloudClient implements AutoCloseable {
                     .setClientId(0L)
                     .setAppBuildId(0L)
                     .build();
-            ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder> response =
+            SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response response =
                 beginAppUploadBatchWithRetries(
                     request,
                     remotePathsToUpload.size(),
                     remotePathsToDelete.size()
                 );
-            SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder body = response.getBody();
+            SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response body = response;
             long batchId = body.getBatchId();
             if (batchId == 0L) {
-                recordDiagnosticEvent("begin_app_upload_batch invalid_batch_id batchId=0 result=" + response.getResult());
+                recordDiagnosticEvent("begin_app_upload_batch invalid_batch_id batchId=0");
             }
-            ensureValidUploadBatchId(batchId, response.getResult());
+            ensureValidUploadBatchId(batchId, EResult.OK);
             Log.i(
                 TAG,
                 "Steam Cloud upload batch started. batchId="
@@ -805,15 +1049,18 @@ public final class SteamCloudClient implements AutoCloseable {
             throw new IOException("Steam Cloud upload source file is missing: " + sourceFile.getAbsolutePath());
         }
 
-        long fileSizeLong = sourceFile.length();
-        if (fileSizeLong > Integer.MAX_VALUE) {
-            throw new IOException("Steam Cloud upload does not support files larger than 2 GiB: " + remotePath);
-        }
-        int fileSize = (int) fileSizeLong;
-        String sha1Hex = sha1Hex(sourceFile);
+        File uploadSnapshot = createUploadSnapshot(sourceFile, uploadSnapshotDir);
         boolean startedUpload = false;
+        long fileSizeLong = 0L;
+        String sha1Hex = "";
 
         try {
+            fileSizeLong = uploadSnapshot.length();
+            if (fileSizeLong > Integer.MAX_VALUE) {
+                throw new IOException("Steam Cloud upload does not support files larger than 2 GiB: " + remotePath);
+            }
+            int fileSize = (int) fileSizeLong;
+            sha1Hex = sha1Hex(uploadSnapshot);
             Log.i(
                 TAG,
                 "Beginning HTTP upload for Steam Cloud file: "
@@ -845,11 +1092,11 @@ public final class SteamCloudClient implements AutoCloseable {
                     .addPlatformsToSync("all")
                     .setUploadBatchId(uploadBatchId)
                     .build();
-            ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder> beginResponse =
+            SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response beginResponse =
                 beginHttpUploadWithRetries(request, remotePath);
             startedUpload = true;
 
-            SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder body = beginResponse.getBody();
+            SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response body = beginResponse;
             String url = (body.getUseHttps() ? "https://" : "http://") + body.getUrlHost() + body.getUrlPath();
             recordDiagnosticEvent(
                 "begin_http_upload response remotePath="
@@ -863,7 +1110,7 @@ public final class SteamCloudClient implements AutoCloseable {
             );
             Request.Builder requestBuilder = new Request.Builder()
                 .url(url)
-                .put(RequestBody.create(sourceFile, null));
+                .put(RequestBody.create(uploadSnapshot, null));
             for (int index = 0; index < body.getRequestHeadersCount(); index++) {
                 SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.HTTPHeaders header =
                     body.getRequestHeaders(index);
@@ -913,29 +1160,134 @@ public final class SteamCloudClient implements AutoCloseable {
             }
             Log.e(TAG, "Steam Cloud upload failed for " + remotePath + '.', error);
             throw error;
+        } finally {
+            if (!uploadSnapshot.delete() && uploadSnapshot.exists()) {
+                Log.w(TAG, "Failed to remove temporary Steam Cloud upload snapshot: " + uploadSnapshot);
+            }
         }
     }
 
-    public void completeUploadBatch(int appId, long batchId, EResult batchResult) throws Exception {
+    public void deleteFile(int appId, String remotePath, long uploadBatchId) throws Exception {
+        SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request request =
+            buildClientDeleteFileRequest(appId, remotePath, uploadBatchId);
         try {
-            SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request request =
-                SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request.newBuilder()
-                    .setAppid(appId)
-                    .setBatchId(batchId)
-                    .setBatchEresult(batchResult.code())
-                    .build();
-            ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Response.Builder> response =
-                waitForServiceJobWithRetries(
-                    () -> cloudService.completeAppUploadBatchBlocking(request),
-                    RPC_TIMEOUT_MS,
-                    "CompleteAppUploadBatch"
-                );
-            ensureServiceResult(response, "CompleteAppUploadBatch");
-            Log.i(TAG, "Steam Cloud upload batch completed. batchId=" + batchId + " result=" + batchResult);
+            protocolClient.clientDeleteFile(request);
+            recordDiagnosticEvent(
+                "client_delete_file acknowledged remotePath=" + remotePath + " batchId=" + uploadBatchId
+            );
         } catch (Exception error) {
-            Log.e(TAG, "Steam Cloud upload batch completion failed during " + currentStage + '.', error);
+            recordDiagnosticEvent(
+                "client_delete_file failed remotePath=" + remotePath + " batchId=" + uploadBatchId +
+                    " error=" + describeThrowable(error)
+            );
             throw error;
         }
+    }
+
+    static SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request buildClientDeleteFileRequest(
+        int appId,
+        String remotePath,
+        long uploadBatchId
+    ) {
+        if (appId <= 0) {
+            throw new IllegalArgumentException("Steam Cloud AppID must be positive.");
+        }
+        if (isBlank(remotePath)) {
+            throw new IllegalArgumentException("Steam Cloud delete path must not be blank.");
+        }
+        if (uploadBatchId <= 0L) {
+            throw new IllegalArgumentException("Steam Cloud delete requires a valid upload batch ID.");
+        }
+        return SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request.newBuilder()
+            .setAppid(appId)
+            .setFilename(remotePath.trim())
+            .setIsExplicitDelete(true)
+            .setUploadBatchId(uploadBatchId)
+            .build();
+    }
+
+    public void completeUploadBatch(int appId, long batchId, EResult batchResult) throws Exception {
+        // CompleteAppUploadBatch is susceptible to transient EResult.Fail (2) responses from the
+        // Steam backend when the batch finalization is still in-flight server-side even though all
+        // individual file commits succeeded.  Retry with back-off before giving up.
+        SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request request =
+            SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request.newBuilder()
+                .setAppid(appId)
+                .setBatchId(batchId)
+                .setBatchEresult(batchResult.code())
+                .build();
+        for (int attempt = 1; attempt <= COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS; attempt++) {
+            try {
+                protocolClient.completeAppUploadBatch(request);
+                Log.i(TAG, "Steam Cloud upload batch completed. batchId=" + batchId
+                    + " result=" + batchResult + " attempt=" + attempt);
+                recordDiagnosticEvent(
+                    "completeappuploadbatch success batchId=" + batchId
+                        + " result=" + batchResult + " attempt=" + attempt
+                );
+                return;
+            } catch (Exception error) {
+                boolean isRetryable = isRetryableCompleteUploadBatchException(error);
+                recordDiagnosticEvent(
+                    "completeappuploadbatch failed batchId=" + batchId
+                        + " attempt=" + attempt + " retryable=" + isRetryable
+                        + " error=" + describeThrowable(error)
+                );
+                if (!isRetryable || attempt >= COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS) {
+                    Log.e(TAG, "Steam Cloud upload batch completion failed during " + currentStage
+                        + " batchId=" + batchId + " attempt=" + attempt + '.', error);
+                    throw error;
+                }
+                long delayMs = COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS[
+                    Math.min(attempt - 1, COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS.length - 1)
+                ];
+                Log.w(TAG, "Steam Cloud upload batch completion failed transiently for batchId=" + batchId
+                    + ": " + sanitizeSingleLine(error.getMessage())
+                    + "; retrying attempt " + (attempt + 1) + "/" + COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS
+                    + " after " + delayMs + "ms.", error);
+                sleepBeforeRetry(delayMs);
+            }
+        }
+        throw new IllegalStateException("CompleteAppUploadBatch failed without completing. batchId=" + batchId);
+    }
+
+    private static boolean isRetryableCompleteUploadBatchException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof TimeoutException) {
+                return true;
+            }
+            // SteamServiceMethodException carries the raw EResult code; EResult.Fail (2) is the
+            // most common transient result during CompleteAppUploadBatch.
+            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
+                int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
+                return isRetryableCompleteUploadBatchResultCode(code);
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("completeappuploadbatch failed: fail")
+                    || normalized.contains("eresult=2")
+                    || normalized.contains("eresult = 2")
+                    || normalized.contains("busy")
+                    || normalized.contains("timeout")
+                    || normalized.contains("timed out")
+                    || normalized.contains("serviceunavailable")
+                    || normalized.contains("service unavailable")
+                    || normalized.contains("remotecallfailed")
+                    || normalized.contains("remote call failed")
+                ) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isRetryableCompleteUploadBatchResultCode(int code) {
+        // EResult.Fail=2, Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
+        return code == 2 || code == 10 || code == 15 || code == 16 || code == 71;
     }
 
     @Override
@@ -943,23 +1295,8 @@ public final class SteamCloudClient implements AutoCloseable {
         shuttingDown.set(true);
         running.set(false);
 
-        Thread thread = callbackThread;
-        if (thread != null) {
-            thread.interrupt();
-        }
-        try {
-            steamClient.disconnect();
-        } catch (Throwable ignored) {
-            // Best effort.
-        }
-        LogManager.removeListener(javaSteamLogCollector);
-        if (thread != null) {
-            try {
-                thread.join(1000L);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        protocolClient.close();
+        recordDiagnosticEvent("cm_disconnect completed");
         applyProxySystemProperties();
     }
 
@@ -976,17 +1313,19 @@ public final class SteamCloudClient implements AutoCloseable {
             lastAuthPromptDescription,
             guardDataConfigured,
             guardDataUpdated,
-            javaSteamLogCollector.describeLastLog(),
-            javaSteamLogCollector.describeLastError(),
-            javaSteamLogCollector.snapshotTailLines(),
-            javaSteamLogCollector.snapshotErrorStackLines(),
+            "<not applicable: accelerated protocol CM>",
+            "<not applicable: accelerated protocol CM>",
+            Collections.emptyList(),
+            Collections.emptyList(),
             snapshotDiagnosticEvents(),
             wattAccelerationEnabled ? "enabled" : "disabled",
             credentialsAuthSteamId64,
             loggedOnCallbackSteamId64,
             steamClientSteamId64,
             cmServerSelectionMs,
-            cmConnectWaitMs
+            cmConnectWaitMs,
+            playingSessionBlocked,
+            playingSessionAppId
         );
     }
 
@@ -1049,21 +1388,12 @@ public final class SteamCloudClient implements AutoCloseable {
     private PreparedServerRecord selectWebSocketServerRecord() throws IOException {
         List<PreparedServerRecord> candidates = new ArrayList<>();
 
-        if (wattAccelerationEnabled) {
-            boolean refreshed = steamClient.getServers().forceRefreshServerList();
-            recordDiagnosticEvent("cm_server_list_refresh result=" + (refreshed ? "completed" : "failed"));
-        }
-
-        ServerRecord serverListRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
-        if (serverListRecord != null) {
-            candidates.add(new PreparedServerRecord(serverListRecord, "Steam server list"));
-        }
+        String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
+        addWebSocketAddressCandidate(candidates, defaultAddress, "JavaSteam default websocket CM");
 
         String cachedAddress = readOptionalTextFile(lastCmEndpointFile);
         addWebSocketAddressCandidate(candidates, cachedAddress, "Cached websocket CM fallback");
-
-        String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
-        addWebSocketAddressCandidate(candidates, defaultAddress, "JavaSteam default websocket CM");
+        recordDiagnosticEvent("cm_server_list skipped using_cached_or_default_websocket");
 
         IOException lastResolutionError = null;
         List<String> attemptedKeys = new ArrayList<>();
@@ -1318,8 +1648,26 @@ public final class SteamCloudClient implements AutoCloseable {
             });
         }
 
+        long deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        while (!combined.isDone()) {
+            long remainingNs = deadlineNs - System.nanoTime();
+            if (remainingNs <= 0L) {
+                throw new TimeoutException(stage + " timed out after " + (timeoutMs / 1000L) + "s.");
+            }
+            long sleepMs = Math.min(
+                250L,
+                Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNs))
+            );
+            try {
+                Thread.sleep(sleepMs);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw error;
+            }
+        }
+
         try {
-            return (T) combined.get(timeoutMs, TimeUnit.MILLISECONDS);
+            return (T) combined.get();
         } catch (ExecutionException error) {
             Throwable cause = unwrapAsyncThrowable(error);
             if (cause instanceof Exception) {
@@ -1329,8 +1677,6 @@ public final class SteamCloudClient implements AutoCloseable {
                 throw (Error) cause;
             }
             throw new IllegalStateException(stage + " failed.", cause);
-        } catch (TimeoutException error) {
-            throw new TimeoutException(stage + " timed out after " + (timeoutMs / 1000L) + "s.");
         }
     }
 
@@ -1533,24 +1879,18 @@ public final class SteamCloudClient implements AutoCloseable {
                 .setFileSha(sha1Hex)
                 .setFilename(remotePath)
                 .build();
-        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_CommitHTTPUpload_Response.Builder> response = null;
+        SteammessagesCloudSteamclient.CCloud_CommitHTTPUpload_Response response = null;
         for (int attempt = 1; attempt <= TRANSIENT_RPC_MAX_ATTEMPTS; attempt++) {
-            response = waitForServiceJob(
-                cloudService.commitHTTPUpload(request),
-                RPC_TIMEOUT_MS,
-                "CommitHTTPUpload"
-            );
-            EResult result = response.getResult();
-            if (result == EResult.OK) {
-                return response.getBody().getFileCommitted();
+            try {
+                response = protocolClient.commitHttpUpload(request);
+                return response.getFileCommitted();
+            } catch (Exception error) {
+                if (!isRetryableSteamCloudException(error) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
+                    throw error;
+                }
+                sleepBeforeTransientRetry("CommitHTTPUpload", error, attempt);
             }
-            if (!isRetryableSteamCloudResult(result) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
-                ensureServiceResult(response, "CommitHTTPUpload");
-            }
-            sleepBeforeTransientRetry("CommitHTTPUpload", result, remotePath, attempt);
         }
-
-        ensureServiceResult(response, "CommitHTTPUpload");
         throw new IllegalStateException("CommitHTTPUpload failed without a response result.");
     }
 
@@ -1593,127 +1933,68 @@ public final class SteamCloudClient implements AutoCloseable {
         throw new IllegalStateException(stage + " failed without a response result.");
     }
 
-    private ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder>
+    private SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response
     beginHttpUploadWithRetries(
         SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Request request,
         String remotePath
     ) throws Exception {
-        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder> response = null;
+        SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response response = null;
         for (int attempt = 1; attempt <= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS; attempt++) {
-            response = waitForServiceJob(
-                cloudService.beginHTTPUpload(request),
-                RPC_TIMEOUT_MS,
-                "BeginHTTPUpload"
-            );
-            EResult result = response.getResult();
-            recordDiagnosticEvent(
-                "begin_http_upload result remotePath="
-                    + remotePath
-                    + " attempt="
-                    + attempt
-                    + "/"
-                    + BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS
-                    + " result="
-                    + result
-            );
-            if (result == EResult.OK) {
+            try {
+                response = protocolClient.beginHttpUpload(request);
+                recordDiagnosticEvent("begin_http_upload success remotePath=" + remotePath + " attempt=" + attempt);
                 return response;
+            } catch (Exception error) {
+                if (!isRetryableSteamCloudException(error) || attempt >= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS) {
+                    throw error;
+                }
+                sleepBeforeTransientRetry("BeginHTTPUpload", error, attempt);
             }
-            if (!isRetryableBeginHttpUploadResult(result) || attempt >= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS) {
-                ensureServiceResult(response, "BeginHTTPUpload");
-            }
-
-            long delayMs = beginHttpUploadRetryDelayMs(result, attempt);
-            Log.w(
-                TAG,
-                "BeginHTTPUpload returned "
-                    + result
-                    + " for "
-                    + remotePath
-                    + "; retrying attempt "
-                    + (attempt + 1)
-                    + "/"
-                    + BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS
-                    + " after "
-                    + delayMs
-                    + "ms."
-                    + beginHttpUploadRetryHint(result)
-            );
-            sleepBeforeRetry(delayMs);
         }
-
-        ensureServiceResult(response, "BeginHTTPUpload");
         throw new IllegalStateException("BeginHTTPUpload failed without a response result.");
     }
 
-    private ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder>
+    private SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response
     beginAppUploadBatchWithRetries(
         SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Request request,
         int uploadCount,
         int deleteCount
     ) throws Exception {
-        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder> response = null;
+        SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response response = null;
         for (int attempt = 1; attempt <= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS; attempt++) {
-            response = waitForServiceJob(
-                cloudService.beginAppUploadBatch(request),
-                RPC_TIMEOUT_MS,
-                "BeginAppUploadBatch"
-            );
-            EResult result = response.getResult();
-            long batchId = response.getBody() == null ? 0L : response.getBody().getBatchId();
-            recordDiagnosticEvent(
-                "begin_app_upload_batch result uploads="
-                    + uploadCount
-                    + " deletes="
-                    + deleteCount
-                    + " attempt="
-                    + attempt
-                    + "/"
-                    + BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS
-                    + " result="
-                    + result
-                    + " batchId="
-                    + batchId
-            );
-            if (result == EResult.OK && batchId != 0L) {
+            try {
+                response = protocolClient.beginAppUploadBatch(request);
+                long batchId = response.getBatchId();
+                recordDiagnosticEvent(
+                    "begin_app_upload_batch success uploads=" + uploadCount + " deletes=" + deleteCount
+                        + " attempt=" + attempt + " batchId=" + batchId
+                );
+                ensureValidUploadBatchId(batchId, EResult.OK);
                 return response;
-            }
-            if (!isRetryableBeginAppUploadBatchResult(result, batchId)
-                || attempt >= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS
-            ) {
-                if (result == EResult.OK) {
-                    ensureValidUploadBatchId(batchId, result);
+            } catch (Exception error) {
+                EResult typedResult = steamCloudResultFromException(error);
+                long batchId = response == null ? 0L : response.getBatchId();
+                boolean retryable = typedResult != null
+                    ? isRetryableBeginAppUploadBatchResult(typedResult, batchId)
+                    : isRetryableSteamCloudException(error);
+                if (!retryable || attempt >= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS) {
+                    throw error;
                 }
-                ensureServiceResult(response, "BeginAppUploadBatch");
+                if (typedResult != null) {
+                    long delayMs = beginAppUploadBatchRetryDelayMs(typedResult, batchId, attempt);
+                    Log.w(
+                        TAG,
+                        "BeginAppUploadBatch returned " + typedResult +
+                            beginAppUploadBatchRetryHint(typedResult, batchId) +
+                            "; retrying attempt " + (attempt + 1) + "/" +
+                            BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS + " after " + delayMs + "ms."
+                    );
+                    sleepBeforeRetry(delayMs);
+                } else {
+                    sleepBeforeTransientRetry("BeginAppUploadBatch", error, attempt);
+                }
             }
-
-            long delayMs = beginAppUploadBatchRetryDelayMs(result, batchId, attempt);
-            Log.w(
-                TAG,
-                "BeginAppUploadBatch returned "
-                    + result
-                    + " (batchId="
-                    + batchId
-                    + ") for uploads="
-                    + uploadCount
-                    + " deletes="
-                    + deleteCount
-                    + "; retrying attempt "
-                    + (attempt + 1)
-                    + "/"
-                    + BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS
-                    + " after "
-                    + delayMs
-                    + "ms."
-                    + beginAppUploadBatchRetryHint(result, batchId)
-            );
-            sleepBeforeRetry(delayMs);
         }
-
-        if (response != null && response.getResult() == EResult.OK) {
-            ensureValidUploadBatchId(response.getBody() == null ? 0L : response.getBody().getBatchId(), response.getResult());
-        }
-        ensureServiceResult(response, "BeginAppUploadBatch");
         throw new IllegalStateException("BeginAppUploadBatch failed without a response result.");
     }
 
@@ -1783,6 +2064,18 @@ public final class SteamCloudClient implements AutoCloseable {
             if (current instanceof TimeoutException) {
                 return true;
             }
+            // SteamServiceMethodException carries a typed result code; check it directly instead
+            // of relying on string parsing which misses codes like EResult.Fail (2).
+            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
+                int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
+                // Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
+                if (code == 10 || code == 15 || code == 16 || code == 71 || code == 108) {
+                    return true;
+                }
+                // Do not retry other typed results (e.g. Fail=2 for generic cloud calls,
+                // auth errors, etc.) — let the caller decide based on context.
+                return false;
+            }
             String message = current.getMessage();
             if (message != null) {
                 String normalized = message.toLowerCase(Locale.ROOT);
@@ -1800,6 +2093,19 @@ public final class SteamCloudClient implements AutoCloseable {
             current = current.getCause();
         }
         return false;
+    }
+
+    private static EResult steamCloudResultFromException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
+                return EResult.from(
+                    ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode()
+                );
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private static boolean isRetryableDownloadException(Throwable error) {
@@ -1834,7 +2140,8 @@ public final class SteamCloudClient implements AutoCloseable {
 
     private static boolean isRetryableBeginHttpUploadResult(EResult result) {
         return isRetryableSteamCloudResult(result)
-            || result == EResult.TooManyPending;
+            || result == EResult.TooManyPending
+            || result == EResult.DuplicateRequest;
     }
 
     private static boolean isRetryableBeginAppUploadBatchResult(EResult result, long batchId) {
@@ -1858,17 +2165,21 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     private static long beginHttpUploadRetryDelayMs(EResult result, int attempt) {
-        long[] delays = result == EResult.TooManyPending
+        long[] delays = isPendingUploadSlotResult(result)
             ? BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS
             : BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS;
         return delays[Math.min(attempt - 1, delays.length - 1)];
     }
 
     private static String beginHttpUploadRetryHint(EResult result) {
-        if (result != EResult.TooManyPending) {
+        if (!isPendingUploadSlotResult(result)) {
             return "";
         }
         return " Steam may still be clearing an earlier unfinished upload batch.";
+    }
+
+    private static boolean isPendingUploadSlotResult(EResult result) {
+        return result == EResult.TooManyPending || result == EResult.DuplicateRequest;
     }
 
     private static void sleepBeforeRetry(long delayMs) throws InterruptedException {
@@ -1901,9 +2212,18 @@ public final class SteamCloudClient implements AutoCloseable {
         } catch (Exception error) {
             throw new IOException("Failed to initialize SHA-1 digest.", error);
         }
-        try {
-            byte[] bytes = Files.readAllBytes(file.toPath());
-            digest.update(bytes);
+        try (InputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[IO_BUFFER_SIZE];
+            while (true) {
+                int read = input.read(buffer);
+                if (read < 0) {
+                    break;
+                }
+                if (read == 0) {
+                    continue;
+                }
+                digest.update(buffer, 0, read);
+            }
         } catch (IOException error) {
             throw new IOException("Failed to read Steam Cloud upload source file.", error);
         }
@@ -1931,40 +2251,197 @@ public final class SteamCloudClient implements AutoCloseable {
         return base.trim() + " (Steam Cloud)";
     }
 
-    private static byte[] maybeUnzip(byte[] bytes, String remotePath) throws IOException {
-        if (bytes.length < 4
-            || bytes[0] != 0x50
-            || bytes[1] != 0x4B
-            || bytes[2] != 0x03
-            || bytes[3] != 0x04
-        ) {
-            return bytes;
+    public static final class DownloadLimits {
+        private final long maxCompressedDownloadBytes;
+        private final long maxRawDownloadBytes;
+
+        public DownloadLimits(long maxCompressedDownloadBytes, long maxRawDownloadBytes) {
+            if (maxCompressedDownloadBytes < 0L || maxRawDownloadBytes < 0L) {
+                throw new IllegalArgumentException("Download limits must not be negative.");
+            }
+            this.maxCompressedDownloadBytes = maxCompressedDownloadBytes;
+            this.maxRawDownloadBytes = maxRawDownloadBytes;
         }
 
-        try (ZipInputStream zipStream = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+        public static DownloadLimits defaults() {
+            return new DownloadLimits(
+                DEFAULT_MAX_COMPRESSED_DOWNLOAD_BYTES,
+                DEFAULT_MAX_RAW_DOWNLOAD_BYTES
+            );
+        }
+
+        public long getMaxCompressedDownloadBytes() {
+            return maxCompressedDownloadBytes;
+        }
+
+        public long getMaxRawDownloadBytes() {
+            return maxRawDownloadBytes;
+        }
+    }
+
+    static File createUploadSnapshot(File sourceFile, File snapshotDirectory) throws IOException {
+        File source = sourceFile.getAbsoluteFile();
+        ensureDirectoryExists(snapshotDirectory, "Steam Cloud upload snapshot directory");
+        File snapshot = File.createTempFile("steam-cloud-upload-", ".snapshot", snapshotDirectory);
+        boolean completed = false;
+        try {
+            copyFileWithLimit(source, snapshot, Long.MAX_VALUE, "Steam Cloud upload snapshot");
+            completed = true;
+            return snapshot;
+        } finally {
+            if (!completed) {
+                snapshot.delete();
+            }
+        }
+    }
+
+    private static long maybeUnzip(
+        File compressedFile,
+        File rawFile,
+        String remotePath,
+        long maxRawBytes
+    ) throws IOException {
+        if (!hasZipLocalFileHeader(compressedFile)) {
+            return copyFileWithLimit(compressedFile, rawFile, maxRawBytes, "raw download for " + remotePath);
+        }
+
+        try (
+            InputStream input = new FileInputStream(compressedFile);
+            ZipInputStream zipStream = new ZipInputStream(input)
+        ) {
             ZipEntry entry = zipStream.getNextEntry();
             if (entry == null) {
                 throw new IOException("Downloaded ZIP for " + remotePath + " had no entries.");
             }
-            return readAll(zipStream);
+            validateZipEntry(entry, remotePath);
+            long rawBytes = copyToFile(
+                zipStream,
+                rawFile,
+                maxRawBytes,
+                "decompressed download for " + remotePath
+            );
+            zipStream.closeEntry();
+            if (zipStream.getNextEntry() != null) {
+                throw new IOException("Downloaded ZIP for " + remotePath + " contained multiple entries.");
+            }
+            return rawBytes;
+        }
+    }
+
+    private static boolean hasZipLocalFileHeader(File file) throws IOException {
+        try (InputStream input = new FileInputStream(file)) {
+            return input.read() == 0x50
+                && input.read() == 0x4B
+                && input.read() == 0x03
+                && input.read() == 0x04;
+        }
+    }
+
+    private static void validateZipEntry(ZipEntry entry, String remotePath) throws IOException {
+        if (entry.isDirectory()) {
+            throw new IOException("Downloaded ZIP for " + remotePath + " contained a directory entry.");
+        }
+        String name = entry.getName();
+        if (isUnsafeZipEntryName(name)) {
+            throw new IOException("Downloaded ZIP for " + remotePath + " contained an unsafe entry path.");
+        }
+    }
+
+    private static boolean isUnsafeZipEntryName(String name) {
+        if (isBlank(name) || name.indexOf('\0') >= 0) {
+            return true;
+        }
+        String normalized = name.replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.endsWith("/") || normalized.indexOf(':') >= 0) {
+            return true;
+        }
+        for (String segment : normalized.split("/", -1)) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static long copyFileWithLimit(
+        File source,
+        File target,
+        long maxBytes,
+        String description
+    ) throws IOException {
+        try (InputStream input = new FileInputStream(source)) {
+            return copyToFile(input, target, maxBytes, description);
+        }
+    }
+
+    private static long copyToFile(
+        InputStream input,
+        File target,
+        long maxBytes,
+        String description
+    ) throws IOException {
+        if (maxBytes < 0L) {
+            throw new IllegalArgumentException("maxBytes must not be negative");
+        }
+        long copied = 0L;
+        try (FileOutputStream output = new FileOutputStream(target, false)) {
+            byte[] buffer = new byte[IO_BUFFER_SIZE];
+            while (true) {
+                int read = input.read(buffer);
+                if (read < 0) {
+                    break;
+                }
+                if (read == 0) {
+                    continue;
+                }
+                if (copied > maxBytes - read) {
+                    throw new DownloadLimitIOException(
+                        "Steam Cloud " + description + " exceeds the configured limit: limit=" + maxBytes
+                    );
+                }
+                output.write(buffer, 0, read);
+                copied += read;
+            }
+            output.getFD().sync();
+        }
+        return copied;
+    }
+
+    private static void validateDownloadedFile(
+        File rawFile,
+        long expectedRawSize,
+        String expectedSha1,
+        String remotePath
+    ) throws IOException {
+        long actualSize = rawFile.length();
+        if (expectedRawSize >= 0L && actualSize != expectedRawSize) {
+            throw new IOException(
+                "Steam Cloud download size mismatch for "
+                    + remotePath
+                    + ": expectedRawSize="
+                    + expectedRawSize
+                    + " actualRawSize="
+                    + actualSize
+            );
+        }
+        if (isBlank(expectedSha1)) {
+            return;
+        }
+        String actualSha1 = sha1Hex(rawFile);
+        if (!actualSha1.equalsIgnoreCase(expectedSha1.trim())) {
+            throw new IOException(
+                "Steam Cloud download SHA-1 mismatch for "
+                    + remotePath
+                    + ": expectedSha1="
+                    + expectedSha1.trim()
+                    + " actualSha1="
+                    + actualSha1
+            );
         }
     }
 
     private static long elapsedMillis(long startedAtNs) {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNs);
-    }
-
-    private static byte[] readAll(InputStream inputStream) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        while (true) {
-            int read = inputStream.read(buffer);
-            if (read < 0) {
-                break;
-            }
-            output.write(buffer, 0, read);
-        }
-        return output.toByteArray();
     }
 
     private static void validateDownloadedBytes(
@@ -2187,6 +2664,8 @@ public final class SteamCloudClient implements AutoCloseable {
         private final String steamClientSteamId64;
         private final long cmServerSelectionMs;
         private final long cmConnectWaitMs;
+        private final boolean playingSessionBlocked;
+        private final int playingSessionAppId;
 
         private DiagnosticsSnapshot(
             String currentStage,
@@ -2210,7 +2689,9 @@ public final class SteamCloudClient implements AutoCloseable {
             String loggedOnCallbackSteamId64,
             String steamClientSteamId64,
             long cmServerSelectionMs,
-            long cmConnectWaitMs
+            long cmConnectWaitMs,
+            boolean playingSessionBlocked,
+            int playingSessionAppId
         ) {
             this.currentStage = currentStage;
             this.protocolTypesDescription = protocolTypesDescription;
@@ -2234,6 +2715,8 @@ public final class SteamCloudClient implements AutoCloseable {
             this.steamClientSteamId64 = steamClientSteamId64;
             this.cmServerSelectionMs = cmServerSelectionMs;
             this.cmConnectWaitMs = cmConnectWaitMs;
+            this.playingSessionBlocked = playingSessionBlocked;
+            this.playingSessionAppId = playingSessionAppId;
         }
 
         public String getCurrentStage() {
@@ -2322,6 +2805,14 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public long getCmConnectWaitMs() {
             return cmConnectWaitMs;
+        }
+
+        public boolean getPlayingSessionBlocked() {
+            return playingSessionBlocked;
+        }
+
+        public int getPlayingSessionAppId() {
+            return playingSessionAppId;
         }
     }
 
@@ -2463,6 +2954,12 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final class HttpTransferIOException extends IOException {
         private HttpTransferIOException(String message, IOException cause) {
             super(message, cause);
+        }
+    }
+
+    private static final class DownloadLimitIOException extends IOException {
+        private DownloadLimitIOException(String message) {
+            super(message);
         }
     }
 

@@ -84,6 +84,9 @@ public final class JREUtils {
             appendUniquePathEntry(pathEntries, "/vendor/lib");
             appendUniquePathEntry(pathEntries, "/vendor/lib/hw");
         }
+        // Keep APK libraries ahead of optional resource-pack, patch, and market libraries.
+        // Core LWJGL binaries must be resolved from the same APK generation as their Java
+        // classes; GDX explicitly loads its external runtime libraries when needed.
         appendUniquePathEntry(pathEntries, nativeLibDir);
         if (extraLibDirs != null) {
             for (String extraLibDir : extraLibDirs) {

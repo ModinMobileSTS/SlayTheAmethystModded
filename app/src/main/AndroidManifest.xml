@@ -75,6 +75,17 @@
             android:exported="false"
             android:process=":diag" />
 
+        <!-- Exported receiver so adb can trigger DiagnosticsProcessService
+             without the service itself being exported. -->
+        <receiver
+            android:name="io.stamethyst.backend.diag.AdbDiagnosticsReceiver"
+            android:exported="true"
+            android:process=":diag">
+            <intent-filter>
+                <action android:name="io.stamethyst.action.ADB_STAGE_JVM_LOG" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name="io.stamethyst.backend.diag.LogcatCaptureService"
             android:exported="false"
@@ -95,6 +106,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"
             android:process=":steamcloud" />
+
+        <service
+            android:name="io.stamethyst.backend.steamcloud.SteamGamePresenceService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:process=":game" />
 
         <service
             android:name="io.stamethyst.backend.easytier.EasyTierProcessService"

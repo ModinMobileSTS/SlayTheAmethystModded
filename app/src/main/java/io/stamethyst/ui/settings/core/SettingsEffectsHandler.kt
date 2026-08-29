@@ -39,6 +39,8 @@ fun SettingsEffectsHandler(
     val activity = requireNotNull(LocalActivity.current)
     val navigator = currentNavigator
     val shareLogsChooserTitle = stringResource(R.string.settings_share_logs_chooser_title)
+    val sharePerformanceLogsChooserTitle =
+        stringResource(R.string.settings_share_performance_logs_chooser_title)
     val importJarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.onJarPicked(activity, uri)
     }
@@ -56,6 +58,9 @@ fun SettingsEffectsHandler(
     }
     val exportLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onLogsExportPicked(activity, uri)
+    }
+    val exportPerformanceLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        viewModel.onPerformanceLogsExportPicked(activity, uri)
     }
     var pendingBootOverlayImageSlot by remember { mutableStateOf<BootOverlayImageSlot?>(null) }
     @Suppress("DEPRECATION")
@@ -117,6 +122,7 @@ fun SettingsEffectsHandler(
                     )
                 }
 
+
                 is SettingsScreenViewModel.Effect.OpenExportModsPicker -> {
                     exportModsLauncher.launch(effect.fileName)
                 }
@@ -127,6 +133,10 @@ fun SettingsEffectsHandler(
 
                 is SettingsScreenViewModel.Effect.OpenExportLogsPicker -> {
                     exportLogsLauncher.launch(effect.fileName)
+                }
+
+                is SettingsScreenViewModel.Effect.OpenExportPerformanceLogsPicker -> {
+                    exportPerformanceLogsLauncher.launch(effect.fileName)
                 }
 
                 is SettingsScreenViewModel.Effect.OpenBootOverlayImagePicker -> {
@@ -143,6 +153,13 @@ fun SettingsEffectsHandler(
                     val shareIntent = JvmLogShareService.buildShareIntent(activity, effect.payload)
                     activity.startActivity(
                         Intent.createChooser(shareIntent, shareLogsChooserTitle)
+                    )
+                }
+
+                is SettingsScreenViewModel.Effect.SharePerformanceLogsBundle -> {
+                    val shareIntent = JvmLogShareService.buildShareIntent(activity, effect.payload)
+                    activity.startActivity(
+                        Intent.createChooser(shareIntent, sharePerformanceLogsChooserTitle)
                     )
                 }
 
@@ -170,5 +187,3 @@ fun SettingsEffectsHandler(
     }
 
 }
-
-

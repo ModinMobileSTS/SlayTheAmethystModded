@@ -99,6 +99,7 @@ internal object SettingsRepository {
         val touchDoubleClickAsRightClick: Boolean,
         val ignoreLongPressRightClickWhilePlayingCard: Boolean,
         val builtInSoftKeyboardEnabled: Boolean,
+        val floatingToolButtons: Set<String>,
         val hapticFeedbackEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
         val showModFileName: Boolean,
@@ -241,6 +242,7 @@ internal object SettingsRepository {
                     LauncherPreferences.readIgnoreLongPressRightClickWhilePlayingCard(context),
                 builtInSoftKeyboardEnabled =
                     LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
+                floatingToolButtons = LauncherPreferences.readFloatingToolButtons(context),
                 hapticFeedbackEnabled = LauncherPreferences.isHapticFeedbackEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherPreferences.readAutoSwitchLeftAfterRightClick(context),
                 showModFileName = LauncherPreferences.readShowModFileName(context),
@@ -387,6 +389,10 @@ internal object SettingsRepository {
         LauncherPreferences.setBuiltInSoftKeyboardEnabled(
             context,
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
+        )
+        LauncherPreferences.saveFloatingToolButtons(
+            context,
+            LauncherPreferences.DEFAULT_FLOATING_TOOL_BUTTONS
         )
         LauncherPreferences.setHapticFeedbackEnabled(
             context,
@@ -621,5 +627,4 @@ internal object SettingsRepository {
             .format(Date(timestampMs))
     }
 }
-
 

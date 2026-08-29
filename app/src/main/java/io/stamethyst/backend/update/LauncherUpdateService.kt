@@ -1,7 +1,7 @@
 package io.stamethyst.backend.update
 
 import android.content.Context
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import java.io.IOException
@@ -265,7 +265,7 @@ object LauncherUpdateService {
     }
 
     private fun createGithubClients(context: Context): GithubRequestClients {
-        return GithubAcceleratedHttp.createClientPair(
+        return WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

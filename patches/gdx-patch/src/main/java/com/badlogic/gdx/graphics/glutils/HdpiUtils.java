@@ -17,22 +17,11 @@
 package com.badlogic.gdx.graphics.glutils;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.backends.lwjgl.LwjglApplication;
 
 public class HdpiUtils {
-	private static int activeBackBufferWidth () {
-		int overrideWidth = LwjglApplication.getScaledRenderBackBufferWidthOverride();
-		return overrideWidth > 0 ? overrideWidth : Gdx.graphics.getBackBufferWidth();
-	}
-
-	private static int activeBackBufferHeight () {
-		int overrideHeight = LwjglApplication.getScaledRenderBackBufferHeightOverride();
-		return overrideHeight > 0 ? overrideHeight : Gdx.graphics.getBackBufferHeight();
-	}
-
 	public static void glScissor (int x, int y, int width, int height) {
-		int backBufferWidth = activeBackBufferWidth();
-		int backBufferHeight = activeBackBufferHeight();
+		int backBufferWidth = Gdx.graphics.getBackBufferWidth();
+		int backBufferHeight = Gdx.graphics.getBackBufferHeight();
 		if (Gdx.graphics.getWidth() != backBufferWidth || Gdx.graphics.getHeight() != backBufferHeight) {
 			Gdx.gl.glScissor(
 				toBackBufferX(x, backBufferWidth),
@@ -46,8 +35,8 @@ public class HdpiUtils {
 	}
 
 	public static void glViewport (int x, int y, int width, int height) {
-		int backBufferWidth = activeBackBufferWidth();
-		int backBufferHeight = activeBackBufferHeight();
+		int backBufferWidth = Gdx.graphics.getBackBufferWidth();
+		int backBufferHeight = Gdx.graphics.getBackBufferHeight();
 		if (Gdx.graphics.getWidth() != backBufferWidth || Gdx.graphics.getHeight() != backBufferHeight) {
 			Gdx.gl.glViewport(
 				toBackBufferX(x, backBufferWidth),
@@ -61,19 +50,19 @@ public class HdpiUtils {
 	}
 
 	public static int toLogicalX (int backBufferX) {
-		return (int)((float)(backBufferX * Gdx.graphics.getWidth()) / (float)activeBackBufferWidth());
+		return (int)((float)(backBufferX * Gdx.graphics.getWidth()) / (float)Gdx.graphics.getBackBufferWidth());
 	}
 
 	public static int toLogicalY (int backBufferY) {
-		return (int)((float)(backBufferY * Gdx.graphics.getHeight()) / (float)activeBackBufferHeight());
+		return (int)((float)(backBufferY * Gdx.graphics.getHeight()) / (float)Gdx.graphics.getBackBufferHeight());
 	}
 
 	public static int toBackBufferX (int logicalX) {
-		return toBackBufferX(logicalX, activeBackBufferWidth());
+		return toBackBufferX(logicalX, Gdx.graphics.getBackBufferWidth());
 	}
 
 	public static int toBackBufferY (int logicalY) {
-		return toBackBufferY(logicalY, activeBackBufferHeight());
+		return toBackBufferY(logicalY, Gdx.graphics.getBackBufferHeight());
 	}
 
 	private static int toBackBufferX (int logicalX, int backBufferWidth) {

@@ -31,6 +31,12 @@ public final class CombatTexturePrewarm {
             "bottomScene/scene2.jpg",
             "bottomScene/scene2.png",
             "bottomScene/scene3.jpg",
+            // vfx atlas used by all card animations and VFX effects.
+            // Without pinning this, every VFX region draw during DrawCardAction
+            // triggers a fake-texture materialize → 2 extra SpriteBatch flushes.
+            // With 700+ fake region draws per spike frame this accounts for
+            // ~1400 of the observed 3400+ extra flushes.
+            "vfx/vfx.png",
     };
 
     private static final boolean[] PREWARMED_TEXTURES = new boolean[COMBAT_TEXTURES.length];

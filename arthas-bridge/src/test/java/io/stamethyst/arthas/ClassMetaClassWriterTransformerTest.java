@@ -28,6 +28,33 @@ public class ClassMetaClassWriterTransformerTest {
     }
 
     @Test
+    public void transformedCommonSuperCallUsesTargetLoader() throws Exception {
+        byte[] transformed = new ClassMetaClassWriterTransformer().transform(
+            null, "com/alibaba/bytekit/asm/ClassMetaClassWriter",
+            null, null, buildMinimalClassMetaClassWriter());
+        final java.util.List<String> calls = new java.util.ArrayList<String>();
+
+        new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name,
+                    String descriptor, String signature, String[] exceptions) {
+                if (!"getCommonSuperClass".equals(name)) return null;
+                return new MethodVisitor(Opcodes.ASM9) {
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner,
+                            String method, String desc, boolean isInterface) {
+                        calls.add(owner + "." + method + desc);
+                    }
+                };
+            }
+        }, 0);
+
+        assertTrue(calls.contains(
+            "io/stamethyst/arthas/CommonSuperBridge.resolveCommonSuper"
+                + "(Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"));
+    }
+
+    @Test
     public void transform_skipsOtherClasses() {
         byte[] original = new byte[]{(byte)0xCA, (byte)0xFE, (byte)0xBA, (byte)0xBE, 0, 0, 0, 52};
         ClassMetaClassWriterTransformer t = new ClassMetaClassWriterTransformer();

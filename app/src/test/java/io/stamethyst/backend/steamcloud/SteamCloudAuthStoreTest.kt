@@ -42,6 +42,35 @@ class SteamCloudAuthStoreTest {
         assertEquals("guard-token", guardData)
     }
 
+    @Test
+    fun finishLoginAttempt_clearsOnlyTheMatchingActiveAttempt() {
+        assertEquals(
+            LoginAttemptFinishAction.CLEAR_ACTIVE,
+            resolveLoginAttemptFinish(
+                activeAttemptId = "active",
+                finishingAttemptId = "active",
+            ),
+        )
+        assertEquals(
+            LoginAttemptFinishAction.IGNORE,
+            resolveLoginAttemptFinish(
+                activeAttemptId = "newer",
+                finishingAttemptId = "unrelated",
+            ),
+        )
+    }
+
+    @Test
+    fun finishLoginAttempt_preservesCommittedAttemptWhenNewAttemptIsActive() {
+        assertEquals(
+            LoginAttemptFinishAction.IGNORE,
+            resolveLoginAttemptFinish(
+                activeAttemptId = "newer",
+                finishingAttemptId = "cancelled",
+            ),
+        )
+    }
+
     private fun authSnapshot(steamId64: String): SteamCloudAuthStore.AuthSnapshot =
         SteamCloudAuthStore.AuthSnapshot(
             accountName = "account",

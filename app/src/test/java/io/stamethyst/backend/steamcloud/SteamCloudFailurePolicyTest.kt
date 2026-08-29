@@ -41,6 +41,12 @@ class SteamCloudFailurePolicyTest {
             SteamCloudFailureClassifier.classify(CancellationException("cancelled")),
         )
         assertEquals(
+            SteamCloudFailureCategory.TRANSIENT_NETWORK,
+            SteamCloudFailureClassifier.classify(
+                IllegalStateException("Steam Cloud upload failed: BeginHTTPUpload failed: DuplicateRequest"),
+            ),
+        )
+        assertEquals(
             SteamCloudFailureCategory.UNKNOWN,
             SteamCloudFailureClassifier.classify(IllegalStateException("local file failure")),
         )

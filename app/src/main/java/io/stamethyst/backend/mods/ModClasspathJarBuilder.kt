@@ -255,6 +255,9 @@ internal object ModClasspathJarBuilder {
                         foundRequired.add(name)
                         continue
                     }
+                    if (GDX_MTS_OWNED_CLASSES.contains(name)) {
+                        return false
+                    }
                     if (name.startsWith(GDX_BACKEND_PREFIX) &&
                         name.endsWith(".class") &&
                         !ALLOWED_PARENT_BACKEND_CLASSES.contains(name)

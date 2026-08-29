@@ -89,7 +89,17 @@ object MtsClasspathWarmupCoordinator {
             45,
             context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
         )
-        if (skipWhenCacheCurrent && launchSnapshot != null && isCacheCurrent(context)) {
+        // Both cache-current evaluations below read the same five core files, none of
+        // which prepareMtsModFileList touches, so they must reach the same verdict.
+        // Computing the marker once turns the second evaluation into a marker-file
+        // comparison instead of a second full central-directory digest pass over the
+        // desktop jar and every imported component jar.
+        var markerValue: String? = null
+        fun isCacheCurrentWithMemoizedMarker(): Boolean {
+            val computed = markerValue ?: buildCacheMarkerValue(context).also { markerValue = it }
+            return isCacheCurrent(context, computed)
+        }
+        if (skipWhenCacheCurrent && launchSnapshot != null && isCacheCurrentWithMemoizedMarker()) {
             reportProgress(
                 progressCallback,
                 100,
@@ -98,7 +108,7 @@ object MtsClasspathWarmupCoordinator {
             return true
         }
         val snapshot = OptionalModStorageCoordinator.prepareMtsModFileList(context, launchSnapshot)
-        if (skipWhenCacheCurrent && isCacheCurrent(context)) {
+        if (skipWhenCacheCurrent && isCacheCurrentWithMemoizedMarker()) {
             reportProgress(
                 progressCallback,
                 100,
@@ -131,9 +141,9 @@ object MtsClasspathWarmupCoordinator {
     }
 
     @JvmStatic
-    fun isCacheCurrent(context: Context): Boolean {
+    fun isCacheCurrent(context: Context, markerValue: String = buildCacheMarkerValue(context)): Boolean {
         val markerFile = RuntimePaths.mtsClasspathCacheMarker(context)
-        val markerValue = try {
+        val actualMarker = try {
             markerFile.takeIf(File::isFile)
                 ?.readText(StandardCharsets.UTF_8)
                 ?.trim()
@@ -141,7 +151,7 @@ object MtsClasspathWarmupCoordinator {
         } catch (_: Throwable) {
             ""
         }
-        if (markerValue.isEmpty() || markerValue != buildCacheMarkerValue(context)) {
+        if (markerValue.isEmpty() || markerValue != actualMarker) {
             return false
         }
         if (!StsDesktopJarPatcher.isPatchedWithCurrentPatch(
@@ -210,7 +220,7 @@ object MtsClasspathWarmupCoordinator {
      * build could still compare equal to a newer one field-for-field.
      */
     private fun buildCacheMarkerValue(context: Context): String = buildString {
-        append("schema|1").append('\n')
+        append("schema|4").append('\n')
         append(jarFingerprint("desktop", RuntimePaths.importedStsJar(context))).append('\n')
         append(jarFingerprint("modthespire", RuntimePaths.importedMtsJar(context))).append('\n')
         append(jarFingerprint("basemod", RuntimePaths.importedBaseModJar(context))).append('\n')

@@ -56,14 +56,17 @@ public abstract class GLTexture implements Disposable {
 	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
 	private static final String FRAME_PROFILER_RESOURCE_STALL_MS_PROP = "amethyst.gdx.frame_profiler.resource_stall_ms";
 	private static final boolean FRAME_PROFILER_RESOURCE_ENABLED =
-		readBooleanSystemProperty(FRAME_PROFILER_ENABLED_PROP, false)
-			|| readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false);
+		readBooleanSystemProperty(FRAME_PROFILER_ENABLED_PROP, false);
 	private static final long FRAME_PROFILER_RESOURCE_STALL_NANOS =
 		readLongSystemProperty(FRAME_PROFILER_RESOURCE_STALL_MS_PROP, 8L, 1L, 10000L) * 1000000L;
 	private static final String GPU_RESOURCE_DIAG_TEXTURE_STACKS_PROP =
 		"amethyst.gdx.gpu_resource_diag.texture_stacks";
+	private static final String GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_PROP =
+		"amethyst.gdx.gpu_resource_diag.lifecycle_logs";
+	private static final boolean GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_PROP, false);
 	private static final boolean GPU_RESOURCE_DIAG_TEXTURE_STACKS_ENABLED =
-		readBooleanSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_STACKS_PROP, true);
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_STACKS_PROP, false);
 	private static final String GPU_RESOURCE_DIAG_TEXTURE_STACK_LIMIT_PROP =
 		"amethyst.gdx.gpu_resource_diag.texture_stack_limit";
 	private static final int GPU_RESOURCE_DIAG_TEXTURE_STACK_LIMIT =
@@ -83,7 +86,7 @@ public abstract class GLTexture implements Disposable {
 	private static final String GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_PROP =
 		"amethyst.gdx.gpu_resource_diag.texture_construct_stacks";
 	private static final boolean GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_ENABLED =
-		readBooleanSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_PROP, true);
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACKS_PROP, false);
 	private static final String GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT_PROP =
 		"amethyst.gdx.gpu_resource_diag.texture_construct_stack_limit";
 	private static final int GPU_RESOURCE_DIAG_TEXTURE_CONSTRUCT_STACK_LIMIT =
@@ -1788,7 +1791,7 @@ public abstract class GLTexture implements Disposable {
 			textureLivePeak = live;
 			newPeak = true;
 		}
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		if (newPeak) {
 			System.out.println("[gdx-diag] GLTexture peak_live=" + live
 				+ " created=" + created
@@ -1804,7 +1807,7 @@ public abstract class GLTexture implements Disposable {
 	private static void onTextureHandleUpdated (long id, int oldHandle, int newHandle, String reason) {
 		if (oldHandle == newHandle) return;
 		TEXTURE_HANDLE_UPDATES.incrementAndGet();
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLTexture handle_update id=" + id
 			+ " old=" + oldHandle
 			+ " new=" + newHandle
@@ -1819,7 +1822,7 @@ public abstract class GLTexture implements Disposable {
 			TEXTURES_LIVE.set(0);
 			live = 0;
 		}
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLTexture dispose id=" + id
 			+ " handle=" + handle
 			+ " reason=" + reason
@@ -1831,7 +1834,7 @@ public abstract class GLTexture implements Disposable {
 		if (live > textureLivePeak) {
 			textureLivePeak = live;
 		}
-		if (!GPU_RESOURCE_DIAG_ENABLED || id == 0L) return;
+		if (!GPU_RESOURCE_DIAG_ENABLED || !GPU_RESOURCE_DIAG_LIFECYCLE_LOGS_ENABLED || id == 0L) return;
 		System.out.println("[gdx-diag] GLTexture restore id=" + id
 			+ " handle=" + handle
 			+ " reason=" + reason

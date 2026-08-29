@@ -193,12 +193,45 @@ public final class ClassFinderScanCachePatches {
         }
     }
 
+    /**
+     * Number of distinct archive sets currently held by the in-memory shared scan cache.
+     * Exposed for the LoadoutMonsterScanProbePatches diagnostics so a device run can tell
+     * "dedup engaged" (entries appear) from "call sites fell back to native scans"
+     * (count stays zero).
+     */
+    public static int sharedCacheEntryCount() {
+        synchronized (ClassFinderScanCachePatches.class) {
+            return CACHE.size();
+        }
+    }
+
     public static int findClassesCached(
         ClassFinder finder,
         Collection<ClassInfo> output,
         ClassFilter filter
     ) {
         if (!isEnabled() || output == null) {
+            return finder.findClasses(output, filter);
+        }
+        return findClassesShared(finder, output, filter);
+    }
+
+    /**
+     * Shared-scan core without the cache-mode gate.
+     *
+     * {@link #findClassesCached} serves the Downfall autoAddCards call sites and stays
+     * inactive outside cache-hit launches. Loadout's scanner threads need the same
+     * deduplication on every launch regardless of the MTS patch cache state, so
+     * {@code LoadoutClassFinderDedupPatches} routes its instrumented call sites here.
+     * Semantics are identical to a plain {@code findClasses} call: the caller's own
+     * filter still decides every entry, only the underlying archive walk is shared.
+     */
+    public static int findClassesShared(
+        ClassFinder finder,
+        Collection<ClassInfo> output,
+        ClassFilter filter
+    ) {
+        if (output == null) {
             return finder.findClasses(output, filter);
         }
         String key = cacheKey(finder);

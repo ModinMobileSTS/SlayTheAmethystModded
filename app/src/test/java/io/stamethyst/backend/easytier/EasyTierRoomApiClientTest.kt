@@ -696,6 +696,43 @@ class EasyTierRoomApiClientTest {
         }
     }
 
+    /**
+     * The Room API is polled every few seconds, so the client must be shared and bounded.
+     *
+     * A per-call [OkHttpClient] gave every request its own connection pool, so each poll reopened a
+     * TCP+TLS connection while the server still held the previous one for its keep-alive window, and
+     * a bare builder left OkHttp's 10s connect default as the only bound — longer than the poll
+     * interval itself, which pushed lease renewal past the server lease and expired live sessions.
+     */
+    @Test
+    fun defaultHttpClient_isSharedAcrossCalls() {
+        assertTrue(
+            EasyTierRoomApiClient.defaultHttpClient() === EasyTierRoomApiClient.defaultHttpClient()
+        )
+    }
+
+    @Test
+    fun defaultHttpClient_boundsEveryPhaseOfACall() {
+        val client = EasyTierRoomApiClient.defaultHttpClient()
+
+        assertTrue(client.connectTimeoutMillis > 0)
+        assertTrue(client.readTimeoutMillis > 0)
+        assertTrue(client.writeTimeoutMillis > 0)
+        // Without a call timeout a request that keeps making slow progress can still outlive
+        // several poll intervals even when each individual phase is bounded.
+        assertTrue(client.callTimeoutMillis > 0)
+    }
+
+    @Test
+    fun defaultHttpClient_connectBudgetStaysUnderThePollInterval() {
+        // A connect that outlives the tick which scheduled it is what let polls pile up and drift
+        // the effective renewal cadence past the server's session lease.
+        val pollIntervalMillis = 5_000
+        assertTrue(
+            EasyTierRoomApiClient.defaultHttpClient().connectTimeoutMillis < pollIntervalMillis
+        )
+    }
+
     private fun assertReportedMods(body: String) {
         val mods = requireNotNull(Json.parseToJsonElement(body).jsonObject["mods"]).jsonArray
         assertEquals(2, mods.size)

@@ -13,12 +13,16 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.render.AndroidGameModeSupport
+import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.DisplayRefreshRateController
+import io.stamethyst.backend.render.FullscreenCanvasSize
+import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -43,7 +47,9 @@ object StsLaunchSpec {
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
     private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
     private val EFFECTIVE_PERFORMANCE_PROPERTY_KEYS = listOf(
-        "amethyst.gdx.frame_profiler",
+        "amethyst.gdx.frame_ring",
+        "amethyst.gdx.frame_hud",
+        "amethyst.bridge.launcher_perf_snapshot",
         "amethyst.gdx.gpu_resource_summary",
         "amethyst.gdx.gpu_resource_diag"
     )
@@ -52,6 +58,8 @@ object StsLaunchSpec {
         "amethyst.gdx.debug_leak_interval_frames",
         "amethyst.gdx.debug_leak_max_bytes",
         "amethyst.gdx.debug_leak_texture_size",
+        "amethyst.runtime_compat.loadout_monster_scan_probe",
+        "amethyst.runtime_compat.class_finder_scan_cache_profile",
         "amethyst.gdx.gpu_guardian_soft_budget_bytes",
         "amethyst.gdx.gpu_guardian_hard_budget_bytes",
         "amethyst.gdx.gpu_guardian_watch_growth_bytes",
@@ -119,7 +127,9 @@ object StsLaunchSpec {
         autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
         autoplaySingleRoomSpecPath: String = "",
         autoplayChoiceDelayMs: Long = 0L,
-        cardObtainEffectOwnershipCompatEnabled: Boolean = true
+        autoplaySingleRoomBenchMode: Boolean = false,
+        cardObtainEffectOwnershipCompatEnabled: Boolean = true,
+        performanceDeepDiagnosticsOverride: Boolean? = null
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -128,12 +138,20 @@ object StsLaunchSpec {
         if (!stsHome.exists()) {
             stsHome.mkdirs()
         }
+        if (isMtsLaunchMode(launchMode)) {
+            // MTS boots the LWJGL3 desktop backend when its config has imgui=true, and that
+            // path crashes in Amethyst's incomplete GLFW bridge. Force-clear the flag before
+            // the game JVM starts; the runtime guard in MtsLoaderCrashPatcher backs this up.
+            MtsImguiGuard.disableImguiIfEnabled(context)
+        }
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
-        val performanceDeepDiagnostics =
-            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+        val requestedPerformanceDeepDiagnostics = performanceDeepDiagnosticsOverride
+            ?: LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+        val performanceDeepDiagnostics = requestedPerformanceDeepDiagnostics &&
+            ArthasResourcePackService.isInstalled(context)
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.
@@ -189,10 +207,11 @@ object StsLaunchSpec {
             args.add("-XX:+UnlockDiagnosticVMOptions")
             args.add("-verbose:gc")
             args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
-            args.add("-Damethyst.gdx.frame_profiler=true")
-            args.add("-Damethyst.gdx.frame_profiler.stack=true")
-            args.add("-Damethyst.gdx.frame_profiler.slow_ms=33")
-            args.add("-Damethyst.gdx.frame_profiler.summary_frames=300")
+            // Single switch activates FrameRingBuffer + amethyst-frame-probe HUD.
+            // Budget defaults to 1000ms/foregroundFPS; override with frame_ring.budget_ms.
+            args.add("-Damethyst.gdx.frame_ring=true")
+            val budgetMs = 1000 / LauncherConfig.readTargetFps(context).coerceAtLeast(1)
+            args.add("-Damethyst.gdx.frame_ring.budget_ms=$budgetMs")
         }
         if (isMtsLaunchMode(launchMode)) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
@@ -233,6 +252,19 @@ object StsLaunchSpec {
         args.add("-Damethyst.in_game_file_picker_request=${RuntimePaths.inGameFilePickerRequestFile(context).absolutePath}")
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
         args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")
+        args.add("-Damethyst.achievement.request_path=${RuntimePaths.achievementRequestFile(context).absolutePath}")
+        args.add(
+            "-Damethyst.achievement.lock_command_path=" +
+                RuntimePaths.achievementLockCommandFile(context).absolutePath
+        )
+        args.add("-Damethyst.richpresence.path=${RuntimePaths.richPresenceFile(context).absolutePath}")
+        val richPresenceDisplay = LauncherConfig.readRichPresenceDisplayPreferences(context)
+        args.add("-Damethyst.richpresence.prefix=${richPresenceDisplay.prefix.persistedValue}")
+        args.add("-Damethyst.richpresence.device_name=${richPresenceDeviceName()}")
+        args.add("-Damethyst.richpresence.show_character=${richPresenceDisplay.showCharacter}")
+        args.add("-Damethyst.richpresence.show_floor=${richPresenceDisplay.showFloor}")
+        args.add("-Damethyst.richpresence.show_ascension=${richPresenceDisplay.showAscension}")
+        args.add("-Damethyst.richpresence.show_act=${richPresenceDisplay.showAct}")
         args.add("-Damethyst.touchscreen_card_hold_state=${RuntimePaths.touchscreenCardHoldStateFile(context).absolutePath}")
         args.add("-Damethyst.easytier.runtime_state_file=${EasyTierStateStore.stateFile(context).absolutePath}")
         args.add(
@@ -352,6 +384,14 @@ object StsLaunchSpec {
                 if (LauncherConfig.isBuiltInSoftKeyboardEnabled(context)) "true" else "false"
         )
         args.add(
+            "-Damethyst.floating_tools.auto_switch_left_after_right_click=" +
+                if (LauncherConfig.readAutoSwitchLeftAfterRightClick(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.floating_tools.buttons=" +
+                LauncherConfig.readFloatingToolButtons(context).joinToString(",")
+        )
+        args.add(
             "-D$TOGETHER_IN_SPIRE_ROUTE_LOCK_PROPERTY=" +
                 LauncherConfig.isTogetherInSpireRouteLockEnabled(context)
         )
@@ -375,21 +415,17 @@ object StsLaunchSpec {
             args.add("-Dorg.lwjgl.util.DebugFunctions=true")
         }
         val appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
-        val lwjglLibraryFile = NativeLibraryPathResolver.resolveLibraryFile(
-            context = context,
-            libraryName = "liblwjgl.so",
-            appNativeLibraryDir = appNativeLibraryDir
-        ) ?: File(appNativeLibraryDir, "liblwjgl.so")
-        val openalLibraryFile = NativeLibraryPathResolver.resolveLibraryFile(
-            context = context,
-            libraryName = "libopenal.so",
-            appNativeLibraryDir = appNativeLibraryDir
-        ) ?: File(appNativeLibraryDir, "libopenal.so")
+        val lwjglLibraryFile = File(appNativeLibraryDir, "liblwjgl.so")
+        val openalLibraryFile = File(appNativeLibraryDir, "libopenal.so")
         val lwjglLibraryDir = lwjglLibraryFile.parentFile ?: File(appNativeLibraryDir)
+        // Do not expose resource-pack, patch, or market directories to LWJGL's global
+        // resolver. Those directories may hold another LWJGL generation; GDX receives its
+        // external native directory separately through amethyst.gdx.native_dir below.
+        val lwjglLibraryPath = lwjglLibraryDir.absolutePath
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
         args.add("-Dorg.lwjgl.libname=${lwjglLibraryFile.absolutePath}")
         args.add("-Dorg.lwjgl.openal.libname=${openalLibraryFile.absolutePath}")
-        args.add("-Dorg.lwjgl.librarypath=${lwjglLibraryDir.absolutePath}")
+        args.add("-Dorg.lwjgl.librarypath=$lwjglLibraryPath")
         args.add("-Dorg.lwjgl.system.SharedLibraryExtractPath=${lwjglLibraryDir.absolutePath}")
         args.add("-Dorg.lwjgl.system.EmulateSystemLoadLibrary=true")
         args.add("-Damethyst.renderer.selection_mode=${rendererDecision.selectionMode.persistedValue}")
@@ -410,15 +446,21 @@ object StsLaunchSpec {
         val virtualResolutionMode = LauncherConfig.readVirtualResolutionMode(context)
         val physicalWidth = Math.max(1, CallbackBridge.physicalWidth)
         val physicalHeight = Math.max(1, CallbackBridge.physicalHeight)
+        val fullscreenCanvas = FullscreenCanvasResolution.resolve(context)
         val virtualResolution = VirtualResolutionPolicy.resolve(
-            physicalWidth = physicalWidth,
-            physicalHeight = physicalHeight,
+            physicalWidth = fullscreenCanvas.width,
+            physicalHeight = fullscreenCanvas.height,
             renderScale = renderScale,
             mode = virtualResolutionMode
         )
-        val virtualWidth = virtualResolution.width
-        val virtualHeight = virtualResolution.height
-        args.add("-Damethyst.gdx.render_scale=$renderScale")
+        val launchVirtualSize = resolveLaunchVirtualSize(
+            bridgeWidth = CallbackBridge.windowWidth,
+            bridgeHeight = CallbackBridge.windowHeight,
+            fallbackWidth = virtualResolution.width,
+            fallbackHeight = virtualResolution.height
+        )
+        val virtualWidth = launchVirtualSize.width
+        val virtualHeight = launchVirtualSize.height
         val effectiveTargetFps = AndroidGameModeSupport.resolveTargetFps(
             LauncherConfig.readTargetFps(context),
             AndroidGameModeSupport.readCurrentMode(context)
@@ -431,6 +473,22 @@ object StsLaunchSpec {
         )
         if (expectedRefreshRateHz > 0f) {
             args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
+        }
+        try {
+            // DesktopLauncher reads this file before LibGDX starts. Keep its first Settings
+            // initialization aligned with the fixed fullscreen-priority logical canvas.
+            DisplayConfigSync.syncToCurrentResolution(
+                context = context,
+                width = virtualWidth,
+                height = virtualHeight,
+                targetFpsLimitOverride = effectiveTargetFps
+            )
+        } catch (error: Throwable) {
+            Log.w(
+                TAG,
+                "Failed to prepare startup display config ${virtualWidth}x${virtualHeight}",
+                error
+            )
         }
         args.add(
             "-Damethyst.gdx.native_dir=" +
@@ -447,8 +505,8 @@ object StsLaunchSpec {
                 "targetFps=$effectiveTargetFps, " +
                 "activeRefreshRate=$expectedRefreshRateHz"
         )
-        args.add("-Dglfwstub.windowWidth=$physicalWidth")
-        args.add("-Dglfwstub.windowHeight=$physicalHeight")
+        args.add("-Dglfwstub.windowWidth=$virtualWidth")
+        args.add("-Dglfwstub.windowHeight=$virtualHeight")
         args.add("-Dglfwstub.physicalWidth=$physicalWidth")
         args.add("-Dglfwstub.physicalHeight=$physicalHeight")
         args.add("-Damethyst.gdx.virtual_width=$virtualWidth")
@@ -647,6 +705,20 @@ object StsLaunchSpec {
         )
         if (performanceDeepDiagnostics) {
             args.add("-Damethyst.gdx.gpu_resource_summary=true")
+            args.add("-Damethyst.gdx.frame_hud=$showPerformanceOverlay")
+        }
+        if (ramSaverEnabled) {
+            // Scale ram-saver's hot-pin texture budget with the heap size.
+            // The default 384 MB was calibrated for a 512 MB heap (75%).
+            // At 1024 MB the same ratio gives ~768 MB, keeping the proportion
+            // consistent so the hot-pin set doesn't shrink relative to available
+            // memory and cause DrawCardAction flush-spikes from atlas re-uploads.
+            val hotBudgetMb = (heapMaxMb * 0.75).toLong().coerceIn(256L, 1536L)
+            args.add("-Dramsaver.hot.budget_mb=$hotBudgetMb")
+            // Pin textures for the full combat duration (up to 10 min).
+            // 120 s was too short — textures were age-dropped mid-combat and
+            // re-materialized during DrawCardAction, multiplying SpriteBatch flushes.
+            args.add("-Dramsaver.hot.pin_seconds=600")
         }
         val debugPropertyResult = addDebugGpuGuardianTestProperties(context, args)
         logEffectivePerformanceProperties(
@@ -700,7 +772,15 @@ object StsLaunchSpec {
                     "0"
                 }
         )
-        args.add("-Damethyst.autoplay.wait_for_agent=${if (effectiveAutoplay) "true" else "false"}")
+        // bench mode: played by perf-bench harness — infinite energy + HP, full autoplay
+        args.add(
+            "-Damethyst.debug.autoplay.single_room_bench_mode=" +
+                if (effectiveAutoplay && autoplayMode == AutoplayMode.SINGLE_ROOM
+                    && autoplaySingleRoomBenchMode) "true" else "false"
+        )
+        // wait_for_agent=false: perf-bench and normal smoke autoplay do not use an agent.
+        // Only set true when an external agent is explicitly requested.
+        args.add("-Damethyst.autoplay.wait_for_agent=false")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
@@ -710,8 +790,9 @@ object StsLaunchSpec {
                 enabled = LauncherConfig.isMtsPatchCacheEnabled(context)
             )
         }
-        if (showPerformanceOverlay) {
+        if (showPerformanceOverlay || performanceDeepDiagnostics) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
+            args.add("-Damethyst.bridge.launcher_perf_snapshot=${RuntimePaths.launcherPerfSnapshot(context).absolutePath}")
         }
         if (performanceDeepDiagnostics) {
             args.add("-Damethyst.bridge.gc_histogram_dir=${RuntimePaths.jvmHistogramsDir(context).absolutePath}")
@@ -729,7 +810,22 @@ object StsLaunchSpec {
                 performanceDeepDiagnostics = performanceDeepDiagnostics
             )
         ) {
-            args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=port=9099")
+            val gameProbeArgs = buildString {
+                append("port=9099")
+                if (performanceDeepDiagnostics) {
+                    val outputDir = RuntimePaths.offlineArthasOutputDir(context)
+                    if (!outputDir.exists()) {
+                        outputDir.mkdirs()
+                    }
+                    append(",arthas=true")
+                    append(",arthasPort=8099")
+                    append(",arthasDelaySeconds=15")
+                    append(",arthasOutputDir=").append(outputDir.absolutePath)
+                    append(",arthasHome=")
+                        .append(RuntimePaths.arthasResourceCurrentDir(context).absolutePath)
+                }
+            }
+            args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=$gameProbeArgs")
         }
         args.add("-cp")
         if (isMtsLaunchMode(launchMode)) {
@@ -779,6 +875,22 @@ object StsLaunchSpec {
             selectionMode = LauncherConfig.readRendererSelectionMode(context),
             manualBackend = LauncherConfig.readManualRendererBackend(context)
         )
+    }
+
+    internal fun resolveLaunchVirtualSize(
+        bridgeWidth: Int,
+        bridgeHeight: Int,
+        fallbackWidth: Int,
+        fallbackHeight: Int
+    ): FullscreenCanvasSize {
+        return if (bridgeWidth > 0 && bridgeHeight > 0) {
+            FullscreenCanvasSize(bridgeWidth, bridgeHeight)
+        } else {
+            FullscreenCanvasSize(
+                fallbackWidth.coerceAtLeast(1),
+                fallbackHeight.coerceAtLeast(1)
+            )
+        }
     }
 
     private fun joinModIds(modIds: List<String>): String {
@@ -983,6 +1095,16 @@ object StsLaunchSpec {
 
     private fun hasJvmProperty(args: List<String>, key: String): Boolean {
         return readEffectiveJvmProperty(args, key) != null
+    }
+
+    private fun richPresenceDeviceName(): String {
+        val manufacturer = Build.MANUFACTURER.orEmpty().trim()
+        val model = Build.MODEL.orEmpty().trim()
+        return when {
+            model.isEmpty() -> manufacturer.ifEmpty { "Android" }
+            manufacturer.isEmpty() || model.startsWith(manufacturer, ignoreCase = true) -> model
+            else -> "$manufacturer $model"
+        }
     }
 
     private fun readEffectiveJvmProperty(args: List<String>, key: String): String? {

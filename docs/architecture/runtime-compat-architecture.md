@@ -99,7 +99,7 @@ flowchart LR
     PatchCache["amethyst.mts.patch_cache.current"]:::flag
     FeatureFlag["amethyst.runtime_compat.*"]:::flag
     Gate["StartupCacheRuntimeConfig.isCacheFeatureEnabled(...)"]:::gate
-    Features["Lazy images / lazy descriptions / class scan cache / fast splash / Loadout cache patches"]:::feat
+    Features["Lazy images / lazy descriptions / class scan cache / fast splash"]:::feat
 
     PatchCache --> Gate
     FeatureFlag --> Gate

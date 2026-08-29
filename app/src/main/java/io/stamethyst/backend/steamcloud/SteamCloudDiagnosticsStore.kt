@@ -40,6 +40,34 @@ internal object SteamCloudDiagnosticsStore {
         error: Throwable? = null,
         extraLines: List<String> = emptyList(),
     ) {
+        SteamCloudOperationMutex.runExclusive(context) {
+            writeSummaryExclusive(
+                context = context,
+                operation = operation,
+                outcome = outcome,
+                accountName = accountName,
+                startedAtMs = startedAtMs,
+                completedAtMs = completedAtMs,
+                diagnostics = diagnostics,
+                failureSummary = failureSummary,
+                error = error,
+                extraLines = extraLines,
+            )
+        }
+    }
+
+    private fun writeSummaryExclusive(
+        context: Context,
+        operation: String,
+        outcome: String,
+        accountName: String,
+        startedAtMs: Long,
+        completedAtMs: Long,
+        diagnostics: SteamCloudClient.DiagnosticsSnapshot?,
+        failureSummary: String?,
+        error: Throwable?,
+        extraLines: List<String>,
+    ) {
         val file = summaryFile(context)
         val parent = file.parentFile
         if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
@@ -191,7 +219,7 @@ internal object SteamCloudDiagnosticsStore {
             }
         }
         val text = lines.joinToString("\n") + "\n"
-        file.writeText(text, Charsets.UTF_8)
+        SteamCloudAtomicFileStore.writeText(file, text, Charsets.UTF_8)
         if (outcome.equals("FAILED", ignoreCase = true)) {
             runCatching { writeFailureHistory(context, operation, startedAtMs, completedAtMs, text) }
         }
@@ -201,7 +229,9 @@ internal object SteamCloudDiagnosticsStore {
     }
 
     fun clear(context: Context) {
-        summaryFile(context).delete()
+        SteamCloudOperationMutex.runExclusive(context) {
+            summaryFile(context).delete()
+        }
     }
 
     @Throws(IOException::class)

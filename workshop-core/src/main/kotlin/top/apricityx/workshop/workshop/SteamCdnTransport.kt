@@ -2,6 +2,7 @@ package top.apricityx.workshop.workshop
 
 import top.apricityx.workshop.steam.protocol.CdnRequestEndpoint
 import top.apricityx.workshop.steam.protocol.CdnServer
+import top.apricityx.workshop.steam.protocol.SteamDeclaredCdnHosts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -29,6 +30,13 @@ internal class SteamCdnTransport(
         contentServers: List<CdnServer>,
         preferSteamChinaServers: Boolean = false,
     ): SteamCdnServerPool {
+        // Remember every host Steam handed us so the app's HTTPS-only guard can accept
+        // cleartext depot traffic on these edges, including China CDN hosts that were not
+        // in the launcher's static allowlist.
+        contentServers.forEach { server ->
+            SteamDeclaredCdnHosts.register(server.host)
+            SteamDeclaredCdnHosts.register(server.vHost)
+        }
         val proxyServer = contentServers.firstOrNull(CdnServer::useAsProxy)
         val eligibleServers = contentServers
             .asSequence()

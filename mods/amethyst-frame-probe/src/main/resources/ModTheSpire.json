@@ -1,0 +1,10 @@
+{
+  "modid": "amethystframeprobe",
+  "name": "Amethyst Frame Probe",
+  "author_list": ["Apricityx"],
+  "description": "Per-frame ring buffer, in-game bar chart HUD, and JSONL incident writer for frame-timing diagnostics. Active only when amethyst.gdx.frame_ring=true.",
+  "version": "1.0.0",
+  "mts_version": "3.30.0",
+  "sts_version": "12-18-2022",
+  "dependencies": ["basemod"]
+}

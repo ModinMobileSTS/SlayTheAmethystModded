@@ -65,8 +65,8 @@ internal class WorkshopSteamWebSession(
      * request that gates every logged-in market load unaccelerated.
      */
     private val directoryClient: OkHttpClient,
-    /** Bare client for the CM websocket handshake, which must not be rewritten. */
-    private val protocolClient: OkHttpClient,
+    /** Accelerated client for CM websocket sessions, including steamserver.net routes. */
+    private val cmHttpClient: OkHttpClient,
     private val identity: WorkshopSteamClientIdentity,
 ) {
     private val appContext = context.applicationContext
@@ -153,7 +153,7 @@ internal class WorkshopSteamWebSession(
         val webAccessToken = cachedToken?.toWorkshopWebAccessToken() ?: withContext(Dispatchers.IO) {
             val accessToken = SteamAuthenticationClient(
                 directoryClient = SteamDirectoryClient(directoryClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(appContext).asCmSession() },
             ).generateAccessTokenForApp(
                 account = account,
                 allowRenewal = false,

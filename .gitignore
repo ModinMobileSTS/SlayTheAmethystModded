@@ -52,6 +52,9 @@ logs/
 debug-artifacts
 /runtime-pack/
 
+# Rust build artifacts and cache
+/desktop-companion/target/
+
 # Harness jar-library cache
 debug-artifacts/harness/jar-library/
 tmp-feedback-smoke/

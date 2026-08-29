@@ -150,16 +150,6 @@ object CallbackBridgeCodegen {
             androidCriticalNative = true
         ),
         CallbackBridgeMethod(
-            name = "nativeSendScreenSize",
-            returnType = "void",
-            parameters = listOf(
-                CallbackBridgeParameter("int", "width"),
-                CallbackBridgeParameter("int", "height")
-            ),
-            androidVisibility = "private",
-            androidCriticalNative = true
-        ),
-        CallbackBridgeMethod(
             name = "nativeSetWindowAttrib",
             returnType = "void",
             parameters = listOf(

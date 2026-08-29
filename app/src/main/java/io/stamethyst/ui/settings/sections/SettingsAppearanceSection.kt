@@ -123,7 +123,6 @@ internal fun SettingsAppearanceSection(
                 options = LauncherThemeMode.entries,
                 optionLabel = { themeMode -> themeModeDisplayName(themeMode) },
                 onOptionSelected = actions.onThemeModeChanged,
-                description = stringResource(R.string.settings_theme_mode_desc),
             )
         )
 
@@ -136,7 +135,6 @@ internal fun SettingsAppearanceSection(
                 options = LauncherIconMode.entries,
                 optionLabel = { iconMode -> launcherIconModeDisplayName(iconMode) },
                 onOptionSelected = actions.onLauncherIconModeChanged,
-                description = stringResource(R.string.settings_app_icon_desc),
             )
         )
 
@@ -147,22 +145,10 @@ internal fun SettingsAppearanceSection(
             onClick = { showThemeColorDialog = true }
         )
         ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
-        Text(
-            text = stringResource(R.string.settings_theme_color_desc),
-            style = MaterialTheme.typography.bodySmall
-        )
 
         Text(
             text = stringResource(R.string.settings_chrome_background_opacity_title),
             style = MaterialTheme.typography.bodyMedium
-        )
-        Text(
-            text = formatChromeBackgroundOpacity(chromeBackgroundOpacitySliderValue),
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text(
-            text = stringResource(R.string.settings_chrome_background_opacity_desc),
-            style = MaterialTheme.typography.bodySmall
         )
         Slider(
             value = chromeBackgroundOpacitySliderValue,
@@ -195,10 +181,6 @@ internal fun SettingsAppearanceSection(
             enabled = !uiState.busy,
             onClick = { showBootOverlayStyleDialog = true }
         )
-        Text(
-            text = stringResource(R.string.settings_boot_overlay_style_desc),
-            style = MaterialTheme.typography.bodySmall
-        )
 
         if (uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
             SettingsActionListItem(
@@ -206,10 +188,6 @@ internal fun SettingsAppearanceSection(
                 supportingText = bootOverlayCustomImageSummary(uiState.bootOverlayImageConfig),
                 enabled = !uiState.busy,
                 onClick = { showBootOverlayCustomImageDialog = true }
-            )
-            Text(
-                text = stringResource(R.string.settings_boot_overlay_custom_image_desc),
-                style = MaterialTheme.typography.bodySmall
             )
         }
 
@@ -219,10 +197,6 @@ internal fun SettingsAppearanceSection(
                 supportingText = loadingAnimationDisplayName(uiState.bootOverlayAnimation),
                 enabled = !uiState.busy,
                 onClick = { showBootOverlayAnimationDialog = true }
-            )
-            Text(
-                text = stringResource(R.string.settings_loading_animation_desc),
-                style = MaterialTheme.typography.bodySmall
             )
         }
     }
@@ -1151,11 +1125,6 @@ private fun chromeBackgroundOpacityToStep(value: Float): Int {
 }
 
 
-private fun formatChromeBackgroundOpacity(value: Float): String {
-    return "${(value * 100f).roundToInt()}%"
-}
-
-
 @Composable
 internal fun ThemeColorPreviewRow(selectedThemeColor: LauncherThemeColor) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1218,5 +1187,4 @@ internal fun ThemeColorSwatch(
             .border(width = 2.dp, color = borderColor, shape = CircleShape)
     )
 }
-
 

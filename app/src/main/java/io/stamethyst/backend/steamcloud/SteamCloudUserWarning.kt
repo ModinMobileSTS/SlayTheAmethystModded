@@ -41,6 +41,14 @@ internal sealed interface SteamCloudUserWarning {
         }
     }
 
+    data class DuplicateMappedLocalPath(
+        val localRelativePath: String,
+    ) : SteamCloudUserWarning {
+        override fun rawMessage(): String {
+            return DUPLICATE_MAPPED_LOCAL_PATH_PREFIX + localRelativePath
+        }
+    }
+
     companion object {
         fun parse(rawMessage: String): SteamCloudUserWarning? {
             return when {
@@ -69,6 +77,10 @@ internal sealed interface SteamCloudUserWarning {
                     UnsupportedRemotePath(rawMessage.removePrefix(UNSUPPORTED_REMOTE_PATH_PREFIX))
                 }
 
+                rawMessage.startsWith(DUPLICATE_MAPPED_LOCAL_PATH_PREFIX) -> {
+                    DuplicateMappedLocalPath(rawMessage.removePrefix(DUPLICATE_MAPPED_LOCAL_PATH_PREFIX))
+                }
+
                 else -> null
             }
         }
@@ -81,8 +93,10 @@ internal sealed interface SteamCloudUserWarning {
             "No previous Steam Cloud sync baseline is saved yet. Existing files present on both sides are treated as conflicts until you complete a full pull once."
         private const val IGNORED_LOCAL_DELETIONS_PREFIX = "Ignored "
         private const val IGNORED_LOCAL_DELETIONS_SUFFIX =
-            " local deletion(s) because Phase 2 uploads do not delete Steam Cloud files."
+            " local deletion(s) because uploads do not delete Steam Cloud files."
         private const val UNSUPPORTED_REMOTE_PATH_PREFIX =
             "Ignored unsupported Steam Cloud path: "
+        private const val DUPLICATE_MAPPED_LOCAL_PATH_PREFIX =
+            "Ignored duplicate Steam Cloud entries mapped to local path: "
     }
 }

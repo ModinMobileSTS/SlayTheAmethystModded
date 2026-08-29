@@ -3,6 +3,8 @@ package io.stamethyst.backend.launch
 import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierNetworkMode
+import io.stamethyst.backend.easytier.EasyTierSessionController
+import io.stamethyst.backend.easytier.resolveEasyTierPollSuccessStatus
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -73,6 +75,37 @@ class StsLaunchSpecEasyTierTest {
                 "amethyst.easytier.together_in_spire.port" to "33455",
             ),
             properties,
+        )
+    }
+
+    /**
+     * The player-visible consequence of the status downgrade, pinned end to end.
+     *
+     * A session that recovered from a transient poll failure kept every part of its state except its
+     * status, which stayed on `SESSION_READY`. Because these launch properties are gated on
+     * `CONNECTED`, relaunching the game in that state silently dropped the host address and the
+     * player could not rejoin the room they were still connected to.
+     */
+    @Test
+    fun buildEasyTierTogetherInSpireJvmProperties_survivesATransientPollFailure() {
+        val connected = connectedSnapshot()
+        val recovered = connected.copy(
+            status = resolveEasyTierPollSuccessStatus(
+                sessionState = "connected",
+                current = EasyTierSessionController.buildFailureSnapshot(
+                    previous = connected.copy(connectedAtMs = 2_000L),
+                    summary = "timeout",
+                ),
+            ),
+        )
+
+        assertEquals(EasyTierConnectionStatus.CONNECTED, recovered.status)
+        assertEquals(
+            "10.144.0.1",
+            StsLaunchSpec.buildEasyTierTogetherInSpireJvmProperties(
+                snapshot = recovered,
+                autofillEnabled = true,
+            )["amethyst.easytier.together_in_spire.host_ip"],
         )
     }
 

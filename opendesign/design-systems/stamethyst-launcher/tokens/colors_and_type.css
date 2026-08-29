@@ -1,0 +1,298 @@
+/*
+ * STS Amethyst Launcher design tokens.
+ * Imported from the Android Material 3 theme and Compose UI sources.
+ * The default roles are the exact colorless light scheme; dark roles are
+ * enabled with [data-theme-mode="dark"] or prefers-color-scheme.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Theme seeds persisted by LauncherThemeColor. */
+  --seed-zhanshige: #c24a4a;
+  --seed-liebao: #3f8a4b;
+  --seed-jibao: #d2a72e;
+  --seed-guanjie: #6f4c93;
+  --seed-colorless: #2196f3;
+
+  /* Exact colorless light tonal roles from LauncherTheme.kt. */
+  --raw-primary-light: #36618e;
+  --raw-on-primary-light: #ffffff;
+  --raw-primary-container-light: #d1e4ff;
+  --raw-on-primary-container-light: #194975;
+  --raw-secondary-light: #535f70;
+  --raw-on-secondary-light: #ffffff;
+  --raw-secondary-container-light: #d7e3f7;
+  --raw-on-secondary-container-light: #3b4858;
+  --raw-tertiary-light: #6b5778;
+  --raw-on-tertiary-light: #ffffff;
+  --raw-tertiary-container-light: #f2daff;
+  --raw-on-tertiary-container-light: #523f5f;
+  --raw-background-light: #f8f9ff;
+  --raw-on-background-light: #191c20;
+  --raw-surface-light: #f8f9ff;
+  --raw-on-surface-light: #191c20;
+  --raw-surface-variant-light: #dfe2eb;
+  --raw-on-surface-variant-light: #43474e;
+  --raw-inverse-surface-light: #2e3135;
+  --raw-inverse-on-surface-light: #eff0f7;
+  --raw-error-light: #ba1a1a;
+  --raw-on-error-light: #ffffff;
+  --raw-error-container-light: #ffdAD6;
+  --raw-on-error-container-light: #93000a;
+  --raw-outline-light: #73777f;
+  --raw-outline-variant-light: #c3c7cf;
+  --raw-surface-bright-light: #f8f9ff;
+  --raw-surface-dim-light: #d8dae0;
+  --raw-surface-container-lowest-light: #ffffff;
+  --raw-surface-container-low-light: #f2f3fa;
+  --raw-surface-container-light: #eceef4;
+  --raw-surface-container-high-light: #e6e8ee;
+  --raw-surface-container-highest-light: #e1e2e8;
+  --raw-scrim: #000000;
+
+  /* Launcher non-color tokens. */
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --text-headline-medium: 28px;
+  --text-headline-small: 24px;
+  --text-title-large: 22px;
+  --text-title-medium: 16px;
+  --text-title-small: 14px;
+  --text-body-large: 16px;
+  --text-body-medium: 14px;
+  --text-body-small: 12px;
+  --text-label-large: 14px;
+  --text-label-medium: 12px;
+  --text-label-small: 11px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --radius-compact: 6px;
+  --radius-control: 8px;
+  --radius-row: 12px;
+  --radius-icon: 18px;
+  --radius-card: 22px;
+  --radius-header: 24px;
+  --radius-pill: 999px;
+  --elevation-low: 2px;
+  --elevation-header: 6px;
+  --blur-glass: 12px;
+  --motion-progress: 360ms;
+  --motion-crossfade: 260ms;
+  --motion-log-scroll: 240ms;
+  --motion-skeleton-pulse: 900ms;
+  --motion-skeleton-shimmer: 1180ms;
+
+  /* Semantic roles. */
+  --primary: var(--raw-primary-light);
+  --on-primary: var(--raw-on-primary-light);
+  --primary-container: var(--raw-primary-container-light);
+  --on-primary-container: var(--raw-on-primary-container-light);
+  --secondary: var(--raw-secondary-light);
+  --on-secondary: var(--raw-on-secondary-light);
+  --secondary-container: var(--raw-secondary-container-light);
+  --on-secondary-container: var(--raw-on-secondary-container-light);
+  --tertiary: var(--raw-tertiary-light);
+  --on-tertiary: var(--raw-on-tertiary-light);
+  --tertiary-container: var(--raw-tertiary-container-light);
+  --on-tertiary-container: var(--raw-on-tertiary-container-light);
+  --background: var(--raw-background-light);
+  --on-background: var(--raw-on-background-light);
+  --surface-primary: var(--raw-surface-light);
+  --surface-secondary: var(--raw-surface-container-low-light);
+  --surface-tertiary: var(--raw-surface-container-light);
+  --surface-high: var(--raw-surface-container-high-light);
+  --surface-highest: var(--raw-surface-container-highest-light);
+  --surface-variant: var(--raw-surface-variant-light);
+  --on-surface: var(--raw-on-surface-light);
+  --on-surface-variant: var(--raw-on-surface-variant-light);
+  --surface-tint: var(--primary);
+  --inverse-surface: var(--raw-inverse-surface-light);
+  --inverse-on-surface: var(--raw-inverse-on-surface-light);
+  --error: var(--raw-error-light);
+  --on-error: var(--raw-on-error-light);
+  --error-container: var(--raw-error-container-light);
+  --on-error-container: var(--raw-on-error-container-light);
+  --border-strong: var(--raw-outline-light);
+  --border-subtle: var(--raw-outline-variant-light);
+  --scrim: var(--raw-scrim);
+  --glass-border: color-mix(in srgb, var(--border-subtle) 34%, transparent);
+  --glass-background: color-mix(in srgb, var(--surface-primary) 0%, transparent);
+  --skeleton-base: color-mix(in srgb, var(--on-surface) 6.5%, transparent);
+  --skeleton-highlight: color-mix(in srgb, var(--on-surface) 20%, transparent);
+
+  /* Semantic type aliases. */
+  --h1: var(--text-headline-medium);
+  --h2: var(--text-headline-small);
+  --title: var(--text-title-medium);
+  --body: var(--text-body-medium);
+  --body-small: var(--text-body-small);
+  --caption: var(--text-label-small);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme-mode="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+}
+
+/* Exact colorless dark tonal roles from LauncherTheme.kt. */
+:root[data-theme-mode="dark"] {
+    --raw-primary-dark: #a0cafd;
+    --raw-on-primary-dark: #003258;
+    --raw-primary-container-dark: #194975;
+    --raw-on-primary-container-dark: #d1e4ff;
+    --raw-secondary-dark: #bbc7db;
+    --raw-on-secondary-dark: #253140;
+    --raw-secondary-container-dark: #3b4858;
+    --raw-on-secondary-container-dark: #d7e3f7;
+    --raw-tertiary-dark: #d6bee4;
+    --raw-on-tertiary-dark: #3b2948;
+    --raw-tertiary-container-dark: #523f5f;
+    --raw-on-tertiary-container-dark: #f2daff;
+    --raw-background-dark: #111418;
+    --raw-on-background-dark: #e1e2e8;
+    --raw-surface-dark: #111418;
+    --raw-on-surface-dark: #e1e2e8;
+    --raw-surface-variant-dark: #43474e;
+    --raw-on-surface-variant-dark: #c3c7cf;
+    --raw-inverse-surface-dark: #e1e2e8;
+    --raw-inverse-on-surface-dark: #2e3135;
+    --raw-error-dark: #ffb4ab;
+    --raw-on-error-dark: #690005;
+    --raw-error-container-dark: #93000a;
+    --raw-on-error-container-dark: #ffdad6;
+    --raw-outline-dark: #8d9199;
+    --raw-outline-variant-dark: #43474e;
+    --raw-surface-bright-dark: #36393e;
+    --raw-surface-dim-dark: #111418;
+    --raw-surface-container-lowest-dark: #0b0e13;
+    --raw-surface-container-low-dark: #191c20;
+    --raw-surface-container-dark: #1d2024;
+    --raw-surface-container-high-dark: #272a2f;
+    --raw-surface-container-highest-dark: #32353a;
+
+    --primary: var(--raw-primary-dark);
+    --on-primary: var(--raw-on-primary-dark);
+    --primary-container: var(--raw-primary-container-dark);
+    --on-primary-container: var(--raw-on-primary-container-dark);
+    --secondary: var(--raw-secondary-dark);
+    --on-secondary: var(--raw-on-secondary-dark);
+    --secondary-container: var(--raw-secondary-container-dark);
+    --on-secondary-container: var(--raw-on-secondary-container-dark);
+    --tertiary: var(--raw-tertiary-dark);
+    --on-tertiary: var(--raw-on-tertiary-dark);
+    --tertiary-container: var(--raw-tertiary-container-dark);
+    --on-tertiary-container: var(--raw-on-tertiary-container-dark);
+    --background: var(--raw-background-dark);
+    --on-background: var(--raw-on-background-dark);
+    --surface-primary: var(--raw-surface-dark);
+    --surface-secondary: var(--raw-surface-container-low-dark);
+    --surface-tertiary: var(--raw-surface-container-dark);
+    --surface-high: var(--raw-surface-container-high-dark);
+    --surface-highest: var(--raw-surface-container-highest-dark);
+    --surface-variant: var(--raw-surface-variant-dark);
+    --on-surface: var(--raw-on-surface-dark);
+    --on-surface-variant: var(--raw-on-surface-variant-dark);
+    --surface-tint: var(--primary);
+    --inverse-surface: var(--raw-inverse-surface-dark);
+    --inverse-on-surface: var(--raw-inverse-on-surface-dark);
+    --error: var(--raw-error-dark);
+    --on-error: var(--raw-on-error-dark);
+    --error-container: var(--raw-error-container-dark);
+    --on-error-container: var(--raw-on-error-container-dark);
+    --border-strong: var(--raw-outline-dark);
+    --border-subtle: var(--raw-outline-variant-dark);
+    --glass-border: color-mix(in srgb, var(--border-subtle) 34%, transparent);
+    --skeleton-base: color-mix(in srgb, var(--on-surface) 6.5%, transparent);
+    --skeleton-highlight: color-mix(in srgb, var(--on-surface) 20%, transparent);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme-mode="light"]) {
+    --raw-primary-dark: #a0cafd;
+    --raw-on-primary-dark: #003258;
+    --raw-primary-container-dark: #194975;
+    --raw-on-primary-container-dark: #d1e4ff;
+    --raw-secondary-dark: #bbc7db;
+    --raw-on-secondary-dark: #253140;
+    --raw-secondary-container-dark: #3b4858;
+    --raw-on-secondary-container-dark: #d7e3f7;
+    --raw-tertiary-dark: #d6bee4;
+    --raw-on-tertiary-dark: #3b2948;
+    --raw-tertiary-container-dark: #523f5f;
+    --raw-on-tertiary-container-dark: #f2daff;
+    --raw-background-dark: #111418;
+    --raw-on-background-dark: #e1e2e8;
+    --raw-surface-dark: #111418;
+    --raw-on-surface-dark: #e1e2e8;
+    --raw-surface-variant-dark: #43474e;
+    --raw-on-surface-variant-dark: #c3c7cf;
+    --raw-inverse-surface-dark: #e1e2e8;
+    --raw-inverse-on-surface-dark: #2e3135;
+    --raw-error-dark: #ffb4ab;
+    --raw-on-error-dark: #690005;
+    --raw-error-container-dark: #93000a;
+    --raw-on-error-container-dark: #ffdad6;
+    --raw-outline-dark: #8d9199;
+    --raw-outline-variant-dark: #43474e;
+    --raw-surface-container-lowest-dark: #0b0e13;
+    --raw-surface-container-low-dark: #191c20;
+    --raw-surface-container-dark: #1d2024;
+    --raw-surface-container-high-dark: #272a2f;
+    --raw-surface-container-highest-dark: #32353a;
+    --primary: var(--raw-primary-dark);
+    --on-primary: var(--raw-on-primary-dark);
+    --primary-container: var(--raw-primary-container-dark);
+    --on-primary-container: var(--raw-on-primary-container-dark);
+    --secondary: var(--raw-secondary-dark);
+    --on-secondary: var(--raw-on-secondary-dark);
+    --secondary-container: var(--raw-secondary-container-dark);
+    --on-secondary-container: var(--raw-on-secondary-container-dark);
+    --tertiary: var(--raw-tertiary-dark);
+    --on-tertiary: var(--raw-on-tertiary-dark);
+    --tertiary-container: var(--raw-tertiary-container-dark);
+    --on-tertiary-container: var(--raw-on-tertiary-container-dark);
+    --background: var(--raw-background-dark);
+    --on-background: var(--raw-on-background-dark);
+    --surface-primary: var(--raw-surface-dark);
+    --surface-secondary: var(--raw-surface-container-low-dark);
+    --surface-tertiary: var(--raw-surface-container-dark);
+    --surface-high: var(--raw-surface-container-high-dark);
+    --surface-highest: var(--raw-surface-container-highest-dark);
+    --surface-variant: var(--raw-surface-variant-dark);
+    --on-surface: var(--raw-on-surface-dark);
+    --on-surface-variant: var(--raw-on-surface-variant-dark);
+    --surface-tint: var(--primary);
+    --inverse-surface: var(--raw-inverse-surface-dark);
+    --inverse-on-surface: var(--raw-inverse-on-surface-dark);
+    --error: var(--raw-error-dark);
+    --on-error: var(--raw-on-error-dark);
+    --error-container: var(--raw-error-container-dark);
+    --on-error-container: var(--raw-on-error-container-dark);
+    --border-strong: var(--raw-outline-dark);
+    --border-subtle: var(--raw-outline-variant-dark);
+    --glass-border: color-mix(in srgb, var(--border-subtle) 34%, transparent);
+    --skeleton-base: color-mix(in srgb, var(--on-surface) 6.5%, transparent);
+    --skeleton-highlight: color-mix(in srgb, var(--on-surface) 20%, transparent);
+  }
+}

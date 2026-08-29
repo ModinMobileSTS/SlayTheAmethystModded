@@ -585,8 +585,7 @@ private fun FirstRunRenderStep(
             SettingsSwitchSpec(
                 checked = uiState.avoidDisplayCutout,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_display_cutout_enabled),
-                disabledText = stringResource(R.string.settings_display_cutout_disabled),
+                title = stringResource(R.string.settings_display_cutout_enabled),
                 description = stringResource(R.string.settings_first_run_render_display_cutout_desc),
                 onCheckedChange = onDisplayCutoutAvoidanceChanged,
             )
@@ -596,8 +595,7 @@ private fun FirstRunRenderStep(
             SettingsSwitchSpec(
                 checked = uiState.cropScreenBottom,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_crop_screen_bottom_enabled),
-                disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
+                title = stringResource(R.string.settings_crop_screen_bottom_enabled),
                 description = stringResource(R.string.settings_first_run_render_crop_screen_bottom_desc),
                 onCheckedChange = onScreenBottomCropChanged,
             )
@@ -607,8 +605,7 @@ private fun FirstRunRenderStep(
             SettingsSwitchSpec(
                 checked = uiState.gameplayLargerUiEnabled,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_gameplay_larger_ui_enabled),
-                disabledText = stringResource(R.string.settings_gameplay_larger_ui_disabled),
+                title = stringResource(R.string.settings_gameplay_larger_ui_enabled),
                 description = stringResource(R.string.settings_first_run_render_larger_ui_desc),
                 onCheckedChange = onGameplayLargerUiChanged,
             )
@@ -717,8 +714,7 @@ private fun FirstRunInputStep(
             SettingsSwitchSpec(
                 checked = uiState.touchDoubleClickAsRightClick,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-                disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+                title = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
                 description = stringResource(R.string.settings_first_run_input_double_click_desc),
                 onCheckedChange = onTouchDoubleClickAsRightClickChanged,
             )
@@ -766,8 +762,7 @@ private fun FirstRunUpdatesStep(
             SettingsSwitchSpec(
                 checked = uiState.autoCheckUpdatesEnabled,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.update_auto_check_enabled),
-                disabledText = stringResource(R.string.update_auto_check_disabled),
+                title = stringResource(R.string.update_auto_check_enabled),
                 description = stringResource(R.string.settings_first_run_updates_mirror_required_desc),
                 onCheckedChange = onAutoCheckUpdatesChanged,
             )
@@ -931,8 +926,7 @@ private fun FirstRunSetupSteamCloudStep(
             SettingsSwitchSpec(
                 checked = uiState.steamCloudWattAccelerationEnabled,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
-                disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
+                title = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
                 description = stringResource(R.string.settings_first_run_steam_cloud_acceleration_desc),
                 onCheckedChange = onSteamCloudWattAccelerationChanged,
             )
@@ -1082,5 +1076,4 @@ private fun gameplayFontScaleToStep(value: Float): Int {
             GameplaySettingsService.FONT_SCALE_STEP
         ).roundToInt()
 }
-
 

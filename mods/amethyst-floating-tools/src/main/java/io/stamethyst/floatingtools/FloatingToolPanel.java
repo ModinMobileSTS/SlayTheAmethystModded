@@ -7,52 +7,76 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.core.Settings;
+import com.megacrit.cardcrawl.helpers.FontHelper;
 import com.megacrit.cardcrawl.helpers.ImageMaster;
-import com.megacrit.cardcrawl.helpers.PowerTip;
-import com.megacrit.cardcrawl.helpers.TipHelper;
 import com.megacrit.cardcrawl.helpers.input.InputHelper;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import org.lwjgl.input.Keyboard;
 
 final class FloatingToolPanel {
     private static final String PROP_ENABLED = "amethyst.floating_tools.enabled";
+    private static final String PROP_BUTTONS = "amethyst.floating_tools.buttons";
+    private static final String PROP_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK =
+        "amethyst.floating_tools.auto_switch_left_after_right_click";
 
-    private static final float TAB_HIT_W = 36f;
-    private static final float TAB_HIT_H = 128f;
-    private static final float SIDE_PANEL_X = 50f;
     private static final float RELIC_IMG_SIZE = 128f;
     private static final float RELIC_HIT_SIZE = 72f;
-    private static final float RELIC_SPACE_Y = 88f;
-    private static final float RELIC_START_TOP = 155f;
-    private static final float TIP_BOX_W = 320f;
-    private static final float TIP_SIDE_PAD = 24f;
-    private static final float TIP_ANCHOR_GAP = 46f;
-    private static final float TIP_TOP_OFFSET = 58f;
+    // Scales the whole button (art plus hit box). The ring radii below must grow with it,
+    // otherwise neighbouring hit boxes start to overlap.
+    private static final float BUTTON_SIZE_SCALE = 1.25f;
+    private static final float ORB_HIT_SIZE = 84f;
+    private static final float ORB_IMG_SIZE = 104f;
+    private static final float RING_INNER_RADIUS = 148f;
+    private static final float RING_OUTER_RADIUS = 268f;
+    private static final float RING_SWEEP_DEGREES = 136f;
+    private static final float RING_OPEN_ROTATION_DEGREES = 4f;
+    private static final float RING_EDGE_MARGIN = 2f;
+    private static final float ORB_MAX_BREATHE_SCALE = 1.025f * 1.07f;
+    private static final float DRAWER_OPEN_SECONDS = 0.30f;
+    private static final float DRAWER_CLOSE_SECONDS = 0.22f;
+    private static final float DRAWER_STAGGER = 0.35f;
+    private static final float DRAWER_REVEAL_FLOOR = 0.35f;
+    private static final float BUTTON_APPEAR_MIN_SCALE = 0.55f;
+    private static final float BUTTON_CLICKABLE_APPEAR = 0.75f;
+    private static final float DRAWER_INPUT_BLOCK_PROGRESS = 0.22f;
     private static final float BUTTON_PRESS_MAX_SCALE = 1.24f;
     private static final float BUTTON_PRESS_INITIAL_SCALE = 1.08f;
     private static final float BUTTON_PRESS_GROW_SPEED = 18f;
     private static final float BUTTON_PRESS_SHRINK_SPEED = 12f;
+    private static final float BUTTON_HOVER_SCALE = 1.08f;
+    private static final float TIP_BOX_W = 320f;
+    private static final float TIP_SIDE_PAD = 24f;
+    private static final float TIP_ANCHOR_GAP = 46f;
+    private static final float TIP_TOP_OFFSET = 58f;
+    private static final float TIP_TEXT_SCALE = 0.9f;
+    private static final float TIP_MIN_W = 180f;
+    private static final float TIP_H = 54f;
 
     private static final Color WHITE = new Color(1f, 1f, 1f, 1f);
     private static final Color SHADOW = new Color(0f, 0f, 0f, 0.38f);
+    private static final Color TIP_BACKGROUND = new Color(0.035f, 0.028f, 0.022f, 0.96f);
+    private static final Color TIP_BORDER = new Color(0.72f, 0.57f, 0.30f, 0.92f);
     private static final Color PASSIVE_OUTLINE = new Color(0f, 0f, 0f, 0.33f);
     private static final Color ACTIVE_OUTLINE = new Color(0.62f, 0.9f, 0.38f, 0.72f);
     private static final Color RELIC_DARK = new Color(0.075f, 0.068f, 0.052f, 1f);
     private static final Color RELIC_MID = new Color(0.18f, 0.14f, 0.075f, 1f);
     private static final Color RELIC_GREEN = new Color(0.60f, 0.85f, 0.42f, 1f);
+    private static final Color ORB_HALO = new Color(0.55f, 0.82f, 0.45f, 1f);
     private static final Color ICON_ACTIVE_TINT = new Color(0.82f, 1f, 0.64f, 1f);
     private static final String ICON_PATH = "amethystFloatingTools/images/tools/";
 
     private final ArrayList<ToolButton> buttons = new ArrayList<ToolButton>();
-    private final ArrayList<PowerTip> tabTips = new ArrayList<PowerTip>();
+    private final Set<Action> enabledOptionalActions = new HashSet<Action>();
     private final FloatingToolWheel wheel = new FloatingToolWheel();
     private final Color sidePanelTint = new Color();
+    private final Color fadeTint = new Color();
     private final Texture[] iconTextures = new Texture[Action.values().length];
     private final float[] buttonScaleOffsets = new float[Action.values().length];
 
-    private Texture sidePanelTab;
-    private Texture sidePanelArrow;
     private boolean enabled;
+    private boolean autoSwitchLeftAfterRightClick;
     private boolean expanded;
     private boolean ctrlDown;
     private boolean shiftDown;
@@ -62,25 +86,28 @@ final class FloatingToolPanel {
     private boolean rightSurfaceDown;
     private boolean uiLeftPressActive;
 
+    private float drawerRaw;
     private float drawerProgress;
-    private float tabCenterX;
-    private float tabCenterY;
-    private float drawerX;
-    private float drawerY;
-    private float drawerW;
-    private float drawerH;
+    private float orbCenterX;
+    private float orbCenterY;
+    private float orbPulse;
+    private float ringRadius;
     private Action lastHoveredAction;
     private Action pressedAction;
 
     void configureFromSystemProperties() {
         boolean wasEnabled = enabled;
         enabled = Boolean.parseBoolean(System.getProperty(PROP_ENABLED, "false"));
+        autoSwitchLeftAfterRightClick = Boolean.parseBoolean(
+            System.getProperty(PROP_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK, "true")
+        );
+        configureOptionalActions();
         if (!enabled && wasEnabled) {
             releaseAllHeldKeys();
+            releaseRightSurface();
             expanded = false;
             locked = false;
             rightMode = false;
-            rightSurfaceDown = false;
             uiLeftPressActive = false;
             lastHoveredAction = null;
             clearButtonPressState();
@@ -98,12 +125,11 @@ final class FloatingToolPanel {
             return;
         }
         float delta = Gdx.graphics.getDeltaTime();
+        orbPulse += delta;
         updateButtonPressScales(delta);
-        float target = expanded ? 1f : 0f;
-        drawerProgress = MathUtils.lerp(drawerProgress, target, delta * 6f);
-        if (Math.abs(drawerProgress - target) < 0.005f) {
-            drawerProgress = target;
-        }
+        float duration = expanded ? DRAWER_OPEN_SECONDS : DRAWER_CLOSE_SECONDS;
+        drawerRaw = MathUtils.clamp(drawerRaw + (expanded ? delta : -delta) / duration, 0f, 1f);
+        drawerProgress = smoothStep(drawerRaw);
         layout();
     }
 
@@ -128,7 +154,7 @@ final class FloatingToolPanel {
 
         boolean overTab = containsTab(InputHelper.mX, InputHelper.mY);
         ToolButton button = findButton(InputHelper.mX, InputHelper.mY);
-        updateTabHoverSound(overTab);
+        updateHoverSound(overTab, button);
         boolean overDrawer = containsDrawer(InputHelper.mX, InputHelper.mY);
         if (overTab && (InputHelper.justClickedLeft || InputHelper.justClickedRight)) {
             toggleExpanded();
@@ -151,14 +177,14 @@ final class FloatingToolPanel {
             return;
         }
         if (locked) {
-            rightSurfaceDown = false;
+            releaseRightSurface();
             consumePointerInput();
             return;
         }
         if (rightMode) {
             transformLeftClickToRightClick();
         } else {
-            rightSurfaceDown = false;
+            releaseRightSurface();
         }
     }
 
@@ -167,11 +193,10 @@ final class FloatingToolPanel {
             return;
         }
         layout();
-        if (drawerProgress > 0.02f) {
+        if (drawerRaw > 0f) {
             renderDrawer(sb);
         }
-        renderTab(sb);
-        renderTabTip();
+        renderOrb(sb);
         sb.setColor(Color.WHITE);
     }
 
@@ -202,14 +227,14 @@ final class FloatingToolPanel {
                 break;
             case LOCK:
                 locked = !locked;
-                rightSurfaceDown = false;
+                releaseRightSurface();
                 break;
             case WHEEL:
                 wheel.begin(wheelOffset(button));
                 break;
             case MOUSE_MODE:
                 rightMode = !rightMode;
-                rightSurfaceDown = false;
+                releaseRightSurface();
                 break;
             case KEYBOARD:
                 expanded = false;
@@ -305,68 +330,175 @@ final class FloatingToolPanel {
     private void transformLeftClickToRightClick() {
         if (InputHelper.justClickedLeft) {
             rightSurfaceDown = true;
+            FloatingToolInputBridge.sendMouseButton(
+                FloatingToolInputBridge.MOUSE_RIGHT,
+                true
+            );
             clearLeftFields();
-            InputHelper.justClickedRight = true;
-            InputHelper.isMouseDown_R = true;
             return;
         }
         if (!rightSurfaceDown) {
             return;
         }
         if (InputHelper.justReleasedClickLeft || !InputHelper.isMouseDown) {
-            rightSurfaceDown = false;
+            releaseRightSurfaceAndMaybeSwitchToLeft();
             clearLeftFields();
-            InputHelper.justReleasedClickRight = true;
-            InputHelper.isMouseDown_R = false;
         } else {
             clearLeftFields();
-            InputHelper.isMouseDown_R = true;
         }
+    }
+
+    private void releaseRightSurface() {
+        if (!rightSurfaceDown) {
+            return;
+        }
+        FloatingToolInputBridge.sendMouseButton(
+            FloatingToolInputBridge.MOUSE_RIGHT,
+            false
+        );
+        rightSurfaceDown = false;
     }
 
     private void layout() {
         buttons.clear();
         float s = Settings.scale;
-        float hit = RELIC_HIT_SIZE * s;
-        float hiddenX = Settings.WIDTH + 100f * s;
-        float targetX = Settings.WIDTH - SIDE_PANEL_X * s;
-        float currentX = MathUtils.lerp(hiddenX, targetX, drawerProgress);
-        float yPos = Settings.HEIGHT - RELIC_START_TOP * Settings.yScale;
-        float spaceY = RELIC_SPACE_Y * s;
+        float hit = RELIC_HIT_SIZE * BUTTON_SIZE_SCALE * s;
 
-        addButton(Action.ONLINE, "Online", currentX, yPos, hit, hit);
-        addButton(Action.CTRL, "Ctrl", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.SHIFT, "Shift", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.TAB, "Tab", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.ALT, "Alt", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.LOCK, locked ? "Unlock" : "Lock", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.WHEEL, "Wheel", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.MOUSE_MODE, rightMode ? "Right mouse" : "Left mouse", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.KEYBOARD, "Keyboard", currentX, yPos -= spaceY, hit, hit);
-        addButton(Action.ADD_KEY, "Add key", currentX, yPos -= spaceY, hit, hit);
+        ArrayList<Action> coreActions = new ArrayList<Action>();
+        coreActions.add(Action.ONLINE);
+        coreActions.add(Action.MOUSE_MODE);
+        coreActions.add(Action.KEYBOARD);
+        coreActions.add(Action.ADD_KEY);
 
-        float visual = RELIC_IMG_SIZE * s;
-        drawerX = currentX - visual / 2f;
-        drawerW = visual;
-        drawerY = yPos - visual / 2f;
-        drawerH = spaceY * (buttons.size() - 1) + visual;
+        ArrayList<Action> optionalActions = new ArrayList<Action>();
+        if (isOptionalActionEnabled(Action.CTRL)) {
+            optionalActions.add(Action.CTRL);
+        }
+        if (isOptionalActionEnabled(Action.SHIFT)) {
+            optionalActions.add(Action.SHIFT);
+        }
+        if (isOptionalActionEnabled(Action.TAB)) {
+            optionalActions.add(Action.TAB);
+        }
+        if (isOptionalActionEnabled(Action.ALT)) {
+            optionalActions.add(Action.ALT);
+        }
+        if (isOptionalActionEnabled(Action.LOCK)) {
+            optionalActions.add(Action.LOCK);
+        }
+        if (isOptionalActionEnabled(Action.WHEEL)) {
+            optionalActions.add(Action.WHEEL);
+        }
 
-        float collapsedTabX = Settings.WIDTH - TAB_HIT_W * s / 2f;
-        float expandedTabX = targetX - TAB_HIT_W * s * 1.5f;
-        tabCenterX = MathUtils.lerp(collapsedTabX, expandedTabX, drawerProgress);
-        tabCenterY = Settings.HEIGHT / 2f;
+        // The orb anchors the ring; buttons orbit it on two arcs.
+        float visual = RELIC_IMG_SIZE * BUTTON_SIZE_SCALE * BUTTON_PRESS_MAX_SCALE * s;
+        float innerRadius = RING_INNER_RADIUS * s;
+        float outerRadius = optionalActions.isEmpty() ? innerRadius : RING_OUTER_RADIUS * s;
+
+        // Shrink the ring when the screen is too short for the widest orbit.
+        float desiredExtent = outerRadius + visual / 2f;
+        float allowedExtent = Settings.HEIGHT / 2f;
+        float fit = desiredExtent > allowedExtent ? allowedExtent / desiredExtent : 1f;
+        innerRadius *= fit;
+        outerRadius *= fit;
+        float ringExtent = desiredExtent * fit;
+
+        // Only the orb's own radius is reserved, so it sits flush against the screen edge.
+        orbCenterX = Settings.WIDTH - ORB_IMG_SIZE * s / 2f * ORB_MAX_BREATHE_SCALE - RING_EDGE_MARGIN * s;
+        orbCenterY = Settings.HEIGHT / 2f;
+
+        layoutRing(coreActions, innerRadius, 1f, hit);
+        layoutRing(optionalActions, outerRadius, 1.6f, hit);
+
+        ringRadius = ringExtent;
     }
 
-    private void addButton(Action action, String label, float centerX, float centerY, float hitW, float hitH) {
-        buttons.add(new ToolButton(action, label, centerX, centerY, hitW, hitH));
+    private void layoutRing(ArrayList<Action> ringActions, float radius, float rotationScale, float hit) {
+        if (ringActions.isEmpty()) {
+            return;
+        }
+        int count = ringActions.size();
+        // Fan the buttons across an arc centred on the left-facing direction (180 degrees),
+        // kept well under a half circle so the orb can sit flush against the screen edge.
+        float sweep = count == 1 ? 0f : RING_SWEEP_DEGREES;
+        float step = count == 1 ? 0f : sweep / (count - 1);
+        for (int index = 0; index < count; index++) {
+            Action action = ringActions.get(index);
+            float appear = staggeredAppear(index, count);
+            float rotation = (1f - appear) * RING_OPEN_ROTATION_DEGREES * rotationScale;
+            float angle = 180f - sweep / 2f + rotation + step * index;
+            float reveal = MathUtils.lerp(DRAWER_REVEAL_FLOOR, 1f, appear);
+            float centerX = orbCenterX + MathUtils.cosDeg(angle) * radius * reveal;
+            float centerY = orbCenterY + MathUtils.sinDeg(angle) * radius * reveal;
+            addButton(action, centerX, centerY, hit, hit, appear);
+        }
+    }
+
+    // Each button trails the one before it so the ring unfurls and folds instead of snapping as a block.
+    private float staggeredAppear(int index, int count) {
+        if (count <= 1) {
+            return drawerProgress;
+        }
+        float delay = DRAWER_STAGGER * ((float) index / (count - 1));
+        float span = 1f - DRAWER_STAGGER;
+        return smoothStep(MathUtils.clamp((drawerRaw - delay) / span, 0f, 1f));
+    }
+
+    private static float smoothStep(float t) {
+        return t * t * (3f - 2f * t);
+    }
+
+    private void addButton(
+        Action action,
+        float centerX,
+        float centerY,
+        float hitW,
+        float hitH,
+        float appear
+    ) {
+        buttons.add(new ToolButton(action, centerX, centerY, hitW, hitH, appear));
+    }
+
+    private void configureOptionalActions() {
+        enabledOptionalActions.clear();
+        String configuredButtons = System.getProperty(PROP_BUTTONS, "");
+        for (String buttonId : configuredButtons.split(",")) {
+            Action action = optionalActionForId(buttonId.trim());
+            if (action != null) {
+                enabledOptionalActions.add(action);
+            }
+        }
+    }
+
+    private boolean isOptionalActionEnabled(Action action) {
+        return enabledOptionalActions.contains(action);
+    }
+
+    private static Action optionalActionForId(String buttonId) {
+        if ("ctrl".equalsIgnoreCase(buttonId)) {
+            return Action.CTRL;
+        }
+        if ("shift".equalsIgnoreCase(buttonId)) {
+            return Action.SHIFT;
+        }
+        if ("tab".equalsIgnoreCase(buttonId)) {
+            return Action.TAB;
+        }
+        if ("alt".equalsIgnoreCase(buttonId)) {
+            return Action.ALT;
+        }
+        if ("lock".equalsIgnoreCase(buttonId)) {
+            return Action.LOCK;
+        }
+        if ("wheel".equalsIgnoreCase(buttonId)) {
+            return Action.WHEEL;
+        }
+        return null;
     }
 
     private ToolButton findButton(float px, float py) {
-        if (drawerProgress < 0.22f) {
-            return null;
-        }
         for (ToolButton button : buttons) {
-            if (button.contains(px, py)) {
+            if (button.appear >= BUTTON_CLICKABLE_APPEAR && button.contains(px, py)) {
                 return button;
             }
         }
@@ -383,74 +515,109 @@ final class FloatingToolPanel {
     }
 
     private boolean containsDrawer(float px, float py) {
-        return drawerProgress > 0.22f &&
-            px >= drawerX &&
-            px <= drawerX + drawerW &&
-            py >= drawerY &&
-            py <= drawerY + drawerH;
+        if (drawerProgress <= DRAWER_INPUT_BLOCK_PROGRESS) {
+            return false;
+        }
+        // The ring is circular, so only swallow clicks inside the actual radius.
+        float dx = px - orbCenterX;
+        float dy = py - orbCenterY;
+        return dx * dx + dy * dy <= ringRadius * ringRadius;
     }
 
     private boolean containsTab(float px, float py) {
         float s = Settings.scale;
-        float halfW = TAB_HIT_W * s / 2f;
-        float halfH = TAB_HIT_H * s / 2f;
-        return px >= tabCenterX - halfW &&
-            px <= tabCenterX + halfW &&
-            py >= tabCenterY - halfH &&
-            py <= tabCenterY + halfH;
+        float radius = ORB_HIT_SIZE * s / 2f;
+        float dx = px - orbCenterX;
+        float dy = py - orbCenterY;
+        return dx * dx + dy * dy <= radius * radius;
     }
 
     private void renderDrawer(SpriteBatch sb) {
         for (ToolButton button : buttons) {
             renderButton(sb, button);
         }
+        ToolButton hoveredButton = findButton(InputHelper.mX, InputHelper.mY);
+        if (hoveredButton != null && isHoverableAction(hoveredButton.action) &&
+            hoveredButton.appear >= BUTTON_CLICKABLE_APPEAR) {
+            renderHoverTooltip(sb, hoveredButton);
+        }
     }
 
     private void renderButton(SpriteBatch sb, ToolButton button) {
-        boolean hovered = button.contains(InputHelper.mX, InputHelper.mY);
-        boolean active = isActive(button.action);
-        float drawScale = Settings.scale * buttonPressScale(button.action);
-        renderRelicOutline(sb, button.centerX, button.centerY, drawScale, active);
-        renderRelicBody(sb, button.centerX, button.centerY, drawScale, active);
-        renderIcon(sb, button, drawScale, active);
-        if (hovered) {
-            queueToolTips(button.tips, button.centerX, button.centerY);
-        }
-    }
-
-    private void renderTabTip() {
-        if (!containsTab(InputHelper.mX, InputHelper.mY)) {
+        if (button.appear <= 0.01f) {
             return;
         }
-        tabTips.clear();
-        tabTips.add(
-            new PowerTip(
-                expanded ? "收起工具抽屉" : "展开工具抽屉",
-                expanded ?
-                    "收起右侧 Loadout 风格工具列，保留右侧侧边标签。" :
-                    "展开右侧 Loadout 风格工具列，显示鼠标、键盘和滚轮控制图标。"
-            )
-        );
-        queueToolTips(tabTips, tabCenterX, tabCenterY);
+        boolean active = isActive(button.action);
+        boolean hovered = isHoverableAction(button.action) &&
+            button.appear >= BUTTON_CLICKABLE_APPEAR &&
+            button.contains(InputHelper.mX, InputHelper.mY);
+        float appearScale = MathUtils.lerp(BUTTON_APPEAR_MIN_SCALE, 1f, button.appear);
+        float drawScale =
+            Settings.scale * BUTTON_SIZE_SCALE * buttonPressScale(button.action) * appearScale *
+                (hovered ? BUTTON_HOVER_SCALE : 1f);
+        float alpha = button.appear;
+        renderRelicOutline(sb, button.centerX, button.centerY, drawScale, active || hovered, alpha);
+        renderRelicBody(sb, button.centerX, button.centerY, drawScale, active, alpha);
+        renderIcon(sb, button, drawScale, active || hovered, alpha);
     }
 
-    private void queueToolTips(ArrayList<PowerTip> tips, float anchorX, float anchorY) {
-        float s = Settings.scale;
-        float boxW = TIP_BOX_W * s;
-        float sidePad = TIP_SIDE_PAD * s;
-        float x;
-        if (anchorX > Settings.WIDTH / 2f) {
-            x = anchorX - boxW - TIP_ANCHOR_GAP * s;
-        } else {
-            x = anchorX + TIP_ANCHOR_GAP * s;
+    private boolean isHoverableAction(Action action) {
+        return action == Action.MOUSE_MODE ||
+            action == Action.ADD_KEY ||
+            action == Action.KEYBOARD ||
+            action == Action.ONLINE;
+    }
+
+    private void renderHoverTooltip(SpriteBatch sb, ToolButton button) {
+        String text = tooltipFor(button.action);
+        if (text == null || FontHelper.cardDescFont_N == null) {
+            return;
         }
+
+        float s = Settings.scale;
+        float textW = FontHelper.getWidth(FontHelper.cardDescFont_N, text, TIP_TEXT_SCALE);
+        float boxW = Math.max(TIP_MIN_W * s, textW + TIP_SIDE_PAD * 2f * s);
+        float boxH = TIP_H * s;
+        float sidePad = TIP_SIDE_PAD * s;
+        float x = button.centerX - boxW - TIP_ANCHOR_GAP * s;
         float maxX = Math.max(sidePad, Settings.WIDTH - boxW - sidePad);
         x = MathUtils.clamp(x, sidePad, maxX);
+        float y = button.centerY + TIP_TOP_OFFSET * s;
+        if (y + boxH > Settings.HEIGHT - sidePad) {
+            y = button.centerY - boxH - TIP_TOP_OFFSET * s;
+        }
+        y = MathUtils.clamp(y, sidePad, Settings.HEIGHT - boxH - sidePad);
 
-        float y = Math.min(anchorY + TIP_TOP_OFFSET * s, Settings.HEIGHT - sidePad);
-        y += TipHelper.calculateToAvoidOffscreen(tips, y);
-        y = Math.min(y, Settings.HEIGHT - sidePad);
-        TipHelper.queuePowerTips(x, y, tips);
+        drawRectCentered(sb, x + boxW / 2f + 4f * s, y + boxH / 2f - 4f * s,
+            boxW, boxH, SHADOW);
+        drawRectCentered(sb, x + boxW / 2f, y + boxH / 2f, boxW, boxH, TIP_BORDER);
+        drawRectCentered(sb, x + boxW / 2f, y + boxH / 2f, boxW - 4f * s, boxH - 4f * s,
+            TIP_BACKGROUND);
+        FontHelper.renderFontCentered(
+            sb,
+            FontHelper.cardDescFont_N,
+            text,
+            x + boxW / 2f,
+            y + boxH / 2f - 6f * s,
+            Settings.CREAM_COLOR,
+            TIP_TEXT_SCALE
+        );
+        sb.setColor(WHITE);
+    }
+
+    private String tooltipFor(Action action) {
+        switch (action) {
+            case MOUSE_MODE:
+                return "切换鼠标左右键";
+            case ADD_KEY:
+                return "新增按键";
+            case KEYBOARD:
+                return "打开键盘";
+            case ONLINE:
+                return "打开虚拟局域网菜单";
+            default:
+                return null;
+        }
     }
 
     private boolean isActive(Action action) {
@@ -472,80 +639,87 @@ final class FloatingToolPanel {
         }
     }
 
-    private void renderTab(SpriteBatch sb) {
-        ensureSidePanelTextures();
+    private void renderOrb(SpriteBatch sb) {
         updateSidePanelTint();
         float s = Settings.scale;
-        sb.setColor(sidePanelTint);
-        sb.draw(
-            sidePanelTab,
-            tabCenterX - 12f,
-            tabCenterY - 64f,
-            15.5f,
-            64f,
-            31f,
-            128f,
-            s,
-            s,
-            0f,
-            0,
-            0,
-            32,
-            128,
-            true,
-            false
+        boolean hovered = containsTab(InputHelper.mX, InputHelper.mY);
+        float breathe = MathUtils.sin(orbPulse * 2.2f);
+        float radius = ORB_IMG_SIZE * s / 2f * (1f + 0.025f * breathe) * (hovered ? 1.07f : 1f);
+
+        sb.setBlendFunction(770, 1);
+        drawDisc(sb, orbCenterX, orbCenterY, radius * 1.6f, ORB_HALO, 0.15f + 0.05f * breathe);
+        sb.setBlendFunction(770, 771);
+
+        drawDisc(sb, orbCenterX + 5f * s, orbCenterY - 5f * s, radius, SHADOW, SHADOW.a);
+        drawDisc(sb, orbCenterX, orbCenterY, radius, sidePanelTint, 1f);
+        drawDisc(sb, orbCenterX, orbCenterY, radius * 0.86f, RELIC_DARK, 1f);
+        drawDisc(
+            sb,
+            orbCenterX,
+            orbCenterY,
+            radius * 0.63f,
+            expanded ? RELIC_GREEN : RELIC_MID,
+            1f
         );
+        drawDisc(sb, orbCenterX, orbCenterY, radius * 0.44f, RELIC_DARK, 1f);
+        drawDisc(
+            sb,
+            orbCenterX - radius * 0.22f,
+            orbCenterY + radius * 0.26f,
+            radius * 0.3f,
+            WHITE,
+            0.14f
+        );
+
         sb.setColor(WHITE);
-        sb.draw(
-            sidePanelArrow,
-            tabCenterX - 12f,
-            tabCenterY - 16f,
-            16f,
-            16f,
-            32f,
-            32f,
-            s,
-            s,
-            0f,
-            0,
-            0,
-            32,
-            32,
-            !expanded,
-            false
-        );
     }
 
-    private void renderRelicOutline(SpriteBatch sb, float cx, float cy, float scale, boolean active) {
-        drawRelicShape(sb, cx + 5f * scale, cy - 5f * scale, scale, SHADOW);
+    private void drawDisc(SpriteBatch sb, float cx, float cy, float radius, Color color, float alpha) {
+        Texture disc = ImageMaster.TARGET_UI_CIRCLE;
+        if (disc == null) {
+            drawRelicShape(sb, cx, cy, radius / 38f, color, alpha);
+            return;
+        }
+        sb.setColor(color.r, color.g, color.b, alpha);
+        sb.draw(disc, cx - radius, cy - radius, radius * 2f, radius * 2f);
+        sb.setColor(WHITE);
+    }
+
+    private void renderRelicOutline(SpriteBatch sb, float cx, float cy, float scale, boolean active, float alpha) {
+        drawRelicShape(sb, cx + 5f * scale, cy - 5f * scale, scale, SHADOW, alpha);
         if (active) {
             sb.setBlendFunction(770, 1);
-            drawRelicShape(sb, cx, cy, scale, ACTIVE_OUTLINE);
+            drawRelicShape(sb, cx, cy, scale, ACTIVE_OUTLINE, alpha);
             sb.setBlendFunction(770, 771);
         } else {
-            drawRelicShape(sb, cx, cy, scale, PASSIVE_OUTLINE);
+            drawRelicShape(sb, cx, cy, scale, PASSIVE_OUTLINE, alpha);
         }
     }
 
-    private void renderRelicBody(SpriteBatch sb, float cx, float cy, float scale, boolean active) {
-        drawRelicShape(sb, cx, cy, scale * 0.86f, RELIC_DARK);
-        drawRotatedRect(sb, cx, cy, 60f * scale, 60f * scale, 45f, active ? RELIC_GREEN : RELIC_MID);
-        drawRelicShape(sb, cx, cy, scale * 0.58f, RELIC_DARK);
+    private void renderRelicBody(SpriteBatch sb, float cx, float cy, float scale, boolean active, float alpha) {
+        drawRelicShape(sb, cx, cy, scale * 0.86f, RELIC_DARK, alpha);
+        drawRotatedRect(sb, cx, cy, 60f * scale, 60f * scale, 45f, fade(active ? RELIC_GREEN : RELIC_MID, alpha));
+        drawRelicShape(sb, cx, cy, scale * 0.58f, RELIC_DARK, alpha);
     }
 
-    private void drawRelicShape(SpriteBatch sb, float cx, float cy, float scale, Color color) {
-        drawRotatedRect(sb, cx, cy, 76f * scale, 76f * scale, 45f, color);
-        drawRectCentered(sb, cx, cy, 72f * scale, 52f * scale, color);
-        drawRectCentered(sb, cx, cy, 52f * scale, 72f * scale, color);
+    private void drawRelicShape(SpriteBatch sb, float cx, float cy, float scale, Color color, float alpha) {
+        drawRotatedRect(sb, cx, cy, 76f * scale, 76f * scale, 45f, fade(color, alpha));
+        drawRectCentered(sb, cx, cy, 72f * scale, 52f * scale, fade(color, alpha));
+        drawRectCentered(sb, cx, cy, 52f * scale, 72f * scale, fade(color, alpha));
     }
 
-    private void renderIcon(SpriteBatch sb, ToolButton button, float scale, boolean active) {
+    private Color fade(Color color, float alpha) {
+        fadeTint.set(color.r, color.g, color.b, color.a * alpha);
+        return fadeTint;
+    }
+
+    private void renderIcon(SpriteBatch sb, ToolButton button, float scale, boolean active, float alpha) {
         Texture icon = iconFor(button.action);
         if (icon == null) {
             return;
         }
         float size = 88f * scale;
-        sb.setColor(active ? ICON_ACTIVE_TINT : WHITE);
+        sb.setColor(fade(active ? ICON_ACTIVE_TINT : WHITE, alpha));
         sb.draw(icon, button.centerX - size / 2f, button.centerY - size / 2f, size, size);
         sb.setColor(WHITE);
     }
@@ -598,15 +772,6 @@ final class FloatingToolPanel {
         return icon;
     }
 
-    private void ensureSidePanelTextures() {
-        if (sidePanelTab == null) {
-            sidePanelTab = loadToolTexture("side_panel_tab.png");
-        }
-        if (sidePanelArrow == null) {
-            sidePanelArrow = loadToolTexture("side_panel_arrow.png");
-        }
-    }
-
     private Texture loadToolTexture(String filename) {
         Texture texture = ImageMaster.loadImage(ICON_PATH + filename);
         if (texture != null) {
@@ -653,8 +818,11 @@ final class FloatingToolPanel {
         );
     }
 
-    private void updateTabHoverSound(boolean overTab) {
+    private void updateHoverSound(boolean overTab, ToolButton button) {
         Action hovered = overTab ? Action.TAB_HANDLE : null;
+        if (button != null && isHoverableAction(button.action)) {
+            hovered = button.action;
+        }
         if (hovered != null && hovered != lastHoveredAction) {
             playHover();
         }
@@ -671,10 +839,21 @@ final class FloatingToolPanel {
     }
 
     private void consumePointerInput() {
+        if (InputHelper.justReleasedClickLeft || !InputHelper.isMouseDown) {
+            releaseRightSurfaceAndMaybeSwitchToLeft();
+        }
         consumeLeftInput();
         InputHelper.justClickedRight = false;
         InputHelper.justReleasedClickRight = false;
         InputHelper.isMouseDown_R = false;
+    }
+
+    private void releaseRightSurfaceAndMaybeSwitchToLeft() {
+        boolean hadRightSurface = rightSurfaceDown;
+        releaseRightSurface();
+        if (hadRightSurface && autoSwitchLeftAfterRightClick) {
+            rightMode = false;
+        }
     }
 
     private void consumeLeftInput() {
@@ -723,21 +902,26 @@ final class FloatingToolPanel {
 
     private static final class ToolButton {
         final Action action;
-        final String label;
         final float centerX;
         final float centerY;
         final float hitW;
         final float hitH;
-        final ArrayList<PowerTip> tips = new ArrayList<PowerTip>();
+        final float appear;
 
-        ToolButton(Action action, String label, float centerX, float centerY, float hitW, float hitH) {
+        ToolButton(
+            Action action,
+            float centerX,
+            float centerY,
+            float hitW,
+            float hitH,
+            float appear
+        ) {
             this.action = action;
-            this.label = label;
             this.centerX = centerX;
             this.centerY = centerY;
             this.hitW = hitW;
             this.hitH = hitH;
-            this.tips.add(new PowerTip(label, descriptionFor(action, label)));
+            this.appear = appear;
         }
 
         boolean contains(float px, float py) {
@@ -745,33 +929,6 @@ final class FloatingToolPanel {
                 px <= centerX + hitW / 2f &&
                 py >= centerY - hitH / 2f &&
                 py <= centerY + hitH / 2f;
-        }
-
-        private static String descriptionFor(Action action, String label) {
-            switch (action) {
-                case ONLINE:
-                    return "打开 Android 联机窗口，可查看房间、连接状态、玩家 IP 和房主管理操作。";
-                case CTRL:
-                    return "切换 Ctrl 修饰键。启用后保持 Ctrl 按下，再点一次释放。";
-                case SHIFT:
-                    return "切换 Shift 修饰键。启用后保持 Shift 按下，再点一次释放。";
-                case TAB:
-                    return "发送一次 Tab 键，用于切换焦点或触发支持 Tab 的游戏界面操作。";
-                case ALT:
-                    return "切换 Alt 修饰键。启用后保持 Alt 按下，再点一次释放。";
-                case LOCK:
-                    return "锁定时会吞掉游戏点击，避免误点卡牌或按钮；再次点击解除锁定。";
-                case WHEEL:
-                    return "按住图标上半部向上滚动，下半部向下滚动；离中心越远滚动越快。";
-                case MOUSE_MODE:
-                    return "切换触摸点击的鼠标按钮。右键模式会保持启用，直到再次点击此图标切回左键。";
-                case KEYBOARD:
-                    return "打开旧版 Android 侧键盘输入；根据启动器设置使用内置键盘或系统输入法。";
-                case ADD_KEY:
-                    return "添加一个 Android 侧自定义按键悬浮窗。悬浮窗由内置软键盘路径发送按键，可长按拖动并拖到垃圾桶删除。";
-                default:
-                    return label;
-            }
         }
     }
 }

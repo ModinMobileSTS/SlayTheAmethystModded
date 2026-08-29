@@ -37,6 +37,12 @@ class SteamCloudUserWarningTest {
                 ).rawMessage()
             )
         )
+        assertEquals(
+            SteamCloudUserWarning.DuplicateMappedLocalPath("preferences/STSPlayer"),
+            SteamCloudUserWarning.parse(
+                SteamCloudUserWarning.DuplicateMappedLocalPath("preferences/STSPlayer").rawMessage()
+            )
+        )
     }
 
     @Test

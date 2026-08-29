@@ -74,25 +74,6 @@ These patches live in `mods/amethyst-runtime-compat` and are gated by
 `amethyst.mts.patch_cache.current=true` unless noted otherwise. They are intentionally
 inactive for non-cache launches.
 
-### Loadout class scan cache
-
-Implemented by `LoadoutClassScanCachePatches`.
-
-Loadout scans every enabled mod jar to discover optional card modifiers, powers,
-orbs, and monsters. Amethyst replaces those repeated `ClassFinder` scans with a
-persistent per-mod cache under the MTS patch cache directory. Each entry stores class
-names for one kind of Loadout lookup and is keyed by the MTS patch cache marker plus
-the mod id/version when available.
-
-On a cache miss, one jar scan builds all four Loadout indexes. On later launches,
-Loadout reloads the cached class names, revalidates them through class loading and
-type checks, and fills Loadout's original maps synchronously. This removes the
-startup fan-out of many Loadout scanner threads. The patch stays inactive whenever
-`amethyst.mts.patch_cache.current=false`, so non-cache and cache-miss launches keep
-Loadout's original threaded scanner behavior.
-
-Disable with `amethyst.runtime_compat.loadout_class_scan_cache=false`.
-
 ### Downfall ClassFinder scan cache
 
 Implemented by `ClassFinderScanCachePatches`.
@@ -163,13 +144,7 @@ Disable with `amethyst.runtime_compat.fast_cache_splash=false`. Tune with
 
 ## Supporting non-cache optimization
 
-`LoadoutBaseGameMonsterSkipPatches` is a cache-hit-only companion optimization. It
-skips Loadout's base-game monster scan only when `amethyst.mts.patch_cache.current=true`
-because the original cache-hit path spends time scanning and then fails with an empty
-map in the observed Android runtime. Non-cache launches keep Loadout's original scan
-so the monster selector can still populate vanilla monsters.
-
-`BaseModEditCardsTimingPatches` and `BaseModPostInitializeTimingPatches` are also
+`BaseModEditCardsTimingPatches` and `BaseModPostInitializeTimingPatches` are
 not cache strategies. They are diagnostic wrappers used to identify which subscriber
 owns the remaining startup work.
 
@@ -204,6 +179,20 @@ options measured at 0 ms for size+mtime, 15 ms for the central directory digest,
 cache, but the ratio is what motivated the choice: correctness against in-place rebuilds
 for roughly a third of the cost of hashing whole files, against a cache hit that saves
 seconds.
+
+Two launch-path measures keep that per-launch cost down without weakening the marker:
+
+- The mod-jar fingerprints fan out across a small fixed pool (capped at
+  `min(availableProcessors, 4)`, mirroring the cache build's package-jar pool) because
+  each one is an open plus a central-directory seek against storage that may be cold.
+  Results are reassembled in input order, so the digest stays deterministic.
+- The GDX patch jar is still hashed over its whole content — it is merged into the
+  cached main jar, so archive-level shortcuts would miss metadata-only changes — but
+  the digest is recorded in a sidecar under the patch cache directory, keyed by the
+  file's size and mtime. The patch jar ships with the launcher and is replaced
+  wholesale by the component installer, never edited in place, so unlike user mods its
+  size+mtime identify the installed artifact well enough to reuse a recorded digest. A
+  mismatch recomputes; a missing or corrupt sidecar falls back to the full read.
 
 Cache reads are conservative:
 
@@ -302,13 +291,11 @@ breaking type identity:
   came from the cached jar. `getResources` returns child entries before parent ones.
 
 The loader registers as parallel-capable and locks per class name. Locking the whole
-loader instead would serialize every load performed by Loadout's scanner threads,
-BaseMod, and the GDX asset threads, and risks deadlock when a parent-first delegation
+loader instead would serialize every load performed by BaseMod, mod scanner threads,
+and the GDX asset threads, and risks deadlock when a parent-first delegation
 happens while another thread holds the parent's lock.
 
-## Space precheck and scan cache sweep
-
-Two forms of unbounded cost were possible once the cache had been running for a while.
+## Space precheck
 
 `store` refuses to start when the filesystem cannot plausibly hold the result. The
 estimate is coarse — three times the base game jar, floored at 256MB — because the real
@@ -320,21 +307,6 @@ destroy a working cache, fail, fall back correctly, and then repeat the same doo
 build and its full cost on every subsequent launch. `amethyst.mts.patch_cache.min_free_bytes`
 overrides the estimate; unknown free space is treated as permission to proceed, so an
 unreadable filesystem does not silently disable caching.
-
-`loadout-scan-cache/` was the one directory that only ever grew. Every other artifact is
-overwritten or wiped per build — the package directory by `deletePackageJars`, the main
-jar and both metadata caches by being rewritten in place — but the scan cache file names
-embed a hash of the whole patch cache marker, so each new marker produces an entirely
-fresh set of names and strands the previous set forever. Nothing collected them: the
-runtime compat mod only replaces the single file it is about to write, and the launcher
-only clears the directory when the user turns the feature off.
-
-A completed build now sweeps them. Staleness is decided by reading the `identity=`
-header, which is exactly the test `LoadoutClassScanCachePatches.readCacheFile` applies:
-a file whose identity does not carry the current marker will be rejected by the mod
-anyway, so it is already dead weight. Files too short or malformed to have a header are
-swept for the same reason. The sweep runs after the marker is committed and never
-throws — housekeeping must not invalidate an otherwise complete cache.
 
 ## Fallback boundary on a cache hit
 
@@ -375,13 +347,37 @@ rebuilt whenever the marker changes, so the disk they cost is cheap and temporar
 while every class the JVM loads from them on a hit would otherwise pay inflater time.
 The main jar carries the whole base game, so it dominates that cost.
 
-`mergeCompiledClasses` runs after `writeFastMainJar` whenever Javassist produced patched
-base-game classes, and it rewrites every entry of the main jar into a fresh temporary jar
-before renaming it over the original. It was creating that `ZipOutputStream` without
-setting a level, so it silently re-deflated the entire main jar at the default level and
-undid the choice made a moment earlier — the uncompressed main jar only survived when the
-merge pass happened not to run. The merge writer now sets the same level as the other two.
+## Compiled-class merging
 
-`store_keepsMergedCacheJarUncompressed` locks this in. Note that `NO_COMPRESSION` still
-emits `DEFLATED` entries, just with stored blocks, so the entry method is not a usable
-signal; the test asserts on compressed size using a highly compressible payload instead.
+When Javassist produces patched base-game classes, those bytes must end up in the
+cached main jar ahead of every original copy of the class. Two paths provide that,
+with identical content and precedence:
+
+- Primary: `store()` collects the compiled classes before invoking MTS's
+  `packageJar`, and the fast main-jar writer substitutes them inline wherever a
+  matching entry appears while it writes, appending classes no source jar contains.
+  No second pass over the archive happens. This matters because the merge rewrite
+  used to re-read, inflate, and re-write the entire base-game-sized jar just to
+  replace a handful of class entries.
+- Fallback: when MTS's own package writer produced the jar instead (fast path
+  unavailable or failed), the serial `mergeCompiledClasses` rewrite still runs over
+  the finished jar. It remains stream-based on purpose: a raw zip-record-level
+  rewrite would avoid inflating every entry but means hand-parsing local headers
+  and rebuilding the central directory on the durability-critical artifact, a risk
+  not worth taking for a path that now almost never runs.
+
+In both paths the compiled-classpath bytes win over the OUTJAR snapshot bytes and
+over every source jar copy; the two must never coexist in the output. When the fast
+writer took over, `store()` reports `mergeCompiledClasses skipped, folded into fast
+write` in its step log instead of paying the rewrite again;
+`store_skipsMergeRewriteWhenFastPathTookOver` locks the skip in, and
+`store_mergesCompiledBaseGameClassesIntoCacheJar` plus
+`packageJarFastPath_foldsCompiledClassOverridesIntoMainJar` lock the content rules.
+
+Historical note: the fallback rewrite once created its `ZipOutputStream` without
+setting a level, silently re-deflating the entire main jar at the default level. It
+now sets the same `NO_COMPRESSION` level as both fast writers, and
+`store_keepsMergedCacheJarUncompressed` locks that in. Note that `NO_COMPRESSION`
+still emits `DEFLATED` entries, just with stored blocks, so the entry method is not
+a usable signal; the test asserts on compressed size using a highly compressible
+payload instead.

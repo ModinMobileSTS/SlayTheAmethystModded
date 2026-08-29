@@ -1,18 +1,95 @@
-# Steam Cloud Read-Only Spike
+# Steam CM Protocol Spike
 
 这个模块是一个独立的 JVM 命令行 spike，用来验证 `Slay the Spire` 的 Steam 云存档链路是否能走通。
 
-当前目标只包括：
+当前目标包括：
 
 - Steam 登录
 - 枚举 `646570` 的云文件列表
 - 按需下载选中的云文件
+- 受显式确认保护的单一成就协议实验
 
 当前明确不做：
 
 - 上传/删除
 - 主 launcher 接入
 - Android app 运行时集成
+
+## 成就协议实验
+
+`achievementUnlock` 与 `achievementLock` 只面向 `Slay the Spire` 的 `shrug_it_off`。
+前者必须提供 `--confirm-shrug-it-off`，后者必须提供
+`--confirm-lock-shrug-it-off`。两者都会先读取用户统计和 schema，保留返回的 `crc_stats`，
+只设置或清除该成就的单个 stat bit，再发送 `ClientStoreUserStats2`（EMsg `5466`），并等待
+`ClientStoreUserStatsResponse`（EMsg `821`）的 Job 响应。仅当响应为 `EResult.OK`、
+没有验证错误且重新读取确认对应 bit 状态后，命令才报告成功。它们不会重置整个 stat 或其他成就 bit。
+
+这不是 Steam 官方面向普通用户的 API。请只在你拥有权限的账号和游戏上进行实验；
+联网、反作弊或服务器权威游戏可能拒绝写入或出现进度不一致。Android app 不会调用这个
+实验写入路径。
+
+## 在电脑上获取 Refresh Token
+
+`refreshToken` 任务会在电脑上完成 Steam 凭据登录和 Steam Guard 验证，取得持久 refresh token，方便调试 CM 协议而不依赖 Android 设备上的登录状态。该任务不会请求 depot key。
+
+默认会将敏感信息写到稳定的本机会话文件：
+
+```text
+agent-tmp/steam-desktop-session.env
+```
+
+文件包含 `STEAM_ACCOUNT_NAME`、`STEAM_STEAM_ID64`、`STEAM_REFRESH_TOKEN` 和可用时的 `STEAM_GUARD_DATA`。不要提交、分享或上传该文件；Linux/macOS 上工具会尝试将文件权限限制为当前用户读写。
+
+后续 `depotKey` 和 `achievementUnlock` 命令会自动读取这个会话文件，不需要重复登录：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:depotKey --args="--no-output"
+.\gradlew.bat :tools:steam-cloud-spike:achievementUnlock --args="--confirm-shrug-it-off --no-output"
+.\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off --no-output"
+```
+
+如果环境变量中的代理导致 Steam CM TLS/WebSocket 握手失败，可以对单次命令强制直连：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off --no-output --no-proxy"
+```
+
+`--no-proxy` 会覆盖 `STEAM_PROXY_URL`、`HTTPS_PROXY` 和 `HTTP_PROXY`；命令启动时会输出
+`steamTransport=direct` 或所选代理地址，方便确认实际连接路径。
+
+如果需要重新授权或更换账号，使用 `--reauthenticate`。它会忽略现有 refresh token，重新请求账号密码和 Steam Guard/授权确认，然后覆盖本机会话文件：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:refreshToken --args="--reauthenticate"
+```
+
+也可以通过 `--env-file` 指定其他会话文件；命令行参数和环境变量会覆盖文件中的同名值。
+
+交互式登录：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:refreshToken
+```
+
+也可提前提供账号和密码，Steam Guard 仍会按需提示：
+
+```powershell
+$env:STEAM_USERNAME="your_steam_account"
+$env:STEAM_PASSWORD="your_password"
+.\gradlew.bat :tools:steam-cloud-spike:refreshToken
+```
+
+需要本地代理时：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:refreshToken --args="--proxy-url http://127.0.0.1:7897"
+```
+
+token 默认不会回显到终端。仅在确实需要复制到临时调试环境时才使用：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:refreshToken --args="--print-token --no-output"
+```
 
 ## 获取 Depot Key
 
@@ -146,7 +223,7 @@ $env:HTTPS_PROXY="http://127.0.0.1:7897"
 
 ## 输出
 
-默认输出目录：
+默认云存档输出目录：
 
 ```text
 .tmp/sts-steam-cloud-spike

@@ -49,13 +49,21 @@ object LauncherIconController {
         component: ComponentName,
         state: Int
     ) {
-        if (packageManager.getComponentEnabledSetting(component) == state) {
-            return
+        try {
+            if (packageManager.getComponentEnabledSetting(component) == state) {
+                return
+            }
+            packageManager.setComponentEnabledSetting(
+                component,
+                state,
+                PackageManager.DONT_KILL_APP
+            )
+        } catch (_: IllegalArgumentException) {
+            // The launcher-icon alias is not declared in this package build.
+            // This happens when an APK is repackaged for coexistence (e.g. via
+            // MT Manager) and the repackager drops or mangles the activity-alias
+            // components. Icon switching is best-effort — never let it crash
+            // the app at startup.
         }
-        packageManager.setComponentEnabledSetting(
-            component,
-            state,
-            PackageManager.DONT_KILL_APP
-        )
     }
 }

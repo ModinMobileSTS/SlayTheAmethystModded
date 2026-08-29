@@ -29,27 +29,39 @@ internal object SteamCloudManifestStore {
 
     fun pushSummaryFile(context: Context): File = File(outputDir(context), PUSH_SUMMARY_FILE_NAME)
 
-    fun readSnapshot(context: Context): SteamCloudManifestSnapshot? {
-        val file = manifestFile(context)
-        if (!file.isFile) {
-            return null
+    fun readSnapshot(
+        context: Context,
+        expectedSteamId64: String? = null,
+    ): SteamCloudManifestSnapshot? {
+        return SteamCloudOperationMutex.runExclusive(context) {
+            val file = manifestFile(context)
+            if (!file.isFile) {
+                return@runExclusive null
+            }
+            readSnapshotFile(file)?.takeIf { snapshot ->
+                expectedSteamId64 == null ||
+                    snapshot.steamId64.trim() == expectedSteamId64.trim()
+            }
         }
-        return readSnapshotFile(file)
     }
 
     @Throws(IOException::class)
     fun writeSnapshot(context: Context, snapshot: SteamCloudManifestSnapshot) {
-        val file = manifestFile(context)
-        SteamCloudAtomicFileStore.writeText(file, json.encodeToString(snapshot), Charsets.UTF_8)
+        SteamCloudOperationMutex.runExclusive(context) {
+            val file = manifestFile(context)
+            SteamCloudAtomicFileStore.writeText(file, json.encodeToString(snapshot), Charsets.UTF_8)
+        }
     }
 
     fun clear(context: Context) {
-        val manifest = manifestFile(context)
-        manifest.delete()
-        SteamCloudAtomicFileStore.backupFile(manifest).delete()
-        pullSummaryFile(context).delete()
-        pullDownloadDetailsFile(context).delete()
-        pushSummaryFile(context).delete()
+        SteamCloudOperationMutex.runExclusive(context) {
+            val manifest = manifestFile(context)
+            manifest.delete()
+            SteamCloudAtomicFileStore.backupFile(manifest).delete()
+            pullSummaryFile(context).delete()
+            pullDownloadDetailsFile(context).delete()
+            pushSummaryFile(context).delete()
+        }
     }
 
     private fun readSnapshotFile(file: File): SteamCloudManifestSnapshot? {

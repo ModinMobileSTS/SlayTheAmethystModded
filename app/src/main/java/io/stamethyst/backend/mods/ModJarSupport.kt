@@ -12,9 +12,10 @@ import java.util.ArrayList
 import java.util.zip.ZipFile
 
 object ModJarSupport {
-    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.35"
+    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.38"
     private const val EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION = "1.0.0"
-    private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.3"
+    private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.5"
+    private const val EXPECTED_AMETHYST_FRAME_PROBE_VERSION = "1.0.0"
 
     class ModManifestInfo(
         @JvmField val modId: String,
@@ -149,6 +150,32 @@ object ModJarSupport {
             throw IOException(
                 "Invalid AmethystFloatingTools.jar: version is $version, " +
                     "expected $EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION"
+            )
+        }
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun validateAmethystFrameProbeJar(jarFile: File?) {
+        if (jarFile == null || !jarFile.isFile) {
+            throw IOException("AmethystFrameProbe.jar not found")
+        }
+        ZipFile(jarFile).use { zipFile ->
+            if (zipFile.getEntry("io/stamethyst/frameprobe/AmethystFrameProbe.class") == null) {
+                throw IOException(
+                    "Invalid AmethystFrameProbe.jar: missing entry class"
+                )
+            }
+        }
+        val modId = ModJarManifestParser.normalizeModId(resolveModId(jarFile))
+        if (ModManager.MOD_ID_AMETHYST_FRAME_PROBE != modId) {
+            throw IOException("Invalid AmethystFrameProbe.jar: modid is $modId")
+        }
+        val version = readModManifest(jarFile).version.trim()
+        if (version != EXPECTED_AMETHYST_FRAME_PROBE_VERSION) {
+            throw IOException(
+                "Invalid AmethystFrameProbe.jar: version is $version, "
+                    + "expected $EXPECTED_AMETHYST_FRAME_PROBE_VERSION"
             )
         }
     }

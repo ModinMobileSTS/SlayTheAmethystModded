@@ -19,6 +19,7 @@ from typing import Any
 _ARTHAS_PROMPT = re.compile(rb"\[arthas@([^\]\r\n]+)\]\$ ?")
 _ARTHAS_AGENT_PORT = 9099
 _ARTHAS_BRIDGE_PORT = 8099
+_APP_PACKAGE = "io.stamethyst"
 _ARTHAS_DEVICE_DIR = "/data/data/io.stamethyst/files/arthas"
 _ARTHAS_RESOURCE_DIR = Path(__file__).resolve().parents[1] / "arthas" / "resource"
 _RUNTIME_ROOT = "/data/data/io.stamethyst/files/runtimes/Internal"
@@ -161,7 +162,6 @@ class Daemon:
     def _handle(self, conn: _socket.socket) -> None:
         session: dict[str, Any] = {"serial": None}
         try:
-            conn.settimeout(30)
             reader = conn.makefile("r", encoding="utf-8", newline="\n")
             while self._running:
                 line = reader.readline()
@@ -282,7 +282,11 @@ class Daemon:
         data = bytearray()
         sock.settimeout(min(1.0, timeout))
         while time.monotonic() < deadline:
-            chunk = sock.recv(8192)
+            try:
+                chunk = sock.recv(8192)
+            except _socket.timeout:
+                # recv window elapsed but deadline has not — keep polling
+                continue
             if not chunk:
                 raise RuntimeError("Arthas bridge closed before prompt")
             data.extend(chunk)
@@ -315,6 +319,49 @@ class Daemon:
             sock.close()
             self._remove_forward(serial, local_port)
 
+    def _push_to_app_dir(self, serial: str, local_path: str, remote_path: str, timeout: int = 60) -> None:
+        """Push a file into the app's private data directory via /data/local/tmp/ + run-as.
+
+        Direct `adb push` to /data/data/<pkg>/ is blocked by the shell user's lack of
+        permissions.  The workaround is a two-step transfer:
+          1. Push to the world-writable staging area /data/local/tmp/.
+          2. Use `run-as <pkg>` to mkdir + cp the file into the final destination.
+          3. Remove the staging file.
+        """
+        name = Path(remote_path).name
+        tmp_path = f"/data/local/tmp/{name}"
+        dest_dir = str(Path(remote_path).parent)
+
+        # Step 1 — push to tmp (no permission restrictions here)
+        subprocess.run(
+            self._adb_cmd(serial, "push", local_path, tmp_path),
+            timeout=timeout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        try:
+            # Step 2 — mkdir + cp using the app's own uid
+            shell_cmd = (
+                f"run-as {_APP_PACKAGE} sh -c "
+                f"'mkdir -p {dest_dir} && cp {tmp_path} {remote_path}'"
+            )
+            subprocess.run(
+                self._adb_cmd(serial, "shell", shell_cmd),
+                timeout=30,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        finally:
+            # Step 3 — clean up staging file (best-effort)
+            subprocess.run(
+                self._adb_cmd(serial, "shell", f"rm -f {tmp_path}"),
+                timeout=10,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
     def _push_arthas_resources(self, serial: str) -> None:
         files = (
             "arthas-core.jar",
@@ -327,13 +374,7 @@ class Daemon:
             path = _ARTHAS_RESOURCE_DIR / name
             if not path.is_file():
                 raise RuntimeError(f"missing Arthas resource: {path}")
-            subprocess.run(
-                self._adb_cmd(serial, "push", str(path), f"{_ARTHAS_DEVICE_DIR}/{name}"),
-                timeout=60,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                check=True,
-            )
+            self._push_to_app_dir(serial, str(path), f"{_ARTHAS_DEVICE_DIR}/{name}")
         companions = (
             (_ARTHAS_RESOURCE_DIR / "jdk-companion" / "aarch64" / "libjvm.debuginfo",
              f"{_RUNTIME_ROOT}/lib/aarch64/server/libjvm.debuginfo"),
@@ -345,20 +386,7 @@ class Daemon:
         for local, remote in companions:
             if not local.is_file():
                 continue
-            subprocess.run(
-                self._adb_cmd(serial, "shell", "mkdir", "-p", str(Path(remote).parent)),
-                timeout=10,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
-            subprocess.run(
-                self._adb_cmd(serial, "push", str(local), remote),
-                timeout=60,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                check=True,
-            )
+            self._push_to_app_dir(serial, str(local), remote)
 
     def _recover_arthas(self, serial: str, agent_port: int, arthas_port: int) -> str:
         self._push_arthas_resources(serial)
@@ -373,12 +401,12 @@ class Daemon:
         if response != "OK":
             raise RuntimeError(f"game-probe rejected arthas bridge: {response or 'connection closed'}")
         last_error: Exception | None = None
-        for _ in range(10):
+        for _ in range(20):
             try:
                 return self._probe_arthas(serial, arthas_port)
             except Exception as exc:
                 last_error = exc
-                time.sleep(0.3)
+                time.sleep(0.5)
         raise RuntimeError(f"bridge did not become ready: {last_error}")
 
     def _ensure_arthas(self, serial: str, agent_port: int, arthas_port: int) -> dict[str, Any]:

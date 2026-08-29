@@ -17,24 +17,36 @@ internal object SteamCloudBaselineStore {
     fun baselineFile(context: Context): File =
         File(SteamCloudManifestStore.outputDir(context), BASELINE_FILE_NAME)
 
-    fun readSnapshot(context: Context): SteamCloudSyncBaseline? {
-        val file = baselineFile(context)
-        if (!file.isFile) {
-            return null
+    fun readSnapshot(
+        context: Context,
+        expectedSteamId64: String? = null,
+    ): SteamCloudSyncBaseline? {
+        return SteamCloudOperationMutex.runExclusive(context) {
+            val file = baselineFile(context)
+            if (!file.isFile) {
+                return@runExclusive null
+            }
+            readSnapshotFile(file)?.takeIf { snapshot ->
+                expectedSteamId64 == null ||
+                    snapshot.steamId64.trim() == expectedSteamId64.trim()
+            }
         }
-        return readSnapshotFile(file)
     }
 
     @Throws(IOException::class)
     fun writeSnapshot(context: Context, snapshot: SteamCloudSyncBaseline) {
-        val file = baselineFile(context)
-        SteamCloudAtomicFileStore.writeText(file, json.encodeToString(snapshot), Charsets.UTF_8)
+        SteamCloudOperationMutex.runExclusive(context) {
+            val file = baselineFile(context)
+            SteamCloudAtomicFileStore.writeText(file, json.encodeToString(snapshot), Charsets.UTF_8)
+        }
     }
 
     fun clear(context: Context) {
-        val baseline = baselineFile(context)
-        baseline.delete()
-        SteamCloudAtomicFileStore.backupFile(baseline).delete()
+        SteamCloudOperationMutex.runExclusive(context) {
+            val baseline = baselineFile(context)
+            baseline.delete()
+            SteamCloudAtomicFileStore.backupFile(baseline).delete()
+        }
     }
 
     private fun readSnapshotFile(file: File): SteamCloudSyncBaseline? {

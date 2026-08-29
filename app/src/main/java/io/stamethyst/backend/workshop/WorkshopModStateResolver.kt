@@ -37,35 +37,41 @@ object WorkshopModStateResolver {
         return resolveRecordState(record, remoteUpdatedAtMillis)
     }
 
-    private fun resolveTaskState(
-        status: WorkshopDownloadTaskStatus?,
-        message: String,
-    ): WorkshopResolvedModState? = when (status) {
-        WorkshopDownloadTaskStatus.Queued -> WorkshopResolvedModState(
-            kind = WorkshopResolvedModStateKind.Queued,
-            statusText = message.ifBlank { "等待下载" },
-        )
+    /**
+     * Single source of truth for mapping a persisted task status onto a display state kind.
+     *
+     * Every surface that renders download progress (mod cards, market list, download center)
+     * must go through this so the pages cannot drift apart.
+     */
+    fun resolveTaskKind(status: WorkshopDownloadTaskStatus?): WorkshopResolvedModStateKind? = when (status) {
+        WorkshopDownloadTaskStatus.Queued -> WorkshopResolvedModStateKind.Queued
+        // Pausing keeps reporting as Downloading: the transfer is still draining until the
+        // service actually settles on Paused.
         WorkshopDownloadTaskStatus.Resolving,
         WorkshopDownloadTaskStatus.Downloading,
-        WorkshopDownloadTaskStatus.Pausing -> WorkshopResolvedModState(
-            kind = WorkshopResolvedModStateKind.Downloading,
-            statusText = message.ifBlank { "正在下载" },
-        )
-        WorkshopDownloadTaskStatus.Cancelling -> WorkshopResolvedModState(
-            kind = WorkshopResolvedModStateKind.Cancelling,
-            statusText = message.ifBlank { "正在取消" },
-        )
-        WorkshopDownloadTaskStatus.Paused -> WorkshopResolvedModState(
-            kind = WorkshopResolvedModStateKind.DownloadPaused,
-            statusText = message.ifBlank { "下载已暂停，可继续" },
-        )
-        WorkshopDownloadTaskStatus.Failed -> WorkshopResolvedModState(
-            kind = WorkshopResolvedModStateKind.DownloadFailed,
-            statusText = message.ifBlank { "下载失败" },
-        )
+        WorkshopDownloadTaskStatus.Pausing -> WorkshopResolvedModStateKind.Downloading
+        WorkshopDownloadTaskStatus.Cancelling -> WorkshopResolvedModStateKind.Cancelling
+        WorkshopDownloadTaskStatus.Paused -> WorkshopResolvedModStateKind.DownloadPaused
+        WorkshopDownloadTaskStatus.Failed -> WorkshopResolvedModStateKind.DownloadFailed
         WorkshopDownloadTaskStatus.Completed,
         WorkshopDownloadTaskStatus.Cancelled,
         null -> null
+    }
+
+    private fun resolveTaskState(
+        status: WorkshopDownloadTaskStatus?,
+        message: String,
+    ): WorkshopResolvedModState? {
+        val kind = resolveTaskKind(status) ?: return null
+        val fallbackText = when (kind) {
+            WorkshopResolvedModStateKind.Queued -> "等待下载"
+            WorkshopResolvedModStateKind.Downloading -> "正在下载"
+            WorkshopResolvedModStateKind.Cancelling -> "正在取消"
+            WorkshopResolvedModStateKind.DownloadPaused -> "下载已暂停，可继续"
+            WorkshopResolvedModStateKind.DownloadFailed -> "下载失败"
+            else -> ""
+        }
+        return WorkshopResolvedModState(kind = kind, statusText = message.ifBlank { fallbackText })
     }
 
     private fun WorkshopDownloadTaskStatus?.shouldOverrideUpdateAvailableRecord(): Boolean = when (this) {

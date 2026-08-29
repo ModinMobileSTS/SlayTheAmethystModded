@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,20 +37,29 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.steamcloud.SteamCloudLoginChallengeKind
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.AccountCircle
+import io.stamethyst.ui.icon.Lock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherSteamCloudLoginScreen(
     viewModel: SettingsScreenViewModel,
     modifier: Modifier = Modifier,
-    challengeRoute: Route = Route.SteamCloudGuard,
+    challengeRoute: Route = Route.SteamCloudLoginMethod,
+    guardRoute: Route = Route.SteamCloudGuard,
+    loginRoute: Route = Route.SteamCloudLogin,
     onLoginCompleted: (() -> Unit)? = null,
 ) {
     val activity = requireNotNull(LocalActivity.current)
@@ -59,11 +69,30 @@ fun LauncherSteamCloudLoginScreen(
     var username by rememberSaveable { mutableStateOf(uiState.steamCloudAccountName) }
     var password by rememberSaveable { mutableStateOf("") }
     var loginAttempted by rememberSaveable { mutableStateOf(false) }
+    var savedCredentialsLoaded by rememberSaveable { mutableStateOf(false) }
     val canNavigateBack = !uiState.busy || loginChallenge != null
     val loginLoading = uiState.busy && loginChallenge == null
 
     LaunchedEffect(activity) {
         viewModel.bind(activity)
+        val savedCredentials = withContext(Dispatchers.IO) {
+            viewModel.readSavedSteamCloudLoginCredentials(activity)
+        }
+        if (!savedCredentialsLoaded) {
+            if (savedCredentials.username.isNotBlank()) {
+                username = savedCredentials.username
+            }
+            password = savedCredentials.password
+            savedCredentialsLoaded = true
+        }
+    }
+
+    LaunchedEffect(username, password, savedCredentialsLoaded) {
+        if (!savedCredentialsLoaded) {
+            return@LaunchedEffect
+        }
+        delay(250L)
+        viewModel.saveSteamCloudLoginCredentials(activity, username, password)
     }
 
     LaunchedEffect(uiState.steamCloudAccountName) {
@@ -96,8 +125,14 @@ fun LauncherSteamCloudLoginScreen(
     }
 
     LaunchedEffect(loginChallenge?.kind, loginChallenge?.previousCodeWasIncorrect, loginChallenge?.emailHint) {
-        if (loginChallenge != null) {
-            navigator.push(challengeRoute)
+        if (loginChallenge != null && navigator.backStack.lastOrNull() == loginRoute) {
+            navigator.push(
+                if (loginChallenge.kind == SteamCloudLoginChallengeKind.METHOD_SELECTION) {
+                    challengeRoute
+                } else {
+                    guardRoute
+                }
+            )
         }
     }
 
@@ -151,6 +186,13 @@ fun LauncherSteamCloudLoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !uiState.busy && loginChallenge == null,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AccountCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
                     label = { Text(stringResource(R.string.settings_steam_cloud_username_label)) }
                 )
                 Spacer(modifier = Modifier.size(10.dp))
@@ -160,6 +202,14 @@ fun LauncherSteamCloudLoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !uiState.busy && loginChallenge == null,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     visualTransformation = PasswordVisualTransformation(),
                     label = { Text(stringResource(R.string.settings_steam_cloud_password_label)) }
                 )
@@ -193,5 +243,3 @@ fun LauncherSteamCloudLoginScreen(
         }
     }
 }
-
-

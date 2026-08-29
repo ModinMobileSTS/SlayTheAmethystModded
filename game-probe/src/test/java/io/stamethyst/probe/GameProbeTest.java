@@ -7,6 +7,8 @@ import java.lang.instrument.ClassDefinition;
 import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.util.jar.JarFile;
+import java.util.Properties;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.Assert.*;
 
@@ -46,6 +48,41 @@ public class GameProbeTest {
         GameProbe.premain("", inst);
 
         assertNotNull(GameProbe.getConnectionManager());
+    }
+
+    @Test
+    public void offlineArthasConfigIsExplicitAndBounded() {
+        Properties props = new Properties();
+        OfflineArthasController.Config disabled = OfflineArthasController.Config.from(props);
+        assertFalse(disabled.enabled);
+
+        props.setProperty("arthas", "true");
+        props.setProperty("arthasPort", "99999");
+        props.setProperty("arthasDelaySeconds", "-1");
+        OfflineArthasController.Config enabled = OfflineArthasController.Config.from(props);
+        assertTrue(enabled.enabled);
+        assertEquals(8099, enabled.port);
+        assertEquals(15, enabled.delaySeconds);
+    }
+
+    @Test
+    public void promptScannerFindsCompleteArthasPrompt() {
+        byte[] prompt = OfflineArthasController.RawShell.findPrompt(
+            "welcome\n[arthas@123]$ ".getBytes(StandardCharsets.US_ASCII));
+        assertArrayEquals("[arthas@123]$ ".getBytes(StandardCharsets.US_ASCII), prompt);
+        assertNull(OfflineArthasController.RawShell.findPrompt(
+            "[arthas@123]$".getBytes(StandardCharsets.US_ASCII)));
+    }
+
+    @Test
+    public void gameClassLoaderCaptureRejectsSystemAndProbeClasses() {
+        assertFalse(GameProbe.isCandidateGameClassLoader(
+            ClassLoader.getSystemClassLoader(), "com/megacrit/cardcrawl/core/CardCrawlGame"));
+        ClassLoader child = new ClassLoader(ClassLoader.getSystemClassLoader()) {};
+        assertFalse(GameProbe.isCandidateGameClassLoader(child, "io/stamethyst/arthas/Bridge"));
+        assertFalse(GameProbe.isCandidateGameClassLoader(child, "org/example/Unrelated"));
+        assertTrue(GameProbe.isCandidateGameClassLoader(
+            child, "com/megacrit/cardcrawl/core/CardCrawlGame"));
     }
 
     private static class FakeInstrumentation implements Instrumentation {

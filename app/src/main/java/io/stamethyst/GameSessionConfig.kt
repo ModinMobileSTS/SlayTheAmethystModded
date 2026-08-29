@@ -10,6 +10,7 @@ import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RenderSurfaceBackend
@@ -30,12 +31,14 @@ internal data class GameSessionConfig(
     val autoplay: Boolean,
     val autoplaySaveMode: AutoplaySaveMode,
     val autoplayMode: AutoplayMode,
+    val autoplaySingleRoomBenchMode: Boolean,
     val autoplaySingleRoomSpecPath: String,
     val autoplayChoiceDelayMs: Long,
     val cardObtainEffectOwnershipCompatEnabled: Boolean,
     val specialKeyInputMode: SpecialKeyInputMode,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
+    val performanceDeepDiagnostics: Boolean,
     val mirrorJvmLogsToLogcat: Boolean,
     val touchMouseInteractionMode: TouchMouseInteractionMode,
     val touchDoubleClickAsRightClick: Boolean,
@@ -103,6 +106,9 @@ internal data class GameSessionConfig(
                 autoplayMode = AutoplayMode.fromPersistedValue(
                     intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_MODE)
                 ),
+                autoplaySingleRoomBenchMode = intent.getBooleanExtra(
+                    StsGameActivity.EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, false
+                ),
                 autoplaySingleRoomSpecPath =
                     intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC)
                         .orEmpty(),
@@ -118,6 +124,11 @@ internal data class GameSessionConfig(
                 showFloatingMouseWindow =
                     specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
+                performanceDeepDiagnostics = (if (intent.hasExtra(StsGameActivity.EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS)) {
+                    intent.getBooleanExtra(StsGameActivity.EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS, false)
+                } else {
+                    LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+                }) && ArthasResourcePackService.isInstalled(context),
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),
                 touchDoubleClickAsRightClick = LauncherConfig.readTouchDoubleClickAsRightClick(context),

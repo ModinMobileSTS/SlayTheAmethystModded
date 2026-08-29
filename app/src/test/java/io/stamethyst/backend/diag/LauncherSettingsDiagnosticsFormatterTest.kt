@@ -10,14 +10,14 @@ class LauncherSettingsDiagnosticsFormatterTest {
             LauncherSettingsDiagnosticsSnapshot(
                 sections = listOf(
                     LauncherSettingsDiagnosticsSection(
-                        title = "General",
+                        title = "Launcher / Appearance",
                         entries = listOf(
                             "player.name" to "player\nname",
                             "theme.mode" to "FOLLOW_SYSTEM (follow_system)"
                         )
                     ),
                     LauncherSettingsDiagnosticsSection(
-                        title = "MobileGlues",
+                        title = "Developer / MobileGlues",
                         entries = listOf(
                             "anglePolicy" to "尽量开启 (Prefer Enabled) (1)"
                         )
@@ -26,11 +26,11 @@ class LauncherSettingsDiagnosticsFormatterTest {
             )
         )
 
-        assertTrue(text.contains("launcherSettings.formatVersion=1"))
-        assertTrue(text.contains("[General]"))
+        assertTrue(text.contains("launcherSettings.formatVersion=2"))
+        assertTrue(text.contains("[Launcher / Appearance]"))
         assertTrue(text.contains("player.name=player name"))
         assertTrue(text.contains("theme.mode=FOLLOW_SYSTEM (follow_system)"))
-        assertTrue(text.contains("[MobileGlues]"))
+        assertTrue(text.contains("[Developer / MobileGlues]"))
         assertTrue(text.contains("anglePolicy=尽量开启 (Prefer Enabled) (1)"))
     }
 }

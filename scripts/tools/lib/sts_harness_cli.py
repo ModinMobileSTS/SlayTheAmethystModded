@@ -229,6 +229,37 @@ def create_parser() -> argparse.ArgumentParser:
         default="",
         help="One-shot BaseMod DevConsole command (e.g. 'gold 999'). If omitted, enters interactive REPL mode.",
     )
+    parser.add_argument(
+        "-UpdateBaseline", "--update-baseline",
+        dest="perf_bench_update_baseline",
+        action="store_true",
+        help="Overwrite the perf-bench baseline file with this run's metrics.",
+    )
+    parser.add_argument(
+        "-PerfBenchBaseline", "--perf-bench-baseline",
+        dest="perf_bench_baseline",
+        default="",
+        help="Path to the perf-bench baseline JSON file.",
+    )
+    parser.add_argument(
+        "-PerfBenchEnableProfiler", "--perf-bench-enable-profiler",
+        dest="perf_bench_enable_profiler",
+        action="store_true",
+        help="Enable async-profiler flamegraph when regressions are detected (opt-in).",
+    )
+    parser.add_argument(
+        "-PerfBenchProfilerSeconds", "--perf-bench-profiler-seconds",
+        dest="perf_bench_profiler_seconds",
+        type=int,
+        default=30,
+        help="CPU profiling duration in seconds when regressions are found (default 30).",
+    )
+    parser.add_argument(
+        "-PerfBenchCharacter", "--perf-bench-character",
+        dest="perf_bench_character",
+        default="",
+        help="Autoplay character used by perf-bench (default IRONCLAD).",
+    )
     return parser
 
 
@@ -282,5 +313,10 @@ def main(argv: list[str] | None = None) -> int:
         cloud_sync_source_file=args.cloud_sync_source_file,
         cloud_sync_pull_interval_seconds=args.cloud_sync_pull_interval_seconds,
         connector_port=args.connector_port,
+        perf_bench_update_baseline=getattr(args, "perf_bench_update_baseline", False),
+        perf_bench_baseline=getattr(args, "perf_bench_baseline", ""),
+        perf_bench_enable_profiler=getattr(args, "perf_bench_enable_profiler", False),
+        perf_bench_profiler_seconds=getattr(args, "perf_bench_profiler_seconds", 30),
+        perf_bench_character=getattr(args, "perf_bench_character", ""),
     )
     return Harness(options).run()

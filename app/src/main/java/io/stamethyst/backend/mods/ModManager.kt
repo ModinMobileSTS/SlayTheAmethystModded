@@ -2,6 +2,7 @@ package io.stamethyst.backend.mods
 
 import android.content.Context
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -26,6 +27,7 @@ object ModManager {
     const val MOD_ID_AMETHYST_RUNTIME_COMPAT = "amethystruntimecompat"
     const val MOD_ID_AMETHYST_FLOATING_TOOLS = "amethystfloatingtools"
     const val MOD_ID_RAM_SAVER = "ramsaver"
+    const val MOD_ID_AMETHYST_FRAME_PROBE = "amethystframeprobe"
     const val MOD_ID_TEXTURE_REPLACER = "texturereplacer"
     const val OPTIONAL_MOD_PRIORITY_MIN = 0
     const val OPTIONAL_MOD_PRIORITY_MAX = 10
@@ -36,7 +38,8 @@ object ModManager {
             MOD_ID_STSLIB,
             MOD_ID_AMETHYST_RUNTIME_COMPAT,
             MOD_ID_AMETHYST_FLOATING_TOOLS,
-            MOD_ID_RAM_SAVER
+            MOD_ID_RAM_SAVER,
+            MOD_ID_AMETHYST_FRAME_PROBE
         )
     )
 
@@ -183,6 +186,9 @@ object ModManager {
         if (MOD_ID_RAM_SAVER == normalized) {
             return hasBundledAsset(context, "components/mods/RamSaver.jar")
         }
+        if (MOD_ID_AMETHYST_FRAME_PROBE == normalized) {
+            return hasBundledAsset(context, "components/mods/AmethystFrameProbe.jar")
+        }
         return false
     }
 
@@ -203,6 +209,9 @@ object ModManager {
         }
         if (MOD_ID_RAM_SAVER == normalized) {
             return RuntimePaths.importedRamSaverJar(context)
+        }
+        if (MOD_ID_AMETHYST_FRAME_PROBE == normalized) {
+            return RuntimePaths.importedAmethystFrameProbeJar(context)
         }
         OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
         return File(RuntimePaths.optionalModsLibraryDir(context), "${sanitizeFileName(normalized)}.jar")
@@ -541,6 +550,14 @@ object ModManager {
                 RuntimePaths.importedRamSaverJar(context)
             )
         )
+        result.add(
+            buildRequiredEntry(
+                context,
+                MOD_ID_AMETHYST_FRAME_PROBE,
+                "Amethyst Frame Probe",
+                RuntimePaths.importedAmethystFrameProbeJar(context)
+            )
+        )
 
         val optionalModFiles = findOptionalModFiles(context)
         val rawSelection = readEnabledOptionalModKeysSafely(context)
@@ -634,6 +651,19 @@ object ModManager {
                 )
             )
         }
+        // Frame Probe is only launched when deep performance diagnostics is active.
+        // Its SpireInitializer is inert without the frame ring, so keeping it out of the
+        // launch list avoids loading the mod, installing its hooks, and subscribing to
+        // render/update callbacks on every normal launch.
+        if (isFrameProbeEnabled(context)) {
+            requiredEntries.add(
+                resolveRequiredLaunchModEntry(
+                    RuntimePaths.importedAmethystFrameProbeJar(context),
+                    MOD_ID_AMETHYST_FRAME_PROBE,
+                    "AmethystFrameProbe.jar"
+                )
+            )
+        }
 
         val optionalSelection = resolveOptionalLaunchSelection(context)
         val launchModFiles = ArrayList<File>()
@@ -705,6 +735,21 @@ object ModManager {
         }
     }
 
+    /**
+     * True when the Amethyst Frame Probe mod should be loaded into the MTS launch.
+     *
+     * This mirrors the exact condition in [io.stamethyst.backend.launch.StsLaunchSpec.buildArgs]
+     * that sets `-Damethyst.gdx.frame_ring=true`: deep performance diagnostics must be enabled
+     * and the arthas resource pack must be installed (the ring is only meaningful with it).
+     * When either is missing the mod is not enabled, so its SpireInitializer, @SpirePatch2 hooks,
+     * and render/update subscriptions never run.
+     */
+    @JvmStatic
+    fun isFrameProbeEnabled(context: Context): Boolean {
+        return LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context) &&
+            ArthasResourcePackService.isInstalled(context)
+    }
+
     @JvmStatic
     @Throws(IOException::class)
     fun listMtsLaunchModFiles(context: Context): List<File> {
@@ -740,6 +785,14 @@ object ModManager {
                 resolveRequiredLaunchModFile(
                     RuntimePaths.importedRamSaverJar(context),
                     "RamSaver.jar"
+                )
+            )
+        }
+        if (isFrameProbeEnabled(context)) {
+            launchModFiles.add(
+                resolveRequiredLaunchModFile(
+                    RuntimePaths.importedAmethystFrameProbeJar(context),
+                    "AmethystFrameProbe.jar"
                 )
             )
         }
@@ -787,6 +840,8 @@ object ModManager {
         val enabled = when (expectedModId) {
             MOD_ID_RAM_SAVER ->
                 available && LauncherConfig.isRamSaverEnabled(context)
+            MOD_ID_AMETHYST_FRAME_PROBE ->
+                available && isFrameProbeEnabled(context)
             MOD_ID_AMETHYST_FLOATING_TOOLS ->
                 available && LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD
             else ->

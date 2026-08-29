@@ -4,6 +4,7 @@ import posixpath
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,7 @@ COMMANDS = (
     "startup-cache-profile",
     "console",
     "steam-cloud-sync",
+    "perf-bench",
 )
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
 AGENT_COMMANDS = ("attach", "detach", "list", "status")
@@ -229,6 +231,14 @@ class HarnessOptions:
     cloud_sync_payload: str = ""
     cloud_sync_source_file: str = ""
     cloud_sync_pull_interval_seconds: int = 10
+    perf_bench_baseline: str = ""
+    perf_bench_update_baseline: bool = False
+    perf_bench_character: str = ""
+    perf_bench_monster: str = ""
+    perf_bench_cards: str = ""
+    autoplay_single_room_bench_mode: bool = False
+    perf_bench_enable_profiler: bool = False
+    perf_bench_profiler_seconds: int = 30
     connector_port: int | None = None
 
 
@@ -270,6 +280,8 @@ class Harness:
         return (self.repo_root / path).resolve()
 
     def default_out_dir(self) -> Path:
+        if self.options.command == "perf-bench":
+            return self.repo_root / "agent-tmp" / f"perf-bench-{file_timestamp()}"
         return self.repo_root / "debug-artifacts" / "harness" / f"{self.options.command}-{file_timestamp()}"
 
     def resolved_out_dir(self) -> Path:
@@ -312,9 +324,16 @@ class Harness:
     def connect_connector(self) -> None:
         from scripts.tools.connector.client import ConnectorClient, resolve_connector_port
 
-        port = resolve_connector_port(self.options.connector_port)
+        explicit_port = self.options.connector_port
+        env_port = __import__("os").environ.get("STS_CONNECTOR_PORT", "").strip()
+        if explicit_port is not None or env_port:
+            port = resolve_connector_port(explicit_port)
+            auto_start = False
+        else:
+            port = 19876
+            auto_start = True
         self.connector_port = port
-        client = ConnectorClient(port=port, auto_start=False)
+        client = ConnectorClient(port=port, auto_start=auto_start)
         client.connect()
         self.connector = client
         status = None
@@ -863,7 +882,6 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             "privatePatchMarker": self.remote_app_path_state("files/mts_patch_cache/.mts_patch_cache"),
             "privatePatchJar": self.remote_app_path_state("files/mts_patch_cache/desktop-1.0-modded.jar"),
             "privatePackageDir": self.remote_app_path_state("files/mts_patch_cache/package"),
-            "loadoutScanCacheDir": self.remote_app_path_state("files/mts_patch_cache/loadout-scan-cache"),
         }
 
     def build_single_room_spec_text(self) -> str:
@@ -1468,7 +1486,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         if command in ("doctor", "install", "start", "stop", "logs", "screenshot", "status",
                        "mods", "set-mods", "smoke", "decompil", "agent-attach", "agent-detach",
                        "agent-list", "agent-status", "play", "hotreload", "perf", "single-room", "exit",
-                       "startup-cache-profile", "console"):
+                       "startup-cache-profile", "console", "perf-bench"):
             if command == "doctor":
                 from scripts.tools.harness.doctor import run_doctor
                 run_doctor(ctx)
@@ -1558,6 +1576,9 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             elif command == "startup-cache-profile":
                 from scripts.tools.harness.startup_cache import run_startup_cache_profile
                 return run_startup_cache_profile(ctx, resolved_out_dir)
+            elif command == "perf-bench":
+                from scripts.tools.harness.perf_bench import run_perf_bench
+                return run_perf_bench(ctx, resolved_out_dir)
 
         return 0
 
@@ -1815,6 +1836,11 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             exit_code = 1
             self.result["error"] = {"type": f"{exc.__class__.__module__}.{exc.__class__.__name__}", "message": str(exc)}
             self.set_result_success(False, "ERROR", str(exc))
+            print(
+                f"Harness error [{exc.__class__.__name__}]: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
         finally:
             self.write_result(result_path)
         return exit_code

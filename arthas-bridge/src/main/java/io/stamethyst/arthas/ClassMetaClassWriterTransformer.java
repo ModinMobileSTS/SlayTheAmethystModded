@@ -1,6 +1,6 @@
 package io.stamethyst.arthas;
 
-import org.objectweb.asm.*;
+import com.alibaba.deps.org.objectweb.asm.*;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
@@ -13,9 +13,14 @@ public class ClassMetaClassWriterTransformer implements ClassFileTransformer {
     public byte[] transform(ClassLoader loader, String internalName,
                             Class<?> classBeingRedefined,
                             ProtectionDomain pd, byte[] classfileBuffer) {
-        if (!TARGET.equals(internalName)) {
+        String name = internalName;
+        if (name == null && classBeingRedefined != null) {
+            name = classBeingRedefined.getName();
+        }
+        if (name == null || !TARGET.equals(name.replace('.', '/'))) {
             return null;
         }
+        ArthasCommandBridge.log("transforming " + TARGET + " loader=" + loader);
         ClassReader cr = new ClassReader(classfileBuffer);
         ClassWriter cw = new ClassWriter(cr, 0);
         cr.accept(new PatchVisitor(cw), 0);
@@ -58,12 +63,16 @@ public class ClassMetaClassWriterTransformer implements ClassFileTransformer {
                 mv.visitInsn(Opcodes.POP);
                 mv.visitInsn(Opcodes.POP);
 
+                mv.visitVarInsn(Opcodes.ALOAD, 0);
+                mv.visitFieldInsn(Opcodes.GETFIELD,
+                    "com/alibaba/bytekit/asm/ClassMetaClassWriter",
+                    "classLoader", "Ljava/lang/ClassLoader;");
                 mv.visitVarInsn(Opcodes.ALOAD, 1);
                 mv.visitVarInsn(Opcodes.ALOAD, 2);
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC,
                     "io/stamethyst/arthas/CommonSuperBridge",
                     "resolveCommonSuper",
-                    "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                    "(Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
                     false);
                 mv.visitInsn(Opcodes.DUP);
                 mv.visitJumpInsn(Opcodes.IFNONNULL, keepResult);

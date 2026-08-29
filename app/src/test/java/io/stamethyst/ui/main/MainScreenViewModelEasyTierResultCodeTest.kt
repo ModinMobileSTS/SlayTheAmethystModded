@@ -103,6 +103,28 @@ class MainScreenViewModelEasyTierResultCodeTest {
     }
 
     @Test
+    fun hasEasyTierRoomOwnerCredential_requiresEitherOwnerOrSessionToken() {
+        assertFalse(
+            hasEasyTierRoomOwnerCredential(
+                ownerToken = "",
+                sessionToken = "",
+            )
+        )
+        assertTrue(
+            hasEasyTierRoomOwnerCredential(
+                ownerToken = "owner-token",
+                sessionToken = "",
+            )
+        )
+        assertTrue(
+            hasEasyTierRoomOwnerCredential(
+                ownerToken = "",
+                sessionToken = "session-token",
+            )
+        )
+    }
+
+    @Test
     fun shouldPreserveEasyTierRoomSelection_keepsActiveRoomOnNotFoundButCleansInactiveRoom() {
         assertTrue(
             shouldPreserveEasyTierRoomSelection(

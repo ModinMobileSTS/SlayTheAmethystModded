@@ -45,6 +45,9 @@ class OkHttpSteamCmSession(
     private val client: OkHttpClient = newDefaultOkHttpClient(),
     private val machineName: String = DEFAULT_MACHINE_NAME,
     private val machineId: ByteArray = defaultSteamMachineId(),
+    private val webSocketFactory: SteamWebSocketFactory = SteamWebSocketFactory { request, listener ->
+        client.newWebSocket(request, listener)
+    },
 ) : SteamCmSession {
     init {
         activeSessions += this
@@ -184,7 +187,7 @@ class OkHttpSteamCmSession(
             }
         }
 
-        webSocket = client.newWebSocket(request, listener)
+        webSocket = webSocketFactory.newWebSocket(request, listener)
         withTimeout(REQUEST_TIMEOUT_MS) { deferred.await() }
     }
 
@@ -378,6 +381,86 @@ class OkHttpSteamCmSession(
             pendingRequests.remove(sourceJobId)
             throw error
         }
+    }
+
+    override suspend fun <T : MessageLite> sendClientMessage(
+        emsg: Int,
+        request: MessageLite,
+        responseEmsg: Int,
+        parser: Parser<T>,
+    ): T = sendClientMessage(emsg, request, responseEmsg, parser, null)
+
+    override suspend fun <T : MessageLite> sendClientMessage(
+        emsg: Int,
+        request: MessageLite,
+        responseEmsg: Int,
+        parser: Parser<T>,
+        routingAppId: UInt?,
+    ): T = retryRecoverableRequest {
+        val session = currentSession.value
+            ?: throw SteamProtocolException("Steam CM session is not logged on")
+        val sourceJobId = nextJobId.getAndIncrement()
+        val response = CompletableDeferred<T>()
+        pendingRequests[sourceJobId] = PendingRequest(
+            methodName = "EMsg.$emsg",
+            expectedEmsg = responseEmsg,
+            parser = parser,
+            deferred = response,
+        )
+        val header = CMsgProtoBufHeader.newBuilder()
+            .setClientSessionid(session.sessionId)
+            .setSteamid(session.steamId)
+            .setJobidSource(sourceJobId)
+            .apply { routingAppId?.let { setRoutingAppid(it.toInt()) } }
+            .build()
+        val packet = SteamPacketCodec.encode(
+            emsg = emsg,
+            header = header,
+            body = request,
+        )
+        if (webSocket?.send(packet.toByteString()) != true) {
+            pendingRequests.remove(sourceJobId)
+            throw SteamProtocolException("Failed to send EMsg.$emsg")
+        }
+        try {
+            withTimeout(REQUEST_TIMEOUT_MS) { response.await() }
+        } catch (error: Throwable) {
+            pendingRequests.remove(sourceJobId)
+            throw error
+        }
+    }
+
+    override suspend fun sendClientMessage(emsg: Int, request: MessageLite) {
+        val session = currentSession.value
+            ?: throw SteamProtocolException("Steam CM session is not logged on")
+        val packet = SteamPacketCodec.encode(
+            emsg = emsg,
+            header = CMsgProtoBufHeader.newBuilder()
+                .setClientSessionid(session.sessionId)
+                .setSteamid(session.steamId)
+                .setJobidSource(-1L)
+                .setJobidTarget(-1L)
+                .build(),
+            body = request,
+        )
+        check(webSocket?.send(packet.toByteString()) == true) { "Failed to send EMsg.$emsg" }
+    }
+
+    override suspend fun sendClientMessage(emsg: Int, request: MessageLite, routingAppId: UInt) {
+        val session = currentSession.value
+            ?: throw SteamProtocolException("Steam CM session is not logged on")
+        val packet = SteamPacketCodec.encode(
+            emsg = emsg,
+            header = CMsgProtoBufHeader.newBuilder()
+                .setClientSessionid(session.sessionId)
+                .setSteamid(session.steamId)
+                .setJobidSource(-1L)
+                .setJobidTarget(-1L)
+                .setRoutingAppid(routingAppId.toInt())
+                .build(),
+            body = request,
+        )
+        check(webSocket?.send(packet.toByteString()) == true) { "Failed to send EMsg.$emsg (routing_appid=$routingAppId)" }
     }
 
     override suspend fun requestDepotDecryptionKey(appId: UInt, depotId: UInt): ByteArray = retryRecoverableRequest {

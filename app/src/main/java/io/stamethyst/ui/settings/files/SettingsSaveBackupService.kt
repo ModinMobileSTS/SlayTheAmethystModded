@@ -79,7 +79,8 @@ internal object SettingsSaveBackupService {
             sink.add(root)
             return
         }
-        val children = root.listFiles() ?: return
+        val children = root.listFiles()
+            ?: throw IOException("Failed to enumerate save backup directory: ${root.absolutePath}")
         for (child in children) {
             collectRegularFiles(child, sink)
         }
@@ -92,7 +93,8 @@ internal object SettingsSaveBackupService {
         if (root.isFile) {
             return true
         }
-        val children = root.listFiles() ?: return false
+        val children = root.listFiles()
+            ?: throw IOException("Failed to enumerate save backup directory: ${root.absolutePath}")
         for (child in children) {
             if (containsRegularFiles(child)) {
                 return true
@@ -252,5 +254,4 @@ internal object SettingsSaveBackupService {
         zipOutput.closeEntry()
     }
 }
-
 

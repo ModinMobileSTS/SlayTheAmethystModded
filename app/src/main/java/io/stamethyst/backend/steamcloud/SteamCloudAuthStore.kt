@@ -1,35 +1,55 @@
 package io.stamethyst.backend.steamcloud
 
 import android.content.Context
-import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
+import java.io.IOException
+import java.security.GeneralSecurityException
+import java.security.KeyStore
+import java.util.UUID
+import java.util.concurrent.CancellationException
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 internal object SteamCloudAuthStore {
-    private const val PREFS_NAME = "steam_cloud_auth"
+    private const val LEGACY_PREFS_NAME = "steam_cloud_auth"
+    private const val AUTH_STATE_FILE_NAME = "steam-cloud-auth-state.v1"
+    private const val AUTH_STATE_MAGIC = "STAMETHYST_STEAM_AUTH_V1"
+    private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
+    private const val KEYSTORE_ALIAS = "io.stamethyst.steamcloud.auth.v1"
+    private const val GCM_TAG_LENGTH_BITS = 128
     private const val TAG = "SteamCloudAuthStore"
-    private const val KEY_ACCOUNT_NAME = "account_name"
-    private const val KEY_REFRESH_TOKEN = "refresh_token"
-    private const val KEY_GUARD_DATA = "guard_data"
-    private const val KEY_STEAM_ID_64 = "steam_id_64"
-    private const val KEY_PERSONA_NAME = "persona_name"
-    private const val KEY_AVATAR_URL = "avatar_url"
-    private const val KEY_LAST_AUTH_AT_MS = "last_auth_at_ms"
-    private const val KEY_LAST_MANIFEST_AT_MS = "last_manifest_at_ms"
-    private const val KEY_LAST_PULL_AT_MS = "last_pull_at_ms"
-    private const val KEY_LAST_PUSH_AT_MS = "last_push_at_ms"
-    private const val KEY_LAST_ERROR = "last_error"
-    private const val KEY_WEB_ACCESS_TOKEN = "web_access_token"
-    private const val KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS = "web_access_token_expires_at_ms"
-    private const val KEY_WEB_ACCESS_TOKEN_STEAM_ID_64 = "web_access_token_steam_id_64"
-    private const val KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT = "web_access_token_refresh_fingerprint"
+    private const val AUTH_STATE_READ_ATTEMPTS = 3
+    private const val AUTH_STATE_READ_RETRY_DELAY_MS = 120L
+
+    private val authenticatedData = AUTH_STATE_MAGIC.toByteArray(Charsets.UTF_8)
+    private val json = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
 
     data class SavedAuthMaterial(
         val accountName: String,
         val refreshToken: String,
         val guardData: String,
         val steamId64: String,
+        val credentialRevision: Long,
+    )
+
+    data class SavedLoginCredentials(
+        val username: String,
+        val password: String,
     )
 
     data class AuthSnapshot(
@@ -51,76 +71,227 @@ internal object SteamCloudAuthStore {
                 isValidSteamId64(steamId64)
     }
 
+    data class AuthSnapshotRead(
+        val snapshot: AuthSnapshot,
+        val readFailed: Boolean,
+    )
+
     data class CachedWebAccessToken(
         val accessToken: String,
         val expiresAtMs: Long,
     )
 
-    fun readAuthMaterial(context: Context): SavedAuthMaterial? {
-        return readSafely(context, "read Steam Cloud auth material") { prefs ->
-            val accountName = prefs.getString(KEY_ACCOUNT_NAME, null)?.trim().orEmpty()
-            val refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)?.trim().orEmpty()
-            val steamId64 = prefs.getString(KEY_STEAM_ID_64, null)?.trim().orEmpty()
-            if (accountName.isBlank() || refreshToken.isBlank() || !isValidSteamId64(steamId64)) {
-                return@readSafely null
-            }
-            SavedAuthMaterial(
-                accountName = accountName,
-                refreshToken = refreshToken,
-                guardData = prefs.getString(KEY_GUARD_DATA, null)?.trim().orEmpty(),
-                steamId64 = steamId64,
+    @Serializable
+    private data class StoredState(
+        val schemaVersion: Int = 1,
+        val revision: Long = 0L,
+        val credentialRevision: Long = 0L,
+        val activeLoginAttemptId: String = "",
+        val committedLoginAttemptId: String = "",
+        val loginUsername: String = "",
+        val loginPassword: String = "",
+        val accountName: String = "",
+        val refreshToken: String = "",
+        val guardData: String = "",
+        val steamId64: String = "",
+        val personaName: String = "",
+        val avatarUrl: String = "",
+        val lastAuthAtMs: Long? = null,
+        val lastManifestAtMs: Long? = null,
+        val lastPullAtMs: Long? = null,
+        val lastPushAtMs: Long? = null,
+        val lastError: String = "",
+        val webAccessToken: String = "",
+        val webAccessTokenExpiresAtMs: Long = 0L,
+        val webAccessTokenSteamId64: String = "",
+        val webAccessTokenRefreshFingerprint: String = "",
+    )
+
+    fun readAuthMaterial(context: Context): SavedAuthMaterial? =
+        readStateOrNull(context)?.toAuthMaterialOrNull()
+
+    fun readSavedLoginCredentials(context: Context): SavedLoginCredentials {
+        val state = readStateOrNull(context) ?: return SavedLoginCredentials("", "")
+        return SavedLoginCredentials(
+            username = state.loginUsername.trim(),
+            password = state.loginPassword,
+        )
+    }
+
+    fun saveLoginCredentials(
+        context: Context,
+        username: String,
+        password: String,
+    ) {
+        mutateState(context) { state ->
+            state.copy(
+                loginUsername = username.trim(),
+                loginPassword = password,
             )
         }
     }
 
-    fun readSnapshot(context: Context): AuthSnapshot {
-        return readSafely(context, "read Steam Cloud auth snapshot") { prefs ->
-            val refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)?.trim().orEmpty()
-            val guardData = prefs.getString(KEY_GUARD_DATA, null)?.trim().orEmpty()
-            AuthSnapshot(
-                accountName = prefs.getString(KEY_ACCOUNT_NAME, null)?.trim().orEmpty(),
-                refreshTokenConfigured = refreshToken.isNotBlank(),
-                guardDataConfigured = guardData.isNotBlank(),
-                steamId64 = prefs.getString(KEY_STEAM_ID_64, null)?.trim().orEmpty(),
-                personaName = prefs.getString(KEY_PERSONA_NAME, null)?.trim().orEmpty(),
-                avatarUrl = prefs.getString(KEY_AVATAR_URL, null)?.trim().orEmpty(),
-                lastAuthAtMs = prefs.optionalLong(KEY_LAST_AUTH_AT_MS),
-                lastManifestAtMs = prefs.optionalLong(KEY_LAST_MANIFEST_AT_MS),
-                lastPullAtMs = prefs.optionalLong(KEY_LAST_PULL_AT_MS),
-                lastPushAtMs = prefs.optionalLong(KEY_LAST_PUSH_AT_MS),
-                lastError = prefs.getString(KEY_LAST_ERROR, null)?.trim().orEmpty(),
+    fun readSnapshot(context: Context): AuthSnapshot =
+        readSnapshotWithStatus(context).snapshot
+
+    /**
+     * Reads the auth snapshot and reports whether every read attempt failed.
+     *
+     * A successful load always returns a state (a logged-out account reads as a
+     * blank one), so null/throwing reads only happen on transient errors such as
+     * KeyStore contention while the `:steamcloud` process rewrites the encrypted
+     * state file during a sync. Callers use [AuthSnapshotRead.readFailed] to keep
+     * the last known login state instead of flashing "not signed in".
+     */
+    fun readSnapshotWithStatus(
+        context: Context,
+        attempts: Int = AUTH_STATE_READ_ATTEMPTS,
+    ): AuthSnapshotRead {
+        var lastError: Throwable? = null
+        val attemptCount = attempts.coerceAtLeast(1)
+        repeat(attemptCount) { attempt ->
+            if (attempt > 0) {
+                try {
+                    Thread.sleep(AUTH_STATE_READ_RETRY_DELAY_MS * attempt)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return unreadableSnapshotRead(interrupted)
+                }
+            }
+            runCatching { loadState(context) }
+                .onSuccess { state ->
+                    return AuthSnapshotRead(snapshot = state.toAuthSnapshot(), readFailed = false)
+                }
+                .onFailure { error ->
+                    lastError = error
+                }
+        }
+        val error = lastError
+        if (error != null) {
+            Log.w(TAG, "Steam Cloud auth state is unavailable; treating credentials as absent.", error)
+        }
+        return unreadableSnapshotRead(error)
+    }
+
+    private fun unreadableSnapshotRead(error: Throwable?): AuthSnapshotRead =
+        AuthSnapshotRead(
+            snapshot = AuthSnapshot(
+                accountName = "",
+                refreshTokenConfigured = false,
+                guardDataConfigured = false,
+                steamId64 = "",
+                personaName = "",
+                avatarUrl = "",
+                lastAuthAtMs = null,
+                lastManifestAtMs = null,
+                lastPullAtMs = null,
+                lastPushAtMs = null,
+                lastError = error?.message ?: "",
+            ),
+            readFailed = true,
+        )
+
+    private fun StoredState.toAuthSnapshot(): AuthSnapshot =
+        AuthSnapshot(
+            accountName = accountName.trim(),
+            refreshTokenConfigured = refreshToken.isNotBlank(),
+            guardDataConfigured = guardData.isNotBlank(),
+            steamId64 = steamId64.trim(),
+            personaName = personaName.trim(),
+            avatarUrl = avatarUrl.trim(),
+            lastAuthAtMs = lastAuthAtMs?.takeIf { it > 0L },
+            lastManifestAtMs = lastManifestAtMs?.takeIf { it > 0L },
+            lastPullAtMs = lastPullAtMs?.takeIf { it > 0L },
+            lastPushAtMs = lastPushAtMs?.takeIf { it > 0L },
+            lastError = lastError.trim(),
+        )
+
+    fun beginLoginAttempt(context: Context): String {
+        val attemptId = UUID.randomUUID().toString()
+        val appContext = appContext(context)
+        SteamCloudOperationMutex.runExclusive(appContext) {
+            val state = loadStateForExplicitReset(appContext)
+            writeState(
+                appContext,
+                state.copy(
+                    revision = state.revision + 1L,
+                    activeLoginAttemptId = attemptId,
+                ),
             )
-        } ?: emptySnapshot()
+        }
+        return attemptId
+    }
+
+    fun finishLoginAttempt(
+        context: Context,
+        attemptId: String,
+    ) {
+        val normalizedAttemptId = attemptId.trim()
+        if (normalizedAttemptId.isEmpty()) {
+            return
+        }
+        mutateState(context) { state ->
+            when (resolveLoginAttemptFinish(
+                activeAttemptId = state.activeLoginAttemptId,
+                finishingAttemptId = normalizedAttemptId,
+            )) {
+                LoginAttemptFinishAction.CLEAR_ACTIVE ->
+                    state.copy(activeLoginAttemptId = "")
+
+                LoginAttemptFinishAction.IGNORE -> null
+            }
+        }
     }
 
     fun recordAuthSuccess(
         context: Context,
+        loginAttemptId: String,
+        cancellationHandle: SteamCloudAuthCoordinator.CancellationHandle,
         accountName: String,
         refreshToken: String,
         guardData: String,
         steamId64: String,
+        personaName: String = "",
+        avatarUrl: String = "",
     ) {
-        require(isValidSteamId64(steamId64)) {
+        val normalizedAttemptId = loginAttemptId.trim()
+        val normalizedSteamId = steamId64.trim()
+        require(normalizedAttemptId.isNotEmpty()) { "Steam login attempt ID is required." }
+        require(isValidSteamId64(normalizedSteamId)) {
             "SteamID64 is required before Steam Cloud auth can be saved."
         }
-        writeSafely(context, "record Steam Cloud auth success") { prefs ->
-            prefs.edit()
-                .putString(KEY_ACCOUNT_NAME, accountName.trim())
-                .putString(KEY_REFRESH_TOKEN, refreshToken.trim())
-                .putString(KEY_GUARD_DATA, guardData.trim())
-                .putString(KEY_STEAM_ID_64, steamId64.trim())
-                .remove(KEY_PERSONA_NAME)
-                .remove(KEY_AVATAR_URL)
-                .putLong(KEY_LAST_AUTH_AT_MS, System.currentTimeMillis())
-                .remove(KEY_LAST_MANIFEST_AT_MS)
-                .remove(KEY_LAST_PULL_AT_MS)
-                .remove(KEY_LAST_PUSH_AT_MS)
-                .remove(KEY_LAST_ERROR)
-                .remove(KEY_WEB_ACCESS_TOKEN)
-                .remove(KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS)
-                .remove(KEY_WEB_ACCESS_TOKEN_STEAM_ID_64)
-                .remove(KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT)
-                .apply()
+
+        SteamCloudOperationMutex.runExclusive(context) {
+            cancellationHandle.runIfActive {
+                val state = loadStateExclusive(appContext(context))
+                if (state.activeLoginAttemptId != normalizedAttemptId) {
+                    throw CancellationException("Steam login attempt is no longer active.")
+                }
+                writeState(
+                    context = appContext(context),
+                    state = state.copy(
+                        revision = state.revision + 1L,
+                        credentialRevision = state.credentialRevision + 1L,
+                        activeLoginAttemptId = "",
+                        committedLoginAttemptId = normalizedAttemptId,
+                        accountName = accountName.trim(),
+                        refreshToken = refreshToken.trim(),
+                        guardData = guardData.trim(),
+                        steamId64 = normalizedSteamId,
+                        personaName = personaName.trim(),
+                        avatarUrl = avatarUrl.trim(),
+                        lastAuthAtMs = System.currentTimeMillis(),
+                        lastManifestAtMs = null,
+                        lastPullAtMs = null,
+                        lastPushAtMs = null,
+                        lastError = "",
+                        webAccessToken = "",
+                        webAccessTokenExpiresAtMs = 0L,
+                        webAccessTokenSteamId64 = "",
+                        webAccessTokenRefreshFingerprint = "",
+                    ),
+                )
+            }
         }
     }
 
@@ -131,21 +302,19 @@ internal object SteamCloudAuthStore {
         nowMs: Long = System.currentTimeMillis(),
         minimumRemainingLifetimeMs: Long,
     ): CachedWebAccessToken? {
-        return readSafely(context, "read cached Steam web access token") { prefs ->
-            val accessToken = prefs.getString(KEY_WEB_ACCESS_TOKEN, null)?.trim().orEmpty()
-            val expiresAtMs = prefs.getLong(KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS, 0L)
-            val storedSteamId = prefs.getString(KEY_WEB_ACCESS_TOKEN_STEAM_ID_64, null)?.trim().orEmpty()
-            val storedRefreshFingerprint = prefs.getString(KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT, null)?.trim().orEmpty()
-            if (
-                accessToken.isBlank() ||
-                expiresAtMs <= nowMs + minimumRemainingLifetimeMs ||
-                storedSteamId != steamId.toString() ||
-                storedRefreshFingerprint != refreshToken.fingerprintForCacheScope()
-            ) {
-                return@readSafely null
-            }
-            CachedWebAccessToken(accessToken = accessToken, expiresAtMs = expiresAtMs)
+        val state = readStateOrNull(context) ?: return null
+        if (
+            state.webAccessToken.isBlank() ||
+            state.webAccessTokenExpiresAtMs <= nowMs + minimumRemainingLifetimeMs ||
+            state.webAccessTokenSteamId64 != steamId.toString() ||
+            state.webAccessTokenRefreshFingerprint != refreshToken.fingerprintForCacheScope()
+        ) {
+            return null
         }
+        return CachedWebAccessToken(
+            accessToken = state.webAccessToken,
+            expiresAtMs = state.webAccessTokenExpiresAtMs,
+        )
     }
 
     fun cacheWebAccessToken(
@@ -156,14 +325,23 @@ internal object SteamCloudAuthStore {
         expiresAtMs: Long,
     ) {
         require(accessToken.isNotBlank()) { "Steam web access token must not be blank." }
-        require(expiresAtMs > System.currentTimeMillis()) { "Steam web access token must expire in the future." }
-        writeSafely(context, "cache Steam web access token") { prefs ->
-            prefs.edit()
-                .putString(KEY_WEB_ACCESS_TOKEN, accessToken.trim())
-                .putLong(KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS, expiresAtMs)
-                .putString(KEY_WEB_ACCESS_TOKEN_STEAM_ID_64, steamId.toString())
-                .putString(KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT, refreshToken.fingerprintForCacheScope())
-                .apply()
+        require(expiresAtMs > System.currentTimeMillis()) {
+            "Steam web access token must expire in the future."
+        }
+        mutateState(context) { state ->
+            val auth = state.toAuthMaterialOrNull()
+            if (auth == null ||
+                auth.steamId64 != steamId.toString() ||
+                auth.refreshToken != refreshToken.trim()
+            ) {
+                return@mutateState null
+            }
+            state.copy(
+                webAccessToken = accessToken.trim(),
+                webAccessTokenExpiresAtMs = expiresAtMs,
+                webAccessTokenSteamId64 = steamId.toString(),
+                webAccessTokenRefreshFingerprint = refreshToken.fingerprintForCacheScope(),
+            )
         }
     }
 
@@ -173,140 +351,306 @@ internal object SteamCloudAuthStore {
         personaName: String,
         avatarUrl: String,
     ) {
-        writeSafely(context, "record Steam Cloud profile") { prefs ->
-            prefs.edit()
-                .putString(KEY_STEAM_ID_64, steamId64.trim())
-                .putString(KEY_PERSONA_NAME, personaName.trim())
-                .putString(KEY_AVATAR_URL, avatarUrl.trim())
-                .apply()
+        val normalizedSteamId = steamId64.trim()
+        mutateState(context) { state ->
+            state.takeIf { it.toAuthMaterialOrNull()?.steamId64 == normalizedSteamId }
+                ?.copy(
+                    personaName = personaName.trim(),
+                    avatarUrl = avatarUrl.trim(),
+                )
         }
     }
 
     fun recordManifestSuccess(context: Context, fetchedAtMs: Long) {
-        writeSafely(context, "record Steam Cloud manifest success") { prefs ->
-            prefs.edit()
-                .putLong(KEY_LAST_MANIFEST_AT_MS, fetchedAtMs)
-                .remove(KEY_LAST_ERROR)
-                .apply()
+        mutateAuthenticatedState(context) { state ->
+            state.copy(lastManifestAtMs = fetchedAtMs, lastError = "")
         }
     }
 
     fun recordPullSuccess(context: Context, completedAtMs: Long) {
-        writeSafely(context, "record Steam Cloud pull success") { prefs ->
-            prefs.edit()
-                .putLong(KEY_LAST_PULL_AT_MS, completedAtMs)
-                .remove(KEY_LAST_ERROR)
-                .apply()
+        mutateAuthenticatedState(context) { state ->
+            state.copy(lastPullAtMs = completedAtMs, lastError = "")
         }
     }
 
     fun recordPushSuccess(context: Context, completedAtMs: Long) {
-        writeSafely(context, "record Steam Cloud push success") { prefs ->
-            prefs.edit()
-                .putLong(KEY_LAST_PUSH_AT_MS, completedAtMs)
-                .remove(KEY_LAST_ERROR)
-                .apply()
+        mutateAuthenticatedState(context) { state ->
+            state.copy(lastPushAtMs = completedAtMs, lastError = "")
         }
     }
 
-    fun recordFailure(context: Context, errorMessage: String) {
-        writeSafely(context, "record Steam Cloud failure") { prefs ->
-            prefs.edit()
-                .putString(KEY_LAST_ERROR, errorMessage.trim())
-                .apply()
+    fun recordFailure(
+        context: Context,
+        errorMessage: String,
+        expectedAuth: SavedAuthMaterial? = null,
+    ) {
+        mutateState(context) { state ->
+            val currentAuth = state.toAuthMaterialOrNull() ?: return@mutateState null
+            if (expectedAuth != null && currentAuth != expectedAuth) {
+                return@mutateState null
+            }
+            state.copy(lastError = errorMessage.trim())
         }
     }
 
     fun clearGuardData(context: Context) {
-        writeSafely(context, "clear Steam Cloud guard data") { prefs ->
-            prefs.edit()
-                .remove(KEY_GUARD_DATA)
-                .apply()
-        }
+        mutateAuthenticatedState(context) { state -> state.copy(guardData = "") }
     }
 
     fun clear(context: Context) {
-        clearEncryptedPrefs(context.applicationContext)
+        val appContext = appContext(context)
+        SteamCloudOperationMutex.runExclusive(appContext) {
+            val previousState = runCatching { loadStateExclusive(appContext) }.getOrNull()
+            val clearedState = StoredState(
+                revision = (previousState?.revision ?: 0L) + 1L,
+                credentialRevision = (previousState?.credentialRevision ?: 0L) + 1L,
+            )
+            writeStateAfterExplicitReset(appContext, clearedState)
+            clearLegacyPreferences(appContext)
+        }
     }
 
-    private inline fun <T> readSafely(
+    private fun mutateAuthenticatedState(
         context: Context,
-        operation: String,
-        block: (SharedPreferences) -> T,
-    ): T? {
-        val appContext = context.applicationContext
-        val prefs = prefsOrNull(appContext) ?: return null
-        return runCatching { block(prefs) }
-            .getOrElse { error ->
-                Log.w(TAG, "Unable to $operation; clearing stored Steam Cloud auth.", error)
-                clearEncryptedPrefs(appContext)
-                null
-            }
-    }
-
-    private inline fun writeSafely(
-        context: Context,
-        operation: String,
-        block: (SharedPreferences) -> Unit,
+        transform: (StoredState) -> StoredState,
     ) {
-        val appContext = context.applicationContext
-        val prefs = prefsOrNull(appContext) ?: return
-        runCatching { block(prefs) }
+        mutateState(context) { state ->
+            state.takeIf { it.toAuthMaterialOrNull() != null }?.let(transform)
+        }
+    }
+
+    private fun mutateState(
+        context: Context,
+        transform: (StoredState) -> StoredState?,
+    ) {
+        val appContext = appContext(context)
+        SteamCloudOperationMutex.runExclusive(appContext) {
+            val state = loadStateExclusive(appContext)
+            val transformed = transform(state) ?: return@runExclusive
+            writeState(
+                appContext,
+                transformed.copy(revision = state.revision + 1L),
+            )
+        }
+    }
+
+    private fun loadState(context: Context): StoredState {
+        val appContext = appContext(context)
+        val file = authStateFile(appContext)
+        if (file.isFile) {
+            return readState(file)
+        }
+        return SteamCloudOperationMutex.runExclusive(appContext) {
+            loadStateExclusive(appContext)
+        }
+    }
+
+    private fun readStateOrNull(context: Context): StoredState? =
+        runCatching { loadState(context) }
             .onFailure { error ->
-                Log.w(TAG, "Unable to $operation; resetting encrypted storage and retrying.", error)
-                clearEncryptedPrefs(appContext)
-                prefsOrNull(appContext)?.let { recoveredPrefs ->
-                    runCatching { block(recoveredPrefs) }
-                        .onFailure { retryError ->
-                            Log.w(TAG, "Unable to $operation after resetting encrypted storage.", retryError)
-                        }
-                }
+                Log.w(TAG, "Steam Cloud auth state is unavailable; treating credentials as absent.", error)
             }
+            .getOrNull()
+
+    private fun loadStateExclusive(context: Context): StoredState {
+        val file = authStateFile(context)
+        if (file.isFile) {
+            return readState(file)
+        }
+
+        val migratedState = readLegacyState(context)
+        writeState(context, migratedState)
+        clearLegacyPreferences(context)
+        return migratedState
     }
 
-    private fun prefsOrNull(context: Context): SharedPreferences? {
-        val appContext = context.applicationContext
-        return runCatching { createEncryptedPrefs(appContext) }
+    private fun loadStateForExplicitReset(context: Context): StoredState =
+        runCatching { loadStateExclusive(context) }
             .getOrElse { error ->
-                Log.w(TAG, "Encrypted Steam Cloud auth storage unavailable; clearing stored auth.", error)
-                clearEncryptedPrefs(appContext)
-                runCatching { createEncryptedPrefs(appContext) }
-                    .getOrElse { retryError ->
-                        Log.w(TAG, "Encrypted Steam Cloud auth storage still unavailable after reset.", retryError)
-                        null
-                    }
+                Log.w(TAG, "Replacing unreadable Steam Cloud auth state after an explicit user action.", error)
+                val replacement = StoredState(revision = 1L)
+                writeStateAfterExplicitReset(context, replacement)
+                clearLegacyPreferences(context)
+                replacement
             }
+
+    private fun writeStateAfterExplicitReset(context: Context, state: StoredState) {
+        try {
+            writeState(context, state)
+        } catch (error: Throwable) {
+            if (!error.hasSecurityCause()) {
+                throw error
+            }
+            resetStateEncryptionKey()
+            writeState(context, state)
+        }
     }
 
-    private fun createEncryptedPrefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context.applicationContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context.applicationContext,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+    private fun readState(file: File): StoredState {
+        val lines = file.readLines(Charsets.UTF_8)
+        if (lines.size != 3 || lines[0] != AUTH_STATE_MAGIC) {
+            throw IOException("Steam Cloud auth state has an unsupported format.")
+        }
+        val key = existingStateEncryptionKey()
+            ?: throw IOException("Steam Cloud auth encryption key is unavailable.")
+        val iv = Base64.decode(lines[1], Base64.NO_WRAP)
+        val ciphertext = Base64.decode(lines[2], Base64.NO_WRAP)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
+        cipher.updateAAD(authenticatedData)
+        val plaintext = cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
+        return json.decodeFromString<StoredState>(plaintext).also { state ->
+            if (state.schemaVersion != 1 || state.revision < 0L || state.credentialRevision < 0L) {
+                throw IOException("Steam Cloud auth state metadata is invalid.")
+            }
+        }
+    }
+
+    private fun writeState(context: Context, state: StoredState) {
+        val plaintext = json.encodeToString(state).toByteArray(Charsets.UTF_8)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, stateEncryptionKey())
+        cipher.updateAAD(authenticatedData)
+        val ciphertext = cipher.doFinal(plaintext)
+        val envelope = buildString {
+            append(AUTH_STATE_MAGIC).append('\n')
+            append(Base64.encodeToString(cipher.iv, Base64.NO_WRAP)).append('\n')
+            append(Base64.encodeToString(ciphertext, Base64.NO_WRAP)).append('\n')
+        }
+        SteamCloudAtomicFileStore.writeTextWithoutBackup(
+            authStateFile(context),
+            envelope,
+            Charsets.UTF_8,
         )
     }
 
-    private fun clearEncryptedPrefs(context: Context) {
-        val appContext = context.applicationContext
-        runCatching {
-            createEncryptedPrefs(appContext).edit().clear().commit()
-        }.onFailure { error ->
-            Log.w(TAG, "Unable to clear encrypted Steam Cloud auth via SharedPreferences.", error)
-        }
-        if (!appContext.deleteSharedPreferences(PREFS_NAME)) {
-            Log.w(TAG, "Encrypted Steam Cloud auth preferences were not present or could not be deleted.")
+    private fun stateEncryptionKey(): SecretKey {
+        existingStateEncryptionKey()?.let { return it }
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
+        generator.init(
+            KeyGenParameterSpec.Builder(
+                KEYSTORE_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+        )
+        return generator.generateKey()
+    }
+
+    private fun existingStateEncryptionKey(): SecretKey? {
+        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+        return keyStore.getKey(KEYSTORE_ALIAS, null) as? SecretKey
+    }
+
+    private fun resetStateEncryptionKey() {
+        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+        if (keyStore.containsAlias(KEYSTORE_ALIAS)) {
+            keyStore.deleteEntry(KEYSTORE_ALIAS)
         }
     }
 
-    private fun emptySnapshot(): AuthSnapshot = AuthSnapshot(
+    private fun readLegacyState(context: Context): StoredState {
+        val legacyFile = legacyPreferencesFile(context)
+        if (!legacyFile.isFile) {
+            return StoredState(revision = 1L)
+        }
+
+        val prefs = createLegacyEncryptedPreferences(context)
+        val accountName = prefs.getString("account_name", null)?.trim().orEmpty()
+        val refreshToken = prefs.getString("refresh_token", null)?.trim().orEmpty()
+        val steamId64 = prefs.getString("steam_id_64", null)?.trim().orEmpty()
+        val hasCompleteAuth = accountName.isNotBlank() &&
+            refreshToken.isNotBlank() &&
+            isValidSteamId64(steamId64)
+        return StoredState(
+            revision = 1L,
+            credentialRevision = if (hasCompleteAuth) 1L else 0L,
+            accountName = accountName,
+            refreshToken = refreshToken,
+            guardData = prefs.getString("guard_data", null)?.trim().orEmpty(),
+            steamId64 = steamId64,
+            personaName = prefs.getString("persona_name", null)?.trim().orEmpty(),
+            avatarUrl = prefs.getString("avatar_url", null)?.trim().orEmpty(),
+            lastAuthAtMs = prefs.optionalLong("last_auth_at_ms"),
+            lastManifestAtMs = prefs.optionalLong("last_manifest_at_ms"),
+            lastPullAtMs = prefs.optionalLong("last_pull_at_ms"),
+            lastPushAtMs = prefs.optionalLong("last_push_at_ms"),
+            lastError = prefs.getString("last_error", null)?.trim().orEmpty(),
+            webAccessToken = prefs.getString("web_access_token", null)?.trim().orEmpty(),
+            webAccessTokenExpiresAtMs = prefs.getLong("web_access_token_expires_at_ms", 0L),
+            webAccessTokenSteamId64 = prefs.getString("web_access_token_steam_id_64", null)?.trim().orEmpty(),
+            webAccessTokenRefreshFingerprint = prefs
+                .getString("web_access_token_refresh_fingerprint", null)
+                ?.trim()
+                .orEmpty(),
+        )
+    }
+
+    private fun createLegacyEncryptedPreferences(context: Context) =
+        MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+            .let { masterKey ->
+                EncryptedSharedPreferences.create(
+                    context,
+                    LEGACY_PREFS_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                )
+            }
+
+    private fun clearLegacyPreferences(context: Context) {
+        val legacyFile = legacyPreferencesFile(context)
+        val legacyBackupFile = File(legacyFile.parentFile, legacyFile.name + ".bak")
+        if (!legacyFile.exists() && !legacyBackupFile.exists()) {
+            return
+        }
+        runCatching {
+            createLegacyEncryptedPreferences(context).edit().clear().commit()
+        }.onFailure { error ->
+            Log.w(TAG, "Unable to clear migrated Steam Cloud preferences.", error)
+        }
+        if (!context.deleteSharedPreferences(LEGACY_PREFS_NAME)) {
+            Log.w(TAG, "Migrated Steam Cloud preferences could not be deleted.")
+        }
+        legacyBackupFile.delete()
+    }
+
+    private fun StoredState.toAuthMaterialOrNull(): SavedAuthMaterial? {
+        val normalizedAccountName = accountName.trim()
+        val normalizedRefreshToken = refreshToken.trim()
+        val normalizedSteamId = steamId64.trim()
+        if (normalizedAccountName.isBlank() ||
+            normalizedRefreshToken.isBlank() ||
+            !isValidSteamId64(normalizedSteamId)
+        ) {
+            return null
+        }
+        return SavedAuthMaterial(
+            accountName = normalizedAccountName,
+            refreshToken = normalizedRefreshToken,
+            guardData = guardData.trim(),
+            steamId64 = normalizedSteamId,
+            credentialRevision = credentialRevision,
+        )
+    }
+
+    private fun StoredState.withoutCredentials(
+        credentialRevision: Long,
+        activeLoginAttemptId: String = "",
+    ): StoredState = copy(
+        credentialRevision = credentialRevision,
+        activeLoginAttemptId = activeLoginAttemptId,
+        committedLoginAttemptId = "",
+        loginUsername = "",
+        loginPassword = "",
         accountName = "",
-        refreshTokenConfigured = false,
-        guardDataConfigured = false,
+        refreshToken = "",
+        guardData = "",
         steamId64 = "",
         personaName = "",
         avatarUrl = "",
@@ -315,7 +659,27 @@ internal object SteamCloudAuthStore {
         lastPullAtMs = null,
         lastPushAtMs = null,
         lastError = "",
+        webAccessToken = "",
+        webAccessTokenExpiresAtMs = 0L,
+        webAccessTokenSteamId64 = "",
+        webAccessTokenRefreshFingerprint = "",
     )
+
+    private fun authStateFile(context: Context): File {
+        val noBackupDirectory = runCatching { context.noBackupFilesDir }.getOrNull()
+            ?: File(context.filesDir, "no_backup")
+        return File(noBackupDirectory, AUTH_STATE_FILE_NAME)
+    }
+
+    private fun legacyPreferencesFile(context: Context): File {
+        val dataDirectory = runCatching { context.applicationInfo.dataDir }.getOrNull()
+            ?.let(::File)
+            ?: context.filesDir.parentFile
+            ?: context.filesDir
+        return File(File(dataDirectory, "shared_prefs"), "$LEGACY_PREFS_NAME.xml")
+    }
+
+    private fun appContext(context: Context): Context = context.applicationContext ?: context
 
     private fun isValidSteamId64(value: String): Boolean =
         value.toULongOrNull()?.let { it > 0uL } == true
@@ -325,12 +689,29 @@ internal object SteamCloudAuthStore {
             .digest(toByteArray(Charsets.UTF_8))
             .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xFF) }
 
-    private fun SharedPreferences.optionalLong(key: String): Long? {
+    private fun Throwable.hasSecurityCause(): Boolean =
+        generateSequence(this) { current -> current.cause?.takeUnless { it === current } }
+            .any { it is GeneralSecurityException }
+
+    private fun android.content.SharedPreferences.optionalLong(key: String): Long? {
         if (!contains(key)) {
             return null
         }
         return getLong(key, 0L).takeIf { it > 0L }
     }
+}
+
+internal enum class LoginAttemptFinishAction {
+    CLEAR_ACTIVE,
+    IGNORE,
+}
+
+internal fun resolveLoginAttemptFinish(
+    activeAttemptId: String,
+    finishingAttemptId: String,
+): LoginAttemptFinishAction = when {
+    activeAttemptId == finishingAttemptId -> LoginAttemptFinishAction.CLEAR_ACTIVE
+    else -> LoginAttemptFinishAction.IGNORE
 }
 
 internal fun reusableGuardDataForCredentials(

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -93,9 +94,51 @@ class SteamCloudSnapshotStoreTest {
         }
     }
 
+    @Test
+    fun storesRejectSnapshotsFromAnotherSteamAccount() {
+        val roots = TestRoots.create("steam-cloud-account-scoped-store")
+        try {
+            val manifest = manifestSnapshot(
+                fetchedAtMs = 1L,
+                entry = manifestEntry(
+                    remotePath = "%GameInstall%preferences/STSPlayer",
+                    localRelativePath = "preferences/STSPlayer",
+                    sha1 = "sha1",
+                ),
+                steamId64 = "76561198000000001",
+            )
+            val baseline = SteamCloudSyncBaseline(
+                syncedAtMs = 1L,
+                localEntries = emptyList(),
+                remoteEntries = manifest.entriesForPlanning,
+                steamId64 = manifest.steamId64,
+            )
+            SteamCloudManifestStore.writeSnapshot(roots.context, manifest)
+            SteamCloudBaselineStore.writeSnapshot(roots.context, baseline)
+
+            assertNull(
+                SteamCloudManifestStore.readSnapshot(roots.context, "76561198000000002")
+            )
+            assertNull(
+                SteamCloudBaselineStore.readSnapshot(roots.context, "76561198000000002")
+            )
+            assertEquals(
+                manifest,
+                SteamCloudManifestStore.readSnapshot(roots.context, manifest.steamId64),
+            )
+            assertEquals(
+                baseline,
+                SteamCloudBaselineStore.readSnapshot(roots.context, baseline.steamId64),
+            )
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
     private fun manifestSnapshot(
         fetchedAtMs: Long,
         entry: SteamCloudManifestEntry,
+        steamId64: String = "",
     ): SteamCloudManifestSnapshot {
         return SteamCloudManifestSnapshot(
             fetchedAtMs = fetchedAtMs,
@@ -104,6 +147,7 @@ class SteamCloudSnapshotStoreTest {
             savesCount = if (entry.rootKind == SteamCloudRootKind.SAVES) 1 else 0,
             entries = listOf(entry),
             warnings = emptyList(),
+            steamId64 = steamId64,
         )
     }
 

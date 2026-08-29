@@ -12,6 +12,7 @@ enum class SteamCloudFailureCategory {
     TRANSIENT_NETWORK,
     AUTH_REJECTED,
     RATE_LIMITED,
+    CLOUD_CONFLICT,
     CANCELLED,
     MISSING_AUTH,
     UNKNOWN,
@@ -49,6 +50,17 @@ internal object SteamCloudFailureClassifier {
 
             causes.any { it is SteamCloudCredentialsMissingException } ->
                 SteamCloudFailureCategory.MISSING_AUTH
+
+            hasEResult(description, 108) || containsAny(
+                description,
+                "BeginHTTPUpload failed: DuplicateRequest",
+            ) -> SteamCloudFailureCategory.TRANSIENT_NETWORK
+
+            // CompleteAppUploadBatch returning EResult.Fail (2) is a known transient race where
+            // Steam's backend hasn't finished committing the batch yet.  The upload itself
+            // succeeded; this is a protocol-layer false-negative.
+            containsAny(description, "completeappuploadbatch") && hasEResult(description, 2) ->
+                SteamCloudFailureCategory.TRANSIENT_NETWORK
 
             causes.any { cause ->
                 cause is SocketTimeoutException ||

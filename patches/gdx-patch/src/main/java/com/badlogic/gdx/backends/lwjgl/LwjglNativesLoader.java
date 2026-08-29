@@ -3,8 +3,6 @@ package com.badlogic.gdx.backends.lwjgl;
 import com.badlogic.gdx.utils.GdxNativesLoader;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 
-import java.io.File;
-
 /**
  * Patched for SlayTheAmethyst:
  * - Skip extracting desktop natives from JAR.
@@ -29,7 +27,8 @@ public final class LwjglNativesLoader {
             throw new GdxRuntimeException("Unable to resolve native directory for LWJGL");
         }
 
-        // LWJGL uses this value when resolving liblwjgl/libopenal.
+        // LWJGL must only search its APK-native directory. Resource-pack, patch, and market
+        // directories are intentionally reserved for GDX's explicit native loader.
         System.setProperty("org.lwjgl.librarypath", nativeDir);
         System.out.println("[gdx-patch] LwjglNativesLoader.load nativeDir=" + nativeDir
                 + " org.lwjgl.librarypath=" + System.getProperty("org.lwjgl.librarypath"));

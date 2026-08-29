@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SteamCloudLocalSnapshotCollectorTest {
@@ -22,6 +23,20 @@ class SteamCloudLocalSnapshotCollectorTest {
             assertEquals("saves/WATCHER.autosave", snapshot[1].localRelativePath)
             assertTrue(snapshot.all { it.sha256.isNotBlank() })
             assertTrue(snapshot.all { it.sha1.isNotBlank() })
+        } finally {
+            tempRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun collect_rejectsManagedRootThatIsNotDirectory() {
+        val tempRoot = Files.createTempDirectory("steam-cloud-local-root-test").toFile()
+        try {
+            File(tempRoot, "preferences").writeText("not-a-directory")
+
+            assertThrows(java.io.IOException::class.java) {
+                SteamCloudLocalSnapshotCollector.collect(tempRoot)
+            }
         } finally {
             tempRoot.deleteRecursively()
         }

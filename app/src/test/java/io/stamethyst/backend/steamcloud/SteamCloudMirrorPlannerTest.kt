@@ -88,6 +88,51 @@ class SteamCloudMirrorPlannerTest {
     }
 
     @Test
+    fun buildLocalMirrorPlan_uploadsSameSizeExistingRemoteWhenSha1IsMissing() {
+        val plan = SteamCloudMirrorPlanner.buildLocalMirrorPlan(
+            currentLocalEntries = listOf(
+                localEntry(
+                    localRelativePath = "preferences/STSPlayer",
+                    fileSize = 154L,
+                    sha256 = "local-sha256",
+                )
+            ),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%preferences/STSPlayer",
+                    localRelativePath = "preferences/STSPlayer",
+                    rawSize = 154L,
+                    timestamp = 10L,
+                )
+            ),
+        )
+
+        assertEquals(
+            listOf("%GameInstall%preferences/STSPlayer"),
+            plan.uploadCandidates.map { it.remotePath },
+        )
+    }
+
+    @Test
+    fun buildLocalMirrorPlan_doesNotDeleteRemoteTombstones() {
+        val plan = SteamCloudMirrorPlanner.buildLocalMirrorPlan(
+            currentLocalEntries = emptyList(),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%saves/WATCHER.autosave",
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    rawSize = 24L,
+                    timestamp = 20L,
+                    persistState = "Forgotten",
+                )
+            ),
+        )
+
+        assertEquals(emptyList<String>(), plan.deleteRemotePaths)
+    }
+
+    @Test
     fun buildLocalMirrorPlan_withBaseline_onlyUploadsPathsThatNeedLocalAuthoritativeChanges() {
         val baseline = SteamCloudSyncBaseline(
             syncedAtMs = 1L,
@@ -204,6 +249,7 @@ class SteamCloudMirrorPlannerTest {
         rootKind: SteamCloudRootKind = SteamCloudRootKind.PREFERENCES,
         rawSize: Long,
         timestamp: Long,
+        persistState: String = "Persisted",
         sha1: String = "",
     ): SteamCloudManifestEntry {
         return SteamCloudManifestEntry(
@@ -213,7 +259,7 @@ class SteamCloudMirrorPlannerTest {
             rawSize = rawSize,
             timestamp = timestamp,
             machineName = "",
-            persistState = "Persisted",
+            persistState = persistState,
             sha1 = sha1,
         )
     }

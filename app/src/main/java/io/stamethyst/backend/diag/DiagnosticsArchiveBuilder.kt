@@ -12,6 +12,7 @@ import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
+import io.stamethyst.backend.steamcloud.SteamGamePresenceDiagnosticsStore
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
 import io.stamethyst.backend.workshop.WorkshopBrowseFailureLogStore
 import io.stamethyst.backend.workshop.WorkshopDownloadLogService
@@ -44,6 +45,7 @@ internal data class DiagnosticsArchiveResult(
 internal object DiagnosticsArchiveBuilder {
     private const val SHARE_DIR_NAME = "share"
     private const val MAX_WORKSHOP_DOWNLOAD_TASKS_IN_ARCHIVE = 10
+    private const val MAX_JVM_HISTOGRAMS_IN_PERFORMANCE_ARCHIVE = 10
 
     fun buildJvmLogExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
@@ -53,6 +55,11 @@ internal object DiagnosticsArchiveBuilder {
     fun buildCrashExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-crash-report-${formatter.format(Date())}.zip"
+    }
+
+    fun buildPerformanceExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-performance-logs-${formatter.format(Date())}.zip"
     }
 
     @Throws(IOException::class)
@@ -77,6 +84,23 @@ internal object DiagnosticsArchiveBuilder {
     }
 
     @Throws(IOException::class)
+    fun createPerformanceShareArchive(context: Context): DiagnosticsArchiveResult {
+        val archiveFile = allocateShareArchiveFile(context, buildPerformanceExportFileName())
+        val entryCount = FileOutputStream(archiveFile, false).use { output ->
+            writePerformanceDiagnosticsBundle(context, output)
+        }
+        return DiagnosticsArchiveResult(archiveFile, entryCount)
+    }
+
+    /**
+     * Called by [io.stamethyst.backend.diag.DiagnosticsProcessService.runAdbStage] via the
+     * adb staging path. Uses the same bundle as Share Logs / exportJvmLogBundle.
+     */
+    @Throws(IOException::class)
+    fun writeDiagnosticsBundlePublic(context: Context, output: OutputStream): Int =
+        writeDiagnosticsBundle(context, output, null)
+
+    @Throws(IOException::class)
     fun exportJvmLogBundle(context: Context, destination: Uri): Int {
         context.contentResolver.openOutputStream(destination).use { output ->
             if (output == null) {
@@ -87,7 +111,84 @@ internal object DiagnosticsArchiveBuilder {
     }
 
     @Throws(IOException::class)
-    private fun writeDiagnosticsBundle(
+    fun exportPerformanceDiagnosticsBundle(context: Context, destination: Uri): Int {
+        context.contentResolver.openOutputStream(destination).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
+            return writePerformanceDiagnosticsBundle(context, output)
+        }
+    }
+
+    @Throws(IOException::class)
+    internal fun writePerformanceDiagnosticsBundle(context: Context, output: OutputStream): Int {
+        var exportedCount = 0
+        ZipOutputStream(output).use { zipOutput ->
+            exportedCount += writeTextEntryAndCount(
+                zipOutput,
+                "sts/performance/readme.txt",
+                "Performance diagnostics captured on-device. Missing files were not generated in the latest session.\n"
+            )
+            exportedCount += writeTextEntryAndCount(
+                zipOutput,
+                "sts/performance/device_info.txt",
+                buildJvmLogDeviceInfo(context)
+            )
+            exportedCount += writeTextEntryAndCount(
+                zipOutput,
+                "sts/performance/launcher_settings.txt",
+                runCatching {
+                    LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
+                }.getOrElse { error ->
+                    "launcher_settings_unavailable=${error.javaClass.simpleName}: ${error.message.orEmpty()}\n"
+                }
+            )
+            val files = listOf(
+                RuntimePaths.frameProbeIncidents(context),
+                RuntimePaths.frameProbePreviousIncidents(context),
+                RuntimePaths.latestLog(context),
+                RuntimePaths.jvmGcLog(context),
+                RuntimePaths.jvmHeapSnapshot(context),
+                RuntimePaths.launcherPerfSnapshot(context),
+            RuntimePaths.performanceLaunchAuditLog(context),
+            RuntimePaths.arthasBridgeLog(context),
+            )
+            files.forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/performance/${file.name}"
+                )
+            }
+            RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/performance/memory_diagnostics/${file.name}"
+                )
+            }
+            exportedCount += writeOptionalDirectoryFiles(
+                zipOutput,
+                RuntimePaths.jvmHistogramsDir(context),
+                "sts/performance/jvm_histograms",
+                limit = MAX_JVM_HISTOGRAMS_IN_PERFORMANCE_ARCHIVE,
+                predicate = { it.name.endsWith(".txt", ignoreCase = true) }
+            )
+            exportedCount += writeOptionalDirectoryFiles(
+                zipOutput,
+                RuntimePaths.offlineArthasOutputDir(context),
+                "sts/performance/arthas",
+                predicate = { file ->
+                    file.name.endsWith(".txt", ignoreCase = true) ||
+                        file.name.endsWith(".log", ignoreCase = true)
+                }
+            )
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeDiagnosticsBundle(
         context: Context,
         output: OutputStream,
         crashContext: CrashArchiveContext?
@@ -134,6 +235,18 @@ internal object DiagnosticsArchiveBuilder {
             )
             exportedCount += writeOptionalFile(
                 zipOutput,
+                SteamGamePresenceDiagnosticsStore.summaryFile(context),
+                "sts/steam-game-presence/${SteamGamePresenceDiagnosticsStore.summaryFile(context).name}"
+            )
+            SteamGamePresenceDiagnosticsStore.listEventLogFiles(context).forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/steam-game-presence/${file.name}"
+                )
+            }
+            exportedCount += writeOptionalFile(
+                zipOutput,
                 SteamCloudManifestStore.manifestFile(context),
                 "sts/steam_cloud/phase1/${SteamCloudManifestStore.manifestFile(context).name}"
             )
@@ -163,23 +276,6 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/steam_login",
                 limit = 5
             )
-            val phase0Dir = File(RuntimePaths.storageRoot(context), "steam-cloud-phase0")
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                File(phase0Dir, "summary.txt"),
-                "sts/steam_cloud/phase0/summary.txt"
-            )
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                File(phase0Dir, "cloud-list.tsv"),
-                "sts/steam_cloud/phase0/cloud-list.tsv"
-            )
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                File(phase0Dir, "last-websocket-cm-endpoint.txt"),
-                "sts/steam_cloud/phase0/last-websocket-cm-endpoint.txt"
-            )
-
             val writtenJvmEntries = LinkedHashSet<String>()
             JvmLogRotationManager.listLogFiles(context).forEach { logFile ->
                 val entryName = "sts/logs/${logFile.name}"
@@ -216,6 +312,8 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/memory_diagnostics/${memoryLogFile.name}"
                 )
             }
+            exportedCount += writeAchievementSyncLogsForArchive(zipOutput, context)
+            exportedCount += writeWindowDiagnosticsForArchive(zipOutput, context)
             RuntimePaths.listLogcatCaptureFiles(context)
                 .groupBy { if (it.name.contains("system")) "system" else "app" }
                 .values
@@ -265,12 +363,15 @@ internal object DiagnosticsArchiveBuilder {
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息和启动器设置。
         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
+        - achievement_sync/：成就请求解析、游戏内弹窗、Steam 查询、上传及失败事件，最多保留 3 槽位，不包含 Steam 凭据。
         - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
+        - window/：游戏窗口、viewport、Surface、尺寸同步和触控坐标映射诊断日志，最多保留 3 槽位。
         - logcat/app/：应用进程 logcat，最多 5 槽位。
         - logcat/system/：系统进程 logcat，最多 5 槽位。
         - launcher_crash_reports/：启动器崩溃报告，最多 5 槽位。
         - steam_login/：Steam credentials 登录失败记录，最多 5 槽位。
         - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
+        - steam-game-presence/：Steam 在线状态上报的最后摘要和连续事件日志，最多保留 3 槽位。
         - workshop/market_failed/：Workshop 市场查询失败日志，最多 5 槽位。
         - workshop/download_tasks/：最近 10 条 Workshop 下载任务日志。
         - workshop/auto_import_patch_logs/：自动导入补丁日志，最多 10 槽位。
@@ -560,6 +661,32 @@ internal object DiagnosticsArchiveBuilder {
         )
     }
 
+    @Throws(IOException::class)
+    internal fun writeWindowDiagnosticsForArchive(zipOutput: ZipOutputStream, context: Context): Int {
+        var exportedCount = 0
+        RuntimePaths.listWindowDiagnosticsFiles(context).forEach { windowLogFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                windowLogFile,
+                "sts/window/${windowLogFile.name}"
+            )
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeAchievementSyncLogsForArchive(zipOutput: ZipOutputStream, context: Context): Int {
+        var exportedCount = 0
+        RuntimePaths.listAchievementSyncLogFiles(context).forEach { achievementLogFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                achievementLogFile,
+                "sts/achievement_sync/${achievementLogFile.name}"
+            )
+        }
+        return exportedCount
+    }
+
     private fun rawWorkshopDownloadLogArchiveName(task: WorkshopDownloadTaskRecord): String {
         return "workshop-download-${task.publishedFileId}-raw-download.log"
     }
@@ -628,7 +755,9 @@ internal object DiagnosticsArchiveBuilder {
         append("android.release=").append(normalizeInfoValue(Build.VERSION.RELEASE)).append('\n')
         append("android.sdkInt=").append(Build.VERSION.SDK_INT).append('\n')
         append("android.securityPatch=").append(normalizeInfoValue(Build.VERSION.SECURITY_PATCH)).append('\n')
-        append("device.abis=").append(Build.SUPPORTED_ABIS.joinToString(", ").ifBlank { "unknown" }).append('\n')
+        append("device.abis=")
+            .append((Build.SUPPORTED_ABIS ?: emptyArray()).joinToString(", ").ifBlank { "unknown" })
+            .append('\n')
         append("device.fingerprint=").append(normalizeInfoValue(Build.FINGERPRINT)).append('\n')
     }
 

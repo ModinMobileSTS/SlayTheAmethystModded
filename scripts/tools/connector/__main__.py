@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import textwrap
+import time
 
 DEFAULT_PORT_ENV = "STS_CONNECTOR_PORT"
 
@@ -107,7 +108,12 @@ def cmd_stop(args: argparse.Namespace) -> None:
 
 
 def cmd_restart(args: argparse.Namespace) -> None:
+    port = _resolve_port(args.port)
     cmd_stop(args)
+    deadline = time.monotonic() + 5.0
+    while _ping(port) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    time.sleep(0.1)
     cmd_start(args)
 
 

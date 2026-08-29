@@ -10,8 +10,10 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ArthasCommandBridge {
     static PrintWriter logger;
@@ -25,15 +27,24 @@ public class ArthasCommandBridge {
     private static final Object LOCK = new Object();
     private static java.net.ServerSocket serverSocket;
     private static int listeningPort = -1;
+    private static final AtomicBoolean byteKitPatchStarted = new AtomicBoolean(false);
 
     public static void agentmain(String args, final Instrumentation inst) {
+        final Runnable byteKitPatchTask = new ByteKitPatchTask(inst);
         new Thread(new Runnable() {
-            public void run() { new ArthasCommandBridge().start(args, inst); }
+            public void run() {
+                new ArthasCommandBridge().start(args, inst, byteKitPatchTask);
+            }
         }, "arthas-bridge").start();
     }
 
     static void log(String msg) {
         if (logger != null) { logger.println("[arthas-bridge] " + msg); logger.flush(); }
+    }
+
+    public static void runOptionalDiagnostics(Instrumentation inst) {
+        setupProcFSFallback();
+        setupAsyncProfilerFlat();
     }
 
     /** True when a usable listener for {@code port} already exists. */
@@ -68,7 +79,9 @@ public class ArthasCommandBridge {
                 return new Listener(serverSocket, true);
             }
             try {
-                java.net.ServerSocket server = new java.net.ServerSocket(port);
+                java.net.ServerSocket server = new java.net.ServerSocket();
+                server.bind(new java.net.InetSocketAddress(
+                    java.net.InetAddress.getLoopbackAddress(), port));
                 serverSocket = server;
                 listeningPort = port;
                 return new Listener(server, false);
@@ -104,7 +117,7 @@ public class ArthasCommandBridge {
         }
     }
 
-    void start(String args, Instrumentation inst) {
+    void start(String args, Instrumentation inst, Runnable byteKitPatchTask) {
         try {
             logger = new PrintWriter(new FileWriter(
                 "/data/data/io.stamethyst/files/arthas-bridge.log", true));
@@ -116,8 +129,12 @@ public class ArthasCommandBridge {
         try {
             log("starting on port " + port);
 
-            CommonSuperBridge.setInstrumentation(inst);
+            initializeSystemCommonSuperBridge(inst);
             inst.addTransformer(new ClassMetaClassWriterTransformer(), true);
+            inst.addTransformer(new ClassLoaderUtilsTransformer(), true);
+            inst.addTransformer(new EnhancerTransformer(), true);
+            com.taobao.arthas.core.GlobalOptions.isBatchReTransform = false;
+            log("batch retransform disabled for MTS ClassLoaders");
 
             CommandResolver resolver = new BuiltinCommandPack(Collections.<String>emptyList());
             resolver.commands().add(Command.create(MetaspaceCommand.class));
@@ -138,9 +155,6 @@ public class ArthasCommandBridge {
                 return;
             }
 
-            setupProcFSFallback();
-            setupAsyncProfilerFlat();
-
             // Idempotent attach: the bootstrap and resolver above were already
             // refreshed, and the running accept loop resolves the shell server
             // per connection, so it picks up the new bootstrap on its own.
@@ -150,7 +164,16 @@ public class ArthasCommandBridge {
             }
 
             log("listening on " + port);
-            acceptLoop(listener.socket, inst);
+            if (Boolean.parseBoolean(props.getProperty("nativeDiagnostics", "false"))) {
+                Thread diagnostics = new Thread(
+                    new OptionalDiagnostics(inst),
+                    "arthas-optional-diagnostics");
+                diagnostics.setDaemon(true);
+                diagnostics.start();
+            } else {
+                log("optional native diagnostics disabled");
+            }
+            acceptLoop(listener.socket, byteKitPatchTask);
         } catch (Throwable e) {
             log("START FAILED: " + e);
             e.printStackTrace(logger);
@@ -158,11 +181,19 @@ public class ArthasCommandBridge {
     }
 
     /**
+     * Optional native/profiler setup must not delay the shell handshake.
+     * Some Android runtimes block while loading procfs helpers, and
+     * async-profiler can be rejected by device perf policy.  The bridge is
+     * useful without either enhancement, so initialize them after the socket
+     * is accepting connections.
+     */
+    /**
      * Accept connections until the listener is closed.  The shell server is
      * resolved per connection instead of being captured, so a bootstrap
      * replaced by a later attach is picked up without restarting the loop.
      */
-    private static void acceptLoop(java.net.ServerSocket server, Instrumentation inst) {
+    private static void acceptLoop(java.net.ServerSocket server,
+            Runnable byteKitPatchTask) {
         while (!server.isClosed()) {
             java.net.Socket client;
             try {
@@ -176,7 +207,6 @@ public class ArthasCommandBridge {
                 return;
             }
             log("client connected");
-            retransformClassMetaClassWriter(inst);
 
             com.taobao.arthas.core.server.ArthasBootstrap current;
             try {
@@ -198,6 +228,12 @@ public class ArthasCommandBridge {
                 continue;
             }
             new Thread(new BridgeSession(client, currentShellServer)).start();
+            if (byteKitPatchStarted.compareAndSet(false, true)) {
+                Thread patchThread = new Thread(
+                    byteKitPatchTask, "arthas-bytekit-patch");
+                patchThread.setDaemon(true);
+                patchThread.start();
+            }
         }
     }
 
@@ -240,15 +276,45 @@ public class ArthasCommandBridge {
         }
     }
 
-    private static void retransformClassMetaClassWriter(Instrumentation inst) {
-        for (Class<?> c : inst.getAllLoadedClasses()) {
-            if ("com.alibaba.bytekit.asm.ClassMetaClassWriter".equals(c.getName())) {
-                try {
-                    inst.retransformClasses(c);
-                } catch (Throwable ignored) {}
-                return;
+    static void retransformByteKitClasses(Instrumentation inst) {
+        String[] targets = {
+            "com.alibaba.bytekit.asm.ClassMetaClassWriter",
+            "com.alibaba.bytekit.utils.ClassLoaderUtils",
+            "com.taobao.arthas.core.advisor.Enhancer"
+        };
+        ClassLoader systemLoader = ClassLoader.getSystemClassLoader();
+        for (String name : targets) {
+            try {
+                Class<?> target = Class.forName(name, false, systemLoader);
+                inst.retransformClasses(target);
+                log("patched " + name);
+            } catch (Throwable e) {
+                log("failed to patch " + name + ": " + e);
             }
         }
+    }
+
+    private static void initializeSystemCommonSuperBridge(Instrumentation inst)
+            throws Exception {
+        ClassLoader systemLoader = ClassLoader.getSystemClassLoader();
+        Class<?> bridgeClass = null;
+        for (int attempt = 0; attempt < 40; attempt++) {
+            try {
+                bridgeClass = Class.forName(
+                    "io.stamethyst.arthas.CommonSuperBridge", true, systemLoader);
+                break;
+            } catch (ClassNotFoundException e) {
+                Thread.sleep(25L);
+            }
+        }
+        if (bridgeClass == null) {
+            throw new ClassNotFoundException(
+                "CommonSuperBridge was not appended to the system classloader");
+        }
+        Method setter = bridgeClass.getMethod(
+            "setInstrumentation", Instrumentation.class);
+        setter.invoke(null, inst);
+        log("enhancer bridge initialized in " + bridgeClass.getClassLoader());
     }
 
     private static Properties parseArgs(String args) {

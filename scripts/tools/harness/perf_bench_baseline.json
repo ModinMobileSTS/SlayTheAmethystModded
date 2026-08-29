@@ -1,0 +1,9 @@
+{
+  "total_p95_ms": 17.15,
+  "total_p99_ms": 31.57,
+  "render_p95_ms": 16.46,
+  "render_p99_ms": 30.7,
+  "flush_spike_frames": 732,
+  "gc_stall_frames": 134,
+  "gc_stall_max_ms": 580.88
+}

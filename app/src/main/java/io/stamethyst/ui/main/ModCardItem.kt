@@ -391,8 +391,11 @@ internal fun ModCard(
                 ) {
                     val workshopState = mod.workshop?.state
                     val showEnableCheckbox = (mod.installed || workshopState == WorkshopModState.TexturePackInstalled) && when (workshopState) {
+                        WorkshopModState.NotDownloaded,
                         WorkshopModState.ImportedUnpatched,
+                        WorkshopModState.Queued,
                         WorkshopModState.Downloading,
+                        WorkshopModState.Cancelling,
                         WorkshopModState.DownloadPaused,
                         WorkshopModState.DownloadFailed,
                         WorkshopModState.NonStandardDownloaded,
@@ -448,54 +451,51 @@ internal fun ModCard(
                 }
             }
         )
+        val workshopActionModifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .graphicsLayer { alpha = normalControlProgress }
+        // Items the launcher manages itself can never be downloaded from here. Mirror the
+        // market's Unavailable treatment: a visibly disabled control instead of a dead button.
+        val workshopDownloadBlocked = mod.workshop?.downloadBlocked == true
         when (mod.workshop?.state) {
             WorkshopModState.ImportedUnpatched -> Button(
                 onClick = { callbacks.onPatchWorkshopMod(mod) },
                 enabled = !batchSelectionMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .graphicsLayer { alpha = normalControlProgress }
+                modifier = workshopActionModifier
             ) {
                 Text(stringResource(R.string.main_mod_workshop_action_install))
             }
-            WorkshopModState.DownloadFailed -> Button(
-                onClick = { callbacks.onRetryWorkshopDownload(mod) },
-                enabled = !batchSelectionMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .graphicsLayer { alpha = normalControlProgress }
-            ) {
-                Text(stringResource(R.string.workshop_action_retry))
-            }
-            WorkshopModState.DownloadPaused -> Button(
-                onClick = { callbacks.onRetryWorkshopDownload(mod) },
-                enabled = !batchSelectionMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .graphicsLayer { alpha = normalControlProgress }
-            ) {
-                Text(stringResource(R.string.main_mod_workshop_action_continue_download))
-            }
-            WorkshopModState.FileMissing -> Button(
-                onClick = { callbacks.onRetryWorkshopDownload(mod) },
-                enabled = !batchSelectionMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .graphicsLayer { alpha = normalControlProgress }
-            ) {
-                Text(stringResource(R.string.main_mod_workshop_action_redownload))
+            WorkshopModState.DownloadFailed,
+            WorkshopModState.DownloadPaused,
+            WorkshopModState.FileMissing -> {
+                val actionLabelResId = when (mod.workshop.state) {
+                    WorkshopModState.DownloadPaused -> R.string.main_mod_workshop_action_continue_download
+                    WorkshopModState.FileMissing -> R.string.main_mod_workshop_action_redownload
+                    else -> R.string.workshop_action_retry
+                }
+                if (workshopDownloadBlocked) {
+                    OutlinedButton(
+                        onClick = {},
+                        enabled = false,
+                        modifier = workshopActionModifier
+                    ) {
+                        Text(stringResource(R.string.workshop_download_state_unavailable))
+                    }
+                } else {
+                    Button(
+                        onClick = { callbacks.onRetryWorkshopDownload(mod) },
+                        enabled = !batchSelectionMode,
+                        modifier = workshopActionModifier
+                    ) {
+                        Text(stringResource(actionLabelResId))
+                    }
+                }
             }
             WorkshopModState.NonStandardDownloaded -> OutlinedButton(
                 onClick = { showActionsDialog = true },
                 enabled = !batchSelectionMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .graphicsLayer { alpha = normalControlProgress }
+                modifier = workshopActionModifier
             ) {
                 Text(stringResource(R.string.main_mod_workshop_action_manual_handle))
             }
@@ -507,21 +507,23 @@ internal fun ModCard(
                 if (progress != null) {
                     LinearProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp)
-                            .graphicsLayer { alpha = normalControlProgress }
+                        modifier = workshopActionModifier
                     )
                 } else {
                     LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp)
-                            .graphicsLayer { alpha = normalControlProgress }
+                        modifier = workshopActionModifier
                     )
                 }
             }
-            else -> Unit
+            // Queued and Cancelling deliberately render no progress bar. Nothing is being
+            // transferred yet (or any more), so an animating bar would misreport the state.
+            // The status text and state badge carry the information instead.
+            WorkshopModState.Queued,
+            WorkshopModState.Cancelling,
+            WorkshopModState.NotDownloaded,
+            WorkshopModState.ImportedPatched,
+            WorkshopModState.UpdateAvailable,
+            null -> Unit
         }
     }
 
@@ -692,7 +694,9 @@ internal fun ModCard(
 private fun ModItemUi.canDeleteDownloadedWorkshopMod(): Boolean {
     if (installed) return false
     return when (workshop?.state) {
+        WorkshopModState.Queued,
         WorkshopModState.Downloading,
+        WorkshopModState.Cancelling,
         WorkshopModState.DownloadPaused,
         WorkshopModState.DownloadFailed,
         WorkshopModState.ImportedUnpatched,

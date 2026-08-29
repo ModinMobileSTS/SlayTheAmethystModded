@@ -12,6 +12,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object QuickStartSteamLogin : Route
     @Serializable
+    data object QuickStartSteamMethod : Route
+    @Serializable
     data object QuickStartSteamGuard : Route
     @Serializable
     data object QuickStartSteamDownload : Route
@@ -31,6 +33,8 @@ sealed interface Route : NavKey {
     data object SettingsLauncher : Route
     @Serializable
     data object SettingsGame : Route
+    @Serializable
+    data object SettingsPerformance : Route
     @Serializable
     data object SettingsMarketCloud : Route
     @Serializable
@@ -56,6 +60,8 @@ sealed interface Route : NavKey {
     data object WorkshopDownloadCenter : Route
     @Serializable
     data object SteamCloudLogin : Route
+    @Serializable
+    data object SteamCloudLoginMethod : Route
     @Serializable
     data object SteamCloudGuard : Route
     @Serializable

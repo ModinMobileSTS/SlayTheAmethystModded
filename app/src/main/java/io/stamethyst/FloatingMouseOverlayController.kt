@@ -121,6 +121,7 @@ internal class FloatingMouseOverlayController(
         val pickerLabel: String,
         val buttonLabel: String,
         val keyCode: Int,
+        val toggleable: Boolean = false,
     )
 
     private data class CustomSoftKeyCategory(
@@ -1672,6 +1673,19 @@ internal class FloatingMouseOverlayController(
     private fun buildCustomSoftKeyCategories(): List<CustomSoftKeyCategory> {
         return listOf(
             CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_common),
+                listOf(
+                    CustomSoftKeySpec("Ctrl", "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, true),
+                    CustomSoftKeySpec("Shift", "Shift", KeyEvent.KEYCODE_SHIFT_LEFT, true),
+                    CustomSoftKeySpec("Alt", "Alt", KeyEvent.KEYCODE_ALT_LEFT, true),
+                    CustomSoftKeySpec("Tab", "Tab", KeyEvent.KEYCODE_TAB),
+                    CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE),
+                    CustomSoftKeySpec("Enter", "Enter", KeyEvent.KEYCODE_ENTER),
+                    CustomSoftKeySpec("Space", "Space", KeyEvent.KEYCODE_SPACE),
+                    CustomSoftKeySpec("Backspace", "Bksp", KeyEvent.KEYCODE_DEL)
+                )
+            ),
+            CustomSoftKeyCategory(
                 activity.getString(R.string.touch_mouse_custom_key_category_function),
                 buildList {
                     add(CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE))
@@ -1742,15 +1756,15 @@ internal class FloatingMouseOverlayController(
             CustomSoftKeyCategory(
                 activity.getString(R.string.touch_mouse_custom_key_category_modifiers),
                 listOf(
-                    CustomSoftKeySpec("Left Shift", "LShift", KeyEvent.KEYCODE_SHIFT_LEFT),
-                    CustomSoftKeySpec("Right Shift", "RShift", KeyEvent.KEYCODE_SHIFT_RIGHT),
-                    CustomSoftKeySpec("Left Ctrl", "LCtrl", KeyEvent.KEYCODE_CTRL_LEFT),
-                    CustomSoftKeySpec("Right Ctrl", "RCtrl", KeyEvent.KEYCODE_CTRL_RIGHT),
-                    CustomSoftKeySpec("Left Alt", "LAlt", KeyEvent.KEYCODE_ALT_LEFT),
-                    CustomSoftKeySpec("Right Alt", "RAlt", KeyEvent.KEYCODE_ALT_RIGHT),
-                    CustomSoftKeySpec("Left Meta", "LMeta", KeyEvent.KEYCODE_META_LEFT),
-                    CustomSoftKeySpec("Right Meta", "RMeta", KeyEvent.KEYCODE_META_RIGHT),
-                    CustomSoftKeySpec("Menu", "Menu", KeyEvent.KEYCODE_MENU)
+                    CustomSoftKeySpec("Left Shift", "LShift", KeyEvent.KEYCODE_SHIFT_LEFT, true),
+                    CustomSoftKeySpec("Right Shift", "RShift", KeyEvent.KEYCODE_SHIFT_RIGHT, true),
+                    CustomSoftKeySpec("Left Ctrl", "LCtrl", KeyEvent.KEYCODE_CTRL_LEFT, true),
+                    CustomSoftKeySpec("Right Ctrl", "RCtrl", KeyEvent.KEYCODE_CTRL_RIGHT, true),
+                    CustomSoftKeySpec("Left Alt", "LAlt", KeyEvent.KEYCODE_ALT_LEFT, true),
+                    CustomSoftKeySpec("Right Alt", "RAlt", KeyEvent.KEYCODE_ALT_RIGHT, true),
+                    CustomSoftKeySpec("Left Meta", "LMeta", KeyEvent.KEYCODE_META_LEFT, true),
+                    CustomSoftKeySpec("Right Meta", "RMeta", KeyEvent.KEYCODE_META_RIGHT, true),
+                    CustomSoftKeySpec("Menu", "Menu", KeyEvent.KEYCODE_MENU, true)
                 )
             ),
             CustomSoftKeyCategory(
@@ -1931,7 +1945,11 @@ internal class FloatingMouseOverlayController(
 
     private fun performCustomSoftKeyClick(state: CustomSoftKeyButtonState) {
         LauncherHaptics.perform(state.view, HapticFeedbackConstants.KEYBOARD_TAP)
-        sendSyntheticSoftKey(state.spec.keyCode)
+        if (state.spec.toggleable) {
+            toggleSpecialKey(state.spec.keyCode)
+        } else {
+            sendSyntheticSoftKey(state.spec.keyCode)
+        }
         state.view.animate().cancel()
         state.view.animate()
             .scaleX(CUSTOM_KEY_BUTTON_TAP_SCALE)
@@ -1948,7 +1966,9 @@ internal class FloatingMouseOverlayController(
         state.longPressTriggered = false
         state.movedBeyondTapSlop = false
         state.overDeleteTarget = false
-        state.view.background = customSoftKeyButtonBackground(active = false)
+        state.view.background = customSoftKeyButtonBackground(
+            active = state.spec.toggleable && activeToggleSoftKeys.containsKey(state.spec.keyCode)
+        )
         animateCustomSoftKeyScale(state.view, 1f)
         updateCustomSoftKeyDeleteTargetAppearance(active = false)
     }

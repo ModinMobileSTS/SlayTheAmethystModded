@@ -30,6 +30,7 @@ import io.stamethyst.backend.easytier.EasyTierGameProcessPriorityBinding
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.presence.GamePresenceStateMarker
+import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
@@ -57,7 +58,9 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         const val EXTRA_AUTOPLAY_SAVE_MODE = "io.stamethyst.autoplay_save_mode"
         const val EXTRA_AUTOPLAY_MODE = "io.stamethyst.autoplay_mode"
         const val EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.autoplay_single_room_spec"
+        const val EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE = "io.stamethyst.autoplay_single_room_bench_mode"
         const val EXTRA_AUTOPLAY_CHOICE_DELAY_MS = "io.stamethyst.autoplay_choice_delay_ms"
+        const val EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS = "io.stamethyst.performance_deep_diagnostics"
         const val EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED =
             "io.stamethyst.card_obtain_effect_ownership_compat_enabled"
 
@@ -74,6 +77,8 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
             autoplaySingleRoomSpecPath: String = "",
             autoplayChoiceDelayMs: Long = 0L,
+            autoplaySingleRoomBenchMode: Boolean = false,
+            performanceDeepDiagnostics: Boolean? = null,
             cardObtainEffectOwnershipCompatEnabled: Boolean = true,
             debugMode: Boolean = false
         ) {
@@ -93,6 +98,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             intent.putExtra(EXTRA_AUTOPLAY_MODE, autoplayMode.persistedValue)
             intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC, autoplaySingleRoomSpecPath)
             intent.putExtra(EXTRA_AUTOPLAY_CHOICE_DELAY_MS, autoplayChoiceDelayMs)
+            intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, autoplaySingleRoomBenchMode)
+            if (performanceDeepDiagnostics != null) {
+                intent.putExtra(EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS, performanceDeepDiagnostics)
+            }
             intent.putExtra(
                 EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED,
                 cardObtainEffectOwnershipCompatEnabled
@@ -115,6 +124,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var bootOverlayKeepScreenOn = false
     private var keepScreenOnActive = false
     private var activityForeground = false
+    private var gameSessionFinished = false
     private val launchGuardToken: String = UUID.randomUUID().toString()
     private val launchGuardLock = Any()
     private var launchGuardAcquired = false
@@ -168,9 +178,11 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         EasyTierGameProcessPriorityBinding.attach(this)
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
+        GameOrientationPolicy.apply(this, isInMultiWindowMode)
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
+        RuntimePaths.richPresenceFile(this).delete()
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_created",
@@ -183,6 +195,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onDestroy() {
+        val jvmWasStarted = ::sessionCoordinator.isInitialized && sessionCoordinator.jvmLaunchStarted
         unregisterGyroscope()
         MemoryDiagnosticsLogger.logEvent(
             this,
@@ -204,8 +217,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             sessionCoordinator.onDestroy()
         }
         EasyTierGameProcessPriorityBinding.detach(this)
-        GamePresenceStateMarker.markLauncherActive(this)
-        if (launchGuardAcquired && (!::sessionCoordinator.isInitialized || !sessionCoordinator.jvmLaunchStarted)) {
+        if (!jvmWasStarted || gameSessionFinished) {
+            markGameSessionFinished()
+        }
+        if (launchGuardAcquired && !jvmWasStarted) {
             releaseLaunchGuard()
         }
         super.onDestroy()
@@ -425,6 +440,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        GameOrientationPolicy.apply(this, isInMultiWindowMode)
         if (::renderSurfaceManager.isInitialized) {
             renderSurfaceManager.onWindowConfigurationChanged("window_configuration")
         }
@@ -433,6 +449,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
         super.onMultiWindowModeChanged(isInMultiWindowMode)
+        GameOrientationPolicy.apply(this, isInMultiWindowMode)
         if (::renderSurfaceManager.isInitialized) {
             renderSurfaceManager.onWindowConfigurationChanged("multi_window_mode")
         }
@@ -440,6 +457,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        GameOrientationPolicy.apply(this, isInMultiWindowMode)
         if (::renderSurfaceManager.isInitialized) {
             renderSurfaceManager.onWindowConfigurationChanged("multi_window_mode")
         }
@@ -523,7 +541,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             config = sessionConfig,
             renderSurfaceManager = renderSurfaceManager,
             inputHandler = inputHandler,
-            onJvmLaunchFinished = { releaseLaunchGuard() }
+            onJvmLaunchFinished = {
+                markGameSessionFinished()
+                releaseLaunchGuard()
+            }
         )
         gameAudioController = GameAudioController(
             activity = this,
@@ -534,6 +555,13 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
                 sessionCoordinator.onAudioOutputRouteChanged()
             }
         )
+    }
+
+    private fun markGameSessionFinished() {
+        if (gameSessionFinished) return
+        gameSessionFinished = true
+        GamePresenceStateMarker.markLauncherActive(this)
+        SteamGamePresenceService.stop(this)
     }
 
     private fun initViews() {

@@ -56,6 +56,8 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.debug_autoplay_single_room_spec"
         const val EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS =
             "io.stamethyst.debug_autoplay_choice_delay_ms"
+        const val EXTRA_DEBUG_PERFORMANCE_DEEP_DIAGNOSTICS =
+            "io.stamethyst.debug_performance_deep_diagnostics"
         const val EXTRA_DEBUG_DISABLE_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT =
             "io.stamethyst.debug_disable_card_obtain_effect_ownership_compat"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
@@ -109,6 +111,7 @@ class LauncherActivity : AppCompatActivity() {
         val autoplayMode: AutoplayMode,
         val autoplaySingleRoomSpecPath: String,
         val autoplayChoiceDelayMs: Long,
+        val performanceDeepDiagnostics: Boolean?,
         val cardObtainEffectOwnershipCompatEnabled: Boolean
     )
 
@@ -310,6 +313,7 @@ class LauncherActivity : AppCompatActivity() {
                         autoplayMode = request.autoplayMode,
                         autoplaySingleRoomSpecPath = request.autoplaySingleRoomSpecPath,
                         autoplayChoiceDelayMs = request.autoplayChoiceDelayMs,
+                        performanceDeepDiagnostics = request.performanceDeepDiagnostics,
                         cardObtainEffectOwnershipCompatEnabled =
                             request.cardObtainEffectOwnershipCompatEnabled
                     )
@@ -363,6 +367,11 @@ class LauncherActivity : AppCompatActivity() {
                 EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS,
                 0L
             ).coerceAtLeast(0L),
+            performanceDeepDiagnostics = if (startupIntent.hasExtra(EXTRA_DEBUG_PERFORMANCE_DEEP_DIAGNOSTICS)) {
+                startupIntent.getBooleanExtra(EXTRA_DEBUG_PERFORMANCE_DEEP_DIAGNOSTICS, false)
+            } else {
+                null
+            },
             cardObtainEffectOwnershipCompatEnabled = !startupIntent.getBooleanExtra(
                 EXTRA_DEBUG_DISABLE_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT,
                 false

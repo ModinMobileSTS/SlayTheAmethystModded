@@ -151,7 +151,8 @@ internal object StsUiTouchCompatPatcher {
             fields = emptyList(),
             methods = listOf(
                 MemberRef("<init>", "(Lcom/megacrit/cardcrawl/screens/mainMenu/TabBarListener;)V"),
-                MemberRef("update", "(F)V")
+                MemberRef("update", "(F)V"),
+                MemberRef("toggleViewUpgrade", "()V")
             )
         )
     )

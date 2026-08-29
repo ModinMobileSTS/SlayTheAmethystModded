@@ -55,6 +55,15 @@ internal object JvmLogShareService {
         )
     }
 
+    fun preparePerformanceSharePayload(host: Activity): JvmLogsSharePayload {
+        val archiveResult = DiagnosticsProcessClient.buildPerformanceLogShareArchive(host)
+        val fileName = archiveResult.archiveFile.name
+        return JvmLogsSharePayload(
+            uri = FileShareCompat.resolveShareUri(host, archiveResult.archiveFile),
+            fileName = fileName
+        )
+    }
+
     fun buildShareIntent(host: Activity, payload: JvmLogsSharePayload): Intent {
         return FileShareCompat.buildShareIntent(
             host = host,
@@ -64,5 +73,4 @@ internal object JvmLogShareService {
         )
     }
 }
-
 

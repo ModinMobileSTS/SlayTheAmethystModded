@@ -99,6 +99,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -233,6 +234,7 @@ private fun LauncherGamePage(
     onModSizeClick: () -> Unit,
     onSteamCloudClick: () -> Unit,
     onEasyTierClick: () -> Unit,
+    onSteamAchievementsClick: () -> Unit,
     onLaunch: () -> Unit,
 ) {
     val steamCloudIndicator = uiState.steamCloudIndicator
@@ -321,6 +323,11 @@ private fun LauncherGamePage(
                 EasyTierOverviewCard(
                     indicator = easyTierIndicator,
                     onClick = onEasyTierClick,
+                )
+
+                SteamAchievementOverviewCard(
+                    state = uiState.steamAchievements,
+                    onClick = onSteamAchievementsClick,
                 )
             }
         }
@@ -523,15 +530,21 @@ private fun GameLaunchActionBar(
 private fun ModsHeaderPinnedContent(
     folderControlsEnabled: Boolean,
     dragLocked: Boolean,
+    showEnabledModsOnly: Boolean,
+    showUpdateAvailableModsOnly: Boolean,
     hostAvailable: Boolean,
     feedbackUnreadCount: Int,
     workshopUpdateCheckState: WorkshopUpdateCheckUiState,
     onToggleDragLocked: () -> Unit,
+    onShowEnabledModsOnlyChange: (Boolean) -> Unit,
+    onShowUpdateAvailableModsOnlyChange: (Boolean) -> Unit,
     onAddFolderClick: () -> Unit,
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
 ) {
     val canEditFolders = folderControlsEnabled && hostAvailable
+    var modFilterMenuExpanded by remember { mutableStateOf(false) }
+    val hasActiveModFilter = showEnabledModsOnly || showUpdateAvailableModsOnly
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_mods,
         iconContentDescription = null,
@@ -559,6 +572,51 @@ private fun ModsHeaderPinnedContent(
                             contentDescription = stringResource(R.string.main_feedback_updates_content_description),
                         )
                     }
+                }
+            }
+            Box {
+                CompactTopBarIconButton(
+                    onClick = { modFilterMenuExpanded = true },
+                    enabled = true,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_filter_list),
+                        contentDescription = stringResource(R.string.main_mod_filter_menu),
+                        tint = if (hasActiveModFilter) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                DropdownMenu(
+                    expanded = modFilterMenuExpanded,
+                    onDismissRequest = { modFilterMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_filter_update_available)) },
+                        onClick = {
+                            onShowUpdateAvailableModsOnlyChange(!showUpdateAvailableModsOnly)
+                        },
+                        leadingIcon = {
+                            Checkbox(
+                                checked = showUpdateAvailableModsOnly,
+                                onCheckedChange = null,
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_filter_enabled)) },
+                        onClick = {
+                            onShowEnabledModsOnlyChange(!showEnabledModsOnly)
+                        },
+                        leadingIcon = {
+                            Checkbox(
+                                checked = showEnabledModsOnly,
+                                onCheckedChange = null,
+                            )
+                        },
+                    )
                 }
             }
             WorkshopUpdateCheckButton(
@@ -926,6 +984,10 @@ private fun SteamCloudOverviewCard(
             disabledElevation = 2.dp,
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -1006,6 +1068,10 @@ private fun EasyTierOverviewCard(
         enabled = indicator.visible,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -3658,7 +3724,12 @@ internal fun LauncherMainRoute(
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState = viewModel.uiState
     val hasActiveWorkshopDownloads = uiState.optionalMods.any { mod ->
-        mod.workshop?.state == WorkshopModState.Downloading
+        when (mod.workshop?.state) {
+            WorkshopModState.Queued,
+            WorkshopModState.Downloading,
+            WorkshopModState.Cancelling -> true
+            else -> false
+        }
     } || WorkshopDownloadCenterStore.tasks.any { task ->
         task.status.isActiveDownload()
     }
@@ -3716,7 +3787,9 @@ internal fun LauncherMainRoute(
             }
             viewModel.refresh(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
-            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
+            // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
+            // freshly completed sync does not immediately restart on recomposition.
+            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = false)
         }
     }
 
@@ -3743,6 +3816,7 @@ internal fun LauncherMainRoute(
                 if (event == Lifecycle.Event.ON_RESUME) {
                     viewModel.refresh(activity)
                     viewModel.syncModSuggestionsIfNeeded(activity)
+                    viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = false)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -4312,6 +4386,7 @@ private fun LauncherMainScreenContent(
         minimumCompatibleVersion = minimumOnlineLobbyCompatibleVersion,
     )
     var showEasyTierBottomSheet by remember { mutableStateOf(false) }
+    var showSteamAchievementsBottomSheet by remember { mutableStateOf(false) }
     var showEasyTierCompatibilityUpdateDialog by remember { mutableStateOf(false) }
     var easyTierRoomLoadBaselineAtOpen by remember { mutableStateOf<Long?>(null) }
     var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
@@ -4340,6 +4415,7 @@ private fun LauncherMainScreenContent(
     val easyTierInitialLoadPending = easyTierBottomSheetVisible &&
         easyTierRoomBrowser.lastLoadedAtMs == easyTierRoomLoadBaselineAtOpen
     val easyTierBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val steamAchievementsBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var batchEditBarState by remember { mutableStateOf<BatchEditBarState?>(null) }
     var batchEditBarHeightPx by remember { mutableIntStateOf(0) }
     val batchSelectionMode = batchEditBarState != null
@@ -4426,6 +4502,12 @@ private fun LauncherMainScreenContent(
     LaunchedEffect(uiState.easyTierIndicator.visible) {
         if (!uiState.easyTierIndicator.visible) {
             showEasyTierBottomSheet = false
+        }
+    }
+
+    LaunchedEffect(showSteamAchievementsBottomSheet) {
+        if (showSteamAchievementsBottomSheet) {
+            actions.onRefreshSteamAchievements()
         }
     }
 
@@ -4552,14 +4634,17 @@ private fun LauncherMainScreenContent(
                             onSteamCloudClick = {
                                 showSteamCloudBottomSheet = true
                             },
-                            onEasyTierClick = {
+                             onEasyTierClick = {
                                 if (easyTierLauncherUpdateRequired) {
                                     showEasyTierCompatibilityUpdateDialog = true
                                 } else {
                                     easyTierRoomLoadBaselineAtOpen = easyTierRoomBrowser.lastLoadedAtMs
                                     showEasyTierBottomSheet = true
-                                }
-                            },
+                                 }
+                             },
+                             onSteamAchievementsClick = {
+                                 showSteamAchievementsBottomSheet = true
+                             },
                             onLaunch = {
                                 if (actions.onLaunch() == LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET) {
                                     showSteamCloudBottomSheet = true
@@ -4572,6 +4657,8 @@ private fun LauncherMainScreenContent(
                         var modsHeaderHeightPx by remember { mutableIntStateOf(0) }
                         var modsHeaderCollapsed by remember { mutableStateOf(false) }
                         var modsContentMountReady by remember { mutableStateOf(false) }
+                        var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
+                        var showUpdateAvailableModsOnly by rememberSaveable { mutableStateOf(false) }
                         val measuredModsHeaderHeight = with(density) { modsHeaderHeightPx.toDp() }
                         val modsHeaderContentTopInset =
                             (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) - 20.dp
@@ -4605,6 +4692,8 @@ private fun LauncherMainScreenContent(
                                     showInitializing = showInitializing || !modsContentMountReady,
                                     contentTopInset = modsHeaderContentTopInset,
                                     actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
+                                    showEnabledModsOnly = showEnabledModsOnly,
+                                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
                                     onHeaderCollapsedChange = { modsHeaderCollapsed = it },
                                     onBatchEditBarStateChange = { batchEditBarState = it },
                                     actions = actions
@@ -4628,10 +4717,16 @@ private fun LauncherMainScreenContent(
                                     ModsHeaderPinnedContent(
                                         folderControlsEnabled = uiState.controlsEnabled && !batchSelectionMode,
                                         dragLocked = uiState.dragLocked,
+                                        showEnabledModsOnly = showEnabledModsOnly,
+                                        showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
                                         hostAvailable = actions.isHostAvailable,
                                         feedbackUnreadCount = feedbackUnreadCount,
                                         workshopUpdateCheckState = workshopUpdateCheckState,
                                         onToggleDragLocked = actions.onToggleDragLocked,
+                                        onShowEnabledModsOnlyChange = { showEnabledModsOnly = it },
+                                        onShowUpdateAvailableModsOnlyChange = {
+                                            showUpdateAvailableModsOnly = it
+                                        },
                                         onAddFolderClick = { showCreateFolderDialog = true },
                                         onCheckWorkshopUpdates = {
                                             if (!batchSelectionMode) {
@@ -4733,6 +4828,22 @@ private fun LauncherMainScreenContent(
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
                 initialLoading = easyTierInitialLoadPending,
+            )
+        }
+    }
+
+    if (showSteamAchievementsBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSteamAchievementsBottomSheet = false },
+            sheetState = steamAchievementsBottomSheetState,
+            sheetGesturesEnabled = false,
+        ) {
+            SteamAchievementBottomSheetContent(
+                state = uiState.steamAchievements,
+                debugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(LocalContext.current),
+                onRefresh = actions.onRefreshSteamAchievements,
+                onSetAchievementUnlocked = actions.onSetSteamAchievementUnlocked,
+                 onSyncAchievements = actions.onSyncSteamAchievements,
             )
         }
     }
@@ -5209,8 +5320,14 @@ internal fun shouldShowSteamCloudBackgroundUploadAction(
     indicator: MainScreenViewModel.SteamCloudIndicatorUi,
 ): Boolean {
     return indicator.state == MainScreenViewModel.SteamCloudIndicatorState.SYNCING &&
-        indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
+        indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD &&
+        indicator.backgroundUploadReady
 }
+
+internal fun shouldShowSteamCloudBackgroundLaunchDuringCheck(
+    indicator: MainScreenViewModel.SteamCloudIndicatorUi,
+): Boolean = indicator.state == MainScreenViewModel.SteamCloudIndicatorState.CHECKING &&
+    indicator.backgroundUploadReady
 
 internal fun shouldAutoLaunchAfterSteamCloudUpdate(
     indicator: MainScreenViewModel.SteamCloudIndicatorUi,
@@ -5897,7 +6014,9 @@ private fun SteamCloudBottomSheetContent(
             buildSteamCloudConflictCardSummaries(it)
         }
     }
+    var showConflictFilesDialog by remember { mutableStateOf(false) }
     val showBackgroundUploadAction = shouldShowSteamCloudBackgroundUploadAction(indicator)
+    val showBackgroundLaunchDuringCheck = shouldShowSteamCloudBackgroundLaunchDuringCheck(indicator)
 
     Column(
         modifier = Modifier
@@ -6070,6 +6189,19 @@ private fun SteamCloudBottomSheetContent(
                         }
                     }
                 }
+                // "View conflicting files" link — only shown when there are typed conflicts
+                val conflictingFiles = indicator.plan?.conflicts
+                if (!conflictingFiles.isNullOrEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_steam_cloud_conflict_view_files),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier
+                            .clickable { showConflictFilesDialog = true }
+                            .padding(top = 2.dp),
+                    )
+                }
             }
 
             MainScreenViewModel.SteamCloudIndicatorState.SYNCING -> {
@@ -6152,15 +6284,47 @@ private fun SteamCloudBottomSheetContent(
             }
 
             MainScreenViewModel.SteamCloudIndicatorState.CHECKING -> {
-                OutlinedButton(
-                    onClick = onCancelCheck,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(text = stringResource(R.string.main_steam_cloud_action_cancel_check))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (showBackgroundLaunchDuringCheck) {
+                        Text(
+                            text = stringResource(R.string.main_steam_cloud_background_upload_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = onCancelCheck,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = if (showBackgroundLaunchDuringCheck) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+                        ) {
+                            Text(text = stringResource(R.string.main_steam_cloud_action_cancel_check))
+                        }
+                        if (showBackgroundLaunchDuringCheck) {
+                            Button(
+                                onClick = onBackgroundUploadAndLaunch,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(text = stringResource(R.string.main_steam_cloud_action_background_start))
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (showConflictFilesDialog) {
+        val conflicts = indicator.plan?.conflicts.orEmpty()
+        SteamCloudConflictFilesDialog(
+            conflicts = conflicts,
+            onDismiss = { showConflictFilesDialog = false },
+        )
     }
 }
 
@@ -6310,6 +6474,57 @@ private fun SteamCloudConflictMetaLine(
 }
 
 @Composable
+private fun SteamCloudConflictFilesDialog(
+    conflicts: List<io.stamethyst.backend.steamcloud.SteamCloudConflict>,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(R.string.main_steam_cloud_conflict_files_dialog_title))
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                conflicts.forEachIndexed { index, conflict ->
+                    val kindLabel = when (conflict.kind) {
+                        io.stamethyst.backend.steamcloud.SteamCloudConflictKind.BASELINE_REQUIRED ->
+                            stringResource(R.string.main_steam_cloud_conflict_files_dialog_kind_baseline_required)
+                        io.stamethyst.backend.steamcloud.SteamCloudConflictKind.BOTH_CHANGED ->
+                            stringResource(R.string.main_steam_cloud_conflict_files_dialog_kind_both_changed)
+                    }
+                    if (index > 0) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = conflict.localRelativePath,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = kindLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_steam_cloud_conflict_confirm_cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun steamCloudActionBarTitle(
     state: MainScreenViewModel.SteamCloudIndicatorState,
 ): String {
@@ -6396,6 +6611,13 @@ private fun localizedSteamCloudPlanWarning(
             resources.getString(
                 R.string.main_steam_cloud_warning_unsupported_remote_path,
                 parsed.remotePath
+            )
+        }
+
+        is SteamCloudUserWarning.DuplicateMappedLocalPath -> {
+            resources.getString(
+                R.string.main_steam_cloud_warning_duplicate_mapped_local_path,
+                parsed.localRelativePath
             )
         }
 
@@ -6508,6 +6730,8 @@ private fun ColumnScope.MainContentSwitcher(
     showInitializing: Boolean,
     contentTopInset: Dp = 0.dp,
     actionBarBottomPadding: Dp,
+    showEnabledModsOnly: Boolean,
+    showUpdateAvailableModsOnly: Boolean,
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit,
     actions: MainScreenActions
@@ -6568,6 +6792,8 @@ private fun ColumnScope.MainContentSwitcher(
                     contentTopInset = contentTopInset,
                     contentBottomInset = actionBarBottomPadding,
                     hostAvailable = actions.isHostAvailable,
+                    showEnabledModsOnly = showEnabledModsOnly,
+                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
                     onHeaderCollapsedChange = onHeaderCollapsedChange,
                     onBatchEditBarStateChange = onBatchEditBarStateChange,
                     callbacks = ModFolderSectionCallbacks(

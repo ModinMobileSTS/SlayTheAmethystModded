@@ -29,7 +29,7 @@ internal object SteamCloudMirrorPlanner {
         currentLocalEntries: List<SteamCloudLocalFileSnapshotEntry>,
         currentRemoteSnapshot: SteamCloudManifestSnapshot,
     ): SteamCloudMirrorPlan {
-        val currentRemoteByPath = currentRemoteSnapshot.entries.associateBy { it.localRelativePath }
+        val currentRemoteByPath = currentRemoteSnapshot.entriesForPlanning.associateBy { it.localRelativePath }
         val uploadCandidates = currentLocalEntries
             .sortedWith(compareBy<SteamCloudLocalFileSnapshotEntry>({ it.localRelativePath.lowercase() }, { it.localRelativePath }))
             .mapNotNull { localEntry ->
@@ -57,8 +57,9 @@ internal object SteamCloudMirrorPlanner {
             }
 
         val localPaths = currentLocalEntries.mapTo(linkedSetOf()) { it.localRelativePath }
-        val deleteRemotePaths = currentRemoteSnapshot.entries
+        val deleteRemotePaths = currentRemoteSnapshot.entriesForPlanning
             .asSequence()
+            .filter { it.isLive }
             .filter { it.localRelativePath !in localPaths }
             .map { it.remotePath }
             .sortedWith(compareBy<String>({ it.lowercase() }, { it }))
@@ -76,7 +77,7 @@ internal object SteamCloudMirrorPlanner {
         baseline: SteamCloudSyncBaseline,
     ): SteamCloudMirrorPlan {
         val currentLocalByPath = currentLocalEntries.associateBy { it.localRelativePath }
-        val currentRemoteByPath = currentRemoteSnapshot.entries.associateBy { it.localRelativePath }
+        val currentRemoteByPath = currentRemoteSnapshot.entriesForPlanning.associateBy { it.localRelativePath }
         val baselineLocalByPath = baseline.localEntries.associateBy { it.localRelativePath }
         val baselineRemoteByPath = baseline.remoteEntries.associateBy { it.localRelativePath }
         val allPaths = linkedSetOf<String>().apply {
@@ -102,7 +103,7 @@ internal object SteamCloudMirrorPlanner {
                 ?: continue
 
             if (currentLocal == null) {
-                currentRemote?.remotePath?.let(deleteRemotePaths::add)
+                currentRemote?.takeIf { it.isLive }?.remotePath?.let(deleteRemotePaths::add)
                 continue
             }
 
@@ -111,18 +112,14 @@ internal object SteamCloudMirrorPlanner {
                 ?: SteamCloudPathMapper.buildRemotePath(localRelativePath)
                 ?: continue
 
-            val shouldUpload = when {
-                currentRemote == null -> true
-                else -> {
-                    val localChanged = hasLocalChanged(baselineLocal, currentLocal)
-                    val remoteChanged = hasRemoteChanged(baselineRemote, currentRemote)
-                    localChanged || remoteChanged
-                }
-            }
+            val localChanged = hasLocalChanged(baselineLocal, currentLocal)
+            val remoteChanged = hasRemoteChanged(baselineRemote, currentRemote)
+            val remoteMatches = shouldSkipUploadBecauseRemoteMatches(currentLocal, currentRemote)
+            val shouldUpload = currentRemote == null || localChanged || remoteChanged || !remoteMatches
             if (!shouldUpload) {
                 continue
             }
-            if (shouldSkipUploadBecauseRemoteMatches(currentLocal, currentRemote)) {
+            if (remoteMatches) {
                 continue
             }
 
@@ -172,26 +169,39 @@ internal object SteamCloudMirrorPlanner {
         if (baseline == null || current == null) {
             return true
         }
-        val sha1Changed = baseline.sha1.isNotBlank() &&
-            current.sha1.isNotBlank() &&
-            !baseline.sha1.equals(current.sha1, ignoreCase = true)
-        return baseline.remotePath != current.remotePath
-            || baseline.rawSize != current.rawSize
-            || baseline.timestamp != current.timestamp
-            || baseline.persistState != current.persistState
-            || sha1Changed
+        // Normalize path separators — Steam may return '\' or '/' depending on client/platform.
+        val baselinePath = baseline.remotePath.replace('\\', '/')
+        val currentPath = current.remotePath.replace('\\', '/')
+        if (baselinePath != currentPath) {
+            return true
+        }
+        if (!steamCloudPersistStatesMatch(baseline.persistState, current.persistState)) {
+            return true
+        }
+        // SHA-1 is the authoritative content identity signal.
+        val baselineSha1 = baseline.sha1.trim()
+        val currentSha1 = current.sha1.trim()
+        if (baselineSha1.isNotBlank() && currentSha1.isNotBlank()) {
+            return !baselineSha1.equals(currentSha1, ignoreCase = true)
+        }
+        // Size remains a change detector when comparing two remote manifest versions.  It is
+        // intentionally not used as proof that a local file matches a remote file.
+        return baseline.rawSize != current.rawSize
     }
 
     private fun shouldSkipUploadBecauseRemoteMatches(
         local: SteamCloudLocalFileSnapshotEntry,
         remote: SteamCloudManifestEntry?,
     ): Boolean {
-        if (remote == null) {
+        if (remote == null || !remote.isLive) {
             return false
         }
-        if (local.sha1.isBlank() || remote.sha1.isBlank()) {
-            return false
+        // Use SHA-1 only when both sides have it; size alone is not proof of equality.
+        val localSha1 = local.sha1.trim()
+        val remoteSha1 = remote.sha1.trim()
+        if (localSha1.isNotBlank() && remoteSha1.isNotBlank()) {
+            return localSha1.equals(remoteSha1, ignoreCase = true)
         }
-        return local.sha1.equals(remote.sha1, ignoreCase = true)
+        return false
     }
 }

@@ -6,10 +6,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class RamSaverDiag {
-    private static final String GPU_RESOURCE_DIAG_PROP = "amethyst.gdx.gpu_resource_diag";
     private static final String RAM_SAVER_DIAG_PROP = "ramsaver.diag.enabled";
     private static final String RAM_SAVER_VERBOSE_PROP = "ramsaver.diag.verbose";
-    private static final boolean ENABLED = readBoolean(GPU_RESOURCE_DIAG_PROP, false) || readBoolean(RAM_SAVER_DIAG_PROP, false);
+    private static final boolean ENABLED = readBoolean(RAM_SAVER_DIAG_PROP, false);
     private static final boolean VERBOSE = readBoolean(RAM_SAVER_VERBOSE_PROP, false);
     private static final int STACK_DEPTH = readInt("ramsaver.diag.stack_depth", 14, 1, 64);
     private static final long SLOW_EVENT_NANOS = readLong("ramsaver.diag.slow_ms", 4L, 0L, 60000L) * 1000000L;

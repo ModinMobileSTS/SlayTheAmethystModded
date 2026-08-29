@@ -48,12 +48,11 @@ public class SpriteBatch implements Batch {
 		readBooleanProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
 	private static final boolean GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED =
 		readBooleanProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
-	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
-	// consumeFrameDiagnostics() is only called from LwjglApplication's frame profiler branch, so with
-	// the profiler off these counters are written and never read. switchTexture/flush run thousands of
-	// times per frame in StS, making the atomic increments pure overhead in the default configuration.
+	// Frame-ring diagnostics: atomic counters gated by FrameRingBuffer.ENABLED.
+	// switchTexture/flush run thousands of times per frame in StS; with the ring
+	// disabled the JIT eliminates the dead branches entirely.
 	private static final boolean FRAME_DIAGNOSTICS_ENABLED =
-		readBooleanProperty(FRAME_PROFILER_ENABLED_PROP, false);
+		Boolean.getBoolean("amethyst.gdx.frame_ring");
 	private static final AtomicInteger FRAME_FLUSHES = new AtomicInteger();
 	private static final AtomicInteger FRAME_TEXTURE_SWITCHES = new AtomicInteger();
 	private static final AtomicInteger FRAME_MAX_SPRITES_IN_BATCH = new AtomicInteger();
@@ -89,6 +88,18 @@ public class SpriteBatch implements Batch {
 	private int compatAppliedTotal;
 	private int compatSkippedTotal;
 
+	/** Returns and resets the flush counter. Returns 0 when ring is disabled. */
+	public static int consumeFlushCount () {
+		return FRAME_DIAGNOSTICS_ENABLED ? FRAME_FLUSHES.getAndSet(0) : 0;
+	}
+
+	/** Returns and resets the texture-switch counter. Returns 0 when ring is disabled. */
+	public static int consumeSwitchCount () {
+		return FRAME_DIAGNOSTICS_ENABLED ? FRAME_TEXTURE_SWITCHES.getAndSet(0) : 0;
+	}
+
+	/** @deprecated Use {@link #consumeFlushCount()} / {@link #consumeSwitchCount()} instead. */
+	@Deprecated
 	public static String consumeFrameDiagnostics () {
 		if (!FRAME_DIAGNOSTICS_ENABLED) {
 			return "spriteFlushes=disabled textureSwitches=disabled maxSpritesInBatch=disabled";

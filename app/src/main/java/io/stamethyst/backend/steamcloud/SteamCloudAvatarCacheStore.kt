@@ -53,7 +53,14 @@ internal object SteamCloudAvatarCacheStore {
         if (!file.isFile) {
             return null
         }
-        return BitmapFactory.decodeFile(file.absolutePath)
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+        if (bitmap == null) {
+            // A file that no longer decodes is corrupt (truncated download or an
+            // error page saved as an image); drop it so the next load re-downloads
+            // instead of failing forever.
+            file.delete()
+        }
+        return bitmap
     }
 
     private fun download(context: Context, avatarUrl: String, cacheKey: String): Bitmap? {
@@ -85,7 +92,13 @@ internal object SteamCloudAvatarCacheStore {
             if (!tempFile.renameTo(outputFile)) {
                 return@runCatching null
             }
-            BitmapFactory.decodeFile(outputFile.absolutePath)
+            val bitmap = BitmapFactory.decodeFile(outputFile.absolutePath)
+            if (bitmap == null) {
+                // Never keep a file we cannot render; otherwise every later load
+                // retries the network against the same poisoned cache entry.
+                outputFile.delete()
+            }
+            bitmap
         }.getOrNull()
     }
 
@@ -95,9 +108,17 @@ internal object SteamCloudAvatarCacheStore {
     private fun cacheDirectory(context: Context): File =
         File(context.applicationContext.filesDir, DIRECTORY_NAME)
 
+    /**
+     * Keys the cache by the URL path instead of the full URL: Steam serves the
+     * same avatar image from rotating CDN hosts (akamai/cloudflare/steamstatic),
+     * so host changes must not produce a second download for identical content.
+     * The path itself carries the unique avatar hash (…/&lt;hash&gt;_full.jpg).
+     */
     private fun cacheKey(avatarUrl: String): String {
+        val path = runCatching { java.net.URI(avatarUrl).path }.getOrNull().orEmpty()
+        val identity = path.ifBlank { avatarUrl }
         val digest = MessageDigest.getInstance("SHA-256")
-            .digest(avatarUrl.toByteArray(Charsets.UTF_8))
+            .digest(identity.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 }

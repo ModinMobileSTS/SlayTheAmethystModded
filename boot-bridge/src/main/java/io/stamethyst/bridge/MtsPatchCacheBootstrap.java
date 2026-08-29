@@ -513,7 +513,7 @@ public final class MtsPatchCacheBootstrap {
     static final class ChildFirstJarClassLoader extends URLClassLoader {
         static {
             // Without this the JVM serializes every loadClass call on a single lock.
-            // Loadout's scanner threads, BaseMod, and the GDX asset threads all load
+            // Mod scanner threads, BaseMod, and the GDX asset threads all load
             // classes concurrently through this loader, so a single lock is both a
             // startup bottleneck and a deadlock risk once a parent-first delegation
             // happens while another thread holds the parent's lock.

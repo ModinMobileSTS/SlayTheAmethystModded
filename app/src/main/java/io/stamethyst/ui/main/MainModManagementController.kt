@@ -16,6 +16,7 @@ import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
+import io.stamethyst.backend.workshop.WorkshopDownloadBlocklist
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
 import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
@@ -2018,9 +2019,13 @@ internal class MainModManagementController(
         io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus.Cancelled -> false
     }
 
-    private fun io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus.toStandaloneWorkshopCardState(): WorkshopModCardState = when (this) {
-        io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus.Paused -> WorkshopModCardState.DownloadPaused
-        io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus.Failed -> WorkshopModCardState.DownloadFailed
+    private fun io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus.toStandaloneWorkshopCardState(): WorkshopModCardState = when (
+        WorkshopModStateResolver.resolveTaskKind(this)
+    ) {
+        WorkshopResolvedModStateKind.DownloadPaused -> WorkshopModCardState.DownloadPaused
+        WorkshopResolvedModStateKind.DownloadFailed -> WorkshopModCardState.DownloadFailed
+        // Queued/Cancelling have no persisted card state of their own; the live task status
+        // carried alongside the record is what drives the rendered state.
         else -> WorkshopModCardState.Downloading
     }
 
@@ -2104,6 +2109,7 @@ internal class MainModManagementController(
             localJarPath = absoluteJarPath,
             localPreviewImagePath = resolveWorkshopPreviewImagePath(host, this),
             downloadProgressPercent = task?.progressPercent,
+            downloadBlocked = WorkshopDownloadBlocklist.isBlocked(publishedFileId),
         )
     }
 
@@ -2120,12 +2126,12 @@ internal class MainModManagementController(
     }
 
     private fun WorkshopResolvedModStateKind.toWorkshopModState(): WorkshopModState = when (this) {
-        WorkshopResolvedModStateKind.NotDownloaded -> WorkshopModState.DownloadFailed
+        WorkshopResolvedModStateKind.NotDownloaded -> WorkshopModState.NotDownloaded
         WorkshopResolvedModStateKind.ImportedUnpatched -> WorkshopModState.ImportedUnpatched
         WorkshopResolvedModStateKind.ImportedPatched -> WorkshopModState.ImportedPatched
-        WorkshopResolvedModStateKind.Queued,
-        WorkshopResolvedModStateKind.Downloading,
-        WorkshopResolvedModStateKind.Cancelling -> WorkshopModState.Downloading
+        WorkshopResolvedModStateKind.Queued -> WorkshopModState.Queued
+        WorkshopResolvedModStateKind.Downloading -> WorkshopModState.Downloading
+        WorkshopResolvedModStateKind.Cancelling -> WorkshopModState.Cancelling
         WorkshopResolvedModStateKind.DownloadPaused -> WorkshopModState.DownloadPaused
         WorkshopResolvedModStateKind.DownloadFailed -> WorkshopModState.DownloadFailed
         WorkshopResolvedModStateKind.NonStandardDownloaded -> WorkshopModState.NonStandardDownloaded
@@ -2159,7 +2165,9 @@ internal class MainModManagementController(
     private fun ModItemUi.canDeleteDownloadedWorkshopMod(): Boolean {
         if (installed) return false
         return when (workshop?.state) {
+            WorkshopModState.Queued,
             WorkshopModState.Downloading,
+            WorkshopModState.Cancelling,
             WorkshopModState.DownloadPaused,
             WorkshopModState.DownloadFailed,
             WorkshopModState.ImportedUnpatched,
@@ -2172,7 +2180,12 @@ internal class MainModManagementController(
 
     private fun ModItemUi.isActiveWorkshopDownload(): Boolean {
         if (installed) return false
-        return workshop?.state == WorkshopModState.Downloading
+        return when (workshop?.state) {
+            WorkshopModState.Queued,
+            WorkshopModState.Downloading,
+            WorkshopModState.Cancelling -> true
+            else -> false
+        }
     }
 
     private fun deleteWorkshopResidueForMod(host: Activity, mod: ModItemUi) {

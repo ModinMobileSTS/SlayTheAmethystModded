@@ -15,6 +15,7 @@ class SteamCloudBackgroundUploadActionTest {
                     visible = true,
                     state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
                     syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+                    backgroundUploadReady = true,
                 )
             )
         )
@@ -25,6 +26,17 @@ class SteamCloudBackgroundUploadActionTest {
                     visible = true,
                     state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
                     syncDirection = SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL,
+                )
+            )
+        )
+
+        assertFalse(
+            shouldShowSteamCloudBackgroundUploadAction(
+                MainScreenViewModel.SteamCloudIndicatorUi(
+                    visible = true,
+                    state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
+                    syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+                    backgroundUploadReady = false,
                 )
             )
         )
@@ -57,6 +69,7 @@ class SteamCloudBackgroundUploadActionTest {
                     visible = true,
                     state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
                     syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+                    backgroundUploadReady = true,
                 )
             )
         )
@@ -75,9 +88,47 @@ class SteamCloudBackgroundUploadActionTest {
             shouldAutoLaunchAfterSteamCloudUpdate(
                 MainScreenViewModel.SteamCloudIndicatorUi(
                     visible = true,
+                    state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
+                    syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+                    backgroundUploadReady = false,
+                )
+            )
+        )
+
+        assertFalse(
+            shouldAutoLaunchAfterSteamCloudUpdate(
+                MainScreenViewModel.SteamCloudIndicatorUi(
+                    visible = true,
                     state = MainScreenViewModel.SteamCloudIndicatorState.CONFLICT,
                 )
             )
         )
+    }
+
+    @Test
+    fun readyBackgroundUpload_isTheOnlySyncingStateThatCanLaunch() {
+        val ready = MainScreenViewModel.SteamCloudIndicatorUi(
+            visible = true,
+            state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
+            syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
+            backgroundUploadReady = true,
+        )
+        val notReady = ready.copy(backgroundUploadReady = false)
+
+        assertTrue(shouldShowSteamCloudBackgroundUploadAction(ready))
+        assertTrue(shouldAutoLaunchAfterSteamCloudUpdate(ready))
+        assertFalse(shouldShowSteamCloudBackgroundUploadAction(notReady))
+        assertFalse(shouldAutoLaunchAfterSteamCloudUpdate(notReady))
+    }
+
+    @Test
+    fun backgroundLaunchDuringCheck_requiresFrozenSnapshot() {
+        val checking = MainScreenViewModel.SteamCloudIndicatorUi(
+            visible = true,
+            state = MainScreenViewModel.SteamCloudIndicatorState.CHECKING,
+        )
+
+        assertFalse(shouldShowSteamCloudBackgroundLaunchDuringCheck(checking))
+        assertTrue(shouldShowSteamCloudBackgroundLaunchDuringCheck(checking.copy(backgroundUploadReady = true)))
     }
 }

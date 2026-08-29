@@ -204,8 +204,7 @@ fun LauncherMobileGluesSettingsScreen(
                     SettingsSwitchSpec(
                         checked = showCustomSettings,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(R.string.mobileglues_custom_settings_enabled),
-                        disabledText = stringResource(R.string.mobileglues_custom_settings_disabled),
+                        title = stringResource(R.string.mobileglues_custom_settings_enabled),
                         description = stringResource(R.string.mobileglues_custom_settings_desc),
                         onCheckedChange = { showCustomSettings = it }
                     )
@@ -275,8 +274,7 @@ fun LauncherMobileGluesSettingsScreen(
                         SettingsSwitchSpec(
                             checked = uiState.mobileGluesExtComputeShaderEnabled,
                             enabled = !uiState.busy,
-                            enabledText = stringResource(R.string.mobileglues_compute_shader_enabled),
-                            disabledText = stringResource(R.string.mobileglues_compute_shader_disabled),
+                            title = stringResource(R.string.mobileglues_compute_shader_enabled),
                             description = stringResource(R.string.mobileglues_compute_shader_desc),
                             onCheckedChange = {
                                 viewModel.onMobileGluesExtComputeShaderChanged(activity, it)
@@ -287,8 +285,7 @@ fun LauncherMobileGluesSettingsScreen(
                         SettingsSwitchSpec(
                             checked = uiState.mobileGluesExtTimerQueryEnabled,
                             enabled = !uiState.busy,
-                            enabledText = stringResource(R.string.mobileglues_timer_query_enabled),
-                            disabledText = stringResource(R.string.mobileglues_timer_query_disabled),
+                            title = stringResource(R.string.mobileglues_timer_query_enabled),
                             description = stringResource(R.string.mobileglues_timer_query_desc),
                             onCheckedChange = {
                                 viewModel.onMobileGluesExtTimerQueryChanged(activity, it)
@@ -299,11 +296,8 @@ fun LauncherMobileGluesSettingsScreen(
                         SettingsSwitchSpec(
                             checked = uiState.mobileGluesExtDirectStateAccessEnabled,
                             enabled = !uiState.busy,
-                            enabledText = stringResource(
+                            title = stringResource(
                                 R.string.mobileglues_direct_state_access_enabled
-                            ),
-                            disabledText = stringResource(
-                                R.string.mobileglues_direct_state_access_disabled
                             ),
                             description = stringResource(R.string.mobileglues_direct_state_access_desc),
                             onCheckedChange = {
@@ -454,5 +448,4 @@ private fun currentMobileGluesParameterLines(
         ),
     )
 }
-
 

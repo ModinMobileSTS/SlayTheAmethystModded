@@ -44,6 +44,22 @@ class StsDesktopJarPatcherTest {
     }
 
     @Test
+    fun shouldPatchStsEntry_acceptsFrameRingBufferInnerClasses() {
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val included = method.invoke(
+            StsDesktopJarPatcher,
+            "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer\$FrameConsumer.class"
+        ) as Boolean
+
+        assertTrue(included)
+    }
+
+    @Test
     fun requiredPatchClasses_includeTextureOwnerSummary() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS))
     }

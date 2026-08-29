@@ -55,6 +55,10 @@ import kotlinx.coroutines.delay
 
 
 internal data class DeveloperRuntimeSettingsActions(
+    val onGpuResourceDiagChanged: (Boolean) -> Unit,
+    val onSharePerformanceLogs: () -> Unit,
+    val onExportPerformanceLogs: () -> Unit,
+    val onInstallArthasResource: () -> Unit,
     val onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     val onSustainedPerformanceModeChanged: (Boolean) -> Unit,
     val onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
@@ -85,7 +89,6 @@ internal data class StatusSettingsActions(
     val onLogcatCaptureChanged: (Boolean) -> Unit,
     val onLauncherLogcatCaptureChanged: (Boolean) -> Unit,
     val onJvmLogcatMirrorChanged: (Boolean) -> Unit,
-    val onGpuResourceDiagChanged: (Boolean) -> Unit,
     val onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     val onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
     val onClearJunkFiles: () -> Unit,
@@ -104,10 +107,8 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
     onLocalTestCloudControlEnabledChanged: (Boolean) -> Unit = {},
+    onSteamAchievementDebugModeEnabledChanged: (Boolean) -> Unit = {},
     onLocalTestEndpointsChanged: (String, String, String) -> Boolean = { _, _, _ -> false },
-    onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
-    onRunSteamCloudPhase0Probe: () -> Unit = {},
-    onClearSteamCloudPhase0Credentials: () -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
@@ -124,6 +125,9 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onLauncherLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
+    onSharePerformanceLogs: () -> Unit = {},
+    onExportPerformanceLogs: () -> Unit = {},
+    onInstallArthasResource: () -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onClearJunkFiles: () -> Unit = {},
@@ -166,6 +170,10 @@ internal fun LauncherDeveloperSettingsScreenContent(
                 SettingsDeveloperRuntimeSection(
                     uiState = uiState,
                     actions = DeveloperRuntimeSettingsActions(
+                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
+                        onSharePerformanceLogs = onSharePerformanceLogs,
+                        onExportPerformanceLogs = onExportPerformanceLogs,
+                        onInstallArthasResource = onInstallArthasResource,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                         onCompendiumUpgradeTouchFixEnabledChanged =
@@ -203,8 +211,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                     SettingsSwitchSpec(
                         checked = uiState.localTestCloudControlEnabled,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(R.string.settings_cloud_control_test_enabled),
-                        disabledText = stringResource(R.string.settings_cloud_control_test_disabled),
+                        title = stringResource(R.string.settings_cloud_control_test_enabled),
                         description = stringResource(R.string.settings_cloud_control_test_desc),
                         onCheckedChange = onLocalTestCloudControlEnabledChanged,
                     )
@@ -279,17 +286,6 @@ internal fun LauncherDeveloperSettingsScreenContent(
         }
 
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_phase0_title)) {
-                SettingsSteamCloudPhase0Section(
-                    uiState = uiState,
-                    onSaveCredentials = onSaveSteamCloudPhase0Credentials,
-                    onRunProbe = onRunSteamCloudPhase0Probe,
-                    onClearCredentials = onClearSteamCloudPhase0Credentials,
-                )
-            }
-        }
-
-        item {
             SettingsSectionCard(title = stringResource(R.string.settings_developer_render_title)) {
                 SettingsAdvancedRenderSection(
                     uiState = uiState,
@@ -328,11 +324,24 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onLogcatCaptureChanged = onLogcatCaptureChanged,
                         onLauncherLogcatCaptureChanged = onLauncherLogcatCaptureChanged,
                         onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
-                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged,
                         onClearJunkFiles = onClearJunkFiles,
                     ),
+                )
+            }
+        }
+
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_steam_achievement_debug_mode_title)) {
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.steamAchievementDebugModeEnabled,
+                        enabled = !uiState.busy,
+                        title = stringResource(R.string.settings_steam_achievement_debug_mode_enabled),
+                        description = stringResource(R.string.settings_steam_achievement_debug_mode_desc),
+                        onCheckedChange = onSteamAchievementDebugModeEnabledChanged,
+                    )
                 )
             }
         }
@@ -370,8 +379,7 @@ internal fun SettingsTogetherInSpireSection(
         SettingsSwitchSpec(
             checked = uiState.togetherInSpireRouteLockEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_together_in_spire_route_lock_enabled),
-            disabledText = stringResource(R.string.settings_together_in_spire_route_lock_disabled),
+            title = stringResource(R.string.settings_together_in_spire_route_lock_enabled),
             description = stringResource(R.string.settings_together_in_spire_route_lock_desc),
             onCheckedChange = actions.onRouteLockEnabledChanged,
         )
@@ -381,8 +389,7 @@ internal fun SettingsTogetherInSpireSection(
         SettingsSwitchSpec(
             checked = uiState.togetherInSpireEasyTierAutofillEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_together_in_spire_autofill_enabled),
-            disabledText = stringResource(R.string.settings_together_in_spire_autofill_disabled),
+            title = stringResource(R.string.settings_together_in_spire_autofill_enabled),
             description = stringResource(R.string.settings_together_in_spire_autofill_desc),
             onCheckedChange = actions.onEasyTierAutofillEnabledChanged,
         )
@@ -471,115 +478,6 @@ internal fun SettingsResetDefaultsSection(
 
 
 @Composable
-internal fun SettingsSteamCloudPhase0Section(
-    uiState: SettingsScreenViewModel.UiState,
-    onSaveCredentials: (String, String, String) -> Boolean,
-    onRunProbe: () -> Unit,
-    onClearCredentials: () -> Unit,
-) {
-    var showCredentialsDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingAccountName by rememberSaveable { mutableStateOf("") }
-    var pendingRefreshToken by rememberSaveable { mutableStateOf("") }
-    var pendingProxyUrl by rememberSaveable { mutableStateOf("") }
-
-    Text(
-        text = uiState.steamCloudPhase0StatusText.ifBlank {
-            stringResource(R.string.settings_steam_cloud_phase0_status_idle)
-        },
-        style = MaterialTheme.typography.bodySmall
-    )
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_phase0_credentials_title),
-        supportingText = uiState.steamCloudPhase0CredentialsSummary,
-        enabled = !uiState.busy,
-        onClick = {
-            pendingAccountName = uiState.steamCloudPhase0AccountName
-            pendingRefreshToken = ""
-            pendingProxyUrl = uiState.steamCloudPhase0ProxyUrl
-            showCredentialsDialog = true
-        }
-    )
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_phase0_run_title),
-        supportingText = stringResource(R.string.settings_steam_cloud_phase0_run_desc),
-        enabled = !uiState.busy,
-        onClick = onRunProbe
-    )
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_phase0_clear_title),
-        supportingText = stringResource(R.string.settings_steam_cloud_phase0_clear_desc),
-        enabled = !uiState.busy,
-        onClick = onClearCredentials
-    )
-
-    if (showCredentialsDialog) {
-        AlertDialog(
-            onDismissRequest = { showCredentialsDialog = false },
-            title = { Text(stringResource(R.string.settings_steam_cloud_phase0_credentials_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = pendingAccountName,
-                        onValueChange = { pendingAccountName = it },
-                        singleLine = true,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_account_label)) }
-                    )
-                    OutlinedTextField(
-                        value = pendingRefreshToken,
-                        onValueChange = { pendingRefreshToken = it },
-                        singleLine = false,
-                        minLines = 3,
-                        maxLines = 5,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_token_label)) }
-                    )
-                    OutlinedTextField(
-                        value = pendingProxyUrl,
-                        onValueChange = { pendingProxyUrl = it },
-                        singleLine = true,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_proxy_label)) }
-                    )
-                    Text(
-                        text = if (uiState.steamCloudPhase0RefreshTokenConfigured) {
-                            stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_keep_token)
-                        } else {
-                            stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_new_token)
-                        },
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_proxy_hint),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            confirmButton = {
-                HapticTextButton(
-                    onClick = {
-                        if (onSaveCredentials(pendingAccountName, pendingRefreshToken, pendingProxyUrl)) {
-                            showCredentialsDialog = false
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.main_folder_dialog_confirm))
-                }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { showCredentialsDialog = false }) {
-                    Text(stringResource(R.string.main_folder_dialog_cancel))
-                }
-            }
-        )
-    }
-}
-
-
-@Composable
 internal fun SettingsDeveloperEntrySection(
     busy: Boolean,
     onOpenDeveloperSettings: () -> Unit,
@@ -599,13 +497,38 @@ internal fun SettingsDeveloperRuntimeSection(
     actions: DeveloperRuntimeSettingsActions,
 ) {
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
+    var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (!uiState.arthasResourceInstalled) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_arthas_resource_title),
+            supportingText = stringResource(R.string.settings_arthas_resource_install_summary),
+            enabled = !uiState.busy,
+            onClick = actions.onInstallArthasResource
+        )
+    } else {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.gpuResourceDiagEnabled,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_gpu_resource_diag_enabled),
+                description = stringResource(R.string.settings_gpu_resource_diag_desc),
+                onCheckedChange = actions.onGpuResourceDiagChanged
+            )
+        )
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_performance_logs_title),
+            supportingText = stringResource(R.string.settings_performance_logs_desc),
+            enabled = !uiState.busy,
+            onClick = { showPerformanceLogsDialog = true }
+        )
+    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.sustainedPerformanceModeEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_sustained_performance_enabled),
-            disabledText = stringResource(R.string.settings_sustained_performance_disabled),
+            title = stringResource(R.string.settings_sustained_performance_enabled),
             description = stringResource(R.string.settings_sustained_performance_desc),
             onCheckedChange = actions.onSustainedPerformanceModeChanged
         )
@@ -629,8 +552,7 @@ internal fun SettingsDeveloperRuntimeSection(
         SettingsSwitchSpec(
             checked = uiState.manualDismissBootOverlay,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_boot_overlay_manual_enabled),
-            disabledText = stringResource(R.string.settings_boot_overlay_manual_disabled),
+            title = stringResource(R.string.settings_boot_overlay_manual_enabled),
             description = stringResource(R.string.settings_boot_overlay_manual_desc),
             onCheckedChange = actions.onManualDismissBootOverlayChanged
         )
@@ -640,8 +562,7 @@ internal fun SettingsDeveloperRuntimeSection(
         SettingsSwitchSpec(
             checked = uiState.compendiumUpgradeTouchFixEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
-            disabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_disabled),
+            title = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
             description = stringResource(R.string.settings_compendium_upgrade_touch_fix_desc),
             onCheckedChange = actions.onCompendiumUpgradeTouchFixEnabledChanged
         )
@@ -668,6 +589,38 @@ internal fun SettingsDeveloperRuntimeSection(
             confirmButton = {
                 TextButton(onClick = { showGameModeDialog = false }) {
                     Text(stringResource(R.string.settings_system_game_mode_acknowledge))
+                }
+            }
+        )
+    }
+
+    if (showPerformanceLogsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPerformanceLogsDialog = false },
+            title = { Text(stringResource(R.string.settings_performance_logs_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsActionListItem(
+                        title = stringResource(R.string.settings_performance_logs_share),
+                        enabled = !uiState.busy,
+                        onClick = {
+                            showPerformanceLogsDialog = false
+                            actions.onSharePerformanceLogs()
+                        }
+                    )
+                    SettingsActionListItem(
+                        title = stringResource(R.string.settings_performance_logs_export),
+                        enabled = !uiState.busy,
+                        onClick = {
+                            showPerformanceLogsDialog = false
+                            actions.onExportPerformanceLogs()
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showPerformanceLogsDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
                 }
             }
         )
@@ -708,8 +661,7 @@ internal fun SettingsAdvancedRenderSection(
         SettingsSwitchSpec(
             checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_renderer_auto_enabled),
-            disabledText = stringResource(R.string.settings_renderer_auto_disabled),
+            title = stringResource(R.string.settings_renderer_auto_enabled),
             description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
                 stringResource(
                     R.string.settings_renderer_auto_current,
@@ -821,11 +773,8 @@ internal fun SettingsAdvancedRenderSection(
             enabled = !uiState.busy &&
                 uiState.gpuResourceGuardianMode != GpuResourceGuardianMode.OFF &&
                 uiState.gpuResourceGuardianMode != GpuResourceGuardianMode.LEGACY,
-            enabledText = stringResource(
+            title = stringResource(
                 R.string.settings_gpu_resource_guardian_pressure_downscale_enabled
-            ),
-            disabledText = stringResource(
-                R.string.settings_gpu_resource_guardian_pressure_downscale_disabled
             ),
             description = stringResource(
                 R.string.settings_gpu_resource_guardian_pressure_downscale_desc
@@ -872,8 +821,7 @@ internal fun SettingsAdvancedRenderSection(
         SettingsSwitchSpec(
             checked = uiState.compressedPointersEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_jvm_compressed_pointers_enabled),
-            disabledText = stringResource(R.string.settings_jvm_compressed_pointers_disabled),
+            title = stringResource(R.string.settings_jvm_compressed_pointers_enabled),
             description = stringResource(R.string.settings_jvm_compressed_pointers_desc),
             onCheckedChange = actions.onJvmCompressedPointersChanged
         )
@@ -883,8 +831,7 @@ internal fun SettingsAdvancedRenderSection(
         SettingsSwitchSpec(
             checked = uiState.stringDeduplicationEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_jvm_string_dedup_enabled),
-            disabledText = stringResource(R.string.settings_jvm_string_dedup_disabled),
+            title = stringResource(R.string.settings_jvm_string_dedup_enabled),
             description = stringResource(R.string.settings_jvm_string_dedup_desc),
             onCheckedChange = actions.onJvmStringDeduplicationChanged
         )
@@ -939,8 +886,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.lwjglDebugEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_lwjgl_debug_enabled),
-            disabledText = stringResource(R.string.settings_lwjgl_debug_disabled),
+            title = stringResource(R.string.settings_lwjgl_debug_enabled),
             description = stringResource(R.string.settings_lwjgl_debug_desc),
             onCheckedChange = actions.onLwjglDebugChanged
         )
@@ -949,8 +895,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.preloadAllJreLibrariesEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_preload_all_jre_enabled),
-            disabledText = stringResource(R.string.settings_preload_all_jre_disabled),
+            title = stringResource(R.string.settings_preload_all_jre_enabled),
             description = stringResource(R.string.settings_preload_all_jre_desc),
             onCheckedChange = actions.onPreloadAllJreLibrariesChanged
         )
@@ -959,8 +904,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.logcatCaptureEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_logcat_capture_enabled),
-            disabledText = stringResource(R.string.settings_logcat_capture_disabled),
+            title = stringResource(R.string.settings_logcat_capture_enabled),
             description = stringResource(R.string.settings_logcat_capture_desc),
             onCheckedChange = actions.onLogcatCaptureChanged
         )
@@ -969,8 +913,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.launcherLogcatCaptureEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_launcher_logcat_capture_enabled),
-            disabledText = stringResource(R.string.settings_launcher_logcat_capture_disabled),
+            title = stringResource(R.string.settings_launcher_logcat_capture_enabled),
             description = stringResource(R.string.settings_launcher_logcat_capture_desc),
             onCheckedChange = actions.onLauncherLogcatCaptureChanged
         )
@@ -979,28 +922,16 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.jvmLogcatMirrorEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_jvm_logcat_mirror_enabled),
-            disabledText = stringResource(R.string.settings_jvm_logcat_mirror_disabled),
+            title = stringResource(R.string.settings_jvm_logcat_mirror_enabled),
             description = stringResource(R.string.settings_jvm_logcat_mirror_desc),
             onCheckedChange = actions.onJvmLogcatMirrorChanged
         )
     )
     SettingsSwitchItem(
         SettingsSwitchSpec(
-            checked = uiState.gpuResourceDiagEnabled,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_gpu_resource_diag_enabled),
-            disabledText = stringResource(R.string.settings_gpu_resource_diag_disabled),
-            description = stringResource(R.string.settings_gpu_resource_diag_desc),
-            onCheckedChange = actions.onGpuResourceDiagChanged
-        )
-    )
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
             checked = uiState.gdxPadCursorDebugEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_gdx_pad_cursor_debug_enabled),
-            disabledText = stringResource(R.string.settings_gdx_pad_cursor_debug_disabled),
+            title = stringResource(R.string.settings_gdx_pad_cursor_debug_enabled),
             description = stringResource(R.string.settings_gdx_pad_cursor_debug_desc),
             onCheckedChange = actions.onGdxPadCursorDebugChanged
         )
@@ -1009,8 +940,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.glBridgeSwapHeartbeatDebugEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_glbridge_swap_heartbeat_enabled),
-            disabledText = stringResource(R.string.settings_glbridge_swap_heartbeat_disabled),
+            title = stringResource(R.string.settings_glbridge_swap_heartbeat_enabled),
             description = stringResource(R.string.settings_glbridge_swap_heartbeat_desc),
             onCheckedChange = actions.onGlBridgeSwapHeartbeatDebugChanged
         )
@@ -1157,4 +1087,3 @@ internal fun RendererBackend.briefProsCons(context: Context): String {
             context.getString(R.string.settings_renderer_pros_cons_vulkan_zink)
     }
 }
-

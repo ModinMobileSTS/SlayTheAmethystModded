@@ -289,6 +289,119 @@ class SteamCloudDiffPlannerTest {
     }
 
     @Test
+    fun buildUploadPlan_sameSizeMissingSha1_requiresBaselineConflict() {
+        val plan = SteamCloudDiffPlanner.buildUploadPlan(
+            plannedAtMs = 1L,
+            currentLocalEntries = listOf(
+                localEntry(
+                    localRelativePath = "preferences/STSPlayer",
+                    fileSize = 128L,
+                    sha256 = "local-sha256",
+                )
+            ),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%preferences/STSPlayer",
+                    localRelativePath = "preferences/STSPlayer",
+                    rawSize = 128L,
+                    timestamp = 1L,
+                )
+            ),
+            baseline = null,
+        )
+
+        assertEquals(0, plan.uploadCandidates.size)
+        assertEquals(1, plan.conflicts.size)
+        assertEquals(SteamCloudConflictKind.BASELINE_REQUIRED, plan.conflicts.single().kind)
+    }
+
+    @Test
+    fun buildUploadPlan_tombstoneIsDeletionChangeButNotDownloadCandidate() {
+        val baseline = SteamCloudSyncBaseline(
+            syncedAtMs = 1L,
+            localEntries = listOf(
+                localEntry(
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    sha256 = "same-local",
+                )
+            ),
+            remoteEntries = listOf(
+                remoteEntry(
+                    remotePath = "%GameInstall%saves/WATCHER.autosave",
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    rawSize = 50L,
+                    timestamp = 1L,
+                )
+            ),
+        )
+
+        val plan = SteamCloudDiffPlanner.buildUploadPlan(
+            plannedAtMs = 2L,
+            currentLocalEntries = listOf(
+                localEntry(
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    sha256 = "same-local",
+                )
+            ),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%saves/WATCHER.autosave",
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    rawSize = 50L,
+                    timestamp = 2L,
+                    persistState = "dElEtEd",
+                )
+            ),
+            baseline = baseline,
+        )
+
+        assertEquals(1, plan.remoteOnlyChanges.size)
+        assertEquals(
+            SteamCloudRemoteOnlyChangeKind.REMOTE_FILE_DELETED,
+            plan.remoteOnlyChanges.single().kind,
+        )
+        assertEquals(null, plan.remoteOnlyChanges.single().currentRemote)
+        assertEquals(0, plan.uploadCandidates.size)
+    }
+
+    @Test
+    fun buildUploadPlan_recreatedLocalFileOverRetainedTombstoneIsNewUpload() {
+        val tombstone = remoteEntry(
+            remotePath = "%GameInstall%preferences/STSPlayer",
+            localRelativePath = "preferences/STSPlayer",
+            rawSize = 0L,
+            timestamp = 2L,
+            persistState = "k_ECloudStoragePersistStateDeleted",
+        )
+        val plan = SteamCloudDiffPlanner.buildUploadPlan(
+            plannedAtMs = 3L,
+            currentLocalEntries = listOf(
+                localEntry(
+                    localRelativePath = "preferences/STSPlayer",
+                    fileSize = 3L,
+                    sha256 = "new-local",
+                    sha1 = "new-local-sha1",
+                )
+            ),
+            currentRemoteSnapshot = remoteSnapshot(tombstone),
+            baseline = SteamCloudSyncBaseline(
+                syncedAtMs = 2L,
+                localEntries = emptyList(),
+                remoteEntries = listOf(tombstone),
+            ),
+        )
+
+        assertEquals(1, plan.uploadCandidates.size)
+        assertEquals(SteamCloudUploadCandidateKind.NEW_FILE, plan.uploadCandidates.single().kind)
+        assertEquals(0, plan.conflicts.size)
+        assertEquals(0, plan.remoteOnlyChanges.size)
+    }
+
+    @Test
     fun buildUploadPlan_detectsRemoteSha1ChangeWhenMetadataMatches() {
         val baseline = SteamCloudSyncBaseline(
             syncedAtMs = 1L,
@@ -454,6 +567,7 @@ class SteamCloudDiffPlannerTest {
         rootKind: SteamCloudRootKind = SteamCloudRootKind.PREFERENCES,
         rawSize: Long,
         timestamp: Long,
+        persistState: String = "Persisted",
         sha1: String = "",
     ): SteamCloudManifestEntry {
         return SteamCloudManifestEntry(
@@ -463,7 +577,7 @@ class SteamCloudDiffPlannerTest {
             rawSize = rawSize,
             timestamp = timestamp,
             machineName = "",
-            persistState = "Persisted",
+            persistState = persistState,
             sha1 = sha1,
         )
     }

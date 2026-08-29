@@ -24,7 +24,11 @@ import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
+import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
+import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.input.GameInputHandler
@@ -51,6 +55,7 @@ internal class GameSessionCoordinator(
         private const val LAN_GAME_STATE_REQUEST_POLL_MS = 300L
         private const val FILE_PICKER_REQUEST_POLL_MS = 120L
         private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
+        private const val ACHIEVEMENT_REQUEST_POLL_MS = 120L
         private const val HARNESS_EXIT_REQUEST_POLL_MS = 120L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
@@ -92,6 +97,9 @@ internal class GameSessionCoordinator(
     private var lanGameStateRequestPollStarted = false
     private var filePickerRequestPollStarted = false
     private var rescueToastRequestPollStarted = false
+    private var achievementRequestPollStarted = false
+    private var lastAchievementRequestKey = ""
+    private var lastInvalidAchievementPayload = ""
     private var harnessExitRequestPollStarted = false
     private var rescueToastShown = false
     @Volatile
@@ -106,6 +114,9 @@ internal class GameSessionCoordinator(
             activity = activity,
             viewModel = ViewModelProvider(activity)[MainScreenViewModel::class.java],
         )
+    }
+    private val inGameAchievementOverlayController by lazy {
+        InGameAchievementOverlayController(activity)
     }
     private val startCheckRunnable = Runnable {
         startCheckPosted = false
@@ -161,6 +172,14 @@ internal class GameSessionCoordinator(
             }
         }
     }
+    private val achievementRequestPollRunnable = object : Runnable {
+        override fun run() {
+            pollAchievementRequest()
+            if (!destroyed && achievementRequestPollStarted) {
+                mainHandler.postDelayed(this, ACHIEVEMENT_REQUEST_POLL_MS)
+            }
+        }
+    }
 
     private val bootOverlayController: BootOverlayController = BootOverlayController(
         activity = activity,
@@ -194,6 +213,8 @@ internal class GameSessionCoordinator(
         autoplayMode = config.autoplayMode,
         autoplaySingleRoomSpecPath = config.autoplaySingleRoomSpecPath,
         autoplayChoiceDelayMs = config.autoplayChoiceDelayMs,
+        autoplaySingleRoomBenchMode = config.autoplaySingleRoomBenchMode,
+        performanceDeepDiagnostics = config.performanceDeepDiagnostics,
         cardObtainEffectOwnershipCompatEnabled = config.cardObtainEffectOwnershipCompatEnabled,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
@@ -214,6 +235,8 @@ internal class GameSessionCoordinator(
                 startLanGameStateRequestPolling()
                 startFilePickerRequestPolling()
                 startRescueToastRequestPolling()
+                startAchievementRequestPolling()
+                SteamGamePresenceService.startIfEnabled(activity)
                 updatePerformanceOverlayVisibility()
                 updateSystemGameState()
                 trySchedulePostBootSurfaceSoftRefresh("runtime_ready")
@@ -235,14 +258,19 @@ internal class GameSessionCoordinator(
 
     fun initSessionUi(overlayView: TextView) {
         bootOverlayController.init()
-        inGameEasyTierOverlayController.attachToHost(activity.findViewById(R.id.gameHost))
+        activity.findViewById<android.widget.FrameLayout>(R.id.gameHost).let { host ->
+            inGameEasyTierOverlayController.attachToHost(host)
+            inGameAchievementOverlayController.attachToHost(host)
+        }
         if (performanceOverlayController == null) {
             performanceOverlayController = GamePerformanceOverlayController(
                 activity = activity,
                 overlayView = overlayView,
                 rendererSummary = config.rendererDecision.overlaySummary(),
                 readJvmRuntimeMemorySnapshot = { jvmLaunchController.runtimeMemorySnapshot },
-                readJvmLaunchStartedElapsedMs = { jvmLaunchController.jvmLaunchStartedElapsedMs }
+                readJvmLaunchStartedElapsedMs = { jvmLaunchController.jvmLaunchStartedElapsedMs },
+                snapshotFile = io.stamethyst.config.RuntimePaths.launcherPerfSnapshot(activity),
+                performanceDeepDiagnostics = config.performanceDeepDiagnostics
             )
         }
         performanceOverlayController?.init()
@@ -262,8 +290,10 @@ internal class GameSessionCoordinator(
         stopLanGameStateRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
+        stopAchievementRequestPolling()
         stopHarnessExitRequestPolling()
         inGameEasyTierOverlayController.onDestroy()
+        inGameAchievementOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         reportEasyTierInGameState(EasyTierInGameSessionState.Online)
         cancelForegroundAudioRestoreRetries()
@@ -473,12 +503,23 @@ internal class GameSessionCoordinator(
             )
         )
 
+        clearStaleAchievementRequestBeforeLaunch()
         syncRuntimeForegroundState(true)
         ExpectedGameExitNotice.clearExpectedGameExit(activity)
         jvmLaunchStartedWallTimeMs = System.currentTimeMillis()
         jvmLaunchController.start(
             javaHome = javaHome,
             bootOverlayController = bootOverlayController
+        )
+    }
+
+    private fun clearStaleAchievementRequestBeforeLaunch() {
+        val requestFile = RuntimePaths.achievementRequestFile(activity)
+        if (!requestFile.isFile) return
+        val deleted = runCatching { requestFile.delete() }.getOrDefault(false)
+        AchievementSyncLogStore.append(
+            activity,
+            if (deleted) "request_cleared_before_launch" else "request_clear_before_launch_failed",
         )
     }
 
@@ -1040,12 +1081,12 @@ internal class GameSessionCoordinator(
     }
 
     private fun updatePerformanceOverlayVisibility() {
-        val shouldShow = !backExitRequested &&
-            config.showGamePerformanceOverlay &&
+        val shouldCollect = !backExitRequested &&
+            (config.showGamePerformanceOverlay || config.performanceDeepDiagnostics) &&
             jvmLaunchController.runtimeLifecycleReady &&
             bootOverlayController.isDismissed &&
             activity.hasWindowFocus()
-        performanceOverlayController?.setVisible(shouldShow)
+        performanceOverlayController?.setVisible(shouldCollect)
     }
 
     private fun updateSystemGameState() {
@@ -1128,6 +1169,75 @@ internal class GameSessionCoordinator(
     private fun stopRescueToastRequestPolling() {
         rescueToastRequestPollStarted = false
         mainHandler.removeCallbacks(rescueToastRequestPollRunnable)
+    }
+
+    private fun startAchievementRequestPolling() {
+        if (achievementRequestPollStarted) return
+        achievementRequestPollStarted = true
+        lastAchievementRequestKey = ""
+        lastInvalidAchievementPayload = ""
+        AchievementSyncLogStore.append(activity, "polling_started")
+        mainHandler.post(achievementRequestPollRunnable)
+    }
+
+    private fun stopAchievementRequestPolling() {
+        achievementRequestPollStarted = false
+        mainHandler.removeCallbacks(achievementRequestPollRunnable)
+        AchievementSyncLogStore.append(activity, "polling_stopped")
+    }
+
+    private fun pollAchievementRequest() {
+        if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
+        val requestFile = RuntimePaths.achievementRequestFile(activity)
+        val payload = try {
+            if (requestFile.isFile) requestFile.readText().trim() else ""
+        } catch (error: Throwable) {
+            AchievementSyncLogStore.append(
+                activity,
+                "request_read_failed",
+                "error=${AchievementSyncLogStore.errorType(error)}",
+            )
+            return
+        }
+        if (payload.isBlank()) return
+        val request = SteamAchievementSyncService.parseRequest(payload)
+        if (request == null) {
+            if (payload != lastInvalidAchievementPayload) {
+                lastInvalidAchievementPayload = payload
+                AchievementSyncLogStore.append(
+                    activity,
+                    "request_rejected",
+                    "bytes=${payload.toByteArray().size}",
+                )
+            }
+            return
+        }
+        lastInvalidAchievementPayload = ""
+        if (request.dedupeKey == lastAchievementRequestKey) return
+        lastAchievementRequestKey = request.dedupeKey
+        AchievementSyncLogStore.append(
+            activity,
+            "request_parsed",
+            "request=${request.id} slot=${request.saveSlot ?: "none"} ids=${request.achievementIds.sorted().joinToString(",")}",
+        )
+        val requestUnchanged = runCatching {
+            requestFile.isFile && requestFile.readText().trim() == payload
+        }.getOrDefault(false)
+        if (requestUnchanged && !requestFile.delete()) {
+            AchievementSyncLogStore.append(activity, "request_delete_failed", "request=${request.id}")
+        } else if (!requestUnchanged) {
+            AchievementSyncLogStore.append(activity, "request_delete_deferred", "request=${request.id}")
+        }
+        if (LauncherConfig.isAchievementUnlockNotificationEnabled(activity)) {
+            inGameAchievementOverlayController.enqueue(request.achievementIds)
+        }
+        SteamAchievementSyncService.syncRequestAsync(activity.applicationContext, request) { error ->
+            if (error != null) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, R.string.achievement_sync_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun stopHarnessExitRequestPolling() {

@@ -19,6 +19,8 @@ dependencies {
 
 tasks.register<Jar>("fatJar") {
     archiveFileName = "arthas-bridge.jar"
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
     manifest {
         attributes(
             "Agent-Class" to "io.stamethyst.arthas.ArthasCommandBridge",

@@ -13,6 +13,7 @@ import com.megacrit.cardcrawl.map.MapEdge;
 import com.megacrit.cardcrawl.map.MapRoomNode;
 import com.megacrit.cardcrawl.monsters.AbstractMonster;
 import com.megacrit.cardcrawl.monsters.MonsterGroup;
+import com.megacrit.cardcrawl.neow.NeowEvent;
 import com.megacrit.cardcrawl.neow.NeowRoom;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
 import com.megacrit.cardcrawl.rooms.EventRoom;
@@ -20,6 +21,8 @@ import com.megacrit.cardcrawl.rooms.MonsterRoomBoss;
 import com.megacrit.cardcrawl.rooms.RestRoom;
 import com.megacrit.cardcrawl.screens.DungeonMapScreen;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Random;
 
@@ -51,6 +54,8 @@ final class AutoplayDungeonActions {
     private static long pendingMapSelectionMillis;
     private static boolean pendingBossSelection;
     private static long pendingBossSelectionMillis;
+    private static Field neowScreenNumField;
+    private static Method neowButtonEffectMethod;
 
     private AutoplayDungeonActions() {
     }
@@ -75,6 +80,9 @@ final class AutoplayDungeonActions {
         }
         if (room.phase == AbstractRoom.RoomPhase.COMBAT) {
             handleCombat(player, room);
+            return;
+        }
+        if (handleNeowRoom(room)) {
             return;
         }
         if (skipOptionalRoomIfNeeded(room)) {
@@ -621,10 +629,6 @@ final class AutoplayDungeonActions {
     // region optional room skipping
 
     private static boolean skipOptionalRoomIfNeeded(AbstractRoom room) {
-        if (room instanceof NeowRoom && room.phase != AbstractRoom.RoomPhase.COMPLETE) {
-            completeOptionalRoom(room, "neow");
-            return true;
-        }
         if (room instanceof RestRoom && room.phase != AbstractRoom.RoomPhase.COMPLETE) {
             completeOptionalRoom(room, "campfire");
             return true;
@@ -638,6 +642,51 @@ final class AutoplayDungeonActions {
             return true;
         }
         return false;
+    }
+
+    private static boolean handleNeowRoom(AbstractRoom room) {
+        if (!(room instanceof NeowRoom) || AbstractDungeon.firstRoomChosen) {
+            return false;
+        }
+        if (AbstractDungeon.screen == AbstractDungeon.CurrentScreen.MAP) {
+            return false;
+        }
+        if (!(room.event instanceof NeowEvent)) {
+            AutoplayLog.warn("neow: room has no NeowEvent", null);
+            return true;
+        }
+
+        try {
+            NeowEvent event = (NeowEvent) room.event;
+            Field screenField = getNeowScreenNumField();
+            Method buttonMethod = getNeowButtonEffectMethod();
+            int before = screenField.getInt(event);
+            buttonMethod.invoke(event, 0);
+            int after = screenField.getInt(event);
+            AutoplayLog.info(
+                "neow: advanced native dialog option=0 screen=" + before + "->" + after
+            );
+        } catch (Throwable t) {
+            AutoplayLog.warn("neow: failed to advance native dialog", t);
+        }
+        return true;
+    }
+
+    private static Field getNeowScreenNumField() throws Exception {
+        if (neowScreenNumField == null) {
+            neowScreenNumField = NeowEvent.class.getDeclaredField("screenNum");
+            neowScreenNumField.setAccessible(true);
+        }
+        return neowScreenNumField;
+    }
+
+    private static Method getNeowButtonEffectMethod() throws Exception {
+        if (neowButtonEffectMethod == null) {
+            neowButtonEffectMethod = NeowEvent.class.getDeclaredMethod(
+                "buttonEffect", int.class);
+            neowButtonEffectMethod.setAccessible(true);
+        }
+        return neowButtonEffectMethod;
     }
 
     private static void completeOptionalRoom(AbstractRoom room, String roomKind) {

@@ -318,6 +318,9 @@ private fun ModCardBadges(
     val showSuggestion = !modSuggestionText.isNullOrBlank()
     val showImportPatch = !mod.importPatchDetails.isNullOrBlank() || mod.importPatches.isNotEmpty()
     val showUpdate = mod.workshop?.state == WorkshopModState.UpdateAvailable
+    // States that already communicate themselves through the dedicated action row (a button or
+    // a progress bar) are suppressed here to avoid saying the same thing twice. Queued and
+    // Cancelling render no action control, so they keep their badge.
     val workshopBadgeState = mod.workshop?.state?.takeIf {
         it != WorkshopModState.ImportedUnpatched &&
             it != WorkshopModState.DownloadFailed &&
@@ -485,9 +488,12 @@ private fun NewImportBadge() {
 @Composable
 private fun WorkshopStateBadge(state: WorkshopModState) {
     val text = when (state) {
+        WorkshopModState.NotDownloaded -> stringResource(R.string.workshop_download_state_not_downloaded)
         WorkshopModState.ImportedUnpatched -> stringResource(R.string.main_mod_workshop_state_needs_patch)
         WorkshopModState.ImportedPatched -> stringResource(R.string.main_mod_workshop_state_workshop)
+        WorkshopModState.Queued -> stringResource(R.string.workshop_download_state_queued)
         WorkshopModState.Downloading -> stringResource(R.string.main_mod_workshop_state_downloading)
+        WorkshopModState.Cancelling -> stringResource(R.string.workshop_download_state_cancelling)
         WorkshopModState.DownloadPaused -> stringResource(R.string.main_mod_workshop_state_paused)
         WorkshopModState.DownloadFailed -> stringResource(R.string.main_mod_workshop_state_failed)
         WorkshopModState.NonStandardDownloaded -> stringResource(R.string.main_mod_workshop_state_manual_required)

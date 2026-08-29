@@ -18,6 +18,7 @@ data class SteamCloudSyncBaseline(
     val syncedAtMs: Long,
     val localEntries: List<SteamCloudLocalFileSnapshotEntry>,
     val remoteEntries: List<SteamCloudManifestEntry>,
+    val steamId64: String = "",
 ) : JavaSerializable
 
 enum class SteamCloudUploadCandidateKind {
@@ -80,6 +81,7 @@ data class SteamCloudUploadPlan(
     val remoteOnlyChanges: List<SteamCloudRemoteOnlyChange>,
     val remoteDeleteCandidates: List<SteamCloudRemoteDeleteCandidate>,
     val warnings: List<String>,
+    val plannedRemoteManifestIdentity: String = "",
 ) : JavaSerializable {
     val uploadBytes: Long
         get() = uploadCandidates.sumOf { it.fileSize }

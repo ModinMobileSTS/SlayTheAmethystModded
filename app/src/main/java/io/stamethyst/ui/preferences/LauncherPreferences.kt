@@ -26,6 +26,7 @@ import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.RichPresenceDisplayPreferences
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.TouchMouseInteractionMode
@@ -102,6 +103,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_CARD_PLAY_OPTIMIZATION_MODE
     val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
+    val DEFAULT_FLOATING_TOOL_BUTTONS: Set<String>
+        get() = LauncherConfig.DEFAULT_FLOATING_TOOL_BUTTONS
+    val FLOATING_TOOL_BUTTON_IDS: List<String>
+        get() = LauncherConfig.FLOATING_TOOL_BUTTON_IDS
     val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_HAPTIC_FEEDBACK_ENABLED
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
@@ -160,6 +165,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
     val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED
+    val DEFAULT_STEAM_GAME_PRESENCE_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_STEAM_GAME_PRESENCE_ENABLED
+    val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED
     val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS: Int
         get() = LauncherConfig.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS
     val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS: Int
@@ -274,6 +283,30 @@ object LauncherPreferences {
         LauncherConfig.setDeveloperSettingsWarningDismissed(context, dismissed)
     }
 
+    fun isSteamAchievementDebugModeEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamAchievementDebugModeEnabled(context)
+    }
+
+    fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamAchievementDebugModeEnabled(context, enabled)
+    }
+
+    fun isSteamAchievementSyncEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamAchievementSyncEnabled(context)
+    }
+
+    fun setSteamAchievementSyncEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamAchievementSyncEnabled(context, enabled)
+    }
+
+    fun isAchievementUnlockNotificationEnabled(context: Context): Boolean {
+        return LauncherConfig.isAchievementUnlockNotificationEnabled(context)
+    }
+
+    fun setAchievementUnlockNotificationEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setAchievementUnlockNotificationEnabled(context, enabled)
+    }
+
     fun isLocalTestCloudControlEnabled(context: Context): Boolean {
         return LauncherConfig.isLocalTestCloudControlEnabled(context)
     }
@@ -341,6 +374,14 @@ object LauncherPreferences {
 
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setBuiltInSoftKeyboardEnabled(context, enabled)
+    }
+
+    fun readFloatingToolButtons(context: Context): Set<String> {
+        return LauncherConfig.readFloatingToolButtons(context)
+    }
+
+    fun saveFloatingToolButtons(context: Context, buttons: Set<String>) {
+        LauncherConfig.saveFloatingToolButtons(context, buttons)
     }
 
     fun isHapticFeedbackEnabled(context: Context): Boolean {
@@ -658,6 +699,25 @@ object LauncherPreferences {
 
     fun setSteamCloudAutoLaunchAfterSyncEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamCloudAutoLaunchAfterSyncEnabled(context, enabled)
+    }
+
+    fun isSteamGamePresenceEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamGamePresenceEnabled(context)
+    }
+
+    fun setSteamGamePresenceEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamGamePresenceEnabled(context, enabled)
+    }
+
+    fun readRichPresenceDisplayPreferences(context: Context): RichPresenceDisplayPreferences {
+        return LauncherConfig.readRichPresenceDisplayPreferences(context)
+    }
+
+    fun saveRichPresenceDisplayPreferences(
+        context: Context,
+        settings: RichPresenceDisplayPreferences,
+    ) {
+        LauncherConfig.saveRichPresenceDisplayPreferences(context, settings)
     }
 
     fun readWorkshopMaxConcurrentDownloads(context: Context): Int {

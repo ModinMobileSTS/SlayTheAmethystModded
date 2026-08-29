@@ -29,6 +29,45 @@ tasks.register<JavaExec>("depotKey") {
     workingDir = rootProject.projectDir
 }
 
+tasks.register<JavaExec>("refreshToken") {
+    group = "steam"
+    description = "Login to Steam and write a refresh-token env file."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
+    prependToolCommand("refreshToken")
+    standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
+tasks.register<JavaExec>("achievementUnlock") {
+    group = "steam"
+    description = "Experimentally unlock only Slay the Spire's Shrug It Off achievement through Steam CM."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
+    prependToolCommand("achievementUnlock")
+    standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
+tasks.register<JavaExec>("achievementLock") {
+    group = "steam"
+    description = "Experimentally lock only Slay the Spire's Shrug It Off achievement through Steam CM."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
+    prependToolCommand("achievementLock")
+    standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
+private fun JavaExec.prependToolCommand(command: String) {
+    doFirst {
+        val suppliedArgs = args?.toList().orEmpty()
+        if (suppliedArgs.firstOrNull() != command) {
+            setArgs(listOf(command) + suppliedArgs)
+        }
+    }
+}
+
 dependencies {
     implementation(project(":steam-protocol"))
     implementation(libs.coroutines.core)

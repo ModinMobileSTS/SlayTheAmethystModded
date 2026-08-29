@@ -1,5 +1,7 @@
 package com.badlogic.gdx.backends.lwjgl;
 
+import org.lwjgl.opengl.Display;
+
 /** Resolved-once view of the system properties that the LWJGL main loop consults every frame.
  *
  * Every property below is published by the launcher as a {@code -D} JVM argument before the game
@@ -33,101 +35,61 @@ final class LwjglHotLoopConfig {
 	static final boolean DEFAULT_FBO_REBIND_CACHE_ENABLED =
 		parseBoolean(System.getProperty(DEFAULT_FBO_REBIND_CACHE_PROP), true);
 	static final boolean POST_RENDER_CLEAR_ENABLED = Boolean.getBoolean(POST_RENDER_CLEAR_PROP);
-	/** {@code 0} means "not configured"; the caller derives the value from {@code Display} instead.
-	 *
-	 * These are the launch-time values only. They describe the surface as it existed when the JVM
-	 * started, so anything that can change while the game runs — notably entering, resizing or
-	 * leaving a multi-window/freeform window — must not be resolved from them. Callers should go
-	 * through {@link #physicalWidth()} / {@link #virtualWidth()}, which prefer the live size the
-	 * Android side publishes and only fall back to these constants. */
+	/** {@code 0} means "not configured". Physical dimensions remain live so the final presenter can
+	 * fill a resized Android surface. Virtual dimensions are fixed at JVM launch so the game's
+	 * startup-only UI geometry never needs to be rebuilt. */
 	static final int PHYSICAL_WIDTH_OVERRIDE = parsePositiveInt(System.getProperty(GLFWSTUB_PHYSICAL_WIDTH_PROP));
 	static final int PHYSICAL_HEIGHT_OVERRIDE = parsePositiveInt(System.getProperty(GLFWSTUB_PHYSICAL_HEIGHT_PROP));
 	static final int VIRTUAL_WIDTH_OVERRIDE = parsePositiveInt(System.getProperty(VIRTUAL_WIDTH_PROP));
 	static final int VIRTUAL_HEIGHT_OVERRIDE = parsePositiveInt(System.getProperty(VIRTUAL_HEIGHT_PROP));
 
-	/** Aspect ratio implied by the launch-time virtual resolution, or {@code 0} when unconfigured.
-	 * Used to keep a fixed-resolution mode's shape after a live resize. */
-	private static final float LAUNCH_VIRTUAL_ASPECT =
-		(VIRTUAL_WIDTH_OVERRIDE > 0 && VIRTUAL_HEIGHT_OVERRIDE > 0)
-			? (float)VIRTUAL_WIDTH_OVERRIDE / (float)VIRTUAL_HEIGHT_OVERRIDE
-			: 0f;
-
 	private static volatile boolean liveSizeBridgeUnavailable = false;
 
-	/** Live physical surface width, falling back to the launch-time override. */
+    /** Fixed physical render-buffer width, falling back to the display facade and launch-time override.
+     *
+     * The Android bridge publishes the cropped game canvas before the JVM starts. Window-mode
+     * changes are compositor-only and must not resize the GLFW logical window or render buffer. */
 	static int physicalWidth () {
-		int live = nativePhysicalWidth();
-		if (live > 0) return live;
-		return PHYSICAL_WIDTH_OVERRIDE;
+		return preferLivePhysicalSize(nativePhysicalWidth(), displayWidth(), PHYSICAL_WIDTH_OVERRIDE);
 	}
 
-	/** Live physical surface height, falling back to the launch-time override. */
+	/** Live physical surface height, falling back to the display facade and launch-time override. */
 	static int physicalHeight () {
-		int live = nativePhysicalHeight();
-		if (live > 0) return live;
-		return PHYSICAL_HEIGHT_OVERRIDE;
+		return preferLivePhysicalSize(nativePhysicalHeight(), displayHeight(), PHYSICAL_HEIGHT_OVERRIDE);
 	}
 
-	/** Virtual (render target) width for the current surface size.
-	 *
-	 * With no launch-time override this is simply the live physical width. With one, the configured
-	 * render shape is re-fitted into the live surface so a resize keeps the intended aspect ratio
-	 * instead of staying frozen at the startup resolution. */
+	static int preferLivePhysicalSize (int nativeSize, int displaySize, int fallbackSize) {
+		if (nativeSize > 0) return nativeSize;
+		if (displaySize > 0) return displaySize;
+		return fallbackSize;
+	}
+
+	private static int displayWidth () {
+		try {
+			if (!Display.isCreated()) return 0;
+			return Math.max(1, Math.round(Display.getWidth() * PixelScaleCompat.factor()));
+		} catch (Throwable ignored) {
+			return 0;
+		}
+	}
+
+	private static int displayHeight () {
+		try {
+			if (!Display.isCreated()) return 0;
+			return Math.max(1, Math.round(Display.getHeight() * PixelScaleCompat.factor()));
+		} catch (Throwable ignored) {
+			return 0;
+		}
+	}
+
+	/** Fixed logical render-target width chosen by the launcher at startup. */
 	static int virtualWidth () {
-		if (VIRTUAL_WIDTH_OVERRIDE <= 0) return 0;
-		int livePhysicalWidth = nativePhysicalWidth();
-		int livePhysicalHeight = nativePhysicalHeight();
-		if (livePhysicalWidth <= 0 || livePhysicalHeight <= 0) return VIRTUAL_WIDTH_OVERRIDE;
-		return fittedVirtualSize(livePhysicalWidth, livePhysicalHeight, true);
+		return VIRTUAL_WIDTH_OVERRIDE > 0 ? VIRTUAL_WIDTH_OVERRIDE : physicalWidth();
 	}
 
-	/** Virtual (render target) height for the current surface size. */
+	/** Fixed logical render-target height chosen by the launcher at startup. */
 	static int virtualHeight () {
-		if (VIRTUAL_HEIGHT_OVERRIDE <= 0) return 0;
-		int livePhysicalWidth = nativePhysicalWidth();
-		int livePhysicalHeight = nativePhysicalHeight();
-		if (livePhysicalWidth <= 0 || livePhysicalHeight <= 0) return VIRTUAL_HEIGHT_OVERRIDE;
-		return fittedVirtualSize(livePhysicalWidth, livePhysicalHeight, false);
-	}
-
-	/** Fits {@link #LAUNCH_VIRTUAL_ASPECT} inside the live surface, never upscaling past it. */
-	private static int fittedVirtualSize (int livePhysicalWidth, int livePhysicalHeight, boolean wantWidth) {
-		return fitVirtualSize(
-			livePhysicalWidth,
-			livePhysicalHeight,
-			VIRTUAL_WIDTH_OVERRIDE,
-			VIRTUAL_HEIGHT_OVERRIDE,
-			LAUNCH_VIRTUAL_ASPECT,
-			wantWidth
-		);
-	}
-
-	/** Pure form of {@link #fittedVirtualSize} so the resize contract is unit testable.
-	 *
-	 * @param launchAspect aspect ratio to preserve, or {@code <= 0} to just clamp to the surface.
-	 * @param wantWidth {@code true} to return the fitted width, {@code false} for the height. */
-	static int fitVirtualSize (
-		int livePhysicalWidth,
-		int livePhysicalHeight,
-		int launchVirtualWidth,
-		int launchVirtualHeight,
-		float launchAspect,
-		boolean wantWidth
-	) {
-		if (launchAspect <= 0f) {
-			return Math.max(1, wantWidth ? livePhysicalWidth : livePhysicalHeight);
-		}
-		int width = livePhysicalWidth;
-		int height = Math.max(1, (int)(width / launchAspect));
-		if (height > livePhysicalHeight) {
-			height = livePhysicalHeight;
-			width = Math.max(1, (int)(height * launchAspect));
-		}
-		// Never render larger than the launch-time budget; that value already accounts for the
-		// configured render scale and the fixed-resolution modes.
-		if (launchVirtualWidth > 0) width = Math.min(width, launchVirtualWidth);
-		if (launchVirtualHeight > 0) height = Math.min(height, launchVirtualHeight);
-		return Math.max(1, wantWidth ? width : height);
+		return VIRTUAL_HEIGHT_OVERRIDE > 0 ? VIRTUAL_HEIGHT_OVERRIDE : physicalHeight();
 	}
 
 	private static int nativePhysicalWidth () {

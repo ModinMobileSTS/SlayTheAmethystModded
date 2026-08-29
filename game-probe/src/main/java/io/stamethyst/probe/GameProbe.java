@@ -47,11 +47,7 @@ public final class GameProbe {
                                         Class<?> classBeingRedefined,
                                         ProtectionDomain protectionDomain,
                                         byte[] classfileBuffer) {
-                    if (loader != null && GAME_CLASSLOADER == null
-                        && !internalName.startsWith("io/stamethyst/agent/")
-                        && !internalName.startsWith("java/")
-                        && !internalName.startsWith("sun/")
-                        && !internalName.startsWith("jdk/")) {
+                    if (GAME_CLASSLOADER == null && isCandidateGameClassLoader(loader, internalName)) {
                         GAME_CLASSLOADER = loader;
                         System.out.println("[game-probe] captured game ClassLoader: "
                             + loader.getClass().getName());
@@ -85,6 +81,7 @@ public final class GameProbe {
         } catch (Exception e) {
             System.err.println("[game-probe] failed to start TCP server: " + e.getMessage());
         }
+        OfflineArthasController.schedule(props, inst);
     }
 
     public static void agentmain(String agentArgs, Instrumentation inst) {
@@ -134,5 +131,16 @@ public final class GameProbe {
             }
         }
         return props;
+    }
+
+    static boolean isCandidateGameClassLoader(ClassLoader loader, String internalName) {
+        if (loader == null || loader == ClassLoader.getSystemClassLoader() || internalName == null) {
+            return false;
+        }
+        String loaderName = loader.getClass().getName();
+        if (loaderName.contains("ExtClassLoader")) return false;
+        return internalName.startsWith("com/megacrit/cardcrawl/")
+            || internalName.startsWith("basemod/")
+            || internalName.startsWith("com/evacipated/cardcrawl/modthespire/");
     }
 }

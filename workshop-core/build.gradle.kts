@@ -17,4 +17,5 @@ dependencies {
     implementation(libs.okio)
     implementation(libs.tukaani.xz)
     compileOnly(libs.zstd)
+    testImplementation(libs.junit4)
 }

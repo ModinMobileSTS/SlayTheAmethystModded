@@ -2,6 +2,7 @@ package io.stamethyst.config
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LauncherConfigGameplayDefaultsTest {
@@ -27,6 +28,11 @@ class LauncherConfigGameplayDefaultsTest {
     @Test
     fun steamCloudAutoLaunchAfterSync_isDisabledByDefault() {
         assertFalse(LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED)
+    }
+
+    @Test
+    fun achievementUnlockNotification_isEnabledByDefault() {
+        assertTrue(LauncherConfig.DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED)
     }
 
     @Test

@@ -92,8 +92,6 @@ class WorkshopServiceTest {
         assertEquals(1, result.items.size)
         assertEquals("Test Mod", result.items.single().title)
         assertEquals(123456uL, result.items.single().publishedFileId)
-        assertEquals(1234L, result.items.single().fileSizeBytes)
-        assertEquals(42L, result.items.single().downloadCount)
         assertTrue(!result.hasNextPage)
         assertEquals(1, browseServer.requestCount)
         val browseRequest = browseServer.takeRequest()
@@ -108,6 +106,13 @@ class WorkshopServiceTest {
         assertEquals("30", browseRequest.url.queryParameter("numperpage"))
         assertEquals("30", browseRequest.url.queryParameter("days"))
         assertEquals("Character", browseRequest.url.queryParameter("requiredtags[]"))
+        // Metadata backfill is decoupled from the page fetch: nothing hits the details API
+        // until the caller asks for it.
+        assertEquals(0, detailsServer.requestCount)
+
+        val enriched = runBlocking { service.loadBrowseItemMetadata(result.items) }
+        assertEquals(1234L, enriched.single().fileSizeBytes)
+        assertEquals(42L, enriched.single().downloadCount)
         assertEquals(1, detailsServer.requestCount)
         assertEquals("/ISteamRemoteStorage/GetPublishedFileDetails/v1/", detailsServer.takeRequest().url.encodedPath)
     }

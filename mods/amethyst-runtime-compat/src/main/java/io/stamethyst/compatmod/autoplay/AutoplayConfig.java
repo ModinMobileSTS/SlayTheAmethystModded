@@ -32,6 +32,13 @@ public final class AutoplayConfig {
     /** When true, single-room configures the encounter but never plays cards or ends turns. */
     public static final String AUTOPLAY_SINGLE_ROOM_HOLD_PROP =
         "amethyst.debug.autoplay.single_room_hold";
+    /**
+     * When true, single-room runs in bench mode: plays all cards every turn, refills
+     * energy to 99 and restores HP to max each turn so the run never ends prematurely.
+     * Used by the perf-bench harness command.
+     */
+    public static final String AUTOPLAY_SINGLE_ROOM_BENCH_MODE_PROP =
+        "amethyst.debug.autoplay.single_room_bench_mode";
 
     public static final String MODE_NORMAL = "normal";
     public static final String MODE_SINGLE_ROOM = "single_room";
@@ -58,6 +65,8 @@ public final class AutoplayConfig {
         readString(AUTOPLAY_SINGLE_ROOM_SPEC_PROP, "");
     private static final boolean SINGLE_ROOM_HOLD =
         readBoolean(AUTOPLAY_SINGLE_ROOM_HOLD_PROP, false);
+    private static final boolean SINGLE_ROOM_BENCH_MODE =
+        readBoolean(AUTOPLAY_SINGLE_ROOM_BENCH_MODE_PROP, false);
     private static final long TICK_INTERVAL_MS =
         clampLong(readLong(AUTOPLAY_TICK_INTERVAL_MS_PROP, DEFAULT_TICK_INTERVAL_MS),
             MIN_TICK_INTERVAL_MS, MAX_TICK_INTERVAL_MS);
@@ -106,6 +115,10 @@ public final class AutoplayConfig {
 
     public static boolean isSingleRoomHoldEnabled() {
         return SINGLE_ROOM_HOLD;
+    }
+
+    public static boolean isSingleRoomBenchModeEnabled() {
+        return SINGLE_ROOM_BENCH_MODE;
     }
 
     public static boolean shouldContinueLastSave() {

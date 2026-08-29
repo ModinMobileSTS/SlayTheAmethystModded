@@ -128,32 +128,6 @@ fun LauncherSettingsGameScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
-        onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
-        onVirtualResolutionModeChanged = { mode ->
-            viewModel.onVirtualResolutionModeChanged(activity, mode)
-        },
-        onDisplayCutoutAvoidanceChanged = { enabled ->
-            viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
-        },
-        onScreenBottomCropChanged = { enabled ->
-            viewModel.onScreenBottomCropChanged(activity, enabled)
-        },
-        onRamSaverEnabledChanged = { enabled ->
-            viewModel.onRamSaverEnabledChanged(activity, enabled)
-        },
-        onMtsPatchCacheEnabledChanged = { enabled ->
-            viewModel.onMtsPatchCacheEnabledChanged(activity, enabled)
-        },
-        onKeepScreenOnTimeoutSelected = { timeoutMinutes ->
-            viewModel.onKeepScreenOnTimeoutSelected(activity, timeoutMinutes)
-        },
-        onGameplayFontScaleChanged = { value ->
-            viewModel.onGameplayFontScaleChanged(activity, value)
-        },
-        onGameplayLargerUiChanged = { enabled ->
-            viewModel.onGameplayLargerUiChanged(activity, enabled)
-        },
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onTouchscreenInputModeChanged = { mode ->
@@ -180,11 +154,61 @@ fun LauncherSettingsGameScreen(
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
         },
+        onFloatingToolButtonChanged = { buttonId, enabled ->
+            viewModel.onFloatingToolButtonChanged(activity, buttonId, enabled)
+        },
         onHapticFeedbackChanged = { enabled ->
             viewModel.onHapticFeedbackChanged(activity, enabled)
         },
         onAutoSwitchLeftAfterRightClickChanged = { enabled ->
             viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled)
+        },
+        onDisplayCutoutAvoidanceChanged = { enabled ->
+            viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
+        },
+        onScreenBottomCropChanged = { enabled ->
+            viewModel.onScreenBottomCropChanged(activity, enabled)
+        },
+        onGameplayFontScaleChanged = { value ->
+            viewModel.onGameplayFontScaleChanged(activity, value)
+        },
+        onGameplayLargerUiChanged = { enabled ->
+            viewModel.onGameplayLargerUiChanged(activity, enabled)
+        },
+        onKeepScreenOnTimeoutSelected = { timeoutMinutes ->
+            viewModel.onKeepScreenOnTimeoutSelected(activity, timeoutMinutes)
+        },
+    )
+}
+
+
+@Composable
+fun LauncherSettingsPerformanceScreen(
+    viewModel: SettingsScreenViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val activity = requireNotNull(LocalActivity.current)
+    val navigator = currentNavigator
+    val uiState = viewModel.uiState
+
+    LaunchedEffect(activity) {
+        viewModel.bind(activity)
+    }
+
+    LauncherSettingsPerformanceScreenContent(
+        modifier = modifier,
+        uiState = uiState,
+        onGoBack = navigator::goBack,
+        onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
+        onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
+        onVirtualResolutionModeChanged = { mode ->
+            viewModel.onVirtualResolutionModeChanged(activity, mode)
+        },
+        onRamSaverEnabledChanged = { enabled ->
+            viewModel.onRamSaverEnabledChanged(activity, enabled)
+        },
+        onMtsPatchCacheEnabledChanged = { enabled ->
+            viewModel.onMtsPatchCacheEnabledChanged(activity, enabled)
         },
         onGamePerformanceOverlayChanged = { enabled ->
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
@@ -216,6 +240,18 @@ fun LauncherSettingsMarketCloudScreen(
         },
         onSteamCloudAutoLaunchAfterSyncChanged = { enabled ->
             viewModel.onSteamCloudAutoLaunchAfterSyncChanged(activity, enabled)
+        },
+        onSteamGamePresenceChanged = { enabled ->
+            viewModel.onSteamGamePresenceChanged(activity, enabled)
+        },
+        onRichPresenceDisplayPreferencesChanged = { settings ->
+            viewModel.onRichPresenceDisplayPreferencesChanged(activity, settings)
+        },
+        onSteamAchievementSyncChanged = { enabled ->
+            viewModel.onSteamAchievementSyncChanged(activity, enabled)
+        },
+        onAchievementUnlockNotificationChanged = { enabled ->
+            viewModel.onAchievementUnlockNotificationChanged(activity, enabled)
         },
         onOpenSteamCloudSaveSettings = { navigator.push(Route.SteamCloudSaveSettings) },
         onClearSteamCloudCredentials = { viewModel.onClearSteamCloudCredentials(activity) },
@@ -363,6 +399,9 @@ fun LauncherDeveloperSettingsScreen(
         onLocalTestCloudControlEnabledChanged = { enabled ->
             viewModel.onLocalTestCloudControlEnabledChanged(activity, enabled)
         },
+        onSteamAchievementDebugModeEnabledChanged = { enabled ->
+            viewModel.onSteamAchievementDebugModeEnabledChanged(activity, enabled)
+        },
         onLocalTestEndpointsChanged = { onlineServiceBaseUrl, configServerUrl, entryNodeUrl ->
             viewModel.onLocalTestEndpointsChanged(
                 activity,
@@ -370,15 +409,6 @@ fun LauncherDeveloperSettingsScreen(
                 configServerUrl,
                 entryNodeUrl,
             )
-        },
-        onSaveSteamCloudPhase0Credentials = { accountName, refreshToken, proxyUrl ->
-            viewModel.onSaveSteamCloudPhase0Credentials(activity, accountName, refreshToken, proxyUrl)
-        },
-        onRunSteamCloudPhase0Probe = {
-            viewModel.onRunSteamCloudPhase0Probe(activity)
-        },
-        onClearSteamCloudPhase0Credentials = {
-            viewModel.onClearSteamCloudPhase0Credentials(activity)
         },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
@@ -418,6 +448,9 @@ fun LauncherDeveloperSettingsScreen(
         onGpuResourceDiagChanged = { enabled ->
             viewModel.onGpuResourceDiagChanged(activity, enabled)
         },
+        onSharePerformanceLogs = { viewModel.onSharePerformanceLogs(activity) },
+        onExportPerformanceLogs = viewModel::onExportPerformanceLogsToFile,
+        onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },
         onGdxPadCursorDebugChanged = { enabled ->
             viewModel.onGdxPadCursorDebugChanged(activity, enabled)
         },
@@ -432,4 +465,3 @@ fun LauncherDeveloperSettingsScreen(
         },
     )
 }
-

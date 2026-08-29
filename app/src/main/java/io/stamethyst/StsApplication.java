@@ -7,6 +7,7 @@ import io.stamethyst.backend.diag.MemoryDiagnosticsLogger;
 import io.stamethyst.backend.feedback.StreamChatPreviewInitializer;
 import io.stamethyst.backend.presence.GamePresenceReporter;
 import io.stamethyst.backend.process.AppProcess;
+import io.stamethyst.backend.steamcloud.SteamCloudLegacySensitiveDataCleanup;
 import io.stamethyst.config.CloudControlConfig;
 import io.stamethyst.config.LauncherIconController;
 import io.stamethyst.config.LauncherThemeController;
@@ -22,6 +23,7 @@ public class StsApplication extends Application {
         MemoryDiagnosticsLogger.install(getApplicationContext());
         MainActivity.init(getApplicationContext());
         if (AppProcess.isDefaultProcess(getApplicationContext())) {
+            SteamCloudLegacySensitiveDataCleanup.clear(getApplicationContext());
             LauncherIconController.applySavedIconMode(getApplicationContext());
             StreamChatPreviewInitializer.initialize(getApplicationContext());
             CloudControlConfig.refreshOnAppStart(getApplicationContext());

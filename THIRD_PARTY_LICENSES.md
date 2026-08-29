@@ -6,6 +6,22 @@
 - License: GNU Lesser General Public License v3.0 (LGPL-3.0)
 - Usage: JavaSE launch bridge integration, JNI bridge, component assets.
 
+## EasyTier (Desktop Companion, Bundled Runtime)
+- Source: https://github.com/EasyTier/EasyTier
+- Release: `v2.6.4`, Windows x86_64 archive
+- License: GNU Lesser General Public License v3.0 (LGPL-3.0)
+- Usage: `desktop-companion` embeds the official Windows runtime files
+  (`easytier-core.exe`, `Packet.dll`, `wintun.dll`, and `WinDivert64.sys`) as
+  build assets, extracts them to the user's runtime directory, and invokes the
+  core as a separate process. The upstream files are not modified.
+- Embedded binary SHA-256:
+  `da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d`
+- Source archive:
+  https://github.com/EasyTier/EasyTier/releases/download/v2.6.4/easytier-windows-x86_64-v2.6.4.zip
+- Redistribution requirement: Keep the complete LGPL notice, upstream
+  copyright/source information, and permit replacement of the extracted
+  EasyTier binary.
+
 ## GL4ES
 - Source lineage: packaged via Amethyst-Android renderer stack.
 - Local usage: `libgl4es_114.so`

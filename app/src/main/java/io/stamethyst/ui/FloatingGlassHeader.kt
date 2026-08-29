@@ -60,6 +60,13 @@ fun CollapsibleFloatingGlassHeader(
     expandedContentTopPadding: Dp = 14.dp,
     pinnedContent: @Composable ColumnScope.() -> Unit,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
+    /**
+     * Always-visible trailing slot, rendered below [expandedContent].
+     *
+     * Unlike [expandedContent] this survives collapse, so transient status such as load progress
+     * stays readable while the user scrolls the list.
+     */
+    footerContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     FloatingGlassHeader(
         modifier = modifier,
@@ -85,6 +92,12 @@ fun CollapsibleFloatingGlassHeader(
                     content = expandedContent,
                 )
             }
+        }
+        if (footerContent != null) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                content = footerContent,
+            )
         }
     }
 }

@@ -97,6 +97,12 @@ fun LauncherSteamCloudGuardScreen(
         viewModel.bind(activity)
     }
 
+    LaunchedEffect(challenge?.kind) {
+        if (challenge?.kind == SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION) {
+            viewModel.onAcceptSteamCloudDeviceConfirmation()
+        }
+    }
+
     LaunchedEffect(challenge, uiState.busy, uiState.steamCloudRefreshTokenConfigured) {
         if (challenge == null && !uiState.busy) {
             if (uiState.steamCloudRefreshTokenConfigured) {
@@ -167,7 +173,7 @@ fun LauncherSteamCloudGuardScreen(
                 .padding(16.dp)
         ) {
             if (challenge != null) {
-                val challengeKey = "${challenge.kind.name}:${challenge.previousCodeWasIncorrect}:${challenge.emailHint}"
+                val challengeKey = "${challenge.kind.name}:${challenge.previousCodeWasIncorrect}:${challenge.emailHint}:${challenge.deviceCodeAvailable}:${challenge.availableKinds}"
                 var remainingSeconds by rememberSaveable(challengeKey) {
                     mutableStateOf(STEAM_GUARD_WEBSOCKET_WATCHDOG_SECONDS)
                 }
@@ -211,6 +217,8 @@ fun LauncherSteamCloudGuardScreen(
                     }
                     Spacer(modifier = Modifier.size(16.dp))
                     when (challenge.kind) {
+                        SteamCloudLoginChallengeKind.METHOD_SELECTION -> Unit
+
                         SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> {
                             Button(
                                 onClick = { openSteamApp(activity) },
@@ -257,6 +265,118 @@ fun LauncherSteamCloudGuardScreen(
                             modifier = Modifier.size(28.dp),
                             strokeWidth = 3.dp
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LauncherSteamCloudLoginMethodScreen(
+    viewModel: SettingsScreenViewModel,
+    guardRoute: Route,
+    modifier: Modifier = Modifier,
+) {
+    val activity = requireNotNull(LocalActivity.current)
+    val navigator = currentNavigator
+    val uiState = viewModel.uiState
+    val challenge = uiState.steamCloudLoginChallenge
+
+    LaunchedEffect(activity) {
+        viewModel.bind(activity)
+    }
+
+    fun cancelAndReturn() {
+        viewModel.onCancelSteamCloudChallenge(activity)
+        navigator.goBack()
+    }
+
+    BackHandler(onBack = ::cancelAndReturn)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_steam_cloud_challenge_method_title)) },
+                navigationIcon = {
+                    IconButton(onClick = ::cancelAndReturn) {
+                        Icon(
+                            imageVector = Icons.ArrowBack,
+                            contentDescription = stringResource(R.string.common_content_desc_back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { paddingValues ->
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+        ) {
+            if (challenge?.kind == SteamCloudLoginChallengeKind.METHOD_SELECTION) {
+                SettingsSectionCard(
+                    title = stringResource(R.string.settings_steam_cloud_challenge_method_title),
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_steam_cloud_challenge_method_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.size(16.dp))
+                    if (SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION in challenge.availableKinds) {
+                        Button(
+                            onClick = {
+                                viewModel.onSelectSteamCloudLoginMethod(
+                                    SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION,
+                                )
+                                navigator.push(guardRoute)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.settings_steam_cloud_method_steam_app_action))
+                        }
+                        Spacer(modifier = Modifier.size(10.dp))
+                    }
+                    if (SteamCloudLoginChallengeKind.DEVICE_CODE in challenge.availableKinds) {
+                        Button(
+                            onClick = {
+                                viewModel.onSelectSteamCloudLoginMethod(
+                                    SteamCloudLoginChallengeKind.DEVICE_CODE,
+                                )
+                                navigator.push(guardRoute)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.settings_steam_cloud_method_device_code_action))
+                        }
+                        Spacer(modifier = Modifier.size(10.dp))
+                    }
+                    if (SteamCloudLoginChallengeKind.EMAIL_CODE in challenge.availableKinds) {
+                        Button(
+                            onClick = {
+                                viewModel.onSelectSteamCloudLoginMethod(
+                                    SteamCloudLoginChallengeKind.EMAIL_CODE,
+                                )
+                                navigator.push(guardRoute)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.settings_steam_cloud_method_email_code_action))
+                        }
+                    }
+                }
+            } else if (uiState.busy) {
+                SettingsSectionCard(
+                    title = stringResource(R.string.settings_steam_cloud_challenge_method_title),
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
                     }
                 }
             }
@@ -385,6 +505,9 @@ private fun openSteamApp(context: Context) {
 @Composable
 private fun steamCloudChallengeTitle(challenge: SteamCloudLoginChallenge): String {
     return when (challenge.kind) {
+        SteamCloudLoginChallengeKind.METHOD_SELECTION ->
+            stringResource(R.string.settings_steam_cloud_challenge_method_title)
+
         SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
             stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_title)
 
@@ -407,6 +530,9 @@ private fun steamCloudChallengeTitle(challenge: SteamCloudLoginChallenge): Strin
 @Composable
 private fun steamCloudChallengeDescription(challenge: SteamCloudLoginChallenge) = buildAnnotatedString {
     when (challenge.kind) {
+        SteamCloudLoginChallengeKind.METHOD_SELECTION ->
+            append(stringResource(R.string.settings_steam_cloud_challenge_method_desc))
+
         SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> {
             append(stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_desc))
             withStyle(SpanStyle(color = Color.Red, fontWeight = FontWeight.Bold)) {
@@ -429,5 +555,3 @@ private fun steamCloudChallengeDescription(challenge: SteamCloudLoginChallenge) 
             }
     }
 }
-
-

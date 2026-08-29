@@ -4,12 +4,22 @@
         <exclude domain="sharedpref" path="baidu_translation_credentials.xml" />
         <exclude domain="sharedpref" path="baidu_translation_credentials_fallback.xml" />
         <exclude domain="sharedpref" path="steam_cloud_auth.xml" />
+        <exclude domain="sharedpref" path="steam_cloud_auth.xml.bak" />
+        <exclude domain="sharedpref" path="steam_cloud_phase&#48;.xml" />
+        <exclude domain="sharedpref" path="steam_cloud_phase&#48;.xml.bak" />
+        <exclude domain="file" path="steam-cloud-phase&#48;/" />
+        <exclude domain="external" path="steam-cloud-phase&#48;/" />
         <exclude domain="sharedpref" path="easytier_credentials.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="baidu_translation_credentials.xml" />
         <exclude domain="sharedpref" path="baidu_translation_credentials_fallback.xml" />
         <exclude domain="sharedpref" path="steam_cloud_auth.xml" />
+        <exclude domain="sharedpref" path="steam_cloud_auth.xml.bak" />
+        <exclude domain="sharedpref" path="steam_cloud_phase&#48;.xml" />
+        <exclude domain="sharedpref" path="steam_cloud_phase&#48;.xml.bak" />
+        <exclude domain="file" path="steam-cloud-phase&#48;/" />
+        <exclude domain="external" path="steam-cloud-phase&#48;/" />
         <exclude domain="sharedpref" path="easytier_credentials.xml" />
     </device-transfer>
 </data-extraction-rules>

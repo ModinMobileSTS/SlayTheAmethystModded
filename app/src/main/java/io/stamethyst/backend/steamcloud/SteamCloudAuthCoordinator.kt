@@ -21,16 +21,51 @@ internal object SteamCloudAuthCoordinator {
     private const val AUTH_COMPLETION_TIMEOUT_MS = 4L * 60L * 1000L
     private const val LOGIN_CANCELLED_MESSAGE = "Steam Cloud login cancelled by user."
 
+    interface AuthPrompt {
+        fun getDeviceCode(previousCodeWasIncorrect: Boolean): CompletableFuture<String>
+
+        fun getEmailCode(
+            email: String?,
+            previousCodeWasIncorrect: Boolean,
+        ): CompletableFuture<String>
+
+        fun getDeviceConfirmationDecision(
+            deviceCodeAvailable: Boolean,
+        ): CompletableFuture<SteamCloudDeviceConfirmationDecision>
+
+        fun getChallengeSelection(
+            challenges: List<SteamGuardChallenge>,
+        ): CompletableFuture<SteamGuardChallengeType>
+    }
+
     class CancellationHandle {
         private val cancelled = AtomicBoolean(false)
         private val session = AtomicReference<SteamCredentialAuthSession?>()
+        private val loginAttemptId = AtomicReference<String?>(null)
+        private val cancellationCleanupScheduled = AtomicBoolean(false)
+        @Volatile
+        private var onLoginAttemptCancelled: ((String) -> Unit)? = null
 
         val isCancelled: Boolean
             get() = cancelled.get()
 
         fun cancel() {
-            cancelled.set(true)
+            val wasCancelled = cancelled.getAndSet(true)
             session.getAndSet(null)?.close()
+            if (!wasCancelled) {
+                scheduleLoginAttemptCleanup()
+            }
+        }
+
+        internal fun bindLoginAttempt(
+            attemptId: String,
+            onCancelled: (String) -> Unit,
+        ) {
+            loginAttemptId.set(attemptId)
+            onLoginAttemptCancelled = onCancelled
+            if (cancelled.get()) {
+                scheduleLoginAttemptCleanup()
+            }
         }
 
         internal fun attach(session: SteamCredentialAuthSession) {
@@ -51,6 +86,19 @@ internal object SteamCloudAuthCoordinator {
                 throw CancellationException(LOGIN_CANCELLED_MESSAGE)
             }
         }
+
+        internal fun <T> runIfActive(block: () -> T): T {
+            throwIfCancellationRequested()
+            return block()
+        }
+
+        private fun scheduleLoginAttemptCleanup() {
+            val attemptId = loginAttemptId.get()?.trim().orEmpty()
+            val callback = onLoginAttemptCancelled ?: return
+            if (attemptId.isNotEmpty() && cancellationCleanupScheduled.compareAndSet(false, true)) {
+                callback(attemptId)
+            }
+        }
     }
 
     data class AuthResult(
@@ -69,13 +117,15 @@ internal object SteamCloudAuthCoordinator {
         username: String,
         password: String,
         existingGuardData: String,
-        prompt: SteamCloudClient.AuthPrompt,
+        prompt: AuthPrompt,
         cancellationHandle: CancellationHandle = CancellationHandle(),
     ): AuthResult {
         val startedAtMs = System.currentTimeMillis()
         val normalizedUsername = username.trim()
         val normalizedGuardData = existingGuardData.trim().ifBlank { null }
-        val client = SteamCloudClient(context)
+        // Credential login keeps a dedicated CM transport: it must not ride (or
+        // invalidate) the shared connection while establishing new credentials.
+        val client = SteamCloudClient(context, SteamCloudClient.DownloadLimits.defaults(), false)
         try {
             client.use {
                 client.beginOperationDiagnostics(
@@ -151,7 +201,7 @@ internal object SteamCloudAuthCoordinator {
         username: String,
         password: String,
         guardData: String?,
-        prompt: SteamCloudClient.AuthPrompt,
+        prompt: AuthPrompt,
         diagnosticsClient: SteamCloudClient,
         cancellationHandle: CancellationHandle,
     ): SteamCloudClient.AuthMaterial = runBlocking {
@@ -162,12 +212,9 @@ internal object SteamCloudAuthCoordinator {
             readTimeoutMs = 60_000L,
             callTimeoutMs = 60_000L,
         )
-        val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(httpClient)
         val authenticationClient = SteamAuthenticationClient(
-            // Directory lookups are plain HTTPS and benefit from acceleration;
-            // only the CM websocket session needs the bare protocol client.
             directoryClient = SteamDirectoryClient(httpClient),
-            sessionFactory = { OkHttpSteamCmSession(protocolClient) },
+            sessionFactory = { OkHttpSteamCmSession(httpClient) },
         )
         val protocolEvents = mutableListOf<String>()
         val debugLogger: (String) -> Unit = { line ->
@@ -191,8 +238,11 @@ internal object SteamCloudAuthCoordinator {
                 val challenges = session.challenges
                 val challengeSummary = summarizeChallenges(challenges)
                 val lastPrompt = AtomicReference("<not requested>")
-                val selectedChallenge = chooseSupportedChallenge(challenges)
-                diagnosticsClient.recordProtocolAuthDiagnostic("selected_challenge=${selectedChallenge.type.name}")
+                val supportedChallenges = supportedChallengeOptions(challenges)
+                val selectedChallenge = selectChallenge(prompt, supportedChallenges)
+                diagnosticsClient.recordProtocolAuthDiagnostic(
+                    "selected_challenge=${selectedChallenge.type.name}"
+                )
                 cancellationHandle.throwIfCancellationRequested()
 
                 when (selectedChallenge.type) {
@@ -200,8 +250,26 @@ internal object SteamCloudAuthCoordinator {
                     SteamGuardChallengeType.DeviceConfirmation -> {
                         lastPrompt.set("device_confirmation")
                         diagnosticsClient.recordProtocolAuthDiagnostic("auth_prompt device_confirmation")
-                        if (!prompt.acceptDeviceConfirmation().get()) {
-                            throw CancellationException(LOGIN_CANCELLED_MESSAGE)
+                        when (
+                            prompt.getDeviceConfirmationDecision(
+                                challenges.any { it.type == SteamGuardChallengeType.DeviceCode }
+                            ).get()
+                        ) {
+                            SteamCloudDeviceConfirmationDecision.APPROVE_ON_TRUSTED_DEVICE -> Unit
+                            SteamCloudDeviceConfirmationDecision.USE_DEVICE_CODE -> {
+                                if (challenges.none { it.type == SteamGuardChallengeType.DeviceCode }) {
+                                    throw IllegalStateException("Steam 未提供可用的 Steam Guard 2FA 验证码方式。")
+                                }
+                                submitGuardCodeWithPromptRetry(
+                                    session = session,
+                                    challengeType = SteamGuardChallengeType.DeviceCode,
+                                    promptState = lastPrompt,
+                                    diagnosticsClient = diagnosticsClient,
+                                    codeProvider = { previousCodeWasIncorrect ->
+                                        prompt.getDeviceCode(previousCodeWasIncorrect)
+                                    },
+                                )
+                            }
                         }
                     }
 
@@ -320,15 +388,35 @@ internal object SteamCloudAuthCoordinator {
             else -> challengeType.name
         }
 
-    private fun chooseSupportedChallenge(challenges: List<SteamGuardChallenge>): SteamGuardChallenge =
-        challenges.firstOrNull { challenge ->
-            challenge.type == SteamGuardChallengeType.None ||
-                challenge.type == SteamGuardChallengeType.DeviceConfirmation ||
-                challenge.type == SteamGuardChallengeType.DeviceCode ||
-                challenge.type == SteamGuardChallengeType.EmailCode
-        } ?: throw IllegalStateException(
-            "Steam 登录没有可用的受支持验证方式：${summarizeChallenges(challenges)}"
-        )
+    private fun supportedChallengeOptions(challenges: List<SteamGuardChallenge>): List<SteamGuardChallenge> =
+        challenges
+            .filter { challenge ->
+                challenge.type == SteamGuardChallengeType.None ||
+                    challenge.type == SteamGuardChallengeType.DeviceConfirmation ||
+                    challenge.type == SteamGuardChallengeType.DeviceCode ||
+                    challenge.type == SteamGuardChallengeType.EmailCode
+            }
+            .distinctBy(SteamGuardChallenge::type)
+            .let { supported ->
+                if (supported.any { it.type == SteamGuardChallengeType.None }) {
+                    listOf(SteamGuardChallenge(SteamGuardChallengeType.None))
+                } else {
+                    supported
+                }
+            }
+            .ifEmpty { listOf(SteamGuardChallenge(SteamGuardChallengeType.None)) }
+
+    private fun selectChallenge(
+        prompt: AuthPrompt,
+        challenges: List<SteamGuardChallenge>,
+    ): SteamGuardChallenge {
+        if (challenges.size == 1) {
+            return challenges.single()
+        }
+        val selectedType = prompt.getChallengeSelection(challenges).get()
+        return challenges.firstOrNull { it.type == selectedType }
+            ?: throw IllegalStateException("Steam 返回了未提供的验证方式：${selectedType.name}")
+    }
 
     private fun summarizeChallenges(challenges: List<SteamGuardChallenge>): String =
         challenges.ifEmpty { listOf(SteamGuardChallenge(SteamGuardChallengeType.Unknown)) }

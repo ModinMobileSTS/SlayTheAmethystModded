@@ -18,9 +18,13 @@ object RuntimePaths {
     private const val WORKSHOP_AUTO_IMPORT_PATCH_LOG_DIR_NAME = "workshop_auto_import_patch_logs"
     private const val WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME = "workshop_browse_failure_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
+    private const val ACHIEVEMENT_SYNC_LOG_FILE_NAME = "achievement_sync.log"
     private const val PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME = "performance_launch_audit.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
+    private const val LAUNCHER_PERF_SNAPSHOT_FILE_NAME = "launcher_perf_snapshot.txt"
+    private const val FRAME_PROBE_INCIDENTS_FILE_NAME = "frame-probe-incidents.jsonl"
+    private const val FRAME_PROBE_PREVIOUS_INCIDENTS_FILE_NAME = "frame-probe-incidents.prev.jsonl"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val EXPECTED_GAME_EXIT_MARKER_FILE_NAME = ".expected_game_exit_marker"
     private const val EXTERNAL_RESOURCES_DIR_NAME = "external_resources"
@@ -37,9 +41,14 @@ object RuntimePaths {
     private const val TOUCHSCREEN_CARD_HOLD_STATE_FILE_NAME = ".touchscreen_card_hold_state"
     private const val GAME_PRESENCE_STATE_FILE_NAME = ".game_presence_state"
     private const val RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME = ".runtime_rescue_toast_request"
+    private const val ACHIEVEMENT_REQUEST_FILE_NAME = ".achievement_sync_request"
+    private const val ACHIEVEMENT_LOCK_COMMAND_FILE_NAME = ".achievement_lock_command"
     private const val HARNESS_EXIT_REQUEST_FILE_NAME = ".harness_exit_request"
+    private const val RICH_PRESENCE_FILE_NAME = ".rich_presence_state"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
+    private const val WINDOW_DIAGNOSTICS_DIR_NAME = "window"
+    private const val WINDOW_DIAGNOSTICS_LOG_FILE_NAME = "window_diagnostics.log"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
     private const val LOGCAT_APP_CAPTURE_FILE_NAME = "logcat_app_capture.log"
     private const val LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "logcat_system_capture.log"
@@ -53,7 +62,7 @@ object RuntimePaths {
     private const val MTS_PATCH_CACHE_MARKER_FILE_NAME = ".mts_patch_cache"
     private const val MTS_PATCH_CACHE_JAR_FILE_NAME = "desktop-1.0-modded.jar"
     private const val MTS_PATCH_CACHE_PACKAGE_DIR_NAME = "package"
-    private const val MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME = "loadout-scan-cache"
+    private const val MTS_PATCH_CACHE_GDX_PATCH_DIGEST_CACHE_FILE_NAME = "gdx-patch-digest.txt"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
     private const val ANDROID_EMULATED_SEGMENT = "emulated"
@@ -138,6 +147,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun importedRamSaverJar(context: Context): File = File(requiredModsDir(context), "RamSaver.jar")
+
+    @JvmStatic
+    fun importedAmethystFrameProbeJar(context: Context): File =
+        File(requiredModsDir(context), "AmethystFrameProbe.jar")
 
     @JvmStatic
     fun mtsModFileList(context: Context): File = File(stsRoot(context), MTS_MOD_FILE_LIST_FILE_NAME)
@@ -232,8 +245,20 @@ object RuntimePaths {
         File(stsRoot(context), RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME)
 
     @JvmStatic
+    fun achievementRequestFile(context: Context): File =
+        File(stsRoot(context), ACHIEVEMENT_REQUEST_FILE_NAME)
+
+    @JvmStatic
+    fun achievementLockCommandFile(context: Context): File =
+        File(stsRoot(context), ACHIEVEMENT_LOCK_COMMAND_FILE_NAME)
+
+    @JvmStatic
     fun harnessExitRequestFile(context: Context): File =
         File(stsRoot(context), HARNESS_EXIT_REQUEST_FILE_NAME)
+
+    @JvmStatic
+    fun richPresenceFile(context: Context): File =
+        File(stsRoot(context), RICH_PRESENCE_FILE_NAME)
 
     @JvmStatic
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)
@@ -253,6 +278,10 @@ object RuntimePaths {
         File(jvmLogsDir(context), MEMORY_DIAGNOSTICS_LOG_FILE_NAME)
 
     @JvmStatic
+    fun achievementSyncLog(context: Context): File =
+        File(jvmLogsDir(context), ACHIEVEMENT_SYNC_LOG_FILE_NAME)
+
+    @JvmStatic
     fun performanceLaunchAuditLog(context: Context): File =
         File(jvmLogsDir(context), PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME)
 
@@ -269,6 +298,18 @@ object RuntimePaths {
     fun jvmHeapSnapshot(context: Context): File = File(stsRoot(context), JVM_HEAP_SNAPSHOT_FILE_NAME)
 
     @JvmStatic
+    fun launcherPerfSnapshot(context: Context): File =
+        File(stsRoot(context), LAUNCHER_PERF_SNAPSHOT_FILE_NAME)
+
+    @JvmStatic
+    fun frameProbeIncidents(context: Context): File =
+        File(stsRoot(context), FRAME_PROBE_INCIDENTS_FILE_NAME)
+
+    @JvmStatic
+    fun frameProbePreviousIncidents(context: Context): File =
+        File(stsRoot(context), FRAME_PROBE_PREVIOUS_INCIDENTS_FILE_NAME)
+
+    @JvmStatic
     fun jvmSignalDump(context: Context): File = File(stsRoot(context), JVM_SIGNAL_DUMP_FILE_NAME)
 
     @JvmStatic
@@ -276,6 +317,30 @@ object RuntimePaths {
 
     @JvmStatic
     fun logcatDir(context: Context): File = File(stsRoot(context), LOGCAT_DIR_NAME)
+
+    @JvmStatic
+    fun windowDiagnosticsDir(context: Context): File = File(stsRoot(context), WINDOW_DIAGNOSTICS_DIR_NAME)
+
+    @JvmStatic
+    fun windowDiagnosticsLog(context: Context): File =
+        File(windowDiagnosticsDir(context), WINDOW_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun listWindowDiagnosticsFiles(context: Context): List<File> {
+        val directory = windowDiagnosticsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(windowDiagnosticsLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isWindowDiagnosticsFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareWindowDiagnosticsFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(windowDiagnosticsLog(context)) }
+    }
 
     @JvmStatic
     fun logcatCaptureLog(context: Context): File = logcatAppCaptureLog(context)
@@ -368,6 +433,23 @@ object RuntimePaths {
     }
 
     @JvmStatic
+    fun listAchievementSyncLogFiles(context: Context): List<File> {
+        val directory = jvmLogsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(achievementSyncLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isAchievementSyncLogFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareAchievementSyncLogFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(achievementSyncLog(context)) }
+    }
+
+    @JvmStatic
     fun mtsClasspathCacheMarker(context: Context): File =
         File(stsRoot(context), MTS_CLASSPATH_CACHE_MARKER_FILE_NAME)
 
@@ -388,8 +470,8 @@ object RuntimePaths {
         File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_PACKAGE_DIR_NAME)
 
     @JvmStatic
-    fun mtsPatchCacheLoadoutScanCacheDir(context: Context): File =
-        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME)
+    fun mtsPatchCacheGdxPatchDigestCache(context: Context): File =
+        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_GDX_PATCH_DIGEST_CACHE_FILE_NAME)
 
     @JvmStatic
     fun legacyExternalMtsPatchCacheFiles(context: Context): List<File> =
@@ -450,6 +532,37 @@ object RuntimePaths {
     @JvmStatic
     fun agentConnectorJar(context: Context): File =
         File(agentConnectorDir(context), "game-probe.jar")
+
+    @JvmStatic
+    fun arthasResourceRoot(context: Context): File = File(context.filesDir, "arthas_resources")
+
+    @JvmStatic
+    fun arthasResourceCurrentDir(context: Context): File = File(arthasResourceRoot(context), "current")
+
+    @JvmStatic
+    fun arthasResourcePreviousDir(context: Context): File = File(arthasResourceRoot(context), "previous")
+
+    @JvmStatic
+    fun arthasResourceStagingDir(context: Context): File = File(arthasResourceRoot(context), "staging")
+
+    @JvmStatic
+    fun offlineArthasCoreJar(context: Context): File =
+        File(arthasResourceCurrentDir(context), "arthas-core.jar")
+
+    @JvmStatic
+    fun offlineArthasSpyJar(context: Context): File =
+        File(arthasResourceCurrentDir(context), "arthas-spy.jar")
+
+    @JvmStatic
+    fun offlineArthasBridgeJar(context: Context): File =
+        File(arthasResourceCurrentDir(context), "arthas-bridge.jar")
+
+    @JvmStatic
+    fun offlineArthasOutputDir(context: Context): File =
+        File(stsRoot(context), "performance/arthas")
+
+    @JvmStatic
+    fun arthasBridgeLog(context: Context): File = File(context.filesDir, "arthas-bridge.log")
 
     @JvmStatic
     fun bootBridgeDir(context: Context): File = File(componentRoot(context), "boot_bridge")
@@ -710,6 +823,7 @@ object RuntimePaths {
         jvmLogsDir(context).mkdirs()
         jvmHistogramsDir(context).mkdirs()
         logcatDir(context).mkdirs()
+        windowDiagnosticsDir(context).mkdirs()
         launcherCrashReportsDir(context).mkdirs()
         bootOverlayImagesDir(context).mkdirs()
         mtsPatchCacheDir(context).mkdirs()
@@ -738,6 +852,16 @@ object RuntimePaths {
             name.startsWith("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.")
     }
 
+    internal fun isAchievementSyncLogFileName(name: String): Boolean {
+        return name == ACHIEVEMENT_SYNC_LOG_FILE_NAME ||
+            name.startsWith("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.")
+    }
+
+    internal fun isWindowDiagnosticsFileName(name: String): Boolean {
+        return name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME ||
+            name.startsWith("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.")
+    }
+
     internal fun isLauncherCrashReportFileName(name: String): Boolean {
         return name.startsWith(LAUNCHER_CRASH_REPORT_PREFIX) &&
             name.endsWith(".txt", ignoreCase = true)
@@ -764,6 +888,24 @@ object RuntimePaths {
     internal fun compareMemoryDiagnosticsFileNames(left: String, right: String): Int {
         val byRotationIndex = rotationIndexForMemoryDiagnosticsFile(left)
             .compareTo(rotationIndexForMemoryDiagnosticsFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareAchievementSyncLogFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForAchievementSyncLogFile(left)
+            .compareTo(rotationIndexForAchievementSyncLogFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareWindowDiagnosticsFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForWindowDiagnosticsFile(left)
+            .compareTo(rotationIndexForWindowDiagnosticsFile(right))
         if (byRotationIndex != 0) {
             return byRotationIndex
         }
@@ -829,6 +971,30 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForAchievementSyncLogFile(name: String): Int {
+        if (!isAchievementSyncLogFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == ACHIEVEMENT_SYNC_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForWindowDiagnosticsFile(name: String): Int {
+        if (!isWindowDiagnosticsFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

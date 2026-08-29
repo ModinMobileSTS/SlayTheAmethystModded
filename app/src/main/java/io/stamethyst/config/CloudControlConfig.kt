@@ -3,7 +3,7 @@ package io.stamethyst.config
 import android.content.Context
 import android.util.Log
 import io.stamethyst.BuildConfig
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
@@ -724,7 +724,7 @@ object CloudControlConfig {
         context: Context,
         configUrl: String
     ): CloudControlRemoteConfigText {
-        val clients = GithubAcceleratedHttp.createClientPair(
+        val clients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

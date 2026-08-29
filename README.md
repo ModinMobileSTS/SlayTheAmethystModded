@@ -139,33 +139,9 @@ APK 输出目录：
 
 <a id="automation-and-docs"></a>
 
-## 文档入口
+## 相关文档
 
-仓库已经内置了日常联机调试与 CI 发布所需的关键流程。
-
-推荐使用 harness 入口执行可重复的设备调试流程，结果会写入 `debug-artifacts/harness/.../result.json`：
-
-```bat
-python .\scripts\tools\main.py sts-harness -Command doctor
-python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
-python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
-python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
-python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
-python .\scripts\tools\main.py sts-harness -Command exit
-python .\scripts\tools\main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
-```
-
-也可以通过 Gradle 调用同一套 harness：
-
-```powershell
-.\gradlew.bat :app:stsHarnessDoctor
-.\gradlew.bat :app:stsHarnessSmoke
-.\gradlew.bat :app:stsHarnessAutoplaySmoke
-.\gradlew.bat :app:stsHarnessSingleRoom
-.\gradlew.bat :app:stsHarnessSteamCloudSync
-```
-
-低层设备调试命令：
+### 基础调试指令
 
 ```powershell
 .\gradlew.bat :app:stsStart
@@ -173,40 +149,42 @@ python .\scripts\tools\main.py sts-harness -Command steam-cloud-sync -CloudSyncP
 .\gradlew.bat :app:stsPullLogs
 ```
 
-可选参数：
+### 性能测试
 
-- `-PlaunchMode=mts_basemod` 或 `-PlaunchMode=vanilla`
-- `-PdeviceSerial=<adb-serial>`
-- `-PlogsDir=<path>`
-- `-PharnessOutDir=<path>`
-- `-Pautoplay=true`
-- `-PautoplaySaveMode=fresh|continue`
-- `-PautoplayMode=normal|single_room`
-- `-PdisableCardObtainEffectOwnershipCompat=true`
-- `-PsingleRoomCharacter=<id>`
-- `-PsingleRoomMonster=<id>`
-- `-PsingleRoomCards=<逗号分隔的卡牌 id>`
-- `-PsingleRoomSpecFile=<本地 properties 文件>`
-- `-PcloudSyncRelativePath=<sts 相对路径>`
-- `-PcloudSyncPayload=<内联文本>`
-- `-PcloudSyncSourceFile=<本地文本文件>`
-- `-PcloudSyncPullIntervalSeconds=<秒>`
-- `-PpythonExecutable=<python-command>`
+发版前应该进行一轮性能测试，查看更改是否引入性能问题。
 
-`smoke` 会额外保存 harness 侧 logcat；如果游戏在写出 JVM 日志前崩溃，`result.json` 会报告 `LOGCAT_CRASH` 并在 `artifacts.harnessLogcat` 指向完整错误日志。Autoplay smoke 默认等待 300 秒，以便首次修补 `desktop-1.0.jar`；默认 `autoplaySaveMode=fresh` 会清理旧存档并开新局，传 `continue` 时会保留存档并优先继续上次运行。主进程修补失败会作为 `FAIL` 结果写入 `result.json`。
+```shell
+./gradlew :app:stsHarnessPerfBench
+```
 
-Autoplay 会随机处理 `CardRewardScreen` 发现/奖励选牌页，日志中会出现 `[amethyst-autoplay] choice: ...`。`-PdisableCardObtainEffectOwnershipCompat=true` 可在复现同一张牌对象被获得特效和手牌布局同时驱动的问题时，关闭内置的 `ShowCardAndAddToHandEffect` 所有权兼容补丁。
+该任务将会自动启动 app，自动跑真实的运行场景，一并收集性能信息。
 
-`single-room` 会启动一次可配置的单房间战斗，支持模组人物、模组卡牌和 BaseMod/原版 encounter id；玩家死亡或怪物全灭后记录结果但保持进程运行，便于性能采样和手动检查。使用通用 `exit` 命令通过 GDX 优雅退出；`stop` 保留为 force-stop 兜底。结果仍解析到 `statusSnapshot.latestLog.singleRoomResult`。
+建议使用 `-PdeviceSerial` 和 `-PharnessOutDir` 指定设备和结论输出目录。
 
-`steam-cloud-sync` 会默认修改 `sts/saves/.amethyst-cloud-sync-harness.txt` 这个 harness 自己的标记文件，而不是直接改真实角色存档；随后不带 debug launch extra 打开启动器，走正常 Steam Cloud 刷新/上传链路，并按间隔把 `steam-cloud/last-operation-summary.txt`、`push-summary.txt`、`manifest.json`、`sync-baseline.json`、`sts/latest.log`、`sts/boot_bridge_events.log` 等内容拉回到 `polls/<n>/snapshot.json`。只有看到新的 `Outcome: SUCCESS` 且 `Operation: manual_push` 或 `force_push` 才会判成功；最终日志导出会先尝试 `:app:stsPullLogs`，失败时退回 adb 直拉关键文件。
+```shell
+./gradlew :app:stsHarnessPerfBench -PdeviceSerial=10.126.126.1:5555 -PharnessOutDir=agent-tmp/perf-bench
+```
+
+完整参数、默认值、固定行为和输出文件见
+[perf-bench 参数参考](./scripts/tools/harness/README.md#stsHarnessPerfBench)。
+
+GPU 诊断开销应使用固定战斗做关闭/开启配对测试；方法、指标定义和阈值限制见
+[GPU 性能诊断与配对基准](./docs/gpu-performance-diagnostics.md)。
+
+### 市场网络连通性测试
+
+加速链路连接的服务器可能存在不可靠的情况，返回行为未知，发版前应该手动测试市场的可用性。
+
+```shell
+STS_RUN_MARKET_NETWORK_ACCEPTANCE=true ./gradlew :app:marketNetworkAcceptanceTest
+```
 
 更多文档：
 
 - [英文版 README](./docs/README.en.md)
-- [系统架构设计图集（技术汇报版）](./docs/system-architecture-report.md)
 - [架构总览](./docs/architecture-overview.md)
 - [调试自动化指南](./docs/debug-automation/README.md)
+- [GPU 性能诊断与配对基准](./docs/gpu-performance-diagnostics.md)
 - [发布自动化指南](./docs/release-automation/README.md)
 - [后端启动链路说明](./docs/backend-startup-chain.md)
 

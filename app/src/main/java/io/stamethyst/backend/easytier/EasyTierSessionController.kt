@@ -246,6 +246,22 @@ object EasyTierSessionController {
         )
     }
 
+    /**
+     * Marks the connection as failed while preserving everything needed to recover from it.
+     *
+     * [assignedIpv4Cidr] and [connectedAtMs] are deliberately carried over. The Room API only
+     * renews a session lease from a runtime report, and that report is skipped when the snapshot has
+     * no address, so blanking the address here stopped lease renewal at exactly the moment the
+     * connection was struggling. The server then expired the session after its TTL and the next poll
+     * got a 404, which turned a single transient request failure into a permanent disconnect.
+     *
+     * [connectedAtMs] is kept for the same reason in reverse: it is the only evidence that this
+     * session ever reached a working tunnel, which is what separates "never connected, give up" from
+     * "already connected, keep retrying" in [hasEasyTierConnectionTimedOut].
+     *
+     * [peerCount] and [relayServerDescription] are still cleared because they are point-in-time
+     * observations of the room that must not be shown as current while the connection is broken.
+     */
     internal fun buildFailureSnapshot(
         previous: EasyTierConnectionSnapshot,
         summary: String,
@@ -255,10 +271,8 @@ object EasyTierSessionController {
         return previous.copy(
             status = EasyTierConnectionStatus.FAILED,
             failureCategory = failureCategory,
-            connectedAtMs = null,
             lastUpdatedAtMs = nowMs,
             lastErrorSummary = summary,
-            assignedIpv4Cidr = "",
             peerCount = null,
             relayServerDescription = "",
         )

@@ -213,7 +213,7 @@ class ConnectorClient:
         if buffer:
             self._recv_buffer = b""
             return json.loads(buffer.decode("utf-8"))
-        return {}
+        raise ConnectorError("Connector daemon closed the control connection without a response")
 
     def close(self) -> None:
         try:

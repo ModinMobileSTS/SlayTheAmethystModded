@@ -10,7 +10,10 @@ internal object SteamCloudPathMapper {
     )
 
     fun mapRemotePath(remotePath: String): MappedPath? {
-        val normalized = remotePath.trim().replace('\\', '/')
+        val normalized = remotePath.replace('\\', '/')
+        if (!hasCanonicalPathSyntax(normalized)) {
+            return null
+        }
         val mapping = when {
             normalized.startsWith(PREFERENCES_PREFIX) -> {
                 val relativePath = normalized.removePrefix(PREFERENCES_PREFIX)
@@ -36,7 +39,10 @@ internal object SteamCloudPathMapper {
     }
 
     fun mapLocalRelativePath(localRelativePath: String): MappedPath? {
-        val normalized = localRelativePath.trim().replace('\\', '/')
+        if (!hasCanonicalPathSyntax(localRelativePath)) {
+            return null
+        }
+        val normalized = localRelativePath
         val mapping = when {
             normalized.startsWith("preferences/") -> {
                 SteamCloudRootKind.PREFERENCES to normalized.removePrefix("preferences/")
@@ -71,17 +77,22 @@ internal object SteamCloudPathMapper {
     fun buildManifestSnapshot(
         fetchedAtMs: Long,
         remoteEntries: List<SteamCloudClient.RemoteFileRecord>,
+        steamId64: String = "",
     ): SteamCloudManifestSnapshot {
         val warnings = mutableListOf<String>()
-        val entries = remoteEntries.mapNotNull { remoteEntry ->
+        val mappedEntries = remoteEntries.mapNotNull { remoteEntry ->
             val mappedPath = mapRemotePath(remoteEntry.remotePath)
             if (mappedPath == null) {
+                if (looksLikeManagedRemotePath(remoteEntry.remotePath)) {
+                    throw SteamCloudIncompleteManifestException(
+                        "Steam Cloud returned an unsafe or ambiguous managed path: ${remoteEntry.remotePath}"
+                    )
+                }
                 warnings += SteamCloudUserWarning.UnsupportedRemotePath(remoteEntry.remotePath).rawMessage()
                 return@mapNotNull null
             }
-
-            SteamCloudManifestEntry(
-                remotePath = remoteEntry.remotePath,
+            val entry = SteamCloudManifestEntry(
+                remotePath = requireNotNull(buildRemotePath(mappedPath.localRelativePath)),
                 localRelativePath = mappedPath.localRelativePath,
                 rootKind = mappedPath.rootKind,
                 rawSize = remoteEntry.rawFileSize,
@@ -90,28 +101,68 @@ internal object SteamCloudPathMapper {
                 persistState = remoteEntry.persistState,
                 sha1 = remoteEntry.sha1,
             )
-        }.sortedWith(
-            compareBy<SteamCloudManifestEntry>({ it.localRelativePath.lowercase() }, { it.localRelativePath })
-        )
+            if (!entry.hasKnownPersistState) {
+                throw SteamCloudIncompleteManifestException(
+                    "Steam Cloud returned an unknown persistence state for ${entry.remotePath}: " +
+                        remoteEntry.persistState
+                )
+            }
+
+            entry
+        }
+        val duplicateLocalPaths = mappedEntries
+            .groupBy { it.localRelativePath.lowercase() }
+            .filterValues { it.size > 1 }
+            .values
+            .map { duplicates -> duplicates.first().localRelativePath }
+        duplicateLocalPaths.forEach { localRelativePath ->
+            throw SteamCloudIncompleteManifestException(
+                SteamCloudUserWarning.DuplicateMappedLocalPath(localRelativePath).rawMessage()
+            )
+        }
+        val entries = mappedEntries.asSequence()
+            .sortedWith(
+                compareBy<SteamCloudManifestEntry>({ it.localRelativePath.lowercase() }, { it.localRelativePath })
+            )
+            .toList()
 
         return SteamCloudManifestSnapshot(
             fetchedAtMs = fetchedAtMs,
-            fileCount = entries.size,
+            fileCount = entries.count { it.isLive },
             preferencesCount = entries.count { it.rootKind == SteamCloudRootKind.PREFERENCES },
             savesCount = entries.count { it.rootKind == SteamCloudRootKind.SAVES },
             entries = entries,
             warnings = warnings,
+            steamId64 = steamId64.trim(),
         )
     }
 
     private fun isSafeRelativePath(relativePath: String): Boolean {
-        if (relativePath.isBlank()) {
+        if (!hasCanonicalPathSyntax(relativePath) || relativePath.startsWith('/')) {
             return false
         }
         val segments = relativePath.split('/')
-        if (segments.any { it.isBlank() || it == "." || it == ".." }) {
+        if (segments.any {
+                it.isBlank() ||
+                    it != it.trim() ||
+                    it == "." ||
+                    it == ".." ||
+                    DRIVE_PATH_PREFIX.matches(it)
+            }) {
             return false
         }
         return true
     }
+
+    private fun hasCanonicalPathSyntax(path: String): Boolean {
+        return path.isNotBlank() && path == path.trim() && '\\' !in path
+    }
+
+    private fun looksLikeManagedRemotePath(remotePath: String): Boolean {
+        val normalized = remotePath.trim().replace('\\', '/')
+        return normalized.startsWith("%GameInstall%preferences", ignoreCase = true) ||
+            normalized.startsWith("%GameInstall%saves", ignoreCase = true)
+    }
+
+    private val DRIVE_PATH_PREFIX = Regex("^[A-Za-z]:")
 }
