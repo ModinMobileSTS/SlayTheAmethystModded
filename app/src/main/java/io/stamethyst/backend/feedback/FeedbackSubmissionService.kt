@@ -473,7 +473,7 @@ object FeedbackSubmissionService {
     }
 
     private fun allocateFeedbackArchiveFile(context: Context): File {
-        val dir = File(context.cacheDir, FEEDBACK_ARCHIVE_DIR)
+        val dir = File(RuntimePaths.externalCacheRoot(context), FEEDBACK_ARCHIVE_DIR)
         if (!dir.exists() && !dir.mkdirs()) {
             throw IOException("Failed to create feedback cache dir: ${dir.absolutePath}")
         }

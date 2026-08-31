@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -84,7 +85,7 @@ internal object RemoteBitmapCacheStore {
         File(cacheDirectory(context), "$cacheKey.img")
 
     private fun cacheDirectory(context: Context): File =
-        File(context.applicationContext.filesDir, DIRECTORY_NAME)
+        File(RuntimePaths.externalCacheRoot(context.applicationContext), DIRECTORY_NAME)
 
     private fun createClient(context: Context, imageUrl: String): OkHttpClient {
         val appContext = context.applicationContext

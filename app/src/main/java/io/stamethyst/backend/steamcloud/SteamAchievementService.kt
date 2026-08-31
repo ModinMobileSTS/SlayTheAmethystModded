@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import java.io.File
+import io.stamethyst.config.RuntimePaths
 
 /** Bundled Slay the Spire achievement state service with schema-validated CM debug writes. */
 object SteamAchievementService {
@@ -188,7 +189,7 @@ object SteamAchievementService {
     }
 
     private fun cacheFile(context: Context, steamId64: String): File =
-        File(File(context.applicationContext.filesDir, CACHE_DIRECTORY), "$steamId64.tsv")
+        File(File(RuntimePaths.externalCacheRoot(context.applicationContext), CACHE_DIRECTORY), "$steamId64.tsv")
 
     private const val CACHE_VERSION = "v3"
     private const val CACHE_DIRECTORY = "steam-achievements"

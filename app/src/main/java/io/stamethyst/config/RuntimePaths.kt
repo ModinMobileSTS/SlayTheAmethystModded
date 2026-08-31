@@ -16,6 +16,7 @@ object RuntimePaths {
     private const val MTS_MOD_FILE_LIST_FILE_NAME = ".mts_mod_file_list"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
     private const val WORKSHOP_AUTO_IMPORT_PATCH_LOG_DIR_NAME = "workshop_auto_import_patch_logs"
+    private const val STS_JAR_IMPORT_LOG_DIR_NAME = "sts_jar_import_logs"
     private const val WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME = "workshop_browse_failure_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
     private const val ACHIEVEMENT_SYNC_LOG_FILE_NAME = "achievement_sync.log"
@@ -83,6 +84,9 @@ object RuntimePaths {
     fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
 
     @JvmStatic
+    fun externalCacheRoot(context: Context): File = context.externalCacheDir ?: context.cacheDir
+
+    @JvmStatic
     fun externalAppStsRoot(context: Context): File? = appExternalFilesRoot(context)?.let {
         File(it, STS_DIR_NAME)
     }
@@ -95,6 +99,33 @@ object RuntimePaths {
 
     @JvmStatic
     fun storageRoot(context: Context): File = appExternalFilesRoot(context) ?: context.filesDir
+
+    @JvmStatic
+    fun workshopRoot(context: Context): File = File(storageRoot(context), "workshop")
+
+    @JvmStatic
+    fun workshopImportSessionsRoot(context: Context): File =
+        File(workshopRoot(context), "mod-import-sessions")
+
+    @JvmStatic
+    fun workshopQuickStartSteamRoot(context: Context): File =
+        File(workshopRoot(context), "quickstart-steam")
+
+    @JvmStatic
+    fun workshopStsJarImportRoot(context: Context): File =
+        File(workshopRoot(context), "sts-jar-import")
+
+    @JvmStatic
+    fun workshopItemDir(context: Context, appId: UInt, publishedFileId: ULong): File =
+        File(workshopRoot(context), "$appId/$publishedFileId")
+
+    @JvmStatic
+    fun legacyWorkshopItemDir(context: Context, appId: UInt, publishedFileId: ULong): File =
+        File(context.filesDir, "workshop/$appId/$publishedFileId")
+
+    @JvmStatic
+    fun workshopItemDirs(context: Context, appId: UInt, publishedFileId: ULong): List<File> =
+        listOf(workshopItemDir(context, appId, publishedFileId), legacyWorkshopItemDir(context, appId, publishedFileId))
 
     @JvmStatic
     fun stsRoot(context: Context): File = File(storageRoot(context), STS_DIR_NAME)
@@ -499,6 +530,10 @@ object RuntimePaths {
             .distinctBy { it.absolutePath }
             .toList()
 
+    @JvmStatic
+    fun stsJarImportLogsDir(context: Context): File =
+        File(File(stsRoot(context), "workshop"), STS_JAR_IMPORT_LOG_DIR_NAME)
+
     private fun legacyMtsPatchCacheArtifacts(stsRoot: File): List<File> = listOf(
         File(stsRoot, MTS_PATCH_CACHE_MARKER_FILE_NAME),
         File(stsRoot, MTS_PATCH_CACHE_JAR_FILE_NAME),
@@ -593,6 +628,13 @@ object RuntimePaths {
     fun nativeMarketActiveDir(context: Context): File = File(nativeMarketDir(context), "active")
 
     @JvmStatic
+    fun nativeMarketStagingDir(context: Context, packageId: String): File =
+        File(storageRoot(context), "native_market_staging/$packageId.${System.nanoTime()}")
+
+    @JvmStatic
+    fun nativeMarketStagingRoot(context: Context): File = File(storageRoot(context), "native_market_staging")
+
+    @JvmStatic
     fun modSuggestionDir(context: Context): File = File(componentRoot(context), "mod_suggestions")
 
     @JvmStatic
@@ -606,8 +648,21 @@ object RuntimePaths {
     fun runtimeRoot(context: Context): File = File(File(context.filesDir, "runtimes"), "Internal")
 
     @JvmStatic
+    fun runtimeStagingDir(context: Context): File = File(storageRoot(context), "runtime-staging")
+
+    @JvmStatic
     fun externalResourcesRoot(context: Context): File =
+        File(storageRoot(context), EXTERNAL_RESOURCES_DIR_NAME)
+
+    @JvmStatic
+    fun legacyInternalExternalResourcesRoot(context: Context): File =
         File(componentRoot(context), EXTERNAL_RESOURCES_DIR_NAME)
+
+    @JvmStatic
+    fun jvmTempRoot(context: Context): File = File(storageRoot(context), "jvm-tmp")
+
+    @JvmStatic
+    fun feedbackWorkingRoot(context: Context): File = File(storageRoot(context), "feedback-working")
 
     @JvmStatic
     fun externalResourcesCurrentDir(context: Context): File =
@@ -840,6 +895,7 @@ object RuntimePaths {
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         externalResourcesRoot(context).mkdirs()
+        jvmTempRoot(context).mkdirs()
         runtimeRoot(context).mkdirs()
     }
 

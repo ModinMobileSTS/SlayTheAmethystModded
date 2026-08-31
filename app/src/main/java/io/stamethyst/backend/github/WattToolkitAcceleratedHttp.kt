@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.backend.network.AcceleratedRouteEvent
 import io.stamethyst.backend.network.AcceleratedRouteEvents
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
 import java.net.ProtocolException
@@ -151,7 +152,7 @@ internal object WattToolkitAcceleratedHttp {
         readTimeoutMs: Int,
         followRedirects: Boolean = true,
     ): OkHttpClient {
-        val filesDir = context.filesDir
+        val filesDir = RuntimePaths.externalCacheRoot(context)
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createExperimentalGithubDirectAccessRuntime(filesDir)
         }

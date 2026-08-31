@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.security.MessageDigest
 import okhttp3.Request
@@ -80,7 +81,7 @@ internal object FeedbackAvatarCacheStore {
         File(cacheDirectory(context), "$cacheKey.img")
 
     private fun cacheDirectory(context: Context): File =
-        File(context.applicationContext.filesDir, DIRECTORY_NAME)
+        File(RuntimePaths.externalCacheRoot(context.applicationContext), DIRECTORY_NAME)
 
     private fun cacheKey(avatarUrl: String): String {
         val digest = MessageDigest.getInstance("SHA-256")

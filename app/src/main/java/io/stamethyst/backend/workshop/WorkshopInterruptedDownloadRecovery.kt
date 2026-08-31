@@ -1,6 +1,7 @@
 package io.stamethyst.backend.workshop
 
 import android.content.Context
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 
 internal object WorkshopInterruptedDownloadRecovery {
@@ -44,7 +45,7 @@ internal object WorkshopInterruptedDownloadRecovery {
         record: WorkshopInstalledModRecord?,
     ): Boolean {
         if (record == null || record.contentKind != WorkshopInstalledContentKind.JarMod) {
-            return false
+        return false
         }
         val paths = record.allLocalJarPaths()
         val files = paths.map { path -> resolveWorkshopJarFile(context, record, path) }
@@ -174,7 +175,8 @@ internal object WorkshopInterruptedDownloadRecovery {
     }
 
     private fun workshopOutputDir(context: Context, appId: UInt, publishedFileId: ULong): File =
-        File(context.filesDir, "workshop/$appId/$publishedFileId")
+        RuntimePaths.workshopItemDirs(context, appId, publishedFileId)
+            .firstOrNull { it.isDirectory } ?: RuntimePaths.workshopItemDir(context, appId, publishedFileId)
 
     private const val RECOVERED_PATCH_INTERRUPTED_MESSAGE = "下载已完成，上次修补中断，可手动安装"
     private const val RECOVERED_INSTALLED_VERSION_MESSAGE = "已恢复上次安装，更新中断后可重新更新"

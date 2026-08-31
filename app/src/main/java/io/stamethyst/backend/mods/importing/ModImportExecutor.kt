@@ -239,7 +239,9 @@ internal object ModImportExecutor {
                             displayName = patchPlan.displayName,
                             applied = false,
                             summary = context.importString(R.string.mod_import_patch_failed_skipped),
-                            details = error.patchFailureDetailsForResult()
+                            details = error.patchFailureDetailsForResult() +
+                                fileDiagnostics("patch.working", workingJar) +
+                                directoryDiagnostics("patch.session", plan.session.sessionDir)
                         )
                     )
                 }

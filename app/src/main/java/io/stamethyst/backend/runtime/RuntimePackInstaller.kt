@@ -174,7 +174,7 @@ object RuntimePackInstaller {
         )
         prepareCleanDirectory(runtimeRoot, "runtime root")
 
-        val stagingDir = File(context.cacheDir, "runtime-staging")
+        val stagingDir = RuntimePaths.runtimeStagingDir(context)
         throwIfInterrupted()
         reportProgress(
             progressCallback,

@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.stamethyst.R
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.workshop.BaiduAiTextTranslationClient
 import io.stamethyst.backend.workshop.BaiduTranslationApiException
 import io.stamethyst.backend.workshop.BaiduTranslationCredentials
@@ -1602,7 +1603,11 @@ internal class WorkshopViewModel : ViewModel() {
         persistDownloadTaskAsync {
             WorkshopDownloadTaskStore(context).removeAndMarkDeleted(task.publishedFileId)
             metadataStore?.remove(details.summary.appId, details.summary.publishedFileId)
-            File(context.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}").deleteRecursively()
+                    RuntimePaths.workshopItemDirs(
+                        context,
+                        details.summary.appId,
+                        details.summary.publishedFileId,
+                    ).forEach { it.deleteRecursively() }
             WorkshopDownloadProcessService.startNextQueued(context)
         }
     }

@@ -2056,7 +2056,6 @@ class MainScreenViewModel : ViewModel() {
         publishedFileId: ULong,
         localJarPaths: List<String>,
     ): List<ResolvedWorkshopJarCandidate> {
-        val outputDir = File(host.filesDir, "workshop/$appId/$publishedFileId")
         return localJarPaths
             .asSequence()
             .map { path -> path.trim() }
@@ -2066,7 +2065,10 @@ class MainScreenViewModel : ViewModel() {
                 val file = if (pathFile.isAbsolute) {
                     pathFile
                 } else {
-                    File(outputDir, path)
+                    RuntimePaths.workshopItemDirs(host, appId, publishedFileId)
+                        .map { directory -> File(directory, path) }
+                        .firstOrNull(File::exists)
+                        ?: File(RuntimePaths.workshopItemDir(host, appId, publishedFileId), path)
                 }.absoluteFile
                 if (!file.isFile) {
                     null
@@ -2365,7 +2367,7 @@ class MainScreenViewModel : ViewModel() {
                         localJarPaths = importResult.storagePaths,
                         statusText = "已安装 $importedSummary",
                     )
-                    cleanWorkshopDownloadedContent(appContext.filesDir, pending.appId, pending.publishedFileId)
+                    cleanWorkshopDownloadedContent(appContext, pending.appId, pending.publishedFileId)
                     taskStore.upsertOrUpdateWorkshopImportTask(
                         details = details,
                         status = WorkshopDownloadTaskStatus.Completed,
@@ -2765,12 +2767,13 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun cleanWorkshopDownloadedContent(filesDir: File, appId: UInt, publishedFileId: ULong) {
-        val outputDir = File(filesDir, "workshop/$appId/$publishedFileId")
-        if (!outputDir.isDirectory) return
-        outputDir.listFiles().orEmpty().forEach { file ->
-            if (!file.name.startsWith("preview.", ignoreCase = true)) {
-                file.deleteRecursively()
+    private fun cleanWorkshopDownloadedContent(context: Context, appId: UInt, publishedFileId: ULong) {
+        RuntimePaths.workshopItemDirs(context, appId, publishedFileId).forEach { outputDir ->
+            if (!outputDir.isDirectory) return@forEach
+            outputDir.listFiles().orEmpty().forEach { file ->
+                if (!file.name.startsWith("preview.", ignoreCase = true)) {
+                    file.deleteRecursively()
+                }
             }
         }
     }

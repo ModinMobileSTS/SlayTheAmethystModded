@@ -53,6 +53,64 @@ internal object JarFileIoUtils {
     }
 
     @Throws(IOException::class)
+    fun moveFileReplacing(source: File, target: File) {
+        val parent = target.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        val backup = File(target.absolutePath + ".bak")
+        if (backup.exists() && !backup.delete()) {
+            throw IOException("Failed to clear stale backup: ${backup.absolutePath}")
+        }
+        if (target.exists() && !target.renameTo(backup)) {
+            throw IOException(
+                "Failed to back up ${target.absolutePath}; targetExists=${target.exists()} " +
+                    "targetLength=${target.length()} usableSpace=${target.usableSpace} " +
+                    "freeSpace=${target.freeSpace} totalSpace=${target.totalSpace}"
+            )
+        }
+        var moved = false
+        try {
+            if (source.renameTo(target)) {
+                moved = true
+            } else {
+                FileInputStream(source).use { input ->
+                    FileOutputStream(target, false).use { output ->
+                        copyStream(input, output)
+                        output.fd.sync()
+                    }
+                }
+                if (!source.delete()) {
+                    throw IOException(
+                        "Failed to remove temporary file: ${source.absolutePath}; " +
+                            "sourceExists=${source.exists()} sourceLength=${source.length()} " +
+                            "targetExists=${target.exists()} targetLength=${target.length()} " +
+                            "usableSpace=${target.usableSpace} freeSpace=${target.freeSpace} totalSpace=${target.totalSpace}"
+                    )
+                }
+                moved = true
+            }
+        } finally {
+            if (!moved) {
+                if (target.exists()) {
+                    target.delete()
+                }
+                if (backup.exists() && !backup.renameTo(target)) {
+                    throw IOException(
+                        "Failed to restore ${backup.absolutePath} -> ${target.absolutePath}; " +
+                            "backupExists=${backup.exists()} targetExists=${target.exists()} " +
+                            "usableSpace=${target.usableSpace} freeSpace=${target.freeSpace} totalSpace=${target.totalSpace}"
+                    )
+                }
+            }
+        }
+        if (backup.exists() && !backup.delete()) {
+            throw IOException("Failed to delete backup: ${backup.absolutePath}")
+        }
+        target.setLastModified(System.currentTimeMillis())
+    }
+
+    @Throws(IOException::class)
     fun copyStream(input: InputStream, output: java.io.OutputStream) {
         val buffer = ByteArray(8192)
         while (true) {

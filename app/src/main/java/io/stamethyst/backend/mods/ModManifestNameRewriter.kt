@@ -223,14 +223,8 @@ internal object ModManifestNameRewriter {
             if (!replaced) {
                 throw IOException("Failed to rewrite $targetEntryName in ${modJar.name}")
             }
-            if (modJar.exists() && !modJar.delete()) {
-                throw IOException("Failed to replace ${modJar.absolutePath}")
-            }
-            if (!tempJar.renameTo(modJar)) {
-                throw IOException("Failed to move ${tempJar.absolutePath} -> ${modJar.absolutePath}")
-            }
-            val updatedLastModified = maxOf(System.currentTimeMillis(), previousLastModified + 2000L)
-            modJar.setLastModified(updatedLastModified)
+            JarFileIoUtils.moveFileReplacing(tempJar, modJar)
+            modJar.setLastModified(maxOf(System.currentTimeMillis(), previousLastModified + 2000L))
         } finally {
             if (tempJar.exists()) {
                 tempJar.delete()

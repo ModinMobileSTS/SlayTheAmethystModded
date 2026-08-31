@@ -9,6 +9,7 @@ import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.CloudControlSettings
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
+import io.stamethyst.config.RuntimePaths
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -359,6 +360,6 @@ internal class SteamStsJarDownloadService(
         }
 
         private fun quickStartSteamCacheDir(context: Context): File =
-            File(context.cacheDir, QUICK_START_STEAM_CACHE_DIR)
+            RuntimePaths.workshopQuickStartSteamRoot(context)
     }
 }

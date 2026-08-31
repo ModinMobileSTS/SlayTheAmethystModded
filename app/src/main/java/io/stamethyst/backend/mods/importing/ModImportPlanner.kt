@@ -18,6 +18,7 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.structure.DuplicateZipEntryPatchModule
 import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.main.MainFolderStateStore
 import io.stamethyst.ui.main.resolveAssignedFolderId
@@ -135,7 +136,7 @@ internal object ModImportPlanner {
 
     private fun createSession(context: Context): ModImportSession {
         val id = System.currentTimeMillis().coerceAtLeast(1L) * 1000L + (System.nanoTime() and 999L)
-        val dir = File(context.cacheDir, "mod-import-sessions/$id")
+        val dir = File(RuntimePaths.workshopImportSessionsRoot(context), id.toString())
         if (!dir.exists() && !dir.mkdirs()) {
             throw IOException("Failed to create mod import session directory: ${dir.absolutePath}")
         }
@@ -333,13 +334,22 @@ internal object ModImportPlanner {
                 itemId = itemId,
                 source = source,
                 reason = ModImportBlockingReason.UnreadableJar,
-                detail = error.message ?: error.javaClass.simpleName
+                detail = buildString {
+                    append(error.javaClass.name)
+                    error.message?.trim()?.takeIf { it.isNotEmpty() }?.let { append(": ").append(it) }
+                    append("; source=").append(describeFile(source.file))
+                    append("; inspection=").append(describeFile(inspectionFile))
+                }
             )
         } finally {
             if (inspectionFile.exists()) {
                 inspectionFile.delete()
             }
         }
+    }
+
+    private fun describeFile(file: File): String {
+        return "path=${file.absolutePath},exists=${file.exists()},isFile=${file.isFile},length=${file.length()},usableSpace=${file.usableSpace},freeSpace=${file.freeSpace},totalSpace=${file.totalSpace}"
     }
 
     private fun buildPatchPlans(

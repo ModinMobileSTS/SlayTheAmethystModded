@@ -167,10 +167,7 @@ object NativeLibraryMarketService {
         RuntimePaths.ensureBaseDirs(context)
         validateInstallable(context, entry)
 
-        val stagingDir = File(
-            context.cacheDir,
-            "native-market-staging/${entry.id}.${System.nanoTime()}"
-        )
+        val stagingDir = RuntimePaths.nativeMarketStagingDir(context, entry.id)
         prepareCleanDirectory(stagingDir)
         try {
             val clients = WattToolkitAcceleratedHttp.createClientPair(

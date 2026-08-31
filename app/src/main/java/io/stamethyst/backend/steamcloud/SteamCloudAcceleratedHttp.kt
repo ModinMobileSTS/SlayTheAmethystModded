@@ -12,6 +12,7 @@ import io.stamethyst.backend.github.WattToolkitRouteProfile
 import io.stamethyst.backend.github.CredentialSafeRedirectInterceptor
 import io.stamethyst.backend.github.addHttpsOnlyTransport
 import io.stamethyst.backend.github.createWattToolkitRuntime
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
@@ -189,7 +190,7 @@ object SteamCloudAcceleratedHttp {
                 configuredEnabled = enabledProvider?.invoke() ?: enabled,
             )
         }
-        val filesDir = context.filesDir
+        val filesDir = RuntimePaths.externalCacheRoot(context)
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createSteamCloudWattToolkitRuntime(filesDir)
         }
@@ -228,7 +229,7 @@ object SteamCloudAcceleratedHttp {
         context: Context,
         client: OkHttpClient,
     ): SteamWebSocketFactory {
-        val filesDir = context.filesDir
+        val filesDir = RuntimePaths.externalCacheRoot(context)
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createSteamCloudWattToolkitRuntime(filesDir)
         }

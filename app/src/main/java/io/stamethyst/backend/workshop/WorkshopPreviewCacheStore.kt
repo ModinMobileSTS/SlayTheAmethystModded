@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -155,7 +156,7 @@ internal object WorkshopPreviewCacheStore {
             ?.firstOrNull()
     }
 
-    private fun cacheDirectory(context: Context): File = File(context.filesDir, DIRECTORY_NAME)
+    private fun cacheDirectory(context: Context): File = File(RuntimePaths.externalCacheRoot(context), DIRECTORY_NAME)
 
     private fun calculateInSampleSize(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Int {
         if (width <= 0 || height <= 0) return 1

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.security.MessageDigest
 import okhttp3.Request
@@ -106,7 +107,7 @@ internal object SteamCloudAvatarCacheStore {
         File(cacheDirectory(context), "$cacheKey.img")
 
     private fun cacheDirectory(context: Context): File =
-        File(context.applicationContext.filesDir, DIRECTORY_NAME)
+        File(RuntimePaths.externalCacheRoot(context.applicationContext), DIRECTORY_NAME)
 
     /**
      * Keys the cache by the URL path instead of the full URL: Steam serves the

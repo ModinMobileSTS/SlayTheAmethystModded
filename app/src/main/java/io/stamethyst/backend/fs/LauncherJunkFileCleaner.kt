@@ -28,6 +28,19 @@ internal object LauncherJunkFileCleaner {
         RuntimePaths.knownMtsPatchCacheArtifacts(context).forEach(::add)
         add(File(context.cacheDir, MOD_IMPORT_SESSIONS_DIR_NAME))
         add(File(context.cacheDir, MOD_IMPORT_PREVIEW_DIR_NAME))
+        add(File(context.cacheDir, "native-market-staging"))
+        add(File(context.cacheDir, "runtime-staging"))
+        context.externalCacheDir?.let { externalCacheDir ->
+            add(File(externalCacheDir, MOD_IMPORT_SESSIONS_DIR_NAME))
+            add(File(externalCacheDir, MOD_IMPORT_PREVIEW_DIR_NAME))
+        }
+        add(RuntimePaths.workshopImportSessionsRoot(context))
+        add(RuntimePaths.workshopQuickStartSteamRoot(context))
+        add(RuntimePaths.workshopStsJarImportRoot(context))
+        add(RuntimePaths.nativeMarketStagingRoot(context))
+        add(RuntimePaths.runtimeStagingDir(context))
+        add(RuntimePaths.jvmTempRoot(context))
+        add(RuntimePaths.feedbackWorkingRoot(context))
         return targets.values.toList()
     }
 

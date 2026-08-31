@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import io.stamethyst.R
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.feedback.FeedbackConversationService
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackIssueLocalStore
@@ -560,7 +561,8 @@ class FeedbackConversationViewModel(
         if (existing != null && existing.exists()) {
             return existing
         }
-        val dir = File(host.cacheDir, "feedback-conversation-${UUID.randomUUID()}")
+        val dir = File(RuntimePaths.feedbackWorkingRoot(host), "conversation-${UUID.randomUUID()}")
+        dir.parentFile?.mkdirs()
         if (!dir.mkdirs()) {
             throw IOException("Failed to create conversation working directory")
         }

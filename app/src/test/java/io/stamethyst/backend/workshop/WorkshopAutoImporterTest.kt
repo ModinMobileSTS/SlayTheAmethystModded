@@ -12,6 +12,7 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.mods.downfall.DownfallImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.nio.file.Files
 import java.util.zip.ZipEntry
@@ -52,6 +53,24 @@ class WorkshopAutoImporterTest {
     }
 
     @Test
+    fun importPlanningUsesExternalWorkshopWorkspaceForLargeJarInspection() {
+        val roots = TestRoots.create("workshop-external-import-cache")
+        val sourceJar = File(roots.rootDir, "Mod.jar")
+        writeSimpleModJar(sourceJar, modId = "externalcachemod", name = "External Cache Mod")
+
+        val plan = ModImportPlanner.planLocalFiles(
+            context = roots.context,
+            files = listOf(sourceJar),
+        )
+
+        try {
+            assertTrue(plan.session.sessionDir.absolutePath.startsWith(RuntimePaths.workshopImportSessionsRoot(roots.context).absolutePath))
+        } finally {
+            ModImportPlanner.cleanup(plan.session)
+        }
+    }
+
+    @Test
     fun downloadedDownfallJarAutoImportsWithoutInteractiveDownscalePlanning() {
         val roots = TestRoots.create("workshop-downfall-auto-import")
         val sourceJar = File(roots.rootDir, "Downfall.jar")
@@ -66,9 +85,10 @@ class WorkshopAutoImporterTest {
                     .build()
             )
             val details = downfallDetails(fileUrl = server.url("/Downfall.jar").toString())
-            val outputDir = File(
-                roots.context.filesDir,
-                "workshop/${details.summary.appId}/${details.summary.publishedFileId}"
+            val outputDir = RuntimePaths.workshopItemDir(
+                roots.context,
+                details.summary.appId,
+                details.summary.publishedFileId,
             )
             val events = mutableListOf<WorkshopDownloadEvent>()
 
@@ -308,6 +328,7 @@ class WorkshopAutoImporterTest {
                 val rootDir = Files.createTempDirectory(prefix).toFile()
                 val filesDir = File(rootDir, "internal-files").apply { mkdirs() }
                 val cacheDir = File(rootDir, "cache").apply { mkdirs() }
+                val externalCacheDir = File(rootDir, "external-cache").apply { mkdirs() }
                 val externalFilesDir = File(rootDir, "external-files").apply { mkdirs() }
                 val prefs = LinkedHashMap<String, InMemorySharedPreferences>()
                 val resources = TestResources()
@@ -317,6 +338,8 @@ class WorkshopAutoImporterTest {
                         override fun getFilesDir(): File = filesDir
 
                         override fun getCacheDir(): File = cacheDir
+
+                        override fun getExternalCacheDir(): File = externalCacheDir
 
                         override fun getExternalFilesDir(type: String?): File = externalFilesDir
 

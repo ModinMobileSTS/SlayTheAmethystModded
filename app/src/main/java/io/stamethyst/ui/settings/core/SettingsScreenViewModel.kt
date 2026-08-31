@@ -2264,12 +2264,6 @@ class SettingsScreenViewModel : ViewModel() {
             quickStartSteamFailureMessage = null,
             quickStartAutomaticImportRequiresLogin = false,
         )
-        Thread({
-            SteamStsJarDownloadService.clearQuickStartSteamCache(host.applicationContext)
-        }, "QuickStartSteamCacheCleanup").apply {
-            isDaemon = true
-            start()
-        }
     }
 
     fun onWorkshopSteamLanguageChanged(host: Activity, language: SteamLanguagePreference) {
@@ -3820,13 +3814,19 @@ class SettingsScreenViewModel : ViewModel() {
         )
         executor.execute {
             var stagedFile: File? = null
+            val importLog = runCatching { StsJarImportLogStore.create(host) }.getOrNull()
+            StsJarImportLogStore.append(importLog, "start type=picker uri=$uri thread=${Thread.currentThread().name}")
             try {
                 val displayName = SettingsFileService.resolveDisplayName(host, uri)
                 val preparedFile = createStsJarImportScratchFile(host)
                 stagedFile = preparedFile
+                StsJarImportLogStore.append(importLog, "scratch ${describeImportFile(preparedFile)}")
                 SettingsFileService.copyUriToFile(host, uri, preparedFile)
+                StsJarImportLogStore.append(importLog, "after_copy ${describeImportFile(preparedFile)}")
                 StsJarValidator.validate(preparedFile)
+                StsJarImportLogStore.append(importLog, "validator=success")
                 val integrity = StsDesktopJarIntegrity.inspect(preparedFile)
+                StsJarImportLogStore.append(importLog, "integrity matches=${integrity.matchesExpected} expected=${integrity.expectedSha1} actual=${integrity.actualSha1}")
                 if (!integrity.matchesExpected) {
                     val pendingImport = PendingStsJarImport(
                         stagedFile = preparedFile,
@@ -3856,6 +3856,7 @@ class SettingsScreenViewModel : ViewModel() {
                 )
                 stagedFile = null
             } catch (error: Throwable) {
+                StsJarImportLogStore.append(importLog, "failure ${error.javaClass.name}: ${error.message} ${stagedFile?.let(::describeImportFile).orEmpty()}")
                 host.runOnUiThread {
                     setBusy(false, null)
                     showToast(
@@ -3870,6 +3871,7 @@ class SettingsScreenViewModel : ViewModel() {
                     onCompleted?.invoke(false)
                 }
             } finally {
+                StsJarImportLogStore.append(importLog, "cleanup ${stagedFile?.let(::describeImportFile).orEmpty()}")
                 stagedFile?.delete()
             }
         }
@@ -3942,6 +3944,10 @@ class SettingsScreenViewModel : ViewModel() {
         pauseController: PauseController,
         mode: QuickStartSteamImportMode,
     ) {
+        val importLog = runCatching { StsJarImportLogStore.create(host) }.getOrNull()
+        StsJarImportLogStore.append(importLog, "start type=quick_start mode=$mode generation=$generation thread=${Thread.currentThread().name}")
+        StsJarImportLogStore.append(importLog, "cacheRoot=${RuntimePaths.externalCacheRoot(host).absolutePath} state=${describeImportFile(RuntimePaths.externalCacheRoot(host))}")
+        var downloadedJarForDiagnostics: File? = null
         host.runOnUiThread {
             if (generation == quickStartSteamImportGeneration) {
                 setBusy(
@@ -4017,6 +4023,8 @@ class SettingsScreenViewModel : ViewModel() {
                     },
                 )
             }
+            downloadedJarForDiagnostics = downloadedJar
+            StsJarImportLogStore.append(importLog, "download_complete ${describeImportFile(downloadedJar)} generation=$generation")
             host.runOnUiThread {
                 if (generation == quickStartSteamImportGeneration) {
                     updateQuickStartSteamDownloadProgress(
@@ -4038,6 +4046,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
             if (isQuickStartSteamImportCancelled(generation)) {
+                StsJarImportLogStore.append(importLog, "cancelled_before_import generation=$generation ${describeImportFile(downloadedJar)}")
                 downloadedJar.delete()
                 throw CancellationException("Quick start Steam import was cancelled")
             }
@@ -4046,6 +4055,7 @@ class SettingsScreenViewModel : ViewModel() {
                 targetFile = RuntimePaths.importedStsJar(host),
                 validator = StsJarValidator::validate
             )
+            StsJarImportLogStore.append(importLog, "import=success source=${downloadedJar.absolutePath} target=${RuntimePaths.importedStsJar(host).absolutePath}")
             MtsStartupCacheCoordinator.invalidate(host)
             val warmupWarning = prewarmMtsClasspathAfterImport(host)
             val pullResult = if (mode == QuickStartSteamImportMode.AUTHENTICATED) {
@@ -4079,6 +4089,8 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         } catch (error: Throwable) {
+            StsJarImportLogStore.append(importLog, "failure ${error.javaClass.name}: ${error.message} file=${downloadedJarForDiagnostics?.let(::describeImportFile).orEmpty()} generation=$generation")
+            StsJarImportLogStore.append(importLog, error.stackTraceToString())
             if (generation != quickStartSteamImportGeneration || error is CancellationException) {
                 SteamStsJarDownloadService.clearQuickStartSteamCache(host.applicationContext)
                 return
@@ -4486,12 +4498,17 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun createStsJarImportScratchFile(host: Activity): File {
-        val scratchDir = File(host.cacheDir, "sts-jar-import").apply {
+        val scratchDir = RuntimePaths.workshopStsJarImportRoot(host).apply {
             if (!exists() && !mkdirs()) {
                 throw IOException("Failed to create import scratch directory: $absolutePath")
             }
         }
         return File(scratchDir, "desktop-1.0-${System.nanoTime()}.jar")
+    }
+
+    private fun describeImportFile(file: File): String {
+        val parent = file.parentFile
+        return "path=${file.absolutePath} exists=${file.exists()} isFile=${file.isFile} length=${file.length()} canRead=${file.canRead()} canWrite=${file.canWrite()} usableSpace=${file.usableSpace} freeSpace=${file.freeSpace} totalSpace=${file.totalSpace} parentExists=${parent?.isDirectory == true}"
     }
 
     private fun importPreparedLocalStsJar(

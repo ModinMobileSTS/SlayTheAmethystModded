@@ -1,13 +1,15 @@
 package io.stamethyst.backend.workshop
 
 import android.content.Context
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
 internal class WorkshopMetadataStore(context: Context) {
-    private val filesDir = context.filesDir
-    private val file = File(context.filesDir, "workshop/index.json")
+    private val file = File(RuntimePaths.workshopRoot(context), "index.json")
+    private val legacyFile = File(context.filesDir, "workshop/index.json")
+    private val context = context.applicationContext
 
     fun load(): List<WorkshopInstalledModRecord> = withStoreLock { loadUnlocked() }
 
@@ -118,7 +120,7 @@ internal class WorkshopMetadataStore(context: Context) {
     fun markMissingFiles() = withStoreLock {
         var changed = false
         val records = loadUnlocked().map { record ->
-            if (record.shouldMarkFileMissing(filesDir)) {
+            if (record.shouldMarkFileMissing(context)) {
                 changed = true
                 record.copy(
                     cardState = WorkshopModCardState.FileMissing,
@@ -138,8 +140,9 @@ internal class WorkshopMetadataStore(context: Context) {
     }
 
     private fun loadUnlocked(): List<WorkshopInstalledModRecord> {
-        cachedRecords(file)?.let { return it }
-        val records = WorkshopJsonFileStore.readJsonOrDefault(file, emptyList<WorkshopInstalledModRecord>()) { text ->
+        val sourceFile = if (file.isFile || !legacyFile.isFile) file else legacyFile
+        cachedRecords(sourceFile)?.let { return it }
+        val records = WorkshopJsonFileStore.readJsonOrDefault(sourceFile, emptyList<WorkshopInstalledModRecord>()) { text ->
             val root = JSONObject(text)
             val array = root.optJSONArray("items") ?: return@readJsonOrDefault emptyList()
             buildList {
@@ -149,7 +152,7 @@ internal class WorkshopMetadataStore(context: Context) {
                 }
             }
         }
-        updateCache(file, records)
+        updateCache(sourceFile, records)
         return records
     }
 
@@ -217,12 +220,13 @@ private fun WorkshopInstalledModRecord.restoredImportedState(): WorkshopModCardS
     }
 }
 
-private fun WorkshopInstalledModRecord.shouldMarkFileMissing(filesDir: File): Boolean {
+private fun WorkshopInstalledModRecord.shouldMarkFileMissing(context: Context): Boolean {
     val files = allLocalJarPaths().map { path ->
         if (File(path).isAbsolute) {
             File(path)
         } else {
-            File(filesDir, "workshop/$appId/$publishedFileId/$path")
+            val primary = File(RuntimePaths.workshopItemDir(context, appId, publishedFileId), path)
+            if (primary.exists()) primary else File(RuntimePaths.legacyWorkshopItemDir(context, appId, publishedFileId), path)
         }
     }
     if (files.isEmpty()) return false

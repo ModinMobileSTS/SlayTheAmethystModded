@@ -232,7 +232,7 @@ object StsLaunchSpec {
                 if (enableGlBridgeSwapHeartbeatDebug) "true" else "false"
         )
         args.add("-Djava.home=${javaHome.absolutePath}")
-        args.add("-Djava.io.tmpdir=${context.cacheDir.absolutePath}")
+        args.add("-Djava.io.tmpdir=${RuntimePaths.jvmTempRoot(context).absolutePath}")
         args.add(
             "-Djava.library.path=" +
                 NativeLibraryPathResolver.buildJavaLibraryPath(

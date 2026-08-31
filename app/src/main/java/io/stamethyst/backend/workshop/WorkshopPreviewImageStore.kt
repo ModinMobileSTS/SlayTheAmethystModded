@@ -1,6 +1,7 @@
 package io.stamethyst.backend.workshop
 
 import android.content.Context
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -9,13 +10,13 @@ internal class WorkshopPreviewImageStore(
     context: Context,
     private val client: OkHttpClient,
 ) {
-    private val filesDir = context.filesDir
+    private val context = context.applicationContext
 
     fun download(appId: UInt, publishedFileId: ULong, previewUrl: String): String {
         if (previewUrl.isBlank()) return ""
         return runCatching {
             val relativePath = "preview.${sanitizePreviewExtension(previewUrl)}"
-            val directory = File(filesDir, "workshop/$appId/$publishedFileId")
+            val directory = RuntimePaths.workshopItemDir(context, appId, publishedFileId)
             val outputFile = File(directory, relativePath)
             val tempFile = File(directory, "$relativePath.tmp")
             directory.mkdirs()

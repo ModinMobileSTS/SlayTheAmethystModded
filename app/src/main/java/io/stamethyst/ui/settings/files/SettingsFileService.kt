@@ -32,6 +32,7 @@ import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
 import io.stamethyst.backend.steamcloud.SteamCloudStagedPathReplacement
 import io.stamethyst.backend.steamcloud.SteamCloudStagedPathStore
+import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.ui.main.ModAliasStore
@@ -221,6 +222,7 @@ internal object SettingsFileService {
                     }
                     output.write(buffer, 0, read)
                 }
+                output.fd.sync()
             }
         }
     }
@@ -261,7 +263,7 @@ internal object SettingsFileService {
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-        if (!sourceFile.isFile || sourceFile.length() == 0L) {
+        if (!sourceFile.isFile) {
             throw IOException("Source file not found or empty: ${sourceFile.absolutePath}")
         }
         val tempFile = File(
@@ -272,6 +274,7 @@ internal object SettingsFileService {
             sourceFile.inputStream().use { input ->
                 FileOutputStream(tempFile, false).use { output ->
                     input.copyTo(output)
+                    output.fd.sync()
                 }
             }
             validator?.invoke(tempFile)
@@ -300,7 +303,6 @@ internal object SettingsFileService {
                     "- ${RuntimePaths.latestLog(host).absolutePath}\n" +
                     "- ${RuntimePaths.jvmLogsDir(host).absolutePath}\n"
                 writeTextEntry(zipOutput, "sts/jvm_logs/README.txt", message)
-                return 0
             }
             for (logFile in logFiles) {
                 writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
@@ -308,6 +310,14 @@ internal object SettingsFileService {
             }
             if (auditFile.isFile) {
                 writeFileToZip(zipOutput, auditFile, "sts/jvm_logs/${auditFile.name}")
+                exportedCount++
+            }
+            StsJarImportLogStore.list(host).forEach { logFile ->
+                writeFileToZip(zipOutput, logFile, "sts/workshop/sts_jar_import_logs/${logFile.name}")
+                exportedCount++
+            }
+            WorkshopAutoImportPatchLogStore.listLogFiles(host).forEach { logFile ->
+                writeFileToZip(zipOutput, logFile, "sts/workshop/auto_import_patch_logs/${logFile.name}")
                 exportedCount++
             }
             return exportedCount

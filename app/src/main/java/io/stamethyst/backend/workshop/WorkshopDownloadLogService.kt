@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import io.stamethyst.backend.file_interactive.FileShareCompat
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -32,7 +33,7 @@ object WorkshopDownloadLogService {
     }
 
     fun prepareShareIntent(host: Activity, task: WorkshopDownloadTaskRecord): Intent {
-        val file = File(host.cacheDir, "share/${fileName(task)}")
+        val file = File(RuntimePaths.externalCacheRoot(host), "share/${fileName(task)}")
         file.parentFile?.mkdirs()
         file.writeText(buildLogText(task), StandardCharsets.UTF_8)
         val uri = FileShareCompat.resolveShareUri(host, file)

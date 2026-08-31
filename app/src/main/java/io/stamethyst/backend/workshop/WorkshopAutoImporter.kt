@@ -49,6 +49,9 @@ internal object WorkshopAutoImporter {
         log(logFile, "workshop.publishedFileId=${details.summary.publishedFileId}")
         log(logFile, "workshop.title=${details.summary.title}")
         log(logFile, "source.jar.count=${normalizedJarFiles.size}")
+        log(logFile, "context.filesDir=${context.filesDir.absolutePath} state=${describeFile(context.filesDir)}")
+        log(logFile, "context.cacheDir=${context.cacheDir.absolutePath} state=${describeFile(context.cacheDir)}")
+        log(logFile, "context.externalCacheDir=${context.externalCacheDir?.absolutePath.orEmpty()} state=${context.externalCacheDir?.let(::describeFile).orEmpty()}")
         normalizedJarFiles.forEachIndexed { index, jarFile ->
             log(logFile, "source.jar[$index].path=${jarFile.absolutePath}")
             log(logFile, "source.jar[$index].exists=${jarFile.isFile}")
@@ -75,6 +78,8 @@ internal object WorkshopAutoImporter {
         }
         return try {
             log(logFile, "规划阶段完成")
+            log(logFile, "import.sessionDir=${plan.session.sessionDir.absolutePath}")
+            log(logFile, "import.sessionDirState=${describeFile(plan.session.sessionDir)}")
             logPlan(logFile, plan)
             val decisions = buildAutoImportDecisions(context, plan)
             logDecisions(logFile, plan, decisions)
@@ -120,8 +125,10 @@ internal object WorkshopAutoImporter {
             log(logFile, error.stackTraceToString())
             WorkshopAutoImportResult.Failed(error.message ?: error.javaClass.simpleName)
         } finally {
+            log(logFile, "cleanup.before=${describeFile(plan.session.sessionDir)}")
             runCatching { ModImportPlanner.cleanup(plan.session) }
                 .onFailure { error -> log(logFile, "清理导入会话失败：${error.summaryForLog()}") }
+            log(logFile, "cleanup.after=${describeFile(plan.session.sessionDir)}")
             log(logFile, "自动导入修补结束")
         }
     }
@@ -190,6 +197,10 @@ internal object WorkshopAutoImporter {
 
     private fun log(logFile: File?, message: String) {
         WorkshopAutoImportPatchLogStore.appendLine(logFile, message)
+    }
+
+    private fun describeFile(file: File): String {
+        return "path=${file.absolutePath} exists=${file.exists()} isFile=${file.isFile} isDirectory=${file.isDirectory} length=${file.length()} canRead=${file.canRead()} canWrite=${file.canWrite()} usableSpace=${file.usableSpace} freeSpace=${file.freeSpace} totalSpace=${file.totalSpace}"
     }
 
     private fun logPlan(logFile: File?, plan: ModImportPlan) {

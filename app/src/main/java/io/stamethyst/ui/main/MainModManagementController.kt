@@ -1233,7 +1233,7 @@ internal class MainModManagementController(
 
     @Throws(IOException::class)
     private fun prepareModShareFile(host: Activity, sourceFile: File): File {
-        val shareDir = File(host.cacheDir, "share/mods")
+        val shareDir = File(RuntimePaths.externalCacheRoot(host), "share/mods")
         if (!shareDir.exists() && !shareDir.mkdirs()) {
             throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
         }
@@ -2144,14 +2144,23 @@ internal class MainModManagementController(
         val path = record.localJarPath.trim()
         if (path.isEmpty()) return ""
         val file = File(path)
-        return if (file.isAbsolute) path else File(host.filesDir, "workshop/${record.appId}/${record.publishedFileId}/$path").absolutePath
+        if (file.isAbsolute) return path
+        return RuntimePaths.workshopItemDirs(host, record.appId, record.publishedFileId)
+            .map { directory -> File(directory, path) }
+            .firstOrNull(File::exists)
+            ?.absolutePath
+            ?: File(RuntimePaths.workshopItemDir(host, record.appId, record.publishedFileId), path).absolutePath
     }
 
     private fun resolveWorkshopJarPaths(host: Activity, record: WorkshopInstalledModRecord): List<String> =
         record.allLocalJarPaths()
             .map { path ->
                 val file = File(path)
-                if (file.isAbsolute) path else File(host.filesDir, "workshop/${record.appId}/${record.publishedFileId}/$path").absolutePath
+                if (file.isAbsolute) path else RuntimePaths.workshopItemDirs(host, record.appId, record.publishedFileId)
+                    .map { directory -> File(directory, path) }
+                    .firstOrNull(File::exists)
+                    ?.absolutePath
+                    ?: File(RuntimePaths.workshopItemDir(host, record.appId, record.publishedFileId), path).absolutePath
             }
             .distinct()
 
@@ -2159,7 +2168,12 @@ internal class MainModManagementController(
         val path = record.localPreviewImagePath.trim()
         if (path.isEmpty()) return ""
         val file = File(path)
-        return if (file.isAbsolute) path else File(host.filesDir, "workshop/${record.appId}/${record.publishedFileId}/$path").absolutePath
+        if (file.isAbsolute) return path
+        return RuntimePaths.workshopItemDirs(host, record.appId, record.publishedFileId)
+            .map { directory -> File(directory, path) }
+            .firstOrNull(File::exists)
+            ?.absolutePath
+            ?: File(RuntimePaths.workshopItemDir(host, record.appId, record.publishedFileId), path).absolutePath
     }
 
     private fun ModItemUi.canDeleteDownloadedWorkshopMod(): Boolean {
@@ -2194,8 +2208,11 @@ internal class MainModManagementController(
     }
 
     private fun deleteWorkshopResidue(host: Activity, workshop: WorkshopModUi): Boolean {
-        val directory = workshopDirectory(host, workshop)
-        val deletedDirectory = if (directory.exists()) directory.deleteRecursively() else false
+        val directories = RuntimePaths.workshopItemDirs(host, workshop.appId, workshop.publishedFileId)
+        var deletedDirectory = false
+        directories.forEach { directory ->
+            if (directory.exists()) deletedDirectory = directory.deleteRecursively() || deletedDirectory
+        }
         val record = WorkshopMetadataStore(host).findByPublishedFileId(workshop.appId, workshop.publishedFileId)
         val localPaths = record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) }
         localPaths.forEach { path -> deleteWorkshopTexturePackIfNeeded(path) }
@@ -2208,7 +2225,7 @@ internal class MainModManagementController(
     }
 
     private fun workshopDirectory(host: Activity, workshop: WorkshopModUi): File {
-        return File(host.filesDir, "workshop/${workshop.appId}/${workshop.publishedFileId}")
+        return RuntimePaths.workshopItemDir(host, workshop.appId, workshop.publishedFileId)
     }
 
     private fun deleteWorkshopTexturePackIfNeeded(path: String) {

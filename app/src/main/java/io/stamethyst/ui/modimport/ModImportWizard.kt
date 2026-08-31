@@ -1,6 +1,7 @@
 package io.stamethyst.ui.modimport
 
 import android.app.Activity
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -65,6 +66,7 @@ import io.stamethyst.backend.mods.importing.ImportPatchResult
 import io.stamethyst.backend.mods.importing.ModImportItemPlan
 import io.stamethyst.backend.mods.importing.ModImportPlan
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 
 @Composable
@@ -115,7 +117,7 @@ internal fun ModImportHost(
                             localJarPaths = importedPaths,
                             statusText = statusText,
                         )
-                        cleanWorkshopDownloadedContent(context.filesDir, source)
+                        cleanWorkshopDownloadedContent(context, source)
                     }
                     activity?.runOnUiThread(onImportCompleted)
                 }
@@ -124,12 +126,13 @@ internal fun ModImportHost(
     }
 }
 
-private fun cleanWorkshopDownloadedContent(filesDir: File, source: WorkshopImportSource) {
-    val outputDir = File(filesDir, "workshop/${source.appId}/${source.publishedFileId}")
-    if (!outputDir.isDirectory) return
-    outputDir.listFiles().orEmpty().forEach { file ->
-        if (!file.name.startsWith("preview.", ignoreCase = true)) {
-            file.deleteRecursively()
+private fun cleanWorkshopDownloadedContent(context: Context, source: WorkshopImportSource) {
+    RuntimePaths.workshopItemDirs(context, source.appId, source.publishedFileId).forEach { outputDir ->
+        if (!outputDir.isDirectory) return@forEach
+        outputDir.listFiles().orEmpty().forEach { file ->
+            if (!file.name.startsWith("preview.", ignoreCase = true)) {
+                file.deleteRecursively()
+            }
         }
     }
 }

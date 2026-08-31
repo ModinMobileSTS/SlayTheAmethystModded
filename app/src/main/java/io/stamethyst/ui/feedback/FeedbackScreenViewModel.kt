@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.feedback.FeedbackCategory
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
 import io.stamethyst.backend.feedback.FeedbackSubscriptionChangeResult
@@ -540,7 +541,8 @@ class FeedbackScreenViewModel : ViewModel() {
         if (existing != null && existing.exists()) {
             return existing
         }
-        val dir = File(host.cacheDir, "feedback-draft-${UUID.randomUUID()}")
+        val dir = File(RuntimePaths.feedbackWorkingRoot(host), "draft-${UUID.randomUUID()}")
+        dir.parentFile?.mkdirs()
         if (!dir.mkdirs()) {
             throw IOException("Failed to create feedback working directory")
         }

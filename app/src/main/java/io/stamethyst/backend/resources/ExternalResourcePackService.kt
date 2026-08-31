@@ -268,6 +268,7 @@ object ExternalResourcePackService {
     @JvmStatic
     fun isAvailable(context: Context): Boolean {
         return runCatching {
+            migrateLegacyExternalResourcesIfNeeded(context)
             collectExternalPackIssues(
                 context = context,
                 packRoot = RuntimePaths.externalResourcesCurrentDir(context)
@@ -289,6 +290,7 @@ object ExternalResourcePackService {
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
     ) {
         throwIfInterrupted()
+        migrateLegacyExternalResourcesIfNeeded(context)
         RuntimePaths.ensureBaseDirs(context)
         reportProgress(
             progressCallback,
@@ -401,6 +403,28 @@ object ExternalResourcePackService {
             missing += "resource pack version $expectedVersion"
         }
         return missing
+    }
+
+    @Throws(IOException::class)
+    private fun migrateLegacyExternalResourcesIfNeeded(context: Context) {
+        val currentRoot = RuntimePaths.externalResourcesRoot(context)
+        val legacyRoot = RuntimePaths.legacyInternalExternalResourcesRoot(context)
+        if (currentRoot.absolutePath == legacyRoot.absolutePath) return
+        if (!legacyRoot.exists()) return
+        if (currentRoot.isDirectory && currentRoot.listFiles().orEmpty().isNotEmpty()) return
+        if (currentRoot.exists() && !currentRoot.deleteRecursively()) {
+            throw IOException("Failed to clear empty external resource root: ${currentRoot.absolutePath}")
+        }
+        val migrationRoot = File(
+            currentRoot.parentFile ?: throw IOException("External resource root has no parent"),
+            "${currentRoot.name}.migration-${System.nanoTime()}"
+        )
+        copyDirectory(legacyRoot, migrationRoot)
+        if (!migrationRoot.renameTo(currentRoot)) {
+            migrationRoot.deleteRecursively()
+            throw IOException("Failed to move migrated external resources into place")
+        }
+        legacyRoot.deleteRecursively()
     }
 
     private fun collectMissingBundledResources(context: Context): List<String> {

@@ -360,7 +360,7 @@ object CloudControlConfig {
         } else {
             CLOUD_CONTROL_CACHE_FILE_NAME
         }
-        return File(File(context.filesDir, CLOUD_CONTROL_CACHE_DIRECTORY_NAME), fileName)
+        return File(File(RuntimePaths.externalCacheRoot(context), CLOUD_CONTROL_CACHE_DIRECTORY_NAME), fileName)
     }
 
     private fun updateCurrentSettings(settings: CloudControlSettings) {

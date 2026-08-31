@@ -14,6 +14,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.backend.steamcloud.SteamGamePresenceDiagnosticsStore
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
+import io.stamethyst.ui.settings.files.StsJarImportLogStore
 import io.stamethyst.backend.workshop.WorkshopBrowseFailureLogStore
 import io.stamethyst.backend.workshop.WorkshopDownloadLogService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
@@ -341,6 +342,7 @@ internal object DiagnosticsArchiveBuilder {
             exportedCount += writeWorkshopDownloadDiagnostics(zipOutput, context)
             exportedCount += writeWorkshopBrowseFailureLogsForArchive(zipOutput, context)
             exportedCount += writeWorkshopAutoImportPatchLogsForArchive(zipOutput, context)
+            exportedCount += writeStsJarImportLogsForArchive(zipOutput, context)
             exportedCount += writeEasyTierDiagnosticsForArchive(zipOutput, context)
 
             if (crashContext != null) {
@@ -504,6 +506,23 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 logFile,
                 "sts/workshop/auto_import_patch_logs/${logFile.name}"
+            )
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeStsJarImportLogsForArchive(
+        zipOutput: ZipOutputStream,
+        context: Context
+    ): Int {
+        val logFiles = StsJarImportLogStore.list(context)
+        var exportedCount = 0
+        logFiles.forEach { logFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                logFile,
+                "sts/workshop/sts_jar_import_logs/${logFile.name}"
             )
         }
         return exportedCount
@@ -693,7 +712,7 @@ internal object DiagnosticsArchiveBuilder {
 
     @Throws(IOException::class)
     private fun allocateShareArchiveFile(context: Context, fileName: String): File {
-        val shareDir = File(context.cacheDir, SHARE_DIR_NAME)
+        val shareDir = File(RuntimePaths.externalCacheRoot(context), SHARE_DIR_NAME)
         if (!shareDir.exists() && !shareDir.mkdirs()) {
             throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
         }

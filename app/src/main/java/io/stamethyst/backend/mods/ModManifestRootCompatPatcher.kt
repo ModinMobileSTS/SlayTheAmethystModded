@@ -299,13 +299,7 @@ internal object ModManifestRootCompatPatcher {
                 }
             }
 
-            if (modJar.exists() && !modJar.delete()) {
-                throw IOException("Failed to replace ${modJar.absolutePath}")
-            }
-            if (!tempJar.renameTo(modJar)) {
-                throw IOException("Failed to move ${tempJar.absolutePath} -> ${modJar.absolutePath}")
-            }
-            modJar.setLastModified(System.currentTimeMillis())
+            JarFileIoUtils.moveFileReplacing(tempJar, modJar)
         } finally {
             if (tempJar.exists()) {
                 tempJar.delete()

@@ -16,6 +16,7 @@ import io.stamethyst.R
 import io.stamethyst.LauncherActivity
 import io.stamethyst.ui.main.NewlyImportedModHighlightStore
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -338,7 +339,8 @@ class WorkshopDownloadProcessService : Service() {
             StopReason.Cancel -> {
                 taskStore.removeAndMarkDeleted(publishedFileId)
                 WorkshopMetadataStore(applicationContext).remove(appId, publishedFileId)
-                File(applicationContext.filesDir, "workshop/$appId/$publishedFileId").deleteRecursively()
+                RuntimePaths.workshopItemDirs(applicationContext, appId, publishedFileId)
+                    .forEach { it.deleteRecursively() }
             }
         }
     }
@@ -434,7 +436,11 @@ class WorkshopDownloadProcessService : Service() {
                     )
                 }
                 downloadPreviewImageInBackground(service, metadataStore, details)
-                val outputDir = File(applicationContext.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}")
+                val outputDir = RuntimePaths.workshopItemDir(
+                    applicationContext,
+                    details.summary.appId,
+                    details.summary.publishedFileId,
+                )
                 if (preservePartialDownload) {
                     taskStore.appendLog(details.summary.publishedFileId, "保留部分下载文件，尝试断点续传")
                 } else {
@@ -563,7 +569,11 @@ class WorkshopDownloadProcessService : Service() {
                                 cleanOutput(details)
                                 return@collect
                             }
-                            val outputDir = File(applicationContext.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}")
+                            val outputDir = RuntimePaths.workshopItemDir(
+                                applicationContext,
+                                details.summary.appId,
+                                details.summary.publishedFileId,
+                            )
                             val jarArtifacts = findDownloadedJars(outputDir)
                             val message: String
                             val record = if (jarArtifacts.isNotEmpty()) {
@@ -1030,7 +1040,11 @@ class WorkshopDownloadProcessService : Service() {
     }
 
     private fun cleanOutput(details: WorkshopItemDetails) {
-        File(applicationContext.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}").deleteRecursively()
+        RuntimePaths.workshopItemDirs(
+            applicationContext,
+            details.summary.appId,
+            details.summary.publishedFileId,
+        ).forEach { it.deleteRecursively() }
     }
 
     private fun restoreExistingRecordOrUpdateState(
@@ -1060,7 +1074,11 @@ class WorkshopDownloadProcessService : Service() {
     ) {
         val task = taskStore.find(details.summary.publishedFileId)
         if (task?.status == WorkshopDownloadTaskStatus.Completed) return
-        val outputDir = File(applicationContext.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}")
+        val outputDir = RuntimePaths.workshopItemDir(
+            applicationContext,
+            details.summary.appId,
+            details.summary.publishedFileId,
+        )
         val jarArtifacts = findDownloadedJars(outputDir)
         if (jarArtifacts.isEmpty()) return
         val existingRecord = metadataStore.findByPublishedFileId(
