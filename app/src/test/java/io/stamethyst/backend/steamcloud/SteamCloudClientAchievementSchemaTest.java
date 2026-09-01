@@ -63,6 +63,27 @@ public final class SteamCloudClientAchievementSchemaTest {
     }
 
     @Test
+    public void parsesMinimalistFromUnsignedHighBit() {
+        KeyValue root = new KeyValue("UserStats");
+        KeyValue stats = new KeyValue("stats");
+        KeyValue stat = new KeyValue("1");
+        KeyValue bits = new KeyValue("bits");
+        KeyValue bit = new KeyValue("31");
+        bit.set("name", new KeyValue("name", "MINIMALIST"));
+        bits.set("31", bit);
+        stat.set("bits", bits);
+        stats.set("1", stat);
+        root.set("stats", stats);
+
+        SteamCloudClient.UserStatsResult.AchievementStatTarget target =
+            SteamCloudClient.parseAchievementStatTargets(root).get("minimalist");
+
+        assertEquals(1, target.statId);
+        assertEquals(31, target.bitIndex);
+        assertEquals(Integer.MIN_VALUE, target.mask);
+    }
+
+    @Test
     public void parsesAchievementNameFromDisplayWhenBitHasNoDirectName() {
         KeyValue root = new KeyValue("UserStats");
         KeyValue stats = new KeyValue("stats");
@@ -84,6 +105,72 @@ public final class SteamCloudClientAchievementSchemaTest {
 
         assertEquals(1, target.statId);
         assertEquals(1, target.bitIndex);
+    }
+
+    @Test
+    public void parsesMinimalistFromAlternateSchemaFieldAndCanonicalizesPrefix() {
+        KeyValue root = new KeyValue("UserStats");
+        KeyValue stats = new KeyValue("stats");
+        KeyValue stat = new KeyValue("2");
+        KeyValue bits = new KeyValue("bits");
+        KeyValue bit = new KeyValue("4");
+        bit.set("displayName", new KeyValue("displayName", "Achievement_The-Minimalist"));
+        bits.set("4", bit);
+        stat.set("bits", bits);
+        stats.set("2", stat);
+        root.set("stats", stats);
+
+        SteamCloudClient.UserStatsResult.AchievementStatTarget target =
+            SteamCloudClient.parseAchievementStatTargets(root).get("minimalist");
+
+        assertEquals(2, target.statId);
+        assertEquals(4, target.bitIndex);
+        assertEquals(16, target.mask);
+    }
+
+    @Test
+    public void parsesMinimalistFromLeafBitValue() {
+        KeyValue root = new KeyValue("UserStats");
+        KeyValue stats = new KeyValue("stats");
+        KeyValue stat = new KeyValue("2");
+        KeyValue bits = new KeyValue("bits");
+        bits.set("4", new KeyValue("4", "minimalist"));
+        stat.set("bits", bits);
+        stats.set("2", stat);
+        root.set("stats", stats);
+
+        SteamCloudClient.UserStatsResult.AchievementStatTarget target =
+            SteamCloudClient.parseAchievementStatTargets(root).get("minimalist");
+
+        assertEquals(2, target.statId);
+        assertEquals(4, target.bitIndex);
+    }
+
+    @Test
+    public void describesRawStatBitShapeForSchemaInvestigation() {
+        KeyValue root = new KeyValue("UserStats");
+        KeyValue stats = new KeyValue("stats");
+        KeyValue stat = new KeyValue("2");
+        KeyValue bits = new KeyValue("bits");
+        KeyValue bit = new KeyValue("4", "minimalist");
+        bit.set("displayName", new KeyValue("displayName", "Minimalist"));
+        bits.set("4", bit);
+        stat.set("bits", bits);
+        stats.set("2", stat);
+        root.set("stats", stats);
+
+        String description = SteamCloudClient.describeAchievementStatSchema(root).get(0);
+        assertEquals(0, description.indexOf("statId=2,bitIndex=4,"));
+        org.junit.Assert.assertTrue(description.contains("displayName="));
+    }
+
+    @Test
+    public void achievementBlockWriteProbeReportsNoIndependentWriteField() {
+        String description = SteamCloudClient.describeAchievementBlockWriteProtocol();
+
+        org.junit.Assert.assertTrue(description.contains("fields=game_id"));
+        org.junit.Assert.assertTrue(description.contains("stats"));
+        org.junit.Assert.assertTrue(description.contains("achievement_block_write_field=<none>"));
     }
 
     @Test

@@ -14,6 +14,7 @@ import top.apricityx.workshop.steam.protocol.SteamPacketCodec
 import top.apricityx.workshop.steam.protocol.SteamProtocolException
 import top.apricityx.workshop.steam.protocol.newDefaultOkHttpClient
 import `in`.dragonbra.javasteam.enums.EResult
+import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesPlayerSteamclient
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats
 import `in`.dragonbra.javasteam.types.KeyValue
 import okhttp3.OkHttpClient
@@ -46,6 +47,8 @@ fun main(args: Array<String>) {
             when (parsed.command) {
                 ToolCommand.DepotKey -> StsDepotKeyTool(parsed).run()
                 ToolCommand.RefreshToken -> SteamRefreshTokenTool(parsed).run()
+                ToolCommand.AchievementProbe -> SteamAchievementProbeTool(parsed).run()
+                ToolCommand.AchievementBitProbe -> SteamAchievementBitProbeTool(parsed).run()
                 ToolCommand.AchievementUnlock -> SteamAchievementMutationTool(parsed, AchievementMutation.Unlock).run()
                 ToolCommand.AchievementLock -> SteamAchievementMutationTool(parsed, AchievementMutation.Lock).run()
             }
@@ -64,6 +67,8 @@ private enum class ToolCommand(
 ) {
     DepotKey("fetch Steam depot key"),
     RefreshToken("retrieve Steam refresh token"),
+    AchievementProbe("inspect Steam achievement CM protocol"),
+    AchievementBitProbe("run an explicitly confirmed raw Steam achievement-bit experiment"),
     AchievementUnlock("run the restricted Steam achievement test"),
     AchievementLock("run the restricted Steam achievement lock test"),
 }
@@ -155,6 +160,167 @@ private enum class AchievementMutation(
 ) {
     Unlock("achievementUnlock", "--confirm-shrug-it-off", true),
     Lock("achievementLock", "--confirm-lock-shrug-it-off", false),
+}
+
+/** Read-only CM inspection for an achievement API name. It never sends a StoreUserStats request. */
+private class SteamAchievementProbeTool(
+    private val args: ParsedArgs,
+) {
+    suspend fun run() {
+        val envFileValues = readCredentialEnvFiles(args)
+        val merged = MergedConfig(args, envFileValues)
+        val client = buildHttpClient(merged.proxyUrl())
+        val directoryClient = SteamDirectoryClient(client)
+        val account = merged.accountSession(directoryClient, client, debugLogger = null)
+        val targetApiName = args.achievementApiName.lowercase()
+
+        OkHttpSteamCmSession(client).use { session ->
+            session.connectWithRefreshToken(directoryClient.loadServers(), account)
+            val response = getUserStatsResponse(session, account.steamId)
+            val schemaTargets = parseAchievementStats(response.schema.toByteArray(), inspectTarget = false)
+            val target = schemaTargets[targetApiName]
+
+            println("achievementProbe.stage=read_complete steamId64=${account.steamId} target=$targetApiName")
+            println(
+                "achievementProbe.schema target_present=${target != null} " +
+                    "stat_targets=${schemaTargets.size} stats=${response.statsCount} " +
+                    "achievement_blocks=${response.achievementBlocksCount} crc_stats=${response.crcStats}",
+            )
+            target?.let {
+                val currentValue = response.statsList.firstOrNull { stat -> stat.statId == it.statId }?.statValue ?: 0
+                println(
+                    "achievementProbe.target stat_id=${it.statId} bit_index=${it.bitIndex} " +
+                        "mask=${it.mask} current_value=$currentValue",
+                )
+            }
+            describeStatDefinitions(response.schema.toByteArray()).forEach { definition ->
+                println("achievementProbe.stat_definition $definition")
+            }
+            response.achievementBlocksList.forEach { block ->
+                println(
+                    "achievementProbe.block achievement_id=${block.achievementId} " +
+                        "unlock_times=${block.unlockTimeList.joinToString(",")}",
+                )
+            }
+            val achievements = withTimeout(CM_REQUEST_TIMEOUT_MS) {
+                session.callServiceMethod(
+                    methodName = "Player.GetTopAchievementsForGames#1",
+                    request = SteammessagesPlayerSteamclient.CPlayer_GetTopAchievementsForGames_Request
+                        .newBuilder()
+                        .setSteamid(account.steamId)
+                        .setLanguage("english")
+                        .setMaxAchievements(100)
+                        .addAppids(STS_APP_ID.toInt())
+                        .build(),
+                    parser = SteammessagesPlayerSteamclient.CPlayer_GetTopAchievementsForGames_Response.parser(),
+                )
+            }
+            achievements.gamesList
+                .filter { game -> game.appid.toLong() == STS_APP_ID }
+                .flatMap { game -> game.achievementsList }
+                .forEach { achievement ->
+                    println(
+                        "achievementProbe.player_achievement name=${achievement.name} " +
+                            "stat_id=${achievement.statid} bit=${achievement.bit}",
+                        )
+                }
+            val catalog = withTimeout(CM_REQUEST_TIMEOUT_MS) {
+                session.callServiceMethod(
+                    methodName = "Player.GetGameAchievements#1",
+                    request = SteammessagesPlayerSteamclient.CPlayer_GetGameAchievements_Request
+                        .newBuilder()
+                        .setAppid(STS_APP_ID.toInt())
+                        .setLanguage("english")
+                        .build(),
+                    parser = SteammessagesPlayerSteamclient.CPlayer_GetGameAchievements_Response.parser(),
+                )
+            }
+            println("achievementProbe.player_catalog count=${catalog.achievementsCount}")
+            catalog.achievementsList.forEach { achievement ->
+                println(
+                    "achievementProbe.player_catalog_entry internal_name=${achievement.internalName} " +
+                        "localized_name=${achievement.localizedName}",
+                )
+            }
+            val storeFields = SteammessagesClientserverUserstats.CMsgClientStoreUserStats2
+                .getDescriptor().fields.joinToString(",") { field -> field.name }
+            println(
+                "achievementProbe.write_capability message=CMsgClientStoreUserStats2 fields=$storeFields " +
+                    "supports_named_achievement=false supports_achievement_block=false",
+            )
+        }
+    }
+}
+
+/**
+ * A test-account-only experiment for identifying an undocumented achievement bit.
+ * One specified bit is written, then the read-only Player service identifies any newly unlocked
+ * achievement by name. It deliberately has no default stat ID or bit index.
+ */
+private class SteamAchievementBitProbeTool(
+    private val args: ParsedArgs,
+) {
+    suspend fun run() {
+        require(args.confirmUnsafeStatBit) {
+            "Refusing raw stat-bit experiment without --confirm-unsafe-stat-bit."
+        }
+        val statId = args.options["stat-id"]?.toIntOrNull()
+            ?: throw IllegalArgumentException("--stat-id is required for raw stat-bit experiments.")
+        val bitIndex = args.options["bit-index"]?.toIntOrNull()
+            ?: throw IllegalArgumentException("--bit-index is required for raw stat-bit experiments.")
+        require(statId >= 0) { "--stat-id must be non-negative." }
+        require(bitIndex in 0..31) { "--bit-index must be within 0..31." }
+
+        val envFileValues = readCredentialEnvFiles(args)
+        val merged = MergedConfig(args, envFileValues)
+        val client = buildHttpClient(merged.proxyUrl())
+        val directoryClient = SteamDirectoryClient(client)
+        val account = merged.accountSession(directoryClient, client, debugLogger = null)
+        val mask = 1 shl bitIndex
+
+        OkHttpSteamCmSession(client).use { session ->
+            session.connectWithRefreshToken(directoryClient.loadServers(), account)
+            val initial = getUserStatsResponse(session, account.steamId)
+            val beforeAchievements = getUnlockedAchievementNames(session, account.steamId)
+            val currentValue = initial.statsList.firstOrNull { it.statId == statId }?.statValue ?: 0
+            val requestedValue = currentValue or mask
+            println(
+                "achievementBitProbe.stage=initial_read stat_id=$statId bit_index=$bitIndex " +
+                    "current_value=$currentValue requested_value=$requestedValue unlocked_before=${beforeAchievements.sorted().joinToString(",")}",
+            )
+            if (requestedValue == currentValue) {
+                println("achievementBitProbe.status=bit_already_set")
+                return
+            }
+
+            val response = storeUserStat(
+                session = session,
+                steamId = account.steamId,
+                crcStats = initial.crcStats,
+                statId = statId,
+                statValue = requestedValue,
+            )
+            require(!response.hasEresult() || response.eresult == EResult.OK.code()) {
+                "Steam CM StoreUserStats failed: ${response.eresult}"
+            }
+            require(!response.statsOutOfDate) { "Steam CM StoreUserStats rejected stale statistics." }
+            require(response.statsFailedValidationCount == 0) {
+                "Steam CM StoreUserStats validation failed for stat ${response.getStatsFailedValidation(0).statId}."
+            }
+
+            val verified = getUserStatsResponse(session, account.steamId)
+            val verifiedValue = verified.statsList.firstOrNull { it.statId == statId }?.statValue ?: 0
+            require(verifiedValue and mask != 0) {
+                "Steam CM accepted the write but did not preserve statId=$statId bitIndex=$bitIndex."
+            }
+            val afterAchievements = getUnlockedAchievementNames(session, account.steamId)
+            val newlyUnlocked = afterAchievements - beforeAchievements
+            println(
+                "achievementBitProbe.status=bit_confirmed stat_id=$statId bit_index=$bitIndex " +
+                    "newly_unlocked=${newlyUnlocked.sorted().joinToString(",").ifBlank { "<none>" }}",
+            )
+        }
+    }
 }
 
 private class SteamAchievementMutationTool(
@@ -300,10 +466,84 @@ private data class AchievementStatTarget(
     val bitIndex: Int,
 ) {
     init {
-        require(bitIndex in 0..30) { "Achievement bit index must fit a signed stat value." }
+        require(bitIndex in 0..31) { "Achievement bit index must fit a 32-bit Steam stat value." }
     }
 
     val mask: Int = 1 shl bitIndex
+}
+
+private suspend fun getUserStatsResponse(
+    session: OkHttpSteamCmSession,
+    steamId: Long,
+): SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse {
+    val response = withTimeout(CM_REQUEST_TIMEOUT_MS) {
+        session.sendClientMessage(
+            SteamPacketCodec.emsgClientGetUserStats,
+            SteammessagesClientserverUserstats.CMsgClientGetUserStats.newBuilder()
+                .setGameId(STS_APP_ID)
+                .setSteamIdForUser(steamId)
+                .setSchemaLocalVersion(0)
+                .setCrcStats(0)
+                .build(),
+            SteamPacketCodec.emsgClientGetUserStatsResponse,
+            SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse.parser(),
+            STS_APP_ID.toUInt(),
+        )
+    }
+    require(!response.hasEresult() || response.eresult == EResult.OK.code()) {
+        "Steam CM GetUserStats failed: ${response.eresult}"
+    }
+    return response
+}
+
+private suspend fun getUnlockedAchievementNames(
+    session: OkHttpSteamCmSession,
+    steamId: Long,
+): Set<String> = withTimeout(CM_REQUEST_TIMEOUT_MS) {
+    session.callServiceMethod(
+        methodName = "Player.GetTopAchievementsForGames#1",
+        request = SteammessagesPlayerSteamclient.CPlayer_GetTopAchievementsForGames_Request
+            .newBuilder()
+            .setSteamid(steamId)
+            .setLanguage("english")
+            .setMaxAchievements(100)
+            .addAppids(STS_APP_ID.toInt())
+            .build(),
+        parser = SteammessagesPlayerSteamclient.CPlayer_GetTopAchievementsForGames_Response.parser(),
+    ).gamesList
+        .filter { game -> game.appid.toLong() == STS_APP_ID }
+        .flatMap { game -> game.achievementsList }
+        .map { achievement -> achievement.name.trim().lowercase() }
+        .filter(String::isNotEmpty)
+        .toSet()
+}
+
+private suspend fun storeUserStat(
+    session: OkHttpSteamCmSession,
+    steamId: Long,
+    crcStats: Int,
+    statId: Int,
+    statValue: Int,
+): SteammessagesClientserverUserstats.CMsgClientStoreUserStatsResponse = withTimeout(CM_REQUEST_TIMEOUT_MS) {
+    val stat = SteammessagesClientserverUserstats.CMsgClientStoreUserStats2.Stats
+        .newBuilder()
+        .setStatId(statId)
+        .setStatValue(statValue)
+        .build()
+    session.sendClientMessage(
+        SteamPacketCodec.emsgClientStoreUserStats2,
+        SteammessagesClientserverUserstats.CMsgClientStoreUserStats2.newBuilder()
+            .setGameId(STS_APP_ID)
+            .setSettorSteamId(steamId)
+            .setSetteeSteamId(steamId)
+            .setCrcStats(crcStats)
+            .setExplicitReset(false)
+            .addStats(stat)
+            .build(),
+        SteamPacketCodec.emsgClientStoreUserStatsResponse,
+        SteammessagesClientserverUserstats.CMsgClientStoreUserStatsResponse.parser(),
+        STS_APP_ID.toUInt(),
+    )
 }
 
 private class MergedConfig(
@@ -489,6 +729,8 @@ private data class ParsedArgs(
     val inspectAchievementSchema: Boolean,
     val reauthenticate: Boolean,
     val noOutput: Boolean,
+    val achievementApiName: String,
+    val confirmUnsafeStatBit: Boolean,
     val envFile: Path?,
     val loginTimeoutMinutes: Long,
 ) {
@@ -503,6 +745,8 @@ private data class ParsedArgs(
                 command = when (args[0]) {
                     "depotKey" -> ToolCommand.DepotKey
                     "refreshToken" -> ToolCommand.RefreshToken
+                    "achievementProbe" -> ToolCommand.AchievementProbe
+                    "achievementBitProbe" -> ToolCommand.AchievementBitProbe
                     "achievementUnlock" -> ToolCommand.AchievementUnlock
                     "achievementLock" -> ToolCommand.AchievementLock
                     else -> throw IllegalArgumentException("Unknown command: ${args[0]}")
@@ -547,6 +791,8 @@ private data class ParsedArgs(
                 inspectAchievementSchema = "inspect-achievement-schema" in flags,
                 reauthenticate = "reauthenticate" in flags,
                 noOutput = "no-output" in flags,
+                achievementApiName = options["achievement-api-name"]?.trim().orEmpty().ifBlank { "minimalist" },
+                confirmUnsafeStatBit = "confirm-unsafe-stat-bit" in flags,
                 envFile = envFile?.let { Path.of(it) },
                 loginTimeoutMinutes = options["login-timeout-minutes"]?.toLongOrNull()
                     ?: DEFAULT_LOGIN_TIMEOUT_MINUTES,
@@ -562,6 +808,7 @@ private data class ParsedArgs(
             "confirm-shrug-it-off",
             "confirm-lock-shrug-it-off",
             "inspect-achievement-schema",
+            "confirm-unsafe-stat-bit",
             "reauthenticate",
             "no-output",
         )
@@ -730,7 +977,7 @@ private fun parseAchievementStats(
             val statId = currentPath.getOrNull(statsIndex + 1)?.toIntOrNull()
             val bitIndex = currentPath.getOrNull(bitsIndex + 1)?.toIntOrNull()
             val apiName = name.asString().orEmpty().trim()
-            if (statId != null && bitIndex != null && bitIndex in 0..30 && apiName.isNotEmpty()) {
+            if (statId != null && bitIndex != null && bitIndex in 0..31 && apiName.isNotEmpty()) {
                 result[apiName.lowercase()] = AchievementStatTarget(statId, bitIndex)
             }
         }
@@ -742,6 +989,40 @@ private fun parseAchievementStats(
         printAchievementSchemaTargetPaths(root)
     }
     return result
+}
+
+/** Lists every stat definition, including non-bitfield entries omitted from GetUserStats at zero. */
+private fun describeStatDefinitions(schema: ByteArray): List<String> {
+    if (schema.isEmpty()) return emptyList()
+    val root = KeyValue()
+    if (!root.tryReadAsBinary(schema.inputStream())) return emptyList()
+    val definitions = mutableListOf<String>()
+
+    fun value(node: KeyValue, name: String): String = node.get(name)
+        .takeUnless { it == KeyValue.INVALID }
+        ?.asString()
+        ?.trim()
+        .orEmpty()
+
+    fun collect(node: KeyValue) {
+        if (node.name.equals("stats", ignoreCase = true)) {
+            node.children.forEach { stat ->
+                val fields = stat.children
+                    .filter { child -> !child.name.equals("bits", ignoreCase = true) }
+                    .joinToString(",") { child -> "${child.name}=${child.asString().orEmpty().trim()}" }
+                val bitNames = stat.get("bits")
+                    .takeUnless { it == KeyValue.INVALID }
+                    ?.children
+                    ?.joinToString(",") { bit -> "${bit.name}:${value(bit, "name")}" }
+                    .orEmpty()
+                definitions += "stat_id=${stat.name} fields=$fields bits=$bitNames"
+            }
+        }
+        node.children.forEach(::collect)
+    }
+
+    collect(root)
+    return definitions
 }
 
 private fun printAchievementSchemaTargetPaths(root: KeyValue) {
@@ -775,6 +1056,8 @@ private fun printUsage() {
         Usage:
           .\gradlew.bat :tools:steam-cloud-spike:depotKey --args="--app-id 646570 --depot-id 877621"
           .\gradlew.bat :tools:steam-cloud-spike:refreshToken
+          .\gradlew.bat :tools:steam-cloud-spike:achievementProbe --args="--achievement-api-name minimalist"
+          .\gradlew.bat :tools:steam-cloud-spike:achievementBitProbe --args="--stat-id 1 --bit-index 26 --confirm-unsafe-stat-bit"
           .\gradlew.bat :tools:steam-cloud-spike:achievementUnlock --args="--confirm-shrug-it-off"
           .\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off"
 
@@ -805,7 +1088,11 @@ private fun printUsage() {
           --print-token                  also print refresh token to terminal
            --reauthenticate               ignore the saved desktop session and sign in again
            --confirm-shrug-it-off         required for the one experimental achievement mutation
-           --confirm-lock-shrug-it-off    required to clear the one experimental achievement bit
+          --confirm-lock-shrug-it-off    required to clear the one experimental achievement bit
+          --achievement-api-name <name>  read-only CM probe target. Default: minimalist
+          --stat-id <id>                  raw stat-bit experiment target; no default
+          --bit-index <index>             raw stat-bit experiment target; no default
+          --confirm-unsafe-stat-bit       required for a raw stat-bit experiment
           --inspect-achievement-schema   print read-only schema paths containing shrug_it_off
           --no-output                    do not write the env file
           --debug                        print protocol debug logs

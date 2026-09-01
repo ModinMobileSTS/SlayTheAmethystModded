@@ -415,21 +415,39 @@ public final class SteamCloudClient implements AutoCloseable {
             }
         }
 
+        public static final class AchievementBlock {
+            public final int achievementId;
+            public final List<Integer> unlockTimes;
+
+            AchievementBlock(int achievementId, List<Integer> unlockTimes) {
+                this.achievementId = achievementId;
+                this.unlockTimes = Collections.unmodifiableList(new ArrayList<>(unlockTimes));
+            }
+        }
+
         public final List<AchievementDefinition> definitions;
         public final int crcStats;
         public final Map<Integer, Integer> statValues;
         public final Map<String, AchievementStatTarget> achievementStatTargets;
+        public final List<String> achievementStatSchemaEntries;
+        public final List<AchievementBlock> achievementBlocks;
 
         UserStatsResult(
             List<AchievementDefinition> definitions,
             int crcStats,
             Map<Integer, Integer> statValues,
-            Map<String, AchievementStatTarget> achievementStatTargets
+            Map<String, AchievementStatTarget> achievementStatTargets,
+            List<String> achievementStatSchemaEntries,
+            List<AchievementBlock> achievementBlocks
         ) {
             this.definitions = definitions;
             this.crcStats = crcStats;
             this.statValues = statValues;
             this.achievementStatTargets = achievementStatTargets;
+            this.achievementStatSchemaEntries = Collections.unmodifiableList(
+                new ArrayList<>(achievementStatSchemaEntries)
+            );
+            this.achievementBlocks = Collections.unmodifiableList(new ArrayList<>(achievementBlocks));
         }
     }
 
@@ -450,9 +468,41 @@ public final class SteamCloudClient implements AutoCloseable {
                 schema == null ? Collections.emptyList() : parseAchievementSchema(schema),
                 response.getCrcStats(),
                 Collections.unmodifiableMap(statValues),
-                schema == null ? Collections.emptyMap() : parseAchievementStatTargets(schema)
+                schema == null ? Collections.emptyMap() : parseAchievementStatTargets(schema),
+                schema == null ? Collections.emptyList() : describeAchievementStatSchema(schema),
+                parseAchievementBlocks(response)
             );
         } catch (Exception error) { throw error; }
+    }
+
+    private static List<UserStatsResult.AchievementBlock> parseAchievementBlocks(
+        SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse response
+    ) {
+        List<UserStatsResult.AchievementBlock> result = new ArrayList<>();
+        for (
+            SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse.Achievement_Blocks block
+                : response.getAchievementBlocksList()
+        ) {
+            result.add(new UserStatsResult.AchievementBlock(
+                block.getAchievementId(),
+                block.getUnlockTimeList()
+            ));
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    /** Documents the protocol boundary: CM exposes achievement blocks for reads only. */
+    public static String describeAchievementBlockWriteProtocol() {
+        List<String> fields = new ArrayList<>();
+        for (
+            com.google.protobuf.Descriptors.FieldDescriptor field
+                : SteammessagesClientserverUserstats.CMsgClientStoreUserStats2.getDescriptor()
+                    .getFields()
+        ) {
+            fields.add(field.getName());
+        }
+        return "CMsgClientStoreUserStats2 fields=" + String.join(",", fields)
+            + " achievement_block_write_field=<none>";
     }
 
     /**
@@ -511,6 +561,40 @@ public final class SteamCloudClient implements AutoCloseable {
         return Collections.unmodifiableMap(result);
     }
 
+    /** Returns raw stat-bit shapes so schema changes can be diagnosed without guessing a mapping. */
+    static List<String> describeAchievementStatSchema(KeyValue root) {
+        List<String> result = new ArrayList<>();
+        collectAchievementStatSchemaEntries(root, result);
+        return Collections.unmodifiableList(result);
+    }
+
+    private static void collectAchievementStatSchemaEntries(KeyValue node, List<String> result) {
+        if ("stats".equalsIgnoreCase(node.getName())) {
+            for (KeyValue stat : node.getChildren()) {
+                int statId = parseNonNegativeInt(stat.getName());
+                KeyValue bits = stat.get("bits");
+                if (statId < 0 || bits == KeyValue.INVALID) continue;
+                for (KeyValue bit : bits.getChildren()) {
+                    int bitIndex = parseNonNegativeInt(bit.getName());
+                    if (bitIndex < 0 || bitIndex > 31) continue;
+                    result.add(
+                        "statId=" + statId
+                            + ",bitIndex=" + bitIndex
+                            + ",name=" + value(bit, "name")
+                            + ",achievement=" + value(bit, "achievement")
+                            + ",achievementName=" + value(bit, "achievementName")
+                            + ",displayName=" + value(bit, "displayName")
+                            + ",displayEnglish=" + value(bit, "display", "name", "english")
+                            + ",value=" + safeTrim(bit.asString())
+                    );
+                }
+            }
+        }
+        for (KeyValue child : node.getChildren()) {
+            collectAchievementStatSchemaEntries(child, result);
+        }
+    }
+
     private static void collectAchievementStatContainers(
         KeyValue node,
         Map<String, UserStatsResult.AchievementStatTarget> result
@@ -524,9 +608,15 @@ public final class SteamCloudClient implements AutoCloseable {
                     int bitIndex = parseNonNegativeInt(bit.getName());
                     String apiName = firstNonBlank(
                         value(bit, "name"),
-                        value(bit, "display", "name", "english")
+                        value(bit, "achievement"),
+                        value(bit, "achievementName"),
+                        value(bit, "displayName"),
+                        value(bit, "display_name"),
+                        value(bit, "display", "name", "english"),
+                        nullToEmpty(bit.getValue())
                     );
-                    if (bitIndex >= 0 && bitIndex <= 30 && !apiName.isEmpty()) {
+                    apiName = canonicalAchievementApiName(apiName);
+                    if (bitIndex >= 0 && bitIndex <= 31 && !apiName.isEmpty()) {
                         result.put(
                             apiName.toLowerCase(Locale.ROOT),
                             new UserStatsResult.AchievementStatTarget(statId, bitIndex)
@@ -600,6 +690,24 @@ public final class SteamCloudClient implements AutoCloseable {
             if (!normalized.isEmpty()) return normalized;
         }
         return "";
+    }
+
+    /**
+     * Steam has returned the same achievement with cosmetic naming differences in schema
+     * variants. Keep the canonical local API name while retaining the server-provided bit.
+     */
+    private static String canonicalAchievementApiName(String value) {
+        String normalized = safeTrim(value).toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) return "";
+        String compact = normalized.replaceAll("[^a-z0-9]", "");
+        if (compact.startsWith("achievement")) {
+            compact = compact.substring("achievement".length());
+        }
+        if (compact.startsWith("the") && compact.length() > 3) {
+            compact = compact.substring("the".length());
+        }
+        if ("minimalist".equals(compact)) return "minimalist";
+        return normalized;
     }
 
     private static String safeTrim(String value) {

@@ -48,6 +48,27 @@ agent-tmp/steam-desktop-session.env
 .\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off --no-output"
 ```
 
+## 只读成就协议探测
+
+`achievementProbe` 使用本机会话读取指定成就的 CM schema、原始 stat、achievement block 和
+`ClientStoreUserStats2` 可用字段。它不会发送任何成就或统计写入请求，默认目标为 `minimalist`：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:achievementProbe
+.\gradlew.bat :tools:steam-cloud-spike:achievementProbe --args="--achievement-api-name minimalist"
+```
+
+## 原始 Bit 实验
+
+仅限测试账号。`achievementBitProbe` 写入一个明确指定的 CM stat bit，再比较 Steam Player
+服务返回的已解锁成就名称。它必须同时指定目标和确认标记：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:achievementBitProbe --args="--stat-id 1 --bit-index 26 --confirm-unsafe-stat-bit"
+```
+
+该命令会改变账号状态；不要用于正常账号或未知 AppID。
+
 如果环境变量中的代理导致 Steam CM TLS/WebSocket 握手失败，可以对单次命令强制直连：
 
 ```powershell

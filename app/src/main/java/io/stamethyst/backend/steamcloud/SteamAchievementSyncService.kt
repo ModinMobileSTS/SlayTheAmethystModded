@@ -73,7 +73,7 @@ object SteamAchievementSyncService {
                 if (error == null) {
                     "source=runtime request=${request.id}"
                 } else {
-                    "source=runtime request=${request.id} error=${AchievementSyncLogStore.errorType(error)}"
+                    "source=runtime request=${request.id} ${AchievementSyncLogStore.errorDetails(error)}"
                 },
             )
             onFinished(error)
@@ -92,7 +92,7 @@ object SteamAchievementSyncService {
                 if (error == null) {
                     "source=manual"
                 } else {
-                    "source=manual error=${AchievementSyncLogStore.errorType(error)}"
+                    "source=manual ${AchievementSyncLogStore.errorDetails(error)}"
                 },
             )
             onFinished(error)
@@ -181,9 +181,18 @@ object SteamAchievementSyncService {
             val auth = SteamCloudAuthStore.readAuthMaterial(context)
                 ?: error("Steam authentication is unavailable")
             AchievementSyncLogStore.append(context, "remote_fetch_started", "source=$source")
-            val remote = SteamAchievementService.fetchViaCm(
-                context, auth.accountName, auth.refreshToken, auth.steamId64
-            ).achievements.filter { it.unlocked }.map { it.apiName }.toSet()
+            val remote = try {
+                SteamAchievementService.fetchViaCm(
+                    context, auth.accountName, auth.refreshToken, auth.steamId64
+                ).achievements.filter { it.unlocked }.map { it.apiName }.toSet()
+            } catch (error: Throwable) {
+                AchievementSyncLogStore.append(
+                    context,
+                    "remote_fetch_failed",
+                    "source=$source ${AchievementSyncLogStore.errorDetails(error)}",
+                )
+                throw error
+            }
             AchievementSyncLogStore.append(
                 context,
                 "remote_fetch_completed",
@@ -196,8 +205,12 @@ object SteamAchievementSyncService {
                 "source=$source count=${upload.size} ids=${upload.sorted().joinToString(",")}",
             )
             replacePending(context, auth.steamId64, upload)
-            upload.forEach { apiName ->
-                AchievementSyncLogStore.append(context, "upload_started", "source=$source id=$apiName")
+            upload.forEachIndexed { index, apiName ->
+                AchievementSyncLogStore.append(
+                    context,
+                    "upload_started",
+                    "source=$source id=$apiName index=${index + 1} total=${upload.size}",
+                )
                 try {
                     SteamAchievementService.setAchievementUnlockedViaCm(
                         context, auth.accountName, auth.refreshToken, auth.steamId64, apiName, true
@@ -208,7 +221,7 @@ object SteamAchievementSyncService {
                     AchievementSyncLogStore.append(
                         context,
                         "upload_failed",
-                        "source=$source id=$apiName error=${AchievementSyncLogStore.errorType(error)}",
+                        "source=$source id=$apiName index=${index + 1} total=${upload.size} ${AchievementSyncLogStore.errorDetails(error)}",
                     )
                     throw error
                 }

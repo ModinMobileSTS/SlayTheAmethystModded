@@ -49,6 +49,26 @@ tasks.register<JavaExec>("achievementUnlock") {
     workingDir = rootProject.projectDir
 }
 
+tasks.register<JavaExec>("achievementProbe") {
+    group = "steam"
+    description = "Read-only inspect a Slay the Spire achievement through Steam CM."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
+    prependToolCommand("achievementProbe")
+    standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
+tasks.register<JavaExec>("achievementBitProbe") {
+    group = "steam"
+    description = "Experimentally write one explicitly confirmed Slay the Spire stat bit."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
+    prependToolCommand("achievementBitProbe")
+    standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
 tasks.register<JavaExec>("achievementLock") {
     group = "steam"
     description = "Experimentally lock only Slay the Spire's Shrug It Off achievement through Steam CM."

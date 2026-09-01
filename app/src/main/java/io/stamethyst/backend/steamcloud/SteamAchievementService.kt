@@ -44,6 +44,32 @@ object SteamAchievementService {
             client.start()
             client.logOnWithRefreshToken(accountName, refreshToken, normalizedId)
             val result = client.getUserStats(APP_ID, normalizedId.toLong(), CM_TIMEOUT_MS)
+            AchievementSyncLogStore.append(
+                context,
+                "cm_schema_received",
+                "operation=fetch definitions=${result.definitions.size} stat_values=${result.statValues.size} " +
+                    "writable_targets=${result.achievementStatTargets.size} crc_stats=${result.crcStats}",
+            )
+            result.achievementStatSchemaEntries.forEach { entry ->
+                AchievementSyncLogStore.append(
+                    context,
+                    "cm_schema_raw_stat_bit",
+                    "operation=fetch $entry",
+                )
+            }
+            AchievementSyncLogStore.append(
+                context,
+                "cm_achievement_blocks_received",
+                "operation=fetch count=${result.achievementBlocks.size} " +
+                    result.achievementBlocks.joinToString(";") { block ->
+                        "achievement_id=${block.achievementId},unlock_times=${block.unlockTimes.joinToString(",")}"
+                    },
+            )
+            AchievementSyncLogStore.append(
+                context,
+                "cm_achievement_block_write_probe",
+                "operation=fetch result=${SteamCloudClient.describeAchievementBlockWriteProtocol()}",
+            )
             return snapshotFromResult(normalizedId, result, System.currentTimeMillis()).also {
                 writeCached(context, it)
             }
@@ -74,12 +100,61 @@ object SteamAchievementService {
             val initial = client.getUserStats(APP_ID, normalizedId.toLong(), CM_TIMEOUT_MS)
             val target = initial.achievementStatTargets[normalizedApiName]
                 ?: fallbackTargetFor(normalizedApiName)
-                ?: throw IllegalStateException(
-                    "Steam CM schema does not define $normalizedApiName.",
+                ?: run {
+                    val error = IllegalStateException(
+                        "Steam CM schema does not define $normalizedApiName.",
+                    )
+                    AchievementSyncLogStore.append(
+                        context,
+                        "cm_schema_target_missing",
+                        "operation=mutation id=$normalizedApiName definitions=${initial.definitions.size} " +
+                            "stat_values=${initial.statValues.size} writable_targets=${initial.achievementStatTargets.size} " +
+                            AchievementSyncLogStore.errorDetails(error),
+                    )
+                    throw error
+                }
+            AchievementSyncLogStore.append(
+                context,
+                "cm_schema_target_resolved",
+                "operation=mutation id=$normalizedApiName stat_id=${target.statId} " +
+                    "bit_index=${target.bitIndex} mask=${target.mask} definitions=${initial.definitions.size} " +
+                    "stat_values=${initial.statValues.size} writable_targets=${initial.achievementStatTargets.size} " +
+                    "crc_stats=${initial.crcStats}",
+            )
+            initial.achievementStatSchemaEntries.forEach { entry ->
+                AchievementSyncLogStore.append(
+                    context,
+                    "cm_schema_raw_stat_bit",
+                    "operation=mutation id=$normalizedApiName $entry",
                 )
+            }
+            AchievementSyncLogStore.append(
+                context,
+                "cm_achievement_blocks_received",
+                "operation=mutation id=$normalizedApiName count=${initial.achievementBlocks.size} " +
+                    initial.achievementBlocks.joinToString(";") { block ->
+                        "achievement_id=${block.achievementId},unlock_times=${block.unlockTimes.joinToString(",")}"
+                    },
+            )
+            AchievementSyncLogStore.append(
+                context,
+                "cm_achievement_block_write_probe",
+                "operation=mutation id=$normalizedApiName result=${SteamCloudClient.describeAchievementBlockWriteProtocol()}",
+            )
             val currentValue = initial.statValues[target.statId] ?: 0
             val currentUnlocked = currentValue and target.mask != 0
+            AchievementSyncLogStore.append(
+                context,
+                "cm_achievement_state",
+                "operation=mutation id=$normalizedApiName stat_id=${target.statId} bit_index=${target.bitIndex} " +
+                    "current_value=$currentValue current_unlocked=$currentUnlocked requested_unlocked=$unlocked",
+            )
             if (currentUnlocked == unlocked) {
+                AchievementSyncLogStore.append(
+                    context,
+                    "cm_achievement_already_in_requested_state",
+                    "operation=mutation id=$normalizedApiName unlocked=$unlocked",
+                )
                 return snapshotFromResult(normalizedId, initial, System.currentTimeMillis()).also {
                     writeCached(context, it)
                 }
@@ -90,22 +165,69 @@ object SteamAchievementService {
                 currentValue and target.mask.inv()
             }
 
-            client.storeUserStat(
-                APP_ID,
-                normalizedId.toLong(),
-                initial.crcStats,
-                target.statId,
-                requestedValue,
-                CM_TIMEOUT_MS,
+            AchievementSyncLogStore.append(
+                context,
+                "cm_stat_write_started",
+                "operation=mutation id=$normalizedApiName stat_id=${target.statId} " +
+                    "bit_index=${target.bitIndex} current_value=$currentValue requested_value=$requestedValue " +
+                    "crc_stats=${initial.crcStats}",
+            )
+            try {
+                client.storeUserStat(
+                    APP_ID,
+                    normalizedId.toLong(),
+                    initial.crcStats,
+                    target.statId,
+                    requestedValue,
+                    CM_TIMEOUT_MS,
+                )
+            } catch (error: Throwable) {
+                AchievementSyncLogStore.append(
+                    context,
+                    "cm_stat_write_failed",
+                    "operation=mutation id=$normalizedApiName stat_id=${target.statId} " +
+                        "requested_value=$requestedValue ${AchievementSyncLogStore.errorDetails(error)}",
+                )
+                throw error
+            }
+            AchievementSyncLogStore.append(
+                context,
+                "cm_stat_write_accepted",
+                "operation=mutation id=$normalizedApiName stat_id=${target.statId} requested_value=$requestedValue",
             )
 
-            val verified = client.getUserStats(APP_ID, normalizedId.toLong(), CM_TIMEOUT_MS)
+            val verified = try {
+                client.getUserStats(APP_ID, normalizedId.toLong(), CM_TIMEOUT_MS)
+            } catch (error: Throwable) {
+                AchievementSyncLogStore.append(
+                    context,
+                    "cm_stat_verify_fetch_failed",
+                    "operation=mutation id=$normalizedApiName stat_id=${target.statId} " +
+                        AchievementSyncLogStore.errorDetails(error),
+                )
+                throw error
+            }
             val verifiedValue = verified.statValues[target.statId] ?: 0
             val verifiedUnlocked = verifiedValue and target.mask != 0
+            AchievementSyncLogStore.append(
+                context,
+                "cm_stat_verify_result",
+                "operation=mutation id=$normalizedApiName stat_id=${target.statId} bit_index=${target.bitIndex} " +
+                    "verified_value=$verifiedValue verified_unlocked=$verifiedUnlocked requested_unlocked=$unlocked " +
+                    "crc_stats=${verified.crcStats}",
+            )
             if (verifiedUnlocked != unlocked) {
-                throw IllegalStateException(
+                val error = IllegalStateException(
                     "Steam CM accepted the write but did not confirm $normalizedApiName as requested.",
                 )
+                AchievementSyncLogStore.append(
+                    context,
+                    "cm_stat_verify_failed",
+                    "operation=mutation id=$normalizedApiName stat_id=${target.statId} " +
+                        "verified_value=$verifiedValue verified_unlocked=$verifiedUnlocked requested_unlocked=$unlocked " +
+                        AchievementSyncLogStore.errorDetails(error),
+                )
+                throw error
             }
             return snapshotFromResult(normalizedId, verified, System.currentTimeMillis()).also {
                 writeCached(context, it)
