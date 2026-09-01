@@ -41,6 +41,7 @@ internal object LauncherJunkFileCleaner {
         add(RuntimePaths.runtimeStagingDir(context))
         add(RuntimePaths.jvmTempRoot(context))
         add(RuntimePaths.feedbackWorkingRoot(context))
+        add(RuntimePaths.transientFilesRoot(context))
         return targets.values.toList()
     }
 

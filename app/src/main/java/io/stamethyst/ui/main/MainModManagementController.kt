@@ -1233,7 +1233,7 @@ internal class MainModManagementController(
 
     @Throws(IOException::class)
     private fun prepareModShareFile(host: Activity, sourceFile: File): File {
-        val shareDir = File(RuntimePaths.externalCacheRoot(host), "share/mods")
+        val shareDir = File(RuntimePaths.transientFilesRoot(host), "share/mods")
         if (!shareDir.exists() && !shareDir.mkdirs()) {
             throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
         }

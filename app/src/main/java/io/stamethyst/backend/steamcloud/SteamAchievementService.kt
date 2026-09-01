@@ -311,7 +311,7 @@ object SteamAchievementService {
     }
 
     private fun cacheFile(context: Context, steamId64: String): File =
-        File(File(RuntimePaths.externalCacheRoot(context.applicationContext), CACHE_DIRECTORY), "$steamId64.tsv")
+        File(File(RuntimePaths.transientFilesRoot(context.applicationContext), CACHE_DIRECTORY), "$steamId64.tsv")
 
     private const val CACHE_VERSION = "v3"
     private const val CACHE_DIRECTORY = "steam-achievements"

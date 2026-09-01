@@ -743,7 +743,7 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun isExternalStsJar(uri: Uri): Boolean {
-        val tempJar = File(RuntimePaths.externalCacheRoot(this), "external-sts-check-${System.nanoTime()}.jar")
+        val tempJar = File(RuntimePaths.transientFilesRoot(this), "external-sts-check-${System.nanoTime()}.jar")
         return try {
             contentResolver.openInputStream(uri).use { input ->
                 if (input == null) {

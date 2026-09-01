@@ -81,7 +81,7 @@ internal object FeedbackAvatarCacheStore {
         File(cacheDirectory(context), "$cacheKey.img")
 
     private fun cacheDirectory(context: Context): File =
-        File(RuntimePaths.externalCacheRoot(context.applicationContext), DIRECTORY_NAME)
+        File(RuntimePaths.transientFilesRoot(context.applicationContext), DIRECTORY_NAME)
 
     private fun cacheKey(avatarUrl: String): String {
         val digest = MessageDigest.getInstance("SHA-256")

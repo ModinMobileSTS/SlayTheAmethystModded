@@ -152,7 +152,7 @@ internal object WattToolkitAcceleratedHttp {
         readTimeoutMs: Int,
         followRedirects: Boolean = true,
     ): OkHttpClient {
-        val filesDir = RuntimePaths.externalCacheRoot(context)
+        val filesDir = RuntimePaths.transientFilesRoot(context)
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createExperimentalGithubDirectAccessRuntime(filesDir)
         }

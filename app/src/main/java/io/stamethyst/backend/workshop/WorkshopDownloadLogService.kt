@@ -33,7 +33,7 @@ object WorkshopDownloadLogService {
     }
 
     fun prepareShareIntent(host: Activity, task: WorkshopDownloadTaskRecord): Intent {
-        val file = File(RuntimePaths.externalCacheRoot(host), "share/${fileName(task)}")
+        val file = File(RuntimePaths.transientFilesRoot(host), "share/${fileName(task)}")
         file.parentFile?.mkdirs()
         file.writeText(buildLogText(task), StandardCharsets.UTF_8)
         val uri = FileShareCompat.resolveShareUri(host, file)

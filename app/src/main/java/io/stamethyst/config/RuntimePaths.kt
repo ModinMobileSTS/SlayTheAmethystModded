@@ -84,7 +84,7 @@ object RuntimePaths {
     fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
 
     @JvmStatic
-    fun externalCacheRoot(context: Context): File = context.externalCacheDir ?: context.cacheDir
+    fun transientFilesRoot(context: Context): File = File(storageRoot(context), "transient")
 
     @JvmStatic
     fun externalAppStsRoot(context: Context): File? = appExternalFilesRoot(context)?.let {
@@ -895,6 +895,7 @@ object RuntimePaths {
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         externalResourcesRoot(context).mkdirs()
+        transientFilesRoot(context).mkdirs()
         jvmTempRoot(context).mkdirs()
         runtimeRoot(context).mkdirs()
     }

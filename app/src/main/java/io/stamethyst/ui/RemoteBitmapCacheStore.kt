@@ -85,7 +85,7 @@ internal object RemoteBitmapCacheStore {
         File(cacheDirectory(context), "$cacheKey.img")
 
     private fun cacheDirectory(context: Context): File =
-        File(RuntimePaths.externalCacheRoot(context.applicationContext), DIRECTORY_NAME)
+        File(RuntimePaths.transientFilesRoot(context.applicationContext), DIRECTORY_NAME)
 
     private fun createClient(context: Context, imageUrl: String): OkHttpClient {
         val appContext = context.applicationContext

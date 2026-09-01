@@ -712,7 +712,7 @@ internal object DiagnosticsArchiveBuilder {
 
     @Throws(IOException::class)
     private fun allocateShareArchiveFile(context: Context, fileName: String): File {
-        val shareDir = File(RuntimePaths.externalCacheRoot(context), SHARE_DIR_NAME)
+        val shareDir = File(RuntimePaths.transientFilesRoot(context), SHARE_DIR_NAME)
         if (!shareDir.exists() && !shareDir.mkdirs()) {
             throw IOException("Failed to create share directory: ${shareDir.absolutePath}")
         }

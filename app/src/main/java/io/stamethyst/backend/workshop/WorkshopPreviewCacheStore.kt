@@ -156,7 +156,7 @@ internal object WorkshopPreviewCacheStore {
             ?.firstOrNull()
     }
 
-    private fun cacheDirectory(context: Context): File = File(RuntimePaths.externalCacheRoot(context), DIRECTORY_NAME)
+    private fun cacheDirectory(context: Context): File = File(RuntimePaths.transientFilesRoot(context), DIRECTORY_NAME)
 
     private fun calculateInSampleSize(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Int {
         if (width <= 0 || height <= 0) return 1

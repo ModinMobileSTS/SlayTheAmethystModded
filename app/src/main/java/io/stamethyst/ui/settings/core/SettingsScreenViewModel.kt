@@ -3946,7 +3946,7 @@ class SettingsScreenViewModel : ViewModel() {
     ) {
         val importLog = runCatching { StsJarImportLogStore.create(host) }.getOrNull()
         StsJarImportLogStore.append(importLog, "start type=quick_start mode=$mode generation=$generation thread=${Thread.currentThread().name}")
-        StsJarImportLogStore.append(importLog, "cacheRoot=${RuntimePaths.externalCacheRoot(host).absolutePath} state=${describeImportFile(RuntimePaths.externalCacheRoot(host))}")
+        StsJarImportLogStore.append(importLog, "transientRoot=${RuntimePaths.transientFilesRoot(host).absolutePath} state=${describeImportFile(RuntimePaths.transientFilesRoot(host))}")
         var downloadedJarForDiagnostics: File? = null
         host.runOnUiThread {
             if (generation == quickStartSteamImportGeneration) {

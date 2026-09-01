@@ -190,7 +190,7 @@ object SteamCloudAcceleratedHttp {
                 configuredEnabled = enabledProvider?.invoke() ?: enabled,
             )
         }
-        val filesDir = RuntimePaths.externalCacheRoot(context)
+        val filesDir = RuntimePaths.transientFilesRoot(context)
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createSteamCloudWattToolkitRuntime(filesDir)
         }
@@ -229,7 +229,7 @@ object SteamCloudAcceleratedHttp {
         context: Context,
         client: OkHttpClient,
     ): SteamWebSocketFactory {
-        val filesDir = RuntimePaths.externalCacheRoot(context)
+        val filesDir = RuntimePaths.transientFilesRoot(context)
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createSteamCloudWattToolkitRuntime(filesDir)
         }

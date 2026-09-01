@@ -107,7 +107,7 @@ internal object SteamCloudAvatarCacheStore {
         File(cacheDirectory(context), "$cacheKey.img")
 
     private fun cacheDirectory(context: Context): File =
-        File(RuntimePaths.externalCacheRoot(context.applicationContext), DIRECTORY_NAME)
+        File(RuntimePaths.transientFilesRoot(context.applicationContext), DIRECTORY_NAME)
 
     /**
      * Keys the cache by the URL path instead of the full URL: Steam serves the

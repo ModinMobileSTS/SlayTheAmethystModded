@@ -22,13 +22,14 @@ class LauncherJunkFileCleanerTest {
             writeFile(File(roots.externalCacheDir, "mod-import-sessions/1/source.jar"), "session")
             writeFile(File(roots.externalCacheDir, "mod-import-preview/preview.jar"), "preview")
             writeFile(File(RuntimePaths.workshopImportSessionsRoot(roots.context), "1/source.jar"), "persistent-session")
+            writeFile(File(RuntimePaths.transientFilesRoot(roots.context), "remote-bitmap-cache/image.img"), "bitmap")
 
             val keptMod = writeFile(File(RuntimePaths.modsDir(roots.context), "Keep.jar"), "keep-me")
             val keptSave = writeFile(File(RuntimePaths.preferencesDir(roots.context), "STSDataVagabond"), "save")
 
             val result = LauncherJunkFileCleaner.clear(roots.context)
 
-            assertEquals(5, result.deletedTargetCount)
+            assertEquals(6, result.deletedTargetCount)
             assertEquals(0, result.failedTargetCount)
             assertTrue(result.deletedBytes >= "cache-jarlegacy-logsessionpreview".toByteArray(StandardCharsets.UTF_8).size)
             assertFalse(RuntimePaths.mtsPatchCacheDir(roots.context).exists())
@@ -36,6 +37,7 @@ class LauncherJunkFileCleanerTest {
             assertFalse(File(roots.externalCacheDir, "mod-import-sessions").exists())
             assertFalse(File(roots.externalCacheDir, "mod-import-preview").exists())
             assertFalse(RuntimePaths.workshopImportSessionsRoot(roots.context).exists())
+            assertFalse(RuntimePaths.transientFilesRoot(roots.context).exists())
             assertTrue(keptMod.isFile)
             assertTrue(keptSave.isFile)
         } finally {
