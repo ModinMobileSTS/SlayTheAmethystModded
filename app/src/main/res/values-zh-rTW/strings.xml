@@ -1673,6 +1673,10 @@
     <string name="settings_export_all_mods">匯出所有模組</string>
     <string name="settings_import_saves">匯入存檔</string>
     <string name="settings_export_saves">匯出存檔</string>
+    <string name="settings_save_export_source_dialog_title">選擇匯出存檔來源</string>
+    <string name="settings_save_export_source_dialog_message">偵測到 Steam 雲端存檔，請選擇要匯出的存檔。</string>
+    <string name="settings_save_export_source_cloud_action">Steam 雲端存檔</string>
+    <string name="settings_save_export_source_independent_action">本機獨立存檔</string>
     <string name="settings_export_error_logs">匯出錯誤日誌</string>
     <string name="settings_system_game_mode_title">系統 Game Mode</string>
     <string name="settings_system_game_mode_acknowledge">我知道了</string>

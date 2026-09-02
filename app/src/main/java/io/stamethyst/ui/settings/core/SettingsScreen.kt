@@ -333,7 +333,7 @@ fun LauncherSettingsFeedbackScreen(
         onImportMods = viewModel::onImportMods,
         onExportMods = viewModel::onExportMods,
         onImportSaves = viewModel::onImportSaves,
-        onExportSaves = viewModel::onExportSaves,
+        onExportSaves = { viewModel.onExportSaves(activity) },
         onExportLogs = { viewModel.onExportLogs(activity) },
         onExportLogsToFile = viewModel::onExportLogsToFile,
         feedbackSubmissionNotice = feedbackSubmissionNotice,

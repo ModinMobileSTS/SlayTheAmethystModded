@@ -243,6 +243,41 @@ public class MtsPatchCacheBootstrapTest {
     }
 
     @Test
+    public void preparePrepackagedPackageUrls_usesExistingPackageJarForBareJsonAmpersandEscape() throws Throwable {
+        File root = Files.createTempDirectory("mts-patch-cache-bootstrap-package-escaped-url-").toFile();
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            File jar = buildFakeMtsRuntimeJar(
+                    root,
+                    "file:/launch/package/Floating%20u0026%20Foil%20Cards-modded.jar"
+            );
+            File packageDir = new File(root, "cache/package");
+            assertTrue(packageDir.mkdirs());
+            File expectedPackageJar = new File(packageDir, "Floating & Foil Cards-modded.jar");
+            assertTrue(expectedPackageJar.createNewFile());
+            URLClassLoader cachedLoader = new URLClassLoader(
+                    new java.net.URL[]{jar.toURI().toURL()},
+                    null
+            );
+            Thread.currentThread().setContextClassLoader(cachedLoader);
+            System.setProperty(PROP_PACKAGE_DIR, packageDir.getAbsolutePath());
+
+            MtsPatchCacheBootstrap.preparePrepackagedPackageUrls();
+
+            Class<?> loader = cachedLoader.loadClass("com.evacipated.cardcrawl.modthespire.Loader");
+            Object modInfos = loader.getField("MODINFOS").get(null);
+            Object firstModInfo = java.lang.reflect.Array.get(modInfos, 0);
+            java.net.URL jarUrl = (java.net.URL) firstModInfo.getClass().getField("jarURL").get(firstModInfo);
+            assertEquals(expectedPackageJar.toURI().toURL(), jarUrl);
+            cachedLoader.close();
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+            System.clearProperty(PROP_PACKAGE_DIR);
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void preparePrepackagedLaunch_restoresAnnotationDbCacheWithoutScanningMods() throws Throwable {
         File root = Files.createTempDirectory("mts-patch-cache-bootstrap-annotation-cache-").toFile();
         ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
@@ -609,11 +644,16 @@ public class MtsPatchCacheBootstrapTest {
     }
 
     private static File buildFakeMtsRuntimeJar(File root) throws Exception {
+        return buildFakeMtsRuntimeJar(root, "file:/launch/package/ExampleMod-modded.jar");
+    }
+
+    private static File buildFakeMtsRuntimeJar(File root, String initialJarUrl) throws Exception {
         File sourceDir = new File(root, "runtime-src");
         File classDir = new File(root, "runtime-classes");
         File packageDir = new File(sourceDir, "com/evacipated/cardcrawl/modthespire");
         assertTrue(packageDir.mkdirs());
         assertTrue(classDir.mkdirs());
+        String escapedInitialJarUrl = initialJarUrl.replace("\\", "\\\\").replace("\"", "\\\"");
 
         Files.write(
                 new File(packageDir, "ModInfo.java").toPath(),
@@ -623,7 +663,7 @@ public class MtsPatchCacheBootstrapTest {
                                 "  public java.net.URL jarURL;\n" +
                                 "  public ModInfo() {\n" +
                                 "    try {\n" +
-                                "      this.jarURL = new java.net.URL(\"file:/launch/package/ExampleMod-modded.jar\");\n" +
+                                "      this.jarURL = new java.net.URL(\"" + escapedInitialJarUrl + "\");\n" +
                                 "    } catch (Exception e) {\n" +
                                 "      throw new RuntimeException(e);\n" +
                                 "    }\n" +

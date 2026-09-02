@@ -674,6 +674,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun externalNativeLibDir(context: Context): File =
+        gdxPatchNativesDir(context)
+
+    @JvmStatic
+    fun externalResourcePackNativeLibDir(context: Context): File =
         File(
             File(externalResourcesCurrentDir(context), EXTERNAL_RESOURCES_LIB_DIR_NAME),
             EXTERNAL_RESOURCES_ABI_DIR_NAME

@@ -224,7 +224,10 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenImportModsPicker : Effect
         data object OpenImportSavesPicker : Effect
         data class OpenExportModsPicker(val fileName: String) : Effect
-        data class OpenExportSavesPicker(val fileName: String) : Effect
+        data class OpenExportSavesPicker(
+            val fileName: String,
+            val sourceMode: SteamCloudSaveMode,
+        ) : Effect
         data class OpenExportLogsPicker(val fileName: String) : Effect
         data class OpenExportPerformanceLogsPicker(val fileName: String) : Effect
         data class OpenBootOverlayImagePicker(val slot: BootOverlayImageSlot) : Effect
@@ -2693,11 +2696,37 @@ class SettingsScreenViewModel : ViewModel() {
         _effects.tryEmit(Effect.OpenExportModsPicker(SettingsFileService.buildModsExportFileName()))
     }
 
-    fun onExportSaves() {
+    fun onExportSaves(host: Activity) {
         if (uiState.busy) {
             return
         }
-        _effects.tryEmit(Effect.OpenExportSavesPicker(SettingsFileService.buildSaveExportFileName()))
+        val fileName = SettingsFileService.buildSaveExportFileName()
+        if (SteamCloudSaveProfileManager.profileHasRegularFiles(host, SteamCloudSaveMode.STEAM_CLOUD)) {
+            showSaveExportSourceDialog(host, fileName)
+        } else {
+            openSaveExportPicker(fileName, LauncherPreferences.readSteamCloudSaveMode(host))
+        }
+    }
+
+    private fun showSaveExportSourceDialog(host: Activity, fileName: String) {
+        if (host.isFinishing || host.isDestroyed) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.settings_save_export_source_dialog_title)
+            .setMessage(R.string.settings_save_export_source_dialog_message)
+            .setPositiveButton(R.string.settings_save_export_source_cloud_action) { _, _ ->
+                openSaveExportPicker(fileName, SteamCloudSaveMode.STEAM_CLOUD)
+            }
+            .setNegativeButton(R.string.settings_save_export_source_independent_action) { _, _ ->
+                openSaveExportPicker(fileName, SteamCloudSaveMode.INDEPENDENT)
+            }
+            .setNeutralButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun openSaveExportPicker(fileName: String, sourceMode: SteamCloudSaveMode) {
+        _effects.tryEmit(Effect.OpenExportSavesPicker(fileName, sourceMode))
     }
 
     fun onExportLogsToFile() {
@@ -4423,14 +4452,18 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onSavesExportPicked(host: Activity, uri: Uri?) {
+    fun onSavesExportPicked(
+        host: Activity,
+        uri: Uri?,
+        sourceMode: SteamCloudSaveMode,
+    ) {
         if (uri == null) {
             return
         }
         setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_save_archive))
         executor.execute {
             try {
-                val exportedCount = SettingsFileService.exportSaveBundle(host, uri)
+                val exportedCount = SettingsFileService.exportSaveBundle(host, uri, sourceMode)
                 host.runOnUiThread {
                     showToast(
                         host,

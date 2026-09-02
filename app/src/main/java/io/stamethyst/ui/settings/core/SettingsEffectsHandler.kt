@@ -27,6 +27,7 @@ import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import io.stamethyst.R
 import io.stamethyst.config.BootOverlayImageSlot
+import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.modimport.ModImportRequestBus
@@ -50,11 +51,14 @@ fun SettingsEffectsHandler(
     val importSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.onSavesArchivePicked(activity, uri)
     }
+    var pendingSaveExportSourceMode by remember { mutableStateOf<SteamCloudSaveMode?>(null) }
     val exportModsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onModsExportPicked(activity, uri)
     }
     val exportSavesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        viewModel.onSavesExportPicked(activity, uri)
+        val sourceMode = pendingSaveExportSourceMode ?: SteamCloudSaveMode.INDEPENDENT
+        pendingSaveExportSourceMode = null
+        viewModel.onSavesExportPicked(activity, uri, sourceMode)
     }
     val exportLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onLogsExportPicked(activity, uri)
@@ -128,6 +132,7 @@ fun SettingsEffectsHandler(
                 }
 
                 is SettingsScreenViewModel.Effect.OpenExportSavesPicker -> {
+                    pendingSaveExportSourceMode = effect.sourceMode
                     exportSavesLauncher.launch(effect.fileName)
                 }
 

@@ -392,6 +392,27 @@ object ExternalResourcePackService {
     fun isExternalizedNativeLibrary(libraryName: String): Boolean =
         libraryName in externalizedNativeLibraries
 
+    @JvmStatic
+    @Throws(IOException::class)
+    fun installNativeLibraries(context: Context) {
+        val sourceDir = RuntimePaths.externalResourcePackNativeLibDir(context)
+        val targetDir = RuntimePaths.externalNativeLibDir(context)
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IOException("Failed to create private native library directory: ${targetDir.absolutePath}")
+        }
+        externalizedNativeLibraries.forEach { libraryName ->
+            val source = File(sourceDir, libraryName)
+            if (!source.isFile || source.length() <= 0L) {
+                throw IOException("Missing external resource native library: ${source.absolutePath}")
+            }
+            val target = File(targetDir, libraryName)
+            copyFile(source, target)
+            if (!target.setExecutable(true, false)) {
+                throw IOException("Failed to mark native library executable: ${target.absolutePath}")
+            }
+        }
+    }
+
     private fun collectExternalPackIssues(context: Context, packRoot: File): List<String> {
         val missing = ArrayList<String>()
         missing += collectMissingResourcePackContent(packRoot)

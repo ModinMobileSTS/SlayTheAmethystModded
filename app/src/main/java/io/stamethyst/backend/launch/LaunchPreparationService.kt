@@ -55,6 +55,7 @@ object LaunchPreparationService {
             context.progressText(R.string.startup_progress_installing_launcher_components)
         )
         ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 21, 43))
+        ExternalResourcePackService.installNativeLibraries(context)
 
         throwIfInterrupted()
         reportProgress(

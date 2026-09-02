@@ -1676,6 +1676,10 @@
     <string name="settings_export_all_mods">导出所有模组</string>
     <string name="settings_import_saves">导入存档</string>
     <string name="settings_export_saves">导出存档</string>
+    <string name="settings_save_export_source_dialog_title">选择导出存档来源</string>
+    <string name="settings_save_export_source_dialog_message">检测到 Steam 云存档，请选择要导出的存档。</string>
+    <string name="settings_save_export_source_cloud_action">Steam 云存档</string>
+    <string name="settings_save_export_source_independent_action">本地独立存档</string>
     <string name="settings_export_error_logs">导出错误日志</string>
     <string name="settings_system_game_mode_title">系统 Game Mode</string>
     <string name="settings_system_game_mode_acknowledge">我知道了</string>

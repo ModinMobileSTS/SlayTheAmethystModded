@@ -10,6 +10,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -393,11 +394,11 @@ public final class MtsPatchCacheBootstrap {
             if (!(rawUrl instanceof URL)) {
                 continue;
             }
-            String fileName = packageFileName((URL) rawUrl);
-            if (fileName.length() == 0) {
+            File packageJar = resolveCachedPackageJar(packageDir, (URL) rawUrl);
+            if (packageJar == null) {
                 continue;
             }
-            jarUrlField.set(modInfo, new File(packageDir, fileName).toURI().toURL());
+            jarUrlField.set(modInfo, packageJar.toURI().toURL());
             prepared++;
         }
         log("Prepared cached MTS package URLs: mods=" + prepared + " packageDir=" + packageDir.getAbsolutePath());
@@ -432,6 +433,59 @@ public final class MtsPatchCacheBootstrap {
             int index = path.lastIndexOf('/');
             return index >= 0 ? path.substring(index + 1) : path;
         }
+    }
+
+    private static File resolveCachedPackageJar(File packageDir, URL url) {
+        String fileName = packageFileName(url);
+        if (fileName.length() == 0) {
+            return null;
+        }
+
+        LinkedHashSet<String> candidates = new LinkedHashSet<String>();
+        addPackageFileNameCandidates(candidates, fileName);
+
+        for (String candidate : candidates) {
+            File packageJar = new File(packageDir, candidate);
+            if (packageJar.isFile()) {
+                if (!candidate.equals(fileName)) {
+                    log("Resolved cached MTS package URL " + fileName + " to existing jar " + candidate);
+                }
+                return packageJar;
+            }
+        }
+        return new File(packageDir, fileName);
+    }
+
+    private static void addPackageFileNameCandidates(Set<String> candidates, String fileName) {
+        if (fileName == null || fileName.length() == 0) {
+            return;
+        }
+        addPackageFileNameCandidate(candidates, fileName);
+        addPackageFileNameCandidate(candidates, decodeUrlComponent(fileName));
+    }
+
+    private static void addPackageFileNameCandidate(Set<String> candidates, String fileName) {
+        if (fileName == null || fileName.length() == 0) {
+            return;
+        }
+        candidates.add(fileName);
+        candidates.add(decodeJsonFileNameEscapes(fileName));
+    }
+
+    private static String decodeUrlComponent(String value) {
+        try {
+            return URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+        } catch (Throwable ignored) {
+            return value;
+        }
+    }
+
+    private static String decodeJsonFileNameEscapes(String value) {
+        return value
+                .replace("\\u0026", "&")
+                .replace("u0026", "&")
+                .replace("\\u0027", "'")
+                .replace("u0027", "'");
     }
 
     private static void invokeCachedLauncher(File cachedJar, File baseJar, File packageDir, String[] args) throws Throwable {

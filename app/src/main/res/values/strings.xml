@@ -1677,6 +1677,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_export_all_mods">Export all mods</string>
     <string name="settings_import_saves">Import saves</string>
     <string name="settings_export_saves">Export saves</string>
+    <string name="settings_save_export_source_dialog_title">Choose save source</string>
+    <string name="settings_save_export_source_dialog_message">Steam Cloud saves are available. Choose which save set to export.</string>
+    <string name="settings_save_export_source_cloud_action">Steam Cloud saves</string>
+    <string name="settings_save_export_source_independent_action">Independent local saves</string>
     <string name="settings_export_error_logs">Export error logs</string>
     <string name="settings_system_game_mode_title">System Game Mode</string>
     <string name="settings_system_game_mode_acknowledge">I understand</string>

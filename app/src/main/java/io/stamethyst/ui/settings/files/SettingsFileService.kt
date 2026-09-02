@@ -30,10 +30,13 @@ import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
+import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.backend.steamcloud.SteamCloudStagedPathReplacement
 import io.stamethyst.backend.steamcloud.SteamCloudStagedPathStore
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SteamCloudSaveMode
+import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.ui.main.ModAliasStore
 import io.stamethyst.ui.main.normalizeModExportFileName
@@ -113,8 +116,16 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun exportSaveBundle(host: Activity, uri: Uri): Int {
-        val stsRoot = RuntimePaths.stsRoot(host)
+    fun exportSaveBundle(
+        host: Activity,
+        uri: Uri,
+        sourceMode: SteamCloudSaveMode = LauncherPreferences.readSteamCloudSaveMode(host),
+    ): Int {
+        val stsRoot = if (LauncherPreferences.readSteamCloudSaveMode(host) == sourceMode) {
+            RuntimePaths.stsRoot(host)
+        } else {
+            SteamCloudSaveProfileManager.profileRoot(host, sourceMode)
+        }
         val sourceRoots = SaveArchiveLayout.existingSourceDirectories(stsRoot)
         host.contentResolver.openOutputStream(uri).use { output ->
             if (output == null) {
