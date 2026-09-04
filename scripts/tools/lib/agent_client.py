@@ -177,6 +177,15 @@ class AgentClient:
             raise AgentError(resp)
         return json.loads(resp) if resp else {}
 
+    def ready(self) -> bool:
+        """Return whether the game classloader and BaseMod console are usable."""
+        resp = self.send("READY")
+        if resp == "READY":
+            return True
+        if resp.startswith("ERROR "):
+            return False
+        return False
+
     def execute(self, command: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """执行一条游戏命令。"""
         args_json = json.dumps(params or {})

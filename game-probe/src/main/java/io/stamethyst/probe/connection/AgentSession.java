@@ -16,6 +16,7 @@ import java.io.*;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
 import java.net.Socket;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -90,6 +91,9 @@ public class AgentSession implements Runnable {
                 break;
             case OBSERVE:
                 handleObserve();
+                break;
+            case READY:
+                handleReady();
                 break;
             case EXEC:
                 handleExec(req);
@@ -224,6 +228,25 @@ public class AgentSession implements Runnable {
         writer.println(AgentResponse.state(state));
     }
 
+    private void handleReady() {
+        Class<?> devConsole = ReflectionUtil.forName("basemod.DevConsole");
+        if (devConsole == null) {
+            writer.println(AgentResponse.error("BaseMod DevConsole not loaded"));
+            return;
+        }
+        try {
+            devConsole.getMethod("execute");
+            Class<?> consoleCommand = findConsoleCommandClass("art");
+            if (consoleCommand == null) {
+                writer.println(AgentResponse.error("ArtFramework console command not registered"));
+                return;
+            }
+            writer.println("READY");
+        } catch (NoSuchMethodException e) {
+            writer.println(AgentResponse.error("BaseMod DevConsole execute() unavailable"));
+        }
+    }
+
     private void handleExec(AgentRequest req) {
         PlayMonitor play = PlayMonitor.INSTANCE;
         if (play == null) {
@@ -260,18 +283,44 @@ public class AgentSession implements Runnable {
             Object result = executeMethod.invoke(null, commandText);
             return result != null ? result.toString() : "ok";
         } catch (NoSuchMethodException e) {
-            // fall through to commands-map approach
+            // BaseMod's released DevConsole exposes execute() and reads currentText. Use
+            // that native entry point first so the command and ConsoleCommand registry stay
+            // in the same game classloader. Older/probe test shims may still expose the
+            // commands-map API below.
+            try {
+                Field currentText = devConsoleClass.getField("currentText");
+                Method executeMethod = devConsoleClass.getMethod("execute");
+                currentText.set(null, commandText);
+                try {
+                    executeMethod.invoke(null);
+                } catch (InvocationTargetException target) {
+                    Throwable cause = target.getCause();
+                    if (cause instanceof Exception) {
+                        throw (Exception) cause;
+                    }
+                    throw target;
+                }
+                return "ok";
+            } catch (NoSuchFieldException ignored) {
+                // fall through to commands-map approach
+            }
         }
 
-        Class<?> consoleCommandClass = ReflectionUtil.forName("basemod.devcommands.ConsoleCommand");
+        String[] tokens = commandText.split("\\s+");
+        String commandName = tokens[0];
+        Class<?> consoleCommandClass = findConsoleCommandClass(commandName);
         if (consoleCommandClass != null) {
             try {
                 Method executeMethod = consoleCommandClass.getMethod("execute", String[].class);
-                executeMethod.invoke(null, (Object) commandText.split("\\s+"));
+                executeMethod.invoke(null, (Object) tokens);
                 return "ok";
             } catch (NoSuchMethodException e) {
                 // fall through to legacy commands-map approach
             }
+        }
+
+        if (ReflectionUtil.forName("basemod.devcommands.ConsoleCommand") != null) {
+            throw new RuntimeException("unknown console command: " + commandName);
         }
 
         Field commandsField = devConsoleClass.getDeclaredField("commands");
@@ -282,8 +331,6 @@ public class AgentSession implements Runnable {
         }
         java.util.Map<?, ?> commands = (java.util.Map<?, ?>) commandsObj;
 
-        String[] tokens = commandText.split("\\s+");
-        String commandName = tokens[0];
         String[] args = new String[tokens.length - 1];
         System.arraycopy(tokens, 1, args, 0, args.length);
 
@@ -295,6 +342,37 @@ public class AgentSession implements Runnable {
         Method execMethod = consoleCommand.getClass().getMethod("execute", String[].class);
         execMethod.invoke(consoleCommand, (Object) args);
         return "ok";
+    }
+
+    private Class<?> findConsoleCommandClass(String commandName) {
+        String className = "basemod.devcommands.ConsoleCommand";
+        Class<?> resolved = ReflectionUtil.forName(className);
+        if (registryContains(resolved, commandName)) {
+            return resolved;
+        }
+
+        Instrumentation inst = instrumentation != null ? instrumentation : GameProbe.getInstrumentation();
+        if (inst != null) {
+            for (Class<?> loaded : inst.getAllLoadedClasses()) {
+                if (className.equals(loaded.getName()) && loaded != resolved
+                    && registryContains(loaded, commandName)) {
+                    return loaded;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean registryContains(Class<?> consoleCommandClass, String commandName) {
+        if (consoleCommandClass == null) return false;
+        try {
+            Field rootField = consoleCommandClass.getDeclaredField("root");
+            rootField.setAccessible(true);
+            Object root = rootField.get(null);
+            return root instanceof Map && ((Map<?, ?>) root).containsKey(commandName);
+        } catch (ReflectiveOperationException e) {
+            return false;
+        }
     }
 
     private static String escapeJson(String s) {
