@@ -34,7 +34,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import top.apricityx.workshop.steam.protocol.SteamDeclaredCdnHosts
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -60,7 +59,6 @@ class SteamCloudAcceleratedHttpTest {
         steamStoreForwardServer.close()
         steamContentForwardServer.close()
         SteamCloudAcceleratedHttp.clearRuntimeCacheForTests()
-        SteamDeclaredCdnHosts.clear()
     }
 
     @Test
@@ -372,7 +370,7 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
-    fun steamContentCdnHttpTransport_allowsManifestAndChunkPathsButRejectsOtherHosts() {
+    fun steamContentCdnHttpTransport_allowsDepotPathsButRejectsOtherPaths() {
         steamContentForwardServer.enqueue(MockResponse.Builder().code(200).body("manifest").build())
         steamContentForwardServer.enqueue(MockResponse.Builder().code(200).body("chunk").build())
         val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
@@ -382,12 +380,12 @@ class SteamCloudAcceleratedHttpTest {
             .build()
 
         listOf(
-            "/depot/646570/manifest/4615174550123654200/5",
-            "/depot/646570/chunk/abcdef",
-        ).forEach { path ->
+            "http://unlisted-cdn.example:${steamContentForwardServer.port}/depot/646570/manifest/4615174550123654200/5",
+            "http://dynamic-cdn-ipv4.example:${steamContentForwardServer.port}/depot/646570/chunk/abcdef",
+        ).forEach { url ->
             client.newCall(
                 Request.Builder()
-                    .url("http://st.dl.eccdnx.com:${steamContentForwardServer.port}$path")
+                    .url(url)
                     .build(),
             ).execute().use { response ->
                 assertEquals(200, response.code)
@@ -406,7 +404,7 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
-    fun steamDeclaredCdnHost_permitsCleartextChunkRedirectForChinaEdge() {
+    fun steamPipeCdn_allowsCleartextChunkRedirectToDynamicChinaEdge() {
         val chunkPath = "/depot/646570/chunk/009626FE3E032E23093B6F03483535C8BC832434"
         val redirectTarget = "http://edge-cdn.steamchina.test:${steamStoreForwardServer.port}$chunkPath?reqhost=ctgslb"
         steamContentForwardServer.enqueue(
@@ -434,13 +432,6 @@ class SteamCloudAcceleratedHttpTest {
         val request = Request.Builder()
             .url("http://st.dl.eccdnx.com:${steamContentForwardServer.port}$chunkPath")
             .build()
-
-        val error = runCatching { client.newCall(request).execute() }.exceptionOrNull()
-        assertTrue("expected undeclared cleartext redirect to be rejected", error is ProtocolException)
-        assertEquals("HTTPS is required for redirected request: $redirectTarget", error?.message)
-        assertEquals(0, steamStoreForwardServer.requestCount)
-
-        SteamDeclaredCdnHosts.register("edge-cdn.steamchina.test")
 
         client.newCall(request).execute().use { response ->
             assertEquals(200, response.code)
