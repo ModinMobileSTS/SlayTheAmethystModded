@@ -43,8 +43,8 @@ class GameSessionConfigTest {
         return GameSessionConfig(
             renderScale = renderScale,
             requestedRenderScale = renderScale,
-            requestedTargetFps = 60,
-            effectiveTargetFps = 60,
+            requestedTargetFps = 60f,
+            effectiveTargetFps = 60f,
             launchMode = "vanilla",
             debugMode = false,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,

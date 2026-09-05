@@ -1,12 +1,16 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(pojav_native LANGUAGES C)
+project(pojav_native LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 find_package(bytehook REQUIRED CONFIG)
+find_package(games-frame-pacing REQUIRED CONFIG)
 find_package(zstd REQUIRED CONFIG)
 
 add_compile_options(-Wall -Wextra)
@@ -21,6 +25,7 @@ add_library(
     ctxbridges/egl_loader.c
     ctxbridges/osmesa_loader.c
     ctxbridges/swap_interval_no_egl.c
+    ctxbridges/swappy_bridge.cpp
     environ/environ.c
     jvm_hooks/emui_iterator_fix_hook.c
     jvm_hooks/java_exec_hooks.c
@@ -53,8 +58,10 @@ target_compile_options(
 target_link_libraries(
     pojavexec
     PRIVATE
+    games-frame-pacing::swappy_static
     android
     dl
+    log
 )
 
 add_library(

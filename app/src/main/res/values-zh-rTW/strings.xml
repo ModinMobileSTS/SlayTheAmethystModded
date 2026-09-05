@@ -1991,6 +1991,9 @@
     <string name="settings_render_scale_title">渲染縮放</string>
     <string name="settings_render_scale_desc">數值越高畫面越清晰，越低則越省效能。</string>
     <string name="settings_target_fps_title">FPS 上限</string>
+    <string name="settings_non_recommended_fps_enabled">選擇不建議的幀數</string>
+    <string name="settings_non_recommended_fps_notice">啟用不建議的幀數後，可能會出現一些小卡頓。</string>
+    <string name="settings_target_fps_option_decimal">%1$.3f FPS</string>
     <string name="settings_keep_screen_on_timeout_title">熄屏時間</string>
     <string name="settings_keep_screen_on_timeout_desc">控制遊戲在最後一次 Android 輸入後繼續保持螢幕常亮多久。啟動載入層始終會保持螢幕常亮。</string>
     <string name="settings_keep_screen_on_timeout_always">始終禁止熄屏</string>
@@ -2179,7 +2182,7 @@
     <string name="settings_status_section_launch_compat">啟動與相容設定</string>
     <string name="settings_status_player_name">玩家名字：%1$s</string>
     <string name="settings_status_render_scale">畫面清晰度：%1$s (0.10–1.00)</string>
-    <string name="settings_status_target_fps">目標 FPS：%1$d</string>
+    <string name="settings_status_target_fps">目標 FPS：%1$s</string>
     <string name="settings_status_virtual_resolution_mode">長寬比 / 解析度：%1$s</string>
     <string name="settings_status_renderer_selection_mode">渲染器選擇模式：%1$s</string>
     <string name="settings_status_renderer_auto_select">渲染器自動選擇：%1$s</string>

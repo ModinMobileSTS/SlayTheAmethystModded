@@ -22,6 +22,11 @@ final class LwjglFramePacerSchedule {
 		return Math.max(1L, NANOS_PER_SECOND / frameRate);
 	}
 
+	/** Nanoseconds budgeted per frame for a fractional rate, rounded to the nearest nanosecond. */
+	static long frameNanos (double frameRate) {
+		return Math.max(1L, Math.round(NANOS_PER_SECOND / frameRate));
+	}
+
 	/**
 	 * Caps a target frame rate at the display's active refresh rate.
 	 *

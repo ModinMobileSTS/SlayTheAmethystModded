@@ -8,12 +8,16 @@ import io.stamethyst.compatmod.achievement.AchievementBridge;
 import io.stamethyst.compatmod.presence.RichPresenceBridge;
 import io.stamethyst.compatmod.core.CompatRuntimeState;
 import io.stamethyst.compatmod.diagnostics.RuntimeMemoryDiagnostics;
+import io.stamethyst.compatmod.save.EventRollPriorRoomSaveField;
+import io.stamethyst.compatmod.save.ShrineListSaveField;
 
 @SpireInitializer
 public class AmethystRuntimeCompat {
     public static void initialize() {
         AchievementBridge.initialize();
         RichPresenceBridge.initialize();
+        ShrineListSaveField.initialize();
+        EventRollPriorRoomSaveField.initialize();
         CompatRuntimeState.logStartupConfiguration();
         RuntimeMemoryDiagnostics.logStartupConfiguration();
         if (AutoplayConfig.isEnabled()) {

@@ -14,6 +14,12 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -47,7 +53,8 @@ import kotlin.math.roundToInt
 
 internal data class PerformanceSettingsActions(
     val onRenderScaleSelected: (Float) -> Unit,
-    val onTargetFpsSelected: (Int) -> Unit,
+    val onTargetFpsSelected: (Float) -> Unit,
+    val onNonRecommendedFpsEnabledChanged: (Boolean) -> Unit,
     val onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
@@ -162,17 +169,48 @@ internal fun SettingsPerformanceSection(
         modifier = Modifier.fillMaxWidth()
     )
 
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = uiState.nonRecommendedFpsEnabled,
+            onCheckedChange = actions.onNonRecommendedFpsEnabledChanged,
+            enabled = !uiState.busy
+        )
+        Text(
+            text = stringResource(R.string.settings_non_recommended_fps_enabled),
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+    AnimatedVisibility(
+        visible = uiState.nonRecommendedFpsEnabled,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut()
+    ) {
+        Text(
+            text = stringResource(R.string.settings_non_recommended_fps_notice),
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
     SettingsChoiceDialogItem(
         SettingsChoiceSpec(
             title = stringResource(R.string.settings_target_fps_title),
-            valueText = stringResource(
-                R.string.settings_target_fps_option,
-                uiState.selectedTargetFps
-            ),
+            valueText = if (uiState.selectedTargetFps == uiState.selectedTargetFps.roundToInt().toFloat()) {
+                stringResource(R.string.settings_target_fps_option, uiState.selectedTargetFps.roundToInt())
+            } else {
+                stringResource(R.string.settings_target_fps_option_decimal, uiState.selectedTargetFps)
+            },
             enabled = !uiState.busy,
             selectedValue = uiState.selectedTargetFps,
             options = uiState.targetFpsOptions,
-            optionLabel = { fps -> stringResource(R.string.settings_target_fps_option, fps) },
+            optionLabel = { fps ->
+                if (fps == fps.roundToInt().toFloat()) {
+                    stringResource(R.string.settings_target_fps_option, fps.roundToInt())
+                } else {
+                    stringResource(R.string.settings_target_fps_option_decimal, fps)
+                }
+            },
             onOptionSelected = actions.onTargetFpsSelected,
         ),
     )

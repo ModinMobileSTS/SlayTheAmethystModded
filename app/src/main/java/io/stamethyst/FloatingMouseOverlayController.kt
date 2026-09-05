@@ -47,6 +47,63 @@ internal data class FloatingMouseResolvedPosition(
     val top: Int,
 )
 
+internal data class FloatingCustomSoftKeyStored(
+    val pickerLabel: String,
+    val buttonLabel: String,
+    val keyCode: Int,
+    val toggleable: Boolean,
+    val leftFraction: Float,
+    val topFraction: Float,
+)
+
+internal fun encodeFloatingCustomSoftKeyLayout(
+    buttons: List<FloatingCustomSoftKeyStored>,
+): String {
+    return buttons.joinToString(separator = ";", prefix = "1;") { button ->
+        listOf(
+            button.keyCode.toString(),
+            if (button.toggleable) "1" else "0",
+            button.leftFraction.toString(),
+            button.topFraction.toString(),
+            Base64.getEncoder().encodeToString(button.pickerLabel.toByteArray(StandardCharsets.UTF_8)),
+            Base64.getEncoder().encodeToString(button.buttonLabel.toByteArray(StandardCharsets.UTF_8)),
+        ).joinToString(",")
+    }.removeSuffix(";")
+}
+
+internal fun decodeFloatingCustomSoftKeyLayout(
+    encoded: String?,
+): List<FloatingCustomSoftKeyStored> {
+    if (encoded.isNullOrBlank()) {
+        return emptyList()
+    }
+    val records = encoded.split(';')
+    if (records.firstOrNull() != "1") {
+        return emptyList()
+    }
+    return records.drop(1).mapNotNull { record ->
+        val fields = record.split(',')
+        if (fields.size != 6) {
+            return@mapNotNull null
+        }
+        runCatching {
+            val leftFraction = fields[2].toFloat()
+            val topFraction = fields[3].toFloat()
+            if (!leftFraction.isFinite() || !topFraction.isFinite()) {
+                return@runCatching null
+            }
+            FloatingCustomSoftKeyStored(
+                pickerLabel = String(Base64.getDecoder().decode(fields[4]), StandardCharsets.UTF_8),
+                buttonLabel = String(Base64.getDecoder().decode(fields[5]), StandardCharsets.UTF_8),
+                keyCode = fields[0].toInt(),
+                toggleable = fields[1] == "1",
+                leftFraction = leftFraction,
+                topFraction = topFraction,
+            )
+        }.getOrNull()
+    }
+}
+
 internal fun captureFloatingMouseStoredPosition(
     leftMargin: Int,
     topMargin: Int,
@@ -166,6 +223,7 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MOUSE_LEFT_FRACTION_KEY = "floating_mouse_left_fraction"
         private const val FLOATING_MOUSE_TOP_FRACTION_KEY = "floating_mouse_top_fraction"
         private const val CUSTOM_KEY_PREFS_NAME = "floating_mouse_custom_keys"
+        private const val CUSTOM_KEY_LAYOUT_KEY = "custom_key_layout"
         private const val CUSTOM_KEY_TUTORIAL_SHOWN_KEY = "custom_key_tutorial_shown"
         private const val CUSTOM_KEY_DRAG_LONG_PRESS_MS = 1000L
         private const val CUSTOM_KEY_BUTTON_SIZE_DP = 52
@@ -474,6 +532,7 @@ internal class FloatingMouseOverlayController(
         floatingMouseButton = button
         button.setOnTouchListener { _, event -> handleFloatingMouseTouch(event) }
         updateTouchMouseModeUi()
+        restoreCustomSoftKeyButtons()
     }
 
     fun onDestroy() {
@@ -958,6 +1017,7 @@ internal class FloatingMouseOverlayController(
     }
 
     private fun detachViews() {
+        saveCustomSoftKeyButtons()
         customSoftKeyPickerDialog?.dismiss()
         customSoftKeyPickerDialog = null
         customSoftKeyButtons.toList().forEach { state ->
@@ -1787,7 +1847,12 @@ internal class FloatingMouseOverlayController(
         )
     }
 
-    private fun addCustomSoftKeyButton(spec: CustomSoftKeySpec) {
+    private fun addCustomSoftKeyButton(
+        spec: CustomSoftKeySpec,
+        restoredPosition: FloatingMouseStoredPosition? = null,
+        showTutorial: Boolean = true,
+        animate: Boolean = true,
+    ) {
         val host = hostView ?: return
         val buttonSize = dpToPx(CUSTOM_KEY_BUTTON_SIZE_DP)
         val labelView = TextView(activity).apply {
@@ -1827,18 +1892,29 @@ internal class FloatingMouseOverlayController(
                 topMargin = 0
             }
         )
-        placeCustomSoftKeyButton(host, button, buttonSize, customSoftKeyButtons.size - 1)
+        placeCustomSoftKeyButton(
+            host = host,
+            button = button,
+            buttonSize = buttonSize,
+            index = customSoftKeyButtons.size - 1,
+            restoredPosition = restoredPosition,
+            onPlaced = if (restoredPosition == null) ::saveCustomSoftKeyButtons else null,
+        )
         button.setOnTouchListener { _, event -> handleCustomSoftKeyTouch(state, event) }
         button.bringToFront()
         customSoftKeyDeleteTarget?.bringToFront()
-        button.scaleX = 0.82f
-        button.scaleY = 0.82f
-        button.animate()
-            .scaleX(1f)
-            .scaleY(1f)
-            .setDuration(CUSTOM_KEY_SCALE_ANIM_DURATION_MS)
-            .start()
-        maybeShowCustomSoftKeyTutorial()
+        if (animate) {
+            button.scaleX = 0.82f
+            button.scaleY = 0.82f
+            button.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(CUSTOM_KEY_SCALE_ANIM_DURATION_MS)
+                .start()
+        }
+        if (showTutorial) {
+            maybeShowCustomSoftKeyTutorial()
+        }
     }
 
     private fun handleCustomSoftKeyTouch(state: CustomSoftKeyButtonState, event: MotionEvent): Boolean {
@@ -1971,6 +2047,7 @@ internal class FloatingMouseOverlayController(
         )
         animateCustomSoftKeyScale(state.view, 1f)
         updateCustomSoftKeyDeleteTargetAppearance(active = false)
+        saveCustomSoftKeyButtons()
     }
 
     private fun moveCustomSoftKeyButton(state: CustomSoftKeyButtonState, rawX: Float, rawY: Float) {
@@ -1988,6 +2065,7 @@ internal class FloatingMouseOverlayController(
     private fun removeCustomSoftKeyButton(state: CustomSoftKeyButtonState) {
         cancelCustomSoftKeyLongPress(state)
         customSoftKeyButtons.remove(state)
+        saveCustomSoftKeyButtons()
         state.view.animate().cancel()
         state.view.animate()
             .alpha(0f)
@@ -2108,17 +2186,84 @@ internal class FloatingMouseOverlayController(
             .start()
     }
 
-    private fun placeCustomSoftKeyButton(host: FrameLayout, button: FrameLayout, buttonSize: Int, index: Int) {
+    private fun placeCustomSoftKeyButton(
+        host: FrameLayout,
+        button: FrameLayout,
+        buttonSize: Int,
+        index: Int,
+        restoredPosition: FloatingMouseStoredPosition?,
+        onPlaced: (() -> Unit)?,
+    ) {
         val offset = dpToPx(CUSTOM_KEY_BUTTON_INITIAL_OFFSET_DP)
         val gap = dpToPx(CUSTOM_KEY_BUTTON_PLACEMENT_GAP_DP)
         host.post {
             val params = button.layoutParams as? FrameLayout.LayoutParams ?: return@post
             val maxLeft = (host.width - buttonSize).coerceAtLeast(0)
             val maxTop = (host.height - buttonSize).coerceAtLeast(0)
-            params.leftMargin = (offset + index * (buttonSize + gap)).coerceIn(0, maxLeft)
-            params.topMargin = (host.height / 2 - buttonSize / 2 + index * gap).coerceIn(0, maxTop)
+            if (restoredPosition == null) {
+                params.leftMargin = (offset + index * (buttonSize + gap)).coerceIn(0, maxLeft)
+                params.topMargin = (host.height / 2 - buttonSize / 2 + index * gap).coerceIn(0, maxTop)
+            } else {
+                val resolved = restoreFloatingMouseResolvedPosition(
+                    leftFraction = restoredPosition.leftFraction,
+                    topFraction = restoredPosition.topFraction,
+                    maxLeft = maxLeft,
+                    maxTop = maxTop,
+                    defaultLeft = 0,
+                    defaultTop = 0,
+                )
+                params.leftMargin = resolved.left
+                params.topMargin = resolved.top
+            }
             button.layoutParams = params
+            onPlaced?.invoke()
         }
+    }
+
+    private fun restoreCustomSoftKeyButtons() {
+        decodeFloatingCustomSoftKeyLayout(customSoftKeyPrefs.getString(CUSTOM_KEY_LAYOUT_KEY, null))
+            .forEach { stored ->
+                addCustomSoftKeyButton(
+                    spec = CustomSoftKeySpec(
+                        pickerLabel = stored.pickerLabel,
+                        buttonLabel = stored.buttonLabel,
+                        keyCode = stored.keyCode,
+                        toggleable = stored.toggleable,
+                    ),
+                    restoredPosition = FloatingMouseStoredPosition(
+                        leftFraction = stored.leftFraction,
+                        topFraction = stored.topFraction,
+                    ),
+                    showTutorial = false,
+                    animate = false,
+                )
+            }
+    }
+
+    private fun saveCustomSoftKeyButtons() {
+        val host = hostView ?: return
+        val buttons = customSoftKeyButtons.mapNotNull { state ->
+            val params = state.view.layoutParams as? FrameLayout.LayoutParams ?: return@mapNotNull null
+            val maxLeft = (host.width - state.view.width).coerceAtLeast(0)
+            val maxTop = (host.height - state.view.height).coerceAtLeast(0)
+            val position = captureFloatingMouseStoredPosition(
+                leftMargin = params.leftMargin,
+                topMargin = params.topMargin,
+                maxLeft = maxLeft,
+                maxTop = maxTop,
+            )
+            FloatingCustomSoftKeyStored(
+                pickerLabel = state.spec.pickerLabel,
+                buttonLabel = state.spec.buttonLabel,
+                keyCode = state.spec.keyCode,
+                toggleable = state.spec.toggleable,
+                leftFraction = position.leftFraction,
+                topFraction = position.topFraction,
+            )
+        }
+        customSoftKeyPrefs.edit()
+            .putString(CUSTOM_KEY_LAYOUT_KEY, encodeFloatingCustomSoftKeyLayout(buttons))
+            .apply()
     }
 
     private fun parentDisallowIntercept(view: View, disallow: Boolean) {

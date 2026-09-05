@@ -85,6 +85,7 @@ import io.stamethyst.backend.render.MobileGluesMultidrawMode
 import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesPreset
 import io.stamethyst.backend.render.MobileGluesSettings
+import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.RendererAvailability
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
@@ -119,6 +120,7 @@ import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import kotlin.math.roundToInt
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
@@ -307,7 +309,8 @@ class SettingsScreenViewModel : ViewModel() {
         val quickStartAutomaticImportRequiresLogin: Boolean = false,
         val playerName: String = LauncherPreferences.DEFAULT_PLAYER_NAME,
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
-        val selectedTargetFps: Int = LauncherPreferences.DEFAULT_TARGET_FPS,
+        val selectedTargetFps: Float = LauncherPreferences.DEFAULT_TARGET_FPS.toFloat(),
+        val nonRecommendedFpsEnabled: Boolean = false,
         val virtualResolutionMode: VirtualResolutionMode =
             LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
@@ -430,7 +433,7 @@ class SettingsScreenViewModel : ViewModel() {
         val gameplayLargerUiEnabled: Boolean = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
         val statusText: String = "",
         val logPathText: String = "",
-        val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList(),
+        val targetFpsOptions: List<Float> = emptyList(),
         val keepScreenOnTimeoutMinuteOptions: List<Int> =
             LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS.toList(),
         val autoCheckUpdatesEnabled: Boolean = LauncherPreferences.DEFAULT_AUTO_CHECK_UPDATES_ENABLED,
@@ -572,12 +575,11 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun bind(
         activity: Activity,
-        targetFpsOptions: IntArray = LauncherPreferences.TARGET_FPS_OPTIONS,
         keepScreenOnTimeoutMinuteOptions: IntArray =
             LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS
     ) {
         syncThemeAppearance(activity)
-        val options = targetFpsOptions.toList()
+        val options = resolveTargetFpsOptions(activity, uiState.nonRecommendedFpsEnabled)
         if (uiState.targetFpsOptions != options) {
             uiState = uiState.copy(targetFpsOptions = options)
         }
@@ -590,6 +592,12 @@ class SettingsScreenViewModel : ViewModel() {
             SettingsRepository.loadSettingsSnapshot(activity)
         }.getOrNull()?.let { snapshot ->
             applySnapshot(activity, snapshot)
+        }
+        val selectedTargetFps = uiState.selectedTargetFps
+        if (!uiState.nonRecommendedFpsEnabled && selectedTargetFps !in uiState.targetFpsOptions) {
+            val recommendedTargetFps = uiState.targetFpsOptions.first()
+            uiState = uiState.copy(selectedTargetFps = recommendedTargetFps)
+            saveTargetFpsSelection(activity, recommendedTargetFps)
         }
         seedSteamCloudIdentityFromStore(activity)
         refreshStatus(activity, clearBusy = false)
@@ -2938,13 +2946,35 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onTargetFpsSelected(host: Activity, targetFps: Int) {
+    fun onTargetFpsSelected(host: Activity, targetFps: Float) {
         if (uiState.busy) {
             return
         }
-        val normalizedTargetFps = LauncherPreferences.normalizeTargetFps(targetFps)
-        uiState = uiState.copy(selectedTargetFps = normalizedTargetFps)
-        saveTargetFpsSelection(host, normalizedTargetFps)
+        uiState = uiState.copy(selectedTargetFps = targetFps)
+        saveTargetFpsSelection(host, targetFps)
+        refreshStatus(host)
+    }
+
+    fun onNonRecommendedFpsEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy || uiState.nonRecommendedFpsEnabled == enabled) {
+            return
+        }
+        LauncherPreferences.setNonRecommendedFpsEnabled(host, enabled)
+        val options = resolveTargetFpsOptions(host, enabled)
+        val targetFps = if (uiState.selectedTargetFps in options) {
+            uiState.selectedTargetFps
+        } else {
+            options.first()
+        }
+        val targetFpsChanged = targetFps != uiState.selectedTargetFps
+        uiState = uiState.copy(
+            nonRecommendedFpsEnabled = enabled,
+            targetFpsOptions = options,
+            selectedTargetFps = targetFps
+        )
+        if (targetFpsChanged) {
+            saveTargetFpsSelection(host, targetFps)
+        }
         refreshStatus(host)
     }
 
@@ -4230,6 +4260,7 @@ class SettingsScreenViewModel : ViewModel() {
             playerName = snapshot.playerName,
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
+            nonRecommendedFpsEnabled = rendering.nonRecommendedFpsEnabled,
             virtualResolutionMode = rendering.virtualResolutionMode,
             renderSurfaceBackend = rendering.renderSurfaceBackend,
             rendererSelectionMode = rendering.rendererSelectionMode,
@@ -4818,7 +4849,10 @@ class SettingsScreenViewModel : ViewModel() {
             R.string.settings_status_render_scale,
             RenderScaleService.format(rendering.renderScale)
         )
-        lines += host.getString(R.string.settings_status_target_fps, rendering.targetFps)
+        lines += host.getString(
+            R.string.settings_status_target_fps,
+            formatTargetFps(rendering.targetFps)
+        )
         lines += host.getString(
             R.string.settings_status_virtual_resolution_mode,
             virtualResolutionModeDisplayName(host, rendering.virtualResolutionMode)
@@ -5704,8 +5738,25 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun saveTargetFpsSelection(host: Activity, targetFps: Int) {
+    private fun saveTargetFpsSelection(host: Activity, targetFps: Float) {
         LauncherPreferences.saveTargetFps(host, targetFps)
+    }
+
+    private fun resolveTargetFpsOptions(context: Activity, includeNonRecommended: Boolean): List<Float> {
+        return if (includeNonRecommended) {
+            LauncherPreferences.NON_RECOMMENDED_TARGET_FPS_OPTIONS.map(Int::toFloat)
+        } else {
+            DisplayRefreshRateController.resolveIdealTargetFpsOptions(context)
+        }
+    }
+
+    private fun formatTargetFps(targetFps: Float): String {
+        if (targetFps == targetFps.roundToInt().toFloat()) {
+            return targetFps.roundToInt().toString()
+        }
+        return String.format(Locale.US, "%.3f", targetFps)
+            .trimEnd('0')
+            .trimEnd('.')
     }
 
     private fun saveKeepScreenOnTimeoutSelection(host: Activity, timeoutMinutes: Int) {

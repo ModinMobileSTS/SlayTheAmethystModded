@@ -51,6 +51,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_TARGET_FPS
     val TARGET_FPS_OPTIONS: IntArray
         get() = LauncherConfig.TARGET_FPS_OPTIONS.copyOf()
+    val NON_RECOMMENDED_TARGET_FPS_OPTIONS: IntArray
+        get() = LauncherConfig.NON_RECOMMENDED_TARGET_FPS_OPTIONS.copyOf()
     val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES: Int
         get() = LauncherConfig.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES
     val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES: Int
@@ -883,8 +885,28 @@ object LauncherPreferences {
         return LauncherConfig.readTargetFps(context)
     }
 
+    fun readTargetFpsValue(context: Context): Float {
+        return LauncherConfig.readTargetFpsValue(context)
+    }
+
+    fun isTargetFpsAutomatic(context: Context): Boolean {
+        return LauncherConfig.isTargetFpsAutomatic(context)
+    }
+
     fun saveTargetFps(context: Context, targetFps: Int) {
         LauncherConfig.saveTargetFps(context, targetFps)
+    }
+
+    fun saveTargetFps(context: Context, targetFps: Float) {
+        LauncherConfig.saveTargetFps(context, targetFps)
+    }
+
+    fun isNonRecommendedFpsEnabled(context: Context): Boolean {
+        return LauncherConfig.isNonRecommendedFpsEnabled(context)
+    }
+
+    fun setNonRecommendedFpsEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setNonRecommendedFpsEnabled(context, enabled)
     }
 
     fun normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes: Int): Int {

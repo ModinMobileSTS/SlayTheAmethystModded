@@ -33,6 +33,11 @@ public class LwjglFramePacerScheduleTest {
 	}
 
 	@Test
+	public void frameNanos_supportsFractionalRatesForExactDisplayDivisors () {
+		assertEquals(12121212L, LwjglFramePacerSchedule.frameNanos(82.5));
+	}
+
+	@Test
 	public void frameNanos_neverReturnsZero () {
 		// A zero period would make every deadline equal to "now" and disable pacing entirely.
 		assertTrue(LwjglFramePacerSchedule.frameNanos(Integer.MAX_VALUE) >= 1L);

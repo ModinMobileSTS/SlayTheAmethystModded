@@ -28,6 +28,10 @@ This built-in mod replaces the Android-side floating mouse window during ModTheS
 
    Consumes clicks that hit the floating tools UI before the base game sees them, implements lock mode by swallowing game clicks while still allowing cursor movement, and emulates right-click touch mode by replacing the Android left-click stream with right-button events. This addresses clicks passing through the tool ring to underlying cards, buttons, or screens. The patch class is `FloatingToolInputConsumePatches`.
 
+7. `FloatingMouseOverlayController` custom soft-key persistence
+
+   Saves every custom floating key added through the picker, including insertion order, duplicate entries, key metadata, and normalized screen position. Restores the saved keys when the overlay is recreated, updates positions after dragging, and removes deleted keys from storage. This addresses custom floating keys disappearing, or returning to default positions, after restarting or recreating a game session. Persistence is implemented by `FloatingMouseOverlayController` using its `floating_mouse_custom_keys` preferences; this legacy Android overlay path requires no Spire patch class, while its in-game Add key request still enters through `GameSessionCoordinator` and `FloatingToolInputConsumePatches.ConsumeAfterInputUpdate`.
+
 ## Icon assets
 
 The ten drawer glyphs are original work for this mod and are generated from vector primitives by `tools/generate_icons.py`. The matching asset declaration is included in `amethystFloatingTools/images/tools/ATTRIBUTION.txt`.
