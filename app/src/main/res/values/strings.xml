@@ -1696,6 +1696,9 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_render_scale_title">Render scale</string>
     <string name="settings_render_scale_desc">Higher is sharper, lower is lighter on performance.</string>
     <string name="settings_target_fps_title">FPS cap</string>
+    <string name="settings_non_recommended_fps_enabled">Choose non-recommended FPS</string>
+    <string name="settings_non_recommended_fps_notice">Using non-recommended FPS may cause minor stutters.</string>
+    <string name="settings_target_fps_option_decimal">%1$.3f FPS</string>
     <string name="settings_keep_screen_on_timeout_title">Screen awake timeout</string>
     <string name="settings_keep_screen_on_timeout_desc">Controls how long the game keeps the screen awake after the last Android input. The loading overlay always keeps the screen awake.</string>
     <string name="settings_keep_screen_on_timeout_always">Always keep awake</string>
@@ -2185,7 +2188,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_status_section_launch_compat">Launch and compatibility settings</string>
     <string name="settings_status_player_name">Player name: %1$s</string>
     <string name="settings_status_render_scale">Render scale: %1$s (0.10-1.00)</string>
-    <string name="settings_status_target_fps">Target FPS: %1$d</string>
+    <string name="settings_status_target_fps">Target FPS: %1$s</string>
     <string name="settings_status_virtual_resolution_mode">Aspect ratio / resolution: %1$s</string>
     <string name="settings_status_renderer_selection_mode">Renderer selection mode: %1$s</string>
     <string name="settings_status_renderer_auto_select">Renderer auto select: %1$s</string>

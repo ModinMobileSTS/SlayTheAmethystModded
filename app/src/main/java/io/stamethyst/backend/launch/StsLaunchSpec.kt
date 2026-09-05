@@ -34,6 +34,7 @@ import java.io.File
 import java.util.Arrays
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.roundToInt
 
 object StsLaunchSpec {
     private const val TAG = "STS-LaunchSpec"
@@ -152,6 +153,12 @@ object StsLaunchSpec {
             ?: LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
         val performanceDeepDiagnostics = requestedPerformanceDeepDiagnostics &&
             ArthasResourcePackService.isInstalled(context)
+        val requestedTargetFps = LauncherConfig.readTargetFpsValue(context)
+        val effectiveTargetFps = if (LauncherConfig.isTargetFpsAutomatic(context)) {
+            DisplayRefreshRateController.resolveAutomaticTargetFps(context)
+        } else {
+            requestedTargetFps
+        }
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.
@@ -210,7 +217,7 @@ object StsLaunchSpec {
             // Single switch activates FrameRingBuffer + amethyst-frame-probe HUD.
             // Budget defaults to 1000ms/foregroundFPS; override with frame_ring.budget_ms.
             args.add("-Damethyst.gdx.frame_ring=true")
-            val budgetMs = 1000 / LauncherConfig.readTargetFps(context).coerceAtLeast(1)
+            val budgetMs = (1000f / effectiveTargetFps.coerceAtLeast(1f)).roundToInt()
             args.add("-Damethyst.gdx.frame_ring.budget_ms=$budgetMs")
         }
         if (isMtsLaunchMode(launchMode)) {
@@ -461,10 +468,6 @@ object StsLaunchSpec {
         )
         val virtualWidth = launchVirtualSize.width
         val virtualHeight = launchVirtualSize.height
-        val effectiveTargetFps = AndroidGameModeSupport.resolveTargetFps(
-            LauncherConfig.readTargetFps(context),
-            AndroidGameModeSupport.readCurrentMode(context)
-        )
         // The in-JVM LWJGL shim cannot read the real panel refresh rate, so publish the value the
         // launcher itself requested. Without this the game assumes 60Hz and mis-paces every frame.
         val expectedRefreshRateHz = DisplayRefreshRateController.resolveExpectedActiveRefreshRateHz(
@@ -474,6 +477,7 @@ object StsLaunchSpec {
         if (expectedRefreshRateHz > 0f) {
             args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
         }
+        args.add("-Damethyst.gdx.paced_fps=$effectiveTargetFps")
         try {
             // DesktopLauncher reads this file before LibGDX starts. Keep its first Settings
             // initialization aligned with the fixed fullscreen-priority logical canvas.

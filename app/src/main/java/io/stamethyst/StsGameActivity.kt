@@ -40,6 +40,7 @@ import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.input.GameInputHandler
+import net.kdt.pojavlaunch.utils.JREUtils
 import java.io.FileOutputStream
 import java.util.UUID
 import org.lwjgl.glfw.CallbackBridge
@@ -138,6 +139,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var gyroscopeSensorMissingLogged = false
     private var gyroscopeForwardFailureLogged = false
     private var gyroscopeFirstForwardLogged = false
+    private var swappyFramePacingInitialized = false
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -215,6 +217,14 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         }
         if (::sessionCoordinator.isInitialized) {
             sessionCoordinator.onDestroy()
+        }
+        if (swappyFramePacingInitialized) {
+            try {
+                JREUtils.destroySwappyFramePacing()
+            } catch (error: Throwable) {
+                Log.w("STS-FramePacing", "Failed to destroy Swappy", error)
+            }
+            swappyFramePacingInitialized = false
         }
         EasyTierGameProcessPriorityBinding.detach(this)
         if (!jvmWasStarted || gameSessionFinished) {
@@ -530,7 +540,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             cropScreenBottom = sessionConfig.cropScreenBottom,
             isSoftKeyboardSessionActive = { inputHandler.isSoftKeyboardSessionActive() },
-            onSurfaceReady = { sessionCoordinator.onSurfaceReady() },
+            onSurfaceReady = {
+                initializeSwappyFramePacing()
+                sessionCoordinator.onSurfaceReady()
+            },
             onTextureFrameUpdate = { timestampNs ->
                 sessionCoordinator.onTextureFrameUpdate(timestampNs)
             }
@@ -555,6 +568,37 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
                 sessionCoordinator.onAudioOutputRouteChanged()
             }
         )
+    }
+
+    private fun initializeSwappyFramePacing() {
+        if (!BuildConfig.SWAPPY_FRAME_PACING_ENABLED) {
+            Log.i("STS-FramePacing", "Swappy disabled reason=build_flag")
+            return
+        }
+        val renderer = sessionConfig.rendererDecision.effectiveBackend
+        if (!renderer.supportsSwappyFramePacing) {
+            Log.i(
+                "STS-FramePacing",
+                "Swappy disabled renderer=${renderer.rendererId()} reason=non_system_egl"
+            )
+            return
+        }
+        try {
+            val enabled = JREUtils.initializeSwappyFramePacing(
+                this,
+                sessionConfig.effectiveTargetFps
+            )
+            // A failed init still consumes Swappy's one-shot initialization attempt and must be
+            // destroyed before this Activity can create another game session in the same process.
+            swappyFramePacingInitialized = true
+            Log.i(
+                "STS-FramePacing",
+                "Swappy init renderer=${renderer.rendererId()} targetFps=${sessionConfig.effectiveTargetFps} " +
+                    "enabled=$enabled"
+            )
+        } catch (error: Throwable) {
+            Log.w("STS-FramePacing", "Swappy initialization unavailable", error)
+        }
     }
 
     private fun markGameSessionFinished() {

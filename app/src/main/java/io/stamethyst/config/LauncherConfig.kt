@@ -108,6 +108,8 @@ object LauncherConfig {
         "sustained_performance_mode_enabled"
     private const val PREF_KEY_KEEP_SCREEN_ON_TIMEOUT_MINUTES = "keep_screen_on_timeout_minutes"
     private const val PREF_KEY_TARGET_FPS = "target_fps"
+    private const val PREF_KEY_TARGET_FPS_EXACT = "target_fps_exact"
+    private const val PREF_KEY_NON_RECOMMENDED_FPS_ENABLED = "non_recommended_fps_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
     private const val PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED =
@@ -265,8 +267,9 @@ object LauncherConfig {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED = true
-    const val DEFAULT_TARGET_FPS = 90
-    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 240)
+    const val DEFAULT_TARGET_FPS = 144
+    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 144)
+    val NON_RECOMMENDED_TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 144, 240)
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
     const val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
     val KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS = intArrayOf(
@@ -1239,6 +1242,7 @@ object LauncherConfig {
 
     fun readTargetFps(context: Context): Int {
         val preferences = prefs(context)
+        readExactTargetFps(preferences)?.let { return it.roundToInt() }
         if (preferences.contains(PREF_KEY_TARGET_FPS)) {
             return normalizeTargetFps(
                 preferences.getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS)
@@ -1255,8 +1259,47 @@ object LauncherConfig {
         val normalizedTargetFps = normalizeTargetFps(targetFps)
         prefs(context).edit {
             putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps)
+            remove(PREF_KEY_TARGET_FPS_EXACT)
         }
         DisplayConfigSync.saveTargetFpsLimit(context, normalizedTargetFps)
+    }
+
+    fun readTargetFpsValue(context: Context): Float {
+        val preferences = prefs(context)
+        return readExactTargetFps(preferences) ?: readTargetFps(context).toFloat()
+    }
+
+    fun isTargetFpsAutomatic(context: Context): Boolean {
+        val preferences = prefs(context)
+        return readExactTargetFps(preferences) == null &&
+            readTargetFps(context) == DEFAULT_TARGET_FPS
+    }
+
+    fun saveTargetFps(context: Context, targetFps: Float) {
+        val normalizedTargetFps = targetFps.takeIf { it > 0f && !it.isNaN() }
+            ?: DEFAULT_TARGET_FPS.toFloat()
+        prefs(context).edit {
+            putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps.roundToInt())
+            putString(PREF_KEY_TARGET_FPS_EXACT, normalizedTargetFps.toString())
+        }
+        DisplayConfigSync.saveTargetFpsLimit(context, normalizedTargetFps.roundToInt())
+    }
+
+    fun isNonRecommendedFpsEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_NON_RECOMMENDED_FPS_ENABLED, false)
+    }
+
+    fun setNonRecommendedFpsEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_NON_RECOMMENDED_FPS_ENABLED, enabled)
+        }
+    }
+
+    private fun readExactTargetFps(preferences: SharedPreferences): Float? {
+        val value = preferences.getString(PREF_KEY_TARGET_FPS_EXACT, null)
+            ?.toFloatOrNull()
+            ?: return null
+        return value.takeIf { it > 0f && !it.isNaN() }
     }
 
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {

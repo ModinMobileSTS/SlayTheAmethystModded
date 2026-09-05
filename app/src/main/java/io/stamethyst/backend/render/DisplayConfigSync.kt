@@ -7,17 +7,18 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.Locale
+import kotlin.math.roundToInt
 
 object DisplayConfigSync {
     private const val DEFAULT_WIDTH = 1280
     private const val DEFAULT_HEIGHT = 720
-    private const val DEFAULT_FPS_LIMIT = 90
+    private const val DEFAULT_FPS_LIMIT = 144
     private const val DEFAULT_FULLSCREEN = false
     private const val DEFAULT_WINDOWED_FULLSCREEN = false
     private const val DEFAULT_VSYNC = true
     private const val MIN_WIDTH = 1
     private const val MIN_HEIGHT = 1
-    private val SUPPORTED_FPS_LIMITS = intArrayOf(24, 30, 60, 90, 120, 240)
+    private val SUPPORTED_FPS_LIMITS = intArrayOf(24, 30, 60, 90, 120, 144)
 
     @JvmStatic
     @Throws(IOException::class)
@@ -25,7 +26,7 @@ object DisplayConfigSync {
         context: Context,
         width: Int,
         height: Int,
-        targetFpsLimitOverride: Int? = null
+        targetFpsLimitOverride: Float? = null
     ) {
         val configFile = RuntimePaths.displayConfigFile(context)
         val lines = buildConfigLines(
@@ -58,7 +59,7 @@ object DisplayConfigSync {
         existingLines: List<String>?,
         width: Int,
         height: Int,
-        targetFpsLimitOverride: Int? = null
+        targetFpsLimitOverride: Float? = null
     ): List<String> {
         // Keep the display config aligned with the actual scaled render surface.
         // If this file clamps to a larger minimum than the active surface/window size,
@@ -67,7 +68,7 @@ object DisplayConfigSync {
         val safeHeight = height.coerceAtLeast(MIN_HEIGHT)
         val state = readExisting(existingLines)
         val fpsLimit = if (targetFpsLimitOverride != null) {
-            normalizeTargetFpsLimit(targetFpsLimitOverride)
+            normalizeTargetFpsLimit(targetFpsLimitOverride.roundToInt())
         } else {
             state.fpsLimit
         }
@@ -173,7 +174,7 @@ object DisplayConfigSync {
     }
 
     private fun normalizeTargetFpsLimit(targetFpsLimit: Int): Int {
-        return if (SUPPORTED_FPS_LIMITS.contains(targetFpsLimit)) {
+        return if (targetFpsLimit in 1..1000) {
             targetFpsLimit
         } else {
             DEFAULT_FPS_LIMIT

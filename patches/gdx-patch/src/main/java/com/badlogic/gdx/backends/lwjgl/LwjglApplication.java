@@ -78,11 +78,14 @@ public class LwjglApplication implements Application {
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String ACTIVE_REFRESH_RATE_PROP = "amethyst.gdx.active_refresh_rate";
+	private static final String PACED_FRAME_RATE_PROP = "amethyst.gdx.paced_fps";
 	private static boolean audioCommandBridgeUnavailable;
 	// The LWJGL shim cannot discover the panel refresh rate (its DisplayMode frequency is 0 and
 	// getDesktopDisplayMode() is hardcoded to 60Hz), so the launcher publishes the real value.
 	private static final int LAUNCHER_ACTIVE_REFRESH_RATE =
 		readIntSystemProperty(ACTIVE_REFRESH_RATE_PROP, 0, 0, 1000);
+	private static final double LAUNCHER_PACED_FRAME_RATE =
+		readDoubleSystemProperty(PACED_FRAME_RATE_PROP, 0.0, 0.0, 1000.0);
 	private static final String GPU_LEAK_INJECTOR_MODE_PROP = "amethyst.gdx.debug_leak_injector";
 	private static final String EXPECTED_EXIT_MARKER_PROP = "amethyst.expected_exit_marker";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
@@ -139,8 +142,9 @@ public class LwjglApplication implements Application {
 	private boolean defaultFramebufferRebindLogged;
 	private int nativeContextGeneration = Integer.MIN_VALUE;
 	private boolean pendingNativeContextRebind;
-	private int androidFramePacerLastFrameRate;
+	private long androidFramePacerLastFrameNanos;
 	private long androidFramePacerNextFrameNanos;
+	private Boolean swappyFramePacingEnabled;
 	private int cachedActiveRefreshRate;
 	private boolean framePacerCapLogged;
 	private Boolean lastActiveState;
@@ -393,17 +397,19 @@ public class LwjglApplication implements Application {
 		return LwjglHotLoopConfig.virtualHeight();
 	}
 
-	// Paces frames by sleeping/parking until the next frame deadline instead of busy-waiting.
+	// Fallback pacing for inactive frames and renderers without Swappy. The Swappy path is paced by
+	// presentation timestamps and fences inside the EGL bridge.
 	// Measured on a 90Hz panel at a 90 FPS target: ~13% less process CPU and ~14% less render-thread
 	// CPU than LWJGL's Display.sync(), with presented FPS and frame jitter unchanged.
 	// The schedule arithmetic lives in LwjglFramePacerSchedule so it can be unit tested.
-	private void syncSoftwareFrame (int frameRate) {
-		if (frameRate <= 0) return;
-		frameRate = capFrameRateToActiveRefreshRate(frameRate);
+	private void syncSoftwareFrame (int configuredFrameRate) {
+		if (configuredFrameRate <= 0) return;
+		double frameRate = LAUNCHER_PACED_FRAME_RATE > 0.0
+			? LAUNCHER_PACED_FRAME_RATE
+			: capFrameRateToActiveRefreshRate(configuredFrameRate);
 		long frameNanos = LwjglFramePacerSchedule.frameNanos(frameRate);
-		if (LwjglFramePacerSchedule.shouldSeed(androidFramePacerLastFrameRate, frameRate,
-			androidFramePacerNextFrameNanos)) {
-			androidFramePacerLastFrameRate = frameRate;
+		if (androidFramePacerLastFrameNanos != frameNanos || androidFramePacerNextFrameNanos <= 0L) {
+			androidFramePacerLastFrameNanos = frameNanos;
 			androidFramePacerNextFrameNanos = LwjglFramePacerSchedule.seed(System.nanoTime(), frameNanos);
 		}
 
@@ -411,6 +417,19 @@ public class LwjglApplication implements Application {
 		sleepUntilFrameDeadline(deadline);
 		androidFramePacerNextFrameNanos =
 			LwjglFramePacerSchedule.advance(deadline, System.nanoTime(), frameNanos);
+	}
+
+	private boolean isSwappyFramePacingEnabled () {
+		if (swappyFramePacingEnabled != null) return swappyFramePacingEnabled.booleanValue();
+		boolean enabled = false;
+		try {
+			enabled = CallbackBridge.nativeIsSwappyEnabled();
+		} catch (Throwable t) {
+			System.out.println("[gdx-patch] Swappy status query unavailable: " + t);
+		}
+		swappyFramePacingEnabled = Boolean.valueOf(enabled);
+		System.out.println("[gdx-patch] Frame pacing: swappyEnabled=" + enabled);
+		return enabled;
 	}
 
 	/** The software pacer is the only frame limiter in this backend: the Android bridge runs with
@@ -1087,6 +1106,21 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	private static double readDoubleSystemProperty (String key, double defaultValue, double minValue, double maxValue) {
+		String configured = System.getProperty(key);
+		if (configured == null) return defaultValue;
+		configured = configured.trim();
+		if (configured.length() == 0) return defaultValue;
+		try {
+			double parsed = Double.parseDouble(configured);
+			if (parsed < minValue) return minValue;
+			if (parsed > maxValue) return maxValue;
+			return parsed;
+		} catch (Throwable ignored) {
+			return defaultValue;
+		}
+	}
+
 	private boolean shouldRunGlobalTextureCompatScan () {
 		if (!LwjglHotLoopConfig.RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_ENABLED) return false;
 		long frame = graphics.frameId;
@@ -1647,7 +1681,8 @@ public class LwjglApplication implements Application {
 				if (frameRate == 0) frameRate = graphics.config.backgroundFPS;
 				if (frameRate == 0) frameRate = 30;
 			}
-			syncSoftwareFrame(frameRate);
+			boolean swappyPacing = shouldRender && isActive && runtimeForeground && isSwappyFramePacingEnabled();
+			if (!swappyPacing) syncSoftwareFrame(frameRate);
 		}
 
 		synchronized (lifecycleListeners) {

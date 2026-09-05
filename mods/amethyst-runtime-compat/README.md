@@ -13,6 +13,7 @@ The root package only contains the ModTheSpire initializer. Runtime fixes should
 - `io.stamethyst.compatmod.rescue`: save/room/render rescue fallbacks for corrupted or incomplete runtime state.
 - `io.stamethyst.compatmod.diagnostics`: diagnostic and memory-observation hooks.
 - `io.stamethyst.compatmod.lifecycle`: expected-exit and process-lifecycle markers.
+- `io.stamethyst.compatmod.save`: deterministic save/load restoration for base-game state omitted from `SaveFile`.
 - `modCompatibility`: compatibility fixes scoped to a specific external mod.
 - `io.stamethyst.compatmod.autoplay`: harness-only autoplay and single-room automation.
 
@@ -254,6 +255,12 @@ Intercepts dungeon transitions and main-menu construction to keep the rich-prese
 
 66. `RichPresenceBridge` main-menu state and `steam_display` token correction
 Writes `status=在 Slay the Amethyst 上游玩 - 主菜单` plus `steam_display=#Status` during `AmethystRuntimeCompat.initialize()` and whenever `MainMenuScreen` is constructed. Dungeon updates use the configurable format `在xx上游玩角色名 - 第xx层（进阶xx）`, with Act appended as ` - 第x幕` when enabled. This addresses the main-menu symptom where the initializer's one-time write could be cleared during game startup or missed before the launcher began observing it. It also fixes the friends-list symptom where the visible string had been placed directly in `steam_display`: Steam requires that key to be a valid localization tag, so raw text is silently dropped. The human-readable value must live in `status`, while `steam_display` names a registered localization token. `#Status` is the token shipped by AppID 646570 and resolves to `%status%`, exactly matching `BaseMod.setRichPresence(String)`. Transport remains binary VDF root `RP`, `CMsgClientRichPresenceUpload` **EMsg 7501**, and `routing_appid=646570`, with `steamid_broadcast` intentionally unset to match node-steam-user's reference upload. Type: gameplay/runtime Steam-presence fix implemented by `RichPresenceBridge` and `MainMenuScreenConstructorPatch`, with service startup coordinated by `SteamGamePresenceService` and message transport in `SteamCloudProtocolClient`.
+
+67. `ShrineListSaveField`
+Saves an ordered copy of `AbstractDungeon.shrineList` in a BaseMod custom save field and restores that exact remaining list after the load constructor has run the base-game and BaseMod shrine initializers. This addresses the symptom where save-and-load inside a question-mark room can change the selected event because vanilla saves `eventList` and `specialOneTimeEventList` but rebuilds the already-consumed shrine pool, changing the candidate count and RNG index mapping. Saves created before this field existed retain vanilla behavior because a missing value is not treated as an empty pool. Type: gameplay determinism fix implemented by `ShrineListSaveField.LoadConstructorPatch`, with ordered one-shot state in `OrderedStringListSaveState`.
+
+68. `EventHelperReplayShopContextPatches`
+Saves whether the room immediately before the pending question-mark transition was a shop and, only for the one `EventHelper.roll(Random)` replayed while loading that save, reapplies vanilla's zero-shop rule to the local roll table. The state is captured at the original event roll and carried into question-mark combat `POST_COMBAT` saves, while ordinary room-entry saves use the actual current room. This addresses the symptom where save-and-load before entering a question-mark room after a shop can change the room from an event to another shop because vanilla temporarily represents the prior room as `EmptyRoom` during reconstruction, including when restoring a completed event combat. Normal rolls and older saves remain unchanged. Type: gameplay determinism fix implemented by `EventHelperReplayShopContextPatches.EventHelperRollPatch` and `EventRollPriorRoomSaveField.SaveFileConstructorPatch`, with the custom field and replay state in `EventRollPriorRoomSaveField` and `EventRollPriorRoomState`.
 
 ## Maintenance rule
 

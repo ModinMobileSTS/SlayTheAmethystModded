@@ -255,6 +255,13 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeIsSwappyEnabled",
+            returnType = "boolean",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeGetGlContextGeneration",
             returnType = "int",
             parameters = emptyList(),

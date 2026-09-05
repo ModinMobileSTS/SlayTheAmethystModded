@@ -53,7 +53,7 @@ internal enum class HorizontalCropSide {
 class RenderSurfaceManager(
     private val activity: StsGameActivity,
     private val renderScale: Float,
-    private val targetFpsLimit: Int,
+    private val targetFpsLimit: Float,
     useTextureViewSurface: Boolean,
     private val virtualResolutionMode: VirtualResolutionMode,
     private val avoidDisplayCutout: Boolean,

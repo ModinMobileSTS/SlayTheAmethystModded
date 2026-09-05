@@ -15,6 +15,7 @@
 #include <EGL/egl.h>
 #include <GL/osmesa.h>
 #include "ctxbridges/osmesa_loader.h"
+#include "ctxbridges/swappy_bridge.h"
 #include "driver_helper/nsbypass.h"
 
 #ifdef GLES_TEST
@@ -193,6 +194,7 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow
     if (previousWindow != NULL) {
         ANativeWindow_release(previousWindow);
     }
+    amethyst_swappy_set_window(nextWindow);
     if (nextWindow != NULL && br_setup_window != NULL) {
         br_setup_window();
     }
@@ -204,6 +206,7 @@ Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(
         ABI_COMPAT JNIEnv *env,
         ABI_COMPAT jclass clazz
 ) {
+    amethyst_swappy_set_window(NULL);
     pthread_mutex_lock(&g_pojav_window_mutex);
     ANativeWindow* window = pojav_environ->pojavWindow;
     if (window == NULL) {
@@ -235,6 +238,24 @@ Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(
             (unsigned long long)release_generation
         );
     }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_net_kdt_pojavlaunch_utils_JREUtils_initializeSwappyFramePacing(
+        JNIEnv* env,
+        ABI_COMPAT jclass clazz,
+        jobject activity,
+        jfloat targetFps
+) {
+    return amethyst_swappy_init(env, activity, (float) targetFps) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_net_kdt_pojavlaunch_utils_JREUtils_destroySwappyFramePacing(
+        ABI_COMPAT JNIEnv* env,
+        ABI_COMPAT jclass clazz
+) {
+    amethyst_swappy_destroy();
 }
 
 EXTERNAL_API void* pojavGetCurrentContext() {

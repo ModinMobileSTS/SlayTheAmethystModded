@@ -27,7 +27,7 @@ class DisplayConfigSyncTest {
         )
 
         assertEquals(
-            listOf("320", "200", "90", "false", "false", "true"),
+            listOf("320", "200", "144", "false", "false", "true"),
             lines
         )
     }
@@ -52,7 +52,7 @@ class DisplayConfigSyncTest {
             existingLines = listOf("1920", "1080", "120", "true", "false", "false"),
             width = 1600,
             height = 900,
-            targetFpsLimitOverride = 90
+            targetFpsLimitOverride = 90f
         )
 
         assertEquals(
@@ -75,7 +75,7 @@ class DisplayConfigSyncTest {
     }
 
     @Test
-    fun buildTargetFpsConfigLines_usesLauncherCompatibleGameDefaultsWhenConfigMissing() {
+    fun buildTargetFpsConfigLines_preservesIntegerCompatibilityValueForExactPacing() {
         val lines = DisplayConfigSync.buildTargetFpsConfigLines(
             existingLines = null,
             targetFpsLimit = 240

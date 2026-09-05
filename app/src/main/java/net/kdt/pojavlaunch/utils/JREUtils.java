@@ -7,6 +7,7 @@
 
 package net.kdt.pojavlaunch.utils;
 
+import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.ConfigurationInfo;
@@ -411,6 +412,10 @@ public final class JREUtils {
     public static native void setupBridgeWindow(Object surface);
 
     public static native void releaseBridgeWindow();
+
+    public static native boolean initializeSwappyFramePacing(Activity activity, float targetFps);
+
+    public static native void destroySwappyFramePacing();
 
     public static native void initializeHooks();
 

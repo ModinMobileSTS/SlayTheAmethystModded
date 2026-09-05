@@ -40,6 +40,7 @@ import io.stamethyst.ui.main.MainScreenViewModel
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
+import kotlin.math.roundToInt
 
 internal class GameSessionCoordinator(
     private val activity: StsGameActivity,
@@ -1388,7 +1389,7 @@ internal class GameSessionCoordinator(
 
     private fun restoreRequestedTargetFps() {
         try {
-            DisplayConfigSync.saveTargetFpsLimit(activity, config.requestedTargetFps)
+            DisplayConfigSync.saveTargetFpsLimit(activity, config.requestedTargetFps.roundToInt())
         } catch (_: Throwable) {
         }
     }

@@ -14,6 +14,7 @@
 #include <environ/environ.h>
 #include "gl_bridge.h"
 #include "egl_loader.h"
+#include "swappy_bridge.h"
 
 #define TAG __FILE_NAME__
 //
@@ -492,6 +493,7 @@ void gl_swap_surface(gl_render_window_t* bundle) {
     if(queuedSurface != NULL) {
         ;
         bundle->nativeSurface = queuedSurface;
+        amethyst_swappy_set_window(bundle->nativeSurface);
         // Preserve the Java-synchronized window size across surface recreation so
         // render scale does not silently snap back to the platform default buffer size.
         int geometryWidth = 0;
@@ -546,6 +548,7 @@ void gl_swap_surface(gl_render_window_t* bundle) {
     }else{
         ;
         bundle->nativeSurface = NULL;
+        amethyst_swappy_set_window(NULL);
         const EGLint pbuffer_attrs[] = {EGL_WIDTH, 1 , EGL_HEIGHT, 1, EGL_NONE};
         bundle->surface = eglCreatePbufferSurface_p(g_EglDisplay, bundle->config, pbuffer_attrs);
         printf("GLBridgeDiag: created PBUFFER surface=%p\n", bundle->surface);
@@ -695,7 +698,10 @@ void gl_swap_buffers() {
     }
 
     if(currentBundle->surface != NULL && currentBundle->surface != EGL_NO_SURFACE) {
-        if(!eglSwapBuffers_p(g_EglDisplay, currentBundle->surface)) {
+        EGLBoolean swapResult = amethyst_swappy_is_enabled()
+            ? (amethyst_swappy_swap(g_EglDisplay, currentBundle->surface) ? EGL_TRUE : EGL_FALSE)
+            : eglSwapBuffers_p(g_EglDisplay, currentBundle->surface);
+        if(!swapResult) {
             EGLint swapErr = eglGetError_p();
             if (swapErr == EGL_BAD_SURFACE || swapErr == EGL_BAD_NATIVE_WINDOW) {
                 eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);

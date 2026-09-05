@@ -26,6 +26,7 @@
 #include "environ/environ.h"
 #include "jvm_hooks/jvm_hooks.h"
 #include "ctxbridges/gl_bridge.h"
+#include "ctxbridges/swappy_bridge.h"
 
 #define EVENT_TYPE_CHAR 1000
 #define EVENT_TYPE_CHAR_MODS 1001
@@ -776,6 +777,14 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlSwapCount(
     __attribute__((unused)) jclass clazz
 ) {
     return (jint) gl_get_swap_count();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeIsSwappyEnabled(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return amethyst_swappy_is_enabled() ? JNI_TRUE : JNI_FALSE;
 }
 
 jboolean critical_send_char(jchar codepoint) {

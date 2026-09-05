@@ -12,10 +12,16 @@ plugins {
     id("io.stamethyst.android-app-build")
 }
 
+dependencies {
+    implementation(libs.androidx.games.frame.pacing)
+}
+
 val packageName = readGradleProperty("application.id")
 val appVersionName = readGradleProperty("application.version.name")
 val appVersionCode = readGradleProperty("application.version.code").toInt()
 val feedbackApiKey = readGradleProperty("feedback.apiKey")
+val swappyFramePacingEnabled =
+    readGradleProperty("swappyEnabled", "true").toBooleanStrictOrNull() ?: true
 
 val localProperties = Properties().apply {
     val file = rootProject.layout.projectDirectory.file("local.properties").asFile
@@ -116,6 +122,7 @@ android {
         buildConfigField("String[]", "RESOURCE_PACK_DOWNLOAD_URLS", resourcePackDownloadUrls.toBuildConfigStringArrayLiteral())
         buildConfigField("String", "RESOURCE_PACK_VERSION", resourcePackVersion.toBuildConfigStringLiteral())
         buildConfigField("String", "CLOUD_CONTROL_CONFIG_URL", cloudControlConfigUrl.toBuildConfigStringLiteral())
+        buildConfigField("boolean", "SWAPPY_FRAME_PACING_ENABLED", swappyFramePacingEnabled.toString())
 
         ndk {
             //noinspection ChromeOsAbiSupport
