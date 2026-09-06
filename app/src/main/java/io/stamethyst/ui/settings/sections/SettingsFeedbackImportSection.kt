@@ -117,7 +117,8 @@ internal enum class SettingsResourceOperationGroup {
 @Composable
 internal fun SettingsImportSection(
     busy: Boolean,
-    onImportJar: () -> Unit,
+     onImportJar: () -> Unit,
+     onReinstallResourcePack: () -> Unit,
     onImportMods: () -> Unit,
     onExportMods: () -> Unit,
     onImportSaves: () -> Unit,
@@ -179,8 +180,14 @@ internal fun SettingsImportSection(
             enabled = !busy,
             onClick = { visibleOperationGroup = SettingsResourceOperationGroup.LOGS }
         )
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_reimport_sts_jar_title),
+         SettingsActionListItem(
+             title = stringResource(R.string.settings_reinstall_resource_pack_title),
+             supportingText = stringResource(R.string.settings_reinstall_resource_pack_desc),
+             enabled = !busy,
+             onClick = onReinstallResourcePack
+         )
+         SettingsActionListItem(
+             title = stringResource(R.string.settings_reimport_sts_jar_title),
             supportingText = stringResource(R.string.settings_reimport_sts_jar_desc),
             enabled = !busy,
             onClick = onImportJar
@@ -339,5 +346,4 @@ internal fun GetNewModsDialog(
         }
     )
 }
-
 

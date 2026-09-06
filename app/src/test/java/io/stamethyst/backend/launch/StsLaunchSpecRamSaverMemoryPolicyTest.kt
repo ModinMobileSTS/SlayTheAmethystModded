@@ -9,8 +9,8 @@ import org.junit.Test
 
 class StsLaunchSpecRamSaverMemoryPolicyTest {
     @Test
-    fun resolveTexturePressureDownscaleEnabled_disablesWhenRamSaverEnabled() {
-        assertFalse(
+    fun resolveTexturePressureDownscaleEnabled_preservesProtectionWhenRamSaverEnabled() {
+        assertTrue(
             StsLaunchSpec.resolveTexturePressureDownscaleEnabled(
                 ramSaverEnabled = true,
                 configuredEnabled = true
@@ -83,9 +83,9 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
-    fun resolveGpuResourceGuardianModeForLaunch_disablesWhenRamSaverEnabled() {
+    fun resolveGpuResourceGuardianModeForLaunch_preservesConfiguredModeWhenRamSaverEnabled() {
         assertEquals(
-            GpuResourceGuardianMode.OFF,
+            GpuResourceGuardianMode.ULTRA_AGGRESSIVE,
             StsLaunchSpec.resolveGpuResourceGuardianModeForLaunch(
                 ramSaverEnabled = true,
                 configuredMode = GpuResourceGuardianMode.ULTRA_AGGRESSIVE
@@ -105,8 +105,8 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
-    fun resolveFboPressureDownscaleEnabled_disablesWhenRamSaverEnabled() {
-        assertFalse(
+    fun resolveFboPressureDownscaleEnabled_preservesProtectionWhenRamSaverEnabled() {
+        assertTrue(
             StsLaunchSpec.resolveFboPressureDownscaleEnabled(
                 ramSaverEnabled = true,
                 configuredEnabled = true,

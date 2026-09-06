@@ -4,6 +4,10 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import io.stamethyst.backend.mods.REQUIRED_STS_PATCH_CLASSES
+import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -121,6 +125,42 @@ class ComponentInstallerLwjglBridgeTest {
                 ByteArrayInputStream(byteArrayOf(1, 2))
             )
         )
+    }
+
+    @Test
+    fun gdxPatchJarCheck_rejectsJarWithMissingRequiredClasses() {
+        val root = Files.createTempDirectory("gdx-patch-check-").toFile()
+        try {
+            val patchJar = File(root, "gdx-patch.jar")
+            ZipOutputStream(patchJar.outputStream()).use { zip ->
+                zip.putNextEntry(ZipEntry("not-a-required-class.class"))
+                zip.write(byteArrayOf(0))
+                zip.closeEntry()
+            }
+
+            assertFalse(StsDesktopJarPatcher.hasRequiredPatchClasses(patchJar))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun gdxPatchJarCheck_acceptsJarContainingAllRequiredClasses() {
+        val root = Files.createTempDirectory("gdx-patch-check-valid-").toFile()
+        try {
+            val patchJar = File(root, "gdx-patch.jar")
+            ZipOutputStream(patchJar.outputStream()).use { zip ->
+                REQUIRED_STS_PATCH_CLASSES.forEach { className ->
+                    zip.putNextEntry(ZipEntry(className))
+                    zip.write(byteArrayOf(0))
+                    zip.closeEntry()
+                }
+            }
+
+            assertTrue(StsDesktopJarPatcher.hasRequiredPatchClasses(patchJar))
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     private fun writeFile(root: File, name: String, contents: String): File {

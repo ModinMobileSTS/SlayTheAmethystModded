@@ -329,7 +329,7 @@
     <string name="resource_gate_full_release_quick_download">无法下载？点我下载离线版。</string>
     <string name="resource_gate_fetching_latest_full_release">获取最新版中</string>
     <string name="resource_gate_fetching_latest_full_release_description">正在获取最新离线版下载链接…</string>
-    <string name="resource_gate_retry">重试</string>
+    <string name="resource_gate_retry">尝试重新拉取资源包</string>
     <string name="resource_gate_open_full_release">打开 full 版本</string>
     <string name="resource_gate_mirror_title">下载镜像</string>
     <string name="resource_gate_slow_download_switch_mirror">下载缓慢？点我切换镜像！</string>
@@ -878,6 +878,11 @@
     <string name="sts_jar_external_import_notice_title">已导入 desktop-1.0.jar</string>
     <string name="sts_jar_external_import_notice_message">检测到你从其他应用打开的是游戏本体 jar，启动器已按正式导入流程完成导入。\n\n源文件：%1$s</string>
     <string name="settings_reimport_sts_jar_title">重新导入 desktop-1.0.jar</string>
+    <string name="settings_reinstall_resource_pack_title">重新拉取依赖包</string>
+    <string name="settings_reinstall_resource_pack_desc">如果游戏遇到资源缺失问题，请重新拉取。</string>
+    <string name="settings_busy_reinstalling_resource_pack">正在重新拉取依赖包…</string>
+    <string name="settings_resource_pack_reinstalled">依赖包已重新拉取。</string>
+    <string name="settings_resource_pack_reinstall_failed">重新拉取依赖包失败：%1$s</string>
     <string name="sts_jar_integrity_warning_title">desktop-1.0.jar 疑似损坏</string>
     <string name="sts_jar_integrity_warning_message">当前选择的文件疑似已经损坏，建议重新下载或者从其他来源下载。如果该提示不在你的意料之中，请勿强制导入，游戏大概率无法启动。</string>
     <string name="sts_jar_integrity_file_label">当前文件</string>

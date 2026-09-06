@@ -67,6 +67,7 @@ internal data class MainScreenActions(
     val onCopyCrashReport: () -> Unit = {},
     val onShareCrashRecoveryReport: () -> Unit = {},
     val onReturnToMainMenu: () -> Unit = {},
+    val onReinstallResourcePack: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onOpenWorkshop: () -> Unit = {},
     val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
@@ -188,6 +189,7 @@ internal fun rememberMainScreenActions(
                 onCopyCrashReport = { viewModel.copyCrashRecoveryReport(activity) },
                 onShareCrashRecoveryReport = { viewModel.shareCrashRecoveryReport(activity) },
                 onReturnToMainMenu = { viewModel.dismissCrashRecovery() },
+                onReinstallResourcePack = { viewModel.onReinstallResourcePack(activity) },
                 onImportMods = {
                     importModsLauncher.launch(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")

@@ -330,7 +330,7 @@
     <string name="resource_gate_full_release_quick_download">無法下載？點我下載完整版</string>
     <string name="resource_gate_fetching_latest_full_release">正在取得最新版</string>
     <string name="resource_gate_fetching_latest_full_release_description">正在取得最新離線版下載連結…</string>
-    <string name="resource_gate_retry">重試</string>
+    <string name="resource_gate_retry">嘗試重新拉取資源包</string>
     <string name="resource_gate_open_full_release">開啟 full 版本</string>
     <string name="resource_gate_mirror_title">下載鏡像</string>
     <string name="resource_gate_slow_download_switch_mirror">下載緩慢？點我切換鏡像！</string>
@@ -879,6 +879,11 @@
     <string name="sts_jar_external_import_notice_title">已匯入 desktop-1.0.jar</string>
     <string name="sts_jar_external_import_notice_message">檢測到你從其他應用開啟的是遊戲本體 jar，啟動器已按正式匯入流程完成匯入。\n\n原始檔：%1$s</string>
     <string name="settings_reimport_sts_jar_title">重新匯入 desktop-1.0.jar</string>
+    <string name="settings_reinstall_resource_pack_title">重新拉取依賴包</string>
+    <string name="settings_reinstall_resource_pack_desc">如果遊戲遇到資源缺失問題，請重新拉取。</string>
+    <string name="settings_busy_reinstalling_resource_pack">正在重新拉取依賴包…</string>
+    <string name="settings_resource_pack_reinstalled">依賴包已重新拉取。</string>
+    <string name="settings_resource_pack_reinstall_failed">重新拉取依賴包失敗：%1$s</string>
     <string name="sts_jar_integrity_warning_title">desktop-1.0.jar SHA-1 不匹配</string>
     <string name="sts_jar_integrity_warning_message">目前選取的基礎遊戲 jar 與啟動器內建的 desktop-1.0.jar 基準不一致。繼續匯入後，遊戲可能無法啟動。</string>
     <string name="sts_jar_integrity_file_label">目前檔案</string>

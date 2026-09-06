@@ -265,6 +265,13 @@ object ExternalResourcePackService {
         ensureAvailable(context, null)
     }
 
+    /** Forces a fresh download even when the currently installed pack passes validation. */
+    @JvmStatic
+    @Throws(IOException::class)
+    fun reinstall(context: Context, progressCallback: StartupProgressCallback? = null) {
+        ensureAvailable(context, progressCallback, null, forceRedownload = true)
+    }
+
     @JvmStatic
     fun isAvailable(context: Context): Boolean {
         return runCatching {
@@ -287,7 +294,8 @@ object ExternalResourcePackService {
     fun ensureAvailable(
         context: Context,
         progressCallback: StartupProgressCallback?,
-        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
+        forceRedownload: Boolean = false
     ) {
         throwIfInterrupted()
         migrateLegacyExternalResourcesIfNeeded(context)
@@ -302,7 +310,7 @@ object ExternalResourcePackService {
             context = context,
             packRoot = RuntimePaths.externalResourcesCurrentDir(context)
         )
-        if (externalPackIssues.isEmpty()) {
+        if (externalPackIssues.isEmpty() && !forceRedownload) {
             reportProgress(
                 progressCallback,
                 100,

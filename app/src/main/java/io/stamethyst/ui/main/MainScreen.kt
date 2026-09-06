@@ -3,7 +3,6 @@ package io.stamethyst.ui.main
 import android.app.Activity
 import android.os.Build
 import android.view.HapticFeedbackConstants
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -161,6 +160,8 @@ import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.FloatingGlassHeader
 import io.stamethyst.ui.LauncherTransientNoticeBus
+import io.stamethyst.ui.LauncherTransientNoticeDuration
+import io.stamethyst.ui.LauncherTransientNoticeRequest
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.rememberCloudControlSettings
@@ -323,6 +324,7 @@ private fun LauncherGamePage(
                 EasyTierOverviewCard(
                     indicator = easyTierIndicator,
                     onClick = onEasyTierClick,
+                    onReinstallResourcePack = actions.onReinstallResourcePack,
                 )
 
                 SteamAchievementOverviewCard(
@@ -1054,6 +1056,7 @@ private fun SteamCloudOverviewCard(
 private fun EasyTierOverviewCard(
     indicator: MainScreenViewModel.EasyTierIndicatorUi,
     onClick: () -> Unit,
+    onReinstallResourcePack: () -> Unit,
 ) {
     val indicatorTint by animateColorAsState(
         targetValue = easyTierIndicatorTint(indicator.state),
@@ -1148,6 +1151,15 @@ private fun EasyTierOverviewCard(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        if (indicator.failureCategory == EasyTierFailureCategory.RuntimeBridgeUnavailable &&
+                            indicator.errorSummary.contains("resource pack", ignoreCase = true)) {
+                            TextButton(
+                                onClick = onReinstallResourcePack,
+                                enabled = !indicator.operationInFlight,
+                            ) {
+                                Text(stringResource(R.string.settings_reinstall_resource_pack_title))
+                            }
                         }
                     }
                 }
@@ -2673,6 +2685,7 @@ internal fun EasyTierBottomSheetContent(
     },
     onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
     onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
+    onReinstallResourcePack: () -> Unit = {},
     initialLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -2694,7 +2707,7 @@ internal fun EasyTierBottomSheetContent(
     var joinableRoomsOnly by remember { mutableStateOf(false) }
     // The launcher's snackbar host sits below this full-height sheet, so confirmations have to be
     // rendered inside the sheet to be visible at all.
-    var sheetNotice by remember { mutableStateOf<UiText?>(null) }
+    var sheetNotice by remember { mutableStateOf<LauncherTransientNoticeRequest?>(null) }
     val sheetView = LocalView.current
     val memberWorkshopDetailViewModel: WorkshopViewModel = viewModel()
     // Secondary sheet pages own the system back gesture so it steps back one level
@@ -2772,7 +2785,7 @@ internal fun EasyTierBottomSheetContent(
     // notice bus, whose host is stacked below this sheet and therefore invisible while it is open.
     LaunchedEffect(Unit) {
         LauncherTransientNoticeBus.requests.collect { request ->
-            sheetNotice = request.message
+            sheetNotice = request
         }
     }
     // Auto-dismiss the in-sheet notice so it behaves like a snackbar rather than a sticky banner.
@@ -2782,13 +2795,19 @@ internal fun EasyTierBottomSheetContent(
             sheetNotice = null
         }
     }
-    LaunchedEffect(troubleshootingToastMessageResId) {
+    LaunchedEffect(troubleshootingToastMessageResId, indicator.errorSummary) {
         if (troubleshootingToastMessageResId != null) {
-            Toast.makeText(
-                sheetView.context,
-                sheetView.context.getString(troubleshootingToastMessageResId),
-                Toast.LENGTH_LONG,
-            ).show()
+            val resourcePackMissing = isEasyTierResourcePackMissing(indicator)
+            LauncherTransientNoticeBus.show(
+                message = UiText.StringResource(troubleshootingToastMessageResId),
+                duration = LauncherTransientNoticeDuration.LONG,
+                actionLabel = if (resourcePackMissing) {
+                    UiText.StringResource(R.string.settings_reinstall_resource_pack_title)
+                } else {
+                    null
+                },
+                onAction = onReinstallResourcePack.takeIf { resourcePackMissing },
+            )
         }
     }
     LaunchedEffect(roomBrowser.creating, selectedRoom?.roomId, roomBrowser.errorSummary) {
@@ -3218,8 +3237,10 @@ internal fun EasyTierBottomSheetContent(
                             joinableOnly = joinableRoomsOnly,
                             onJoinableOnlyChange = { joinableRoomsOnly = it },
                             onSelectLockedRoom = {
-                                sheetNotice = UiText.StringResource(
-                                    R.string.main_easytier_room_locked_select_blocked,
+                                sheetNotice = LauncherTransientNoticeRequest(
+                                    message = UiText.StringResource(
+                                        R.string.main_easytier_room_locked_select_blocked,
+                                    )
                                 )
                             },
                         )
@@ -3270,17 +3291,24 @@ internal fun EasyTierBottomSheetContent(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = notice?.resolve().orEmpty(),
+                            text = notice?.message?.resolve().orEmpty(),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(
-                            onClick = { sheetNotice = null },
+                            onClick = {
+                                val action = notice?.onAction
+                                sheetNotice = null
+                                action?.invoke()
+                            },
                             colors = ButtonDefaults.textButtonColors(
                                 contentColor = MaterialTheme.colorScheme.inversePrimary,
                             ),
                         ) {
-                            Text(stringResource(R.string.common_action_close))
+                            Text(
+                                notice?.actionLabel?.resolve()
+                                    ?: stringResource(R.string.common_action_close)
+                            )
                         }
                     }
                 }
@@ -3698,7 +3726,8 @@ fun LauncherCrashRecoveryScreen(
             onAskAi = { hostActivity?.let(viewModel::copyCrashRecoveryAiPrompt) },
             onCopyReport = { hostActivity?.let(viewModel::copyCrashRecoveryReport) },
             onShareLogs = { hostActivity?.let(viewModel::shareCrashRecoveryReport) },
-            onReturnToMainMenu = onReturnToMainMenu
+            onReturnToMainMenu = onReturnToMainMenu,
+            onReinstallResourcePack = { hostActivity?.let(viewModel::onReinstallResourcePack) },
         )
     } else {
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background))
@@ -4827,6 +4856,7 @@ private fun LauncherMainScreenContent(
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
+                onReinstallResourcePack = actions.onReinstallResourcePack,
                 initialLoading = easyTierInitialLoadPending,
             )
         }
@@ -5432,6 +5462,7 @@ private fun CrashRecoveryScreen(
     onCopyReport: () -> Unit,
     onShareLogs: () -> Unit,
     onReturnToMainMenu: () -> Unit,
+    onReinstallResourcePack: () -> Unit,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -5569,6 +5600,15 @@ private fun CrashRecoveryScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (isExternalResourcePackFailure(crashRecovery.reportText)) {
+                    Button(
+                        onClick = onReinstallResourcePack,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.settings_reinstall_resource_pack_title))
+                    }
+                }
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -5683,6 +5723,21 @@ private fun CrashRecoveryScreen(
         }
     }
 }
+
+private fun isExternalResourcePackFailure(report: String): Boolean {
+    val normalized = report.lowercase()
+    return (normalized.contains("resource pack") || normalized.contains("external resource")) && (
+        normalized.contains("missing") ||
+            normalized.contains("incomplete") ||
+            normalized.contains("not configured") ||
+            normalized.contains("version")
+        )
+}
+
+private fun isEasyTierResourcePackMissing(
+    indicator: MainScreenViewModel.EasyTierIndicatorUi,
+): Boolean = indicator.failureCategory == EasyTierFailureCategory.RuntimeBridgeUnavailable &&
+    isExternalResourcePackFailure(indicator.errorSummary)
 
 @Composable
 private fun CrashRecoveryCard(

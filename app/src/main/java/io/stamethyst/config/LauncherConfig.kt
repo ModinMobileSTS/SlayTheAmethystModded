@@ -1311,11 +1311,9 @@ object LauncherConfig {
     }
 
     fun resolveJvmHeapStartMb(heapMaxMb: Int): Int {
-        // Xms follows Xmx so G1 commits the full heap at startup.
-        // The old coerceAtMost(512) kept Xms at 512 MB regardless of the
-        // user setting, causing G1 to never expand past 512 MB committed
-        // even when Xmx was set to 1024 MB+.
-        return normalizeJvmHeapMaxMb(heapMaxMb)
+        // Keep the initial commit bounded. G1 can grow to Xmx on demand; tying
+        // Xms to Xmx needlessly competes with GL/native memory on small devices.
+        return normalizeJvmHeapMaxMb(heapMaxMb).coerceAtMost(512)
     }
 
     fun readJvmHeapMaxMb(context: Context): Int {

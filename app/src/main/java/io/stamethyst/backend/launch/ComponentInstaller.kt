@@ -9,6 +9,7 @@ import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
@@ -811,7 +812,7 @@ object ComponentInstaller {
         ) {
             missing += "lwjgl2_injector"
         }
-        if (!RuntimePaths.gdxPatchJar(context).isFile) {
+        if (!StsDesktopJarPatcher.hasRequiredPatchClasses(RuntimePaths.gdxPatchJar(context))) {
             missing += "gdx_patch"
         }
         if (!RuntimePaths.bundledLog4jApiJar(context).isFile ||

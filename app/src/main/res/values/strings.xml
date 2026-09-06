@@ -330,7 +330,7 @@
     <string name="resource_gate_full_release_quick_download">Cannot download? Tap to download the full APK.</string>
     <string name="resource_gate_fetching_latest_full_release">Fetching latest version</string>
     <string name="resource_gate_fetching_latest_full_release_description">Getting the latest offline APK download link...</string>
-    <string name="resource_gate_retry">Retry</string>
+    <string name="resource_gate_retry">Try downloading the resource pack again</string>
     <string name="resource_gate_open_full_release">Full release</string>
     <string name="resource_gate_mirror_title">Download mirror</string>
     <string name="resource_gate_slow_download_switch_mirror">Download slow? Tap to switch mirror!</string>
@@ -879,6 +879,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="sts_jar_external_import_notice_title">Imported desktop-1.0.jar</string>
     <string name="sts_jar_external_import_notice_message">The launcher detected that you opened the base game jar from another app and completed the normal desktop-1.0.jar import flow.\n\nSource file: %1$s</string>
     <string name="settings_reimport_sts_jar_title">Re-import desktop-1.0.jar</string>
+    <string name="settings_reinstall_resource_pack_title">Re-download dependency package</string>
+    <string name="settings_reinstall_resource_pack_desc">If the game is missing resources, download them again.</string>
+    <string name="settings_busy_reinstalling_resource_pack">Re-downloading dependency package…</string>
+    <string name="settings_resource_pack_reinstalled">Dependency package re-downloaded.</string>
+    <string name="settings_resource_pack_reinstall_failed">Failed to re-download dependency package: %1$s</string>
     <string name="sts_jar_integrity_warning_title">desktop-1.0.jar SHA-1 mismatch</string>
     <string name="sts_jar_integrity_warning_message">The selected base-game jar does not match the launcher’s built-in desktop-1.0.jar reference. Continuing the import may leave the game unable to start.</string>
     <string name="sts_jar_integrity_file_label">Selected file</string>

@@ -928,7 +928,7 @@ object StsLaunchSpec {
         ramSaverEnabled: Boolean,
         configuredEnabled: Boolean
     ): Boolean {
-        return !ramSaverEnabled && configuredEnabled
+        return configuredEnabled
     }
 
     /**
@@ -968,7 +968,7 @@ object StsLaunchSpec {
         ramSaverEnabled: Boolean,
         configuredMode: GpuResourceGuardianMode
     ): GpuResourceGuardianMode {
-        return if (ramSaverEnabled) GpuResourceGuardianMode.OFF else configuredMode
+        return configuredMode
     }
 
     internal fun resolveFboPressureDownscaleEnabled(
@@ -976,7 +976,7 @@ object StsLaunchSpec {
         configuredEnabled: Boolean,
         offscreenFrameBuffersEnabled: Boolean
     ): Boolean {
-        return !ramSaverEnabled && configuredEnabled && offscreenFrameBuffersEnabled
+        return configuredEnabled && offscreenFrameBuffersEnabled
     }
 
     internal fun buildEasyTierTogetherInSpireJvmProperties(

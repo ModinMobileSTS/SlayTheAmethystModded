@@ -39,6 +39,28 @@ public class Texture extends GLTexture {
     public FileHandle file = null;
     public boolean useMipMaps = false;
     public Pixmap.Format format = null;
+    private String cacheKey;
+    private boolean cacheEvicted;
+    private boolean explicitlyDisposed;
+    private Application managedApp;
+
+    public String getRamSaverKey() {
+        return cacheKey;
+    }
+
+    public void attachToRamSaver(String key) {
+        cacheKey = key;
+    }
+
+    private void registerVariant() {
+        cacheKey = RamSaver.textureKey(file, format, useMipMaps, minFilter, magFilter, uWrap, vWrap);
+        if (!RamSaver.textureExists(cacheKey)) {
+            RamSaver.FileTextureSupplier supplier = new RamSaver.FileTextureSupplier(file, format, useMipMaps);
+            supplier.setFilter(minFilter, magFilter);
+            supplier.setWrap(uWrap, vWrap);
+            RamSaver.registerTexture(cacheKey, supplier);
+        }
+    }
 
     public Texture(String internalPath) {
         this(Gdx.files.internal(internalPath));
@@ -83,7 +105,8 @@ public class Texture extends GLTexture {
         this.format = format;
         this.useMipMaps = useMipMaps;
 
-        String textureKey = file.path();
+        String textureKey = RamSaver.textureKey(file, format, useMipMaps, minFilter, magFilter, uWrap, vWrap);
+        cacheKey = textureKey;
         RamSaverDiag.markFakeTextureWrapperConstructed(textureKey);
         int[] cachedSize = RamSaver.getCachedTextureSize(textureKey);
         if (cachedSize != null) {
@@ -140,9 +163,7 @@ public class Texture extends GLTexture {
                             + " fake=" + diagTexture(this)
             );
         }
-        if (!RamSaver.textureExists(textureKey)) {
-            RamSaver.registerTexture(textureKey, new RamSaver.FileTextureSupplier(file, format, useMipMaps));
-        }
+        registerVariant();
     }
 
     //Not Useless constructor, used by self
@@ -150,7 +171,12 @@ public class Texture extends GLTexture {
         super(glTarget, glHandle);
         this.isFake = false;
         //System.out.println("Tex (not file)");
-        this.load(data);
+        try {
+            this.load(data);
+        } catch (RuntimeException error) {
+            super.dispose();
+            throw error;
+        }
         if (data.isManaged()) {
             addManagedTexture(Gdx.app, this);
         }
@@ -172,10 +198,11 @@ public class Texture extends GLTexture {
         return getRealTexture("explicit", canAge);
     }
     private Texture getRealTexture(String reason, boolean canAge) {
-        if (!isFake)
+        if (!isFake && !cacheEvicted)
             return this;
 
-        String key = file == null ? "null" : file.path();
+        if (explicitlyDisposed) throw new GdxRuntimeException("Texture has been disposed");
+        String key = cacheKey;
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         if (diag) {
@@ -234,7 +261,12 @@ public class Texture extends GLTexture {
         }
         else {
             //if data is provided then it's already loaded a pixmap
-            data.disposePixmap();
+            if (data.getType() == TextureData.TextureDataType.Pixmap && data.isPrepared()) {
+                Pixmap pixmap = data.consumePixmap();
+                if (data.disposePixmap() && pixmap != null) {
+                    pixmap.dispose();
+                }
+            }
 
             if (data instanceof FileTextureData) {
                 file = ((FileTextureData) data).getFileHandle();
@@ -248,9 +280,8 @@ public class Texture extends GLTexture {
                             "format=" + format + " useMipMaps=" + useMipMaps + " fake=" + diagTexture(this)
                     );
                 }
-                if (!RamSaver.textureExists(file.path())) {
-                    RamSaver.registerTexture(file.path(), new RamSaver.FileTextureSupplier(file, format, useMipMaps));
-                }
+                knowSize = false;
+                registerVariant();
             }
         }
     }
@@ -343,8 +374,7 @@ public class Texture extends GLTexture {
         if (!isFake)
             return super.getMinFilter();
 
-        Texture t = RamSaver.getExistingTexture(file.path());
-        return t == null ? super.getMinFilter() : t.getMinFilter();
+        return super.getMinFilter();
     }
 
     @Override
@@ -352,8 +382,7 @@ public class Texture extends GLTexture {
         if (!isFake)
             return super.getMagFilter();
 
-        Texture t = RamSaver.getExistingTexture(file.path());
-        return t == null ? super.getMagFilter() : t.getMagFilter();
+        return super.getMagFilter();
     }
 
     @Override
@@ -361,8 +390,7 @@ public class Texture extends GLTexture {
         if (!isFake)
             return super.getUWrap();
 
-        Texture t = RamSaver.getExistingTexture(file.path());
-        return t == null ? super.getUWrap() : t.getUWrap();
+        return super.getUWrap();
     }
 
     @Override
@@ -370,8 +398,7 @@ public class Texture extends GLTexture {
         if (!isFake)
             return super.getVWrap();
 
-        Texture t = RamSaver.getExistingTexture(file.path());
-        return t == null ? super.getVWrap() : t.getVWrap();
+        return super.getVWrap();
     }
 
     @Override
@@ -385,12 +412,18 @@ public class Texture extends GLTexture {
 
     @Override
     public void bind() {
+        if (explicitlyDisposed) throw new GdxRuntimeException("Texture has been disposed");
+        if (cacheEvicted) {
+            getRealTexture().bind();
+            return;
+        }
         if (!isFake) {
+            if (cacheKey != null) RamSaver.touchTexture(cacheKey, this);
             super.bind();
             return;
         }
 
-        Texture t = RamSaver.getTextureForBindFallback(file == null ? null : file.path());
+        Texture t = RamSaver.getTextureForBindFallback(cacheKey);
         if (t != null) {
             t.bind();
             return;
@@ -400,12 +433,18 @@ public class Texture extends GLTexture {
 
     @Override
     public void bind(int unit) {
+        if (explicitlyDisposed) throw new GdxRuntimeException("Texture has been disposed");
+        if (cacheEvicted) {
+            getRealTexture().bind(unit);
+            return;
+        }
         if (!isFake) {
+            if (cacheKey != null) RamSaver.touchTexture(cacheKey, this);
             super.bind(unit);
             return;
         }
 
-        Texture t = RamSaver.getTextureForBindFallback(file == null ? null : file.path());
+        Texture t = RamSaver.getTextureForBindFallback(cacheKey);
         if (t != null) {
             t.bind(unit);
             return;
@@ -420,39 +459,29 @@ public class Texture extends GLTexture {
             return;
         }
 
+        if ((u == null || u == this.uWrap) && (v == null || v == this.vWrap)) return;
         if (u != null)
             this.uWrap = u;
         if (v != null)
             this.vWrap = v;
 
-        String key = file.path();
-        RamSaver.FileTextureSupplier supplier = RamSaver.getTextureSupplier(key);
-        if (supplier != null)
-            supplier.setWrap(u, v);
-
-        Texture t = RamSaver.getExistingTexture(key);
-        if (t != null)
-            t.unsafeSetWrap(u, v, force);
+        registerVariant();
     }
 
     @Override
     public void setWrap(Texture.TextureWrap u, Texture.TextureWrap v) {
         if (!isFake) {
-            super.setWrap(u, v);
+            super.setWrap(u == null ? this.uWrap : u, v == null ? this.vWrap : v);
             return;
         }
 
-        this.uWrap = u;
-        this.vWrap = v;
+        TextureWrap nextU = u == null ? this.uWrap : u;
+        TextureWrap nextV = v == null ? this.vWrap : v;
+        if (nextU == this.uWrap && nextV == this.vWrap) return;
+        this.uWrap = nextU;
+        this.vWrap = nextV;
 
-        String key = file.path();
-        RamSaver.FileTextureSupplier supplier = RamSaver.getTextureSupplier(key);
-        if (supplier != null)
-            supplier.setWrap(u, v);
-
-        Texture t = RamSaver.getExistingTexture(key);
-        if (t != null)
-            t.setWrap(u, v);
+        registerVariant();
     }
 
     @Override
@@ -462,55 +491,66 @@ public class Texture extends GLTexture {
             return;
         }
 
+        if ((minFilter == null || minFilter == this.minFilter) && (magFilter == null || magFilter == this.magFilter)) return;
         if (minFilter != null)
             this.minFilter = minFilter;
         if (magFilter != null)
             this.magFilter = magFilter;
 
-        String key = file.path();
-        RamSaver.FileTextureSupplier supplier = RamSaver.getTextureSupplier(key);
-        if (supplier != null)
-            supplier.setFilter(minFilter, magFilter);
-
-        Texture t = RamSaver.getExistingTexture(key);
-        if (t != null)
-            t.unsafeSetFilter(minFilter, magFilter, force);
+        registerVariant();
     }
 
     @Override
     public void setFilter(Texture.TextureFilter minFilter, Texture.TextureFilter magFilter) {
         if (!isFake) {
-            super.setFilter(minFilter, magFilter);
+            super.setFilter(minFilter == null ? this.minFilter : minFilter, magFilter == null ? this.magFilter : magFilter);
             return;
         }
 
-        this.minFilter = minFilter;
-        this.magFilter = magFilter;
+        TextureFilter nextMin = minFilter == null ? this.minFilter : minFilter;
+        TextureFilter nextMag = magFilter == null ? this.magFilter : magFilter;
+        if (nextMin == this.minFilter && nextMag == this.magFilter) return;
+        this.minFilter = nextMin;
+        this.magFilter = nextMag;
 
-        String key = file.path();
-        RamSaver.FileTextureSupplier supplier = RamSaver.getTextureSupplier(key);
-        if (supplier != null)
-            supplier.setFilter(minFilter, magFilter);
-
-        Texture t = RamSaver.getExistingTexture(key);
-        if (t != null)
-            t.setFilter(minFilter, magFilter);
+        registerVariant();
     }
 
     @Override
     public void dispose() {
+        // Fake wrappers do not own the shared real texture. Preserve their lazy reuse semantics.
+        if (!isFake) explicitlyDisposed = true;
         super.dispose();
-        if (!isFake && file != null) {
+        removeManagedTexture(this);
+        if (!isFake && cacheKey != null) {
             if (RamSaverDiag.enabled()) {
-                RamSaverDiag.logStackRepeat("real_texture_dispose", file.path(), diagTexture(this));
+                RamSaverDiag.logStackRepeat("real_texture_dispose", cacheKey, diagTexture(this));
             }
-            RamSaver.dispose(file.path());
+            RamSaver.onTextureDisposed(cacheKey, this);
         }
         else if (isFake) {
             if (RamSaverDiag.enabled()) {
                 RamSaverDiag.logStackRepeat("fake_texture_dispose", file == null ? "null" : file.path(), diagTexture(this));
             }
         }
+    }
+
+    /** Releases a managed real texture without re-entering RamSaver's cache bookkeeping. */
+    public void disposeForRamSaver() {
+        cacheEvicted = cacheKey != null && !explicitlyDisposed;
+        super.dispose();
+        removeManagedTexture(this);
+    }
+
+    private static void removeManagedTexture(Texture texture) {
+        if (texture == null || texture.data == null || !texture.data.isManaged()) {
+            return;
+        }
+        Array<Texture> managed = managedTextures.get(texture.managedApp);
+        if (managed != null) {
+            managed.removeValue(texture, true);
+        }
+        texture.managedApp = null;
     }
 
     private static final FakeData placeholderData = new FakeData();
@@ -589,6 +629,7 @@ public class Texture extends GLTexture {
     static final Map<Application, Array<Texture>> managedTextures = new HashMap<>();
 
     protected static void addManagedTexture(Application app, Texture texture) {
+        texture.managedApp = app;
         Array<Texture> managedTextureArray = managedTextures.get(app);
         if (managedTextureArray == null) {
             managedTextureArray = new Array<>();
@@ -666,7 +707,8 @@ public class Texture extends GLTexture {
     }
 
     public static int getNumManagedTextures() {
-        return ((Array)managedTextures.get(Gdx.app)).size;
+        Array<Texture> managed = managedTextures.get(Gdx.app);
+        return managed == null ? 0 : managed.size;
     }
 
     public enum TextureWrap {
@@ -717,44 +759,71 @@ public class Texture extends GLTexture {
     };
 
 
-    private static final byte[] filedata = new byte[64];
+    private static final ThreadLocal<byte[]> filedata = new ThreadLocal<byte[]>() {
+        @Override
+        protected byte[] initialValue() {
+            return new byte[64];
+        }
+    };
     private static final Map<String, Consumer<Texture>> sizeGetters = new HashMap<>();
     static {
         sizeGetters.put("png", (t)->{
-            int read = t.file.readBytes(filedata, 0, filedata.length);
-            int i;
-            //First 8 bytes, png header
-            if (read > 26 && matches(0, PNG_HEADER)) {
-                i = 8;
-                while (i < read - 16) {
-                    int nextChunk = i + 12 + readInt(i);
-                    i += 4;
-                    readIHDR(t, i);
-                    i = nextChunk;
-                    if (t.knowSize)
-                        return;
-                }
-            }
+            byte[] data = filedata.get();
+            int read = t.file.readBytes(data, 0, data.length);
+            if (read < 33 || !matches(data, 0, PNG_HEADER) || readInt(data, 8, true) != 13
+                    || !matches(data, 12, IHDR)) return;
+            int depth = data[24] & 0xff;
+            int color = data[25] & 0xff;
+            boolean validDepth = color == 0 ? (depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16)
+                    : color == 3 ? (depth == 1 || depth == 2 || depth == 4 || depth == 8)
+                    : (color == 2 || color == 4 || color == 6) && (depth == 8 || depth == 16);
+            if (!validDepth || data[26] != 0 || data[27] != 0 || (data[28] != 0 && data[28] != 1)) return;
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(data, 12, 17);
+            if ((int) crc.getValue() != readInt(data, 29, true)) return;
+            acceptSize(t, readInt(data, 16, true), readInt(data, 20, true));
         });
         sizeGetters.put("ktx", (t)->{
-            int read = t.file.readBytes(filedata, 0, filedata.length);
-            int i;
-            //First 12 bytes, ktx header
-            boolean endian = true;
-            if (read > 44 && matches(0, KTX_HEADER)) {
-                i = 12;
-                if (readInt(i) == 0x04030201) {
-                    endian = false;
+            byte[] data = filedata.get();
+            int read = t.file.readBytes(data, 0, data.length);
+            boolean bigEndian;
+            if (read == 64 && matches(data, 0, KTX_HEADER)) {
+                int endianness = readInt(data, 12, true);
+                if (endianness == 0x01020304) {
+                    bigEndian = false;
                 }
-                i += 24;
-                t.width = readInt(i, endian);
-                i += 4;
-                t.height = readInt(i, endian);
-                t.knowSize = true;
+                else if (endianness == 0x04030201) {
+                    bigEndian = true;
+                }
+                else {
+                    return;
+                }
+                int type = readInt(data, 16, bigEndian);
+                int typeSize = readInt(data, 20, bigEndian);
+                int format = readInt(data, 24, bigEndian);
+                int width = readInt(data, 36, bigEndian);
+                int height = readInt(data, 40, bigEndian);
+                int levels = readInt(data, 56, bigEndian);
+                int metadata = readInt(data, 60, bigEndian);
+                if ((type == 0) != (format == 0) || (type == 0 && typeSize != 1)
+                        || (typeSize != 1 && typeSize != 2 && typeSize != 4)
+                        || readInt(data, 28, bigEndian) == 0 || readInt(data, 32, bigEndian) == 0
+                        || readInt(data, 44, bigEndian) != 0 || readInt(data, 48, bigEndian) != 0
+                        || readInt(data, 52, bigEndian) != 1 || metadata < 0 || (metadata & 3) != 0
+                        || levels < 0 || levels > 32 - Integer.numberOfLeadingZeros(Math.max(width, height))) return;
+                acceptSize(t, width, height);
             }
         });
         sizeGetters.put("jpg", Texture::readJpegSize);
         sizeGetters.put("jpeg", Texture::readJpegSize);
+    }
+    static int[] readHeaderSize(FileHandle file) {
+        Texture probe = new Texture(GL20.GL_TEXTURE_2D, 0, placeholderData);
+        probe.file = file;
+        probe.cacheKey = RamSaver.textureKey(file, null, false, probe.minFilter, probe.magFilter, probe.uWrap, probe.vWrap);
+        Consumer<Texture> reader = sizeGetters.get(file.extension().toLowerCase());
+        if (reader != null) reader.accept(probe);
+        return probe.knowSize ? new int[] {probe.width, probe.height} : null;
     }
     private static void getSize(Texture t) {
         if (!t.isFake) {
@@ -762,7 +831,7 @@ public class Texture extends GLTexture {
             t.width = t.getWidth();
             t.height = t.getHeight();
             if (t.file != null) {
-                RamSaver.cacheTextureSize(t.file.path(), t.width, t.height);
+                RamSaver.cacheTextureSize(t.cacheKey, t.width, t.height);
             }
             if (RamSaverDiag.enabled()) {
                 RamSaverDiag.logRepeat("size_real_texture", dataKey(t.data), "size=" + t.width + "x" + t.height + " texture=" + diagTexture(t));
@@ -771,7 +840,7 @@ public class Texture extends GLTexture {
         }
 
         if (t.file != null) {
-            int[] cachedSize = RamSaver.getCachedTextureSize(t.file.path());
+            int[] cachedSize = RamSaver.getCachedTextureSize(t.cacheKey);
             if (cachedSize != null) {
                 t.width = cachedSize[0];
                 t.height = cachedSize[1];
@@ -789,10 +858,15 @@ public class Texture extends GLTexture {
             if (sizeGetter != null) {
                 boolean diag = RamSaverDiag.enabled();
                 long started = diag ? System.nanoTime() : 0L;
-                sizeGetter.accept(t);
+                try {
+                    sizeGetter.accept(t);
+                }
+                catch (RuntimeException ignored) {
+                    t.knowSize = false;
+                }
                 //If failed to process, continue to backup method.
                 if (t.knowSize) {
-                    RamSaver.cacheTextureSize(t.file.path(), t.width, t.height);
+                    RamSaver.cacheTextureSize(t.cacheKey, t.width, t.height);
                     if (diag) {
                         RamSaverDiag.logDuration(
                                 "size_header_success",
@@ -823,7 +897,7 @@ public class Texture extends GLTexture {
         t.height = real.getHeight();
         t.knowSize = true;
         if (t.file != null) {
-            RamSaver.cacheTextureSize(t.file.path(), t.width, t.height);
+            RamSaver.cacheTextureSize(t.cacheKey, t.width, t.height);
         }
         t.dispose();
         if (diag) {
@@ -878,45 +952,30 @@ public class Texture extends GLTexture {
         return data.getClass().getName() + '@' + Integer.toHexString(System.identityHashCode(data));
     }
 
-    private static boolean matches(int fromIndex, byte[] toMatch) {
+    private static boolean matches(byte[] data, int fromIndex, byte[] toMatch) {
         for (int i=0; i < toMatch.length; ++i)
-            if (Texture.filedata[fromIndex + i] != toMatch[i])
+            if (data[fromIndex + i] != toMatch[i])
                 return false;
 
         return true;
     }
 
-    private static int readInt(int index) {
-        return readInt(index, true);
-    }
-    private static int readInt(int index, boolean endian) {
-        if (endian) {
-            return (((Texture.filedata[index])            << 24) |
-                    ((Texture.filedata[index + 1] & 0xff) << 16) |
-                    ((Texture.filedata[index + 2] & 0xff) <<  8) |
-                    ((Texture.filedata[index + 3] & 0xff)));
+    private static int readInt(byte[] data, int index, boolean bigEndian) {
+        if (bigEndian) {
+            return (((data[index])            << 24) |
+                    ((data[index + 1] & 0xff) << 16) |
+                    ((data[index + 2] & 0xff) <<  8) |
+                    ((data[index + 3] & 0xff)));
         }
-        return (((Texture.filedata[index + 3] & 0xff) << 24) |
-                ((Texture.filedata[index + 2] & 0xff) << 16) |
-                ((Texture.filedata[index + 1] & 0xff) <<  8) |
-                ((Texture.filedata[index] & 0xff)));
+        return (((data[index + 3] & 0xff) << 24) |
+                ((data[index + 2] & 0xff) << 16) |
+                ((data[index + 1] & 0xff) <<  8) |
+                ((data[index] & 0xff)));
     }
 
 
-    //png
-    private static void readIHDR(Texture t, int index) {
-        //Now to read chunk
-        //First, 4 byte integer chunk length (8)
-        //Then, 4 byte chunk type (12)
-        //Then, the data
-        for (int i = 0; i < IHDR.length; ++i) {
-            if (Texture.filedata[index + i] != IHDR[i])
-                return;
-        }
-
-        int width, height; //Technically speaking, unsigned int, but if someone has a 1 in the first bit of size, this mod is not for them or anyone else
-        width = readInt(index + 4);
-        height = readInt(index + 8);
+    private static void acceptSize(Texture t, int width, int height) {
+        if (width <= 0 || height <= 0) return;
         t.width = width;
         t.height = height;
         t.knowSize = true;

@@ -87,7 +87,7 @@ public class SpriteCacheFakeTextures {
                             "cacheID=" + cacheID + " index=" + i + " texture=" + textureDetails(texture)
                     );
                 }
-                Texture real = RamSaver.getTextureForBindFallback(texture.file == null ? null : texture.file.path());
+                Texture real = RamSaver.getTextureForBindFallback(texture.getRamSaverKey());
                 if (real == null) {
                     originals[i] = null;
                     continue;

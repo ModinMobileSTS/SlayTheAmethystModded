@@ -90,7 +90,7 @@ public class TextureDescriptorFakeTexture {
         }
         if (hasFakeTexture(texture)) {
             Texture fake = (Texture) texture;
-            String path = fake.file == null ? null : fake.file.path();
+            String path = fake.getRamSaverKey();
             int hash = path == null ? System.identityHashCode(fake) : path.hashCode();
             return 0x80000000 | (hash & 0x7fffffff);
         }
@@ -114,7 +114,7 @@ public class TextureDescriptorFakeTexture {
             return null;
         }
         Texture fake = (Texture) texture;
-        return fake.file == null ? null : fake.file.path();
+        return fake.getRamSaverKey();
     }
 
     private static int filterKey(Texture.TextureFilter filter) {

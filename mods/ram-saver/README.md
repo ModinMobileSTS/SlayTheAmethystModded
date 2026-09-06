@@ -92,6 +92,15 @@ Pre-initializes Swing text-document insertion, the AWT event queue lookup, and M
 26. `optispire.patches.CombatTexturePrewarm`
 Keeps the shared `vfx/vfx.png` atlas resident with the existing combat prewarm set so card animations and other combat effects do not repeatedly materialize the lazy atlas during draw actions. This addresses SpriteBatch flush spikes and render hitches caused by effect-region draws switching between fake and real textures. Type: rendering performance mitigation implemented by `CombatTexturePrewarm`.
 
+27. `com.badlogic.gdx.graphics.RealTexture`, `com.badlogic.gdx.graphics.Texture`, and `optispire.RamSaver`
+Keep file-backed real textures out of libGDX's unbounded managed-texture retention path, release their current GL handles through the normal texture lifecycle, and retain only explicitly resident assets. This addresses long-session heap/GPU growth, stale-handle deletion, and context-reload duplication caused by evicting file textures through raw handle snapshots. Type: memory-management and lifecycle fix implemented by `RealTexture`, `Texture`, and `RamSaver`.
+
+28. `com.badlogic.gdx.graphics.Texture` and `optispire.RamSaver`
+Bound reference-queue cleanup per frame, make stale holder cleanup generation-safe, repair parent/dependent detachment, preserve nullable sampler parameters, and harden PNG/KTX dimension parsing. This addresses post-GC frame spikes, wrong atlas dimensions, and accidental disposal of a newer texture generation. Type: compatibility/performance fix implemented by `Texture` and `RamSaver`.
+
+29. `io.stamethyst.backend.launch.StsLaunchSpec` and `io.stamethyst.config.LauncherConfig`
+Keep large JVM heap selections from forcing the same large initial heap commit and preserve configured GPU/FBO pressure protection while RAM Saver is enabled. This addresses native/GPU memory pressure and low-memory-device kills caused by treating Java heap capacity as available graphics memory. Type: launcher memory-policy fix implemented by `StsLaunchSpec` and `LauncherConfig`.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

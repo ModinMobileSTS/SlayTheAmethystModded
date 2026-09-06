@@ -83,6 +83,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.resources.ExternalResourcePackService
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.MtsComponentUpdateProgress
 import io.stamethyst.backend.update.MtsComponentUpdateService
@@ -391,6 +392,7 @@ class MainScreenViewModel : ViewModel() {
     private val workshopUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val modNameMigrationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mtsComponentUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val resourcePackExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
     private var currentReadModSuggestionKeys: Set<String> = emptySet()
     private var pendingLaunchUnreadSuggestionModNames: List<String> = emptyList()
@@ -2897,6 +2899,47 @@ class MainScreenViewModel : ViewModel() {
     fun retryLaunchAfterCrash(host: Activity) {
         dismissCrashRecovery()
         onLaunch(host)
+    }
+
+    fun onReinstallResourcePack(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        setBusy(true, UiText.StringResource(R.string.settings_busy_reinstalling_resource_pack))
+        resourcePackExecutor.execute {
+            try {
+                ExternalResourcePackService.reinstall(host.applicationContext) { percent, message ->
+                    host.runOnUiThread {
+                        if (uiState.busy) {
+                            setBusy(true, UiText.DynamicString(message), progressPercent = percent)
+                        }
+                    }
+                }
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(R.string.settings_resource_pack_reinstalled)
+                        )
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.DynamicString(
+                                host.getString(
+                                    R.string.settings_resource_pack_reinstall_failed,
+                                    GithubMirrorFallback.summarize(error),
+                                )
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG,
+                        )
+                    )
+                }
+            }
+        }
     }
 
     fun copyCrashRecoveryReport(host: Activity) {
@@ -5879,6 +5922,7 @@ class MainScreenViewModel : ViewModel() {
         workshopUpdateExecutor.shutdownNow()
         modNameMigrationExecutor.shutdownNow()
         mtsComponentUpdateExecutor.shutdownNow()
+        resourcePackExecutor.shutdownNow()
         steamAchievementExecutor.shutdownNow()
         modManagementController.shutdown()
         super.onCleared()

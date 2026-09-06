@@ -1,27 +1,21 @@
-"""
-perf_trace — background Arthas sampler for flush spike diagnosis.
+"""Arthas diagnosis for frame-probe stalls.
 
-Runs two Arthas commands while the game is live:
+The prior sampler counted common ``SpriteBatch.flush`` callers. That explains
+batch composition, but it cannot explain a long frame: every normal frame has
+flushes and the command had no timestamp correlation with frame-probe data.
 
-  stack com.badlogic.gdx.graphics.g2d.SpriteBatch flush -n <N>
-      Captures the full Java call stack at each flush() invocation.
-      Aggregated into a caller-frequency table: which methods drive the
-      most flushes.
-
-  trace com.megacrit.cardcrawl.cards.AbstractCard render -n <N> '#cost > 5'
-      Captures per-invocation timing for AbstractCard.render() calls that
-      exceed 5 ms.  Reveals slow individual card renders.
-
-Both commands run in a daemon thread so the bench poll loop is not
-blocked.  Call start_tracer() after the game reaches READY, and
-collect_tracer_report() after the game exits.
+This sampler traces the render-loop root only when one loop iteration exceeds
+the frame budget, then separately traces explicit GC and texture upload. The
+root trace carries the same render-thread stack that produced the long frame.
 """
 
 from __future__ import annotations
 
 import re
+import json
 import threading
 import time
+from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,6 +36,12 @@ class SlowRenderEntry:
     method: str
     cost_ms: float
     subframes: list[str] = field(default_factory=list)
+    timestamp_text: str = ""
+    thread_name: str = ""
+    matched_incident: dict[str, Any] | None = None
+    same_second_incident_count: int = 0
+    same_second_long_incident_count: int = 0
+    same_second_max_ms: float = 0.0
 
 
 @dataclass
@@ -56,12 +56,24 @@ class FunctionHotspot:
 class TracerResult:
     raw_stack_output: str = ""
     raw_trace_output: str = ""
+    raw_gc_output: str = ""
+    raw_upload_output: str = ""
+    raw_update_output: str = ""
+    raw_dungeon_output: str = ""
     caller_table: list[CallerEntry] = field(default_factory=list)
     slow_renders: list[SlowRenderEntry] = field(default_factory=list)
     error: str = ""
     duration_s: float = 0.0
     arthas_pid: str = ""
     function_hotspots: list[FunctionHotspot] = field(default_factory=list)
+    started_epoch_ms: int = 0
+    ended_epoch_ms: int = 0
+    incident_count_in_window: int = 0
+    long_incident_count_in_window: int = 0
+    long_frame_entries: list[SlowRenderEntry] = field(default_factory=list)
+    upload_entries: list[SlowRenderEntry] = field(default_factory=list)
+    update_entries: list[SlowRenderEntry] = field(default_factory=list)
+    dungeon_entries: list[SlowRenderEntry] = field(default_factory=list)
 
 
 _MAX_STACK_SAMPLES   = 300
@@ -69,6 +81,14 @@ _MAX_TRACE_SAMPLES   = 100
 _MAX_EXAMPLE_STACKS  = 3
 _TRACE_COST_FLOOR_MS = 5      # only capture renders >5 ms
 _DEFAULT_DURATION_S  = 90     # sampling window; tracer interrupted after this
+
+_FRAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame"
+_FRAME_METHOD = "render"
+_FRAME_COST_FLOOR_MS = 33
+_GC_CLASS = "java.lang.System"
+_GC_METHOD = "gc"
+_UPLOAD_CLASS = "com.badlogic.gdx.graphics.GLTexture"
+_UPLOAD_METHOD = "uploadImageData"
 
 # SpriteBatch.flush is in libGDX — use the full class name
 _FLUSH_CLASS  = "com.badlogic.gdx.graphics.g2d.SpriteBatch"
@@ -109,6 +129,7 @@ class FlushTracer:
     def start(self) -> None:
         """Spawn the background sampling thread.  Non-blocking."""
         self._started_at = time.monotonic()
+        self._result.started_epoch_ms = int(time.time() * 1000)
         self._thread = threading.Thread(
             target=self._run, daemon=True, name="flush-tracer"
         )
@@ -148,21 +169,39 @@ class FlushTracer:
             )
             self._result.arthas_pid = str(ensure.get("pid", ""))
 
-            # A streaming command owns its shell connection. Run both samplers
-            # concurrently so the short autoplay window is shared by stack and
-            # trace instead of being consumed serially.
+            # A streaming command owns its shell connection. Each probe uses a
+            # separate session so root-frame, GC, and upload evidence covers the
+            # same diagnostic window.
             workers = [
                 threading.Thread(
-                    target=self._sample_stack_connection,
+                    target=self._sample_frame_connection,
                     args=(ArthasShell, ConnectorClient),
                     daemon=True,
-                    name="arthas-stack-sampler",
+                    name="arthas-frame-sampler",
                 ),
                 threading.Thread(
-                    target=self._sample_trace_connection,
+                    target=self._sample_gc_connection,
                     args=(ArthasShell, ConnectorClient),
                     daemon=True,
-                    name="arthas-trace-sampler",
+                    name="arthas-gc-sampler",
+                ),
+                threading.Thread(
+                    target=self._sample_upload_connection,
+                    args=(ArthasShell, ConnectorClient),
+                    daemon=True,
+                    name="arthas-upload-sampler",
+                ),
+                threading.Thread(
+                    target=self._sample_update_connection,
+                    args=(ArthasShell, ConnectorClient),
+                    daemon=True,
+                    name="arthas-update-sampler",
+                ),
+                threading.Thread(
+                    target=self._sample_dungeon_connection,
+                    args=(ArthasShell, ConnectorClient),
+                    daemon=True,
+                    name="arthas-dungeon-sampler",
                 ),
             ]
             for worker in workers:
@@ -176,6 +215,7 @@ class FlushTracer:
                 pass
 
         self._result.duration_s = time.monotonic() - self._started_at
+        self._result.ended_epoch_ms = int(time.time() * 1000)
 
     def _open_shell(self, shell_type: Any, connector_type: Any) -> tuple[Any, Any, Any]:
         conn = connector_type(port=self._connector.port)
@@ -196,27 +236,28 @@ class FlushTracer:
         shell = shell_type(stream=stream)
         return conn, stream, shell
 
-    def _sample_stack_connection(self, shell_type: Any, connector_type: Any) -> None:
+    def _sample_frame_connection(self, shell_type: Any, connector_type: Any) -> None:
         conn = stream = None
         try:
             conn, stream, shell = self._open_shell(shell_type, connector_type)
             shell.command("options disable-sub-class true")
-            self._collect_stacks(shell)
+            self._collect_frame_traces(shell)
         except Exception as exc:
             self._result.raw_stack_output = f"[error: {exc}]"
-            self._append_error(f"Arthas stack failed: {exc}")
+            self._append_error(f"Arthas frame trace failed: {exc}")
         finally:
             self._close_sample_connection(conn, stream)
 
-    def _sample_trace_connection(self, shell_type: Any, connector_type: Any) -> None:
+    def _sample_gc_connection(self, shell_type: Any, connector_type: Any) -> None:
         conn = stream = None
         try:
             conn, stream, shell = self._open_shell(shell_type, connector_type)
             shell.command("options disable-sub-class true")
-            self._collect_traces(shell)
+            shell.command("options unsafe true")
+            self._collect_gc_traces(shell)
         except Exception as exc:
-            self._result.raw_trace_output = f"[error: {exc}]"
-            self._append_error(f"Arthas trace failed: {exc}")
+            self._result.raw_gc_output = f"[error: {exc}]"
+            self._append_error(f"Arthas GC trace failed: {exc}")
         finally:
             self._close_sample_connection(conn, stream)
 
@@ -229,37 +270,97 @@ class FlushTracer:
                 except Exception:
                     pass
 
-    def _collect_stacks(self, shell: Any) -> None:
-        """Run `stack SpriteBatch flush` and save raw output."""
+    def _sample_upload_connection(self, shell_type: Any, connector_type: Any) -> None:
+        conn = stream = None
+        try:
+            conn, stream, shell = self._open_shell(shell_type, connector_type)
+            shell.command("options disable-sub-class true")
+            self._collect_upload_traces(shell)
+        except Exception as exc:
+            self._append_error(f"Arthas upload trace failed: {exc}")
+        finally:
+            self._close_sample_connection(conn, stream)
+
+    def _sample_update_connection(self, shell_type: Any, connector_type: Any) -> None:
+        conn = stream = None
+        try:
+            conn, stream, shell = self._open_shell(shell_type, connector_type)
+            shell.command("options disable-sub-class true")
+            raw = shell.command(
+                f"trace com.megacrit.cardcrawl.core.CardCrawlGame update -n {_MAX_TRACE_SAMPLES} '#cost > 10'",
+                duration=self._duration_s,
+            )
+            self._result.raw_update_output = raw
+            self._out_dir.mkdir(parents=True, exist_ok=True)
+            (self._out_dir / "arthas-trace-cardcrawl-update.txt").write_text(
+                raw, encoding="utf-8", errors="replace"
+            )
+        except Exception as exc:
+            self._result.raw_update_output = f"[error: {exc}]"
+            self._append_error(f"Arthas update trace failed: {exc}")
+        finally:
+            self._close_sample_connection(conn, stream)
+
+    def _sample_dungeon_connection(self, shell_type: Any, connector_type: Any) -> None:
+        conn = stream = None
+        try:
+            conn, stream, shell = self._open_shell(shell_type, connector_type)
+            shell.command("options disable-sub-class true")
+            raw = shell.command(
+                f"trace com.megacrit.cardcrawl.dungeons.AbstractDungeon render -n {_MAX_TRACE_SAMPLES} '#cost > 10'",
+                duration=self._duration_s,
+            )
+            self._result.raw_dungeon_output = raw
+            self._out_dir.mkdir(parents=True, exist_ok=True)
+            (self._out_dir / "arthas-trace-dungeon-render.txt").write_text(
+                raw, encoding="utf-8", errors="replace"
+            )
+        except Exception as exc:
+            self._result.raw_dungeon_output = f"[error: {exc}]"
+            self._append_error(f"Arthas dungeon trace failed: {exc}")
+        finally:
+            self._close_sample_connection(conn, stream)
+
+    def _collect_frame_traces(self, shell: Any) -> None:
+        """Trace only render-loop iterations that match frame-probe jank."""
         cmd = (
-            f"stack {_FLUSH_CLASS} {_FLUSH_METHOD} -n {_MAX_STACK_SAMPLES}"
+            f"trace {_FRAME_CLASS} {_FRAME_METHOD} -n {_MAX_TRACE_SAMPLES} "
+            f"'#cost > {_FRAME_COST_FLOOR_MS}'"
         )
         try:
             raw = shell.command(cmd, duration=self._duration_s)
             self._result.raw_stack_output = raw
+            self._result.raw_trace_output = raw
             self._out_dir.mkdir(parents=True, exist_ok=True)
-            (self._out_dir / "arthas-stack-flush.txt").write_text(
+            (self._out_dir / "arthas-trace-long-frame.txt").write_text(
                 raw, encoding="utf-8", errors="replace"
             )
         except Exception as exc:
             self._result.raw_stack_output = f"[error: {exc}]"
 
-    def _collect_traces(self, shell: Any) -> None:
-        """Run `trace AbstractCard render` and save raw output."""
-        trace_duration = min(30.0, max(5.0, self._duration_s / 3))
+    def _collect_gc_traces(self, shell: Any) -> None:
+        """Capture explicit System.gc callers instead of inferring from heap drop."""
         cmd = (
-            f"trace {_RENDER_CLASS} {_RENDER_METHOD} "
-            f"-n {_MAX_TRACE_SAMPLES} '#cost > {_TRACE_COST_FLOOR_MS}'"
+            f"stack {_GC_CLASS} {_GC_METHOD} -n {_MAX_TRACE_SAMPLES}"
         )
         try:
-            raw = shell.command(cmd, duration=trace_duration)
-            self._result.raw_trace_output = raw
+            raw = shell.command(cmd, duration=self._duration_s)
+            self._result.raw_gc_output = raw
             self._out_dir.mkdir(parents=True, exist_ok=True)
-            (self._out_dir / "arthas-trace-render.txt").write_text(
+            (self._out_dir / "arthas-stack-system-gc.txt").write_text(
                 raw, encoding="utf-8", errors="replace"
             )
         except Exception as exc:
-            self._result.raw_trace_output = f"[error: {exc}]"
+            self._result.raw_gc_output = f"[error: {exc}]"
+
+    def _collect_upload_traces(self, shell: Any) -> None:
+        cmd = f"trace {_UPLOAD_CLASS} {_UPLOAD_METHOD} -n {_MAX_TRACE_SAMPLES} '#cost > {_TRACE_COST_FLOOR_MS}'"
+        raw = shell.command(cmd, duration=self._duration_s)
+        self._result.raw_upload_output = raw
+        self._out_dir.mkdir(parents=True, exist_ok=True)
+        (self._out_dir / "arthas-trace-texture-upload.txt").write_text(
+            raw, encoding="utf-8", errors="replace"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -337,15 +438,27 @@ def parse_trace_output(raw: str) -> list[SlowRenderEntry]:
     sub_re  = re.compile(r"\+---\[(\d+(?:\.\d+)?)ms\]\s+(.+)")
 
     current: SlowRenderEntry | None = None
+    timestamp_text = ""
+    thread_name = ""
     for line in raw.splitlines():
-        stripped = line.strip()
+        stripped = re.sub(r"\x1b\[[0-9;]*m", "", line.strip())
+        header = re.match(r"`?---?ts=([^;]+);thread_name=([^;]+);", stripped)
+        if header:
+            timestamp_text = header.group(1).strip()
+            thread_name = header.group(2).strip()
+            continue
         m = root_re.match(stripped)
         if m:
             if current is not None:
                 entries.append(current)
             cost_ms = float(m.group(1))
             method  = _shorten_frame(m.group(2).strip())
-            current = SlowRenderEntry(method=method, cost_ms=cost_ms)
+            current = SlowRenderEntry(
+                method=method,
+                cost_ms=cost_ms,
+                timestamp_text=timestamp_text,
+                thread_name=thread_name,
+            )
             continue
         m = sub_re.match(stripped)
         if m and current is not None:
@@ -357,6 +470,60 @@ def parse_trace_output(raw: str) -> list[SlowRenderEntry]:
         entries.append(current)
 
     return sorted(entries, key=lambda e: e.cost_ms, reverse=True)
+
+
+def _trace_epoch_ms(timestamp_text: str) -> int | None:
+    if not timestamp_text:
+        return None
+    try:
+        # Android game logs use the device's local wall clock. The test
+        # devices used by the harness report China Standard Time; correlation
+        # falls back to a broad nearest-time search if this is not exact.
+        parsed = datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S")
+        return int(parsed.replace(tzinfo=timezone(timedelta(hours=8))).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def correlate_trace_incidents(entries: list[SlowRenderEntry], incidents: list[dict[str, Any]]) -> None:
+    """Attach same-second frame-probe aggregates to Arthas samples.
+
+    Arthas emits timestamps with one-second precision, while frame-probe emits
+    milliseconds. A nearest millisecond match would fabricate causality, so we
+    only report aggregate evidence from the shared wall-clock second.
+    """
+    if not incidents:
+        return
+    usable = [item for item in incidents if isinstance(item.get("t"), (int, float))]
+    for entry in entries:
+        timestamp = _trace_epoch_ms(entry.timestamp_text)
+        if timestamp is None:
+            continue
+        second_start = timestamp - (timestamp % 1000)
+        same_second = [
+            item for item in usable
+            if second_start <= float(item["t"]) < second_start + 1000
+        ]
+        entry.same_second_incident_count = len(same_second)
+        long_same_second = [
+            item for item in same_second if float(item.get("totalMs", 0.0)) > 33.0
+        ]
+        entry.same_second_long_incident_count = len(long_same_second)
+        entry.same_second_max_ms = max(
+            (float(item.get("totalMs", 0.0)) for item in same_second),
+            default=0.0,
+        )
+
+
+def parse_direct_callers(raw: str, limit: int = 15) -> list[tuple[str, int]]:
+    """Return direct callers from generic Arthas stack output."""
+    counts: dict[str, int] = {}
+    for block in re.split(r"(?=^ts=)", raw, flags=re.MULTILINE):
+        frames = [line.strip()[3:] for line in block.splitlines()
+                  if line.strip().startswith("at ")]
+        if frames:
+            counts[frames[0]] = counts.get(frames[0], 0) + 1
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)[:limit]
 
 
 def aggregate_trace_hotspots(entries: list[SlowRenderEntry]) -> list[FunctionHotspot]:
@@ -384,7 +551,7 @@ def _shorten_frame(frame: str) -> str:
     """Turn 'com.megacrit.cardcrawl.cards.AbstractCard.renderGlow(AbstractCard.java:123)'
     into 'AbstractCard.renderGlow (AbstractCard.java:123)'."""
     # strip line-number annotation like "(AbstractCard.java:123)"
-    frame = frame.strip().replace(":", ".")
+    frame = re.sub(r"\x1b\[[0-9;]*m", "", frame.strip()).replace(":", ".")
     m = re.match(r"^(.+?)(?:\((.+?)\))?$", frame)
     if not m:
         return frame
@@ -406,50 +573,68 @@ def _shorten_frame(frame: str) -> str:
 # ---------------------------------------------------------------------------
 
 def format_report(result: TracerResult, top_n: int = 15) -> str:
-    """Build a human-readable flush + trace report."""
-    callers = parse_stack_output(result.raw_stack_output)
-    slow_renders = parse_trace_output(result.raw_trace_output)
-    result.function_hotspots = aggregate_trace_hotspots(slow_renders)
+    """Build a report that distinguishes long frames, GC and texture upload."""
+    long_frames = result.long_frame_entries or parse_trace_output(result.raw_trace_output)
+    gc_callers = parse_direct_callers(result.raw_gc_output)
+    uploads = result.upload_entries or parse_trace_output(result.raw_upload_output)
+    updates = result.update_entries or parse_trace_output(result.raw_update_output)
+    dungeons = result.dungeon_entries or parse_trace_output(result.raw_dungeon_output)
+    result.function_hotspots = aggregate_trace_hotspots(long_frames)
 
     w = 70
     lines: list[str] = []
     lines.append("=" * w)
-    lines.append("  Flush Spike Source Analysis  (Arthas stack/trace)")
+    lines.append("  Long Frame Source Analysis  (Arthas trace)")
     if result.arthas_pid:
         lines.append(f"  JVM pid: {result.arthas_pid}")
     lines.append(f"  Sampling window: {result.duration_s:.0f}s")
+    if result.started_epoch_ms and result.ended_epoch_ms:
+        lines.append(f"  Wall window: {result.started_epoch_ms}..{result.ended_epoch_ms}")
+        lines.append(
+            f"  Frame-probe incidents in window: {result.incident_count_in_window} "
+            f"(>33ms: {result.long_incident_count_in_window})"
+        )
     if result.error:
         lines.append(f"  [!] {result.error}")
     lines.append("-" * w)
 
-    # ── flush caller table ──────────────────────────────────────────────────
-    total_samples = sum(e.count for e in callers)
-    lines.append(f"  SpriteBatch.flush() callers  (samples: {total_samples})")
+    lines.append(f"  Long render-loop samples  (samples: {len(long_frames)})")
     lines.append("")
-    if not callers:
-        lines.append("    (no stack samples collected)")
+    if not long_frames:
+        lines.append("    (no long render-loop samples collected)")
     else:
-        col_w = 44
-        lines.append(f"    {'caller':<{col_w}}  {'count':>6}  {'%':>5}")
-        lines.append(f"    {'-'*col_w}  {'-'*6}  {'-'*5}")
-        for entry in callers[:top_n]:
-            pct = 100.0 * entry.count / total_samples if total_samples else 0.0
-            lines.append(
-                f"    {entry.frame:<{col_w}}  {entry.count:>6}  {pct:>4.1f}%"
+        for entry in long_frames[:top_n]:
+            match = entry.matched_incident
+            context = (
+                f" arthas_second={entry.timestamp_text or 'unknown'}"
+                f" probe_same_second={entry.same_second_incident_count}"
+                f" probe_long_same_second={entry.same_second_long_incident_count}"
+                f" probe_max_same_second={entry.same_second_max_ms:.1f}ms"
             )
-        if len(callers) > top_n:
-            lines.append(f"    ... and {len(callers) - top_n} more callers")
+            lines.append(f"    {entry.cost_ms:>7.1f}ms  {entry.method}{context}")
+            for sub in entry.subframes[:4]:
+                lines.append(f"               +-- {sub}")
 
     lines.append("")
-
-    # ── top example stacks ──────────────────────────────────────────────────
-    if callers:
-        top = callers[0]
-        lines.append(f"  Top caller example stack ({top.frame}):")
-        if top.stacks:
-            for frame in top.stacks[0]:
-                lines.append(f"      at {frame}")
-        lines.append("")
+    lines.append("  Explicit System.gc() callers")
+    if not gc_callers:
+        if "No class or method is affected" in result.raw_gc_output:
+            lines.append("    (Arthas did not affect System.gc(); check unsafe/core-class support)")
+        else:
+            lines.append("    (no System.gc() stack samples collected)")
+    else:
+        for frame, count in gc_callers:
+            lines.append(f"    {count:>5}  {_shorten_frame(frame)}")
+    lines.append("")
+    lines.append("  Deep render subpath samples")
+    lines.append(f"    CardCrawlGame.update: {len(updates)} samples")
+    lines.append(f"    AbstractDungeon.render: {len(dungeons)} samples")
+    for label, entries in (("update", updates), ("dungeon", dungeons)):
+        for entry in entries[:3]:
+            lines.append(f"    {label} {entry.cost_ms:>7.1f}ms  {entry.method}")
+            for sub in entry.subframes[:6]:
+                lines.append(f"               +-- {sub}")
+    lines.append("")
 
     lines.append("  Functions contributing most trace time")
     lines.append("")
@@ -467,15 +652,17 @@ def format_report(result: TracerResult, top_n: int = 15) -> str:
             )
     lines.append("")
 
-    # ── slow render table ───────────────────────────────────────────────────
     lines.append(
-        f"  Slow AbstractCard.render() calls  (>{_TRACE_COST_FLOOR_MS}ms, samples: {len(slow_renders)})"
+        f"  Slow texture upload calls  (>{_TRACE_COST_FLOOR_MS}ms, samples: {len(uploads)})"
     )
     lines.append("")
-    if not slow_renders:
-        lines.append("    (no slow renders captured)")
+    if not uploads:
+        if "Affect(class count:" in result.raw_upload_output:
+            lines.append("    (no slow texture uploads captured in this window)")
+        else:
+            lines.append("    (texture upload trace failed or returned no command output)")
     else:
-        for entry in slow_renders[:top_n]:
+        for entry in uploads[:top_n]:
             lines.append(f"    {entry.cost_ms:>7.1f}ms  {entry.method}")
             for sub in entry.subframes[:4]:
                 lines.append(f"               +-- {sub}")
@@ -513,12 +700,49 @@ def collect_tracer_report(
     tracer: FlushTracer,
     out_dir: Path,
     join_timeout: float = 30.0,
+    incidents_path: Path | None = None,
 ) -> tuple[str, Path]:
     """Wait for the tracer, build the report string, write it to disk.
 
     Returns (report_text, report_path).
     """
     tracer.join(timeout=join_timeout)
+    if incidents_path is not None and incidents_path.is_file():
+        incidents = []
+        for raw in incidents_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                incidents.append(json.loads(raw))
+            except Exception:
+                continue
+        in_window = [
+            item for item in incidents
+            if isinstance(item.get("t"), (int, float))
+            and tracer.result.started_epoch_ms <= item["t"] <= tracer.result.ended_epoch_ms
+        ]
+        tracer.result.incident_count_in_window = len(in_window)
+        tracer.result.long_incident_count_in_window = sum(
+            1 for item in in_window if float(item.get("totalMs", 0.0)) > 33.0
+        )
+        tracer.result.long_frame_entries = parse_trace_output(tracer.result.raw_trace_output)
+        tracer.result.upload_entries = parse_trace_output(tracer.result.raw_upload_output)
+        tracer.result.update_entries = parse_trace_output(tracer.result.raw_update_output)
+        tracer.result.dungeon_entries = parse_trace_output(tracer.result.raw_dungeon_output)
+        correlate_trace_incidents(tracer.result.long_frame_entries, in_window)
+        correlate_trace_incidents(tracer.result.upload_entries, in_window)
+        correlate_trace_incidents(tracer.result.update_entries, in_window)
+        correlate_trace_incidents(tracer.result.dungeon_entries, in_window)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "arthas-frame-correlation.json").write_text(
+            json.dumps({
+                "arthasPid": tracer.result.arthas_pid,
+                "startedEpochMs": tracer.result.started_epoch_ms,
+                "endedEpochMs": tracer.result.ended_epoch_ms,
+                "incidentCountInWindow": tracer.result.incident_count_in_window,
+                "longIncidentCountInWindow": tracer.result.long_incident_count_in_window,
+                "note": "Window correlation only; Arthas stream output has no stable frame-probe event id.",
+            }, indent=2),
+            encoding="utf-8",
+        )
     report = format_report(tracer.result)
     report_path = out_dir / "flush-spike-report.txt"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -133,9 +133,12 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
                     try:
                         from scripts.tools.harness.perf_trace import start_tracer
                         trace_dir = resolved_out_dir / "arthas-trace"
+                        # Keep the root-frame trace alive for most of the run.
+                        # A short boot-only window can never explain late-room
+                        # spikes and made the old report look more complete than it was.
                         trace_duration = max(
-                            30.0,
-                            min(180.0, max(1, ctx.options.timeout_seconds) * 0.6),
+                            60.0,
+                            min(600.0, max(1, ctx.options.timeout_seconds) - 30.0),
                         )
                         tracer = start_tracer(
                             connector=ctx.connector,
@@ -226,6 +229,7 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
                     tracer,
                     resolved_out_dir / "arthas-trace",
                     join_timeout=30.0,
+                    incidents_path=local_incidents,
                 )
                 ctx.result.setdefault("artifacts", {})["flushSpikeReport"] = str(trace_report_path)
                 tracer_collected = True

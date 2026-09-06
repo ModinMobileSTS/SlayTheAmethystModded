@@ -52,6 +52,15 @@ internal object StsDesktopJarPatcher {
         }
     }
 
+    internal fun hasRequiredPatchClasses(patchJar: File): Boolean {
+        if (!patchJar.isFile || patchJar.length() <= 0L) {
+            return false
+        }
+        return runCatching {
+            loadPatchClassEntries(patchJar).keys.containsAll(REQUIRED_STS_PATCH_CLASSES)
+        }.getOrDefault(false)
+    }
+
     @Throws(IOException::class)
     fun ensurePatchedStsJar(
         context: Context,

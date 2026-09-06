@@ -75,6 +75,7 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.resources.ArthasResourcePackService
+import io.stamethyst.backend.resources.ExternalResourcePackService
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -2681,6 +2682,44 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         _effects.tryEmit(Effect.OpenImportJarPicker)
+    }
+
+    fun onReinstallResourcePack(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        setBusy(true, UiText.StringResource(R.string.settings_busy_reinstalling_resource_pack))
+        executor.execute {
+            try {
+                ExternalResourcePackService.reinstall(host.applicationContext) { percent, message ->
+                    host.runOnUiThread {
+                        if (uiState.busy) {
+                            setBusy(
+                                busy = true,
+                                message = UiText.DynamicString(message),
+                                progressPercent = percent,
+                            )
+                        }
+                    }
+                }
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(host, UiText.StringResource(R.string.settings_resource_pack_reinstalled), Toast.LENGTH_SHORT)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_resource_pack_reinstall_failed,
+                            GithubMirrorFallback.summarize(error),
+                        ),
+                        Toast.LENGTH_LONG,
+                    )
+                }
+            }
+        }
     }
 
     fun onImportMods() {

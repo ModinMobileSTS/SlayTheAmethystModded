@@ -161,7 +161,8 @@ public final class CombatTexturePrewarm {
         }
 
         String path = COMBAT_TEXTURES[index];
-        if (!RamSaver.textureExists(path)) {
+        String key = RamSaver.prewarmKey(Gdx.files.internal(path));
+        if (!RamSaver.textureExists(key)) {
             markPrewarmed(index);
             return PrewarmResult.MISSING;
         }
@@ -169,14 +170,15 @@ public final class CombatTexturePrewarm {
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         try {
-            Texture existing = RamSaver.getExistingTexture(path);
+            Texture existing = RamSaver.getExistingTexture(key);
             if (existing != null) {
+                RamSaver.getTexture(null, key, false);
                 markPrewarmed(index);
                 logStep(diag, started, reason, path, PrewarmResult.CACHED);
                 return PrewarmResult.CACHED;
             }
 
-            Texture texture = RamSaver.getTexture(null, path, false);
+            Texture texture = RamSaver.getTexture(null, key, false);
             if (texture != null && texture.getTextureObjectHandle() != 0) {
                 markPrewarmed(index);
                 logStep(diag, started, reason, path, PrewarmResult.LOADED);
@@ -211,7 +213,7 @@ public final class CombatTexturePrewarm {
         int missing = 0;
         for (int i = 0; i < COMBAT_TEXTURES.length; i++) {
             String path = COMBAT_TEXTURES[i];
-            if (RamSaver.textureExists(path)) {
+            if (RamSaver.textureExists(RamSaver.prewarmKey(Gdx.files.internal(path)))) {
                 alreadyRegistered++;
                 continue;
             }
@@ -219,7 +221,7 @@ public final class CombatTexturePrewarm {
             try {
                 FileHandle file = Gdx.files.internal(path);
                 if (file.exists()) {
-                    RamSaver.registerTexture(path, new RamSaver.FileTextureSupplier(file, null, false));
+                    RamSaver.registerPrewarmTexture(file);
                     registered++;
                 }
                 else {

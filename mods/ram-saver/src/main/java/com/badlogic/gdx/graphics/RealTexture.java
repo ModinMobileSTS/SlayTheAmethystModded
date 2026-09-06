@@ -5,7 +5,6 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.glutils.FileTextureData;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
 import com.badlogic.gdx.utils.GdxRuntimeException;
-import optispire.RamSaver;
 import optispire.RamSaverDiag;
 
 public class RealTexture extends Texture {
@@ -23,6 +22,9 @@ public class RealTexture extends Texture {
 
     public RealTexture(FileHandle file, Pixmap.Format format, boolean useMipMaps) {
         this(TextureData.Factory.loadFromFile(file, format, useMipMaps));
+        this.file = file;
+        this.format = format;
+        this.useMipMaps = useMipMaps;
     }
 
     public RealTexture(Pixmap pixmap) {
@@ -50,7 +52,15 @@ public class RealTexture extends Texture {
 
     protected RealTexture(int glTarget, int glHandle, TextureData data) {
         super(glTarget, glHandle);
-        this.load(data);
+        if (data instanceof FileTextureData) {
+            this.file = ((FileTextureData) data).getFileHandle();
+        }
+        try {
+            this.load(data);
+        } catch (RuntimeException error) {
+            disposeForRamSaver();
+            throw error;
+        }
         if (data.isManaged()) {
             addManagedTexture(Gdx.app, this);
         }
@@ -122,22 +132,6 @@ public class RealTexture extends Texture {
 
     public boolean isManaged() {
         return this.data.isManaged();
-    }
-
-    @Override
-    public void dispose() {
-        super.dispose();
-        if (file != null) {
-            if (RamSaverDiag.enabled()) {
-                RamSaverDiag.logStackRepeat("real_texture_dispose", file.path(), diagTexture(this));
-            }
-            RamSaver.dispose(file.path());
-        }
-        else {
-            if (RamSaverDiag.enabled()) {
-                RamSaverDiag.logStackRepeat("real_texture_dispose_no_file", dataKey(this.data), diagTexture(this));
-            }
-        }
     }
 
     private static String dataKey(TextureData data) {

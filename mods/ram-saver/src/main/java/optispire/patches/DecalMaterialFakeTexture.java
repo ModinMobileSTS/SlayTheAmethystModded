@@ -37,7 +37,7 @@ public class DecalMaterialFakeTexture {
                 );
             }
             originalTexture.set(texture);
-            Texture real = RamSaver.getTextureForBindFallback(texture.file == null ? null : texture.file.path());
+            Texture real = RamSaver.getTextureForBindFallback(texture.getRamSaverKey());
             if (real == null) {
                 originalTexture.remove();
                 return;

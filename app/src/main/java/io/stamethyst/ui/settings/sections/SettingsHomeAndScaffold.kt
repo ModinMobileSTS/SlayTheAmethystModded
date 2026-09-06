@@ -768,7 +768,8 @@ internal fun LauncherSettingsFeedbackScreenContent(
     onOpenFeedback: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onOpenFeedbackIssueBrowser: () -> Unit = {},
-    onImportJar: () -> Unit = {},
+     onImportJar: () -> Unit = {},
+     onReinstallResourcePack: () -> Unit = {},
     onImportMods: () -> Unit = {},
     onExportMods: () -> Unit = {},
     onImportSaves: () -> Unit = {},
@@ -796,7 +797,8 @@ internal fun LauncherSettingsFeedbackScreenContent(
             SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files), iconResId = R.drawable.ic_settings_resources) {
                 SettingsImportSection(
                     busy = uiState.busy,
-                    onImportJar = onImportJar,
+                     onImportJar = onImportJar,
+                     onReinstallResourcePack = onReinstallResourcePack,
                     onImportMods = onImportMods,
                     onExportMods = onExportMods,
                     onImportSaves = onImportSaves,
