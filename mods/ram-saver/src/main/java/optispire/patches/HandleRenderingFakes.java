@@ -1,14 +1,18 @@
 package optispire.patches;
 
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.PolygonRegion;
 import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Affine2;
 import com.evacipated.cardcrawl.modthespire.lib.ByRef;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
-import com.evacipated.cardcrawl.modthespire.lib.SpirePostfixPatch;
+import com.evacipated.cardcrawl.modthespire.lib.SpireInstrumentPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
+import javassist.CannotCompileException;
+import javassist.expr.ExprEditor;
+import javassist.expr.FieldAccess;
 import optispire.RamSaverDiag;
 
 public class HandleRenderingFakes {
@@ -72,55 +76,54 @@ public class HandleRenderingFakes {
                     TextureRegion.class, float.class, float.class, Affine2.class
             }
     )
+    @SpirePatch2(
+            clz = PolygonSpriteBatch.class,
+            method = "draw",
+            paramtypez = { PolygonRegion.class, float.class, float.class }
+    )
+    @SpirePatch2(
+            clz = PolygonSpriteBatch.class,
+            method = "draw",
+            paramtypez = { PolygonRegion.class, float.class, float.class, float.class, float.class }
+    )
+    @SpirePatch2(
+            clz = PolygonSpriteBatch.class,
+            method = "draw",
+            paramtypez = {
+                    PolygonRegion.class, float.class, float.class, float.class, float.class,
+                    float.class, float.class, float.class, float.class, float.class
+            }
+    )
     public static class FakeRegion {
-        private static Texture temp = null;
-        @SpirePrefixPatch
-        public static void loadTex(TextureRegion region) {
-            /*if (region instanceof ManagedAtlas.ManagedRegion) {
-                ((ManagedAtlas.ManagedRegion) region).prepTexture();
-            }*/
-            Texture t = region.getTexture();
-            if (t.isFake) {
-                boolean diag = RamSaverDiag.enabled();
-                long started = diag ? System.nanoTime() : 0L;
-                if (diag) {
-                    RamSaverDiag.logStackRepeat(
-                            "draw_region_fake_texture",
-                            textureKey(t),
-                            "region=" + regionDetails(region) + " texture=" + textureDetails(t)
-                    );
+        @SpireInstrumentPatch
+        public static ExprEditor resolveTextureRead() {
+            return new ExprEditor() {
+                @Override
+                public void edit(FieldAccess field) throws CannotCompileException {
+                    if (field.isReader() && field.getClassName().equals(TextureRegion.class.getName())
+                            && field.getFieldName().equals("texture")) {
+                        // Normalize the local texture before lastTexture comparison.
+                        // Never mutate the shared region, including on nested draws or exceptions.
+                        field.replace("$_ = " + HandleRenderingFakes.class.getName()
+                                + ".resolveRegionTexture($proceed());");
+                    }
                 }
-                temp = t;
-                region.setTexture(t.getRealTexture());
-                if (diag) {
-                    RamSaverDiag.logDuration(
-                            "draw_region_materialize",
-                            textureKey(t),
-                            started,
-                            "region=" + regionDetails(region) + " realTexture=" + textureDetails(region.getTexture()),
-                            false
-                    );
-                }
-            }
+            };
         }
+    }
 
-        @SpirePostfixPatch
-        public static void nullTex(TextureRegion region) {
-            /*if (region instanceof ManagedAtlas.ManagedRegion) {
-                ((ManagedAtlas.ManagedRegion) region).nullTexture();
-            }*/
-            if (temp != null) {
-                if (RamSaverDiag.enabled()) {
-                    RamSaverDiag.logRepeat(
-                            "draw_region_restore_fake_texture",
-                            textureKey(temp),
-                            "region=" + regionDetails(region) + " fake=" + textureDetails(temp)
-                    );
-                }
-                region.setTexture(temp);
-                temp = null;
-            }
+    public static Texture resolveRegionTexture(Texture texture) {
+        boolean diag = texture != null && texture.isFake && RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
+        if (diag) {
+            RamSaverDiag.logStackRepeat("draw_region_fake_texture", textureKey(texture), textureDetails(texture));
         }
+        Texture real = texture == null ? null : texture.getRealTexture();
+        if (diag) {
+            RamSaverDiag.logDuration("draw_region_materialize", textureKey(texture), started,
+                    "realTexture=" + textureDetails(real), false);
+        }
+        return real;
     }
 
     @SpirePatch2(
@@ -283,15 +286,4 @@ public class HandleRenderingFakes {
         return builder.toString();
     }
 
-    private static String regionDetails(TextureRegion region) {
-        if (!RamSaverDiag.enabled()) {
-            return "";
-        }
-        if (region == null) {
-            return "null";
-        }
-        return RamSaverDiag.describeObject(region)
-                + " region=" + region.getRegionX() + ',' + region.getRegionY() + ' '
-                + region.getRegionWidth() + 'x' + region.getRegionHeight();
-    }
 }

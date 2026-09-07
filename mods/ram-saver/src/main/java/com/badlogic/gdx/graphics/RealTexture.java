@@ -82,8 +82,10 @@ public class RealTexture extends Texture {
 
             this.bind();
             uploadImageData(3553, data);
-            this.setFilter(this.minFilter, this.magFilter);
-            this.setWrap(this.uWrap, this.vWrap);
+            // The texture is still bound after upload. Avoid setFilter/setWrap
+            // here because those public methods bind again on the render thread.
+            this.unsafeSetFilter(this.minFilter, this.magFilter, true);
+            this.unsafeSetWrap(this.uWrap, this.vWrap, true);
             Gdx.gl.glBindTexture(this.glTarget, 0);
             if (diag) {
                 RamSaverDiag.logDuration(

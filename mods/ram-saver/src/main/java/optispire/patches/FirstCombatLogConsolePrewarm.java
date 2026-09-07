@@ -1,13 +1,9 @@
 package optispire.patches;
 
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
-import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
-import com.megacrit.cardcrawl.map.MapRoomNode;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
-import com.megacrit.cardcrawl.rooms.MonsterRoom;
-import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
 import optispire.RamSaverDiag;
 
 import javax.swing.JTextArea;
@@ -21,7 +17,6 @@ public final class FirstCombatLogConsolePrewarm {
 
     private static int splashUpdateCount = 0;
     private static boolean completed = false;
-    private static boolean fallbackAttempted = false;
 
     private FirstCombatLogConsolePrewarm() {
     }
@@ -36,31 +31,11 @@ public final class FirstCombatLogConsolePrewarm {
         }
     }
 
-    @SpirePatch2(
-            clz = AbstractDungeon.class,
-            method = "nextRoomTransition",
-            paramtypez = {SaveFile.class}
-    )
-    public static class AbstractDungeonNextRoomTransitionPatch {
-        @SpirePrefixPatch
-        public static void Prefix() {
-            prewarmBeforeUpcomingCombat();
-        }
-    }
-
     private static void prewarmDuringNonCombat() {
-        if (completed || !shouldPrewarmDuringUpdate()) {
+        if (completed || !shouldPrewarmDuringUpdate() || !FirstCombatPrewarmBudget.tryStep()) {
             return;
         }
         prewarm("background");
-    }
-
-    private static void prewarmBeforeUpcomingCombat() {
-        if (completed || fallbackAttempted || !isNextRoomCombat()) {
-            return;
-        }
-        fallbackAttempted = true;
-        prewarm("fallback");
     }
 
     private static void prewarm(String reason) {
@@ -129,14 +104,4 @@ public final class FirstCombatLogConsolePrewarm {
         }
     }
 
-    private static boolean isNextRoomCombat() {
-        try {
-            MapRoomNode nextRoom = AbstractDungeon.nextRoom;
-            AbstractRoom room = nextRoom == null ? null : nextRoom.room;
-            return room instanceof MonsterRoom;
-        }
-        catch (RuntimeException ignored) {
-            return false;
-        }
-    }
 }

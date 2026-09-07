@@ -53,13 +53,18 @@ public class Texture extends GLTexture {
     }
 
     private void registerVariant() {
-        cacheKey = RamSaver.textureKey(file, format, useMipMaps, minFilter, magFilter, uWrap, vWrap);
-        if (!RamSaver.textureExists(cacheKey)) {
+        cacheKey = registerVariant(minFilter, magFilter, uWrap, vWrap);
+    }
+
+    private String registerVariant(TextureFilter min, TextureFilter mag, TextureWrap u, TextureWrap v) {
+        String key = RamSaver.textureKey(file, format, useMipMaps, min, mag, u, v);
+        if (!RamSaver.textureExists(key)) {
             RamSaver.FileTextureSupplier supplier = new RamSaver.FileTextureSupplier(file, format, useMipMaps);
-            supplier.setFilter(minFilter, magFilter);
-            supplier.setWrap(uWrap, vWrap);
-            RamSaver.registerTexture(cacheKey, supplier);
+            supplier.setFilter(min, mag);
+            supplier.setWrap(u, v);
+            RamSaver.registerTexture(key, supplier);
         }
+        return key;
     }
 
     public Texture(String internalPath) {
@@ -197,6 +202,21 @@ public class Texture extends GLTexture {
     public Texture getRealTexture(boolean canAge) {
         return getRealTexture("explicit", canAge);
     }
+
+    /** Descriptor overrides select a shared variant, never mutate another wrapper's sampler. */
+    public Texture getRealTexture(TextureFilter min, TextureFilter mag, TextureWrap u, TextureWrap v) {
+        if (!isFake && (cacheKey == null || file == null)) return getRealTexture();
+        if (explicitlyDisposed) throw new GdxRuntimeException("Texture has been disposed");
+        min = min == null ? minFilter : min;
+        mag = mag == null ? magFilter : mag;
+        u = u == null ? uWrap : u;
+        v = v == null ? vWrap : v;
+        if (min == minFilter && mag == magFilter && u == uWrap && v == vWrap) {
+            // Even binder reuse (which skips bind()) must refresh the cache owner.
+            return RamSaver.getTexture(null, cacheKey, true);
+        }
+        return RamSaver.getTexture(null, registerVariant(min, mag, u, v), true);
+    }
     private Texture getRealTexture(String reason, boolean canAge) {
         if (!isFake && !cacheEvicted)
             return this;
@@ -240,8 +260,10 @@ public class Texture extends GLTexture {
 
                 this.bind();
                 uploadImageData(3553, data);
-                this.setFilter(this.minFilter, this.magFilter);
-                this.setWrap(this.uWrap, this.vWrap);
+                // Keep the upload path on the current GL binding. Calling the
+                // public setters would perform two redundant re-binds per load.
+                this.unsafeSetFilter(this.minFilter, this.magFilter, true);
+                this.unsafeSetWrap(this.uWrap, this.vWrap, true);
                 Gdx.gl.glBindTexture(this.glTarget, 0);
                 if (diag) {
                     RamSaverDiag.logDuration(
@@ -459,13 +481,7 @@ public class Texture extends GLTexture {
             return;
         }
 
-        if ((u == null || u == this.uWrap) && (v == null || v == this.vWrap)) return;
-        if (u != null)
-            this.uWrap = u;
-        if (v != null)
-            this.vWrap = v;
-
-        registerVariant();
+        setFakeSampler(null, null, u, v, force);
     }
 
     @Override
@@ -475,13 +491,7 @@ public class Texture extends GLTexture {
             return;
         }
 
-        TextureWrap nextU = u == null ? this.uWrap : u;
-        TextureWrap nextV = v == null ? this.vWrap : v;
-        if (nextU == this.uWrap && nextV == this.vWrap) return;
-        this.uWrap = nextU;
-        this.vWrap = nextV;
-
-        registerVariant();
+        setFakeSampler(null, null, u == null ? uWrap : u, v == null ? vWrap : v, true);
     }
 
     @Override
@@ -491,13 +501,7 @@ public class Texture extends GLTexture {
             return;
         }
 
-        if ((minFilter == null || minFilter == this.minFilter) && (magFilter == null || magFilter == this.magFilter)) return;
-        if (minFilter != null)
-            this.minFilter = minFilter;
-        if (magFilter != null)
-            this.magFilter = magFilter;
-
-        registerVariant();
+        setFakeSampler(minFilter, magFilter, null, null, force);
     }
 
     @Override
@@ -507,13 +511,29 @@ public class Texture extends GLTexture {
             return;
         }
 
-        TextureFilter nextMin = minFilter == null ? this.minFilter : minFilter;
-        TextureFilter nextMag = magFilter == null ? this.magFilter : magFilter;
-        if (nextMin == this.minFilter && nextMag == this.magFilter) return;
-        this.minFilter = nextMin;
-        this.magFilter = nextMag;
+        setFakeSampler(minFilter == null ? this.minFilter : minFilter,
+                magFilter == null ? this.magFilter : magFilter, null, null, true);
+    }
 
-        registerVariant();
+    private void setFakeSampler(TextureFilter min, TextureFilter mag, TextureWrap u, TextureWrap v, boolean force) {
+        boolean changed = (min != null && min != minFilter) || (mag != null && mag != magFilter)
+                || (u != null && u != uWrap) || (v != null && v != vWrap);
+        if (!changed && !force) return;
+        Texture previous = RamSaver.getExistingTexture(cacheKey);
+        if (min != null) minFilter = min;
+        if (mag != null) magFilter = mag;
+        if (u != null) uWrap = u;
+        if (v != null) vWrap = v;
+        if (changed) registerVariant();
+        Texture real = RamSaver.getExistingTexture(cacheKey);
+        if (real == null && previous == null) return; // Unmaterialized wrappers stay lazy.
+        // Real textures escape through regions and getRealTexture(), so exclusive
+        // ownership cannot be inferred from wrapper count. New samplers need a copy;
+        // returning to an existing variant reuses its upload instead.
+        if (real == null) real = getRealTexture();
+        real.bind();
+        real.unsafeSetFilter(min, mag, force);
+        real.unsafeSetWrap(u, v, force);
     }
 
     @Override

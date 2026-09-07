@@ -101,6 +101,15 @@ Bound reference-queue cleanup per frame, make stale holder cleanup generation-sa
 29. `io.stamethyst.backend.launch.StsLaunchSpec` and `io.stamethyst.config.LauncherConfig`
 Keep large JVM heap selections from forcing the same large initial heap commit and preserve configured GPU/FBO pressure protection while RAM Saver is enabled. This addresses native/GPU memory pressure and low-memory-device kills caused by treating Java heap capacity as available graphics memory. Type: launcher memory-policy fix implemented by `StsLaunchSpec` and `LauncherConfig`.
 
+30. `optispire.RamSaver`, `com.badlogic.gdx.graphics.Texture`, `optispire.patches.G3dBindRealTextures`, `optispire.patches.TextureDescriptorFakeTexture`, `optispire.patches.SpriteCacheFakeTextures`, and `optispire.patches.HandleRenderingFakes`
+Preserve the caller's GL texture binding while materializing a cold texture, maintain hot-pin accounting without scanning every historical texture state, apply sampler variants without mutating shared textures, and resolve PolygonRegion/SpriteCache fake textures only on the draw path that uses them. This addresses multi-texture sampling corruption, per-bind CPU overhead, unstable descriptor caches, and unnecessary SpriteCache uploads and allocations. Type: rendering compatibility and performance fix implemented by the listed classes.
+
+31. `optispire.patches.PrewarmTextureRegistry`, `optispire.patches.FirstCombatPrewarmBudget`, `optispire.patches.CombatTexturePrewarm`, `optispire.patches.FirstCombatUiPrewarm`, `optispire.patches.BattleStartResourcePrewarm`, and `optispire.patches.FirstCombatLogConsolePrewarm`
+Build prewarm keys from the actual atlas page metadata, share one prewarm step budget across first-combat patches, and avoid completing duplicate or invalid work permanently. This addresses duplicate atlas texture residency, repeated fallback work, and large synchronous first-room transition spikes while retaining incremental first-combat warmup. Type: prewarm memory/performance fix implemented by the listed classes.
+
+32. `optispire.patches.ChangeSpriterLoader`
+Keep lazy Spriter loading as the default memory policy while exposing an explicit `ramsaver.spriter.pack=true` compatibility switch for installations where animation batching is more important than peak texture memory. This addresses the loss of batching caused by unconditional atlas packing suppression. Type: configurable rendering performance workaround implemented by `ChangeSpriterLoader`.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

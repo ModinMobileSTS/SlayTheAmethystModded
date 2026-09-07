@@ -69,6 +69,7 @@ Gson ends up using LinkedTreeMap for all the localization text
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.RealTexture;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
@@ -80,6 +81,9 @@ import com.megacrit.cardcrawl.core.CardCrawlGame;
 
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.IntBuffer;
 import java.util.*;
 import java.util.function.Supplier;
 
@@ -227,6 +231,9 @@ public class RamSaver {
     private static final Set<String> nullAssets = new HashSet<>();
     private static final Set<String> rejectedTextures = new HashSet<>();
     private static final Map<String, FakeTextureState> fakeTextureStates = new HashMap<>();
+    // Insertion order is also expiry order: every refresh uses the same pin lifetime.
+    private static final LinkedHashMap<FakeTextureState, Long> hotPins = new LinkedHashMap<>();
+    private static long hotPinBytes;
     private static final ArrayList<ArrayList<String>> loadedSets = new ArrayList<>();
     private static final String[] agingKeys = new String[SET_LIMIT];
     private static final int RENDER_CREATE_REPEAT_THRESHOLD = 25;
@@ -444,8 +451,9 @@ public class RamSaver {
         if (state == null) {
             return false;
         }
-        synchronized (state) {
-            return state.hotPinned && System.nanoTime() < state.hotPinnedUntilNanos;
+        synchronized (hotPins) {
+            if (state.hotPinned && System.nanoTime() >= state.hotPinnedUntilNanos) unpin(state);
+            return state.hotPinned;
         }
     }
 
@@ -480,14 +488,11 @@ public class RamSaver {
                     && (elapsedNanos >= HOT_SLOW_LOAD_NANOS || state.recentMaterializeCount >= HOT_LOAD_REPEAT_THRESHOLD);
             if (shouldPin) {
                 repeatedHot = state.hotPinned;
-                state.hotPinned = true;
-                state.hotPinnedUntilNanos = now + HOT_PIN_NANOS;
-                state.hotPinnedAtNanos = now;
                 becameHot = !repeatedHot;
             }
         }
         if (becameHot || repeatedHot) {
-            enforceHotPinBudget(now);
+            pin(state, now);
             if (RamSaverDiag.enabled()) {
                 RamSaverDiag.logRepeat(
                         becameHot ? "hot_texture_pinned" : "hot_texture_refreshed",
@@ -750,7 +755,21 @@ public class RamSaver {
             }
             return null;
         }
-        Texture t = supplier.get();
+        // Uploads and supplier sampler setters bind on the current unit. Query only
+        // this cold path; real binds still go through GLTexture's lifecycle tracking.
+        IntBuffer binding = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder()).asIntBuffer();
+        Gdx.gl.glGetIntegerv(GL20.GL_ACTIVE_TEXTURE, binding);
+        int activeTexture = binding.get(0);
+        binding.clear();
+        Gdx.gl.glGetIntegerv(GL20.GL_TEXTURE_BINDING_2D, binding);
+        int previousTexture = binding.get(0);
+        Texture t;
+        try {
+            t = supplier.get();
+        } finally {
+            Gdx.gl.glActiveTexture(activeTexture);
+            Gdx.gl.glBindTexture(GL20.GL_TEXTURE_2D, previousTexture);
+        }
         if (t == null) { //nulls get saved permanently. Usually means invalid filepath.
             ManagedAsset holder = managedAssetPool.obtain();
             holder.canAge = false;
@@ -971,10 +990,7 @@ public class RamSaver {
         long now = System.nanoTime();
         state.estimatedBytes = estimateTextureBytes(texture.getWidth(), texture.getHeight());
         if (texture.getTextureData().useMipMaps()) state.estimatedBytes += state.estimatedBytes / 3L;
-        state.hotPinned = true;
-        state.hotPinnedAtNanos = now;
-        state.hotPinnedUntilNanos = now + HOT_PIN_NANOS;
-        enforceHotPinBudget(now);
+        pin(state, now);
     }
 
     /** Real bind sites refresh only their current owner, without allocating or scanning pin budgets. */
@@ -1124,7 +1140,7 @@ public class RamSaver {
         asset.dispose();
         FakeTextureState state = getFakeTextureState(id);
         if (state != null && (removeKey || !loadedAssets.containsKey(id))) {
-            state.hotPinned = false;
+            unpin(state);
             state.materializationFallback = null;
         }
         if (removeKey && loadedAssets.get(asset.ID) == asset) {
@@ -1201,51 +1217,44 @@ public class RamSaver {
         return (long) width * (long) height * 4L;
     }
 
-    private static void enforceHotPinBudget(long nowNanos) {
-        if (HOT_PIN_BUDGET_BYTES <= 0L) {
-            return;
+    private static void pin(FakeTextureState state, long nowNanos) {
+        synchronized (hotPins) {
+            unpin(state);
+            state.hotPinned = true;
+            state.hotPinnedAtNanos = nowNanos;
+            state.hotPinnedUntilNanos = nowNanos + HOT_PIN_NANOS;
+            hotPins.put(state, state.estimatedBytes);
+            hotPinBytes += state.estimatedBytes;
+            enforceHotPinBudget(nowNanos);
         }
-        while (true) {
-            FakeTextureState oldest = null;
-            long totalBytes = 0L;
-            int hotCount = 0;
-            synchronized (fakeTextureStates) {
-                for (FakeTextureState state : fakeTextureStates.values()) {
-                    synchronized (state) {
-                        if (!state.hotPinned) {
-                            continue;
-                        }
-                        if (nowNanos >= state.hotPinnedUntilNanos) {
-                            state.hotPinned = false;
-                            continue;
-                        }
-                        hotCount++;
-                        totalBytes += state.estimatedBytes;
-                        if (oldest == null || state.hotPinnedAtNanos < oldest.hotPinnedAtNanos) {
-                            oldest = state;
-                        }
-                    }
+    }
+
+    private static void unpin(FakeTextureState state) {
+        synchronized (hotPins) {
+            Long bytes = hotPins.remove(state);
+            if (bytes != null) hotPinBytes -= bytes;
+            state.hotPinned = false;
+            state.hotPinnedUntilNanos = 0L;
+        }
+    }
+
+    private static void enforceHotPinBudget(long nowNanos) {
+        synchronized (hotPins) {
+            Iterator<Map.Entry<FakeTextureState, Long>> iterator = hotPins.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<FakeTextureState, Long> entry = iterator.next();
+                FakeTextureState state = entry.getKey();
+                boolean expired = nowNanos >= state.hotPinnedUntilNanos;
+                if (!expired && hotPinBytes <= HOT_PIN_BUDGET_BYTES) break;
+                hotPinBytes -= entry.getValue();
+                iterator.remove();
+                state.hotPinned = false;
+                state.hotPinnedUntilNanos = 0L;
+                if (!expired && RamSaverDiag.enabled()) {
+                    RamSaverDiag.logRepeat("hot_texture_unpinned_budget", state.textureID,
+                            "estimatedBytes=" + entry.getValue() + " totalBytes=" + hotPinBytes
+                                    + " hotCount=" + hotPins.size() + " budgetBytes=" + HOT_PIN_BUDGET_BYTES);
                 }
-            }
-            if (totalBytes <= HOT_PIN_BUDGET_BYTES || oldest == null) {
-                return;
-            }
-            String evictedId = oldest.textureID;
-            long evictedBytes;
-            synchronized (oldest) {
-                evictedBytes = oldest.estimatedBytes;
-                oldest.hotPinned = false;
-                oldest.hotPinnedUntilNanos = 0L;
-            }
-            if (RamSaverDiag.enabled()) {
-                RamSaverDiag.logRepeat(
-                        "hot_texture_unpinned_budget",
-                        evictedId,
-                        "estimatedBytes=" + evictedBytes
-                                + " totalBytes=" + totalBytes
-                                + " hotCount=" + hotCount
-                                + " budgetBytes=" + HOT_PIN_BUDGET_BYTES
-                );
             }
         }
     }
@@ -1254,21 +1263,12 @@ public class RamSaver {
         if (!RamSaverDiag.enabled()) {
             return "";
         }
-        long totalBytes = 0L;
-        int hotCount = 0;
-        synchronized (fakeTextureStates) {
-            for (FakeTextureState state : fakeTextureStates.values()) {
-                synchronized (state) {
-                    if (state.hotPinned && nowNanos < state.hotPinnedUntilNanos) {
-                        hotCount++;
-                        totalBytes += state.estimatedBytes;
-                    }
-                }
-            }
+        synchronized (hotPins) {
+            enforceHotPinBudget(nowNanos);
+            return "hotCount=" + hotPins.size()
+                    + " hotBytes=" + hotPinBytes
+                    + " hotBudgetBytes=" + HOT_PIN_BUDGET_BYTES;
         }
-        return "hotCount=" + hotCount
-                + " hotBytes=" + totalBytes
-                + " hotBudgetBytes=" + HOT_PIN_BUDGET_BYTES;
     }
 
     private static String findRenderTextureCreationSignature() {

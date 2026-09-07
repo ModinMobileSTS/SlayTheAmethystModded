@@ -4,15 +4,11 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
-import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.helpers.FontHelper;
 import com.megacrit.cardcrawl.helpers.ImageMaster;
-import com.megacrit.cardcrawl.map.MapRoomNode;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
-import com.megacrit.cardcrawl.rooms.MonsterRoom;
-import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
 import com.megacrit.cardcrawl.vfx.combat.BattleStartEffect;
 import optispire.RamSaverDiag;
 
@@ -23,7 +19,6 @@ public final class BattleStartResourcePrewarm {
     private static final GlyphLayout GLYPH_LAYOUT = new GlyphLayout();
     private static int nextStep = 0;
     private static int splashUpdateCount = 0;
-    private static boolean fallbackAttempted = false;
 
     private BattleStartResourcePrewarm() {
     }
@@ -38,50 +33,15 @@ public final class BattleStartResourcePrewarm {
         }
     }
 
-    @SpirePatch2(
-            clz = AbstractDungeon.class,
-            method = "nextRoomTransition",
-            paramtypez = {SaveFile.class}
-    )
-    public static class AbstractDungeonNextRoomTransitionPatch {
-        @SpirePrefixPatch
-        public static void Prefix() {
-            prewarmRemainingForUpcomingCombat();
-        }
-    }
-
     private static void prewarmOneResourceDuringNonCombat() {
         if (!shouldPrewarmDuringUpdate()) {
             return;
         }
-        if (nextStep >= STEP_COUNT) {
+        if (nextStep >= STEP_COUNT || !FirstCombatPrewarmBudget.tryStep()) {
             return;
         }
         if (prewarmStep(nextStep, "background")) {
             nextStep++;
-        }
-    }
-
-    private static void prewarmRemainingForUpcomingCombat() {
-        if (fallbackAttempted || nextStep >= STEP_COUNT || !isNextRoomCombat()) {
-            return;
-        }
-
-        fallbackAttempted = true;
-        long started = RamSaverDiag.enabled() ? System.nanoTime() : 0L;
-        int completed = 0;
-        while (nextStep < STEP_COUNT && prewarmStep(nextStep, "fallback")) {
-            nextStep++;
-            completed++;
-        }
-        if (RamSaverDiag.enabled()) {
-            RamSaverDiag.logDuration(
-                    "battle_start_resource_prewarm_done",
-                    "first-combat",
-                    started,
-                    "completedNow=" + completed + " completed=" + nextStep + "/" + STEP_COUNT,
-                    false
-            );
         }
     }
 
@@ -152,6 +112,7 @@ public final class BattleStartResourcePrewarm {
 
         long started = RamSaverDiag.enabled() ? System.nanoTime() : 0L;
         try {
+            // findRegion alone does not materialize a page; the atlas page is already covered by CombatTexturePrewarm.
             ImageMaster.vfxAtlas.findRegion("combat/battleStartSword");
             logStep(started, reason, "region:combat/battleStartSword");
             return true;
@@ -221,14 +182,4 @@ public final class BattleStartResourcePrewarm {
         }
     }
 
-    private static boolean isNextRoomCombat() {
-        try {
-            MapRoomNode nextRoom = AbstractDungeon.nextRoom;
-            AbstractRoom room = nextRoom == null ? null : nextRoom.room;
-            return room instanceof MonsterRoom;
-        }
-        catch (RuntimeException ignored) {
-            return false;
-        }
-    }
 }

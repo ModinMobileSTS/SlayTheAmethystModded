@@ -56,10 +56,6 @@ public class TextureDescriptorFakeTexture {
             if (result != 0) {
                 return SpireReturn.Return(result);
             }
-            result = compareFakeTexturePath(__instance.texture, other.texture);
-            if (result != 0) {
-                return SpireReturn.Return(result);
-            }
             result = compareInt(filterKey(__instance.minFilter), filterKey(other.minFilter));
             if (result != 0) {
                 return SpireReturn.Return(result);
@@ -89,32 +85,11 @@ public class TextureDescriptorFakeTexture {
             return 0;
         }
         if (hasFakeTexture(texture)) {
-            Texture fake = (Texture) texture;
-            String path = fake.getRamSaverKey();
-            int hash = path == null ? System.identityHashCode(fake) : path.hashCode();
+            // Descriptor.equals uses texture identity, not the mutable sampler cache key.
+            int hash = System.identityHashCode(texture);
             return 0x80000000 | (hash & 0x7fffffff);
         }
         return texture.getTextureObjectHandle();
-    }
-
-    private static int compareFakeTexturePath(GLTexture left, GLTexture right) {
-        if (!hasFakeTexture(left) && !hasFakeTexture(right)) {
-            return 0;
-        }
-        String leftPath = texturePath(left);
-        String rightPath = texturePath(right);
-        if (leftPath == null || rightPath == null) {
-            return compareInt(System.identityHashCode(left), System.identityHashCode(right));
-        }
-        return leftPath.compareTo(rightPath);
-    }
-
-    private static String texturePath(GLTexture texture) {
-        if (!hasFakeTexture(texture)) {
-            return null;
-        }
-        Texture fake = (Texture) texture;
-        return fake.getRamSaverKey();
     }
 
     private static int filterKey(Texture.TextureFilter filter) {

@@ -12,18 +12,27 @@ import javassist.CtBehavior;
 import optispire.RamSaverDiag;
 
 public class ChangeSpriterLoader {
+    // Opt-in only: the original packer eagerly holds source pixmaps and atlas pages.
+    public static final String PACK_PROPERTY = "ramsaver.spriter.pack";
+
     @SpirePatch2(
             clz = LibGdxLoader.class,
             method = SpirePatch.CONSTRUCTOR,
             paramtypez = { Data.class, int.class, int.class }
     )
-    public static class NeverPack {
+    @SpirePatch2(
+            clz = LibGdxLoader.class,
+            method = SpirePatch.CONSTRUCTOR,
+            paramtypez = { Data.class, boolean.class }
+    )
+    public static class PackingPolicy {
         @SpirePostfixPatch
-        public static void No(@ByRef boolean[] ___pack) {
+        public static void apply(@ByRef boolean[] ___pack) {
+            // The boolean constructor overwrites the delegated constructor's pack flag.
+            ___pack[0] = ___pack[0] && Boolean.getBoolean(PACK_PROPERTY);
             if (RamSaverDiag.enabled()) {
-                RamSaverDiag.logStackRepeat("spriter_disable_pack", "LibGdxLoader", "oldPack=" + ___pack[0]);
+                RamSaverDiag.logStackRepeat("spriter_pack_policy", "LibGdxLoader", "pack=" + ___pack[0]);
             }
-            ___pack[0] = false;
         }
     }
 
@@ -34,12 +43,14 @@ public class ChangeSpriterLoader {
     )
     public static class NoPixmap {
         @SpireInsertPatch(
-                locator = Locator.class
+                locator = Locator.class,
+                localvars = { "f" }
         )
-        public static SpireReturn<Sprite> justMakeTheSprite(FileReference ref, FileHandle ___f, Data ___data) {
+        public static SpireReturn<Sprite> justMakeTheSprite(FileReference ref, FileHandle f, Data ___data, boolean ___pack) {
+            if (___pack) return SpireReturn.Continue();
             boolean diag = RamSaverDiag.enabled();
             long started = diag ? System.nanoTime() : 0L;
-            Texture t = new Texture(___f);
+            Texture t = new Texture(f);
             t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
             int width = (int)___data.getFile(ref.folder, ref.file).size.width;
             int height = (int)___data.getFile(ref.folder, ref.file).size.height;
@@ -47,7 +58,7 @@ public class ChangeSpriterLoader {
             if (diag) {
                 RamSaverDiag.logDuration(
                         "spriter_make_sprite",
-                        ___f.path(),
+                        f.path(),
                         started,
                         "refFolder=" + ref.folder
                                 + " refFile=" + ref.file
@@ -72,9 +83,10 @@ public class ChangeSpriterLoader {
             clz = LibGdxLoader.class,
             method = "finishLoading"
     )
-    public static class JustDont {
+    public static class FinishLoading {
         @SpirePrefixPatch
-        public static SpireReturn<Void> no() {
+        public static SpireReturn<Void> finish(boolean ___pack) {
+            if (___pack) return SpireReturn.Continue();
             if (RamSaverDiag.enabled()) {
                 RamSaverDiag.logStackRepeat("spriter_skip_finish_loading", "LibGdxLoader", "finishLoading skipped");
             }

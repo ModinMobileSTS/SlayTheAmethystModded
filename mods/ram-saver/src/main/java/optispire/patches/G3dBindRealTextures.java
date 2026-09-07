@@ -32,7 +32,8 @@ public class G3dBindRealTextures {
                         "rebind=" + rebind + " texture=" + textureDetails(fakeTexture)
                 );
             }
-            textureDesc.texture = fakeTexture.getRealTexture(false);
+            textureDesc.texture = fakeTexture.getRealTexture(textureDesc.minFilter, textureDesc.magFilter,
+                    textureDesc.uWrap, textureDesc.vWrap);
             if (diag) {
                 RamSaverDiag.logDuration(
                         "g3d_bind_materialize",

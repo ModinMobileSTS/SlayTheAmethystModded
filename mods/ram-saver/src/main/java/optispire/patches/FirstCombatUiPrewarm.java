@@ -1,25 +1,18 @@
 package optispire.patches;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Pixmap;
-import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
-import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.AbstractCreature;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.helpers.FontHelper;
-import com.megacrit.cardcrawl.map.MapRoomNode;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
-import com.megacrit.cardcrawl.rooms.MonsterRoom;
-import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
-import optispire.RamSaver;
 import optispire.RamSaverDiag;
 
 import java.lang.reflect.Field;
@@ -110,27 +103,15 @@ public final class FirstCombatUiPrewarm {
     private static final String[] PREWARM_TEXTURES = buildPrewarmTextures();
     private static final GlyphLayout GLYPH_LAYOUT = new GlyphLayout();
 
-    private static final boolean[] PREWARMED_TEXTURES = new boolean[PREWARM_TEXTURES.length];
     private static int splashUpdateCount = 0;
     private static int nextTextureIndex = 0;
-    private static int completedTextureCount = 0;
+    private static int attemptedPass = -1;
     private static boolean baseModGlowInitialized = false;
     private static boolean monsterIntentSwitchInitialized = false;
     private static boolean baseModCardDescriptionCnInitialized = false;
     private static boolean combatTextGlyphsPrewarmed = false;
     private static boolean stslibHealthBarReflectionPrewarmed = false;
     private static boolean playerSpineMeshPrewarmed = false;
-    private static boolean registeredKnownTextures = false;
-    private static boolean fallbackAttempted = false;
-
-    private enum PrewarmResult {
-        ALREADY_DONE,
-        LOADED,
-        CACHED,
-        MISSING,
-        SKIPPED,
-        FAILED
-    }
 
     private FirstCombatUiPrewarm() {
     }
@@ -145,24 +126,13 @@ public final class FirstCombatUiPrewarm {
         }
     }
 
-    @SpirePatch2(
-            clz = AbstractDungeon.class,
-            method = "nextRoomTransition",
-            paramtypez = {SaveFile.class}
-    )
-    public static class AbstractDungeonNextRoomTransitionPatch {
-        @SpirePrefixPatch
-        public static void Prefix() {
-            prewarmRemainingForUpcomingCombat();
-        }
-    }
-
     private static void prewarmOneResourceDuringNonCombat() {
         if (!shouldPrewarmDuringUpdate()) {
             return;
         }
 
         if (!baseModGlowInitialized) {
+            if (!FirstCombatPrewarmBudget.tryStep()) return;
             baseModGlowInitialized = initializeClass(
                     "basemod.helpers.CardBorderGlowManager$RenderGlowPatch",
                     "basemod-glow"
@@ -170,6 +140,7 @@ public final class FirstCombatUiPrewarm {
             return;
         }
         if (!monsterIntentSwitchInitialized) {
+            if (!FirstCombatPrewarmBudget.tryStep()) return;
             monsterIntentSwitchInitialized = initializeClass(
                     "com.megacrit.cardcrawl.monsters.AbstractMonster$1",
                     "monster-intent-switch"
@@ -177,6 +148,7 @@ public final class FirstCombatUiPrewarm {
             return;
         }
         if (!baseModCardDescriptionCnInitialized) {
+            if (!FirstCombatPrewarmBudget.tryStep()) return;
             baseModCardDescriptionCnInitialized = initializeClass(
                     "basemod.patches.com.megacrit.cardcrawl.cards.AbstractCard.RenderCustomDynamicVariableCN",
                     "basemod-card-description-cn"
@@ -184,98 +156,42 @@ public final class FirstCombatUiPrewarm {
             return;
         }
 
-        registerKnownTextures();
-        if (completedTextureCount >= PREWARM_TEXTURES.length) {
-            if (!combatTextGlyphsPrewarmed && prewarmCombatTextGlyphs("background")) {
-                combatTextGlyphsPrewarmed = true;
+        int pass = FirstCombatPrewarmBudget.texturePass();
+        if (pass >= 0 && Gdx.files != null) {
+            if (pass != attemptedPass) {
+                attemptedPass = pass;
+                nextTextureIndex = 0;
+            }
+            if (nextTextureIndex < PREWARM_TEXTURES.length) {
+                if (!FirstCombatPrewarmBudget.tryStep()) return;
+                int index = nextTextureIndex++;
+                String path = PREWARM_TEXTURES[index];
+                String atlas = index < FIRST_ROOM_MONSTER_TEXTURES.length
+                        ? path.substring(0, path.lastIndexOf('/') + 1) + "skeleton.atlas" : null;
+                PrewarmTextureRegistry.prewarm(path, atlas, "first_combat_ui_prewarm_step");
                 return;
             }
-            if (!stslibHealthBarReflectionPrewarmed && prewarmStsLibHealthBarReflection("background")) {
-                stslibHealthBarReflectionPrewarmed = true;
-                return;
-            }
-            if (!playerSpineMeshPrewarmed && prewarmPlayerSpineMesh("background")) {
-                playerSpineMeshPrewarmed = true;
-            }
+        }
+        if (!combatTextGlyphsPrewarmed && combatFontsReady()) {
+            if (!FirstCombatPrewarmBudget.tryStep()) return;
+            combatTextGlyphsPrewarmed = prewarmCombatTextGlyphs("background");
             return;
         }
-
-        prewarmNextTexture("background");
+        if (!stslibHealthBarReflectionPrewarmed) {
+            if (!FirstCombatPrewarmBudget.tryStep()) return;
+            stslibHealthBarReflectionPrewarmed = prewarmStsLibHealthBarReflection("background");
+            return;
+        }
+        if (!playerSpineMeshPrewarmed && AbstractDungeon.player != null
+                && CardCrawlGame.psb != null && !CardCrawlGame.psb.isDrawing()) {
+            if (!FirstCombatPrewarmBudget.tryStep()) return;
+            playerSpineMeshPrewarmed = prewarmPlayerSpineMesh("background");
+        }
     }
 
-    private static void prewarmRemainingForUpcomingCombat() {
-        if (fallbackAttempted || !isNextRoomCombat()) {
-            return;
-        }
-        if (isFullyPrewarmed()) {
-            return;
-        }
-
-        fallbackAttempted = true;
-        long started = RamSaverDiag.enabled() ? System.nanoTime() : 0L;
-        int loaded = 0;
-        int cached = 0;
-        int missing = 0;
-        int skipped = 0;
-        int failed = 0;
-        baseModGlowInitialized = initializeClass(
-                "basemod.helpers.CardBorderGlowManager$RenderGlowPatch",
-                "basemod-glow-fallback"
-        );
-        monsterIntentSwitchInitialized = initializeClass(
-                "com.megacrit.cardcrawl.monsters.AbstractMonster$1",
-                "monster-intent-switch-fallback"
-        );
-        baseModCardDescriptionCnInitialized = initializeClass(
-                "basemod.patches.com.megacrit.cardcrawl.cards.AbstractCard.RenderCustomDynamicVariableCN",
-                "basemod-card-description-cn-fallback"
-        );
-        registerKnownTextures();
-        for (int i = 0; i < PREWARM_TEXTURES.length; i++) {
-            switch (prewarmTextureAtIndex(i, "fallback")) {
-                case LOADED:
-                    loaded++;
-                    break;
-                case CACHED:
-                case ALREADY_DONE:
-                    cached++;
-                    break;
-                case MISSING:
-                    missing++;
-                    break;
-                case SKIPPED:
-                    skipped++;
-                    break;
-                case FAILED:
-                    failed++;
-                    break;
-            }
-        }
-        combatTextGlyphsPrewarmed = prewarmCombatTextGlyphs("fallback") || combatTextGlyphsPrewarmed;
-        stslibHealthBarReflectionPrewarmed =
-                prewarmStsLibHealthBarReflection("fallback") || stslibHealthBarReflectionPrewarmed;
-        playerSpineMeshPrewarmed = prewarmPlayerSpineMesh("fallback") || playerSpineMeshPrewarmed;
-
-        if (RamSaverDiag.enabled()) {
-            RamSaverDiag.logDuration(
-                    "first_combat_ui_prewarm_done",
-                    "first-combat",
-                    started,
-                    "loaded=" + loaded
-                            + " cached=" + cached
-                            + " missing=" + missing
-                            + " skipped=" + skipped
-                            + " failed=" + failed
-                            + " completed=" + completedTextureCount + "/" + PREWARM_TEXTURES.length
-                            + " baseModGlow=" + baseModGlowInitialized
-                            + " monsterIntentSwitch=" + monsterIntentSwitchInitialized
-                            + " baseModCardDescriptionCn=" + baseModCardDescriptionCnInitialized
-                            + " combatTextGlyphs=" + combatTextGlyphsPrewarmed
-                            + " stslibHealthBarReflection=" + stslibHealthBarReflectionPrewarmed
-                            + " playerSpineMesh=" + playerSpineMeshPrewarmed,
-                    false
-            );
-        }
+    private static boolean combatFontsReady() {
+        return FontHelper.healthInfoFont != null && FontHelper.blockInfoFont != null
+                && FontHelper.powerAmountFont != null && FontHelper.tipHeaderFont != null;
     }
 
     private static boolean prewarmCombatTextGlyphs(String reason) {
@@ -463,132 +379,6 @@ public final class FirstCombatUiPrewarm {
         }
     }
 
-    private static PrewarmResult prewarmNextTexture(String reason) {
-        int start = nextTextureIndex;
-        for (int inspected = 0; inspected < PREWARM_TEXTURES.length; inspected++) {
-            int index = (start + inspected) % PREWARM_TEXTURES.length;
-            if (PREWARMED_TEXTURES[index]) {
-                continue;
-            }
-            nextTextureIndex = (index + 1) % PREWARM_TEXTURES.length;
-            return prewarmTextureAtIndex(index, reason);
-        }
-        return PrewarmResult.ALREADY_DONE;
-    }
-
-    private static PrewarmResult prewarmTextureAtIndex(int index, String reason) {
-        if (PREWARMED_TEXTURES[index]) {
-            return PrewarmResult.ALREADY_DONE;
-        }
-
-        String path = PREWARM_TEXTURES[index];
-        String key = RamSaver.prewarmKey(Gdx.files.internal(path));
-        if (!RamSaver.textureExists(key)) {
-            markPrewarmed(index);
-            return PrewarmResult.MISSING;
-        }
-
-        boolean diag = RamSaverDiag.enabled();
-        long started = diag ? System.nanoTime() : 0L;
-        try {
-            Texture existing = RamSaver.getExistingTexture(key);
-            if (existing != null) {
-                RamSaver.getTexture(null, key, false);
-                markPrewarmed(index);
-                logTextureStep(diag, started, reason, path, PrewarmResult.CACHED);
-                return PrewarmResult.CACHED;
-            }
-
-            Texture texture = RamSaver.getTexture(null, key, false);
-            if (texture != null && texture.getTextureObjectHandle() != 0) {
-                markPrewarmed(index);
-                logTextureStep(diag, started, reason, path, PrewarmResult.LOADED);
-                return PrewarmResult.LOADED;
-            }
-
-            markPrewarmed(index);
-            logTextureStep(diag, started, reason, path, PrewarmResult.SKIPPED);
-            return PrewarmResult.SKIPPED;
-        }
-        catch (RuntimeException ignored) {
-            markPrewarmed(index);
-            return PrewarmResult.FAILED;
-        }
-    }
-
-    private static void registerKnownTextures() {
-        if (registeredKnownTextures || Gdx.files == null) {
-            return;
-        }
-
-        int registered = 0;
-        int alreadyRegistered = 0;
-        int missing = 0;
-        for (int i = 0; i < PREWARM_TEXTURES.length; i++) {
-            String path = PREWARM_TEXTURES[i];
-            if (RamSaver.textureExists(RamSaver.prewarmKey(Gdx.files.internal(path)))) {
-                alreadyRegistered++;
-                continue;
-            }
-
-            try {
-                FileHandle file = Gdx.files.internal(path);
-                if (file.exists()) {
-                    RamSaver.registerPrewarmTexture(file);
-                    registered++;
-                }
-                else {
-                    markPrewarmed(i);
-                    missing++;
-                }
-            }
-            catch (RuntimeException ignored) {
-                markPrewarmed(i);
-                missing++;
-            }
-        }
-
-        registeredKnownTextures = true;
-        if (RamSaverDiag.enabled()) {
-            RamSaverDiag.logRepeat(
-                    "first_combat_ui_prewarm_registered",
-                    "first-combat-textures",
-                    "registered=" + registered
-                            + " alreadyRegistered=" + alreadyRegistered
-                            + " missing=" + missing
-                            + " completed=" + completedTextureCount + "/" + PREWARM_TEXTURES.length
-            );
-        }
-    }
-
-    private static void markPrewarmed(int index) {
-        if (!PREWARMED_TEXTURES[index]) {
-            PREWARMED_TEXTURES[index] = true;
-            completedTextureCount++;
-        }
-    }
-
-    private static void logTextureStep(
-            boolean diag,
-            long started,
-            String reason,
-            String path,
-            PrewarmResult result
-    ) {
-        if (!diag) {
-            return;
-        }
-        RamSaverDiag.logDuration(
-                "first_combat_ui_prewarm_step",
-                path,
-                started,
-                "reason=" + reason
-                        + " result=" + result
-                        + " completed=" + completedTextureCount + "/" + PREWARM_TEXTURES.length,
-                false
-        );
-    }
-
     private static String[] buildPrewarmTextures() {
         String[] textures = new String[
                 FIRST_ROOM_MONSTER_TEXTURES.length + COMBAT_STATUS_TEXTURES.length + INTENT_TEXTURES.length
@@ -611,16 +401,6 @@ public final class FirstCombatUiPrewarm {
         return textures;
     }
 
-    private static boolean isFullyPrewarmed() {
-        return baseModGlowInitialized
-                && monsterIntentSwitchInitialized
-                && baseModCardDescriptionCnInitialized
-                && completedTextureCount >= PREWARM_TEXTURES.length
-                && combatTextGlyphsPrewarmed
-                && stslibHealthBarReflectionPrewarmed
-                && playerSpineMeshPrewarmed;
-    }
-
     private static boolean shouldPrewarmDuringUpdate() {
         try {
             if (CardCrawlGame.mode == CardCrawlGame.GameMode.SPLASH) {
@@ -641,14 +421,4 @@ public final class FirstCombatUiPrewarm {
         }
     }
 
-    private static boolean isNextRoomCombat() {
-        try {
-            MapRoomNode nextRoom = AbstractDungeon.nextRoom;
-            AbstractRoom room = nextRoom == null ? null : nextRoom.room;
-            return room instanceof MonsterRoom;
-        }
-        catch (RuntimeException ignored) {
-            return false;
-        }
-    }
 }

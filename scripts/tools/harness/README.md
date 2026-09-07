@@ -170,23 +170,6 @@ perfBenchTimeoutSeconds > harnessTimeoutSeconds > 720
 - 性能回归属于信息结果：task 仍返回退出码 `0`，应读取 `result.json` 的状态和 `perf-result.json`，不能只看 Gradle 成功与否。
 - `-PperfBenchUpdateBaseline=true` 会写入 baseline，即使本轮相对旧 baseline 存在回归；更新前应人工检查场景和数据完整性。
 
-### 设备端离线尖刺诊断
-
-`offline_trace.py` 可在游戏运行期间从设备本地采集系统调度和图形轨迹，不依赖 Arthas 或网络：
-
-```bash
-python3 scripts/tools/harness/offline_trace.py \
-  --device 10.126.126.2:5555 \
-  --out agent-tmp/offline-trace \
-  --duration 600
-
-python3 scripts/tools/harness/offline_trace_report.py \
-  --input agent-tmp/offline-trace \
-  --output agent-tmp/offline-trace/report.json
-```
-
-采集内容包括 `atrace` 的 `sched/gfx/view/wm/am/freq/idle`、`dumpsys gfxinfo ... framestats`、游戏进程 PSS/线程数。报告会量化游戏线程被调度出去的时长、睡眠状态、下一运行任务、Android UI/GPU frame percentile，并可与同目录的 frame-probe/JVM GC 文件一起解释。`atrace` 是离线系统证据，不能直接给出 GPU driver 内部调用栈；需要严格 GPU 因果关系时仍需 Perfetto GPU counters 或厂商 GPU 工具。
-
 ### 输出文件
 
 每轮时间戳目录通常包含：
