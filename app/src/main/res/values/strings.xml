@@ -439,9 +439,12 @@
     <string name="main_launch_unread_suggestions_title">Some mod notices have not been read</string>
     <string name="main_launch_unread_suggestions_message_intro">These enabled mods still have unread notices:</string>
     <string name="main_launch_unread_suggestions_message_more_format">%1$d more enabled mods are not shown here.</string>
-    <string name="main_launch_unread_suggestions_message_outro">It is recommended to open the circled exclamation mark on each mod card and read the notice first. You can cancel this launch, or continue anyway.</string>
+    <string name="main_launch_unread_suggestions_message_outro_open_mark">It is recommended to open the circled exclamation mark</string>
+    <string name="main_launch_unread_suggestions_message_outro_read_before">on each mod card and read the notice first.</string>
+    <string name="main_launch_unread_suggestions_message_outro_options">You can cancel this launch, or continue anyway.</string>
     <string name="main_launch_unread_suggestions_cancel">Cancel launch</string>
     <string name="main_launch_unread_suggestions_continue">Launch anyway</string>
+    <string name="main_launch_unread_suggestions_illustration_description">Illustration: open the circled exclamation mark on the mod card to read that mod\'s notice.</string>
     <string name="main_launch_enabled_mod_size_warning_title">Warning</string>
     <string name="main_launch_enabled_mod_size_warning_message">The currently enabled mods total about %1$s. Too many large mods are very likely to put excessive pressure on this device, causing crashes, stutter, and other issues.
 

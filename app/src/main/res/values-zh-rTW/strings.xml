@@ -439,9 +439,12 @@
     <string name="main_launch_unread_suggestions_title">有模組建議尚未閱讀</string>
     <string name="main_launch_unread_suggestions_message_intro">以下已啟用模組帶有未閱讀的提示：</string>
     <string name="main_launch_unread_suggestions_message_more_format">另有 %1$d 個已啟用模組未在此列出。</string>
-    <string name="main_launch_unread_suggestions_message_outro">建議先點開模組卡片右側的圓圈感嘆號檢視注意事項。你可以取消本次啟動，或忽略這些提示繼續啟動遊戲。</string>
+    <string name="main_launch_unread_suggestions_message_outro_open_mark">建議先點開模組卡片右側的圓圈感嘆號</string>
+    <string name="main_launch_unread_suggestions_message_outro_read_before">檢視注意事項。</string>
+    <string name="main_launch_unread_suggestions_message_outro_options">你可以取消本次啟動，或忽略這些提示繼續啟動遊戲。</string>
     <string name="main_launch_unread_suggestions_cancel">取消啟動</string>
     <string name="main_launch_unread_suggestions_continue">仍要啟動</string>
+    <string name="main_launch_unread_suggestions_illustration_description">示意圖：點開模組卡片上的圓圈感嘆號，查看該模組的注意事項。</string>
     <string name="main_launch_enabled_mod_size_warning_title">警告</string>
     <string name="main_launch_enabled_mod_size_warning_message">目前啟用模組總大小約為 %1$s，大型模組過多時，很有可能給裝置帶來過大壓力，造成崩潰卡頓等問題。
 

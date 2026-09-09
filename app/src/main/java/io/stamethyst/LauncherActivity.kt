@@ -54,6 +54,8 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_DEBUG_AUTOPLAY_SAVE_MODE = "io.stamethyst.debug_autoplay_save_mode"
         const val EXTRA_DEBUG_AUTOPLAY_MODE = "io.stamethyst.debug_autoplay_mode"
         const val EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.debug_autoplay_single_room_spec"
+        const val EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_BENCH_MODE =
+            "io.stamethyst.debug_autoplay_single_room_bench_mode"
         const val EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS =
             "io.stamethyst.debug_autoplay_choice_delay_ms"
         const val EXTRA_DEBUG_PERFORMANCE_DEEP_DIAGNOSTICS =
@@ -110,6 +112,7 @@ class LauncherActivity : AppCompatActivity() {
         val autoplaySaveMode: AutoplaySaveMode,
         val autoplayMode: AutoplayMode,
         val autoplaySingleRoomSpecPath: String,
+        val autoplaySingleRoomBenchMode: Boolean,
         val autoplayChoiceDelayMs: Long,
         val performanceDeepDiagnostics: Boolean?,
         val cardObtainEffectOwnershipCompatEnabled: Boolean
@@ -312,6 +315,7 @@ class LauncherActivity : AppCompatActivity() {
                         autoplaySaveMode = request.autoplaySaveMode,
                         autoplayMode = request.autoplayMode,
                         autoplaySingleRoomSpecPath = request.autoplaySingleRoomSpecPath,
+                        autoplaySingleRoomBenchMode = request.autoplaySingleRoomBenchMode,
                         autoplayChoiceDelayMs = request.autoplayChoiceDelayMs,
                         performanceDeepDiagnostics = request.performanceDeepDiagnostics,
                         cardObtainEffectOwnershipCompatEnabled =
@@ -363,6 +367,10 @@ class LauncherActivity : AppCompatActivity() {
             ),
             autoplaySingleRoomSpecPath =
                 startupIntent.getStringExtra(EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_SPEC).orEmpty(),
+            autoplaySingleRoomBenchMode = startupIntent.getBooleanExtra(
+                EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_BENCH_MODE,
+                false
+            ),
             autoplayChoiceDelayMs = startupIntent.getLongExtra(
                 EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS,
                 0L

@@ -57,6 +57,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.zIndex
@@ -126,10 +128,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -4572,14 +4578,7 @@ private fun LauncherMainScreenContent(
             onDismissRequest = actions.onCancelLaunchWithUnreadSuggestions,
             title = { Text(text = stringResource(R.string.main_launch_unread_suggestions_title)) },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text(text = unreadMessage)
-                }
+                UnreadSuggestionLaunchWarningContent(unreadMessage = unreadMessage)
             },
             confirmButton = {
                 TextButton(onClick = actions.onConfirmLaunchWithUnreadSuggestions) {
@@ -5425,13 +5424,83 @@ private fun SteamCloudConflictConfirmationDialog(
     )
 }
 
+private const val SUGGESTION_ICON_INLINE_ID = "suggestion_notice_icon"
+private const val SUGGESTION_ICON_INLINE_ALTERNATE = "\uFFFC"
+private const val SUGGESTION_THIN_SPACE = "\u2009"
+private const val SUGGESTION_UNREAD_ILLUSTRATION_ASPECT = 411f / 125f
+
+@Composable
+private fun UnreadSuggestionLaunchWarningContent(unreadMessage: String) {
+    val inlineContent = remember {
+        mapOf(
+            SUGGESTION_ICON_INLINE_ID to InlineTextContent(
+                placeholder = Placeholder(
+                    width = 20.sp,
+                    height = 20.sp,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
+                )
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_error_outline),
+                        contentDescription = null,
+                        modifier = Modifier.padding(3.dp).size(14.dp)
+                    )
+                }
+            }
+        )
+    }
+    val openMarkNotice = stringResource(R.string.main_launch_unread_suggestions_message_outro_open_mark)
+    val readBefore = stringResource(R.string.main_launch_unread_suggestions_message_outro_read_before)
+    val message = buildAnnotatedString {
+        append(unreadMessage)
+        append('\n')
+        append('\n')
+        append(openMarkNotice)
+        append(SUGGESTION_THIN_SPACE)
+        appendInlineContent(SUGGESTION_ICON_INLINE_ID, SUGGESTION_ICON_INLINE_ALTERNATE)
+        append(SUGGESTION_THIN_SPACE)
+        append(readBefore)
+        append(' ')
+        append(stringResource(R.string.main_launch_unread_suggestions_message_outro_options))
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 320.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = message,
+            inlineContent = inlineContent
+        )
+        Image(
+            painter = painterResource(R.drawable.mod_suggestion_unread_illustration),
+            contentDescription = stringResource(
+                R.string.main_launch_unread_suggestions_illustration_description
+            ),
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .aspectRatio(SUGGESTION_UNREAD_ILLUSTRATION_ASPECT)
+        )
+    }
+}
+
 @Composable
 private fun buildUnreadSuggestionLaunchWarningMessage(modNames: List<String>): String {
     val visibleNames = modNames.take(5)
     val hiddenCount = (modNames.size - visibleNames.size).coerceAtLeast(0)
     return buildString {
         append(stringResource(R.string.main_launch_unread_suggestions_message_intro))
-        append("\n\n")
+        append('\n')
+        append('\n')
         visibleNames.forEach { modName ->
             append("- ").append(modName).append('\n')
         }
@@ -5442,10 +5511,7 @@ private fun buildUnreadSuggestionLaunchWarningMessage(modNames: List<String>): S
                     hiddenCount
                 )
             )
-            append('\n')
         }
-        append('\n')
-        append(stringResource(R.string.main_launch_unread_suggestions_message_outro))
     }.trimEnd()
 }
 

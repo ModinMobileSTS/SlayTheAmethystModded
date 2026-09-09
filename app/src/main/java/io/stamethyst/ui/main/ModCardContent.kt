@@ -3,6 +3,12 @@ package io.stamethyst.ui.main
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +18,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,12 +31,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -405,18 +415,84 @@ private fun ModAssociationBadge(
     )
 }
 
+private const val SUGGESTION_UNREAD_RIPPLE_MS = 3400
+private const val SUGGESTION_UNREAD_RIPPLE_COUNT = 2
+private const val SUGGESTION_UNREAD_RIPPLE_START_SCALE = 0.55f
+private const val SUGGESTION_UNREAD_RIPPLE_END_SCALE = 1.7f
+private const val SUGGESTION_UNREAD_PILL_RADIUS_DP = 10f
+private const val SUGGESTION_UNREAD_RIPPLE_STROKE_DP = 1.4f
+
+private val SuggestionGoldDark = Color(0xFFE9C74E)
+private val SuggestionGoldLight = Color(0xFF8A6D00)
+
 @Composable
 private fun ModSuggestionBadge(
     enabled: Boolean,
     unread: Boolean,
     onClick: () -> Unit,
 ) {
-    ModCardIconBadge(
-        iconResId = R.drawable.ic_error_outline,
-        contentDescription = null,
-        enabled = enabled,
-        onClick = onClick
-    )
+    if (unread) {
+        val scheme = MaterialTheme.colorScheme
+        val useLight = remember(scheme.surface) { scheme.surface.luminance() > 0.5f }
+        val gold = if (useLight) SuggestionGoldLight else SuggestionGoldDark
+        val transition = rememberInfiniteTransition(label = "mod_suggestion_ripple")
+        val phase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = SUGGESTION_UNREAD_RIPPLE_MS,
+                    easing = LinearEasing
+                )
+            ),
+            label = "mod_suggestion_ripple_phase"
+        )
+        ModCardBadgeSurface(
+            enabled = enabled,
+            onClick = onClick
+        ) {
+            Box(
+                modifier = Modifier.padding(4.dp).size(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val strokeWidth = SUGGESTION_UNREAD_RIPPLE_STROKE_DP.dp.toPx()
+                    val baseRadius = SUGGESTION_UNREAD_PILL_RADIUS_DP.dp.toPx()
+                    repeat(SUGGESTION_UNREAD_RIPPLE_COUNT) { index ->
+                        var local = phase + index.toFloat() / SUGGESTION_UNREAD_RIPPLE_COUNT
+                        if (local > 1f) {
+                            local -= 1f
+                        }
+                        val eased = 1f - (1f - local) * (1f - local) * (1f - local)
+                        val radius = baseRadius * (
+                            SUGGESTION_UNREAD_RIPPLE_START_SCALE +
+                                (SUGGESTION_UNREAD_RIPPLE_END_SCALE - SUGGESTION_UNREAD_RIPPLE_START_SCALE) * eased
+                            )
+                        val alpha = (1f - local) * 0.7f
+                        drawCircle(
+                            color = gold.copy(alpha = alpha),
+                            radius = radius,
+                            center = center,
+                            style = Stroke(width = strokeWidth)
+                        )
+                    }
+                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_error_outline),
+                    contentDescription = null,
+                    tint = gold,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+        }
+    } else {
+        ModCardIconBadge(
+            iconResId = R.drawable.ic_error_outline,
+            contentDescription = null,
+            enabled = enabled,
+            onClick = onClick
+        )
+    }
 }
 
 @Composable

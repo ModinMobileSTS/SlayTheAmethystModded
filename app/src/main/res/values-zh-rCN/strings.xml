@@ -438,9 +438,12 @@
     <string name="main_launch_unread_suggestions_title">有模组建议尚未阅读</string>
     <string name="main_launch_unread_suggestions_message_intro">以下已启用模组带有未阅读的提示：</string>
     <string name="main_launch_unread_suggestions_message_more_format">另有 %1$d 个已启用模组未在此列出。</string>
-    <string name="main_launch_unread_suggestions_message_outro">建议先点开模组卡片右侧的圆圈感叹号查看注意事项。你可以取消本次启动，或忽略这些提示继续启动游戏。</string>
+    <string name="main_launch_unread_suggestions_message_outro_open_mark">建议先点开模组卡片右侧的圆圈感叹号</string>
+    <string name="main_launch_unread_suggestions_message_outro_read_before">查看注意事项。</string>
+    <string name="main_launch_unread_suggestions_message_outro_options">你可以取消本次启动，或忽略这些提示继续启动游戏。</string>
     <string name="main_launch_unread_suggestions_cancel">取消启动</string>
     <string name="main_launch_unread_suggestions_continue">仍要启动</string>
+    <string name="main_launch_unread_suggestions_illustration_description">示意图：点开模组卡片上的圆圈感叹号，查看该模组的注意事项。</string>
     <string name="main_launch_enabled_mod_size_warning_title">警告</string>
     <string name="main_launch_enabled_mod_size_warning_message">当前启用模组总大小约为 %1$s，大型模组过多时，很有可能给设备带来过大压力，造成崩溃卡顿等问题。
 
