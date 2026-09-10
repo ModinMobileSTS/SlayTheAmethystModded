@@ -95,6 +95,36 @@ internal object ResourcePackStore {
         )
     }
 
+    /**
+     * Fast launcher-start check for an already activated generation.
+     *
+     * Full content hashing remains in [inspect] and recovery. This only verifies the
+     * atomically-written pointer, generation metadata, and required launch files so the
+     * launcher does not show a preparation screen on every healthy startup.
+     */
+    @JvmStatic
+    fun isQuickStartReady(context: Context): Boolean {
+        val root = RuntimePaths.externalResourcesRoot(context)
+        val pointer = readActivePointer(root) ?: return false
+        val generation = generationDir(root, pointer.packId)
+        if (!generation.isDirectory) return false
+        if (!metadataMatchesActiveGeneration(
+                File(generation, ResourcePackContract.MANIFEST_FILE_NAME),
+                pointer.packId
+            )
+        ) {
+            return false
+        }
+        if (!metadataMatchesActiveGeneration(
+                File(generation, ResourcePackContract.INSTALL_MARKER_FILE_NAME),
+                pointer.packId
+            )
+        ) {
+            return false
+        }
+        return ResourcePackContract.collectMissingContent(generation).isEmpty()
+    }
+
     @JvmStatic
     fun activeGenerationDir(context: Context): File? {
         val root = RuntimePaths.externalResourcesRoot(context)
@@ -435,6 +465,19 @@ internal object ResourcePackStore {
     }
 
     private data class ActivePointer(val packId: String)
+
+    private fun metadataMatchesActiveGeneration(file: File, packId: String): Boolean {
+        if (!file.isFile) return false
+        return runCatching {
+            val properties = Properties()
+            file.reader(StandardCharsets.UTF_8).use(properties::load)
+            properties.getProperty("resourcePackVersion", properties.getProperty("version"))
+                ?.trim() == BuildConfig.RESOURCE_PACK_VERSION.trim() &&
+                properties.getProperty("packId")?.trim() == packId &&
+                properties.getProperty("schemaVersion")?.toIntOrNull() ==
+                    ResourcePackContract.SCHEMA_VERSION
+        }.getOrDefault(false)
+    }
 
     private fun ensureRepositoryDirs(context: Context) {
         val root = RuntimePaths.externalResourcesRoot(context)

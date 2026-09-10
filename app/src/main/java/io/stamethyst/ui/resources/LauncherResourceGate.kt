@@ -64,6 +64,7 @@ import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.resources.ExternalResourcePackService
 import io.stamethyst.backend.resources.ResourcePackDownloadMirrorSwitchController
 import io.stamethyst.backend.resources.ResourcePackSlowDownloadMirrorSwitch
+import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.UpdateMirrorManager
@@ -84,12 +85,19 @@ fun LauncherResourceGate(
     val applicationContext = context.applicationContext
     val coroutineScope = rememberCoroutineScope()
     val quarkDownloadUrl = stringResource(R.string.update_dialog_quark_download_url)
+    val activeGenerationReady = remember(applicationContext) {
+        ResourcePackStore.isQuickStartReady(applicationContext)
+    }
     var gateState by remember {
         mutableStateOf<ResourceGateState>(
-            ResourceGateState.Preparing(
-                percent = 0,
-                message = context.progressText(R.string.startup_progress_checking_external_resources)
-            )
+            if (activeGenerationReady) {
+                ResourceGateState.Ready
+            } else {
+                ResourceGateState.Preparing(
+                    percent = 0,
+                    message = context.progressText(R.string.startup_progress_checking_external_resources)
+                )
+            }
         )
     }
     var selectedMirror by remember {
@@ -118,6 +126,9 @@ fun LauncherResourceGate(
     }
 
     LaunchedEffect(retryNonce) {
+        if (retryNonce == 0 && activeGenerationReady) {
+            return@LaunchedEffect
+        }
         mirrorSwitchController.clearSlowDownloadPrompt()
         slowDownloadSwitch = null
         readyNotified = false

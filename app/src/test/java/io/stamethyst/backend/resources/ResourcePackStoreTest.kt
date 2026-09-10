@@ -48,6 +48,32 @@ class ResourcePackStoreTest {
     }
 
     @Test
+    fun isQuickStartReady_acceptsAHealthyActiveGeneration() {
+        withTestContext { context, root ->
+            val archive = File(root, "resources.zip")
+            writeResourcePackArchive(archive)
+
+            ResourcePackStore.installArchive(context, archive, null, "test")
+
+            assertTrue(ResourcePackStore.isQuickStartReady(context))
+        }
+    }
+
+    @Test
+    fun isQuickStartReady_rejectsMissingRequiredContent() {
+        withTestContext { context, root ->
+            val archive = File(root, "resources.zip")
+            writeResourcePackArchive(archive)
+            ResourcePackStore.installArchive(context, archive, null, "test")
+            val generation = ResourcePackStore.activeGenerationDir(context)
+                ?: error("active generation was not installed")
+            File(generation, "assets/${ResourcePackContract.requiredAssetFiles.first()}").delete()
+
+            assertFalse(ResourcePackStore.isQuickStartReady(context))
+        }
+    }
+
+    @Test
     fun inspect_detectsModifiedActiveContent() {
         withTestContext { context, root ->
             val archive = File(root, "resources.zip")
