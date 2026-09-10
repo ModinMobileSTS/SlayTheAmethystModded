@@ -323,10 +323,9 @@
     <string name="startup_progress_extracting_external_resources">Preparing external runtime resources... %1$d%%</string>
     <string name="startup_progress_external_resources_ready">External runtime resources ready</string>
     <string name="resource_gate_title">Preparing runtime resources</string>
-    <string name="resource_gate_description">The launcher needs a resource pack before it can continue. Full APK builds install these resources locally; slim builds download them once.</string>
     <string name="resource_gate_progress_percent">%1$d%%</string>
     <string name="resource_gate_failure_title">Resource download failed</string>
-    <string name="resource_gate_full_release_fallback">If the resource pack cannot be downloaded, download the latest full release APK from GitHub. The full APK includes all runtime resources and does not need this extra download.</string>
+    <string name="resource_gate_full_release_fallback">If the resource pack cannot be downloaded, download the latest full release APK from GitHub. Its embedded resource archive avoids the extra network download.</string>
     <string name="resource_gate_full_release_quick_download">Cannot download? Tap to download the full APK.</string>
     <string name="resource_gate_fetching_latest_full_release">Fetching latest version</string>
     <string name="resource_gate_fetching_latest_full_release_description">Getting the latest offline APK download link...</string>
@@ -1835,6 +1834,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_busy_installing_arthas_resource">Downloading and installing Arthas diagnostics module…</string>
     <string name="settings_arthas_resource_installed">Arthas diagnostics module installed.</string>
     <string name="settings_arthas_resource_install_failed">Failed to install Arthas diagnostics module: %1$s</string>
+    <string name="settings_resource_pack_title">Runtime resource pack</string>
+    <string name="settings_resource_pack_ready">Ready: version %1$s, pack %2$s. Tap to verify or reinstall.</string>
+    <string name="settings_resource_pack_invalid">Needs repair: %1$s</string>
+    <string name="settings_busy_reinstalling_resource_pack">Verifying and reinstalling runtime resources…</string>
+    <string name="settings_resource_pack_repaired">Runtime resource pack repaired.</string>
+    <string name="settings_resource_pack_repair_failed">Failed to repair runtime resource pack: %1$s</string>
     <string name="settings_performance_logs_title">Performance logs</string>
     <string name="settings_performance_logs_desc">Export or share performance diagnostics collected on this device.</string>
     <string name="settings_performance_logs_share">Share performance logs</string>

@@ -2,6 +2,7 @@ package io.stamethyst.backend.easytier
 
 import android.content.Context
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.backend.resources.ExternalResourcePackService
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -34,7 +35,7 @@ internal object EasyTierNativeLibraryLoader {
                 return
             }
             val sourceLibraryFiles = requireLibraryFiles(
-                RuntimePaths.externalNativeLibDir(context)
+                resolveLibraryDir(context)
             )
             val libraryFiles = stageLibraryFilesForLoading(context, sourceLibraryFiles)
             // Android's linker does not reliably permit executable mappings from
@@ -49,6 +50,22 @@ internal object EasyTierNativeLibraryLoader {
         libraryFileNames.map { fileName ->
             File(libraryDir, fileName).also(::requireLibraryFile)
         }
+
+    internal fun resolveLibraryDir(context: Context): File {
+        val installedDir = RuntimePaths.externalNativeLibDir(context)
+        if (hasRequiredLibraries(installedDir)) {
+            return installedDir
+        }
+        ExternalResourcePackService.installNativeLibraries(context)
+        return installedDir
+    }
+
+    internal fun hasRequiredLibraries(directory: File): Boolean {
+        return libraryFileNames.all { fileName ->
+            val file = File(directory, fileName)
+            file.isFile && file.length() > 0L
+        }
+    }
 
     @Throws(IOException::class)
     internal fun stageLibraryFilesForLoading(

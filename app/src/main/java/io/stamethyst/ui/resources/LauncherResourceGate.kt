@@ -86,14 +86,10 @@ fun LauncherResourceGate(
     val quarkDownloadUrl = stringResource(R.string.update_dialog_quark_download_url)
     var gateState by remember {
         mutableStateOf<ResourceGateState>(
-            if (ExternalResourcePackService.isAvailable(applicationContext)) {
-                ResourceGateState.Ready
-            } else {
-                ResourceGateState.Preparing(
-                    percent = 0,
-                    message = context.progressText(R.string.startup_progress_checking_external_resources)
-                )
-            }
+            ResourceGateState.Preparing(
+                percent = 0,
+                message = context.progressText(R.string.startup_progress_checking_external_resources)
+            )
         )
     }
     var selectedMirror by remember {
@@ -124,10 +120,6 @@ fun LauncherResourceGate(
     LaunchedEffect(retryNonce) {
         mirrorSwitchController.clearSlowDownloadPrompt()
         slowDownloadSwitch = null
-        if (retryNonce == 0 && ExternalResourcePackService.isAvailable(applicationContext)) {
-            gateState = ResourceGateState.Ready
-            return@LaunchedEffect
-        }
         readyNotified = false
         gateState = ResourceGateState.Preparing(
             percent = 0,
@@ -286,11 +278,6 @@ private fun ResourcePreparationScreen(
                         text = stringResource(R.string.resource_gate_title),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = stringResource(R.string.resource_gate_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (preparing != null) {
