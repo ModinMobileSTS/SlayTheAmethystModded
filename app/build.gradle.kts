@@ -73,9 +73,15 @@ val resourcePackDownloadUrls = buildList {
     .filter(String::isNotEmpty)
     .distinct()
 val resourcePackDownloadUrl = resourcePackDownloadUrls.firstOrNull().orEmpty()
+// Hosted pack identity. Keep this on resources-v1.4 until the zip at the
+// download URL is actually replaced; bumping it forces every player to re-download.
 val resourcePackVersion = readGradleProperty(
     "resourcePack.version",
     readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.4" }
+)
+val resourcePackSha256 = readGradleProperty(
+    "resourcePack.sha256",
+    readLocalProperty("resourcePack.sha256")
 )
 val cloudControlConfigUrl = readGradleProperty(
     "cloudControl.configUrl",
@@ -121,6 +127,7 @@ android {
         buildConfigField("String", "RESOURCE_PACK_DOWNLOAD_URL", resourcePackDownloadUrl.toBuildConfigStringLiteral())
         buildConfigField("String[]", "RESOURCE_PACK_DOWNLOAD_URLS", resourcePackDownloadUrls.toBuildConfigStringArrayLiteral())
         buildConfigField("String", "RESOURCE_PACK_VERSION", resourcePackVersion.toBuildConfigStringLiteral())
+        buildConfigField("String", "RESOURCE_PACK_SHA256", resourcePackSha256.toBuildConfigStringLiteral())
         buildConfigField("String", "CLOUD_CONTROL_CONFIG_URL", cloudControlConfigUrl.toBuildConfigStringLiteral())
         buildConfigField("boolean", "SWAPPY_FRAME_PACING_ENABLED", swappyFramePacingEnabled.toString())
 

@@ -82,6 +82,8 @@
 > [!NOTE]
 > `ModTheSpire.jar`、`BaseMod.jar`、`StSLib.jar` 等核心模组 jar 由应用资源打包提供，不会在构建时从外部模组源动态解析。
 
+资源包策略：slim APK 在需要时从固定的 GitHub/Gitee `resources-v1.4` 链接下载；full APK 可将同版本归档内置在 APK 中供离线首次安装。两种 APK 使用相同的本地资源仓库。只要 `resourcePack.version` 不变，应用升级会复用已安装的 generation，不会重新下载。资源包不随本仓库 CI 发版。
+
 ### 2. 构建调试版 APK
 
 ```powershell

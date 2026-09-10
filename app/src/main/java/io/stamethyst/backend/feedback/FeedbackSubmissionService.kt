@@ -8,6 +8,7 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.diag.CrashArchiveContext
 import io.stamethyst.backend.diag.DiagnosticsArchiveBuilder
+import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.config.RuntimePaths
 import org.json.JSONArray
@@ -93,6 +94,7 @@ object FeedbackSubmissionService {
         val environment = collectEnvironmentSnapshot(host)
         val enabledMods = collectEnabledMods(host)
         val logSummary = FeedbackLogAnalyzer.summarizeLatestLog(RuntimePaths.latestLog(host))
+        val resourcePackDiagnostics = ResourcePackStore.buildDiagnostics(host)
         val issueTitle = buildIssueTitle(draft)
         val issueBody = buildIssueBody(
             draft = draft,
@@ -106,7 +108,8 @@ object FeedbackSubmissionService {
             enabledMods = enabledMods,
             issueTitle = issueTitle,
             issueBody = issueBody,
-            logSummary = logSummary
+            logSummary = logSummary,
+            resourcePackDiagnostics = resourcePackDiagnostics
         )
         val archiveFile = buildFeedbackArchive(
             host = host,
@@ -290,7 +293,8 @@ object FeedbackSubmissionService {
         enabledMods: List<FeedbackEnabledModSnapshot>,
         issueTitle: String,
         issueBody: String,
-        logSummary: FeedbackLogSummary
+        logSummary: FeedbackLogSummary,
+        resourcePackDiagnostics: String
     ): String {
         val root = JSONObject()
         root.put("source", "slay-the-amethyst-android")
@@ -380,6 +384,9 @@ object FeedbackSubmissionService {
         root.put("latestLogSummary", JSONObject().apply {
             put("interestingLines", JSONArray(logSummary.interestingLines))
             put("tailLines", JSONArray(logSummary.tailLines))
+        })
+        root.put("resourcePack", JSONObject().apply {
+            put("diagnostics", resourcePackDiagnostics)
         })
         return root.toString(2)
     }

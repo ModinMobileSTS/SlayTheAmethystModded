@@ -17,6 +17,7 @@ import io.stamethyst.backend.render.MobileGluesMultidrawMode
 import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.resources.ResourcePackStore
 
 internal data class LauncherSettingsDiagnosticsSection(
     val title: String,
@@ -52,6 +53,7 @@ internal object LauncherSettingsDiagnosticsFormatter {
             CompatibilitySettings.isNativeTouchscreenAllowlistCompatEnabled(context)
         val runtimeDownscalePolicy = CompatibilitySettings.readRuntimeDownscaleMaterialPolicy(context)
         val importDownscalePolicy = CompatibilitySettings.readImportDownscaleMaterialPolicy(context)
+        val resourcePack = ResourcePackStore.inspect(context)
         return LauncherSettingsDiagnosticsSnapshot(
             sections = listOf(
                 LauncherSettingsDiagnosticsSection(
@@ -71,6 +73,18 @@ internal object LauncherSettingsDiagnosticsFormatter {
                             LauncherConfig.isAutoCheckUpdatesEnabled(context)
                         ),
                         "preferredUpdateMirrorId" to LauncherConfig.readPreferredUpdateMirrorId(context)
+                    )
+                ),
+                LauncherSettingsDiagnosticsSection(
+                    title = "Launcher / Resource pack",
+                    entries = listOf(
+                        "ready" to formatBoolean(resourcePack.ready),
+                        "packId" to (resourcePack.packId ?: "none"),
+                        "version" to (resourcePack.version ?: "none"),
+                        "generation" to (resourcePack.generationDir?.absolutePath ?: "none"),
+                        "state" to (resourcePack.state ?: "none"),
+                        "issues" to resourcePack.issues.joinToString("; "),
+                        "legacyPaths" to resourcePack.legacyPaths.joinToString("|")
                     )
                 ),
                 LauncherSettingsDiagnosticsSection(

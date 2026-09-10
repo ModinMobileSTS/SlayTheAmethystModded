@@ -322,7 +322,6 @@
     <string name="startup_progress_extracting_external_resources">正在准备外置运行资源… %1$d%%</string>
     <string name="startup_progress_external_resources_ready">外置运行资源已准备完成</string>
     <string name="resource_gate_title">正在准备运行资源</string>
-    <string name="resource_gate_description">依赖包约 70 M，请耐心等待。</string>
     <string name="resource_gate_progress_percent">%1$d%%</string>
     <string name="resource_gate_failure_title">资源下载失败</string>
     <string name="resource_gate_full_release_fallback">建议切换上方镜像源重试下载。如果全部下载失败，建议移步 Github 下载离线版安装包。</string>
@@ -883,7 +882,6 @@
     <string name="settings_reimport_sts_jar_title">重新导入 desktop-1.0.jar</string>
     <string name="settings_reinstall_resource_pack_title">重新拉取依赖包</string>
     <string name="settings_reinstall_resource_pack_desc">如果游戏遇到资源缺失问题，请重新拉取。</string>
-    <string name="settings_busy_reinstalling_resource_pack">正在重新拉取依赖包…</string>
     <string name="settings_resource_pack_reinstalled">依赖包已重新拉取。</string>
     <string name="settings_resource_pack_reinstall_failed">重新拉取依赖包失败：%1$s</string>
     <string name="sts_jar_integrity_warning_title">desktop-1.0.jar 疑似损坏</string>
@@ -2143,6 +2141,12 @@
     <string name="settings_busy_installing_arthas_resource">正在下载并安装 Arthas 诊断模块…</string>
     <string name="settings_arthas_resource_installed">Arthas 诊断模块已安装。</string>
     <string name="settings_arthas_resource_install_failed">Arthas 诊断模块安装失败：%1$s</string>
+    <string name="settings_resource_pack_title">运行资源包</string>
+    <string name="settings_resource_pack_ready">已就绪：版本 %1$s，资源标识 %2$s。点击校验或重新安装。</string>
+    <string name="settings_resource_pack_invalid">需要修复：%1$s</string>
+    <string name="settings_busy_reinstalling_resource_pack">正在校验并重新安装运行资源…</string>
+    <string name="settings_resource_pack_repaired">运行资源包已修复。</string>
+    <string name="settings_resource_pack_repair_failed">运行资源包修复失败：%1$s</string>
     <string name="settings_performance_logs_title">性能日志</string>
     <string name="settings_performance_logs_desc">导出或分享设备上采集的性能诊断数据。</string>
     <string name="settings_performance_logs_share">分享性能日志</string>

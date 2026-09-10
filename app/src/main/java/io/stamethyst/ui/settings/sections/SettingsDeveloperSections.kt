@@ -60,6 +60,7 @@ internal data class DeveloperRuntimeSettingsActions(
     val onSharePerformanceLogs: () -> Unit,
     val onExportPerformanceLogs: () -> Unit,
     val onInstallArthasResource: () -> Unit,
+    val onRepairResourcePack: () -> Unit,
     val onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     val onSustainedPerformanceModeChanged: (Boolean) -> Unit,
     val onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
@@ -130,6 +131,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onSharePerformanceLogs: () -> Unit = {},
     onExportPerformanceLogs: () -> Unit = {},
     onInstallArthasResource: () -> Unit = {},
+    onRepairResourcePack: () -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onClearJunkFiles: () -> Unit = {},
@@ -177,6 +179,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onSharePerformanceLogs = onSharePerformanceLogs,
                         onExportPerformanceLogs = onExportPerformanceLogs,
                         onInstallArthasResource = onInstallArthasResource,
+                        onRepairResourcePack = onRepairResourcePack,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                         onCompendiumUpgradeTouchFixEnabledChanged =
@@ -501,6 +504,24 @@ internal fun SettingsDeveloperRuntimeSection(
 ) {
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_resource_pack_title),
+        supportingText = if (uiState.resourcePackReady) {
+            stringResource(
+                R.string.settings_resource_pack_ready,
+                uiState.resourcePackVersion.ifBlank { "unknown" },
+                uiState.resourcePackId.take(12).ifBlank { "unknown" }
+            )
+        } else {
+            stringResource(
+                R.string.settings_resource_pack_invalid,
+                uiState.resourcePackIssues.ifBlank { "unknown" }
+            )
+        },
+        enabled = !uiState.busy,
+        onClick = actions.onRepairResourcePack
+    )
 
     SettingsSwitchItem(
         SettingsSwitchSpec(

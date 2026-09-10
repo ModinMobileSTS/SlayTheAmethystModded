@@ -323,10 +323,9 @@
     <string name="startup_progress_extracting_external_resources">正在準備外置執行資源… %1$d%%</string>
     <string name="startup_progress_external_resources_ready">外置執行資源已準備完成</string>
     <string name="resource_gate_title">正在準備執行資源</string>
-    <string name="resource_gate_description">啟動器需要先準備資源包才能繼續。full 版本會從安裝包內安裝這些資源，slim 版本會在首次啟動時下載一次。</string>
     <string name="resource_gate_progress_percent">%1$d%%</string>
     <string name="resource_gate_failure_title">資源下載失敗</string>
-    <string name="resource_gate_full_release_fallback">如果資源包始終下載不下來，可以去 GitHub 下載最新 release 的 full 版本 APK。full 版本已包含全部執行資源，不需要額外下載。</string>
+    <string name="resource_gate_full_release_fallback">如果資源包始終下載不下來，可以去 GitHub 下載最新 release 的 full 版本 APK。該版本內置資源包歸檔，可免除額外網路下載。</string>
     <string name="resource_gate_full_release_quick_download">無法下載？點我下載完整版</string>
     <string name="resource_gate_fetching_latest_full_release">正在取得最新版</string>
     <string name="resource_gate_fetching_latest_full_release_description">正在取得最新離線版下載連結…</string>
@@ -884,7 +883,6 @@
     <string name="settings_reimport_sts_jar_title">重新匯入 desktop-1.0.jar</string>
     <string name="settings_reinstall_resource_pack_title">重新拉取依賴包</string>
     <string name="settings_reinstall_resource_pack_desc">如果遊戲遇到資源缺失問題，請重新拉取。</string>
-    <string name="settings_busy_reinstalling_resource_pack">正在重新拉取依賴包…</string>
     <string name="settings_resource_pack_reinstalled">依賴包已重新拉取。</string>
     <string name="settings_resource_pack_reinstall_failed">重新拉取依賴包失敗：%1$s</string>
     <string name="sts_jar_integrity_warning_title">desktop-1.0.jar SHA-1 不匹配</string>
@@ -2138,6 +2136,12 @@
     <string name="settings_busy_installing_arthas_resource">正在下載並安裝 Arthas 診斷模組…</string>
     <string name="settings_arthas_resource_installed">Arthas 診斷模組已安裝。</string>
     <string name="settings_arthas_resource_install_failed">Arthas 診斷模組安裝失敗：%1$s</string>
+    <string name="settings_resource_pack_title">執行資源包</string>
+    <string name="settings_resource_pack_ready">已就緒：版本 %1$s，資源識別碼 %2$s。點擊檢查或重新安裝。</string>
+    <string name="settings_resource_pack_invalid">需要修復：%1$s</string>
+    <string name="settings_busy_reinstalling_resource_pack">正在檢查並重新安裝執行資源…</string>
+    <string name="settings_resource_pack_repaired">執行資源包已修復。</string>
+    <string name="settings_resource_pack_repair_failed">執行資源包修復失敗：%1$s</string>
     <string name="settings_performance_logs_title">效能日誌</string>
     <string name="settings_performance_logs_desc">匯出或分享裝置上採集的效能診斷資料。</string>
     <string name="settings_performance_logs_share">分享效能日誌</string>

@@ -12,6 +12,7 @@ import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -22,7 +23,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 object ComponentInstaller {
-    private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
     private const val AFFECTED_LWJGL_BRIDGE_VERSION_V158 = "18bc219264fdc7621d8ff1966c85df9172cffc27"
     private const val LONG_OPERATION_HEARTBEAT_INTERVAL_MS = 5_000L
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
@@ -88,8 +88,19 @@ object ComponentInstaller {
     @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
+        ResourcePackStore.withExclusiveLock(context) {
+            ensureInstalledLocked(context, progressCallback)
+        }
+    }
+
+    private fun ensureInstalledLocked(context: Context, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
+        RuntimePaths.componentRoot(context).listFiles().orEmpty()
+            .filter { file ->
+                file.name.contains(".installing-") || file.name.contains(".previous-")
+            }
+            .forEach(::deleteTreeForCleanup)
         removeLegacyMarketNatives(RuntimePaths.gdxPatchNativesDir(context))
         removeLegacyBundledArthas(RuntimePaths.agentConnectorDir(context))
         val resources = RuntimeResourceProvider(context)
@@ -138,6 +149,9 @@ object ComponentInstaller {
                 context.getString(R.string.startup_progress_launcher_components_already_up_to_date)
             )
         } else {
+            // The patch cache embeds classes from these components; never reuse it
+            // across an APK or resource-pack identity change.
+            MtsStartupCacheCoordinator.clear(context)
             logDiagnostic(
                 context = context,
                 event = "component_install_packaged_components_update_started",
@@ -417,7 +431,10 @@ object ComponentInstaller {
         throwIfInterrupted()
         val names = resources.list(assetPath)
         if (names.isEmpty()) {
-            copyFile(resources, assetPath, File(targetDir.parentFile, File(assetPath).name))
+            if (!resources.exists(assetPath)) {
+                throw IOException("Missing packaged component resource: $assetPath")
+            }
+            copyFile(resources, assetPath, File(targetDir, File(assetPath).name))
             return
         }
         if (!targetDir.exists() && !targetDir.mkdirs()) {
@@ -438,8 +455,47 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun replaceAssetTree(resources: RuntimeResourceProvider, assetPath: String, targetDir: File) {
-        prepareCleanDirectory(targetDir, "component directory")
-        copyAssetTree(resources, assetPath, targetDir)
+        val parent = targetDir.parentFile
+            ?: throw IOException("Component target has no parent: ${targetDir.absolutePath}")
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create component parent: ${parent.absolutePath}")
+        }
+        val stagingDir = File(parent, ".${targetDir.name}.installing-${System.nanoTime()}")
+        val backupDir = File(parent, ".${targetDir.name}.previous-${System.nanoTime()}")
+        prepareCleanDirectory(stagingDir, "component staging directory")
+        try {
+            copyAssetTree(resources, assetPath, stagingDir)
+            if (targetDir.exists() && !targetDir.renameTo(backupDir)) {
+                throw IOException("Failed to preserve component directory: ${targetDir.absolutePath}")
+            }
+            if (!stagingDir.renameTo(targetDir)) {
+                if (backupDir.exists()) {
+                    if (!backupDir.renameTo(targetDir)) {
+                        throw IOException(
+                            "Failed to activate component directory and could not restore the previous copy: " +
+                                targetDir.absolutePath
+                        )
+                    }
+                }
+                throw IOException("Failed to activate component directory: ${targetDir.absolutePath}")
+            }
+            deleteTreeForCleanup(backupDir)
+        } catch (error: Throwable) {
+            if (!targetDir.exists() && backupDir.exists()) {
+                if (!backupDir.renameTo(targetDir)) {
+                    throw IOException(
+                        "Failed to restore component directory: ${targetDir.absolutePath}",
+                        error
+                    )
+                }
+            }
+            throw error
+        } finally {
+            deleteTreeForCleanup(stagingDir)
+            if (targetDir.exists()) {
+                deleteTreeForCleanup(backupDir)
+            }
+        }
     }
 
     @Throws(IOException::class)
@@ -451,7 +507,9 @@ object ComponentInstaller {
         throwIfInterrupted()
         val names = resources.list(assetPath)
         if (names.isEmpty()) {
-            copyFileIfMissing(resources, assetPath, File(targetDir.parentFile, File(assetPath).name))
+            if (resources.exists(assetPath)) {
+                copyFileIfMissing(resources, assetPath, File(targetDir, File(assetPath).name))
+            }
             return
         }
         if (!targetDir.exists() && !targetDir.mkdirs()) {
@@ -474,20 +532,55 @@ object ComponentInstaller {
     private fun copyFile(resources: RuntimeResourceProvider, assetPath: String, targetFile: File) {
         throwIfInterrupted()
         val parent = targetFile.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            ?: throw IOException("Component target has no parent: ${targetFile.absolutePath}")
+        if (!parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create parent: $parent")
         }
-        resources.open(assetPath).use { input ->
-            FileOutputStream(targetFile, false).use { output ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    throwIfInterrupted()
-                    val read = input.read(buffer)
-                    if (read < 0) {
-                        break
+        val temporary = File(parent, ".${targetFile.name}.installing-${System.nanoTime()}")
+        val backup = File(parent, ".${targetFile.name}.previous-${System.nanoTime()}")
+        try {
+            resources.open(assetPath).use { input ->
+                FileOutputStream(temporary, false).use { output ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        throwIfInterrupted()
+                        val read = input.read(buffer)
+                        if (read < 0) {
+                            break
+                        }
+                        output.write(buffer, 0, read)
                     }
-                    output.write(buffer, 0, read)
                 }
+            }
+            if (targetFile.exists() && !targetFile.renameTo(backup)) {
+                throw IOException("Failed to preserve existing file: ${targetFile.absolutePath}")
+            }
+            if (!temporary.renameTo(targetFile)) {
+                if (backup.exists()) {
+                    if (!backup.renameTo(targetFile)) {
+                        throw IOException(
+                            "Failed to activate file and could not restore the previous copy: " +
+                                targetFile.absolutePath
+                        )
+                    }
+                }
+                throw IOException("Failed to activate file: ${targetFile.absolutePath}")
+            }
+            deleteTreeForCleanup(backup)
+        } catch (error: Throwable) {
+            if (!targetFile.exists() && backup.exists()) {
+                if (!backup.renameTo(targetFile)) {
+                    throw IOException(
+                        "Failed to restore existing file: ${targetFile.absolutePath}",
+                        error
+                    )
+                }
+            }
+            throw error
+        } finally {
+            deleteTreeForCleanup(temporary)
+            if (targetFile.exists()) {
+                deleteTreeForCleanup(backup)
             }
         }
     }
@@ -766,7 +859,7 @@ object ComponentInstaller {
     }
 
     private fun componentInstallMarkerFile(context: Context): File {
-        return File(RuntimePaths.componentRoot(context), COMPONENT_INSTALL_MARKER_FILE_NAME)
+        return RuntimePaths.componentInstallMarkerFile(context)
     }
 
     private fun evaluatePackagedComponentsState(
@@ -971,7 +1064,8 @@ object ComponentInstaller {
             @Suppress("DEPRECATION")
             packageInfo.versionCode.toLong()
         }
-        return "$versionCode|${packageInfo.lastUpdateTime}"
+        val resourcePackId = ResourcePackStore.activePackId(context).orEmpty().ifBlank { "none" }
+        return "v2|$versionCode|${packageInfo.lastUpdateTime}|resourcePack=$resourcePackId"
     }
 
     private fun loadPackageInfo(context: Context): PackageInfo {
@@ -1085,6 +1179,17 @@ object ComponentInstaller {
         }
     }
 
+    private fun deleteTreeForCleanup(file: File?) {
+        if (file == null || !file.exists()) return
+        val wasInterrupted = Thread.interrupted()
+        try {
+            FileTreeCleaner.deleteRecursively(file)
+            if (file.exists()) FileTreeCleaner.deleteRecursively(file)
+        } finally {
+            if (wasInterrupted) Thread.currentThread().interrupt()
+        }
+    }
+
     @Throws(IOException::class)
     internal fun removeLegacyMarketNatives(root: File) {
         if (!root.exists()) {
@@ -1113,7 +1218,7 @@ object ComponentInstaller {
             }
         }
 
-        FileTreeCleaner.deleteRecursively(directory)
+        deleteTreeForCleanup(directory)
         if (!directory.exists()) {
             if (!directory.mkdirs() && !directory.isDirectory) {
                 throw IOException("Failed to create $label: ${directory.absolutePath}")
@@ -1133,7 +1238,7 @@ object ComponentInstaller {
 
         for (child in remaining) {
             throwIfInterrupted()
-            FileTreeCleaner.deleteRecursively(child)
+            deleteTreeForCleanup(child)
         }
         val stillRemaining = directory.listFiles()
         if (stillRemaining == null || stillRemaining.isNotEmpty()) {
@@ -1142,4 +1247,5 @@ object ComponentInstaller {
             throw IOException("Failed to clean $label: ${directory.absolutePath}$detail")
         }
     }
+
 }

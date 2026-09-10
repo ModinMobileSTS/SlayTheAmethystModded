@@ -6,6 +6,7 @@ import android.system.Os
 import io.stamethyst.R
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.launch.NativeLibraryPathResolver
+import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.launch.StartupProgressCallback
@@ -128,6 +129,12 @@ object RuntimePackInstaller {
     @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
+        ResourcePackStore.withExclusiveLock(context) {
+            ensureInstalledLocked(context, progressCallback)
+        }
+    }
+
+    private fun ensureInstalledLocked(context: Context, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -135,25 +142,23 @@ object RuntimePackInstaller {
             context.progressText(R.string.startup_progress_checking_runtime_pack)
         )
         RuntimePaths.ensureBaseDirs(context)
+        RuntimePaths.runtimeStagingDir(context).listFiles().orEmpty()
+            .forEach(::deleteTreeForCleanup)
         val resources = RuntimeResourceProvider(context)
         val archArchive = resolveArchArchive(resources)
 
         val runtimeRoot = RuntimePaths.runtimeRoot(context)
-        val markerFile = File(runtimeRoot, ".installed-version")
+        val markerFile = RuntimePaths.runtimeInstallMarkerFile(context)
         val bundledVersion = readResourceAsString(resources, "components/jre/$ARCHIVE_VERSION").trim()
-        val bundledMarker = "$bundledVersion|$archArchive"
+        val resourcePackId = ResourcePackStore.activePackId(context).orEmpty().ifBlank { "none" }
+        val bundledMarker = "v2|$resourcePackId|$bundledVersion|$archArchive"
 
         if (markerFile.exists()) {
             val installedMarker = String(
                 Files.readAllBytes(markerFile.toPath()),
                 StandardCharsets.UTF_8
             ).trim()
-            val markerMatched = installedMarker == bundledMarker ||
-                (installedMarker == bundledVersion && isArm64Archive(archArchive)) ||
-                (installedMarker == "$bundledVersion|$ARCHIVE_AARCH64" &&
-                    ARCHIVE_ARM64 == archArchive) ||
-                (installedMarker == "$bundledVersion|$ARCHIVE_ARM64" &&
-                    ARCHIVE_AARCH64 == archArchive)
+            val markerMatched = installedMarker == bundledMarker
             val javaHome = locateJavaHome(runtimeRoot)
             if (markerMatched && javaHome != null && isRuntimeReady(javaHome)) {
                 postPrepareRuntime(context, javaHome)
@@ -172,107 +177,124 @@ object RuntimePackInstaller {
             10,
             context.progressText(R.string.startup_progress_preparing_runtime_directory)
         )
-        prepareCleanDirectory(runtimeRoot, "runtime root")
-
-        val stagingDir = RuntimePaths.runtimeStagingDir(context)
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            18,
-            context.progressText(R.string.startup_progress_preparing_runtime_staging)
+        val operationDir = File(
+            RuntimePaths.runtimeStagingDir(context),
+            "install-${System.nanoTime()}"
         )
-        prepareCleanDirectory(stagingDir, "staging directory")
-
-        val requiredFiles = arrayOf(ARCHIVE_UNIVERSAL, archArchive, ARCHIVE_VERSION)
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            26,
-            context.progressText(R.string.startup_progress_copying_runtime_archives)
-        )
-        for (i in requiredFiles.indices) {
+        val stagingDir = File(operationDir, "archives")
+        val stagedRuntimeRoot = File(operationDir, "runtime")
+        prepareCleanDirectory(operationDir, "runtime staging operation")
+        try {
             throwIfInterrupted()
-            val required = requiredFiles[i]
-            copyResourceToFile(resources, "components/jre/$required", File(stagingDir, required))
-            val copiedPercent = 26 + ((i + 1) * 14f / requiredFiles.size).roundToInt()
             reportProgress(
                 progressCallback,
-                copiedPercent,
-                context.progressText(R.string.startup_progress_copied_runtime_archive, required)
+                18,
+                context.progressText(R.string.startup_progress_preparing_runtime_staging)
             )
-        }
-
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            42,
-            context.progressText(R.string.startup_progress_extracting_universal_runtime)
-        )
-        extractTarXz(
-            tarXzFile = File(stagingDir, ARCHIVE_UNIVERSAL),
-            destination = runtimeRoot,
-            progressCallback = progressCallback,
-            startPercent = 42,
-            endPercent = 62,
-            messageForArchivePercent = { percent ->
-                context.progressText(R.string.startup_progress_extracting_universal_runtime_percent, percent)
+            if (!stagingDir.mkdirs() && !stagingDir.isDirectory) {
+                throw IOException("Failed to create staging directory: ${stagingDir.absolutePath}")
             }
-        )
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            62,
-            context.progressText(R.string.startup_progress_extracting_architecture_runtime)
-        )
-        extractTarXz(
-            tarXzFile = File(stagingDir, archArchive),
-            destination = runtimeRoot,
-            progressCallback = progressCallback,
-            startPercent = 62,
-            endPercent = 78,
-            messageForArchivePercent = { percent ->
-                context.progressText(R.string.startup_progress_extracting_architecture_runtime_percent, percent)
+            if (!stagedRuntimeRoot.mkdirs() && !stagedRuntimeRoot.isDirectory) {
+                throw IOException("Failed to create staged runtime directory: ${stagedRuntimeRoot.absolutePath}")
             }
-        )
 
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            78,
-            context.progressText(R.string.startup_progress_unpacking_runtime_pack200_files)
-        )
-        unpackPack200Files(context, runtimeRoot, progressCallback)
+            val requiredFiles = arrayOf(ARCHIVE_UNIVERSAL, archArchive, ARCHIVE_VERSION)
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                26,
+                context.progressText(R.string.startup_progress_copying_runtime_archives)
+            )
+            for (i in requiredFiles.indices) {
+                throwIfInterrupted()
+                val required = requiredFiles[i]
+                copyResourceToFile(resources, "components/jre/$required", File(stagingDir, required))
+                val copiedPercent = 26 + ((i + 1) * 14f / requiredFiles.size).roundToInt()
+                reportProgress(
+                    progressCallback,
+                    copiedPercent,
+                    context.progressText(R.string.startup_progress_copied_runtime_archive, required)
+                )
+            }
 
-        throwIfInterrupted()
-        val javaHome = locateJavaHome(runtimeRoot)
-            ?: throw IOException(
-                "Runtime install failed: libjli.so not found under ${runtimeRoot.absolutePath}"
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                42,
+                context.progressText(R.string.startup_progress_extracting_universal_runtime)
             )
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            92,
-            context.progressText(R.string.startup_progress_finalizing_runtime_setup)
-        )
-        postPrepareRuntime(context, javaHome)
-        if (!isRuntimeReady(javaHome)) {
-            throw IOException(
-                "Runtime install failed: missing core Java classes under ${javaHome.absolutePath}"
+            extractTarXz(
+                tarXzFile = File(stagingDir, ARCHIVE_UNIVERSAL),
+                destination = stagedRuntimeRoot,
+                progressCallback = progressCallback,
+                startPercent = 42,
+                endPercent = 62,
+                messageForArchivePercent = { percent ->
+                    context.progressText(R.string.startup_progress_extracting_universal_runtime_percent, percent)
+                }
             )
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                62,
+                context.progressText(R.string.startup_progress_extracting_architecture_runtime)
+            )
+            extractTarXz(
+                tarXzFile = File(stagingDir, archArchive),
+                destination = stagedRuntimeRoot,
+                progressCallback = progressCallback,
+                startPercent = 62,
+                endPercent = 78,
+                messageForArchivePercent = { percent ->
+                    context.progressText(R.string.startup_progress_extracting_architecture_runtime_percent, percent)
+                }
+            )
+
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                78,
+                context.progressText(R.string.startup_progress_unpacking_runtime_pack200_files)
+            )
+            unpackPack200Files(context, stagedRuntimeRoot, progressCallback)
+
+            throwIfInterrupted()
+            val stagedJavaHome = locateJavaHome(stagedRuntimeRoot)
+                ?: throw IOException(
+                    "Runtime install failed: libjli.so not found under ${stagedRuntimeRoot.absolutePath}"
+                )
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                92,
+                context.progressText(R.string.startup_progress_finalizing_runtime_setup)
+            )
+            postPrepareRuntime(context, stagedJavaHome)
+            if (!isRuntimeReady(stagedJavaHome)) {
+                throw IOException(
+                    "Runtime install failed: missing core Java classes under ${stagedJavaHome.absolutePath}"
+                )
+            }
+
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                98,
+                context.progressText(R.string.startup_progress_writing_runtime_install_marker)
+            )
+            Files.write(
+                File(stagedRuntimeRoot, RuntimePaths.runtimeInstallMarkerFile(context).name).toPath(),
+                bundledMarker.toByteArray(StandardCharsets.UTF_8)
+            )
+            activateRuntimeDirectory(stagedRuntimeRoot, runtimeRoot)
+            reportProgress(
+                progressCallback,
+                100,
+                context.progressText(R.string.startup_progress_runtime_pack_ready)
+            )
+        } finally {
+            deleteTreeForCleanup(operationDir)
         }
-
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            98,
-            context.progressText(R.string.startup_progress_writing_runtime_install_marker)
-        )
-        Files.write(markerFile.toPath(), bundledMarker.toByteArray(StandardCharsets.UTF_8))
-        reportProgress(
-            progressCallback,
-            100,
-            context.progressText(R.string.startup_progress_runtime_pack_ready)
-        )
     }
 
     @JvmStatic
@@ -334,7 +356,22 @@ object RuntimePackInstaller {
                         throwIfInterrupted()
                         progressReporter.maybeReport(countingInput.bytesRead)
                         val current = entry!!
-                        val outFile = File(destination, current.name)
+                        val rawName = current.name.replace('\\', '/')
+                        if (rawName.startsWith('/') || rawName.matches(Regex("^[A-Za-z]:/.*"))) {
+                            throw IOException("Unsafe runtime archive entry: ${current.name}")
+                        }
+                        val normalizedName = rawName
+                        if (normalizedName.isEmpty() ||
+                            normalizedName.startsWith("../") ||
+                            normalizedName.contains("/../")
+                        ) {
+                            throw IOException("Unsafe runtime archive entry: ${current.name}")
+                        }
+                        val destinationRoot = destination.canonicalFile.toPath()
+                        val outFile = File(destination, normalizedName)
+                        if (!outFile.canonicalFile.toPath().startsWith(destinationRoot)) {
+                            throw IOException("Unsafe runtime archive entry: ${current.name}")
+                        }
                         if (current.isDirectory) {
                             if (!outFile.exists() && !outFile.mkdirs()) {
                                 throw IOException("Failed to create directory: $outFile")
@@ -347,6 +384,13 @@ object RuntimePackInstaller {
                             throw IOException("Failed to create parent: $parent")
                         }
                         if (current.isSymbolicLink) {
+                            val linkTarget = File(
+                                outFile.parentFile ?: destination,
+                                current.linkName
+                            )
+                            if (!linkTarget.canonicalFile.toPath().startsWith(destinationRoot)) {
+                                throw IOException("Unsafe runtime symlink: ${current.name}")
+                            }
                             try {
                                 if (outFile.exists() && !outFile.delete()) {
                                     throw IOException("Failed to replace existing symlink target: $outFile")
@@ -382,7 +426,102 @@ object RuntimePackInstaller {
 
     private fun isRuntimeReady(javaHome: File): Boolean {
         val libDir = File(javaHome, "lib")
-        return File(libDir, "rt.jar").exists() || File(libDir, "modules").exists()
+        return (File(libDir, "rt.jar").isFile && File(libDir, "rt.jar").length() > 0L) ||
+            (File(libDir, "modules").isFile && File(libDir, "modules").length() > 0L)
+    }
+
+    @Throws(IOException::class)
+    private fun activateRuntimeDirectory(staged: File, target: File) {
+        val parent = target.parentFile
+            ?: throw IOException("Runtime target has no parent: ${target.absolutePath}")
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create runtime parent: ${parent.absolutePath}")
+        }
+        val installing = File(parent, ".${target.name}.installing-${System.nanoTime()}")
+        val backup = File(parent, ".${target.name}.previous-${System.nanoTime()}")
+        deleteTreeForCleanup(installing)
+        deleteTreeForCleanup(backup)
+        if (!staged.renameTo(installing)) {
+            copyDirectory(staged, installing)
+        }
+        val stagedJavaHome = locateJavaHome(installing)
+        if (stagedJavaHome == null || !isRuntimeReady(stagedJavaHome)) {
+            deleteTreeForCleanup(installing)
+            throw IOException("Staged runtime failed final validation")
+        }
+
+        val targetOriginallyExisted = target.exists()
+        var targetMoved = false
+        var activated = false
+        try {
+            if (target.exists()) {
+                if (!target.renameTo(backup)) {
+                    throw IOException("Failed to preserve existing runtime: ${target.absolutePath}")
+                }
+                targetMoved = true
+            }
+            if (!installing.renameTo(target)) {
+                copyDirectory(installing, target)
+                val copiedJavaHome = locateJavaHome(target)
+                if (copiedJavaHome == null || !isRuntimeReady(copiedJavaHome)) {
+                    throw IOException("Copied runtime failed final validation")
+                }
+                deleteTreeForCleanup(installing)
+            }
+            activated = true
+        } catch (error: Throwable) {
+            if ((targetMoved || !targetOriginallyExisted) && target.exists()) {
+                deleteTreeForCleanup(target)
+            }
+            if (targetMoved && backup.exists() && !backup.renameTo(target)) {
+                throw IOException("Runtime activation failed and previous runtime could not be restored", error)
+            }
+            throw error
+        } finally {
+            deleteTreeForCleanup(installing)
+            if (activated) {
+                deleteTreeForCleanup(backup)
+            } else if (targetMoved && backup.exists() && !target.exists()) {
+                backup.renameTo(target)
+            }
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun copyDirectory(source: File, target: File) {
+        if (!source.exists()) {
+            throw IOException("Runtime copy source does not exist: ${source.absolutePath}")
+        }
+        if (Files.isSymbolicLink(source.toPath())) {
+            val parent = target.parentFile
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                throw IOException("Failed to create runtime symlink parent: ${parent.absolutePath}")
+            }
+            if (target.exists() && !target.delete()) {
+                throw IOException("Failed to replace runtime symlink: ${target.absolutePath}")
+            }
+            val linkTarget = Files.readSymbolicLink(source.toPath()).toString()
+            Os.symlink(linkTarget, target.absolutePath)
+            return
+        }
+        if (source.isDirectory) {
+            if (!target.exists() && !target.mkdirs()) {
+                throw IOException("Failed to create runtime directory: ${target.absolutePath}")
+            }
+            source.listFiles().orEmpty().forEach { child ->
+                copyDirectory(child, File(target, child.name))
+            }
+            return
+        }
+        val parent = target.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create runtime target directory: ${parent.absolutePath}")
+        }
+        FileInputStream(source).use { input ->
+            FileOutputStream(target, false).use { output -> input.copyTo(output) }
+        }
+        target.setExecutable(source.canExecute(), false)
+        target.setLastModified(source.lastModified())
     }
 
     @Throws(IOException::class)
@@ -600,9 +739,7 @@ object RuntimePackInstaller {
         if (freetypeVersioned.exists() &&
             (!freetype.exists() || freetype.length() != freetypeVersioned.length())
         ) {
-            if (!freetypeVersioned.renameTo(freetype)) {
-                copyFile(freetypeVersioned, freetype)
-            }
+            copyFile(freetypeVersioned, freetype)
         }
 
         val appAwtXawt = NativeLibraryPathResolver.resolveLibraryFile(
@@ -642,10 +779,6 @@ object RuntimePackInstaller {
                 listRuntimeArchives(resources) +
                 ")"
         )
-    }
-
-    private fun isArm64Archive(archiveName: String): Boolean {
-        return ARCHIVE_AARCH64 == archiveName || ARCHIVE_ARM64 == archiveName
     }
 
     private fun listRuntimeArchives(resources: RuntimeResourceProvider): String {
@@ -727,20 +860,51 @@ object RuntimePackInstaller {
     private fun copyFile(source: File, target: File) {
         throwIfInterrupted()
         val parent = target.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            ?: throw IOException("Runtime target has no parent: ${target.absolutePath}")
+        if (!parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create target directory: $parent")
         }
-        FileInputStream(source).use { input ->
-            FileOutputStream(target, false).use { output ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    throwIfInterrupted()
-                    val read = input.read(buffer)
-                    if (read <= 0) {
-                        break
+        val temporary = File(parent, ".${target.name}.installing-${System.nanoTime()}")
+        val backup = File(parent, ".${target.name}.previous-${System.nanoTime()}")
+        try {
+            FileInputStream(source).use { input ->
+                FileOutputStream(temporary, false).use { output ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        throwIfInterrupted()
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        output.write(buffer, 0, read)
                     }
-                    output.write(buffer, 0, read)
                 }
+            }
+            if (target.exists() && !target.renameTo(backup)) {
+                throw IOException("Failed to preserve runtime file: ${target.absolutePath}")
+            }
+            if (!temporary.renameTo(target)) {
+                if (backup.exists() && !backup.renameTo(target)) {
+                    throw IOException(
+                        "Failed to activate runtime file and could not restore the previous copy: " +
+                            target.absolutePath
+                    )
+                }
+                throw IOException("Failed to activate runtime file: ${target.absolutePath}")
+            }
+            deleteTreeForCleanup(backup)
+        } catch (error: Throwable) {
+            if (!target.exists() && backup.exists() && !backup.renameTo(target)) {
+                throw IOException(
+                    "Failed to restore runtime file: ${target.absolutePath}",
+                    error
+                )
+            }
+            throw error
+        } finally {
+            deleteTreeForCleanup(temporary)
+            if (target.exists()) {
+                deleteTreeForCleanup(backup)
             }
         }
     }
@@ -758,7 +922,7 @@ object RuntimePackInstaller {
             }
         }
 
-        FileTreeCleaner.deleteRecursively(directory)
+        deleteTreeForCleanup(directory)
         if (!directory.exists()) {
             if (!directory.mkdirs() && !directory.isDirectory) {
                 throw IOException("Failed to create $label: ${directory.absolutePath}")
@@ -778,13 +942,30 @@ object RuntimePackInstaller {
 
         for (child in remaining) {
             throwIfInterrupted()
-            FileTreeCleaner.deleteRecursively(child)
+            deleteTreeForCleanup(child)
         }
         val stillRemaining = directory.listFiles()
         if (stillRemaining == null || stillRemaining.isNotEmpty()) {
             val remainingSummary = FileTreeCleaner.summarizeRemainingEntries(directory)
             val detail = if (remainingSummary.isNullOrBlank()) "" else " (remaining: $remainingSummary)"
             throw IOException("Failed to clean $label: ${directory.absolutePath}$detail")
+        }
+    }
+
+    private fun deleteTreeForCleanup(file: File?) {
+        if (file == null || !file.exists()) {
+            return
+        }
+        val wasInterrupted = Thread.interrupted()
+        try {
+            FileTreeCleaner.deleteRecursively(file)
+            if (file.exists()) {
+                FileTreeCleaner.deleteRecursively(file)
+            }
+        } finally {
+            if (wasInterrupted) {
+                Thread.currentThread().interrupt()
+            }
         }
     }
 

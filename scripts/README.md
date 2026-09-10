@@ -11,12 +11,12 @@ Use `scripts/build/main.py` for build, release, and packaging tasks.
 Commands:
 
 - `debug`: build a debug APK. Option: `--application-id` / `-ApplicationId`, default `io.stamethyst.debug`.
-- `release`: build the slim release APK.
+- `release`: build the slim release APK. It downloads the resource pack on first launch.
 - `release-fast`: alias of `release` kept for compatibility.
-- `release-full`: build the full release APK.
+- `release-full`: build the full release APK with the resource-pack archive embedded in the APK; it uses the same runtime installation path as slim.
 - `fast-release`: build the fast slim release APK and skip slow cleanup by default.
 - `fast-release-slim`: alias of `fast-release`.
-- `fast-release-full`: build the fast full release APK and skip slow cleanup by default.
+- `fast-release-full`: build the fast full release APK with the embedded resource-pack archive and skip slow cleanup by default.
 - `prepare-release`: run local release preparation checks and signing setup validation.
 - `package-cloud-function`: package `cloud-function/` into a zip.
 

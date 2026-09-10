@@ -332,8 +332,8 @@ fun LauncherSettingsFeedbackScreen(
         onOpenFeedback = { navigator.push(Route.Feedback) },
         onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
         onOpenFeedbackIssueBrowser = { navigator.push(Route.FeedbackIssueBrowser) },
-         onImportJar = viewModel::onImportJar,
-         onReinstallResourcePack = { viewModel.onReinstallResourcePack(activity) },
+        onImportJar = viewModel::onImportJar,
+        onReinstallResourcePack = { viewModel.onReinstallResourcePack(activity) },
         onImportMods = viewModel::onImportMods,
         onExportMods = viewModel::onExportMods,
         onImportSaves = viewModel::onImportSaves,
@@ -458,6 +458,7 @@ fun LauncherDeveloperSettingsScreen(
         onSharePerformanceLogs = { viewModel.onSharePerformanceLogs(activity) },
         onExportPerformanceLogs = viewModel::onExportPerformanceLogsToFile,
         onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },
+        onRepairResourcePack = { viewModel.onRepairResourcePackRequested(activity) },
         onGdxPadCursorDebugChanged = { enabled ->
             viewModel.onGdxPadCursorDebugChanged(activity, enabled)
         },

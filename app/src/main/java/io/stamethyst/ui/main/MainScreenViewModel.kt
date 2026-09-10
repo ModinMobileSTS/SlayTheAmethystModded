@@ -2908,13 +2908,16 @@ class MainScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_reinstalling_resource_pack))
         resourcePackExecutor.execute {
             try {
-                ExternalResourcePackService.reinstall(host.applicationContext) { percent, message ->
+                ExternalResourcePackService.reinstall(
+                    context = host.applicationContext,
+                    progressCallback = StartupProgressCallback { percent, message ->
                     host.runOnUiThread {
                         if (uiState.busy) {
                             setBusy(true, UiText.DynamicString(message), progressPercent = percent)
                         }
                     }
-                }
+                    }
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     _effects.tryEmit(

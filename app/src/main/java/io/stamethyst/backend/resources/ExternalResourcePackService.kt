@@ -5,8 +5,10 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
+import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.launch.StartupProgressCallback
+import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.UpdateMirrorManager
@@ -18,7 +20,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URL
-import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
@@ -28,8 +30,6 @@ import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -106,55 +106,7 @@ object ExternalResourcePackService {
     private const val DEFAULT_CHUNK_COUNT = 4
     private const val MIN_CHUNKED_DOWNLOAD_THRESHOLD_BYTES = 4L * 1024L * 1024L
 
-    private val externalizedAssetRootPaths = listOf(
-        "components/jre",
-        "components/lwjgl3",
-        "components/log4j_runtime",
-        "components/mods/ModTheSpire.jar",
-        "components/mods/BaseMod.jar",
-        "components/mods/StSLib.jar",
-        "ui"
-    )
-
-    private val requiredCommonAssetFiles = listOf(
-        "components/jre/version",
-        "components/jre/universal.tar.xz",
-        "components/lwjgl3/version",
-        "components/lwjgl3/lwjgl-glfw-classes.jar",
-        "components/log4j_runtime/log4j-api.jar",
-        "components/log4j_runtime/log4j-core.jar",
-        "components/mods/ModTheSpire.jar",
-        "components/mods/BaseMod.jar",
-        "components/mods/StSLib.jar",
-        "ui/boot_bright.png",
-        "ui/boot_dark.png",
-        "ui/update_notice.png"
-    )
-
-    private val requiredRuntimeArchiveAlternatives = listOf(
-        "components/jre/bin-aarch64.tar.xz",
-        "components/jre/bin-arm64.tar.xz"
-    )
-
-    val externalizedNativeLibraries: Set<String> = linkedSetOf(
-        "libEGL_mesa.so",
-        "libOSMesa.so",
-        "libVkLayer_khronos_timeline_semaphore.so",
-        "libcutils.so",
-        "libgdx-freetype.so",
-        "libgdx.so",
-        "libgl4es_114.so",
-        "libglapi.so",
-        "libglxshim.so",
-        "libjnidispatch.so",
-        "liblinkerhook.so",
-        "libmobileglues.so",
-        "libeasytier_android_jni.so",
-        "libeasytier_ffi.so",
-        "libspirv-cross-c-shared.so",
-        "libvulkan_freedreno.so",
-        "libzink_dri.so"
-    )
+    val externalizedNativeLibraries: Set<String> = ResourcePackContract.nativeLibraries
 
     internal data class ConfiguredResourcePackDownloadCandidate(
         val displayName: String,
@@ -268,19 +220,22 @@ object ExternalResourcePackService {
     /** Forces a fresh download even when the currently installed pack passes validation. */
     @JvmStatic
     @Throws(IOException::class)
-    fun reinstall(context: Context, progressCallback: StartupProgressCallback? = null) {
-        ensureAvailable(context, progressCallback, null, forceRedownload = true)
+    fun reinstall(
+        context: Context,
+        progressCallback: StartupProgressCallback? = null,
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController? = null
+    ) {
+        ensureAvailable(
+            context = context,
+            progressCallback = progressCallback,
+            mirrorSwitchController = mirrorSwitchController,
+            forceReinstall = true
+        )
     }
 
     @JvmStatic
     fun isAvailable(context: Context): Boolean {
-        return runCatching {
-            migrateLegacyExternalResourcesIfNeeded(context)
-            collectExternalPackIssues(
-                context = context,
-                packRoot = RuntimePaths.externalResourcesCurrentDir(context)
-            ).isEmpty()
-        }.getOrDefault(false)
+        return runCatching { ResourcePackStore.inspect(context).ready }.getOrDefault(false)
     }
 
     @JvmStatic
@@ -295,10 +250,73 @@ object ExternalResourcePackService {
         context: Context,
         progressCallback: StartupProgressCallback?,
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
-        forceRedownload: Boolean = false
+        forceReinstall: Boolean = false
+    ) {
+        ResourcePackStore.withExclusiveLock(context) {
+            MemoryDiagnosticsLogger.logEvent(
+                context = context,
+                event = "resource_pack_prepare_started",
+                extras = mapOf("expectedVersion" to BuildConfig.RESOURCE_PACK_VERSION),
+                includeMemorySnapshot = false
+            )
+            StartupTraceEvents.append(
+                context = context,
+                event = "resource_pack_prepare_started",
+                extras = mapOf("expectedVersion" to BuildConfig.RESOURCE_PACK_VERSION)
+            )
+            try {
+                ensureAvailableLocked(
+                    context,
+                    progressCallback,
+                    mirrorSwitchController,
+                    forceReinstall
+                )
+                MemoryDiagnosticsLogger.logEvent(
+                    context = context,
+                    event = "resource_pack_prepare_completed",
+                    extras = mapOf(
+                        "packId" to ResourcePackStore.activePackId(context),
+                        "generation" to ResourcePackStore.activeGenerationDir(context)?.absolutePath
+                    ),
+                    includeMemorySnapshot = false
+                )
+                StartupTraceEvents.append(
+                    context = context,
+                    event = "resource_pack_prepare_completed",
+                    extras = mapOf("packId" to ResourcePackStore.activePackId(context).orEmpty())
+                )
+            } catch (error: Throwable) {
+                MemoryDiagnosticsLogger.logEvent(
+                    context = context,
+                    event = "resource_pack_prepare_failed",
+                    extras = mapOf(
+                        "errorClass" to error.javaClass.name,
+                        "errorMessage" to error.message,
+                        "state" to ResourcePackStore.buildDiagnostics(context)
+                    ),
+                    includeMemorySnapshot = false
+                )
+                StartupTraceEvents.append(
+                    context = context,
+                    event = "resource_pack_prepare_failed",
+                    extras = mapOf(
+                        "errorClass" to error.javaClass.name,
+                        "errorMessage" to error.message.orEmpty()
+                    )
+                )
+                throw error
+            }
+        }
+    }
+
+    private fun ensureAvailableLocked(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
+        forceReinstall: Boolean
     ) {
         throwIfInterrupted()
-        migrateLegacyExternalResourcesIfNeeded(context)
+        ResourcePackStore.recover(context)
         RuntimePaths.ensureBaseDirs(context)
         reportProgress(
             progressCallback,
@@ -306,11 +324,11 @@ object ExternalResourcePackService {
             context.progressText(R.string.startup_progress_checking_external_resources)
         )
 
-        val externalPackIssues = collectExternalPackIssues(
-            context = context,
-            packRoot = RuntimePaths.externalResourcesCurrentDir(context)
-        )
-        if (externalPackIssues.isEmpty() && !forceRedownload) {
+        val inspection = ResourcePackStore.inspect(context)
+        // Reuse the installed generation whenever the hosted pack version still
+        // matches. App updates must not bump resourcePack.version unless the
+        // zip at RESOURCE_PACK_DOWNLOAD_URL actually changed.
+        if (inspection.ready && !forceReinstall) {
             reportProgress(
                 progressCallback,
                 100,
@@ -319,18 +337,31 @@ object ExternalResourcePackService {
             return
         }
 
-        val bundledMissing = collectMissingBundledResources(context)
-        if (bundledMissing.isEmpty()) {
-            installBundledResources(
-                context = context,
-                progressCallback = progressCallback
-            )
-            reportProgress(
-                progressCallback,
-                100,
-                context.progressText(R.string.startup_progress_external_resources_ready)
-            )
-            return
+        var embeddedFailure: Throwable? = null
+        if (embeddedResourcePackExists(context)) {
+            try {
+                installEmbeddedResourcePack(
+                    context = context,
+                    progressCallback = progressCallback
+                )
+                reportProgress(
+                    progressCallback,
+                    100,
+                    context.progressText(R.string.startup_progress_external_resources_ready)
+                )
+                return
+            } catch (error: Throwable) {
+                embeddedFailure = error
+                MemoryDiagnosticsLogger.logEvent(
+                    context = context,
+                    event = "resource_pack_embedded_archive_failed",
+                    extras = mapOf(
+                        "errorClass" to error.javaClass.name,
+                        "errorMessage" to error.message
+                    ),
+                    includeMemorySnapshot = false
+                )
+            }
         }
 
         val resourcePackUrls = BuildConfig.RESOURCE_PACK_DOWNLOAD_URLS
@@ -342,19 +373,21 @@ object ExternalResourcePackService {
         if (resourcePackUrls.isEmpty()) {
             throw IOException(
                 "External resource pack is required but RESOURCE_PACK_DOWNLOAD_URLS is not configured. " +
-                    "Missing bundled resources: ${bundledMissing.joinToString(", ")}. " +
-                    "External pack issues: ${externalPackIssues.joinToString(", ")}"
+                    "External pack issues: ${inspection.issues.joinToString(", ")}" +
+                    (embeddedFailure?.let { " Embedded archive failed: ${summarizeResourcePackError(it)}" } ?: ""),
+                embeddedFailure
             )
         }
 
         val stagingRoot = File(
-            RuntimePaths.externalResourcesRoot(context),
-            "staging-${System.nanoTime()}"
+            RuntimePaths.externalResourcesStagingRoot(context),
+            "download-${System.nanoTime()}"
         )
         val downloadFile = File(stagingRoot, "resources.zip")
-        val extractedDir = File(stagingRoot, "current")
         prepareCleanDirectory(stagingRoot)
         try {
+            // The candidate is not considered successful until its archive is installed and
+            // validated. A reachable mirror can still serve a stale or corrupt archive.
             downloadResourcePack(
                 context = context,
                 resourcePackUrls = resourcePackUrls,
@@ -362,32 +395,8 @@ object ExternalResourcePackService {
                 progressCallback = progressCallback,
                 mirrorSwitchController = mirrorSwitchController
             )
-            throwIfInterrupted()
-            reportProgress(
-                progressCallback,
-                72,
-                context.progressText(R.string.startup_progress_extracting_external_resources, 0)
-            )
-            extractResourcePack(
-                archiveFile = downloadFile,
-                targetDir = extractedDir,
-                progressCallback = progressCallback,
-                context = context
-            )
-            val missingAfterExtract = collectMissingResourcePackContent(extractedDir)
-            if (missingAfterExtract.isNotEmpty()) {
-                throw IOException(
-                    "Downloaded resource pack is incomplete. Missing: " +
-                        missingAfterExtract.joinToString(", ")
-                )
-            }
-            writeInstallMarker(context, extractedDir)
-            installExtractedResources(
-                context = context,
-                extractedDir = extractedDir
-            )
         } finally {
-            FileTreeCleaner.deleteRecursively(stagingRoot)
+            deleteTreeForCleanup(stagingRoot)
         }
 
         reportProgress(
@@ -403,101 +412,139 @@ object ExternalResourcePackService {
     @JvmStatic
     @Throws(IOException::class)
     fun installNativeLibraries(context: Context) {
-        val sourceDir = RuntimePaths.externalResourcePackNativeLibDir(context)
-        val targetDir = RuntimePaths.externalNativeLibDir(context)
-        if (!targetDir.exists() && !targetDir.mkdirs()) {
-            throw IOException("Failed to create private native library directory: ${targetDir.absolutePath}")
-        }
-        externalizedNativeLibraries.forEach { libraryName ->
-            val source = File(sourceDir, libraryName)
-            if (!source.isFile || source.length() <= 0L) {
-                throw IOException("Missing external resource native library: ${source.absolutePath}")
+        ResourcePackStore.withExclusiveLock(context) {
+            val generation = ResourcePackStore.activeGenerationDir(context)
+                ?: throw IOException("No active external resource generation is installed")
+            val packId = generation.name
+            val sourceDir = File(File(generation, "lib"), ResourcePackContract.ABI)
+            val targetDir = RuntimePaths.externalNativeLibDir(context)
+            if (nativeLibrariesAreCurrent(targetDir, packId, sourceDir)) {
+                return@withExclusiveLock
             }
-            val target = File(targetDir, libraryName)
-            copyFile(source, target)
-            if (!target.setExecutable(true, false)) {
-                throw IOException("Failed to mark native library executable: ${target.absolutePath}")
+
+            val parent = targetDir.parentFile
+                ?: throw IOException("External native library directory has no parent")
+            if (!parent.exists() && !parent.mkdirs()) {
+                throw IOException("Failed to create external native library parent: ${parent.absolutePath}")
+            }
+            val stagingDir = File(parent, ".natives-staging-${System.nanoTime()}")
+            val backupDir = File(parent, ".natives-backup-${System.nanoTime()}")
+            prepareCleanDirectory(stagingDir)
+            var installed = false
+            try {
+                copyNonExternalNativeFiles(targetDir, stagingDir)
+                externalizedNativeLibraries.forEach { libraryName ->
+                    val source = File(sourceDir, libraryName)
+                    if (!source.isFile || source.length() <= 0L) {
+                        throw IOException("Missing external resource native library: ${source.absolutePath}")
+                    }
+                    val target = File(stagingDir, libraryName)
+                    copyFile(source, target)
+                    if (!target.setExecutable(true, false)) {
+                        throw IOException("Failed to mark native library executable: ${target.absolutePath}")
+                    }
+                }
+                File(stagingDir, ".resource-pack-id").writeText(
+                    "packId=$packId\n",
+                    Charsets.UTF_8
+                )
+                if (!nativeLibrariesAreCurrent(stagingDir, packId, sourceDir)) {
+                    throw IOException("Staged external native libraries failed validation")
+                }
+                if (targetDir.exists() && !targetDir.renameTo(backupDir)) {
+                    throw IOException("Failed to preserve existing external native libraries")
+                }
+                if (!stagingDir.renameTo(targetDir)) {
+                    throw IOException("Failed to activate external native libraries")
+                }
+                installed = true
+                deleteTreeForCleanup(backupDir)
+            } catch (error: Throwable) {
+                if (!installed && !targetDir.exists() && backupDir.exists() &&
+                    !backupDir.renameTo(targetDir)
+                ) {
+                    throw IOException(
+                        "Failed to restore external native libraries after activation error",
+                        error
+                    )
+                }
+                throw error
+            } finally {
+                if (!installed && !targetDir.exists() && backupDir.exists()) {
+                    backupDir.renameTo(targetDir)
+                }
+                deleteTreeForCleanup(stagingDir)
+                if (installed || targetDir.exists()) {
+                    deleteTreeForCleanup(backupDir)
+                }
             }
         }
     }
 
-    private fun collectExternalPackIssues(context: Context, packRoot: File): List<String> {
-        val missing = ArrayList<String>()
-        missing += collectMissingResourcePackContent(packRoot)
-        val markerVersion = readInstalledResourcePackVersion(
-            File(packRoot, RuntimePaths.externalResourcesMarkerFile(context).name)
-        )
-        val expectedVersion = BuildConfig.RESOURCE_PACK_VERSION.trim()
-        if (markerVersion != expectedVersion) {
-            missing += "resource pack version $expectedVersion"
+    private fun embeddedResourcePackExists(context: Context): Boolean {
+        return try {
+            context.assets.open(ResourcePackContract.EMBEDDED_ARCHIVE_ASSET_PATH).use { }
+            true
+        } catch (_: IOException) {
+            false
         }
-        return missing
     }
 
     @Throws(IOException::class)
-    private fun migrateLegacyExternalResourcesIfNeeded(context: Context) {
-        val currentRoot = RuntimePaths.externalResourcesRoot(context)
-        val legacyRoot = RuntimePaths.legacyInternalExternalResourcesRoot(context)
-        if (currentRoot.absolutePath == legacyRoot.absolutePath) return
-        if (!legacyRoot.exists()) return
-        if (currentRoot.isDirectory && currentRoot.listFiles().orEmpty().isNotEmpty()) return
-        if (currentRoot.exists() && !currentRoot.deleteRecursively()) {
-            throw IOException("Failed to clear empty external resource root: ${currentRoot.absolutePath}")
-        }
-        val migrationRoot = File(
-            currentRoot.parentFile ?: throw IOException("External resource root has no parent"),
-            "${currentRoot.name}.migration-${System.nanoTime()}"
+    private fun installEmbeddedResourcePack(
+        context: Context,
+        progressCallback: StartupProgressCallback?
+    ) {
+        val stagingRoot = File(
+            RuntimePaths.externalResourcesStagingRoot(context),
+            "embedded-staging-${System.nanoTime()}"
         )
-        copyDirectory(legacyRoot, migrationRoot)
-        if (!migrationRoot.renameTo(currentRoot)) {
-            migrationRoot.deleteRecursively()
-            throw IOException("Failed to move migrated external resources into place")
+        val archiveFile = File(stagingRoot, "resources.zip")
+        prepareCleanDirectory(stagingRoot)
+        try {
+            copyAssetToFile(
+                context = context,
+                assetPath = ResourcePackContract.EMBEDDED_ARCHIVE_ASSET_PATH,
+                targetFile = archiveFile
+            )
+            ResourcePackStore.installArchive(
+                context = context,
+                archiveFile = archiveFile,
+                progressCallback = progressCallback,
+                source = "embedded-apk"
+            )
+        } finally {
+            deleteTreeForCleanup(stagingRoot)
         }
-        legacyRoot.deleteRecursively()
     }
 
-    private fun collectMissingBundledResources(context: Context): List<String> {
-        val missing = ArrayList<String>()
-        requiredCommonAssetFiles.forEach { assetPath ->
-            if (!bundledAssetFileExists(context, assetPath)) {
-                missing += "assets/$assetPath"
+    @Throws(IOException::class)
+    private fun copyAssetToFile(context: Context, assetPath: String, targetFile: File) {
+        val parent = targetFile.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        context.assets.open(assetPath).use { input ->
+            FileOutputStream(targetFile, false).use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var copiedBytes = 0L
+                while (true) {
+                    throwIfInterrupted()
+                    val read = input.read(buffer)
+                    if (read < 0) {
+                        break
+                    }
+                    if (read == 0) {
+                        continue
+                    }
+                    copiedBytes += read
+                    if (copiedBytes > ResourcePackContract.MAX_ARCHIVE_BYTES) {
+                        throw IOException("Embedded resource pack archive is too large")
+                    }
+                    output.write(buffer, 0, read)
+                }
             }
         }
-        if (requiredRuntimeArchiveAlternatives.none { assetPath ->
-                bundledAssetFileExists(context, assetPath)
-            }
-        ) {
-            missing += "assets/components/jre/{bin-aarch64.tar.xz,bin-arm64.tar.xz}"
-        }
-
-        val appNativeDir = File(context.applicationInfo.nativeLibraryDir)
-        externalizedNativeLibraries.forEach { libraryName ->
-            if (!File(appNativeDir, libraryName).isFile) {
-                missing += "lib/arm64-v8a/$libraryName"
-            }
-        }
-        return missing
-    }
-
-    private fun collectMissingResourcePackContent(packRoot: File): List<String> {
-        val missing = ArrayList<String>()
-        requiredCommonAssetFiles.forEach { assetPath ->
-            if (!File(File(packRoot, "assets"), assetPath).isFile) {
-                missing += "assets/$assetPath"
-            }
-        }
-        if (requiredRuntimeArchiveAlternatives.none { assetPath ->
-                File(File(packRoot, "assets"), assetPath).isFile
-            }
-        ) {
-            missing += "assets/components/jre/{bin-aarch64.tar.xz,bin-arm64.tar.xz}"
-        }
-        externalizedNativeLibraries.forEach { libraryName ->
-            if (!File(externalNativeDir(packRoot), libraryName).isFile) {
-                missing += "lib/arm64-v8a/$libraryName"
-            }
-        }
-        return missing
     }
 
     @Throws(IOException::class)
@@ -545,6 +592,15 @@ object ExternalResourcePackService {
                     candidate.displayName
                 )
             )
+            MemoryDiagnosticsLogger.logEvent(
+                context = context,
+                event = "resource_pack_download_candidate_started",
+                extras = mapOf(
+                    "source" to candidate.displayName,
+                    "url" to candidate.requestUrl
+                ),
+                includeMemorySnapshot = false
+            )
             try {
                 downloadFile(
                     client = downloadClients.pick(candidate.usesGithubAcceleration),
@@ -562,6 +618,12 @@ object ExternalResourcePackService {
                         )
                     }
                 )
+                ResourcePackStore.installArchive(
+                    context = context,
+                    archiveFile = targetFile,
+                    progressCallback = progressCallback,
+                    source = "download:${candidate.displayName}"
+                )
                 mirrorSwitchController?.publishSlowDownloadPrompt(null)
                 return
             } catch (error: Throwable) {
@@ -569,6 +631,16 @@ object ExternalResourcePackService {
                     continue
                 }
                 failures += ResourcePackDownloadFailure(candidate.displayName, error)
+                MemoryDiagnosticsLogger.logEvent(
+                    context = context,
+                    event = "resource_pack_download_candidate_failed",
+                    extras = mapOf(
+                        "source" to candidate.displayName,
+                        "errorClass" to error.javaClass.name,
+                        "errorMessage" to error.message
+                    ),
+                    includeMemorySnapshot = false
+                )
             } finally {
                 mirrorSwitchController?.publishSlowDownloadPrompt(null)
             }
@@ -748,6 +820,9 @@ object ExternalResourcePackService {
         mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
     ) {
         val contentLength = fetchRangeSupportedContentLength(client, requestUrl)
+        if (contentLength != null) {
+            ResourcePackContract.requireArchiveBytes(contentLength)
+        }
         if (contentLength != null && contentLength >= MIN_CHUNKED_DOWNLOAD_THRESHOLD_BYTES) {
             downloadFileChunked(
                 client = client,
@@ -784,12 +859,26 @@ object ExternalResourcePackService {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val acceptRanges = response.header("Accept-Ranges")
-                if (acceptRanges?.lowercase(Locale.ROOT) != "bytes") return null
+                    ?.split(',')
+                    ?.any { value -> value.trim().equals("bytes", ignoreCase = true) }
+                    ?: false
+                if (!acceptRanges) return null
                 response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0L }
             }
         } catch (_: Throwable) {
             null
         }
+    }
+
+    private fun parseContentRange(value: String?): Triple<Long, Long, Long>? {
+        val match = Regex("^bytes\\s+(\\d+)-(\\d+)/(\\d+)$", RegexOption.IGNORE_CASE)
+            .matchEntire(value?.trim().orEmpty())
+            ?: return null
+        val start = match.groupValues[1].toLongOrNull() ?: return null
+        val end = match.groupValues[2].toLongOrNull() ?: return null
+        val total = match.groupValues[3].toLongOrNull() ?: return null
+        if (start < 0L || end < start || total <= end) return null
+        return Triple(start, end, total)
     }
 
     /**
@@ -817,6 +906,7 @@ object ExternalResourcePackService {
         if (!parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
+        ResourcePackContract.requireArchiveBytes(contentLength)
         val tempFile = File(parent, "${targetFile.name}.part")
         // Pre-allocate the full file so random-access writes from each chunk are safe.
         java.io.RandomAccessFile(tempFile, "rw").use { raf -> raf.setLength(contentLength) }
@@ -872,6 +962,13 @@ object ExternalResourcePackService {
             executor.shutdownNow()
         }
 
+        if (totalBytesWritten.get() != contentLength) {
+            tempFile.delete()
+            throw IOException(
+                "Resource pack download size mismatch: ${totalBytesWritten.get()}/$contentLength bytes"
+            )
+        }
+
         if (targetFile.exists() && !targetFile.delete()) {
             tempFile.delete()
             throw IOException("Failed to replace file: ${targetFile.absolutePath}")
@@ -916,7 +1013,19 @@ object ExternalResourcePackService {
                         "Expected HTTP 206 for Range request, got ${response.code}"
                     )
                 }
+                val contentRange = parseContentRange(response.header("Content-Range"))
+                    ?: throw IOException("Range response is missing a valid Content-Range header")
+                if (contentRange.first != rangeStart ||
+                    contentRange.second != rangeEnd ||
+                    contentRange.third != contentLength
+                ) {
+                    throw IOException(
+                        "Range response mismatch: expected $rangeStart-$rangeEnd/$contentLength, " +
+                            "got ${contentRange.first}-${contentRange.second}/${contentRange.third}"
+                    )
+                }
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var chunkBytes = 0L
                 response.body.byteStream().use { input ->
                     java.io.RandomAccessFile(tempFile, "rw").use { raf ->
                         raf.seek(rangeStart)
@@ -926,6 +1035,10 @@ object ExternalResourcePackService {
                             val read = input.read(buffer)
                             if (read < 0) break
                             if (read == 0) continue
+                            chunkBytes += read
+                            if (chunkBytes > rangeEnd - rangeStart + 1L) {
+                                throw IOException("Range response returned too many bytes")
+                            }
                             raf.write(buffer, 0, read)
                             val total = totalBytesWritten.addAndGet(read.toLong())
                             mirrorSwitchContext?.recordDownloadProgress(total)
@@ -955,6 +1068,11 @@ object ExternalResourcePackService {
                             }
                         }
                     }
+                }
+                if (chunkBytes != rangeEnd - rangeStart + 1L) {
+                    throw IOException(
+                        "Range response returned $chunkBytes bytes, expected ${rangeEnd - rangeStart + 1L}"
+                    )
                 }
             }
         } catch (error: Throwable) {
@@ -1000,10 +1118,13 @@ object ExternalResourcePackService {
                 }
                 val tempFile = File(parent, "${targetFile.name}.part")
                 val totalBytes = response.body.contentLength().takeIf { it > 0L }
+                if (totalBytes != null) {
+                    ResourcePackContract.requireArchiveBytes(totalBytes)
+                }
+                var downloadedBytes = 0L
                 response.body.byteStream().use { input ->
                     FileOutputStream(tempFile, false).use { output ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var downloadedBytes = 0L
                         var lastReportBytes = 0L
                         var downloadStartNanos = -1L
                         while (true) {
@@ -1018,6 +1139,9 @@ object ExternalResourcePackService {
                             }
                             if (downloadStartNanos < 0L) {
                                 downloadStartNanos = System.nanoTime()
+                            }
+                            if (downloadedBytes + read > ResourcePackContract.MAX_ARCHIVE_BYTES) {
+                                throw IOException("Resource pack download exceeded the archive size limit")
                             }
                             output.write(buffer, 0, read)
                             downloadedBytes += read
@@ -1046,6 +1170,12 @@ object ExternalResourcePackService {
                             }
                         }
                     }
+                }
+                if (totalBytes != null && downloadedBytes != totalBytes) {
+                    tempFile.delete()
+                    throw IOException(
+                        "Resource pack download size mismatch: $downloadedBytes/$totalBytes bytes"
+                    )
                 }
                 if (targetFile.exists() && !targetFile.delete()) {
                     tempFile.delete()
@@ -1216,260 +1346,95 @@ object ExternalResourcePackService {
     }
 
     @Throws(IOException::class)
-    private fun extractResourcePack(
-        archiveFile: File,
-        targetDir: File,
-        progressCallback: StartupProgressCallback?,
-        context: Context
-    ) {
-        prepareCleanDirectory(targetDir)
-        ZipFile(archiveFile).use { zipFile ->
-            val entries = zipFile.entries().asSequence()
-                .filterNot(ZipEntry::isDirectory)
-                .toList()
-            val totalEntries = entries.size.coerceAtLeast(1)
-            entries.forEachIndexed { index, entry ->
-                throwIfInterrupted()
-                val targetFile = resolveZipTarget(targetDir, entry)
-                val parent = targetFile.parentFile
-                if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                    throw IOException("Failed to create directory: ${parent.absolutePath}")
-                }
-                zipFile.getInputStream(entry).use { input ->
-                    FileOutputStream(targetFile, false).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                if (targetFile.name.endsWith(".so", ignoreCase = true)) {
-                    targetFile.setExecutable(true, false)
-                }
-                val percent = ((index + 1) * 100 / totalEntries).coerceIn(0, 100)
-                reportProgress(
-                    progressCallback,
-                    72 + ((percent * 24) / 100),
-                    context.progressText(R.string.startup_progress_extracting_external_resources, percent)
-                )
-            }
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun installBundledResources(
-        context: Context,
-        progressCallback: StartupProgressCallback?
-    ) {
-        val stagingRoot = File(
-            RuntimePaths.externalResourcesRoot(context),
-            "bundled-staging-${System.nanoTime()}"
-        )
-        val extractedDir = File(stagingRoot, "current")
-        prepareCleanDirectory(stagingRoot)
-        try {
-            copyBundledResources(
-                context = context,
-                targetDir = extractedDir,
-                progressCallback = progressCallback
-            )
-            val missingAfterCopy = collectMissingResourcePackContent(extractedDir)
-            if (missingAfterCopy.isNotEmpty()) {
-                throw IOException(
-                    "Bundled resource pack is incomplete. Missing: " +
-                        missingAfterCopy.joinToString(", ")
-                )
-            }
-            writeInstallMarker(context, extractedDir)
-            installExtractedResources(
-                context = context,
-                extractedDir = extractedDir
-            )
-        } finally {
-            FileTreeCleaner.deleteRecursively(stagingRoot)
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun copyBundledResources(
-        context: Context,
-        targetDir: File,
-        progressCallback: StartupProgressCallback?
-    ) {
-        prepareCleanDirectory(targetDir)
-        val totalSteps = (externalizedAssetRootPaths.size + externalizedNativeLibraries.size)
-            .coerceAtLeast(1)
-        var completedSteps = 0
-
-        externalizedAssetRootPaths.forEach { assetRoot ->
-            throwIfInterrupted()
-            copyBundledAssetTree(
-                context = context,
-                assetPath = assetRoot,
-                targetFile = File(File(targetDir, "assets"), assetRoot)
-            )
-            completedSteps++
-            reportBundledCopyProgress(context, progressCallback, completedSteps, totalSteps)
-        }
-
-        val appNativeDir = File(context.applicationInfo.nativeLibraryDir)
-        val targetNativeDir = externalNativeDir(targetDir)
-        externalizedNativeLibraries.forEach { libraryName ->
-            throwIfInterrupted()
-            val sourceFile = File(appNativeDir, libraryName)
-            if (!sourceFile.isFile) {
-                throw IOException("Missing bundled native library: ${sourceFile.absolutePath}")
-            }
-            val targetFile = File(targetNativeDir, libraryName)
-            copyFile(sourceFile, targetFile)
-            targetFile.setExecutable(true, false)
-            completedSteps++
-            reportBundledCopyProgress(context, progressCallback, completedSteps, totalSteps)
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun copyBundledAssetTree(context: Context, assetPath: String, targetFile: File) {
-        val children = context.assets.list(assetPath)
-            ?.filter(String::isNotEmpty)
-            .orEmpty()
-        if (children.isEmpty()) {
-            copyBundledAssetFile(context, assetPath, targetFile)
-            return
-        }
-        if (!targetFile.exists() && !targetFile.mkdirs()) {
-            throw IOException("Failed to create directory: ${targetFile.absolutePath}")
-        }
-        children.forEach { childName ->
-            copyBundledAssetTree(
-                context = context,
-                assetPath = "$assetPath/$childName",
-                targetFile = File(targetFile, childName)
-            )
-        }
-    }
-
-    @Throws(IOException::class)
-    private fun copyBundledAssetFile(context: Context, assetPath: String, targetFile: File) {
-        val parent = targetFile.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw IOException("Failed to create directory: ${parent.absolutePath}")
-        }
-        context.assets.open(assetPath).use { input ->
-            FileOutputStream(targetFile, false).use { output ->
-                input.copyTo(output)
-            }
-        }
-    }
-
-    private fun reportBundledCopyProgress(
-        context: Context,
-        progressCallback: StartupProgressCallback?,
-        completedSteps: Int,
-        totalSteps: Int
-    ) {
-        val percent = ((completedSteps * 100) / totalSteps).coerceIn(0, 100)
-        reportProgress(
-            progressCallback,
-            8 + ((percent * 88) / 100),
-            context.progressText(R.string.startup_progress_extracting_external_resources, percent)
-        )
-    }
-
-    private fun bundledAssetFileExists(context: Context, assetPath: String): Boolean {
-        return try {
-            context.assets.open(assetPath).use { }
-            true
-        } catch (_: IOException) {
-            false
-        }
-    }
-
-    private fun readInstalledResourcePackVersion(markerFile: File): String? {
-        if (!markerFile.isFile) {
-            return null
-        }
-        return runCatching {
-            markerFile.readLines(StandardCharsets.UTF_8)
-                .firstOrNull { line -> line.startsWith("version=") }
-                ?.substringAfter("version=")
-                ?.trim()
-        }.getOrNull()
-    }
-
-    @Throws(IOException::class)
-    private fun resolveZipTarget(targetDir: File, entry: ZipEntry): File {
-        val normalizedName = entry.name
-            .replace('\\', '/')
-            .trimStart('/')
-        if (normalizedName.isEmpty() ||
-            normalizedName.startsWith("../") ||
-            normalizedName.contains("/../")
-        ) {
-            throw IOException("Unsafe resource pack entry: ${entry.name}")
-        }
-        val targetFile = File(targetDir, normalizedName)
-        val targetRootPath = targetDir.canonicalFile.toPath()
-        val targetPath = targetFile.canonicalFile.toPath()
-        if (!targetPath.startsWith(targetRootPath)) {
-            throw IOException("Unsafe resource pack entry: ${entry.name}")
-        }
-        return targetFile
-    }
-
-    @Throws(IOException::class)
-    private fun writeInstallMarker(context: Context, extractedDir: File) {
-        val marker = File(extractedDir, RuntimePaths.externalResourcesMarkerFile(context).name)
-        marker.writeText(
-            "version=${BuildConfig.RESOURCE_PACK_VERSION}\n" +
-                "appVersion=${BuildConfig.VERSION_NAME}\n",
-            StandardCharsets.UTF_8
-        )
-    }
-
-    @Throws(IOException::class)
-    private fun installExtractedResources(context: Context, extractedDir: File) {
-        val root = RuntimePaths.externalResourcesRoot(context)
-        if (!root.exists() && !root.mkdirs()) {
-            throw IOException("Failed to create directory: ${root.absolutePath}")
-        }
-        val currentDir = RuntimePaths.externalResourcesCurrentDir(context)
-        val previousDir = File(root, "previous")
-        FileTreeCleaner.deleteRecursively(previousDir)
-        if (currentDir.exists() && !currentDir.renameTo(previousDir)) {
-            FileTreeCleaner.deleteRecursively(currentDir)
-        }
-        if (!extractedDir.renameTo(currentDir)) {
-            copyDirectory(extractedDir, currentDir)
-            FileTreeCleaner.deleteRecursively(extractedDir)
-        }
-        FileTreeCleaner.deleteRecursively(previousDir)
-    }
-
-    private fun externalNativeDir(currentDir: File): File =
-        File(File(currentDir, "lib"), "arm64-v8a")
-
-    @Throws(IOException::class)
     private fun prepareCleanDirectory(directory: File) {
         val parent = directory.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-        FileTreeCleaner.deleteRecursively(directory)
+        if (directory.exists()) {
+            deleteTreeForCleanup(directory)
+            if (directory.exists()) {
+                throw IOException("Failed to clean staging directory: ${directory.absolutePath}")
+            }
+        }
         if (!directory.exists() && !directory.mkdirs()) {
             throw IOException("Failed to create directory: ${directory.absolutePath}")
         }
     }
 
+    private fun nativeLibrariesAreCurrent(directory: File, packId: String, sourceDir: File): Boolean {
+        if (!directory.isDirectory) {
+            return false
+        }
+        val marker = File(directory, ".resource-pack-id")
+        if (!marker.isFile || marker.readText(Charsets.UTF_8).trim() != "packId=$packId") {
+            return false
+        }
+        return runCatching {
+            externalizedNativeLibraries.all { libraryName ->
+                val source = File(sourceDir, libraryName)
+                val target = File(directory, libraryName)
+                source.isFile &&
+                    source.length() > 0L &&
+                    target.isFile &&
+                    target.length() == source.length() &&
+                    sha256(source) == sha256(target)
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
     @Throws(IOException::class)
-    private fun copyDirectory(source: File, target: File) {
-        if (source.isDirectory) {
-            if (!target.exists() && !target.mkdirs()) {
-                throw IOException("Failed to create directory: ${target.absolutePath}")
-            }
-            source.listFiles().orEmpty().forEach { child ->
-                copyDirectory(child, File(target, child.name))
-            }
+    private fun copyNonExternalNativeFiles(sourceDir: File, targetDir: File) {
+        if (!sourceDir.exists()) {
             return
         }
-        copyFile(source, target)
+        if (!sourceDir.isDirectory) {
+            throw IOException("Existing external native library path is not a directory: ${sourceDir.absolutePath}")
+        }
+        val sourceRoot = sourceDir.canonicalFile.toPath()
+        sourceDir.walkTopDown().forEach { source ->
+            if (!source.isFile || source.name == ".resource-pack-id") {
+                return@forEach
+            }
+            if (source.name in externalizedNativeLibraries) {
+                return@forEach
+            }
+            val relative = sourceRoot.relativize(source.canonicalFile.toPath())
+                .toString()
+                .replace(File.separatorChar, '/')
+            val target = File(targetDir, relative)
+            copyFile(source, target)
+        }
+    }
+
+    private fun deleteTreeForCleanup(file: File?) {
+        if (file == null || !file.exists()) {
+            return
+        }
+        val wasInterrupted = Thread.interrupted()
+        try {
+            FileTreeCleaner.deleteRecursively(file)
+            if (file.exists()) {
+                FileTreeCleaner.deleteRecursively(file)
+            }
+        } finally {
+            if (wasInterrupted) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     @Throws(IOException::class)
