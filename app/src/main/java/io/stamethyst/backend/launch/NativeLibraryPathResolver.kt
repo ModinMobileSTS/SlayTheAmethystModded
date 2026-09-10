@@ -118,7 +118,6 @@ internal object NativeLibraryPathResolver {
 
     private fun collectNativeSearchRoots(context: Context): List<File> {
         return listOf(
-            RuntimePaths.externalNativeLibDir(context),
             RuntimePaths.gdxPatchNativesDir(context),
             RuntimePaths.nativeMarketActiveDir(context)
         )

@@ -262,6 +262,9 @@ Saves an ordered copy of `AbstractDungeon.shrineList` in a BaseMod custom save f
 68. `EventHelperReplayShopContextPatches`
 Saves whether the room immediately before the pending question-mark transition was a shop and, only for the one `EventHelper.roll(Random)` replayed while loading that save, reapplies vanilla's zero-shop rule to the local roll table. The state is captured at the original event roll and carried into question-mark combat `POST_COMBAT` saves, while ordinary room-entry saves use the actual current room. This addresses the symptom where save-and-load before entering a question-mark room after a shop can change the room from an event to another shop because vanilla temporarily represents the prior room as `EmptyRoom` during reconstruction, including when restoring a completed event combat. Normal rolls and older saves remain unchanged. Type: gameplay determinism fix implemented by `EventHelperReplayShopContextPatches.EventHelperRollPatch` and `EventRollPriorRoomSaveField.SaveFileConstructorPatch`, with the custom field and replay state in `EventRollPriorRoomSaveField` and `EventRollPriorRoomState`.
 
+69. Bundled runtime-compat version `1.0.39`
+Keeps `ModTheSpire.json`, the startup log in `CompatRuntimeState`, and the launcher validator `ModJarSupport.validateAmethystRuntimeCompatJar()` on the same version string. This addresses the symptom where launching failed with `version is 1.0.39, expected 1.0.38` after the bundled jar was bumped. Type: compatibility workaround implemented by aligning `EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION` with the shipped manifest.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

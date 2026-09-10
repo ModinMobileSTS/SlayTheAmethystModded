@@ -22,7 +22,11 @@ internal object FeedbackLogAnalyzer {
         "outofmemory",
         "oom",
         "sigsegv",
-        "anr"
+        "anr",
+        "resource_pack",
+        "resource pack",
+        "external resource",
+        "generation"
     )
 
     fun summarizeLatestLog(logFile: File): FeedbackLogSummary {

@@ -54,6 +54,26 @@ private val externalizedAssetPatterns = listOf(
     "ui/**"
 ) + externalizedModAssetPatterns
 
+private val resourcePackRequiredAssetFiles = listOf(
+    "components/jre/version",
+    "components/jre/universal.tar.xz",
+    "components/lwjgl3/version",
+    "components/lwjgl3/lwjgl-glfw-classes.jar",
+    "components/log4j_runtime/log4j-api.jar",
+    "components/log4j_runtime/log4j-core.jar",
+    "components/mods/ModTheSpire.jar",
+    "components/mods/BaseMod.jar",
+    "components/mods/StSLib.jar",
+    "ui/boot_bright.png",
+    "ui/boot_dark.png",
+    "ui/update_notice.png"
+)
+
+private val resourcePackRuntimeArchiveAlternatives = listOf(
+    "components/jre/bin-aarch64.tar.xz",
+    "components/jre/bin-arm64.tar.xz"
+)
+
 // This was temporarily bundled while the callback bridge migration was in flight.
 // Exclude stale generated outputs so incremental builds cannot retain the duplicate JAR.
 private val obsoleteCommonAssetPatterns = listOf(
@@ -86,15 +106,16 @@ private fun Project.configureStsAndroidAppBuild() {
     val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
     val packagedCommonAssetsDir = layout.buildDirectory.dir("generated/packaged-assets/common")
     val packagedExternalizedAssetsDir = layout.buildDirectory.dir("generated/packaged-assets/externalized")
+    val embeddedResourcePackAssetsDir = layout.buildDirectory.dir("generated/embedded-resource-pack")
     val generatedAndroidCallbackBridgeDir = layout.buildDirectory.dir("generated/source/callbackBridge/android")
 
     configureGeneratedAndroidSources(
         packagedCommonAssetsDir = packagedCommonAssetsDir,
-        packagedExternalizedAssetsDir = packagedExternalizedAssetsDir,
+        embeddedResourcePackAssetsDir = embeddedResourcePackAssetsDir,
         generatedAndroidCallbackBridgeDir = generatedAndroidCallbackBridgeDir
     )
     configureApkOutput(appVersionName)
-    configureSlimNativePackaging()
+    configureExternalResourceNativePackaging()
 
     val generatedAssetTasks = registerRuntimeAssetTasks(
         generatedRuntimeAssetsDir = generatedRuntimeAssetsDir,
@@ -106,9 +127,10 @@ private fun Project.configureStsAndroidAppBuild() {
         packagedExternalizedAssetsDir = packagedExternalizedAssetsDir,
         generatedAssetTasks = generatedAssetTasks
     )
-    val copyResourcesZipToDesktop = registerExternalResourceZipTasks(
+    val resourcePackTasks = registerExternalResourceZipTasks(
         packagedExternalizedAssetsDir = packagedExternalizedAssetsDir,
-        prepareExternalizedAssetsTask = packagedAssetTasks.prepareExternalizedAssets
+        prepareExternalizedAssetsTask = packagedAssetTasks.prepareExternalizedAssets,
+        embeddedResourcePackAssetsDir = embeddedResourcePackAssetsDir
     )
     val adb = androidComponents().sdkComponents.adb.map { it.asFile.absolutePath }
     registerAdbTasks(adb, packageName)
@@ -117,7 +139,16 @@ private fun Project.configureStsAndroidAppBuild() {
 
     tasks.named("preBuild").configure {
         dependsOn(packagedAssetTasks.prepareCommonAssets)
-        dependsOn(packagedAssetTasks.prepareExternalizedAssets)
+    }
+    tasks.matching {
+        it.name in setOf(
+            "generateFullReleaseAssets",
+            "mergeFullReleaseAssets",
+            "generateFastFullReleaseAssets",
+            "mergeFastFullReleaseAssets"
+        )
+    }.configureEach {
+        dependsOn(resourcePackTasks.embedInApk)
     }
     tasks.matching {
         it.name in setOf(
@@ -127,7 +158,7 @@ private fun Project.configureStsAndroidAppBuild() {
             "assembleFastFullRelease"
         )
     }.configureEach {
-        finalizedBy(copyResourcesZipToDesktop)
+        finalizedBy(resourcePackTasks.copyToDesktop)
     }
 }
 
@@ -181,7 +212,7 @@ private fun Project.registerArthasResourcePackageTask() {
 
 private fun Project.configureGeneratedAndroidSources(
     packagedCommonAssetsDir: Provider<Directory>,
-    packagedExternalizedAssetsDir: Provider<Directory>,
+    embeddedResourcePackAssetsDir: Provider<Directory>,
     generatedAndroidCallbackBridgeDir: Provider<Directory>
 ) {
     extensions.configure<ApplicationExtension> {
@@ -189,8 +220,10 @@ private fun Project.configureGeneratedAndroidSources(
             assets.setSrcDirs(listOf(packagedCommonAssetsDir))
             java.srcDir(generatedAndroidCallbackBridgeDir)
         }
+        // Full APKs are offline-capable slim packages: carry one archive and let the
+        // runtime installer unpack it into the same persistent store used by slim APKs.
         listOf("fastFullRelease", "fullRelease").forEach { sourceSetName ->
-            sourceSets.maybeCreate(sourceSetName).assets.srcDir(packagedExternalizedAssetsDir)
+            sourceSets.maybeCreate(sourceSetName).assets.srcDir(embeddedResourcePackAssetsDir)
         }
     }
 }
@@ -231,9 +264,9 @@ private fun Project.configureApkOutput(appVersionName: String) {
     }
 }
 
-private fun Project.configureSlimNativePackaging() {
+private fun Project.configureExternalResourceNativePackaging() {
     val components = androidComponents()
-    listOf("debug", "release", "fastSlimRelease").forEach { buildTypeName ->
+    listOf("debug", "release", "fastSlimRelease", "fastFullRelease", "fullRelease").forEach { buildTypeName ->
         components.onVariants(components.selector().withBuildType(buildTypeName)) { variant ->
             externalizedNativeLibraries.forEach { libraryName ->
                 variant.packaging.jniLibs.excludes.add("**/$libraryName")
@@ -250,6 +283,11 @@ private data class ApkOutputNaming(
 private data class PackagedRuntimeAssetTasks(
     val prepareCommonAssets: TaskProvider<Sync>,
     val prepareExternalizedAssets: TaskProvider<Sync>
+)
+
+private data class ExternalResourcePackTasks(
+    val embedInApk: TaskProvider<Sync>,
+    val copyToDesktop: TaskProvider<Task>
 )
 
 private fun Project.registerPackagedRuntimeAssetTasks(
@@ -296,8 +334,9 @@ private fun Project.registerPackagedRuntimeAssetTasks(
 
 private fun Project.registerExternalResourceZipTasks(
     packagedExternalizedAssetsDir: Provider<Directory>,
-    prepareExternalizedAssetsTask: TaskProvider<Sync>
-): TaskProvider<Task> {
+    prepareExternalizedAssetsTask: TaskProvider<Sync>,
+    embeddedResourcePackAssetsDir: Provider<Directory>
+): ExternalResourcePackTasks {
     val packageExternalResources = tasks.register<Zip>("packageExternalResources") {
         group = "build"
         description = "Package external launcher runtime resources as resources.zip."
@@ -313,10 +352,67 @@ private fun Project.registerExternalResourceZipTasks(
         archiveFileName.set("resources.zip")
         isPreserveFileTimestamps = false
         isReproducibleFileOrder = true
+        doFirst {
+            val externalizedRoot = packagedExternalizedAssetsDir.get().asFile
+            val missingAssets = resourcePackRequiredAssetFiles.filter { path ->
+                val file = File(externalizedRoot, path)
+                !file.isFile || file.length() <= 0L
+            }
+            if (resourcePackRuntimeArchiveAlternatives.none { path ->
+                    val file = File(externalizedRoot, path)
+                    file.isFile && file.length() > 0L
+                }
+            ) {
+                throw GradleException(
+                    "External resource pack is missing an architecture runtime archive: " +
+                        resourcePackRuntimeArchiveAlternatives.joinToString(", ")
+                )
+            }
+            if (missingAssets.isNotEmpty()) {
+                throw GradleException(
+                    "External resource pack is missing assets: ${missingAssets.joinToString(", ")}"
+                )
+            }
+            val nativeRoot = layout.projectDirectory.dir("src/main/jniLibs/$RESOURCE_PACK_ABI").asFile
+            val missingNative = externalizedNativeLibraries.filter { name ->
+                val file = File(nativeRoot, name)
+                !file.isFile || file.length() <= 0L
+            }
+            if (missingNative.isNotEmpty()) {
+                throw GradleException(
+                    "External resource pack is missing native libraries: ${missingNative.joinToString(", ")}"
+                )
+            }
+        }
+        doLast {
+            val archive = archiveFile.get().asFile
+            val digest = MessageDigest.getInstance("SHA-256")
+            archive.inputStream().use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read > 0) digest.update(buffer, 0, read)
+                }
+            }
+            val hash = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+            File(archive.parentFile, "${archive.name}.sha256").writeText(hash + "\n")
+            logger.lifecycle("External resource pack SHA-256: $hash")
+        }
     }
 
     val resourceArchive = packageExternalResources.flatMap { it.archiveFile }
-    return tasks.register("copyExternalResourcesToDesktop") {
+    val embedInApk = tasks.register<Sync>("embedExternalResourcePackInApk") {
+        group = "build"
+        description = "Embed the external resource pack archive in full APK assets."
+        dependsOn(packageExternalResources)
+        from(resourceArchive) {
+            into("resource-pack")
+        }
+        into(embeddedResourcePackAssetsDir)
+    }
+
+    val copyToDesktop = tasks.register("copyExternalResourcesToDesktop") {
         group = "build"
         description = "Copy resources.zip to the current user's Desktop."
         dependsOn(packageExternalResources)
@@ -328,8 +424,17 @@ private fun Project.registerExternalResourceZipTasks(
             val target = File(desktopDirectory, source.name)
             source.copyTo(target, overwrite = true)
             logger.lifecycle("External resources copied to: ${target.absolutePath}")
+            val sidecar = File(source.parentFile, "${source.name}.sha256")
+            if (sidecar.isFile) {
+                sidecar.copyTo(File(desktopDirectory, sidecar.name), overwrite = true)
+            }
         }
     }
+
+    return ExternalResourcePackTasks(
+        embedInApk = embedInApk,
+        copyToDesktop = copyToDesktop
+    )
 }
 
 private fun resolveDesktopDirectory(): File {

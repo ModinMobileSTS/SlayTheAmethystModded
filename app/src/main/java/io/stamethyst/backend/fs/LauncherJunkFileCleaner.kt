@@ -2,6 +2,7 @@ package io.stamethyst.backend.fs
 
 import android.content.Context
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.backend.resources.ResourcePackStore
 import java.io.File
 import java.util.LinkedHashMap
 
@@ -16,7 +17,11 @@ internal object LauncherJunkFileCleaner {
     )
 
     @JvmStatic
-    fun clear(context: Context): CleanupResult = clearTargets(buildCleanupTargets(context))
+    fun clear(context: Context): CleanupResult {
+        val result = clearTargets(buildCleanupTargets(context))
+        ResourcePackStore.tryCleanupTransient(context)
+        return result
+    }
 
     internal fun buildCleanupTargets(context: Context): List<File> {
         val targets = LinkedHashMap<String, File>()

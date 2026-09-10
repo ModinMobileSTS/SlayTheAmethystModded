@@ -6,6 +6,7 @@ import android.os.Build
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierDiagnosticsStore
+import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.SignalCrashDumpReader
@@ -229,6 +230,11 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/info/launcher_settings.txt",
                 LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
             )
+            writeTextEntry(
+                zipOutput,
+                "sts/resource_pack/state.txt",
+                ResourcePackStore.buildDiagnostics(context)
+            )
             exportedCount += writeOptionalFile(
                 zipOutput,
                 SteamCloudDiagnosticsStore.summaryFile(context),
@@ -285,6 +291,11 @@ internal object DiagnosticsArchiveBuilder {
                     exportedCount++
                 }
             }
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                RuntimePaths.startupTraceLog(context),
+                "sts/logs/startup_trace.log"
+            )
 
             exportedCount += writeOptionalFile(
                 zipOutput,
@@ -364,6 +375,7 @@ internal object DiagnosticsArchiveBuilder {
         - easytier/：EasyTier 配置、当前状态，以及最近 5 条断开/重连/失败记录（含 :easytier 进程退出原因）。
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息和启动器设置。
+        - resource_pack/：资源包 active generation、版本、校验和迁移状态。
         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
         - achievement_sync/：成就请求解析、游戏内弹窗、Steam 查询、上传及失败事件，最多保留 3 槽位，不包含 Steam 凭据。
         - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。

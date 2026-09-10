@@ -75,6 +75,9 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.resources.ArthasResourcePackService
+import io.stamethyst.backend.resources.ExternalResourcePackService
+import io.stamethyst.backend.resources.ResourcePackStore
+import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -422,6 +425,10 @@ class SettingsScreenViewModel : ViewModel() {
         val gpuResourceDiagEnabled: Boolean = LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED,
         val arthasResourceInstalled: Boolean = false,
         val arthasResourceVersion: String = "",
+        val resourcePackReady: Boolean = false,
+        val resourcePackVersion: String = "",
+        val resourcePackId: String = "",
+        val resourcePackIssues: String = "",
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenInputMode: TouchscreenInputMode =
@@ -1304,6 +1311,7 @@ class SettingsScreenViewModel : ViewModel() {
                     bundledAssetPath = "components/mods/RamSaver.jar"
                 )
                 val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
+                val resourcePack = ResourcePackStore.inspect(host)
                 val previousUiState = uiState
                 val steamCloudAuthRead = runCatching {
                     SteamCloudAuthStore.readSnapshotWithStatus(host)
@@ -1474,6 +1482,10 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudStatusText = displayedStatusText,
                         steamCloudManifestSummary = displayedManifestSummary,
                         steamCloudManifestAvailable = displayedManifestAvailable,
+                        resourcePackReady = resourcePack.ready,
+                        resourcePackVersion = resourcePack.version.orEmpty(),
+                        resourcePackId = resourcePack.packId.orEmpty(),
+                        resourcePackIssues = resourcePack.issues.joinToString("; "),
                         easyTierSettings = easyTierSettings,
                     )
                 }
@@ -3552,6 +3564,47 @@ class SettingsScreenViewModel : ViewModel() {
                         Toast.LENGTH_LONG
                     )
                     refreshArthasResourceState(host)
+                }
+            }
+        }
+    }
+
+    fun onRepairResourcePackRequested(host: Activity) {
+        if (uiState.busy) return
+        setBusy(true, UiText.StringResource(R.string.settings_busy_reinstalling_resource_pack))
+        executor.execute {
+            try {
+                ExternalResourcePackService.reinstall(
+                    context = host.applicationContext,
+                    progressCallback = StartupProgressCallback { percent, message ->
+                        host.runOnUiThread {
+                            setBusy(
+                                busy = true,
+                                message = UiText.DynamicString(message),
+                                progressPercent = percent,
+                            )
+                        }
+                    }
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(host, UiText.StringResource(R.string.settings_resource_pack_repaired))
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.DynamicString(
+                            host.getString(
+                                R.string.settings_resource_pack_repair_failed,
+                                error.message ?: error.javaClass.simpleName
+                            )
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                    refreshStatus(host)
                 }
             }
         }

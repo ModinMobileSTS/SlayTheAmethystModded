@@ -34,6 +34,16 @@ object RuntimePaths {
     private const val EXTERNAL_RESOURCES_LIB_DIR_NAME = "lib"
     private const val EXTERNAL_RESOURCES_ABI_DIR_NAME = "arm64-v8a"
     private const val EXTERNAL_RESOURCES_MARKER_FILE_NAME = ".resource-pack-installed"
+    private const val EXTERNAL_RESOURCES_ACTIVE_POINTER_FILE_NAME = "active.properties"
+    private const val EXTERNAL_RESOURCES_STATE_FILE_NAME = "state.properties"
+    private const val EXTERNAL_RESOURCES_LOCK_FILE_NAME = ".external_resources.lock"
+    private const val EXTERNAL_RESOURCES_GENERATIONS_DIR_NAME = "generations"
+    private const val EXTERNAL_RESOURCES_STAGING_DIR_NAME = "staging"
+    private const val EXTERNAL_RESOURCES_QUARANTINE_DIR_NAME = "quarantine"
+    private const val EXTERNAL_RESOURCES_MANIFEST_FILE_NAME = "manifest.properties"
+    private const val EXTERNAL_NATIVE_LIB_MARKER_FILE_NAME = ".resource-pack-id"
+    private const val COMPONENT_INSTALL_MARKER_FILE_NAME = ".components-installed-marker"
+    private const val RUNTIME_INSTALL_MARKER_FILE_NAME = ".installed-version"
     private const val IN_GAME_KEYBOARD_REQUEST_FILE_NAME = ".in_game_keyboard_request"
     private const val IN_GAME_LAN_GAME_STATE_REQUEST_FILE_NAME = ".in_game_lan_game_state_request"
     private const val IN_GAME_FILE_PICKER_REQUEST_FILE_NAME = ".in_game_file_picker_request"
@@ -655,6 +665,53 @@ object RuntimePaths {
         File(storageRoot(context), EXTERNAL_RESOURCES_DIR_NAME)
 
     @JvmStatic
+    fun externalResourcesActivePointerFile(context: Context): File =
+        File(externalResourcesRoot(context), EXTERNAL_RESOURCES_ACTIVE_POINTER_FILE_NAME)
+
+    @JvmStatic
+    fun externalResourcesStateFile(context: Context): File =
+        File(externalResourcesRoot(context), EXTERNAL_RESOURCES_STATE_FILE_NAME)
+
+    @JvmStatic
+    fun externalResourcesLockFile(context: Context): File =
+        File(storageRoot(context), EXTERNAL_RESOURCES_LOCK_FILE_NAME)
+
+    @JvmStatic
+    fun externalResourcesGenerationsDir(context: Context): File =
+        File(externalResourcesRoot(context), EXTERNAL_RESOURCES_GENERATIONS_DIR_NAME)
+
+    @JvmStatic
+    fun externalResourcesStagingRoot(context: Context): File =
+        File(externalResourcesRoot(context), EXTERNAL_RESOURCES_STAGING_DIR_NAME)
+
+    @JvmStatic
+    fun externalResourcesQuarantineRoot(context: Context): File =
+        File(externalResourcesRoot(context), EXTERNAL_RESOURCES_QUARANTINE_DIR_NAME)
+
+    @JvmStatic
+    fun externalResourcesGenerationDir(context: Context, packId: String): File =
+        File(externalResourcesGenerationsDir(context), packId)
+
+    @JvmStatic
+    fun externalResourcesGenerationAssetsDir(context: Context, packId: String): File =
+        File(externalResourcesGenerationDir(context, packId), EXTERNAL_RESOURCES_ASSETS_DIR_NAME)
+
+    @JvmStatic
+    fun externalResourcesGenerationNativeLibDir(context: Context, packId: String): File =
+        File(
+            File(externalResourcesGenerationDir(context, packId), EXTERNAL_RESOURCES_LIB_DIR_NAME),
+            EXTERNAL_RESOURCES_ABI_DIR_NAME
+        )
+
+    @JvmStatic
+    fun externalResourcesGenerationMarkerFile(context: Context, packId: String): File =
+        File(externalResourcesGenerationDir(context, packId), EXTERNAL_RESOURCES_MARKER_FILE_NAME)
+
+    @JvmStatic
+    fun externalResourcesGenerationManifestFile(context: Context, packId: String): File =
+        File(externalResourcesGenerationDir(context, packId), EXTERNAL_RESOURCES_MANIFEST_FILE_NAME)
+
+    @JvmStatic
     fun legacyInternalExternalResourcesRoot(context: Context): File =
         File(componentRoot(context), EXTERNAL_RESOURCES_DIR_NAME)
 
@@ -664,6 +721,7 @@ object RuntimePaths {
     @JvmStatic
     fun feedbackWorkingRoot(context: Context): File = File(storageRoot(context), "feedback-working")
 
+    /** Legacy pre-generation layout. It is migration input only, never a runtime read path. */
     @JvmStatic
     fun externalResourcesCurrentDir(context: Context): File =
         File(externalResourcesRoot(context), EXTERNAL_RESOURCES_CURRENT_DIR_NAME)
@@ -682,6 +740,18 @@ object RuntimePaths {
             File(externalResourcesCurrentDir(context), EXTERNAL_RESOURCES_LIB_DIR_NAME),
             EXTERNAL_RESOURCES_ABI_DIR_NAME
         )
+
+    @JvmStatic
+    fun externalNativeLibMarkerFile(context: Context): File =
+        File(externalNativeLibDir(context), EXTERNAL_NATIVE_LIB_MARKER_FILE_NAME)
+
+    @JvmStatic
+    fun componentInstallMarkerFile(context: Context): File =
+        File(componentRoot(context), COMPONENT_INSTALL_MARKER_FILE_NAME)
+
+    @JvmStatic
+    fun runtimeInstallMarkerFile(context: Context): File =
+        File(runtimeRoot(context), RUNTIME_INSTALL_MARKER_FILE_NAME)
 
     @JvmStatic
     fun externalResourcesMarkerFile(context: Context): File =
@@ -899,6 +969,9 @@ object RuntimePaths {
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
         externalResourcesRoot(context).mkdirs()
+        externalResourcesGenerationsDir(context).mkdirs()
+        externalResourcesStagingRoot(context).mkdirs()
+        externalResourcesQuarantineRoot(context).mkdirs()
         transientFilesRoot(context).mkdirs()
         jvmTempRoot(context).mkdirs()
         runtimeRoot(context).mkdirs()

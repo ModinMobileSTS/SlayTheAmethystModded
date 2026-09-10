@@ -454,6 +454,7 @@ fun LauncherDeveloperSettingsScreen(
         onSharePerformanceLogs = { viewModel.onSharePerformanceLogs(activity) },
         onExportPerformanceLogs = viewModel::onExportPerformanceLogsToFile,
         onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },
+        onRepairResourcePack = { viewModel.onRepairResourcePackRequested(activity) },
         onGdxPadCursorDebugChanged = { enabled ->
             viewModel.onGdxPadCursorDebugChanged(activity, enabled)
         },
