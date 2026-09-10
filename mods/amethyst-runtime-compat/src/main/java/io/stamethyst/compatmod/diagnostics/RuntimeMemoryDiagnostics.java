@@ -29,7 +29,7 @@ public final class RuntimeMemoryDiagnostics {
     private static final boolean FBO_MANAGER_ENABLED =
         readBooleanSystemProperty(FBO_MANAGER_PROP, true);
     private static final boolean MENU_DIAG_HOTSPOTS_ENABLED =
-        GPU_RESOURCE_DIAG_ENABLED && readBooleanSystemProperty(MENU_DIAG_HOTSPOTS_PROP, true);
+        GPU_RESOURCE_DIAG_ENABLED && readBooleanSystemProperty(MENU_DIAG_HOTSPOTS_PROP, false);
     private static long mainMenuConstructorStartNs = -1L;
     private static long characterSelectInitializeStartNs = -1L;
     private static CardCrawlGame.GameMode lastMode;

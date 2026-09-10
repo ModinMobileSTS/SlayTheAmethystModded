@@ -151,7 +151,9 @@ object StsLaunchSpec {
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
         val requestedPerformanceDeepDiagnostics = performanceDeepDiagnosticsOverride
             ?: LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
-        val performanceDeepDiagnostics = requestedPerformanceDeepDiagnostics &&
+        val performanceDeepDiagnostics = requestedPerformanceDeepDiagnostics
+        val arthasAnalysisEnabled = performanceDeepDiagnostics &&
+            LauncherConfig.isArthasAnalysisEnabled(context) &&
             ArthasResourcePackService.isInstalled(context)
         val requestedTargetFps = LauncherConfig.readTargetFpsValue(context)
         val effectiveTargetFps = if (LauncherConfig.isTargetFpsAutomatic(context)) {
@@ -816,7 +818,12 @@ object StsLaunchSpec {
         ) {
             val gameProbeArgs = buildString {
                 append("port=9099")
-                if (performanceDeepDiagnostics) {
+                if (shouldEnableOfflineArthas(
+                    performanceDeepDiagnostics = performanceDeepDiagnostics,
+                    arthasAnalysisEnabled = arthasAnalysisEnabled,
+                    autoplay = effectiveAutoplay,
+                    autoplayMode = autoplayMode
+                )) {
                     val outputDir = RuntimePaths.offlineArthasOutputDir(context)
                     if (!outputDir.exists()) {
                         outputDir.mkdirs()
@@ -922,6 +929,16 @@ object StsLaunchSpec {
     ): Boolean {
         return isMtsLaunchMode(launchMode) &&
             (debugMode || autoplay || forceJvmCrash || forceRuntimeCrash || performanceDeepDiagnostics)
+    }
+
+    internal fun shouldEnableOfflineArthas(
+        performanceDeepDiagnostics: Boolean,
+        arthasAnalysisEnabled: Boolean,
+        autoplay: Boolean,
+        autoplayMode: AutoplayMode
+    ): Boolean {
+        return performanceDeepDiagnostics && arthasAnalysisEnabled &&
+            !(autoplay && autoplayMode == AutoplayMode.SINGLE_ROOM)
     }
 
     internal fun resolveTexturePressureDownscaleEnabled(

@@ -238,6 +238,42 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
+    fun shouldEnableOfflineArthas_excludesDeterministicSingleRoomBenchmarks() {
+        assertFalse(
+            StsLaunchSpec.shouldEnableOfflineArthas(
+                performanceDeepDiagnostics = true,
+                arthasAnalysisEnabled = true,
+                autoplay = true,
+                autoplayMode = AutoplayMode.SINGLE_ROOM
+            )
+        )
+        assertTrue(
+            StsLaunchSpec.shouldEnableOfflineArthas(
+                performanceDeepDiagnostics = true,
+                arthasAnalysisEnabled = true,
+                autoplay = false,
+                autoplayMode = AutoplayMode.DEFAULT
+            )
+        )
+        assertFalse(
+            StsLaunchSpec.shouldEnableOfflineArthas(
+                performanceDeepDiagnostics = false,
+                arthasAnalysisEnabled = true,
+                autoplay = false,
+                autoplayMode = AutoplayMode.DEFAULT
+            )
+        )
+        assertFalse(
+            StsLaunchSpec.shouldEnableOfflineArthas(
+                performanceDeepDiagnostics = true,
+                arthasAnalysisEnabled = false,
+                autoplay = false,
+                autoplayMode = AutoplayMode.DEFAULT
+            )
+        )
+    }
+
+    @Test
     fun resolveGamePerformanceDeepDiagnosticsEnabled_ignoresOverlayState() {
         assertFalse(
             LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(

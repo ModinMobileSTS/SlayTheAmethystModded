@@ -107,6 +107,8 @@ Preserve the caller's GL texture binding while materializing a cold texture, mai
 31. `optispire.patches.PrewarmTextureRegistry`, `optispire.patches.FirstCombatPrewarmBudget`, `optispire.patches.CombatTexturePrewarm`, `optispire.patches.FirstCombatUiPrewarm`, `optispire.patches.BattleStartResourcePrewarm`, and `optispire.patches.FirstCombatLogConsolePrewarm`
 Build prewarm keys from the actual atlas page metadata, share one prewarm step budget across first-combat patches, and avoid completing duplicate or invalid work permanently. This addresses duplicate atlas texture residency, repeated fallback work, and large synchronous first-room transition spikes while retaining incremental first-combat warmup. Type: prewarm memory/performance fix implemented by the listed classes.
 
+Prewarm cadence update: after any shared prewarm step, reserves two complete game updates with no further prewarm work before another patch may claim the budget. This addresses back-to-back 50-170 ms startup frames caused by consecutive large atlas decode/upload steps, while retaining the same prewarm resource set and stopping all remaining work before combat. Type: startup frame-pacing fix implemented by `FirstCombatPrewarmBudget`.
+
 32. `optispire.patches.ChangeSpriterLoader`
 Keep lazy Spriter loading as the default memory policy while exposing an explicit `ramsaver.spriter.pack=true` compatibility switch for installations where animation batching is more important than peak texture memory. This addresses the loss of batching caused by unconditional atlas packing suppression. Type: configurable rendering performance workaround implemented by `ChangeSpriterLoader`.
 

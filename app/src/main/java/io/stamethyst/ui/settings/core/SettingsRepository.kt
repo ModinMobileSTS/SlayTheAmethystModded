@@ -131,6 +131,7 @@ internal object SettingsRepository {
         val launcherLogcatCaptureEnabled: Boolean,
         val jvmLogcatMirrorEnabled: Boolean,
         val gpuResourceDiagEnabled: Boolean,
+        val arthasAnalysisEnabled: Boolean,
         val gdxPadCursorDebugEnabled: Boolean,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean
     )
@@ -285,6 +286,7 @@ internal object SettingsRepository {
                     LauncherPreferences.isLauncherLogcatCaptureEnabled(context),
                 jvmLogcatMirrorEnabled = LauncherPreferences.isJvmLogcatMirrorEnabled(context),
                 gpuResourceDiagEnabled = LauncherPreferences.isGpuResourceDiagEnabled(context),
+                arthasAnalysisEnabled = LauncherPreferences.isArthasAnalysisEnabled(context),
                 gdxPadCursorDebugEnabled = LauncherPreferences.isGdxPadCursorDebugEnabled(context),
                 glBridgeSwapHeartbeatDebugEnabled =
                     LauncherPreferences.isGlBridgeSwapHeartbeatDebugEnabled(context)

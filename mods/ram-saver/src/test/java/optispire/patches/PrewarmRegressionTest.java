@@ -19,5 +19,11 @@ public class PrewarmRegressionTest {
         FirstCombatPrewarmBudget.beginFrame(0L, false, false);
         assertTrue(FirstCombatPrewarmBudget.tryStep());
         assertFalse(FirstCombatPrewarmBudget.tryStep());
+        FirstCombatPrewarmBudget.beginFrame(1L, false, false);
+        assertFalse(FirstCombatPrewarmBudget.tryStep());
+        FirstCombatPrewarmBudget.beginFrame(2L, false, false);
+        assertFalse(FirstCombatPrewarmBudget.tryStep());
+        FirstCombatPrewarmBudget.beginFrame(3L, false, false);
+        assertTrue(FirstCombatPrewarmBudget.tryStep());
     }
 }

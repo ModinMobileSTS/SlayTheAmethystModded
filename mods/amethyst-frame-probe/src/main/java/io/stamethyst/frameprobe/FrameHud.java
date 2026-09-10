@@ -31,6 +31,8 @@ public final class FrameHud {
     private static final float ORIGIN_Y  = 12f;   // bottom of chart, in screen coords
     private static final float MAX_H     = 60f;   // height at 3× budget
     private static final float SCALE_H   = MAX_H / 3f; // px per budget multiple
+    private static final int STATS_UPDATE_INTERVAL_FRAMES = 12;
+    private static final int SNAPSHOT_CHECK_INTERVAL_FRAMES = 60;
 
     // ── colours ───────────────────────────────────────────────────────────────
     private static final Color GREEN  = new Color(0.22f, 0.85f, 0.28f, 0.85f);
@@ -42,6 +44,7 @@ public final class FrameHud {
     // ── ring shadow for the chart ─────────────────────────────────────────────
     /** Circular buffer of totalNs values, length WINDOW. */
     private final long[] ring   = new long[WINDOW];
+    private final long[] percentileScratch = new long[WINDOW];
     private int ringHead = 0;   // next write position
     private int ringSize = 0;   // how many valid entries
 
@@ -53,6 +56,11 @@ public final class FrameHud {
     // ── IncidentWriter back-ref for drain loop ────────────────────────────────
     private final IncidentWriter writer;
     private final long budgetNs;
+    private final boolean hudVisible;
+    private final com.badlogic.gdx.backends.lwjgl.FrameRingBuffer.FrameConsumer consumer;
+    private int statsUpdateCountdown;
+    private int snapshotCheckCountdown;
+    private long lastSnapshotModified;
 
     // ── launcher perf snapshot (low-frequency, launcher writes every 1 s) ──────
     private final java.io.File snapshotFile;
@@ -70,10 +78,32 @@ public final class FrameHud {
      */
     private com.badlogic.gdx.graphics.Texture ownTexture;
 
-    public FrameHud(IncidentWriter writer, long budgetNs, java.io.File snapshotFile) {
+    public FrameHud(
+            IncidentWriter writer,
+            long budgetNs,
+            java.io.File snapshotFile,
+            boolean hudVisible) {
         this.writer       = writer;
         this.budgetNs     = budgetNs;
         this.snapshotFile = snapshotFile;
+        this.hudVisible   = hudVisible;
+        this.consumer = new com.badlogic.gdx.backends.lwjgl.FrameRingBuffer.FrameConsumer() {
+            @Override
+            public void consume(
+                    long fid, long wallMs, long total, long render,
+                    long guardian, long reclaim, long swap,
+                    long heap, int flushes, int switches) {
+                ring[ringHead] = total;
+                ringHead = (ringHead + 1) % WINDOW;
+                if (ringSize < WINDOW) ringSize++;
+                lastTotalNs = total;
+                if (total >= FrameHud.this.budgetNs && FrameHud.this.writer != null) {
+                    FrameHud.this.writer.enqueue(buildIncidentLine(
+                        fid, wallMs, total, render, guardian, reclaim, swap,
+                        heap, flushes, switches));
+                }
+            }
+        };
     }
 
     /**
@@ -81,50 +111,36 @@ public final class FrameHud {
      * Drains FrameRingBuffer, writes incidents, pushes data into local ring.
      */
     public void update() {
-        com.badlogic.gdx.backends.lwjgl.FrameRingBuffer.FrameConsumer consumer =
-            new com.badlogic.gdx.backends.lwjgl.FrameRingBuffer.FrameConsumer() {
-                @Override
-                public void consume(
-                        long fid, long wallMs, long total, long render,
-                        long guardian, long reclaim, long swap,
-                        long heap, int flushes, int switches) {
-                    // push to chart ring
-                    ring[ringHead] = total;
-                    ringHead = (ringHead + 1) % WINDOW;
-                    if (ringSize < WINDOW) ringSize++;
-                    lastTotalNs = total;
-                    // write incident if over budget
-                    if (total >= budgetNs && writer != null) {
-                        writer.enqueue(buildIncidentLine(
-                            fid, wallMs, total, render, guardian, reclaim, swap,
-                            heap, flushes, switches));
-                    }
-                }
-            };
         // drain all available frames this update tick
         //noinspection StatementWithEmptyBody
         while (com.badlogic.gdx.backends.lwjgl.FrameRingBuffer.drain(consumer)) {}
 
-        // compute p99 and breach count over current window
-        recomputeStats();
-        // read launcher perf snapshot（启动器每秒写一次，这里低频读取）
-        readLauncherSnapshot();
+        if (!hudVisible) return;
+        if (statsUpdateCountdown-- <= 0) {
+            statsUpdateCountdown = STATS_UPDATE_INTERVAL_FRAMES;
+            recomputeStats();
+        }
+        if (snapshotCheckCountdown-- <= 0) {
+            snapshotCheckCountdown = SNAPSHOT_CHECK_INTERVAL_FRAMES;
+            readLauncherSnapshot();
+        }
     }
 
     private void recomputeStats() {
         if (ringSize == 0) return;
-        long[] copy = new long[ringSize];
         // collect the most recent `ringSize` entries (handles wrap)
         int head = ringHead;
         for (int i = 0; i < ringSize; i++) {
-            copy[i] = ring[(head - 1 - i + WINDOW) % WINDOW];
+            percentileScratch[i] = ring[(head - 1 - i + WINDOW) % WINDOW];
         }
-        java.util.Arrays.sort(copy);
+        java.util.Arrays.sort(percentileScratch, 0, ringSize);
         int p99idx = (int)(ringSize * 0.99f);
         if (p99idx >= ringSize) p99idx = ringSize - 1;
-        p99Ms = copy[p99idx] / 1_000_000f;
+        p99Ms = percentileScratch[p99idx] / 1_000_000f;
         budgetBreaches = 0;
-        for (long v : copy) if (v >= budgetNs) budgetBreaches++;
+        for (int i = 0; i < ringSize; i++) {
+            if (percentileScratch[i] >= budgetNs) budgetBreaches++;
+        }
     }
 
     /**
@@ -222,10 +238,13 @@ public final class FrameHud {
      */
     private void readLauncherSnapshot() {
         if (snapshotFile == null || !snapshotFile.isFile()) return;
-        try {
-            String line = new java.io.BufferedReader(
-                new java.io.FileReader(snapshotFile)).readLine();
+        long modified = snapshotFile.lastModified();
+        if (modified == lastSnapshotModified) return;
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(snapshotFile))) {
+            String line = reader.readLine();
             if (line == null || line.isEmpty()) return;
+            lastSnapshotModified = modified;
             for (String entry : line.split(";")) {
                 int eq = entry.indexOf('=');
                 if (eq <= 0 || eq >= entry.length() - 1) continue;

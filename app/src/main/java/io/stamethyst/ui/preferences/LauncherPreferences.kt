@@ -153,6 +153,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED
     val DEFAULT_GPU_RESOURCE_DIAG_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_DIAG_ENABLED
+    val DEFAULT_ARTHAS_ANALYSIS_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_ARTHAS_ANALYSIS_ENABLED
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
     val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED: Boolean
@@ -638,6 +640,14 @@ object LauncherPreferences {
 
     fun setGpuResourceDiagEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setGpuResourceDiagEnabled(context, enabled)
+    }
+
+    fun isArthasAnalysisEnabled(context: Context): Boolean {
+        return LauncherConfig.isArthasAnalysisEnabled(context)
+    }
+
+    fun setArthasAnalysisEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setArthasAnalysisEnabled(context, enabled)
     }
 
     fun readGpuResourceGuardianMode(context: Context): GpuResourceGuardianMode {

@@ -39,6 +39,8 @@ Nothing runs when `amethyst.gdx.frame_ring` is absent.
 **Symptom addressed**: The old 1 Hz overlay could not show individual frame spikes, while requiring a visible overlay prevented headless diagnostics collection.
 **Patch class**: `io.stamethyst.frameprobe.FrameHud` (no SpirePatch, rendered via PostRenderSubscriber).
 
+Headless allocation update: reuses the frame consumer and percentile scratch buffer, skips HUD-only percentile and snapshot work when the HUD is hidden, throttles visible-HUD calculations, and closes snapshot readers while ignoring unchanged files. This addresses avoidable per-frame arrays, consumers, sorting, file handles, and parsing that increased startup GC pressure during headless benchmark collection. Type: diagnostic performance fix implemented by `FrameHud` and wired by `AmethystFrameProbe`.
+
 ### 4. `IncidentWriter` (JSONL output)
 **What it does**: Off-render-thread writer. Every frame that exceeds the budget threshold is serialised as one JSONL line to `<stsRoot>/frame-probe-incidents.jsonl`. Previous session file is rotated to `frame-probe-incidents.prev.jsonl`. Fields: `t` (wall clock ms), `frame`, `totalMs`, `renderMs`, `guardianMs`, `reclaimMs`, `swapMs`, `heapMb`, `flushes`, `switches`, plus game context fields from `GameContext` (`room`, `floor`, `act`, `tag`, `action`).
 **Symptom addressed**: Old diagnostics required manually parsing `[gdx-frame]` log lines; this produces machine-readable output usable for baseline comparison.

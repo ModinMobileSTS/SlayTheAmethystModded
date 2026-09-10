@@ -56,6 +56,7 @@ import kotlinx.coroutines.delay
 
 internal data class DeveloperRuntimeSettingsActions(
     val onGpuResourceDiagChanged: (Boolean) -> Unit,
+    val onArthasAnalysisChanged: (Boolean) -> Unit,
     val onSharePerformanceLogs: () -> Unit,
     val onExportPerformanceLogs: () -> Unit,
     val onInstallArthasResource: () -> Unit,
@@ -125,6 +126,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onLauncherLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
+    onArthasAnalysisChanged: (Boolean) -> Unit = {},
     onSharePerformanceLogs: () -> Unit = {},
     onExportPerformanceLogs: () -> Unit = {},
     onInstallArthasResource: () -> Unit = {},
@@ -171,6 +173,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                     uiState = uiState,
                     actions = DeveloperRuntimeSettingsActions(
                         onGpuResourceDiagChanged = onGpuResourceDiagChanged,
+                        onArthasAnalysisChanged = onArthasAnalysisChanged,
                         onSharePerformanceLogs = onSharePerformanceLogs,
                         onExportPerformanceLogs = onExportPerformanceLogs,
                         onInstallArthasResource = onInstallArthasResource,
@@ -499,23 +502,34 @@ internal fun SettingsDeveloperRuntimeSection(
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
 
-    if (!uiState.arthasResourceInstalled) {
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_arthas_resource_title),
-            supportingText = stringResource(R.string.settings_arthas_resource_install_summary),
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.gpuResourceDiagEnabled,
             enabled = !uiState.busy,
-            onClick = actions.onInstallArthasResource
+            title = stringResource(R.string.settings_gpu_resource_diag_enabled),
+            description = stringResource(R.string.settings_gpu_resource_diag_desc),
+            onCheckedChange = actions.onGpuResourceDiagChanged
         )
-    } else {
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.gpuResourceDiagEnabled,
+    )
+    if (uiState.gpuResourceDiagEnabled) {
+        if (!uiState.arthasResourceInstalled) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_arthas_resource_title),
+                supportingText = stringResource(R.string.settings_arthas_resource_install_summary),
                 enabled = !uiState.busy,
-                title = stringResource(R.string.settings_gpu_resource_diag_enabled),
-                description = stringResource(R.string.settings_gpu_resource_diag_desc),
-                onCheckedChange = actions.onGpuResourceDiagChanged
+                onClick = actions.onInstallArthasResource
             )
-        )
+        } else {
+            SettingsSwitchItem(
+                SettingsSwitchSpec(
+                    checked = uiState.arthasAnalysisEnabled,
+                    enabled = !uiState.busy,
+                    title = stringResource(R.string.settings_arthas_analysis_enabled),
+                    description = stringResource(R.string.settings_arthas_analysis_desc),
+                    onCheckedChange = actions.onArthasAnalysisChanged
+                )
+            )
+        }
         SettingsActionListItem(
             title = stringResource(R.string.settings_performance_logs_title),
             supportingText = stringResource(R.string.settings_performance_logs_desc),

@@ -452,6 +452,9 @@ fun LauncherDeveloperSettingsScreen(
         onGpuResourceDiagChanged = { enabled ->
             viewModel.onGpuResourceDiagChanged(activity, enabled)
         },
+        onArthasAnalysisChanged = { enabled ->
+            viewModel.onArthasAnalysisChanged(activity, enabled)
+        },
         onSharePerformanceLogs = { viewModel.onSharePerformanceLogs(activity) },
         onExportPerformanceLogs = viewModel::onExportPerformanceLogsToFile,
         onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },

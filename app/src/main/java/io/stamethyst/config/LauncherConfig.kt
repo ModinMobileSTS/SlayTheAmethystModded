@@ -189,6 +189,7 @@ object LauncherConfig {
     private const val PREF_KEY_LAUNCHER_LOGCAT_CAPTURE_ENABLED = "launcher_logcat_capture_enabled"
     private const val PREF_KEY_JVM_LOGCAT_MIRROR_ENABLED = "jvm_logcat_mirror_enabled"
     private const val PREF_KEY_GPU_RESOURCE_DIAG_ENABLED = "gpu_resource_diag_enabled"
+    private const val PREF_KEY_ARTHAS_ANALYSIS_ENABLED = "arthas_analysis_enabled"
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
     private const val PREF_KEY_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED =
@@ -345,6 +346,7 @@ object LauncherConfig {
     const val DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED = true
     const val DEFAULT_JVM_LOGCAT_MIRROR_ENABLED = false
     const val DEFAULT_GPU_RESOURCE_DIAG_ENABLED = false
+    const val DEFAULT_ARTHAS_ANALYSIS_ENABLED = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
     const val DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED = true
@@ -1979,6 +1981,19 @@ object LauncherConfig {
     fun setGpuResourceDiagEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_GPU_RESOURCE_DIAG_ENABLED, enabled)
+        }
+    }
+
+    fun isArthasAnalysisEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_ARTHAS_ANALYSIS_ENABLED,
+            DEFAULT_ARTHAS_ANALYSIS_ENABLED
+        )
+    }
+
+    fun setArthasAnalysisEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_ARTHAS_ANALYSIS_ENABLED, enabled)
         }
     }
 

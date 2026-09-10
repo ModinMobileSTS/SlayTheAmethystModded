@@ -421,6 +421,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
         val gpuResourceDiagEnabled: Boolean = LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED,
+        val arthasAnalysisEnabled: Boolean = LauncherPreferences.DEFAULT_ARTHAS_ANALYSIS_ENABLED,
         val arthasResourceInstalled: Boolean = false,
         val arthasResourceVersion: String = "",
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
@@ -3546,6 +3547,18 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onArthasAnalysisChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy || !uiState.gpuResourceDiagEnabled) {
+            return
+        }
+        if (enabled && !ArthasResourcePackService.isInstalled(host)) {
+            return
+        }
+        uiState = uiState.copy(arthasAnalysisEnabled = enabled)
+        saveArthasAnalysisSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onInstallArthasResourceRequested(host: Activity) {
         if (uiState.busy) return
         setBusy(true, UiText.StringResource(R.string.settings_busy_installing_arthas_resource))
@@ -3598,11 +3611,11 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun refreshArthasResourceState(host: Activity) {
         val state = ArthasResourcePackService.state(host)
-        if (!state.valid && uiState.gpuResourceDiagEnabled) {
-            saveGpuResourceDiagSelection(host, false)
+        if (!state.valid && uiState.arthasAnalysisEnabled) {
+            saveArthasAnalysisSelection(host, false)
         }
         uiState = uiState.copy(
-            gpuResourceDiagEnabled = uiState.gpuResourceDiagEnabled && state.valid,
+            arthasAnalysisEnabled = uiState.arthasAnalysisEnabled && state.valid,
             arthasResourceInstalled = state.valid,
             arthasResourceVersion = state.version,
         )
@@ -4363,6 +4376,7 @@ class SettingsScreenViewModel : ViewModel() {
             launcherLogcatCaptureEnabled = diagnostics.launcherLogcatCaptureEnabled,
             jvmLogcatMirrorEnabled = diagnostics.jvmLogcatMirrorEnabled,
             gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
+            arthasAnalysisEnabled = diagnostics.arthasAnalysisEnabled,
             gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
             glBridgeSwapHeartbeatDebugEnabled = diagnostics.glBridgeSwapHeartbeatDebugEnabled,
             touchscreenInputMode = TouchscreenInputMode.fromSettings(
@@ -5682,6 +5696,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveGpuResourceDiagSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setGpuResourceDiagEnabled(host, enabled)
+    }
+
+    private fun saveArthasAnalysisSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setArthasAnalysisEnabled(host, enabled)
     }
 
     private fun saveGdxPadCursorDebugSelection(host: Activity, enabled: Boolean) {

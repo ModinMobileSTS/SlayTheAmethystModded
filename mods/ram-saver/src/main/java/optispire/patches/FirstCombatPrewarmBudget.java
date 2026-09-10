@@ -8,11 +8,13 @@ import com.megacrit.cardcrawl.rooms.AbstractRoom;
 import com.megacrit.cardcrawl.rooms.MonsterRoom;
 import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
 
-/** One synchronous step per update across all first-combat prewarm patches, not a time deadline. */
+/** One synchronous step followed by two clean updates across all first-combat prewarm patches. */
 final class FirstCombatPrewarmBudget {
     private static final long RECHECK_WINDOW_NANOS = 5_000_000_000L;
+    private static final int STEP_COOLDOWN_FRAMES = 3;
     private static boolean claimed;
     private static boolean stopped;
+    private static int cooldownFrames;
     private static long gameplayStarted = -1L;
     private static int texturePass = -1;
 
@@ -50,6 +52,7 @@ final class FirstCombatPrewarmBudget {
 
     static void beginFrame(long now, boolean gameplay, boolean combat) {
         claimed = false;
+        if (cooldownFrames > 0) cooldownFrames--;
         stopped |= combat;
         if (gameplay && gameplayStarted == -1L) gameplayStarted = now;
         // Completion means an attempt, not permanent residency. Recheck only once near run start.
@@ -63,8 +66,9 @@ final class FirstCombatPrewarmBudget {
     }
 
     static boolean tryStep() {
-        if (stopped || claimed) return false;
+        if (stopped || claimed || cooldownFrames > 0) return false;
         claimed = true;
+        cooldownFrames = STEP_COOLDOWN_FRAMES;
         return true;
     }
 }

@@ -1836,9 +1836,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_gpu_resource_diag_enabled">Deep performance diagnostics</string>
     <string name="settings_gpu_resource_diag_disabled">Deep performance diagnostics: Disabled</string>
     <string name="settings_gpu_resource_diag_desc">Enables frame, swap, GC, runtime memory, and aggregated GPU resource diagnostics. Disabled by default; enable only when investigating performance because it adds logs and minor runtime overhead.</string>
+    <string name="settings_arthas_analysis_enabled">Enable Arthas analysis</string>
+    <string name="settings_arthas_analysis_desc">Starts Arthas sampling alongside deep performance diagnostics. Disabled by default; enable only when an investigation requires JVM method and thread analysis.</string>
     <string name="settings_arthas_resource_title">Arthas diagnostics module</string>
     <string name="settings_arthas_resource_install_summary">Tap to install</string>
-    <string name="settings_arthas_resource_missing_summary">Not installed. arthas-resource.zip is required before enabling deep performance diagnostics.</string>
+    <string name="settings_arthas_resource_missing_summary">Not installed. arthas-resource.zip is required before enabling Arthas analysis.</string>
     <string name="settings_arthas_resource_installed_summary">Installed: %1$s. Tap to update or repair.</string>
     <string name="settings_busy_installing_arthas_resource">Downloading and installing Arthas diagnostics module…</string>
     <string name="settings_arthas_resource_installed">Arthas diagnostics module installed.</string>

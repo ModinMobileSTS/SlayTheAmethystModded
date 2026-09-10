@@ -53,6 +53,8 @@ Adds hooks used by `RuntimeMemoryDiagnostics` to track main-menu and character-s
 5. `RuntimeMemoryDiagnosticsPatches`
 Adds runtime hooks for update/create-character/start-over/reset/dispose so memory diagnostics can observe long-session behavior without modifying the base game directly, including menu-cycle texture/FBO summaries and owner/source hotspot attribution suitable for diagnostic play sessions. All `[amethyst-runtime-diag]` startup, summary, verbose, hotspot, and GPU-summary failure logs are silent unless the launcher's `amethyst.gdx.gpu_resource_diag` property is enabled, addressing the symptom where runtime diagnostic logging could appear during normal launches even when GPU diagnostics were disabled. Type: diagnostic hook implemented by `RuntimeMemoryDiagnosticsPatches` with logging controlled in `RuntimeMemoryDiagnostics`.
 
+Menu hotspot summary update: keeps compact menu-cycle GPU and texture-window summaries enabled during deep diagnostics, but makes the seven full owner/source hotspot rankings opt-in through `amethyst.runtime_compat.menu_diag_hotspots=true`. This addresses 300-400 ms diagnostic tails appended to main-menu construction while preserving the counters needed for routine performance comparisons. Type: diagnostic performance fix implemented by `RuntimeMemoryDiagnostics`.
+
 6. `FrierenTextureCacheCompatPatches`
 Intercepts `ImageMaster.loadImage` for Frieren slot-library textures and reuses one `Texture` per resource path instead of letting `Slot`, `SlotBgLibrary`, and `refreshSlot()` repeatedly allocate duplicates. This targets the severe GPU-memory growth that happens when Frieren rebuilds the full slot background library on each return to the main menu. Type: compatibility workaround for a third-party texture leak.
 

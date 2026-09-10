@@ -2129,9 +2129,11 @@
     <string name="settings_gpu_resource_diag_enabled">深度效能診斷</string>
     <string name="settings_gpu_resource_diag_disabled">深度效能診斷：關閉</string>
     <string name="settings_gpu_resource_diag_desc">啟用影格、swap、GC、執行時記憶體和 GPU 資源彙總診斷。預設關閉；會增加日誌量和少量執行時開銷，僅在排查效能問題時開啟。</string>
+    <string name="settings_arthas_analysis_enabled">啟用 Arthas 分析</string>
+    <string name="settings_arthas_analysis_desc">在深度效能診斷期間啟動 Arthas 採樣。預設關閉；僅在需要 JVM 方法和執行緒分析時開啟。</string>
     <string name="settings_arthas_resource_title">Arthas 診斷模組</string>
     <string name="settings_arthas_resource_install_summary">點擊安裝</string>
-    <string name="settings_arthas_resource_missing_summary">未安裝。開啟深度效能診斷前必須安裝 arthas-resource.zip。</string>
+    <string name="settings_arthas_resource_missing_summary">未安裝。啟用 Arthas 分析前必須安裝 arthas-resource.zip。</string>
     <string name="settings_arthas_resource_installed_summary">已安裝：%1$s。點擊可升級或修復。</string>
     <string name="settings_busy_installing_arthas_resource">正在下載並安裝 Arthas 診斷模組…</string>
     <string name="settings_arthas_resource_installed">Arthas 診斷模組已安裝。</string>

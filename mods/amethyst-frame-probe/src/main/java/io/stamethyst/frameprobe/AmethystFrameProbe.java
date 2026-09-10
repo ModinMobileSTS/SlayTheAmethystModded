@@ -49,7 +49,7 @@ public class AmethystFrameProbe implements PostRenderSubscriber, PostUpdateSubsc
         writer.start();
         java.io.File snapshotFile = new java.io.File(
             System.getProperty("amethyst.bridge.launcher_perf_snapshot", ""));
-        hud = new FrameHud(writer, FrameRingBuffer.BUDGET_NS, snapshotFile);
+        hud = new FrameHud(writer, FrameRingBuffer.BUDGET_NS, snapshotFile, hudVisible);
         System.out.println(
             "[frame-probe] active budgetNs=" + FrameRingBuffer.BUDGET_NS
             + " outputDir=" + stsRoot.getAbsolutePath());
