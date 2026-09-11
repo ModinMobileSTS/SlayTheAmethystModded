@@ -527,6 +527,9 @@ internal class MainModManagementController(
         if (!persistPendingSelection(host)) {
             restorePendingSelection(previousSelection)
         }
+        if (targetMods.any { it.workshop?.isTexturePack == true }) {
+            refresh(host, storageAccessible = true)
+        }
         hostCallbacks.republish(host)
     }
 
@@ -550,6 +553,9 @@ internal class MainModManagementController(
         }
         if (!persistPendingSelection(host)) {
             restorePendingSelection(previousSelection)
+        }
+        if (targetMods.any { it.workshop?.isTexturePack == true }) {
+            refresh(host, storageAccessible = true)
         }
         hostCallbacks.republish(host)
     }

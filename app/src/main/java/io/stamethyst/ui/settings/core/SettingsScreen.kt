@@ -20,6 +20,7 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.openBasicTutorial
+import io.stamethyst.ui.LauncherNavigationRequestBus
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -333,7 +334,7 @@ fun LauncherSettingsFeedbackScreen(
         onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
         onOpenFeedbackIssueBrowser = { navigator.push(Route.FeedbackIssueBrowser) },
         onImportJar = viewModel::onImportJar,
-        onReinstallResourcePack = { viewModel.onReinstallResourcePack(activity) },
+        onReinstallResourcePack = LauncherNavigationRequestBus::requestResourcePack,
         onImportMods = viewModel::onImportMods,
         onExportMods = viewModel::onExportMods,
         onImportSaves = viewModel::onImportSaves,
@@ -458,7 +459,7 @@ fun LauncherDeveloperSettingsScreen(
         onSharePerformanceLogs = { viewModel.onSharePerformanceLogs(activity) },
         onExportPerformanceLogs = viewModel::onExportPerformanceLogsToFile,
         onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },
-        onRepairResourcePack = { viewModel.onRepairResourcePackRequested(activity) },
+        onRepairResourcePack = LauncherNavigationRequestBus::requestResourcePack,
         onGdxPadCursorDebugChanged = { enabled ->
             viewModel.onGdxPadCursorDebugChanged(activity, enabled)
         },

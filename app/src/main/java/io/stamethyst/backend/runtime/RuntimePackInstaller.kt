@@ -31,6 +31,10 @@ object RuntimePackInstaller {
     private const val ARCHIVE_VERSION = "version"
     private const val ARCHIVE_AARCH64 = "bin-aarch64.tar.xz"
     private const val ARCHIVE_ARM64 = "bin-arm64.tar.xz"
+    private val KNOWN_JAVA_HOME_LIBJLI_PATHS = arrayOf(
+        "lib/aarch64/jli/libjli.so",
+        "lib/arm64/jli/libjli.so"
+    )
     private const val EXTRACT_PROGRESS_HEARTBEAT_INTERVAL_MS = 5_000L
     private const val EXTRACT_PROGRESS_STEP_PERCENT = 5
     private const val UNPACK_PROCESS_POLL_INTERVAL_MS = 250L
@@ -299,6 +303,11 @@ object RuntimePackInstaller {
 
     @JvmStatic
     fun locateJavaHome(runtimeRoot: File): File? {
+        // The bundled Pojav runtime has a stable layout. Avoid walking the whole
+        // runtime tree on every launch, while retaining the fallback for older packs.
+        if (KNOWN_JAVA_HOME_LIBJLI_PATHS.any { File(runtimeRoot, it).isFile }) {
+            return runtimeRoot
+        }
         val libjli = findFileByName(runtimeRoot, "libjli.so") ?: return null
         var cursor: File? = libjli.parentFile
         while (cursor != null) {
@@ -748,7 +757,7 @@ object RuntimePackInstaller {
             appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
         )
         if (appAwtXawt != null && appAwtXawt.exists()) {
-            copyFile(appAwtXawt, File(archLibDir, "libawt_xawt.so"))
+            copyFileIfChanged(appAwtXawt, File(archLibDir, "libawt_xawt.so"))
         }
     }
 
@@ -892,6 +901,7 @@ object RuntimePackInstaller {
                 }
                 throw IOException("Failed to activate runtime file: ${target.absolutePath}")
             }
+            target.setLastModified(source.lastModified())
             deleteTreeForCleanup(backup)
         } catch (error: Throwable) {
             if (!target.exists() && backup.exists() && !backup.renameTo(target)) {
@@ -907,6 +917,17 @@ object RuntimePackInstaller {
                 deleteTreeForCleanup(backup)
             }
         }
+    }
+
+    @Throws(IOException::class)
+    private fun copyFileIfChanged(source: File, target: File) {
+        if (target.isFile &&
+            target.length() == source.length() &&
+            target.lastModified() == source.lastModified()
+        ) {
+            return
+        }
+        copyFile(source, target)
     }
 
     @Throws(IOException::class)

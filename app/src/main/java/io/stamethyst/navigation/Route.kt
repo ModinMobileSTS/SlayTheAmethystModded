@@ -22,6 +22,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object FirstRunSetup : Route
     @Serializable
+    data object ResourcePack : Route
+    @Serializable
     data object Main : Route
     @Serializable
     data object CrashRecovery : Route

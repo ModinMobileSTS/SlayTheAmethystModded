@@ -2,7 +2,7 @@
   "modid": "amethystruntimecompat",
   "name": "Amethyst Runtime Compat",
   "author_list": [
-    "OpenAI"
+    "Apricityx"
   ],
   "description": "Bundled runtime compatibility patch that applies launcher-configured mobile-style UI sizing and text scaling together with mobile-focused runtime compatibility fixes.",
   "version": "1.0.39",

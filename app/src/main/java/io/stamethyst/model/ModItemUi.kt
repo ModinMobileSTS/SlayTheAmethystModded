@@ -43,6 +43,7 @@ data class WorkshopModUi(
     val appId: UInt,
     val publishedFileId: ULong,
     val state: WorkshopModState,
+    val isTexturePack: Boolean = false,
     val statusText: String = "",
     val localJarPath: String = "",
     val localPreviewImagePath: String = "",

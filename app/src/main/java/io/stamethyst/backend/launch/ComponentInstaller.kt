@@ -769,8 +769,14 @@ object ComponentInstaller {
             "fi\n" +
                 $$"exec \"$RUNTIME_JAVA\" \"$@\"\n"
 
-        FileOutputStream(javaShim, false).use { output ->
-            output.write(script.toByteArray(StandardCharsets.UTF_8))
+        val scriptBytes = script.toByteArray(StandardCharsets.UTF_8)
+        val alreadyCurrent = javaShim.isFile && runCatching {
+            javaShim.readBytes().contentEquals(scriptBytes)
+        }.getOrDefault(false)
+        if (!alreadyCurrent) {
+            FileOutputStream(javaShim, false).use { output ->
+                output.write(scriptBytes)
+            }
         }
 
         javaShim.setReadable(true, true)

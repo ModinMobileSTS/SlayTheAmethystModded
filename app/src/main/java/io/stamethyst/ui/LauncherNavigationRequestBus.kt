@@ -11,7 +11,17 @@ internal object LauncherNavigationRequestBus {
 
     val workshopDetailRequests = mutableWorkshopDetailRequests.asSharedFlow()
 
+    private val mutableResourcePackRequests = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+    )
+
+    val resourcePackRequests = mutableResourcePackRequests.asSharedFlow()
+
     fun requestWorkshopDetail(item: WorkshopItemSummary) {
         mutableWorkshopDetailRequests.tryEmit(item)
+    }
+
+    fun requestResourcePack() {
+        mutableResourcePackRequests.tryEmit(Unit)
     }
 }

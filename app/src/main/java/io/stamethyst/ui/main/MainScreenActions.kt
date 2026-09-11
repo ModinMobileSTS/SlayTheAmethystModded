@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.LauncherNavigationRequestBus
 
 internal enum class LaunchRequestAction {
     NONE,
@@ -189,7 +190,7 @@ internal fun rememberMainScreenActions(
                 onCopyCrashReport = { viewModel.copyCrashRecoveryReport(activity) },
                 onShareCrashRecoveryReport = { viewModel.shareCrashRecoveryReport(activity) },
                 onReturnToMainMenu = { viewModel.dismissCrashRecovery() },
-                onReinstallResourcePack = { viewModel.onReinstallResourcePack(activity) },
+                onReinstallResourcePack = LauncherNavigationRequestBus::requestResourcePack,
                 onImportMods = {
                     importModsLauncher.launch(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")

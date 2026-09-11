@@ -183,6 +183,7 @@ import io.stamethyst.ui.icon.PlayArrow
 import io.stamethyst.ui.icon.Settings
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
 import io.stamethyst.ui.workshop.WorkshopDetailScreen
@@ -3724,8 +3725,6 @@ fun LauncherCrashRecoveryScreen(
         CrashRecoveryScreen(
             modifier = modifier,
             crashRecovery = crashRecovery,
-            busy = uiState.busy,
-            busyMessage = uiState.busyMessage?.resolve(),
             onBack = onBack,
             onOpenRecoverySettings = onOpenSettings,
             onOpenFeedback = onOpenFeedback,
@@ -3733,7 +3732,7 @@ fun LauncherCrashRecoveryScreen(
             onCopyReport = { hostActivity?.let(viewModel::copyCrashRecoveryReport) },
             onShareLogs = { hostActivity?.let(viewModel::shareCrashRecoveryReport) },
             onReturnToMainMenu = onReturnToMainMenu,
-            onReinstallResourcePack = { hostActivity?.let(viewModel::onReinstallResourcePack) },
+            onReinstallResourcePack = LauncherNavigationRequestBus::requestResourcePack,
         )
     } else {
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background))
@@ -5519,8 +5518,6 @@ private fun buildUnreadSuggestionLaunchWarningMessage(modNames: List<String>): S
 private fun CrashRecoveryScreen(
     modifier: Modifier = Modifier,
     crashRecovery: MainScreenViewModel.CrashRecoveryState,
-    busy: Boolean,
-    busyMessage: String?,
     onBack: () -> Unit,
     onOpenRecoverySettings: () -> Unit,
     onOpenFeedback: () -> Unit,
@@ -5607,17 +5604,6 @@ private fun CrashRecoveryScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        if (busy) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            busyMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
         CrashRecoveryCard {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(
@@ -5669,7 +5655,6 @@ private fun CrashRecoveryScreen(
                 if (isExternalResourcePackFailure(crashRecovery.reportText)) {
                     Button(
                         onClick = onReinstallResourcePack,
-                        enabled = !busy,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(stringResource(R.string.settings_reinstall_resource_pack_title))

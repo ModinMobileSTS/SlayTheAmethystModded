@@ -1,7 +1,7 @@
 {
   "modid": "amethystfloatingtools",
   "name": "Amethyst Floating Tools",
-  "author_list": ["OpenAI"],
+  "author_list": ["Apricityx"],
   "description": "Built-in right-side floating tools panel for Android mouse, keyboard, scroll, and touch-button controls.",
   "version": "1.0.0",
   "mts_version": "3.30.0",

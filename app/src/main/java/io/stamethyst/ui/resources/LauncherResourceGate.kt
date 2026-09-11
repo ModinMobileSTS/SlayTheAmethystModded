@@ -78,6 +78,7 @@ private const val QUARK_BROWSER_PACKAGE_NAME = "com.quark.browser"
 @Composable
 fun LauncherResourceGate(
     modifier: Modifier = Modifier,
+    forceReinstall: Boolean = false,
     onResourcesReady: () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -90,7 +91,7 @@ fun LauncherResourceGate(
     }
     var gateState by remember {
         mutableStateOf<ResourceGateState>(
-            if (activeGenerationReady) {
+            if (activeGenerationReady && !forceReinstall) {
                 ResourceGateState.Ready
             } else {
                 ResourceGateState.Preparing(
@@ -126,7 +127,7 @@ fun LauncherResourceGate(
     }
 
     LaunchedEffect(retryNonce) {
-        if (retryNonce == 0 && activeGenerationReady) {
+        if (!forceReinstall && retryNonce == 0 && activeGenerationReady) {
             return@LaunchedEffect
         }
         mirrorSwitchController.clearSlowDownloadPrompt()
@@ -146,7 +147,8 @@ fun LauncherResourceGate(
                             message = message
                         )
                     },
-                    mirrorSwitchController = mirrorSwitchController
+                    mirrorSwitchController = mirrorSwitchController,
+                    forceReinstall = forceReinstall,
                 )
             }
         }.fold(

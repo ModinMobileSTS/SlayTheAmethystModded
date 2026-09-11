@@ -8,8 +8,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -143,6 +146,7 @@ import io.stamethyst.ui.settings.core.SettingsEffectsHandler
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import io.stamethyst.ui.settings.core.StsJarIntegrityDialogHost
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.resources.LauncherResourceGate
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
@@ -150,6 +154,7 @@ import kotlinx.coroutines.launch
 
 private const val PAGE_TRANSITION_DURATION_MS = 420
 private const val DOCK_VISIBILITY_ANIMATION_MS = 220
+private const val BLOCKING_BUSY_ANIMATION_MS = 180
 private const val QUARK_BROWSER_PACKAGE_NAME = "com.quark.browser"
 internal const val LAUNCHER_DOCK_ITEM_TAG_PREFIX = "launcher_dock_item_"
 
@@ -367,6 +372,12 @@ fun LauncherContent(
 
     LaunchedEffect(Unit) {
         LauncherNavigationRequestBus.workshopDetailRequests.collect(::openWorkshopItemDetails)
+    }
+
+    LaunchedEffect(Unit) {
+        LauncherNavigationRequestBus.resourcePackRequests.collect {
+            navigator.push(Route.ResourcePack)
+        }
     }
 
     LaunchedEffect(currentRoute) {
@@ -648,6 +659,20 @@ fun LauncherContent(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
                             )
+                        }
+
+                        entry<Route.ResourcePack> {
+                            LauncherResourceGate(
+                                modifier = Modifier.fillMaxSize(),
+                                forceReinstall = true,
+                                onResourcesReady = {
+                                    mainViewModel.refresh(activity)
+                                    settingsViewModel.refreshStatus(activity)
+                                    navigator.goBack()
+                                },
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize())
+                            }
                         }
 
                         entry<Route.Main> {
@@ -995,7 +1020,20 @@ fun LauncherContent(
                         onSelectRoute = { route -> selectDockRoute(route) },
                     )
                 }
-                if (shouldShowBlockingBusyWindow) {
+                AnimatedVisibility(
+                    visible = shouldShowBlockingBusyWindow,
+                    enter = fadeIn(animationSpec = tween(durationMillis = BLOCKING_BUSY_ANIMATION_MS)) +
+                        scaleIn(
+                            initialScale = 0.96f,
+                            animationSpec = tween(durationMillis = BLOCKING_BUSY_ANIMATION_MS)
+                        ),
+                    exit = fadeOut(animationSpec = tween(durationMillis = BLOCKING_BUSY_ANIMATION_MS)) +
+                        scaleOut(
+                            targetScale = 0.96f,
+                            animationSpec = tween(durationMillis = BLOCKING_BUSY_ANIMATION_MS)
+                        ),
+                    label = "blockingBusyVisibility"
+                ) {
                     BlockingBusyInteractionBlocker(
                         message = blockingBusyMessage?.resolve()
                             ?: stringResource(R.string.mod_import_busy_message),
@@ -1580,6 +1618,7 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.QuickStartSteamDownload,
         Route.QuickStartJarImport,
         Route.FirstRunSetup,
+        Route.ResourcePack,
         Route.Feedback,
         Route.FeedbackSubscriptions,
         Route.FeedbackIssueBrowser,
@@ -1662,8 +1701,13 @@ private fun BlockingBusyInteractionBlocker(
                     ?.coerceIn(0, 100)
                     ?.div(100f)
                 if (progressFraction != null) {
+                    val animatedProgressFraction by animateFloatAsState(
+                        targetValue = progressFraction,
+                        animationSpec = tween(durationMillis = 240),
+                        label = "blockingBusyProgress"
+                    )
                     LinearProgressIndicator(
-                        progress = { progressFraction },
+                        progress = { animatedProgressFraction },
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
