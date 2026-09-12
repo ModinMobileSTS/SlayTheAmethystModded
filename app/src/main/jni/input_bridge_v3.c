@@ -787,6 +787,31 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeIsSwappyEnabled(
     return amethyst_swappy_is_enabled() ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jint JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeGetSwappyState(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return (jint) amethyst_swappy_get_state();
+}
+
+JNIEXPORT void JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeSetActiveRefreshRateHz(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz,
+        jfloat refreshRateHz
+) {
+    amethyst_swappy_set_active_refresh_rate((float) refreshRateHz);
+}
+
+JNIEXPORT jfloat JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeGetActiveRefreshRateHz(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return (jfloat) amethyst_swappy_get_active_refresh_rate();
+}
+
 jboolean critical_send_char(jchar codepoint) {
     if (pojav_environ->GLFW_invoke_Char && pojav_environ->isInputReady) {
         if (pojav_environ->isUseStackQueueCall) {

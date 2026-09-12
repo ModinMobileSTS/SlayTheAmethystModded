@@ -329,6 +329,10 @@ object ExternalResourcePackService {
         // matches. App updates must not bump resourcePack.version unless the
         // zip at RESOURCE_PACK_DOWNLOAD_URL actually changed.
         if (inspection.ready && !forceReinstall) {
+            // The resource generation and the native target are separate stores. A previous
+            // interrupted install can leave the generation healthy while the derived EasyTier
+            // libraries are absent, so repair the target before declaring preparation complete.
+            installNativeLibraries(context)
             reportProgress(
                 progressCallback,
                 100,
@@ -344,6 +348,7 @@ object ExternalResourcePackService {
                     context = context,
                     progressCallback = progressCallback
                 )
+                installNativeLibraries(context)
                 reportProgress(
                     progressCallback,
                     100,
@@ -624,6 +629,7 @@ object ExternalResourcePackService {
                     progressCallback = progressCallback,
                     source = "download:${candidate.displayName}"
                 )
+                installNativeLibraries(context)
                 mirrorSwitchController?.publishSlowDownloadPrompt(null)
                 return
             } catch (error: Throwable) {

@@ -5,6 +5,7 @@ import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.view.Surface
+import io.stamethyst.config.LauncherConfig
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -25,8 +26,6 @@ internal class DisplayRefreshRateController(
     private val targetFpsLimit: Float,
     private val log: (String) -> Unit = { println(it) }
 ) {
-    private var lastAppliedWindowRefreshRateHz = Float.NaN
-    private var lastAppliedWindowModeId = Int.MIN_VALUE
     private val surfaceVoteState = SurfaceFrameRateVoteState()
 
     fun sync(
@@ -52,32 +51,9 @@ internal class DisplayRefreshRateController(
     private fun resolveWindowRefreshPreference(): WindowRefreshPreference? {
         val targetRefreshRateHz = resolveRequestedRefreshRateHz(targetFpsLimit)
             ?: return null
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return WindowRefreshPreference(
-                preferredRefreshRateHz = targetRefreshRateHz,
-                preferredDisplayModeId = null
-            )
-        }
-        val display = activity.windowManager.defaultDisplay
-            ?: return WindowRefreshPreference(
-                preferredRefreshRateHz = targetRefreshRateHz,
-                preferredDisplayModeId = null
-            )
-        val currentMode = display.mode
-        val supportedModes = display.supportedModes
-            ?.map { mode ->
-                DisplayModeCandidate(
-                    modeId = mode.modeId,
-                    width = mode.physicalWidth,
-                    height = mode.physicalHeight,
-                    refreshRateHz = mode.refreshRate
-                )
-            }
-            .orEmpty()
-        return resolveWindowRefreshPreference(
-            targetFpsLimit = targetFpsLimit,
-            currentDisplayModeId = currentMode?.modeId,
-            supportedModes = supportedModes
+        return WindowRefreshPreference(
+            preferredRefreshRateHz = targetRefreshRateHz,
+            preferredDisplayModeId = null
         )
     }
 
@@ -88,7 +64,6 @@ internal class DisplayRefreshRateController(
         reason: String
     ) {
         val desiredRefreshRateHz = preference?.preferredRefreshRateHz ?: 0f
-        val desiredModeId = preference?.preferredDisplayModeId ?: 0
         val attributes = activity.window.attributes
         var changed = false
         if (!sameRefreshRate(attributes.preferredRefreshRate, desiredRefreshRateHz)) {
@@ -96,21 +71,21 @@ internal class DisplayRefreshRateController(
             changed = true
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            attributes.preferredDisplayModeId != desiredModeId
+            attributes.preferredDisplayModeId != 0
         ) {
-            attributes.preferredDisplayModeId = desiredModeId
+            // Do not retain a mode-id vote from an earlier owner. A content-rate
+            // vote gives the scheduler room to choose the seamless device mode.
+            attributes.preferredDisplayModeId = 0
             changed = true
         }
         if (!changed) {
             return
         }
         activity.window.attributes = attributes
-        lastAppliedWindowRefreshRateHz = desiredRefreshRateHz
-        lastAppliedWindowModeId = desiredModeId
         log(
             "DisplayRefreshRate: window " +
                 "reason=$reason foreground=$inForeground focus=$hasWindowFocus " +
-                "targetFps=$targetFpsLimit requestHz=$desiredRefreshRateHz modeId=$desiredModeId"
+                "targetFps=$targetFpsLimit requestHz=$desiredRefreshRateHz"
         )
     }
 
@@ -136,13 +111,12 @@ internal class DisplayRefreshRateController(
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Allow a non-seamless mode transition, while keeping game-content compatibility
-                // semantics. Some vendor builds keep a higher active mode despite this vote; the
-                // Swappy bridge detects that case and falls back to the software pacer.
+                // Do not opt into a visible mode switch for a continuously running game. The
+                // platform can still apply a lightweight seamless transition when available.
                 surface.setFrameRate(
                     desiredRefreshRateHz,
                     Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
-                    Surface.CHANGE_FRAME_RATE_ALWAYS
+                    Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
                 )
             } else {
                 surface.setFrameRate(
@@ -169,19 +143,16 @@ internal class DisplayRefreshRateController(
     }
 
     companion object {
-        private const val BASE_HIGH_REFRESH_RATE_HZ = 60f
         private const val MAX_AUTOMATIC_TARGET_FPS = 144f
         private const val MIN_SELECTABLE_TARGET_FPS = 24f
         private const val REFRESH_RATE_EPSILON = 0.01f
-        private const val REFRESH_RATE_MATCH_EPSILON_HZ = 0.5f
 
         /**
-         * Best estimate of the refresh rate the panel will actually run at for [targetFpsLimit].
+         * Best estimate of the refresh rate the display is currently running at.
          *
-         * The in-JVM LWJGL shim cannot discover this on its own: its `DisplayMode` frequency is 0
-         * and `getDesktopDisplayMode()` reports a hardcoded 60Hz. The launcher owns the real value
-         * because it is the side that requests the mode, so it resolves it here and hands it to the
-         * game through a system property.
+         * The requested content rate is not evidence that the platform has already switched modes.
+         * The launcher publishes the current Android display value through the native bridge and uses
+         * this value for startup properties.
          */
         @Suppress("DEPRECATION")
         fun resolveExpectedActiveRefreshRateHz(context: Context, targetFpsLimit: Float): Float {
@@ -227,12 +198,11 @@ internal class DisplayRefreshRateController(
         }
 
         /**
-         * Pure resolution of the expected refresh rate.
+         * Pure resolution of the currently active refresh rate.
          *
-         * Only rates the display actually reported are ever returned. [resolveWindowRefreshPreference]
-         * falls back to the raw target when the mode list is unknown, and trusting that would let the
-         * game believe a 60Hz-only panel runs at 90Hz, which in turn disables its software frame
-         * limiter. Returns 0 when nothing trustworthy is known.
+         * The requested content rate is not evidence that the platform has already switched modes.
+         * Return only the current display/mode rate so the JVM fallback pacer never runs ahead of the
+         * mode transition. Returns 0 when nothing trustworthy is known.
          */
         internal fun resolveExpectedRefreshRateHz(
             targetFpsLimit: Float,
@@ -241,17 +211,11 @@ internal class DisplayRefreshRateController(
             supportedModes: List<DisplayModeCandidate>
         ): Float {
             val currentRate = currentDisplayRefreshRateHz.takeIf { it > 0f && !it.isNaN() } ?: 0f
-            if (supportedModes.isEmpty()) {
-                return currentRate
-            }
-            val preferred = resolveWindowRefreshPreference(
-                targetFpsLimit = targetFpsLimit,
-                currentDisplayModeId = currentDisplayModeId,
-                supportedModes = supportedModes
-            )?.preferredRefreshRateHz ?: return currentRate
-            // Accept the preference only if the panel really advertises that rate.
-            val advertised = supportedModes.any { sameRefreshRate(it.refreshRateHz, preferred) }
-            return if (advertised && preferred > 0f) preferred else currentRate
+            if (currentRate > 0f) return currentRate
+            return currentDisplayModeId
+                ?.let { modeId -> supportedModes.firstOrNull { it.modeId == modeId }?.refreshRateHz }
+                ?.takeIf { it > 0f && !it.isNaN() }
+                ?: 0f
         }
 
         internal fun shouldRequestExplicitRefreshRate(targetFpsLimit: Float): Boolean {
@@ -259,23 +223,20 @@ internal class DisplayRefreshRateController(
         }
 
         /**
-         * Chooses the highest stable FPS at or below 144 for the current panel rate.
+         * Chooses the highest stable FPS for the current panel rate.
          * Stable means one rendered frame occupies an integer number of display refresh periods.
          */
         internal fun resolveAutomaticTargetFps(currentDisplayRefreshRateHz: Float): Float {
             val refreshRateHz = currentDisplayRefreshRateHz
                 .takeIf { it > 0f && !it.isNaN() }
-                ?: BASE_HIGH_REFRESH_RATE_HZ
-            val refreshIntervals = kotlin.math.ceil(refreshRateHz / MAX_AUTOMATIC_TARGET_FPS)
-                .toInt()
-                .coerceAtLeast(1)
-            return refreshRateHz / refreshIntervals
+                ?: LauncherConfig.DEFAULT_TARGET_FPS.toFloat()
+            return refreshRateHz
         }
 
         internal fun resolveIdealTargetFpsOptions(currentDisplayRefreshRateHz: Float): List<Float> {
             val refreshRateHz = currentDisplayRefreshRateHz
                 .takeIf { it > 0f && !it.isNaN() }
-                ?: BASE_HIGH_REFRESH_RATE_HZ
+                ?: return emptyList()
             return buildList {
                 var intervals = 1
                 while (true) {
@@ -372,11 +333,7 @@ internal class DisplayRefreshRateController(
             if (targetFpsLimit <= 0) {
                 return null
             }
-            return if (targetFpsLimit < BASE_HIGH_REFRESH_RATE_HZ) {
-                BASE_HIGH_REFRESH_RATE_HZ
-            } else {
-                targetFpsLimit
-            }
+            return targetFpsLimit
         }
 
         internal fun resolveWindowRefreshPreference(
@@ -386,99 +343,13 @@ internal class DisplayRefreshRateController(
         ): WindowRefreshPreference? {
             val targetRefreshRateHz = resolveRequestedRefreshRateHz(targetFpsLimit)
                 ?: return null
-            if (supportedModes.isEmpty()) {
-                return WindowRefreshPreference(
-                    preferredRefreshRateHz = targetRefreshRateHz,
-                    preferredDisplayModeId = null
-                )
-            }
-            val currentMode = currentDisplayModeId?.let { modeId ->
-                supportedModes.firstOrNull { it.modeId == modeId }
-            }
-            val sameSizeModes =
-                if (currentMode != null) {
-                    supportedModes.filter { mode ->
-                        mode.width == currentMode.width && mode.height == currentMode.height
-                    }
-                } else {
-                    supportedModes
-                }
-            if (currentMode != null && isFractionalAutomaticTargetFps(targetFpsLimit)) {
-                val refreshIntervals = (currentMode.refreshRateHz / targetFpsLimit)
-                    .roundToInt()
-                    .coerceAtLeast(1)
-                if (abs(currentMode.refreshRateHz - targetFpsLimit * refreshIntervals) <=
-                    REFRESH_RATE_MATCH_EPSILON_HZ
-                ) {
-                    return WindowRefreshPreference(
-                        preferredRefreshRateHz = currentMode.refreshRateHz,
-                        preferredDisplayModeId = currentMode.modeId
-                    )
-                }
-            }
-            val sameSizeBest = chooseBestModeForRefreshRate(targetRefreshRateHz, sameSizeModes)
-            val globalBest = chooseBestModeForRefreshRate(targetRefreshRateHz, supportedModes)
-            val preferredRefreshRateHz =
-                when {
-                    targetRefreshRateHz <= BASE_HIGH_REFRESH_RATE_HZ &&
-                        sameSizeBest != null -> sameSizeBest.refreshRateHz
-                    targetRefreshRateHz <= BASE_HIGH_REFRESH_RATE_HZ &&
-                        globalBest != null -> globalBest.refreshRateHz
-                    sameSizeBest != null && sameSizeBest.refreshRateHz > BASE_HIGH_REFRESH_RATE_HZ ->
-                        sameSizeBest.refreshRateHz
-                    globalBest != null && globalBest.refreshRateHz > BASE_HIGH_REFRESH_RATE_HZ ->
-                        globalBest.refreshRateHz
-                    else -> targetRefreshRateHz
-                }
-            val preferredDisplayModeId =
-                if (currentMode != null &&
-                    sameSizeBest != null &&
-                    shouldSwitchDisplayMode(targetRefreshRateHz, sameSizeBest)
-                ) {
-                    // This is a persistent vote, not a one-shot switch command. Clearing it
-                    // once the requested mode becomes current lets idle policy lower the rate.
-                    sameSizeBest.modeId
-                } else {
-                    null
-                }
             return WindowRefreshPreference(
-                preferredRefreshRateHz = preferredRefreshRateHz,
-                preferredDisplayModeId = preferredDisplayModeId
+                // This is a content-rate vote. Android chooses a compatible mode;
+                // never force a mode ID or replace the user's target with a panel
+                // capability discovered at startup.
+                preferredRefreshRateHz = targetRefreshRateHz,
+                preferredDisplayModeId = null
             )
-        }
-
-        private fun shouldSwitchDisplayMode(
-            targetRefreshRateHz: Float,
-            mode: DisplayModeCandidate
-        ): Boolean {
-            return targetRefreshRateHz <= BASE_HIGH_REFRESH_RATE_HZ ||
-                mode.refreshRateHz + REFRESH_RATE_EPSILON >= targetRefreshRateHz
-        }
-
-        private fun isFractionalAutomaticTargetFps(targetFpsLimit: Float): Boolean {
-            return abs(targetFpsLimit - targetFpsLimit.roundToInt()) > REFRESH_RATE_EPSILON
-        }
-
-        private fun chooseBestModeForRefreshRate(
-            targetRefreshRateHz: Float,
-            modes: List<DisplayModeCandidate>
-        ): DisplayModeCandidate? {
-            if (modes.isEmpty()) {
-                return null
-            }
-            val atOrAboveTarget = modes
-                .filter { mode -> mode.refreshRateHz + REFRESH_RATE_EPSILON >= targetRefreshRateHz }
-                .minWithOrNull(
-                    compareBy<DisplayModeCandidate> { mode ->
-                        abs(mode.refreshRateHz - targetRefreshRateHz)
-                    }.thenBy { mode ->
-                        mode.refreshRateHz
-                    }
-                )
-            if (atOrAboveTarget != null) {
-                return atOrAboveTarget
-            }
-            return modes.maxByOrNull { mode -> mode.refreshRateHz }
         }
 
         private fun sameRefreshRate(left: Float, right: Float): Boolean {

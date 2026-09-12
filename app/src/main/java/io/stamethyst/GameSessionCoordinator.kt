@@ -89,6 +89,9 @@ internal class GameSessionCoordinator(
     @Volatile
     private var activityStopped = false
 
+    @Volatile
+    private var userLeaveHintReceived = false
+
     private var waitingLandscapeSinceMs = -1L
     private var jvmLaunchStartedWallTimeMs = 0L
     private var startCheckPosted = false
@@ -318,6 +321,7 @@ internal class GameSessionCoordinator(
         }
         activityResumed = true
         activityStopped = false
+        userLeaveHintReceived = false
         foregroundAudioPolicy.markActivityResumed(true)
         performanceOverlayController?.onResume()
         syncRuntimeForegroundState(true)
@@ -355,11 +359,32 @@ internal class GameSessionCoordinator(
         updateSystemGameState()
     }
 
+    /**
+     * Android calls this when the user leaves the game for the launcher, home screen, or recents.
+     * It can arrive before onPause, and onPause may classify a desktop/freeform window as still
+     * visible, so apply the runtime pause and audio mute immediately here.
+     */
+    fun onUserLeaveHint() {
+        if (destroyed || backExitRequested) {
+            return
+        }
+        userLeaveHintReceived = true
+        activityResumed = false
+        foregroundAudioPolicy.markActivityResumed(false)
+        cancelForegroundAudioRestoreRetries()
+        syncRuntimeForegroundState(false)
+        setRuntimeAudioMuted(true)
+        updateSystemGameState()
+    }
+
     fun onStart() {
         activityStopped = false
     }
 
     private fun resolveRuntimeVisible(): Boolean {
+        if (userLeaveHintReceived) {
+            return false
+        }
         return GameWindowVisibilityPolicy.resolveRuntimeVisible(
             activityStopped = activityStopped,
             activityResumed = activityResumed,
@@ -730,6 +755,9 @@ internal class GameSessionCoordinator(
         )
         backExitRequested = true
         backExitLauncherShown = false
+        cancelForegroundAudioRestoreRetries()
+        syncRuntimeForegroundState(false)
+        setRuntimeAudioMuted(true)
         updateSystemGameState()
         val bootOverlayActive = !bootOverlayController.isDismissed
 

@@ -180,6 +180,64 @@ class RenderSurfaceManagerPolicyTest {
     }
 
     @Test
+    fun resolveScreenBottomCropInsets_usesOppositeSideOfSystemWindowGap() {
+        assertEquals(
+            RenderViewportInsets(left = 96),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(),
+                cameraInsets = RenderViewportInsets(right = 96),
+                fallbackInset = 24,
+                windowCropHint = RenderViewportCropHint(
+                    side = HorizontalCropSide.LEFT,
+                    inset = 96
+                )
+            )
+        )
+        assertEquals(
+            RenderViewportInsets(right = 96),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(),
+                cameraInsets = RenderViewportInsets(left = 96),
+                fallbackInset = 24,
+                windowCropHint = RenderViewportCropHint(
+                    side = HorizontalCropSide.RIGHT,
+                    inset = 96
+                )
+            )
+        )
+    }
+
+    @Test
+    fun resolveWindowConstrainedCropHint_followsSystemWindowGap() {
+        assertEquals(
+            RenderViewportCropHint(side = HorizontalCropSide.LEFT, inset = 96),
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 2304,
+                displayWidth = 2400
+            )
+        )
+        assertEquals(
+            RenderViewportCropHint(side = HorizontalCropSide.RIGHT, inset = 96),
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 96,
+                rootWidth = 2304,
+                displayWidth = 2400
+            )
+        )
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 2400,
+                displayWidth = 2400
+            )
+        )
+    }
+
+    @Test
     fun resolveScreenBottomCropInsets_usesReliableInsetsOnly() {
         assertEquals(
             RenderViewportInsets(right = 48),

@@ -262,6 +262,26 @@ object CallbackBridgeCodegen {
             jvmVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeGetSwappyState",
+            returnType = "int",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeSetActiveRefreshRateHz",
+            returnType = "void",
+            parameters = listOf(CallbackBridgeParameter("float", "refreshRateHz")),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetActiveRefreshRateHz",
+            returnType = "float",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeGetGlContextGeneration",
             returnType = "int",
             parameters = emptyList(),

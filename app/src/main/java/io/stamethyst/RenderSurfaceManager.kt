@@ -46,6 +46,11 @@ internal data class RenderViewportLayout(
     val bottomMargin: Int
 )
 
+internal data class RenderViewportCropHint(
+    val side: HorizontalCropSide,
+    val inset: Int
+)
+
 internal enum class HorizontalCropSide {
     LEFT,
     RIGHT
@@ -259,6 +264,7 @@ class RenderSurfaceManager(
         lastWindowInsetsRotation = null
         disconnectBridgeSurfaceIfNeeded()
         renderHost.release()
+        runCatching { CallbackBridge.nativeSetActiveRefreshRateHz(0f) }
     }
 
     fun onForegroundChanged(foreground: Boolean) {
@@ -526,6 +532,7 @@ class RenderSurfaceManager(
     }
 
     private fun syncPreferredRefreshRate(reason: String) {
+        publishActiveRefreshRate()
         refreshRateController.sync(
             inForeground = state.isForeground,
             hasWindowFocus = state.hasWindowFocus,
@@ -534,6 +541,21 @@ class RenderSurfaceManager(
             surfaceGeneration = state.surfaceGeneration,
             reason = reason
         )
+    }
+
+    private fun publishActiveRefreshRate() {
+        if (!::renderView.isInitialized) {
+            runCatching { CallbackBridge.nativeSetActiveRefreshRateHz(0f) }
+            return
+        }
+        val refreshRateHz = renderView.display?.refreshRate
+            ?.takeIf { it > 0f && !it.isNaN() }
+            ?: 0f
+        runCatching {
+            // The game JVM consumes this snapshot only when the software pacer is active.
+            // The Android-side request remains the user's preferred application rate.
+            CallbackBridge.nativeSetActiveRefreshRateHz(refreshRateHz)
+        }
     }
 
     private fun logRefreshDiagnostic(message: String) {
@@ -783,7 +805,10 @@ class RenderSurfaceManager(
             return startupVirtualResolution ?: resolveFullscreenVirtualResolution()
         }
         val insets = currentWindowInsets()
-        val cropInsets = resolveViewportCropInsets(insets)
+        val cropInsets = resolveViewportCropInsets(
+            insets = insets,
+            windowCropHint = renderRoot?.let { resolveWindowConstrainedCropHint(it) }
+        )
         return resolveVirtualResolutionForViewport(
             rootWidth = root.width,
             rootHeight = root.height,
@@ -861,7 +886,8 @@ class RenderSurfaceManager(
             return
         }
         val resolvedInsets = insets ?: currentWindowInsets()
-        val cropInsets = resolveViewportCropInsets(resolvedInsets)
+        val windowCropHint = resolveWindowConstrainedCropHint(root)
+        val cropInsets = resolveViewportCropInsets(resolvedInsets, windowCropHint)
         val virtualResolution = resolveVirtualResolutionForViewport(
             rootWidth = rootWidth,
             rootHeight = rootHeight,
@@ -900,6 +926,7 @@ class RenderSurfaceManager(
         println(
             "RenderSurfaceLayout: " +
                 "root=${rootWidth}x${rootHeight}, " +
+                "windowCropHint=${windowCropHint?.side}:${windowCropHint?.inset}, " +
                 "crop=${cropInsets.left},${cropInsets.top},${cropInsets.right},${cropInsets.bottom}, " +
                 "viewport=${layout.width}x${layout.height}, " +
                 "margins=${layout.leftMargin},${layout.topMargin},${layout.rightMargin},${layout.bottomMargin}"
@@ -939,6 +966,11 @@ class RenderSurfaceManager(
         }
         // Refresh-rate-only changes do not rotate or resize the render surface.
         syncPreferredRefreshRate("display_changed")
+        renderView.post {
+            if (!destroyed && ::renderView.isInitialized) {
+                publishActiveRefreshRate()
+            }
+        }
         val rotation = resolveDisplayRotation()
         if (rotation == lastDisplayRotation) {
             return
@@ -962,7 +994,10 @@ class RenderSurfaceManager(
         }
     }
 
-    private fun resolveScreenBottomCropInsets(insets: WindowInsetsCompat?): RenderViewportInsets {
+    private fun resolveScreenBottomCropInsets(
+        insets: WindowInsetsCompat?,
+        windowCropHint: RenderViewportCropHint? = null
+    ): RenderViewportInsets {
         if (!cropScreenBottom) {
             return RenderViewportInsets()
         }
@@ -980,15 +1015,22 @@ class RenderSurfaceManager(
             cropScreenBottom = true,
             gestureInsets = gestureInsets,
             cameraInsets = cameraInsets,
-            fallbackInset = resolveStatusBarHeightPx()
+            fallbackInset = resolveStatusBarHeightPx(),
+            windowCropHint = windowCropHint
         )
     }
 
-    private fun resolveViewportCropInsets(insets: WindowInsetsCompat?): RenderViewportInsets {
-        val screenBottomCropInsets = resolveScreenBottomCropInsets(insets)
+    private fun resolveViewportCropInsets(
+        insets: WindowInsetsCompat?,
+        windowCropHint: RenderViewportCropHint? = null
+    ): RenderViewportInsets {
+        val screenBottomCropInsets = resolveScreenBottomCropInsets(insets, windowCropHint)
         val displayCutoutAvoidanceInsets = if (
             insets != null &&
-            shouldApplyManualDisplayCutoutAvoidance(avoidDisplayCutout)
+            shouldApplyManualDisplayCutoutAvoidance(
+                avoidDisplayCutout = avoidDisplayCutout,
+                windowConstrained = windowCropHint != null
+            )
         ) {
             resolveDisplayCutoutInsets(insets)
         } else {
@@ -997,12 +1039,38 @@ class RenderSurfaceManager(
         return mergeViewportInsets(screenBottomCropInsets, displayCutoutAvoidanceInsets)
     }
 
+    private fun resolveWindowConstrainedCropHint(root: View): RenderViewportCropHint? {
+        if (!avoidDisplayCutout || activity.isInMultiWindowMode) {
+            return null
+        }
+        val displayWidth = resolveRealDisplayWidthPx()
+        if (displayWidth <= 0) {
+            return null
+        }
+        val location = IntArray(2)
+        root.getLocationOnScreen(location)
+        return resolveWindowConstrainedCropHint(
+            rootLeft = location[0],
+            rootWidth = root.width,
+            displayWidth = displayWidth
+        )
+    }
+
     @Suppress("DEPRECATION")
     private fun resolveDisplayRotation(): Int {
         return try {
             activity.windowManager.defaultDisplay.rotation
         } catch (_: Throwable) {
             0
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resolveRealDisplayWidthPx(): Int {
+        return try {
+            FullscreenCanvasResolution.resolve(activity).width
+        } catch (_: Throwable) {
+            activity.resources.displayMetrics.widthPixels
         }
     }
 
@@ -1048,25 +1116,16 @@ class RenderSurfaceManager(
     }
 
     private fun resolveCameraAvoidanceInsets(insets: WindowInsetsCompat): RenderViewportInsets {
-        val statusAndCutoutInsets = insets.getInsetsIgnoringVisibility(
-            WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+        val statusBarInsets = insets.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.statusBars()
         )
-        var left = statusAndCutoutInsets.left
-        var top = statusAndCutoutInsets.top
-        var right = statusAndCutoutInsets.right
-        var bottom = statusAndCutoutInsets.bottom
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            val cutout = activity.window.decorView.rootWindowInsets?.displayCutout
-            if (cutout != null) {
-                left = maxOf(left, cutout.safeInsetLeft)
-                top = maxOf(top, cutout.safeInsetTop)
-                right = maxOf(right, cutout.safeInsetRight)
-                bottom = maxOf(bottom, cutout.safeInsetBottom)
-            }
-        }
-
-        return RenderViewportInsets(left = left, top = top, right = right, bottom = bottom)
+        val cutoutInsets = resolveDisplayCutoutInsets(insets)
+        return RenderViewportInsets(
+            left = maxOf(statusBarInsets.left, cutoutInsets.left),
+            top = maxOf(statusBarInsets.top, cutoutInsets.top),
+            right = maxOf(statusBarInsets.right, cutoutInsets.right),
+            bottom = maxOf(statusBarInsets.bottom, cutoutInsets.bottom)
+        )
     }
 
     private fun resolveDisplayCutoutInsets(insets: WindowInsetsCompat): RenderViewportInsets {
@@ -1078,7 +1137,7 @@ class RenderSurfaceManager(
         var top = cutoutInsets.top
         var right = cutoutInsets.right
         var bottom = cutoutInsets.bottom
-        val cutout = activity.window.decorView.rootWindowInsets?.displayCutout
+        val cutout = insets.displayCutout
         if (cutout != null) {
             left = maxOf(left, cutout.safeInsetLeft)
             top = maxOf(top, cutout.safeInsetTop)
@@ -1229,19 +1288,23 @@ class RenderSurfaceManager(
             cropScreenBottom: Boolean,
             gestureInsets: RenderViewportInsets,
             cameraInsets: RenderViewportInsets,
-            fallbackInset: Int
+            fallbackInset: Int,
+            windowCropHint: RenderViewportCropHint? = null
         ): RenderViewportInsets {
             if (!cropScreenBottom) {
                 return RenderViewportInsets()
             }
-            val cropSide = resolveScreenBottomCropSide(gestureInsets, cameraInsets)
+            val cropSide = windowCropHint?.side
+                ?: resolveScreenBottomCropSide(gestureInsets, cameraInsets)
             val selectedGestureInset = when (cropSide) {
                 HorizontalCropSide.LEFT -> gestureInsets.left
                 HorizontalCropSide.RIGHT -> gestureInsets.right
             }
+            val windowCropInset = windowCropHint?.inset?.coerceAtLeast(0) ?: 0
             val fallbackCrop = if (
                 selectedGestureInset == 0 &&
-                cameraInsets.maxInset() == 0
+                cameraInsets.maxInset() == 0 &&
+                windowCropInset == 0
             ) {
                 fallbackInset.coerceAtLeast(0)
             } else {
@@ -1250,11 +1313,35 @@ class RenderSurfaceManager(
             val cropPx = maxOf(
                 selectedGestureInset.coerceAtLeast(0),
                 cameraInsets.maxInset().coerceAtLeast(0),
+                windowCropInset,
                 fallbackCrop
             )
             return when (cropSide) {
                 HorizontalCropSide.LEFT -> RenderViewportInsets(left = cropPx)
                 HorizontalCropSide.RIGHT -> RenderViewportInsets(right = cropPx)
+            }
+        }
+
+        internal fun resolveWindowConstrainedCropHint(
+            rootLeft: Int,
+            rootWidth: Int,
+            displayWidth: Int
+        ): RenderViewportCropHint? {
+            if (rootWidth <= 0 || displayWidth <= 0 || rootWidth >= displayWidth) {
+                return null
+            }
+            val leftGap = rootLeft.coerceAtLeast(0)
+            val rightGap = (displayWidth - leftGap - rootWidth).coerceAtLeast(0)
+            return when {
+                rightGap > leftGap + 2 -> RenderViewportCropHint(
+                    side = HorizontalCropSide.LEFT,
+                    inset = rightGap
+                )
+                leftGap > rightGap + 2 -> RenderViewportCropHint(
+                    side = HorizontalCropSide.RIGHT,
+                    inset = leftGap
+                )
+                else -> null
             }
         }
 
@@ -1282,8 +1369,11 @@ class RenderSurfaceManager(
             }
         }
 
-        internal fun shouldApplyManualDisplayCutoutAvoidance(avoidDisplayCutout: Boolean): Boolean {
-            return avoidDisplayCutout
+        internal fun shouldApplyManualDisplayCutoutAvoidance(
+            avoidDisplayCutout: Boolean,
+            windowConstrained: Boolean = false
+        ): Boolean {
+            return avoidDisplayCutout && !windowConstrained
         }
 
         internal fun shouldUseCachedWindowInsets(

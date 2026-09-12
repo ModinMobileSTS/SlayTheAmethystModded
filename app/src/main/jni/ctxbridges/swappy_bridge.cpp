@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <atomic>
 #include <mutex>
 
 #include <swappy/swappyGL.h>
@@ -14,6 +15,8 @@ namespace {
 std::mutex g_swappy_mutex;
 bool g_swappy_initialized = false;
 bool g_swappy_enabled = false;
+std::atomic<int32_t> g_swappy_state{-1};
+std::atomic<int32_t> g_active_refresh_rate_millihz{0};
 
 extern "C" {
 ANativeWindow* pojavAcquireBridgeWindow(void);
@@ -28,25 +31,6 @@ uint64_t resolve_swap_interval_ns(float target_fps) {
     return std::max<uint64_t>(1, requested);
 }
 
-bool refresh_period_can_represent_target(uint64_t refresh_period, float target_fps) {
-    if (refresh_period == 0 || target_fps <= 0.0f) {
-        return true;
-    }
-
-    const uint64_t requested_period = resolve_swap_interval_ns(target_fps);
-    const uint64_t intervals =
-        std::max<uint64_t>(1, (requested_period + refresh_period / 2) / refresh_period);
-    const uint64_t represented_period = refresh_period * intervals;
-    const uint64_t difference = represented_period > requested_period
-        ? represented_period - requested_period
-        : requested_period - represented_period;
-
-    // Swappy presents on whole display intervals. If the requested cadence cannot be represented
-    // closely, raw Swappy pacing would silently choose the next integer interval (90 FPS on a
-    // 120Hz panel becomes 60 FPS), so the caller must keep using the software pacer instead.
-    return difference <= 250000ULL;
-}
-
 }  // namespace
 
 bool amethyst_swappy_init(JNIEnv* env, jobject activity, float target_fps) {
@@ -58,23 +42,15 @@ bool amethyst_swappy_init(JNIEnv* env, jobject activity, float target_fps) {
     if (g_swappy_initialized) {
         return g_swappy_enabled;
     }
-
+    g_swappy_state.store(-1, std::memory_order_release);
     const bool initialized = SwappyGL_init(env, activity);
     g_swappy_initialized = true;
     const uint64_t refresh_period = initialized ? SwappyGL_getRefreshPeriodNanos() : 0;
-    const bool compatible_refresh =
-        refresh_period_can_represent_target(refresh_period, target_fps);
-    g_swappy_enabled = initialized && SwappyGL_isEnabled() && compatible_refresh;
-    if (initialized && !compatible_refresh) {
-        std::printf(
-            "SwappyBridge: disabled reason=incompatible_refresh targetFps=%.3f "
-            "refreshPeriodNs=%llu requestedPeriodNs=%llu\n",
-            static_cast<double>(target_fps),
-            static_cast<unsigned long long>(refresh_period),
-            static_cast<unsigned long long>(resolve_swap_interval_ns(target_fps))
-        );
-        std::fflush(stdout);
-    }
+    // The display may be at a lower rate while the activity starts and move to a
+    // higher rate after input. Swappy tracks refresh-rate callbacks, so the initial
+    // period must not be used as a permanent capability decision.
+    g_swappy_enabled = initialized && SwappyGL_isEnabled();
+    g_swappy_state.store(g_swappy_enabled ? 1 : 0, std::memory_order_release);
     if (g_swappy_enabled) {
         // The launcher owns the target FPS. Avoid competing adaptive policies while the
         // existing renderer is being migrated to Swappy.
@@ -108,6 +84,22 @@ bool amethyst_swappy_init(JNIEnv* env, jobject activity, float target_fps) {
     return g_swappy_enabled;
 }
 
+void amethyst_swappy_set_active_refresh_rate(float refresh_rate_hz) {
+    if (!std::isfinite(refresh_rate_hz) || refresh_rate_hz <= 0.0f) {
+        g_active_refresh_rate_millihz.store(0, std::memory_order_release);
+        return;
+    }
+    const int64_t millihz = std::llround(static_cast<double>(refresh_rate_hz) * 1000.0);
+    g_active_refresh_rate_millihz.store(
+        static_cast<int32_t>(std::max<int64_t>(1, std::min<int64_t>(millihz, INT32_MAX))),
+        std::memory_order_release
+    );
+}
+
+float amethyst_swappy_get_active_refresh_rate(void) {
+    return static_cast<float>(g_active_refresh_rate_millihz.load(std::memory_order_acquire)) / 1000.0f;
+}
+
 void amethyst_swappy_set_window(ANativeWindow* window) {
     std::lock_guard<std::mutex> lock(g_swappy_mutex);
     if (!g_swappy_initialized || !g_swappy_enabled) {
@@ -122,6 +114,10 @@ void amethyst_swappy_set_window(ANativeWindow* window) {
 bool amethyst_swappy_is_enabled(void) {
     std::lock_guard<std::mutex> lock(g_swappy_mutex);
     return g_swappy_initialized && g_swappy_enabled;
+}
+
+int amethyst_swappy_get_state(void) {
+    return g_swappy_state.load(std::memory_order_acquire);
 }
 
 bool amethyst_swappy_swap(EGLDisplay display, EGLSurface surface) {
@@ -143,6 +139,8 @@ void amethyst_swappy_destroy(void) {
     SwappyGL_destroy();
     g_swappy_enabled = false;
     g_swappy_initialized = false;
+    g_swappy_state.store(-1, std::memory_order_release);
+    g_active_refresh_rate_millihz.store(0, std::memory_order_release);
     std::printf("SwappyBridge: destroy\n");
     std::fflush(stdout);
 }

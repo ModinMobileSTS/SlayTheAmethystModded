@@ -303,6 +303,19 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
     }
 
+    override fun onUserLeaveHint() {
+        if (::gameAudioController.isInitialized) {
+            gameAudioController.onPause()
+        }
+        if (::sessionCoordinator.isInitialized) {
+            sessionCoordinator.onUserLeaveHint()
+        }
+        if (::renderSurfaceManager.isInitialized) {
+            renderSurfaceManager.onForegroundChanged(false)
+        }
+        super.onUserLeaveHint()
+    }
+
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_GYROSCOPE || event.values.size < 3) {
             return

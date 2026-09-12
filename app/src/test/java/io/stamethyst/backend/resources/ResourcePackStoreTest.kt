@@ -74,6 +74,34 @@ class ResourcePackStoreTest {
     }
 
     @Test
+    fun nativeLibraries_areReinstalledWhenTheDerivedTargetIsMissing() {
+        withTestContext { context, root ->
+            val archive = File(root, "resources.zip")
+            writeResourcePackArchive(archive)
+            ResourcePackStore.installArchive(context, archive, null, "test")
+
+            ExternalResourcePackService.installNativeLibraries(context)
+            val nativeDir = RuntimePaths.externalNativeLibDir(context)
+            assertTrue(ResourcePackContract.nativeLibraries.all { name ->
+                File(nativeDir, name).isFile
+            })
+            assertTrue(RuntimePaths.externalNativeLibMarkerFile(context).isFile)
+
+            ResourcePackContract.nativeLibraries.forEach { name ->
+                File(nativeDir, name).delete()
+            }
+            RuntimePaths.externalNativeLibMarkerFile(context).delete()
+
+            ExternalResourcePackService.installNativeLibraries(context)
+
+            assertTrue(ResourcePackContract.nativeLibraries.all { name ->
+                File(nativeDir, name).isFile
+            })
+            assertTrue(RuntimePaths.externalNativeLibMarkerFile(context).isFile)
+        }
+    }
+
+    @Test
     fun inspect_detectsModifiedActiveContent() {
         withTestContext { context, root ->
             val archive = File(root, "resources.zip")

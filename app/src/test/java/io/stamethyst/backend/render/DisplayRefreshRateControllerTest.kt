@@ -6,20 +6,20 @@ import org.junit.Test
 
 class DisplayRefreshRateControllerTest {
     @Test
-    fun resolveAutomaticTargetFps_usesTheHighestStableRateBelow144() {
+    fun resolveAutomaticTargetFps_usesTheCurrentDisplayRateWithoutARefreshCeiling() {
         assertEquals(60f, DisplayRefreshRateController.resolveAutomaticTargetFps(60f), 0.001f)
         assertEquals(90f, DisplayRefreshRateController.resolveAutomaticTargetFps(90f), 0.001f)
         assertEquals(120f, DisplayRefreshRateController.resolveAutomaticTargetFps(120f), 0.001f)
         assertEquals(119.88f, DisplayRefreshRateController.resolveAutomaticTargetFps(119.88f), 0.001f)
         assertEquals(144f, DisplayRefreshRateController.resolveAutomaticTargetFps(144f), 0.001f)
-        assertEquals(82.5f, DisplayRefreshRateController.resolveAutomaticTargetFps(165f), 0.001f)
-        assertEquals(120f, DisplayRefreshRateController.resolveAutomaticTargetFps(240f), 0.001f)
+        assertEquals(165f, DisplayRefreshRateController.resolveAutomaticTargetFps(165f), 0.001f)
+        assertEquals(240f, DisplayRefreshRateController.resolveAutomaticTargetFps(240f), 0.001f)
     }
 
     @Test
-    fun resolveAutomaticTargetFps_fallsBackTo60WhenRefreshRateIsUnknown() {
-        assertEquals(60f, DisplayRefreshRateController.resolveAutomaticTargetFps(0f), 0.001f)
-        assertEquals(60f, DisplayRefreshRateController.resolveAutomaticTargetFps(Float.NaN), 0.001f)
+    fun resolveAutomaticTargetFps_usesConfiguredCeilingWhenRefreshRateIsUnavailable() {
+        assertEquals(144f, DisplayRefreshRateController.resolveAutomaticTargetFps(0f), 0.001f)
+        assertEquals(144f, DisplayRefreshRateController.resolveAutomaticTargetFps(Float.NaN), 0.001f)
     }
 
     @Test
@@ -69,7 +69,7 @@ class DisplayRefreshRateControllerTest {
     }
 
     @Test
-    fun resolveWindowRefreshPreference_keepsCurrentHighRefreshModeForFractionalAutomaticDivisor() {
+    fun resolveWindowRefreshPreference_preservesFractionalContentRate() {
         val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
             targetFpsLimit = 82.5f,
             currentDisplayModeId = 2,
@@ -81,15 +81,15 @@ class DisplayRefreshRateControllerTest {
 
         assertEquals(
             WindowRefreshPreference(
-                preferredRefreshRateHz = 165f,
-                preferredDisplayModeId = 2
+                preferredRefreshRateHz = 82.5f,
+                preferredDisplayModeId = null
             ),
             preference
         )
     }
 
     @Test
-    fun resolveWindowRefreshPreference_requests60HzWhenTargetIs60Fps() {
+    fun resolveWindowRefreshPreference_preservesTargetContentRate() {
         val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
             targetFpsLimit = 60f,
             currentDisplayModeId = 1,
@@ -102,14 +102,14 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 60f,
-                preferredDisplayModeId = 1
+                preferredDisplayModeId = null
             ),
             preference
         )
     }
 
     @Test
-    fun resolveWindowRefreshPreference_mapsSub60TargetsTo60Hz() {
+    fun resolveWindowRefreshPreference_preservesSub60ContentRate() {
         val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
             targetFpsLimit = 30f,
             currentDisplayModeId = 1,
@@ -121,8 +121,8 @@ class DisplayRefreshRateControllerTest {
 
         assertEquals(
             WindowRefreshPreference(
-                preferredRefreshRateHz = 60f,
-                preferredDisplayModeId = 2
+                preferredRefreshRateHz = 30f,
+                preferredDisplayModeId = null
             ),
             preference
         )
@@ -142,7 +142,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 60f,
-                preferredDisplayModeId = 1
+                preferredDisplayModeId = null
             ),
             preference
         )
@@ -163,7 +163,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 120f,
-                preferredDisplayModeId = 2
+                preferredDisplayModeId = null
             ),
             preference
         )
@@ -184,7 +184,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 90f,
-                preferredDisplayModeId = 2
+                preferredDisplayModeId = null
             ),
             preference
         )
@@ -204,7 +204,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 120f,
-                preferredDisplayModeId = 1
+                preferredDisplayModeId = null
             ),
             preference
         )
@@ -250,7 +250,7 @@ class DisplayRefreshRateControllerTest {
     }
 
     @Test
-    fun resolveExpectedRefreshRateHz_reportsHighRefreshModeThePanelAdvertises() {
+    fun resolveExpectedRefreshRateHz_reportsCurrentDisplayRate() {
         val refreshRate = DisplayRefreshRateController.resolveExpectedRefreshRateHz(
             targetFpsLimit = 90f,
             currentDisplayRefreshRateHz = 60f,
@@ -261,7 +261,7 @@ class DisplayRefreshRateControllerTest {
             )
         )
 
-        assertEquals(90f, refreshRate, 0.001f)
+        assertEquals(60f, refreshRate, 0.001f)
     }
 
     @Test
@@ -326,7 +326,7 @@ class DisplayRefreshRateControllerTest {
         // Initial switch, successful switch, repeated sync, then a vendor idle fallback.
         for (currentModeId in listOf(1, 2, 2, 1, 2)) {
             assertEquals(
-                WindowRefreshPreference(90f, 2),
+                 WindowRefreshPreference(90f, null),
                 DisplayRefreshRateController.resolveWindowRefreshPreference(90f, currentModeId, modes)
             )
         }

@@ -145,7 +145,8 @@ public class LwjglApplication implements Application {
 	private long androidFramePacerLastFrameNanos;
 	private long androidFramePacerNextFrameNanos;
 	private Boolean swappyFramePacingEnabled;
-	private int cachedActiveRefreshRate;
+	private int observedSwappyFramePacingState = Integer.MIN_VALUE;
+	private double cachedActiveRefreshRate;
 	private boolean framePacerCapLogged;
 	private Boolean lastActiveState;
 	private Boolean coreFramebufferBindUsable;
@@ -404,9 +405,10 @@ public class LwjglApplication implements Application {
 	// The schedule arithmetic lives in LwjglFramePacerSchedule so it can be unit tested.
 	private void syncSoftwareFrame (int configuredFrameRate) {
 		if (configuredFrameRate <= 0) return;
-		double frameRate = LAUNCHER_PACED_FRAME_RATE > 0.0
+		double requestedFrameRate = LAUNCHER_PACED_FRAME_RATE > 0.0
 			? LAUNCHER_PACED_FRAME_RATE
-			: capFrameRateToActiveRefreshRate(configuredFrameRate);
+			: configuredFrameRate;
+		double frameRate = capFrameRateToActiveRefreshRate(requestedFrameRate);
 		long frameNanos = LwjglFramePacerSchedule.frameNanos(frameRate);
 		if (androidFramePacerLastFrameNanos != frameNanos || androidFramePacerNextFrameNanos <= 0L) {
 			androidFramePacerLastFrameNanos = frameNanos;
@@ -430,15 +432,27 @@ public class LwjglApplication implements Application {
 
 
 	private boolean isSwappyFramePacingEnabled () {
-		if (swappyFramePacingEnabled != null) return swappyFramePacingEnabled.booleanValue();
-		boolean enabled = false;
+		int state = -1;
 		try {
-			enabled = CallbackBridge.nativeIsSwappyEnabled();
+			state = CallbackBridge.nativeGetSwappyState();
 		} catch (Throwable t) {
-			System.out.println("[gdx-patch] Swappy status query unavailable: " + t);
+			try {
+				state = CallbackBridge.nativeIsSwappyEnabled() ? 1 : 0;
+			} catch (Throwable ignored) {
+				System.out.println("[gdx-patch] Swappy status query unavailable: " + t);
+			}
 		}
+		if (state < 0) {
+			// Initialization may happen after the first loop iteration. Do not cache
+			// this transient state as a permanent software-pacing decision.
+			return false;
+		}
+		boolean enabled = state > 0;
 		swappyFramePacingEnabled = Boolean.valueOf(enabled);
-		System.out.println("[gdx-patch] Frame pacing: swappyEnabled=" + enabled);
+		if (state != observedSwappyFramePacingState) {
+			observedSwappyFramePacingState = state;
+			System.out.println("[gdx-patch] Frame pacing: swappyEnabled=" + enabled + " state=" + state);
+		}
 		return enabled;
 	}
 
@@ -446,19 +460,28 @@ public class LwjglApplication implements Application {
 	 * swap-interval pacing disabled ({@code FORCE_VSYNC=false}, {@link LwjglGraphics#setVSync}). Pacing
 	 * above what the panel can present therefore does not add frames, it just puts the pacer's schedule
 	 * on a different period than the display, and the two beat against each other. Cap the target at the
-	 * refresh rate the launcher reported so both run on the same period. Only launcher-reported or
+	 * refresh rate reported by Android so both run on the same period. Only launcher-reported or
 	 * driver-reported rates reach here; {@link #resolveActiveRefreshRate()} returns -1 when nothing
 	 * trustworthy is known, in which case the caller's target is used unchanged.
 	 *
-	 * <p>The resolution is cached because this runs on the per-frame path and the fallbacks in
-	 * {@link #resolveActiveRefreshRate()} query Display state. */
-	private int capFrameRateToActiveRefreshRate (int frameRate) {
-		int refreshRate = cachedActiveRefreshRate;
-		if (refreshRate == 0) {
-			refreshRate = resolveActiveRefreshRate();
-			cachedActiveRefreshRate = refreshRate > 0 ? refreshRate : -1;
+	 * <p>The cached value is used only to detect a display-period transition and reset the absolute
+	 * deadline. The refresh-rate snapshot itself is read on each fallback frame so a 60/90 switch does
+	 * not leave the pacer on the old period. */
+	private double capFrameRateToActiveRefreshRate (double frameRate) {
+		double refreshRate = resolveActiveRefreshRate();
+		if (Double.compare(refreshRate, cachedActiveRefreshRate) != 0) {
+			double previousRefreshRate = cachedActiveRefreshRate;
+			cachedActiveRefreshRate = refreshRate;
+			// A display-rate transition invalidates the old absolute deadline. The
+			// next frame starts a fresh schedule instead of inheriting timing debt.
+			androidFramePacerLastFrameNanos = 0L;
+			androidFramePacerNextFrameNanos = 0L;
+			if (previousRefreshRate != 0.0 || refreshRate > 0.0) {
+				System.out.println("[gdx-patch] Frame pacing: active refresh changed from "
+					+ previousRefreshRate + "Hz to " + refreshRate + "Hz");
+			}
 		}
-		int capped = LwjglFramePacerSchedule.capToRefreshRate(frameRate, refreshRate);
+		double capped = refreshRate > 0.0 ? Math.min(frameRate, refreshRate) : frameRate;
 		if (capped != frameRate && !framePacerCapLogged) {
 			framePacerCapLogged = true;
 			System.out.println("[gdx-patch] Frame pacing: capping target " + frameRate + " FPS to active refresh rate "
@@ -489,7 +512,13 @@ public class LwjglApplication implements Application {
 		}
 	}
 
-	private int resolveActiveRefreshRate () {
+	private double resolveActiveRefreshRate () {
+		try {
+			double nativeRefreshRate = CallbackBridge.nativeGetActiveRefreshRateHz();
+			if (nativeRefreshRate > 0.0 && !Double.isNaN(nativeRefreshRate)) return nativeRefreshRate;
+		} catch (Throwable ignored) {
+		}
+
 		if (LAUNCHER_ACTIVE_REFRESH_RATE > 0) {
 			return LAUNCHER_ACTIVE_REFRESH_RATE;
 		}
