@@ -209,6 +209,7 @@ internal class GameSessionCoordinator(
         debugMode = config.debugMode,
         rendererDecision = config.rendererDecision,
         renderScale = config.renderScale,
+        effectiveTargetFps = config.effectiveTargetFps,
         forceJvmCrash = config.forceJvmCrash,
         forceRuntimeCrash = config.forceRuntimeCrash,
         autoplay = config.autoplay,

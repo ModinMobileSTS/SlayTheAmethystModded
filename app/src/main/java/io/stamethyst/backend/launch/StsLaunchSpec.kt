@@ -130,7 +130,8 @@ object StsLaunchSpec {
         autoplayChoiceDelayMs: Long = 0L,
         autoplaySingleRoomBenchMode: Boolean = false,
         cardObtainEffectOwnershipCompatEnabled: Boolean = true,
-        performanceDeepDiagnosticsOverride: Boolean? = null
+        performanceDeepDiagnosticsOverride: Boolean? = null,
+        effectiveTargetFpsOverride: Float? = null
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -156,7 +157,7 @@ object StsLaunchSpec {
             LauncherConfig.isArthasAnalysisEnabled(context) &&
             ArthasResourcePackService.isInstalled(context)
         val requestedTargetFps = LauncherConfig.readTargetFpsValue(context)
-        val effectiveTargetFps = if (LauncherConfig.isTargetFpsAutomatic(context)) {
+        val effectiveTargetFps = effectiveTargetFpsOverride ?: if (LauncherConfig.isTargetFpsAutomatic(context)) {
             DisplayRefreshRateController.resolveAutomaticTargetFps(context)
         } else {
             requestedTargetFps

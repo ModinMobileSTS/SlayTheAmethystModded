@@ -61,6 +61,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         const val EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.autoplay_single_room_spec"
         const val EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE = "io.stamethyst.autoplay_single_room_bench_mode"
         const val EXTRA_AUTOPLAY_CHOICE_DELAY_MS = "io.stamethyst.autoplay_choice_delay_ms"
+        const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
         const val EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS = "io.stamethyst.performance_deep_diagnostics"
         const val EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED =
             "io.stamethyst.card_obtain_effect_ownership_compat_enabled"
@@ -100,6 +101,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC, autoplaySingleRoomSpecPath)
             intent.putExtra(EXTRA_AUTOPLAY_CHOICE_DELAY_MS, autoplayChoiceDelayMs)
             intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, autoplaySingleRoomBenchMode)
+            intent.putExtra(EXTRA_TARGET_FPS, LauncherConfig.readTargetFpsValue(context))
             if (performanceDeepDiagnostics != null) {
                 intent.putExtra(EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS, performanceDeepDiagnostics)
             }

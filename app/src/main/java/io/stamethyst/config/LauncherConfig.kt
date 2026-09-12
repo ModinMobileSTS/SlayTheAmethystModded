@@ -1243,15 +1243,20 @@ object LauncherConfig {
     }
 
     fun readTargetFps(context: Context): Int {
-        val preferences = prefs(context)
-        readExactTargetFps(preferences)?.let { return it.roundToInt() }
+        // StsGameActivity runs in the :game process. Reload this value from the shared file so a
+        // setting changed in the launcher process cannot leave the game process on an old value.
+        val preferences = prefs(context, crossProcess = true)
+        readExactTargetFps(preferences)?.let {
+            return it.roundToInt()
+        }
         if (preferences.contains(PREF_KEY_TARGET_FPS)) {
-            return normalizeTargetFps(
+            val value = normalizeTargetFps(
                 preferences.getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS)
             )
+            return value
         }
         val migrated = normalizeTargetFps(DisplayConfigSync.readTargetFpsLimit(context))
-        preferences.edit {
+        preferences.edit(commit = true) {
             putInt(PREF_KEY_TARGET_FPS, migrated)
         }
         return migrated
@@ -1259,7 +1264,7 @@ object LauncherConfig {
 
     fun saveTargetFps(context: Context, targetFps: Int) {
         val normalizedTargetFps = normalizeTargetFps(targetFps)
-        prefs(context).edit {
+        prefs(context, crossProcess = true).edit(commit = true) {
             putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps)
             remove(PREF_KEY_TARGET_FPS_EXACT)
         }
@@ -1267,12 +1272,15 @@ object LauncherConfig {
     }
 
     fun readTargetFpsValue(context: Context): Float {
-        val preferences = prefs(context)
-        return readExactTargetFps(preferences) ?: readTargetFps(context).toFloat()
+        val preferences = prefs(context, crossProcess = true)
+        readExactTargetFps(preferences)?.let {
+            return it
+        }
+        return readTargetFps(context).toFloat()
     }
 
     fun isTargetFpsAutomatic(context: Context): Boolean {
-        val preferences = prefs(context)
+        val preferences = prefs(context, crossProcess = true)
         return readExactTargetFps(preferences) == null &&
             readTargetFps(context) == DEFAULT_TARGET_FPS
     }
@@ -1280,7 +1288,7 @@ object LauncherConfig {
     fun saveTargetFps(context: Context, targetFps: Float) {
         val normalizedTargetFps = targetFps.takeIf { it > 0f && !it.isNaN() }
             ?: DEFAULT_TARGET_FPS.toFloat()
-        prefs(context).edit {
+        prefs(context, crossProcess = true).edit(commit = true) {
             putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps.roundToInt())
             putString(PREF_KEY_TARGET_FPS_EXACT, normalizedTargetFps.toString())
         }

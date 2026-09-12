@@ -24,7 +24,7 @@
 static __thread gl_render_window_t* currentBundle;
 static EGLDisplay g_EglDisplay;
 static pthread_mutex_t g_surface_mutex = PTHREAD_MUTEX_INITIALIZER;
-static uint32_t g_swap_diag_counter = 0;
+static _Atomic(uint32_t) g_swap_diag_counter = 0;
 static uint32_t g_next_surface_restore_poll_swap = 0;
 static bool g_swap_heartbeat_logging_enabled = false;
 static bool g_swap_profiler_initialized = false;
@@ -62,7 +62,7 @@ void gl_set_swap_heartbeat_logging_enabled(bool enabled) {
 }
 
 uint32_t gl_get_swap_count(void) {
-    return g_swap_diag_counter;
+    return atomic_load_explicit(&g_swap_diag_counter, memory_order_relaxed);
 }
 
 static int64_t gl_now_monotonic_ns() {
@@ -659,10 +659,11 @@ void gl_swap_buffers() {
     // changes are delivered by gl_setup_window(); only poll while rendering to
     // a pbuffer and throttle the poll to avoid a mutex/refcount round-trip on
     // every frame.
+    uint32_t swapCount = gl_get_swap_count();
     if (currentBundle->nativeSurface == NULL &&
-        g_swap_diag_counter >= g_next_surface_restore_poll_swap) {
+        swapCount >= g_next_surface_restore_poll_swap) {
         g_next_surface_restore_poll_swap =
-            g_swap_diag_counter + GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS;
+            swapCount + GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS;
         gl_try_restore_main_window_surface(currentBundle, "swap preflight");
     }
     if (g_swap_profiler_enabled) {
@@ -732,12 +733,13 @@ void gl_swap_buffers() {
         stageStartNs = nowNs;
     }
 
-    g_swap_diag_counter++;
+    // Android's UI thread samples this through JNI; only the count is shared.
+    swapCount = atomic_fetch_add_explicit(&g_swap_diag_counter, 1, memory_order_relaxed) + 1;
     if (g_swap_profiler_enabled) {
         int64_t totalNs = stageStartNs - swapStartNs;
         if (totalNs >= g_swap_profiler_slow_ns) {
             printf("GLBridgePerf: swap slow #%u totalMs=%.3f preflightMs=%.3f windowSwitchMs=%.3f contextRecoveryMs=%.3f eglSwapMs=%.3f surface=%p native=%p state=%d\n",
-                   g_swap_diag_counter,
+                   swapCount,
                    ((double)totalNs) / 1000000.0,
                    ((double)preflightNs) / 1000000.0,
                    ((double)windowSwitchNs) / 1000000.0,
@@ -749,9 +751,9 @@ void gl_swap_buffers() {
         }
     }
     if (g_swap_heartbeat_logging_enabled) {
-        if ((g_swap_diag_counter % 600) == 0) {
+        if ((swapCount % 600) == 0) {
             printf("GLBridgeDiag: swap heartbeat #%u surface=%p native=%p state=%d\n",
-                    g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface,
+                    swapCount, currentBundle->surface, currentBundle->nativeSurface,
                     atomic_load_explicit(&currentBundle->state, memory_order_relaxed));
         }
     }

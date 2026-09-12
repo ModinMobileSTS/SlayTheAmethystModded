@@ -23,6 +23,38 @@ class DisplayRefreshRateControllerTest {
     }
 
     @Test
+    fun resolveAutomaticTargetFps_usesSupportedHighRefreshModeBeforeWindowVote() {
+        assertEquals(
+            90f,
+            DisplayRefreshRateController.resolveAutomaticTargetFps(
+                currentDisplayRefreshRateHz = 60f,
+                currentDisplayModeId = 1,
+                supportedModes = listOf(
+                    mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                    mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 90f)
+                )
+            ),
+            0.001f
+        )
+    }
+
+    @Test
+    fun resolveAutomaticTargetFps_ignoresHighRefreshModesAtOtherResolutions() {
+        assertEquals(
+            60f,
+            DisplayRefreshRateController.resolveAutomaticTargetFps(
+                currentDisplayRefreshRateHz = 60f,
+                currentDisplayModeId = 1,
+                supportedModes = listOf(
+                    mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                    mode(modeId = 2, width = 1920, height = 864, refreshRateHz = 90f)
+                )
+            ),
+            0.001f
+        )
+    }
+
+    @Test
     fun resolveIdealTargetFpsOptions_listsEverySelectableRefreshDivisor() {
         assertEquals(
             listOf(165f, 82.5f, 55f, 41.25f, 33f, 27.5f),
@@ -50,7 +82,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 165f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 2
             ),
             preference
         )
@@ -70,7 +102,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 60f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 1
             ),
             preference
         )
@@ -282,6 +314,38 @@ class DisplayRefreshRateControllerTest {
         )
 
         assertEquals(120f, refreshRate, 0.001f)
+    }
+
+    @Test
+    fun resolveWindowRefreshPreference_keeps90HzVoteAcrossSwitchAndIdleFallback() {
+        val modes = listOf(
+            mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+            mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 90f),
+            mode(modeId = 3, width = 2400, height = 1080, refreshRateHz = 120f)
+        )
+        // Initial switch, successful switch, repeated sync, then a vendor idle fallback.
+        for (currentModeId in listOf(1, 2, 2, 1, 2)) {
+            assertEquals(
+                WindowRefreshPreference(90f, 2),
+                DisplayRefreshRateController.resolveWindowRefreshPreference(90f, currentModeId, modes)
+            )
+        }
+    }
+
+    @Test
+    fun resolveWindowRefreshPreference_doesNotPinAnUnavailableHighRefreshMode() {
+        assertEquals(
+            WindowRefreshPreference(90f, null),
+            DisplayRefreshRateController.resolveWindowRefreshPreference(
+                90f, 1, listOf(mode(1, 2400, 1080, 60f))
+            )
+        )
+        assertEquals(
+            null,
+            DisplayRefreshRateController.resolveWindowRefreshPreference(
+                0f, 1, listOf(mode(1, 2400, 1080, 90f))
+            )
+        )
     }
 
     private fun mode(

@@ -33,6 +33,10 @@ class PerformanceDiagnosticsArchiveTest {
             writeText("performanceDeepDiagnostics=true")
         }
         RuntimePaths.memoryDiagnosticsLog(context).writeText("memory")
+        RuntimePaths.windowDiagnosticsLog(context).apply {
+            parentFile?.mkdirs()
+            writeText("DisplayRefreshRate: sample touchIdleMs=6000 swapFps=90")
+        }
         File(RuntimePaths.jvmHistogramsDir(context).apply { mkdirs() }, "gc_histo_1_combat.txt")
             .writeText("histogram")
         RuntimePaths.arthasBridgeLog(context).writeText("[arthas-bridge] ready")
@@ -53,7 +57,7 @@ class PerformanceDiagnosticsArchiveTest {
             }
         }
 
-        assertEquals(16, count)
+        assertEquals(17, count)
         assertTrue(entries.contains("sts/performance/frame-probe-incidents.jsonl"))
         assertTrue(entries.contains("sts/performance/frame-probe-incidents.prev.jsonl"))
         assertTrue(entries.contains("sts/performance/latest.log"))
@@ -62,6 +66,7 @@ class PerformanceDiagnosticsArchiveTest {
         assertTrue(entries.contains("sts/performance/launcher_perf_snapshot.txt"))
         assertTrue(entries.contains("sts/performance/performance_launch_audit.log"))
         assertTrue(entries.contains("sts/performance/memory_diagnostics/memory_diagnostics.log"))
+        assertTrue(entries.contains("sts/performance/window/window_diagnostics.log"))
         assertTrue(entries.contains("sts/performance/jvm_histograms/gc_histo_1_combat.txt"))
         assertTrue(entries.contains("sts/performance/arthas-bridge.log"))
         assertTrue(entries.contains("sts/performance/arthas/arthas-offline-status.txt"))

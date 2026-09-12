@@ -13,6 +13,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import io.stamethyst.backend.diag.WindowDiagnosticsLogStore
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.FullscreenCanvasSize
@@ -23,6 +25,8 @@ import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.backend.render.VirtualResolutionMode
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal data class RenderViewportInsets(
     val left: Int = 0,
@@ -69,7 +73,10 @@ class RenderSurfaceManager(
     } else {
         SurfaceViewHost(activity)
     }
-    private val refreshRateController = DisplayRefreshRateController(activity, targetFpsLimit)
+    private val refreshRateController = DisplayRefreshRateController(
+        activity, targetFpsLimit, ::logRefreshDiagnostic
+    )
+    private var destroyed = false
     private var pendingSurfaceReadyCallback = false
     private var lastResyncReasonSummary = "init"
     private var resyncApplyCount = 0
@@ -155,6 +162,9 @@ class RenderSurfaceManager(
         renderHost.attach(root, object : RenderSurfaceHost.Callbacks {
             override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
                 state.markSurfaceAvailable(surfaceGeneration, width, height)
+                logRefreshDiagnostic(
+                    "DisplayRefreshRate: surface_lifecycle event=available surfaceGeneration=$surfaceGeneration"
+                )
                 syncPreferredRefreshRate("surface_available")
                 connectBridgeSurfaceIfNeeded()
                 pendingSurfaceReadyCallback = true
@@ -176,6 +186,9 @@ class RenderSurfaceManager(
                 pendingSurfaceReadyCallback = false
                 disconnectBridgeSurfaceIfNeeded()
                 state.markSurfaceDestroyed()
+                logRefreshDiagnostic(
+                    "DisplayRefreshRate: surface_lifecycle event=destroyed surfaceGeneration=$surfaceGeneration"
+                )
                 syncPreferredRefreshRate("surface_destroyed")
             }
 
@@ -225,6 +238,7 @@ class RenderSurfaceManager(
     }
 
     fun onDestroy() {
+        destroyed = true
         if (::renderView.isInitialized) {
             renderView.removeCallbacks(foregroundResyncRunnable)
             renderView.removeCallbacks(windowConfigurationResyncRetryRunnable)
@@ -235,7 +249,8 @@ class RenderSurfaceManager(
         refreshRateController.sync(
             inForeground = false,
             hasWindowFocus = false,
-            surface = renderHost.currentSurface,
+            surface = renderHost.currentSurface.takeIf { state.surfaceGeneration > 0 },
+            surfaceGeneration = state.surfaceGeneration,
             reason = "destroy"
         )
         renderRoot?.let { ViewCompat.setOnApplyWindowInsetsListener(it, null) }
@@ -514,9 +529,19 @@ class RenderSurfaceManager(
         refreshRateController.sync(
             inForeground = state.isForeground,
             hasWindowFocus = state.hasWindowFocus,
-            surface = renderHost.currentSurface,
+            // SurfaceHolder.surface may still be valid inside surfaceDestroyed().
+            surface = renderHost.currentSurface.takeIf { state.surfaceGeneration > 0 },
+            surfaceGeneration = state.surfaceGeneration,
             reason = reason
         )
+    }
+
+    private fun logRefreshDiagnostic(message: String) {
+        println(message)
+        val context = activity.applicationContext
+        activity.lifecycleScope.launch(Dispatchers.IO) {
+            WindowDiagnosticsLogStore.append(context, message)
+        }
     }
 
     private fun performPostBootSurfaceSoftRefresh() {
@@ -909,6 +934,11 @@ class RenderSurfaceManager(
     }
 
     private fun handleDisplayChanged(displayId: Int) {
+        if (!::renderView.isInitialized || renderView.display?.displayId != displayId) {
+            return
+        }
+        // Refresh-rate-only changes do not rotate or resize the render surface.
+        syncPreferredRefreshRate("display_changed")
         val rotation = resolveDisplayRotation()
         if (rotation == lastDisplayRotation) {
             return

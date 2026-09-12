@@ -9,6 +9,7 @@ import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
@@ -35,6 +36,7 @@ class JvmLaunchController(
     private val debugMode: Boolean,
     private val rendererDecision: RendererDecision,
     private val renderScale: Float,
+    private val effectiveTargetFps: Float,
     private val forceJvmCrash: Boolean,
     private val forceRuntimeCrash: Boolean,
     private val autoplay: Boolean,
@@ -73,6 +75,7 @@ class JvmLaunchController(
         private const val LOGCAT_TAG = "STS-JVM"
         private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
             "amethyst.gdx.active_refresh_rate",
+            "amethyst.gdx.paced_fps",
             "amethyst.gdx.frame_ring",
             "amethyst.gdx.frame_hud",
             "amethyst.gdx.gpu_resource_summary",
@@ -388,7 +391,8 @@ class JvmLaunchController(
                             autoplayChoiceDelayMs,
                             autoplaySingleRoomBenchMode,
                             cardObtainEffectOwnershipCompatEnabled,
-                            performanceDeepDiagnostics
+                            performanceDeepDiagnostics,
+                            effectiveTargetFps
                         )
                     )
                     args
@@ -1062,6 +1066,13 @@ class JvmLaunchController(
         extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
         extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()
         extras["javaEnvSwapProfilerExpected"] = performanceDeepDiagnostics.toString()
+        extras["launcher.requestedTargetFps"] =
+            LauncherConfig.readTargetFpsValue(activity).toString()
+        extras["launcher.targetFpsAutomatic"] =
+            LauncherConfig.isTargetFpsAutomatic(activity).toString()
+        extras["displayConfig.targetFps"] =
+            DisplayConfigSync.readTargetFpsLimit(activity).toString()
+        extras["session.effectiveTargetFps"] = effectiveTargetFps.toString()
         startupStepTimings.forEach { (label, tookMs) ->
             extras["jvmStartup.$label"] = tookMs.toString()
         }

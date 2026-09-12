@@ -22,17 +22,18 @@ internal data class WindowRefreshPreference(
 
 internal class DisplayRefreshRateController(
     private val activity: Activity,
-    private val targetFpsLimit: Float
+    private val targetFpsLimit: Float,
+    private val log: (String) -> Unit = { println(it) }
 ) {
     private var lastAppliedWindowRefreshRateHz = Float.NaN
     private var lastAppliedWindowModeId = Int.MIN_VALUE
-    private var lastAppliedSurfaceRefreshRateHz = Float.NaN
-    private var lastAppliedSurfaceIdentity = 0
+    private val surfaceVoteState = SurfaceFrameRateVoteState()
 
     fun sync(
         inForeground: Boolean,
         hasWindowFocus: Boolean,
         surface: Surface?,
+        surfaceGeneration: Int,
         reason: String
     ) {
         val preference =
@@ -42,7 +43,9 @@ internal class DisplayRefreshRateController(
                 null
             }
         applyWindowPreference(preference, inForeground, hasWindowFocus, reason)
-        applySurfacePreference(surface, preference, inForeground, hasWindowFocus, reason)
+        applySurfacePreference(
+            surface, surfaceGeneration, preference, inForeground, hasWindowFocus, reason
+        )
     }
 
     @Suppress("DEPRECATION")
@@ -104,7 +107,7 @@ internal class DisplayRefreshRateController(
         activity.window.attributes = attributes
         lastAppliedWindowRefreshRateHz = desiredRefreshRateHz
         lastAppliedWindowModeId = desiredModeId
-        println(
+        log(
             "DisplayRefreshRate: window " +
                 "reason=$reason foreground=$inForeground focus=$hasWindowFocus " +
                 "targetFps=$targetFpsLimit requestHz=$desiredRefreshRateHz modeId=$desiredModeId"
@@ -113,6 +116,7 @@ internal class DisplayRefreshRateController(
 
     private fun applySurfacePreference(
         surface: Surface?,
+        surfaceGeneration: Int,
         preference: WindowRefreshPreference?,
         inForeground: Boolean,
         hasWindowFocus: Boolean,
@@ -122,14 +126,11 @@ internal class DisplayRefreshRateController(
             return
         }
         val desiredRefreshRateHz = preference?.preferredRefreshRateHz ?: 0f
-        val surfaceIdentity = if (surface != null) System.identityHashCode(surface) else 0
-        if (surface == null) {
-            lastAppliedSurfaceIdentity = 0
-            lastAppliedSurfaceRefreshRateHz = Float.NaN
+        if (surface == null || !surface.isValid) {
+            surfaceVoteState.clear()
             return
         }
-        if (surfaceIdentity == lastAppliedSurfaceIdentity &&
-            sameRefreshRate(lastAppliedSurfaceRefreshRateHz, desiredRefreshRateHz)
+        if (!surfaceVoteState.shouldApply(surface, surfaceGeneration, desiredRefreshRateHz)
         ) {
             return
         }
@@ -149,18 +150,19 @@ internal class DisplayRefreshRateController(
                     Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
                 )
             }
-            lastAppliedSurfaceIdentity = surfaceIdentity
-            lastAppliedSurfaceRefreshRateHz = desiredRefreshRateHz
-            println(
+            surfaceVoteState.recordApplied(surface, surfaceGeneration, desiredRefreshRateHz)
+            log(
                 "DisplayRefreshRate: surface " +
                     "reason=$reason foreground=$inForeground focus=$hasWindowFocus " +
-                    "targetFps=$targetFpsLimit requestHz=$desiredRefreshRateHz"
+                    "targetFps=$targetFpsLimit requestHz=$desiredRefreshRateHz " +
+                    "surfaceGeneration=$surfaceGeneration surfaceIdentity=${System.identityHashCode(surface)}"
             )
         } catch (t: Throwable) {
-            println(
+            log(
                 "DisplayRefreshRate: surface_failed " +
                     "reason=$reason foreground=$inForeground focus=$hasWindowFocus " +
                     "targetFps=$targetFpsLimit requestHz=$desiredRefreshRateHz " +
+                    "surfaceGeneration=$surfaceGeneration " +
                     "error=${t.javaClass.simpleName}: ${t.message}"
             )
         }
@@ -300,7 +302,54 @@ internal class DisplayRefreshRateController(
             } catch (_: Throwable) {
                 null
             }
-            return resolveAutomaticTargetFps(display?.refreshRate ?: 0f)
+            val supportedModes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                display?.supportedModes
+                    ?.map { mode ->
+                        DisplayModeCandidate(
+                            modeId = mode.modeId,
+                            width = mode.physicalWidth,
+                            height = mode.physicalHeight,
+                            refreshRateHz = mode.refreshRate
+                        )
+                    }
+                    .orEmpty()
+            } else {
+                emptyList()
+            }
+            val currentModeId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                display?.mode?.modeId
+            } else {
+                null
+            }
+            return resolveAutomaticTargetFps(
+                currentDisplayRefreshRateHz = display?.refreshRate ?: 0f,
+                currentDisplayModeId = currentModeId,
+                supportedModes = supportedModes
+            )
+        }
+
+        internal fun resolveAutomaticTargetFps(
+            currentDisplayRefreshRateHz: Float,
+            currentDisplayModeId: Int?,
+            supportedModes: List<DisplayModeCandidate>
+        ): Float {
+            if (supportedModes.isEmpty()) {
+                return resolveAutomaticTargetFps(currentDisplayRefreshRateHz)
+            }
+            val currentMode = currentDisplayModeId?.let { modeId ->
+                supportedModes.firstOrNull { it.modeId == modeId }
+            }
+            val sameSizeModes = currentMode?.let { mode ->
+                supportedModes.filter {
+                    it.width == mode.width && it.height == mode.height
+                }
+            }.orEmpty()
+            val refreshRateHz = (sameSizeModes.ifEmpty { supportedModes })
+                .map { it.refreshRateHz }
+                .filter { it > 0f && !it.isNaN() }
+                .maxOrNull()
+                ?: currentDisplayRefreshRateHz
+            return resolveAutomaticTargetFps(refreshRateHz)
         }
 
         @Suppress("DEPRECATION")
@@ -363,7 +412,7 @@ internal class DisplayRefreshRateController(
                 ) {
                     return WindowRefreshPreference(
                         preferredRefreshRateHz = currentMode.refreshRateHz,
-                        preferredDisplayModeId = null
+                        preferredDisplayModeId = currentMode.modeId
                     )
                 }
             }
@@ -384,9 +433,10 @@ internal class DisplayRefreshRateController(
             val preferredDisplayModeId =
                 if (currentMode != null &&
                     sameSizeBest != null &&
-                    sameSizeBest.modeId != currentMode.modeId &&
                     shouldSwitchDisplayMode(targetRefreshRateHz, sameSizeBest)
                 ) {
+                    // This is a persistent vote, not a one-shot switch command. Clearing it
+                    // once the requested mode becomes current lets idle policy lower the rate.
                     sameSizeBest.modeId
                 } else {
                     null

@@ -169,6 +169,13 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/performance/memory_diagnostics/${file.name}"
                 )
             }
+            RuntimePaths.listWindowDiagnosticsFiles(context).forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/performance/window/${file.name}"
+                )
+            }
             exportedCount += writeOptionalDirectoryFiles(
                 zipOutput,
                 RuntimePaths.jvmHistogramsDir(context),

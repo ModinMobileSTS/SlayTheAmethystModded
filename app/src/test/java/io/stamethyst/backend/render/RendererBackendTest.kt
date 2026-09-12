@@ -13,10 +13,10 @@ class RendererBackendTest {
     }
 
     @Test
-    fun supportsSwappyFramePacing_onlyForSystemEglBackends() {
+    fun supportsSwappyFramePacing_forSupportedOpenGlBackends() {
         assertEquals(true, RendererBackend.OPENGL_ES2_NATIVE.supportsSwappyFramePacing)
         assertEquals(true, RendererBackend.OPENGL_ES2_GL4ES.supportsSwappyFramePacing)
-        assertEquals(false, RendererBackend.OPENGL_ES_MOBILEGLUES.supportsSwappyFramePacing)
+        assertEquals(true, RendererBackend.OPENGL_ES_MOBILEGLUES.supportsSwappyFramePacing)
         assertEquals(false, RendererBackend.OPENGL_ES3_DESKTOPGL_ZINK_KOPPER.supportsSwappyFramePacing)
         assertEquals(false, RendererBackend.VULKAN_ZINK.supportsSwappyFramePacing)
     }

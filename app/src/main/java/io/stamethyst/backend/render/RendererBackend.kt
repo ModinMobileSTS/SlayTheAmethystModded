@@ -58,7 +58,9 @@ enum class RendererBackend(
     fun lwjglOpenGlLibName(): String = lwjglOpenGlLibNameValue
 
     val supportsSwappyFramePacing: Boolean
-        get() = this == OPENGL_ES2_NATIVE || this == OPENGL_ES2_GL4ES
+        get() = this == OPENGL_ES_MOBILEGLUES ||
+            this == OPENGL_ES2_NATIVE ||
+            this == OPENGL_ES2_GL4ES
 
     companion object {
         private const val LEGACY_RENDERER_ID_OPENGL_ES3_LTW = "opengles3_ltw"

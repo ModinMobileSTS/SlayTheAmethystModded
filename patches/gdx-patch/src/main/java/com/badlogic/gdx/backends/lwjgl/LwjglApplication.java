@@ -419,6 +419,16 @@ public class LwjglApplication implements Application {
 			LwjglFramePacerSchedule.advance(deadline, System.nanoTime(), frameNanos);
 	}
 
+	private void applyLauncherFrameRateOverride () {
+		if (LAUNCHER_PACED_FRAME_RATE <= 0.0) return;
+		int targetFrameRate = (int)Math.round(LAUNCHER_PACED_FRAME_RATE);
+		if (targetFrameRate <= 0) return;
+		// The launcher is the source of truth for Android's target FPS. DisplayConfig can be stale
+		// when the game reads it during startup, especially inside compatibility containers.
+		graphics.config.foregroundFPS = targetFrameRate;
+	}
+
+
 	private boolean isSwappyFramePacingEnabled () {
 		if (swappyFramePacingEnabled != null) return swappyFramePacingEnabled.booleanValue();
 		boolean enabled = false;
@@ -1451,10 +1461,11 @@ public class LwjglApplication implements Application {
 		SnapshotArray<LifecycleListener> lifecycleListeners = this.lifecycleListeners;
 
 		try {
-			graphics.setupDisplay();
+		graphics.setupDisplay();
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException(e);
 		}
+		applyLauncherFrameRateOverride();
 		initializeAudioOnMainLoop();
 		if (audio != null) processQueuedAudioCommands();
 		System.out.println("[gdx-patch] Frame pacing: targetFps=" + graphics.config.foregroundFPS + ", activeRefreshRate="
