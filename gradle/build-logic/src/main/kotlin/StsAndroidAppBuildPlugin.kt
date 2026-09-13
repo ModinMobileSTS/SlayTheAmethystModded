@@ -145,7 +145,9 @@ private fun Project.configureStsAndroidAppBuild() {
             "generateFullReleaseAssets",
             "mergeFullReleaseAssets",
             "generateFastFullReleaseAssets",
-            "mergeFastFullReleaseAssets"
+            "mergeFastFullReleaseAssets",
+            "generateFullReleaseLintVitalReportModel",
+            "generateFastFullReleaseLintVitalReportModel"
         )
     }.configureEach {
         dependsOn(resourcePackTasks.embedInApk)
