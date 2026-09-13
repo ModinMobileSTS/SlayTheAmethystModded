@@ -62,6 +62,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         const val EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE = "io.stamethyst.autoplay_single_room_bench_mode"
         const val EXTRA_AUTOPLAY_CHOICE_DELAY_MS = "io.stamethyst.autoplay_choice_delay_ms"
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
+        const val EXTRA_SWAPPY_FRAME_PACING_ENABLED = "io.stamethyst.swappy_frame_pacing_enabled"
         const val EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS = "io.stamethyst.performance_deep_diagnostics"
         const val EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED =
             "io.stamethyst.card_obtain_effect_ownership_compat_enabled"
@@ -102,6 +103,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             intent.putExtra(EXTRA_AUTOPLAY_CHOICE_DELAY_MS, autoplayChoiceDelayMs)
             intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, autoplaySingleRoomBenchMode)
             intent.putExtra(EXTRA_TARGET_FPS, LauncherConfig.readTargetFpsValue(context))
+            intent.putExtra(
+                EXTRA_SWAPPY_FRAME_PACING_ENABLED,
+                LauncherConfig.isSwappyFramePacingEnabled(context)
+            )
             if (performanceDeepDiagnostics != null) {
                 intent.putExtra(EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS, performanceDeepDiagnostics)
             }
@@ -556,7 +561,6 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             cropScreenBottom = sessionConfig.cropScreenBottom,
             isSoftKeyboardSessionActive = { inputHandler.isSoftKeyboardSessionActive() },
             onSurfaceReady = {
-                initializeSwappyFramePacing()
                 sessionCoordinator.onSurfaceReady()
             },
             onTextureFrameUpdate = { timestampNs ->
@@ -569,6 +573,9 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             config = sessionConfig,
             renderSurfaceManager = renderSurfaceManager,
             inputHandler = inputHandler,
+            onRuntimeReady = {
+                initializeSwappyFramePacing()
+            },
             onJvmLaunchFinished = {
                 markGameSessionFinished()
                 releaseLaunchGuard()
@@ -586,6 +593,13 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun initializeSwappyFramePacing() {
+        if (swappyFramePacingInitialized) {
+            return
+        }
+        if (!sessionConfig.swappyFramePacingEnabled) {
+            Log.i("STS-FramePacing", "Swappy disabled reason=user_preference")
+            return
+        }
         if (!BuildConfig.SWAPPY_FRAME_PACING_ENABLED) {
             Log.i("STS-FramePacing", "Swappy disabled reason=build_flag")
             return
@@ -598,14 +612,14 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             )
             return
         }
+        // The native init is one-shot even when it returns false or throws. Mark the
+        // attempt before entering JNI so onDestroy can always perform the matching cleanup.
+        swappyFramePacingInitialized = true
         try {
             val enabled = JREUtils.initializeSwappyFramePacing(
                 this,
                 sessionConfig.effectiveTargetFps
             )
-            // A failed init still consumes Swappy's one-shot initialization attempt and must be
-            // destroyed before this Activity can create another game session in the same process.
-            swappyFramePacingInitialized = true
             Log.i(
                 "STS-FramePacing",
                 "Swappy init renderer=${renderer.rendererId()} targetFps=${sessionConfig.effectiveTargetFps} " +

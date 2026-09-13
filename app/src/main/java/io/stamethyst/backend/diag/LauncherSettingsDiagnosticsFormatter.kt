@@ -97,6 +97,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     title = "Game / Rendering",
                     entries = listOf(
                         "targetFps" to LauncherConfig.readTargetFps(context).toString(),
+                        "swappyFramePacingEnabled" to formatBoolean(
+                            LauncherConfig.isSwappyFramePacingEnabled(context)
+                        ),
                         "render.scale" to LauncherConfig.formatRenderScale(
                             LauncherConfig.readRenderScale(context)
                         ),

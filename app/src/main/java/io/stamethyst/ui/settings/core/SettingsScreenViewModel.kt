@@ -313,6 +313,7 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Float = LauncherPreferences.DEFAULT_TARGET_FPS.toFloat(),
         val nonRecommendedFpsEnabled: Boolean = false,
+        val swappyFramePacingEnabled: Boolean = LauncherPreferences.DEFAULT_SWAPPY_FRAME_PACING_ENABLED,
         val virtualResolutionMode: VirtualResolutionMode =
             LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
@@ -3736,6 +3737,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onSwappyFramePacingEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(swappyFramePacingEnabled = enabled)
+        saveSwappyFramePacingEnabledSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onKeepScreenOnTimeoutSelected(host: Activity, timeoutMinutes: Int) {
         if (uiState.busy) {
             return
@@ -4294,6 +4304,7 @@ class SettingsScreenViewModel : ViewModel() {
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
             nonRecommendedFpsEnabled = rendering.nonRecommendedFpsEnabled,
+            swappyFramePacingEnabled = rendering.swappyFramePacingEnabled,
             virtualResolutionMode = rendering.virtualResolutionMode,
             renderSurfaceBackend = rendering.renderSurfaceBackend,
             rendererSelectionMode = rendering.rendererSelectionMode,
@@ -5653,6 +5664,10 @@ class SettingsScreenViewModel : ViewModel() {
         if (!enabled) {
             MtsPatchCacheCoordinator.clear(host)
         }
+    }
+
+    private fun saveSwappyFramePacingEnabledSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setSwappyFramePacingEnabled(host, enabled)
     }
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {

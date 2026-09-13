@@ -779,6 +779,14 @@ Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlSwapCount(
     return (jint) gl_get_swap_count();
 }
 
+JNIEXPORT jint JNICALL
+Java_org_lwjgl_glfw_CallbackBridge_nativeGetGlSurfaceState(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return (jint) gl_get_surface_state();
+}
+
 JNIEXPORT jboolean JNICALL
 Java_org_lwjgl_glfw_CallbackBridge_nativeIsSwappyEnabled(
         __attribute__((unused)) JNIEnv* env,

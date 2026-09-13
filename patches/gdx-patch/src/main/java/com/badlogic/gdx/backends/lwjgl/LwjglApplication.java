@@ -78,6 +78,9 @@ public class LwjglApplication implements Application {
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
 	private static final String ACTIVE_REFRESH_RATE_PROP = "amethyst.gdx.active_refresh_rate";
+	private static final int GL_SURFACE_READY = 0;
+	private static final int GL_SURFACE_SWITCH_PENDING = 1;
+	private static final int GL_SURFACE_UNAVAILABLE = 2;
 	private static final String PACED_FRAME_RATE_PROP = "amethyst.gdx.paced_fps";
 	private static boolean audioCommandBridgeUnavailable;
 	// The LWJGL shim cannot discover the panel refresh rate (its DisplayMode frequency is 0 and
@@ -130,6 +133,7 @@ public class LwjglApplication implements Application {
 	private static volatile int trackedViewportHeight = Integer.MIN_VALUE;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
+	private boolean surfaceStateUnavailableLogged;
 	private boolean missingFunctionPointerPatchLogged;
 	private boolean missingFunctionPointerPatched;
 	private boolean framebufferExtAliasLogged;
@@ -553,6 +557,32 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	private int queryNativeGlSurfaceState () {
+		try {
+			return CallbackBridge.nativeGetGlSurfaceState();
+		} catch (Throwable t) {
+			// Keep older native bridge bundles usable; the current bundle exposes this method.
+			if (!surfaceStateUnavailableLogged) {
+				System.out.println("[gdx-patch] Native GL surface state query unavailable: " + t);
+				surfaceStateUnavailableLogged = true;
+			}
+			return GL_SURFACE_READY;
+		}
+	}
+
+	private boolean prepareNativeGlSurfaceForLoop () {
+		// OSMesa/Zink uses a different bridge and does not expose the EGL surface state
+		// queried by CallbackBridge.nativeGetGlSurfaceState().
+		if (!LwjglGraphics.isGLESContextActive()) return true;
+		int state = queryNativeGlSurfaceState();
+		if (state == GL_SURFACE_SWITCH_PENDING) {
+			pendingNativeContextRebind = true;
+			ensureDisplayContextCurrent("surface-switch");
+			state = queryNativeGlSurfaceState();
+		}
+		return state == GL_SURFACE_READY;
+	}
+
 	private boolean isRuntimeForeground () {
 		try {
 			return CallbackBridge.nativeIsRuntimeForeground();
@@ -887,7 +917,13 @@ public class LwjglApplication implements Application {
 		syncNativeContextGeneration(phase);
 
 		try {
-			boolean needsRebind = pendingNativeContextRebind || !Display.isCurrent();
+			int surfaceState = GL_SURFACE_READY;
+			if (LwjglGraphics.isGLESContextActive()) {
+				surfaceState = queryNativeGlSurfaceState();
+				if (surfaceState == GL_SURFACE_UNAVAILABLE) return;
+			}
+			boolean needsRebind = pendingNativeContextRebind || !Display.isCurrent() ||
+				surfaceState == GL_SURFACE_SWITCH_PENDING;
 			if (needsRebind) {
 				if (!makeDisplayContextCurrent(phase)) {
 					if (!contextRecoveryLogged) {
@@ -1567,9 +1603,10 @@ public class LwjglApplication implements Application {
 				listener.resume();
 			}
 
+			boolean nativeGlSurfaceReady = prepareNativeGlSurfaceForLoop();
 			boolean shouldRender = false;
 
-			if (graphics.canvas != null) {
+			if (nativeGlSurfaceReady && graphics.canvas != null) {
 				int width = graphics.canvas.getWidth();
 				int height = graphics.canvas.getHeight();
 				if (lastWidth != width || lastHeight != height) {
@@ -1581,7 +1618,7 @@ public class LwjglApplication implements Application {
 					listener.resize(lastWidth, lastHeight);
 					shouldRender = true;
 				}
-			} else {
+			} else if (nativeGlSurfaceReady) {
 				graphics.config.x = Display.getX();
 				graphics.config.y = Display.getY();
 				int reportedWidth = graphics.getWidth();
@@ -1601,13 +1638,13 @@ public class LwjglApplication implements Application {
 				}
 			}
 
-			if (executeRunnables()) shouldRender = true;
+			if (nativeGlSurfaceReady && executeRunnables()) shouldRender = true;
 
 			// If one of the runnables set running to false, for example after an exit().
 			if (!running) break;
 
 			input.update();
-			shouldRender |= graphics.shouldRender();
+			if (nativeGlSurfaceReady) shouldRender |= graphics.shouldRender();
 			input.processEvents();
 			if (audio != null) {
 				processQueuedAudioCommands();

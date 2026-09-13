@@ -103,6 +103,7 @@ object LauncherConfig {
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
     private const val PREF_KEY_RAM_SAVER_ENABLED = "ram_saver_enabled"
     private const val PREF_KEY_MTS_PATCH_CACHE_ENABLED = "mts_patch_cache_enabled"
+    private const val PREF_KEY_SWAPPY_FRAME_PACING_ENABLED = "swappy_frame_pacing_enabled"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
         "sustained_performance_mode_enabled"
@@ -338,6 +339,7 @@ object LauncherConfig {
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_RAM_SAVER_ENABLED = true
     const val DEFAULT_MTS_PATCH_CACHE_ENABLED = false
+    const val DEFAULT_SWAPPY_FRAME_PACING_ENABLED = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
@@ -1196,6 +1198,19 @@ object LauncherConfig {
     fun setMtsPatchCacheEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_MTS_PATCH_CACHE_ENABLED, enabled)
+        }
+    }
+
+    fun isSwappyFramePacingEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_SWAPPY_FRAME_PACING_ENABLED,
+            DEFAULT_SWAPPY_FRAME_PACING_ENABLED
+        )
+    }
+
+    fun setSwappyFramePacingEnabled(context: Context, enabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_SWAPPY_FRAME_PACING_ENABLED, enabled)
         }
     }
 

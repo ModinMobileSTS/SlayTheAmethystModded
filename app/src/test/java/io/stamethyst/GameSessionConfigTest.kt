@@ -16,6 +16,28 @@ import org.junit.Test
 
 class GameSessionConfigTest {
     @Test
+    fun mobileGluesDoesNotTriggerPostBootSurfaceSoftRefresh() {
+        assertEquals(
+            false,
+            GameSessionCoordinator.shouldAttemptPostBootSurfaceSoftRefresh(
+                useTextureViewSurface = false,
+                rendererBackend = RendererBackend.OPENGL_ES_MOBILEGLUES
+            )
+        )
+    }
+
+    @Test
+    fun otherSurfaceViewBackendsKeepPostBootSurfaceSoftRefresh() {
+        assertEquals(
+            true,
+            GameSessionCoordinator.shouldAttemptPostBootSurfaceSoftRefresh(
+                useTextureViewSurface = false,
+                rendererBackend = RendererBackend.OPENGL_ES2_GL4ES
+            )
+        )
+    }
+
+    @Test
     fun renderSurfaceBackend_matchesResolvedRendererBackendWhenRenderScaleIsReduced() {
         val config = createConfig(
             renderScale = 0.25f,
@@ -45,6 +67,7 @@ class GameSessionConfigTest {
             requestedRenderScale = renderScale,
             requestedTargetFps = 60f,
             effectiveTargetFps = 60f,
+            swappyFramePacingEnabled = false,
             launchMode = "vanilla",
             debugMode = false,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,

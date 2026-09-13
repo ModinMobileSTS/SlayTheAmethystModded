@@ -55,6 +55,7 @@ internal data class PerformanceSettingsActions(
     val onRenderScaleSelected: (Float) -> Unit,
     val onTargetFpsSelected: (Float) -> Unit,
     val onNonRecommendedFpsEnabledChanged: (Boolean) -> Unit,
+    val onSwappyFramePacingEnabledChanged: (Boolean) -> Unit,
     val onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
@@ -135,6 +136,17 @@ internal fun SettingsPerformanceSection(
             title = stringResource(R.string.settings_mts_patch_cache_title),
             description = stringResource(R.string.settings_mts_patch_cache_desc),
             onCheckedChange = actions.onMtsPatchCacheEnabledChanged,
+            chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
+        )
+    )
+
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.swappyFramePacingEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(R.string.settings_swappy_frame_pacing_title),
+            description = stringResource(R.string.settings_swappy_frame_pacing_desc),
+            onCheckedChange = actions.onSwappyFramePacingEnabledChanged,
             chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
         )
     )

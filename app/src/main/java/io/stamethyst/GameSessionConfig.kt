@@ -22,6 +22,7 @@ internal data class GameSessionConfig(
     val requestedRenderScale: Float,
     val requestedTargetFps: Float,
     val effectiveTargetFps: Float,
+    val swappyFramePacingEnabled: Boolean,
     val launchMode: String,
     val debugMode: Boolean,
     val backBehavior: BackBehavior,
@@ -97,6 +98,10 @@ internal data class GameSessionConfig(
                 requestedRenderScale = requestedRenderScale,
                 requestedTargetFps = requestedTargetFps,
                 effectiveTargetFps = effectiveTargetFps,
+                swappyFramePacingEnabled = intent.getBooleanExtra(
+                    StsGameActivity.EXTRA_SWAPPY_FRAME_PACING_ENABLED,
+                    LauncherConfig.isSwappyFramePacingEnabled(context)
+                ),
                 launchMode = launchMode,
                 debugMode = intent.getBooleanExtra(StsGameActivity.EXTRA_DEBUG_MODE, false),
                 backBehavior = parseBackBehavior(intent),

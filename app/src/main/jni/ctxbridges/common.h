@@ -10,6 +10,7 @@
 
 #define STATE_RENDERER_ALIVE 0
 #define STATE_RENDERER_NEW_WINDOW 1
+#define STATE_RENDERER_NO_SURFACE 2
 
 typedef struct {
     _Atomic char state;

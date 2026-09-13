@@ -75,6 +75,7 @@ internal object SettingsRepository {
         val renderScale: Float,
         val targetFps: Float,
         val nonRecommendedFpsEnabled: Boolean,
+        val swappyFramePacingEnabled: Boolean,
         val virtualResolutionMode: VirtualResolutionMode,
         val renderSurfaceBackend: RenderSurfaceBackend,
         val rendererSelectionMode: RendererSelectionMode,
@@ -223,6 +224,7 @@ internal object SettingsRepository {
                     LauncherPreferences.readTargetFpsValue(context)
                 },
                 nonRecommendedFpsEnabled = LauncherPreferences.isNonRecommendedFpsEnabled(context),
+                swappyFramePacingEnabled = LauncherPreferences.isSwappyFramePacingEnabled(context),
                 virtualResolutionMode = LauncherPreferences.readVirtualResolutionMode(context),
                 renderSurfaceBackend = renderSurfaceBackend,
                 rendererSelectionMode = rendererSelectionMode,

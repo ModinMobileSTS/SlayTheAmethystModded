@@ -56,9 +56,9 @@ val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", 
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
 val defaultResourcePackDownloadUrl =
-    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.5/resources.zip"
+    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.6/resources.zip"
 val defaultResourcePackDownloadFallbackUrls = listOf(
-    "https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.5/resources.zip"
+    "https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.6/resources.zip"
 )
 val defaultCloudControlConfigUrl =
     "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json"
@@ -77,7 +77,7 @@ val resourcePackDownloadUrl = resourcePackDownloadUrls.firstOrNull().orEmpty()
 // bumping it forces every player to re-download.
 val resourcePackVersion = readGradleProperty(
     "resourcePack.version",
-    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.5" }
+    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.6" }
 )
 val resourcePackSha256 = readGradleProperty(
     "resourcePack.sha256",
@@ -317,6 +317,12 @@ tasks.register("marketNetworkAcceptanceTest") {
     group = "verification"
     description = "Runs the opt-in live Watt Steam Community market acceptance test only."
     dependsOn("testDebugUnitTest")
+}
+
+configurations.configureEach {
+    resolutionStrategy.force(
+        "org.jetbrains.kotlin:kotlin-reflect:${libs.versions.kotlin.get()}"
+    )
 }
 
 dependencies {

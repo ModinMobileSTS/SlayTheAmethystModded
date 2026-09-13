@@ -1773,6 +1773,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_ram_saver_experimental_chip">实验性</string>
     <string name="settings_mts_patch_cache_title">启用模组缓存</string>
     <string name="settings_mts_patch_cache_desc">启用后，每次启动游戏会建立缓存，只要不改变模组，即可大幅提升启动游戏的时间。</string>
+    <string name="settings_swappy_frame_pacing_title">Use Swappy for frame pacing</string>
+    <string name="settings_swappy_frame_pacing_desc">Uses the Google Swaapy integration. It may feel smoother on devices that dynamically switch refresh rates, and overall presentation may be smoother. Unsupported devices may stutter when this is enabled. Keep it enabled if it feels smoother without introducing small stutters.</string>
     <string name="settings_performance_overlay_enabled">Performance overlay</string>
     <string name="settings_performance_overlay_disabled">Performance overlay: Disabled</string>
     <string name="settings_performance_overlay_desc">Shows the real-time FPS / memory overlay in game.</string>

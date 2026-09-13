@@ -255,6 +255,13 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeGetGlSurfaceState",
+            returnType = "int",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeIsSwappyEnabled",
             returnType = "boolean",
             parameters = emptyList(),

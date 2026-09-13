@@ -137,6 +137,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_RAM_SAVER_ENABLED
     val DEFAULT_MTS_PATCH_CACHE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_MTS_PATCH_CACHE_ENABLED
+    val DEFAULT_SWAPPY_FRAME_PACING_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_SWAPPY_FRAME_PACING_ENABLED
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED: Boolean
@@ -574,6 +576,14 @@ object LauncherPreferences {
 
     fun setMtsPatchCacheEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setMtsPatchCacheEnabled(context, enabled)
+    }
+
+    fun isSwappyFramePacingEnabled(context: Context): Boolean {
+        return LauncherConfig.isSwappyFramePacingEnabled(context)
+    }
+
+    fun setSwappyFramePacingEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSwappyFramePacingEnabled(context, enabled)
     }
 
     fun isGamePerformanceOverlayEnabled(context: Context): Boolean {

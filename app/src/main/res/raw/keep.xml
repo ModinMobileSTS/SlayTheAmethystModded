@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Strict resource shrinking.
+
+  The default "safe" shrink mode keeps any resource whose name matches a string
+  constant in the dex, which on this codebase retains ~3,200 genuinely unused
+  resources (strings, drawables, styles) and bloats the release APK.
+
+  This app performs no dynamic resource lookup by name: the only
+  Resources.getIdentifier call targets the framework "status_bar_height" dimen,
+  and launcher-icon / theme switching goes through manifest activity-alias
+  components and AppCompatDelegate. Strict mode is therefore safe here.
+
+  If a resource is ever referenced only by name at runtime, add it explicitly
+  with tools:keep below.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:shrinkMode="strict" />

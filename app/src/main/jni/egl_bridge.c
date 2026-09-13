@@ -194,7 +194,6 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow
     if (previousWindow != NULL) {
         ANativeWindow_release(previousWindow);
     }
-    amethyst_swappy_set_window(nextWindow);
     if (nextWindow != NULL && br_setup_window != NULL) {
         br_setup_window();
     }
@@ -206,7 +205,6 @@ Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(
         ABI_COMPAT JNIEnv *env,
         ABI_COMPAT jclass clazz
 ) {
-    amethyst_swappy_set_window(NULL);
     pthread_mutex_lock(&g_pojav_window_mutex);
     ANativeWindow* window = pojav_environ->pojavWindow;
     if (window == NULL) {
@@ -219,7 +217,7 @@ Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(
     pthread_mutex_unlock(&g_pojav_window_mutex);
 
     if (br_setup_window != NULL) {
-        // Notify renderer bridge that the window is gone so it can switch to pbuffer early.
+        // The render thread consumes this generation and switches to the no-surface state.
         br_setup_window();
     } else {
         pojavAcknowledgeBridgeWindowGeneration(release_generation);

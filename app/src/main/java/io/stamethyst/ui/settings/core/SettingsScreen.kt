@@ -205,6 +205,9 @@ fun LauncherSettingsPerformanceScreen(
         onNonRecommendedFpsEnabledChanged = { enabled ->
             viewModel.onNonRecommendedFpsEnabledChanged(activity, enabled)
         },
+        onSwappyFramePacingEnabledChanged = { enabled ->
+            viewModel.onSwappyFramePacingEnabledChanged(activity, enabled)
+        },
         onVirtualResolutionModeChanged = { mode ->
             viewModel.onVirtualResolutionModeChanged(activity, mode)
         },

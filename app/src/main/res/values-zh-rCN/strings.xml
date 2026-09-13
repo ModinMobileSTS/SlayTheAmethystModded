@@ -2071,6 +2071,8 @@
     <string name="settings_ram_saver_experimental_chip">实验性</string>
     <string name="settings_mts_patch_cache_title">启用模组缓存</string>
     <string name="settings_mts_patch_cache_desc">启用后，每次启动游戏会建立缓存，只要不改变模组，即可大幅提升启动游戏的时间。模组越多，效果越明显。启用该功能后，更换模组后的第一次启动会用更多的时间以及一些存储空间。</string>
+    <string name="settings_swappy_frame_pacing_title">使用 Swappy 进行帧同步</string>
+    <string name="settings_swappy_frame_pacing_desc">使用 Google 的 Swaapy 集成，在设备会动态切换刷新率的情况下会流畅一些，整体显示也会更流畅一些，不过如果机型不支持，开启后可能会遇到卡顿的问题，如果开启该选项发现更流畅了而且没有小卡顿，可以一直开启。</string>
     <string name="settings_performance_overlay_enabled">性能叠层</string>
     <string name="settings_performance_overlay_disabled">性能叠层：关闭</string>
     <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存叠层。</string>

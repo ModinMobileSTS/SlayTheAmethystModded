@@ -26,6 +26,7 @@ static EGLDisplay g_EglDisplay;
 static pthread_mutex_t g_surface_mutex = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic(uint32_t) g_swap_diag_counter = 0;
 static uint32_t g_next_surface_restore_poll_swap = 0;
+static _Atomic int64_t g_next_surface_restore_poll_ns = 0;
 static bool g_swap_heartbeat_logging_enabled = false;
 static bool g_swap_profiler_initialized = false;
 static bool g_swap_profiler_enabled = false;
@@ -33,6 +34,7 @@ static int64_t g_swap_profiler_slow_ns = 16000000LL;
 
 
 #define GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS 30
+#define GL_RESTORE_SURFACE_POLL_INTERVAL_NS 100000000LL
 
 #ifndef EGL_CONTEXT_LOST
 #define EGL_CONTEXT_LOST 0x300E
@@ -179,9 +181,16 @@ static ANativeWindow* gl_take_queued_surface(
 static void gl_finish_surface_switch(gl_render_window_t* bundle, uint64_t consumedGeneration) {
     pthread_mutex_lock(&g_surface_mutex);
     bundle->activeSurfaceGeneration = consumedGeneration;
-    char nextState = bundle->newSurfaceGeneration != 0
-        ? STATE_RENDERER_NEW_WINDOW
-        : STATE_RENDERER_ALIVE;
+    char nextState;
+    if (bundle->newSurfaceGeneration != 0) {
+        nextState = STATE_RENDERER_NEW_WINDOW;
+    } else if (bundle->nativeSurface != NULL &&
+               bundle->surface != NULL &&
+               bundle->surface != EGL_NO_SURFACE) {
+        nextState = STATE_RENDERER_ALIVE;
+    } else {
+        nextState = STATE_RENDERER_NO_SURFACE;
+    }
     atomic_store_explicit(&bundle->state, nextState, memory_order_release);
     pthread_mutex_unlock(&g_surface_mutex);
     pojavAcknowledgeBridgeWindowGeneration(consumedGeneration);
@@ -241,6 +250,25 @@ static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const
         printf("GLBridgeDiag: scheduling window restore (%s)\n", reason == NULL ? "unknown" : reason);
     }
     return queued;
+}
+
+static bool gl_try_restore_main_window_surface_if_due(
+        gl_render_window_t* bundle,
+        const char* reason
+) {
+    int64_t now = gl_now_monotonic_ns();
+    if (now > 0) {
+        int64_t next = atomic_load_explicit(&g_next_surface_restore_poll_ns, memory_order_relaxed);
+        if (next > 0 && now < next) {
+            return false;
+        }
+        atomic_store_explicit(
+                &g_next_surface_restore_poll_ns,
+                now + GL_RESTORE_SURFACE_POLL_INTERVAL_NS,
+                memory_order_relaxed
+        );
+    }
+    return gl_try_restore_main_window_surface(bundle, reason);
 }
 
 static bool gl_is_desktop_opengl_renderer(void) {
@@ -329,7 +357,6 @@ static bool gl_egl_ready() {
            && eglCreateContext_p != NULL
            && eglGetError_p != NULL
            && eglCreateWindowSurface_p != NULL
-           && eglCreatePbufferSurface_p != NULL
            && eglMakeCurrent_p != NULL
            && eglSwapBuffers_p != NULL;
 }
@@ -397,7 +424,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
         EGL_RED_SIZE, 8,
         EGL_ALPHA_SIZE, 8,
         EGL_DEPTH_SIZE, 24,
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
         EGL_RENDERABLE_TYPE, renderableType,
         EGL_NONE
     };
@@ -546,15 +573,14 @@ void gl_swap_surface(gl_render_window_t* bundle) {
         bundle->surface = eglCreateWindowSurface_p(g_EglDisplay, bundle->config, bundle->nativeSurface, NULL);
         printf("GLBridgeDiag: created WINDOW surface=%p native=%p\n", bundle->surface, bundle->nativeSurface);
     }else{
-        ;
+        // Do not create a temporary PBuffer while an Android SurfaceView is unavailable.
+        // MobileGlues/vendor EGL stacks can crash when that surface is made current.
         bundle->nativeSurface = NULL;
         amethyst_swappy_set_window(NULL);
-        const EGLint pbuffer_attrs[] = {EGL_WIDTH, 1 , EGL_HEIGHT, 1, EGL_NONE};
-        bundle->surface = eglCreatePbufferSurface_p(g_EglDisplay, bundle->config, pbuffer_attrs);
-        printf("GLBridgeDiag: created PBUFFER surface=%p\n", bundle->surface);
+        bundle->surface = EGL_NO_SURFACE;
+        printf("GLBridgeDiag: no Android surface, keeping EGL context unbound\n");
     }
-    if (bundle->surface == EGL_NO_SURFACE || bundle->surface == NULL) {
-        ;
+    if (queuedSurface != NULL && (bundle->surface == EGL_NO_SURFACE || bundle->surface == NULL)) {
         printf("GLBridgeDiag: surface create failed err=0x%04x\n", eglGetError_p());
     }
     gl_finish_surface_switch(bundle, queuedGeneration);
@@ -564,7 +590,15 @@ static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char
     if (bundle == NULL) {
         return false;
     }
+    if (atomic_load_explicit(&bundle->state, memory_order_acquire) == STATE_RENDERER_NEW_WINDOW) {
+        // A SurfaceView can be replaced while the old EGL surface is still current.
+        eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        gl_swap_surface(bundle);
+    }
     for (int attempt = 0; attempt < 3; attempt++) {
+        if (atomic_load_explicit(&bundle->state, memory_order_acquire) == STATE_RENDERER_NO_SURFACE) {
+            return false;
+        }
         if (bundle->surface == NULL || bundle->surface == EGL_NO_SURFACE) {
             gl_swap_surface(bundle);
             if (bundle->surface == NULL || bundle->surface == EGL_NO_SURFACE) {
@@ -620,26 +654,36 @@ void gl_make_current(gl_render_window_t* bundle) {
     if (hasSetMainWindow) {
         ;
     }
-    if(bundle->surface == NULL) { //it likely will be on the first run
-        gl_swap_surface(bundle);
-    }
     if(!gl_make_current_with_recovery(bundle, "gl_make_current")) {
         if(hasSetMainWindow) {
             pthread_mutex_lock(&g_surface_mutex);
-            if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle) {
-                gl_replace_queued_surface_locked(bundle, NULL, generation);
-            }
-            pthread_mutex_unlock(&g_surface_mutex);
-            gl_swap_surface(bundle);
-            pthread_mutex_lock(&g_surface_mutex);
             if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
-                bundle->newSurfaceGeneration == 0) {
+                bundle->newSurfaceGeneration == 0 &&
+                atomic_load_explicit(&bundle->state, memory_order_acquire) != STATE_RENDERER_NO_SURFACE) {
                 pojav_environ->mainWindowBundle = NULL;
             }
             pthread_mutex_unlock(&g_surface_mutex);
         }
     }
 
+}
+
+int gl_get_surface_state(void) {
+    gl_render_window_t* bundle = currentBundle;
+    if (bundle == NULL && pojav_environ != NULL) {
+        pthread_mutex_lock(&g_surface_mutex);
+        bundle = (gl_render_window_t*)pojav_environ->mainWindowBundle;
+        pthread_mutex_unlock(&g_surface_mutex);
+    }
+    if (bundle == NULL) {
+        return STATE_RENDERER_NO_SURFACE;
+    }
+    int state = atomic_load_explicit(&bundle->state, memory_order_acquire);
+    if (state == STATE_RENDERER_NO_SURFACE) {
+        gl_try_restore_main_window_surface_if_due(bundle, "surface state poll");
+        state = atomic_load_explicit(&bundle->state, memory_order_acquire);
+    }
+    return state;
 }
 
 void gl_swap_buffers() {
@@ -654,17 +698,18 @@ void gl_swap_buffers() {
     int64_t eglSwapNs = 0;
     int64_t stageStartNs = swapStartNs;
 
-    // If we were forced onto a pbuffer but the Java bridge window is back,
-    // promote back to the on-screen surface automatically. Normal surface
-    // changes are delivered by gl_setup_window(); only poll while rendering to
-    // a pbuffer and throttle the poll to avoid a mutex/refcount round-trip on
-    // every frame.
+    // Normal surface changes are delivered by gl_setup_window(). Poll only while
+    // the bridge has no native surface and throttle the check to avoid a
+    // mutex/refcount round-trip on every frame.
     uint32_t swapCount = gl_get_swap_count();
     if (currentBundle->nativeSurface == NULL &&
         swapCount >= g_next_surface_restore_poll_swap) {
         g_next_surface_restore_poll_swap =
             swapCount + GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS;
-        gl_try_restore_main_window_surface(currentBundle, "swap preflight");
+        gl_try_restore_main_window_surface_if_due(currentBundle, "swap preflight");
+    }
+    if (atomic_load_explicit(&currentBundle->state, memory_order_acquire) == STATE_RENDERER_NO_SURFACE) {
+        return;
     }
     if (g_swap_profiler_enabled) {
         int64_t nowNs = gl_now_monotonic_ns();

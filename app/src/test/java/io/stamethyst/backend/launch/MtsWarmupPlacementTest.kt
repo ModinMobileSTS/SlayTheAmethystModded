@@ -55,10 +55,15 @@ class MtsWarmupPlacementTest {
             "app/src/main/java/io/stamethyst/GameSessionCoordinator.kt"
         )
 
-        val runtimeReadySnippet = "onRuntimeReady = {\n            activity.runOnUiThread {\n                startExpectedGameExitReturnWatchdog()"
         val launchBeginSnippet = "jvmLaunchStartedWallTimeMs = System.currentTimeMillis()\n        startExpectedGameExitReturnWatchdog()"
 
-        assertTrue(source.contains(runtimeReadySnippet))
+        val runtimeReadyIndex = source.indexOf("onRuntimeReady = {")
+        val callbackIndex = source.indexOf("onRuntimeReady()", runtimeReadyIndex)
+        val watchdogIndex = source.indexOf("startExpectedGameExitReturnWatchdog()", callbackIndex)
+
+        assertTrue(runtimeReadyIndex >= 0)
+        assertTrue(callbackIndex >= runtimeReadyIndex)
+        assertTrue(watchdogIndex >= callbackIndex)
         assertFalse(source.contains(launchBeginSnippet))
     }
 

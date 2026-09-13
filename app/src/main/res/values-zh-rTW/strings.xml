@@ -2068,6 +2068,8 @@
     <string name="settings_ram_saver_experimental_chip">實驗性</string>
     <string name="settings_mts_patch_cache_title">啟用模組快取</string>
     <string name="settings_mts_patch_cache_desc">啟用後，每次啟動遊戲會建立快取，只要不改變模組，即可大幅提升啟動遊戲的時間。</string>
+    <string name="settings_swappy_frame_pacing_title">使用 Swappy 進行影格同步</string>
+    <string name="settings_swappy_frame_pacing_desc">使用 Google 的 Swaapy 整合，在裝置會動態切換更新率的情況下會更流暢一些，整體顯示也會更流暢一些，不過如果機型不支援，開啟後可能會遇到卡頓問題，如果開啟此選項後發現更流暢而且沒有小卡頓，可以一直開啟。</string>
     <string name="settings_performance_overlay_enabled">效能疊層</string>
     <string name="settings_performance_overlay_disabled">效能疊層：關閉</string>
     <string name="settings_performance_overlay_desc">控制是否在遊戲中顯示即時 FPS / 記憶體疊層。</string>

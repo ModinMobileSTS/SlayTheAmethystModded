@@ -23,6 +23,7 @@ import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
+import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
@@ -47,6 +48,7 @@ internal class GameSessionCoordinator(
     private val config: GameSessionConfig,
     private val renderSurfaceManager: RenderSurfaceManager,
     private val inputHandler: GameInputHandler,
+    private val onRuntimeReady: () -> Unit,
     private val onJvmLaunchFinished: () -> Unit
 ) {
     companion object {
@@ -64,6 +66,16 @@ internal class GameSessionCoordinator(
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
         private const val LANDSCAPE_WAIT_TIMEOUT_MS = 4000L
         private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
+
+        internal fun shouldAttemptPostBootSurfaceSoftRefresh(
+            useTextureViewSurface: Boolean,
+            rendererBackend: RendererBackend
+        ): Boolean {
+            // MobileGlues can crash in the device EGL dispatcher when this refresh destroys a
+            // SurfaceView and the native bridge temporarily falls back to a PBuffer.
+            return !useTextureViewSurface &&
+                rendererBackend != RendererBackend.OPENGL_ES_MOBILEGLUES
+        }
     }
 
     @Volatile
@@ -235,6 +247,8 @@ internal class GameSessionCoordinator(
         onRuntimeCrashDetected = { detail -> handleRuntimeCrashDetected(detail) },
         onRuntimeReady = {
             activity.runOnUiThread {
+                // JVM/native library initialization has completed before Swappy touches EGL.
+                onRuntimeReady()
                 startExpectedGameExitReturnWatchdog()
                 applyForegroundWindowState()
                 updateFloatingMouseVisibility()
@@ -1407,7 +1421,10 @@ internal class GameSessionCoordinator(
     }
 
     private fun trySchedulePostBootSurfaceSoftRefresh(triggerReason: String) {
-        if (config.useTextureViewSurface ||
+        if (!shouldAttemptPostBootSurfaceSoftRefresh(
+                useTextureViewSurface = config.useTextureViewSurface,
+                rendererBackend = config.rendererDecision.effectiveBackend
+            ) ||
             !jvmLaunchController.runtimeLifecycleReady ||
             !bootOverlayController.isDismissed
         ) {
