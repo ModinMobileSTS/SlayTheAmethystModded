@@ -147,7 +147,13 @@ private fun Project.configureStsAndroidAppBuild() {
             "generateFastFullReleaseAssets",
             "mergeFastFullReleaseAssets",
             "generateFullReleaseLintVitalReportModel",
-            "generateFastFullReleaseLintVitalReportModel"
+            "generateFastFullReleaseLintVitalReportModel",
+            "lintVitalAnalyzeFullRelease",
+            "lintVitalReportFullRelease",
+            "lintVitalFullRelease",
+            "lintVitalAnalyzeFastFullRelease",
+            "lintVitalReportFastFullRelease",
+            "lintVitalFastFullRelease"
         )
     }.configureEach {
         dependsOn(resourcePackTasks.embedInApk)
