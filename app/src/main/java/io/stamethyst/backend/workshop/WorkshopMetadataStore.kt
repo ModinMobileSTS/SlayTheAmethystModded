@@ -81,6 +81,85 @@ internal class WorkshopMetadataStore(context: Context) {
         removedCount
     }
 
+    /**
+     * Moves Workshop ownership to a replacement jar without creating a delete-then-recreate gap.
+     * Import replacement can be interrupted after the new jar is committed, so the association
+     * must be updated before the old jar is removed.
+     */
+    fun rebindLocalJarPaths(oldLocalJarPaths: Collection<String>, newLocalJarPath: String): Int = withStoreLock {
+        val normalizedOldPaths = oldLocalJarPaths
+            .mapNotNull { it.normalizedLocalJarPath().takeIf(String::isNotEmpty) }
+            .toSet()
+        val normalizedNewPath = newLocalJarPath.normalizedLocalJarPath()
+        if (normalizedOldPaths.isEmpty() || normalizedNewPath.isEmpty()) return@withStoreLock 0
+
+        var reboundCount = 0
+        val records = loadUnlocked().map { record ->
+            val paths = record.allLocalJarPaths()
+            if (!paths.any { it.normalizedLocalJarPath() in normalizedOldPaths }) {
+                record
+            } else {
+                reboundCount++
+                val reboundPaths = paths
+                    .map { path ->
+                        if (path.normalizedLocalJarPath() in normalizedOldPaths) newLocalJarPath else path
+                    }
+                    .distinct()
+                record.copy(
+                    localJarPath = if (record.localJarPath.normalizedLocalJarPath() in normalizedOldPaths) {
+                        newLocalJarPath
+                    } else {
+                        reboundPaths.firstOrNull().orEmpty()
+                    },
+                    localJarPaths = reboundPaths,
+                )
+            }
+        }
+        if (reboundCount > 0) saveUnlocked(records)
+        reboundCount
+    }
+
+    /** Rewrite absolute paths after the STS root moves to a different storage location. */
+    fun rewriteAbsolutePaths(sourceRoot: File, targetRoot: File): Int = withStoreLock {
+        val source = sourceRoot.absolutePath.normalizedLocalJarPath().trimEnd('/')
+        val target = targetRoot.absolutePath.normalizedLocalJarPath().trimEnd('/')
+        if (source.isEmpty() || target.isEmpty() || source == target) return@withStoreLock 0
+
+        fun rewrite(path: String): String {
+            val normalized = path.normalizedLocalJarPath()
+            return when {
+                normalized == source -> target
+                normalized.startsWith("$source/") -> target + normalized.substring(source.length)
+                else -> path
+            }
+        }
+
+        var changedCount = 0
+        val records = loadUnlocked().map { record ->
+            val rewrittenLocalJarPath = rewrite(record.localJarPath)
+            val rewrittenLocalJarPaths = record.localJarPaths.map(::rewrite)
+            val rewrittenTexturePackPath = rewrite(record.texturePackPath)
+            val rewrittenPreviewPath = rewrite(record.localPreviewImagePath)
+            val changed = rewrittenLocalJarPath != record.localJarPath ||
+                rewrittenLocalJarPaths != record.localJarPaths ||
+                rewrittenTexturePackPath != record.texturePackPath ||
+                rewrittenPreviewPath != record.localPreviewImagePath
+            if (!changed) {
+                record
+            } else {
+                changedCount++
+                record.copy(
+                    localJarPath = rewrittenLocalJarPath,
+                    localJarPaths = rewrittenLocalJarPaths,
+                    texturePackPath = rewrittenTexturePackPath,
+                    localPreviewImagePath = rewrittenPreviewPath,
+                )
+            }
+        }
+        if (changedCount > 0) saveUnlocked(records)
+        changedCount
+    }
+
     fun markPatched(appId: UInt, publishedFileId: ULong, localJarPath: String, statusText: String) =
         markPatched(appId, publishedFileId, listOf(localJarPath), statusText)
 

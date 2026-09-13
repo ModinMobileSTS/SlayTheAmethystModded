@@ -2470,6 +2470,7 @@
     <string name="workshop_action_download_without_dependencies">跳过前置</string>
     <string name="workshop_error_loading_title">加载失败</string>
     <string name="workshop_load_failure_steam_hint">此页面由 Steam 创意工坊驱动，启动器侧的 Steam 链路优选不能 100% 解决问题。如果一直加载失败，请使用任意加速器加速 Steam 商店后重新打开该页面。</string>
+    <string name="workshop_load_failure_website_hint">你也可以选择使用我们的网站进行模组下载：%1$s</string>
     <string name="workshop_load_progress_percent">%1$d%%</string>
     <string name="workshop_load_phase_preparing">准备请求</string>
     <string name="workshop_load_phase_authenticating">正在登录 Steam</string>

@@ -166,6 +166,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.FutureTask
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.ReentrantLock
 import java.util.jar.Manifest
@@ -553,6 +554,8 @@ class SettingsScreenViewModel : ViewModel() {
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val steamCloudLoginCleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    // A slow refresh must not overwrite a newer setting change with its older snapshot.
+    private val statusRefreshGeneration = AtomicLong(0L)
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
@@ -1242,6 +1245,7 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {
+        val refreshGeneration = statusRefreshGeneration.incrementAndGet()
         executor.execute {
             try {
                 val hasJar = hasValidImportedStsJar(host)
@@ -1447,6 +1451,9 @@ class SettingsScreenViewModel : ViewModel() {
                     else steamCloudManifestSnapshot != null
 
                 host.runOnUiThread {
+                    if (refreshGeneration != statusRefreshGeneration.get()) {
+                        return@runOnUiThread
+                    }
                     applySnapshot(host, snapshot)
                     uiState = uiState.copy(
                         busy = if (clearBusy) false else uiState.busy,
@@ -1490,6 +1497,9 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (_: Throwable) {
                 host.runOnUiThread {
+                    if (refreshGeneration != statusRefreshGeneration.get()) {
+                        return@runOnUiThread
+                    }
                     if (clearBusy) {
                         uiState = uiState.copy(
                             busy = false,

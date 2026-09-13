@@ -2471,6 +2471,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_action_download_without_dependencies">Skip dependencies</string>
     <string name="workshop_error_loading_title">Loading failed</string>
     <string name="workshop_load_failure_steam_hint">This page is powered by Steam Workshop. The launcher\'s preferred Steam connection route cannot solve every issue. If loading keeps failing, use any accelerator for the Steam Store, then reopen this page.</string>
+    <string name="workshop_load_failure_website_hint">You can also use our website to download mods: %1$s</string>
     <string name="workshop_load_progress_percent">%1$d%%</string>
     <string name="workshop_load_phase_preparing">Preparing request</string>
     <string name="workshop_load_phase_authenticating">Signing in to Steam</string>

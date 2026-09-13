@@ -2465,6 +2465,7 @@
     <string name="workshop_action_download_without_dependencies">跳過前置</string>
     <string name="workshop_error_loading_title">載入失敗</string>
     <string name="workshop_load_failure_steam_hint">此頁面由 Steam 創意工坊驅動，啟動器側的 Steam 線路優選不能 100% 解決問題。如果一直載入失敗，請使用任意加速器加速 Steam 商店後重新開啟該頁面。</string>
+    <string name="workshop_load_failure_website_hint">你也可以選擇使用我們的網站進行模組下載：%1$s</string>
     <string name="workshop_load_progress_percent">%1$d%%</string>
     <string name="workshop_load_phase_preparing">準備請求</string>
     <string name="workshop_load_phase_authenticating">正在登入 Steam</string>

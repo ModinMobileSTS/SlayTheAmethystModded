@@ -1,6 +1,7 @@
 package io.stamethyst.config
 
 import android.content.Context
+import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -33,12 +34,19 @@ object LegacyStsStorageMigration {
 
         val sourceRoot = RuntimePaths.legacyInternalStsRoot(context)
         val targetRoot = RuntimePaths.stsRoot(context)
-        if (sourceRoot.absolutePath == targetRoot.absolutePath || !sourceRoot.exists()) {
+        if (sourceRoot.absolutePath == targetRoot.absolutePath) {
+            return null
+        }
+        if (!sourceRoot.exists()) {
+            WorkshopMetadataStore(context).rewriteAbsolutePaths(sourceRoot, targetRoot)
             return null
         }
         if (sourceRoot.isFile) {
             throw IOException("Legacy sts root is not a directory: ${sourceRoot.absolutePath}")
         }
+
+        // Repair metadata written by versions that moved files without updating absolute paths.
+        WorkshopMetadataStore(context).rewriteAbsolutePaths(sourceRoot, targetRoot)
 
         val scannedFileCount = countFiles(sourceRoot)
         if (scannedFileCount <= 0) {

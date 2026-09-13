@@ -89,6 +89,26 @@ class WorkshopMetadataStoreTest {
     }
 
     @Test
+    fun rebindLocalJarPathsPreservesWorkshopAssociationForReplacementJar() {
+        val roots = TestRoots.create("workshop-metadata-store-rebind")
+        val store = WorkshopMetadataStore(roots.context)
+        val oldPath = File(roots.rootDir, "optional/Old.jar").absolutePath
+        val newPath = File(roots.rootDir, "optional/New.jar").absolutePath
+        store.upsert(
+            record(title = "Workshop Mod", publishedFileId = 3u, updatedAtMillis = 100L).copy(
+                localJarPath = oldPath,
+                localJarPaths = listOf(oldPath),
+            )
+        )
+
+        assertEquals(1, store.rebindLocalJarPaths(listOf(oldPath), newPath))
+
+        val rebound = store.findByPublishedFileId(646570u, 3uL)
+        assertEquals(newPath, rebound?.localJarPath)
+        assertEquals(listOf(newPath), rebound?.localJarPaths)
+    }
+
+    @Test
     fun recoverFinishedTransferRestoresDownloadedJarAsUnpatched() {
         val roots = TestRoots.create("workshop-metadata-store-recover-complete")
         val metadataStore = WorkshopMetadataStore(roots.context)

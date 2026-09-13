@@ -337,7 +337,10 @@ internal object ModImportExecutor {
                     launchModId = finalLaunchModId,
                     excludedPath = target.absolutePath
                 )
-                WorkshopMetadataStore(context).removeByLocalJarPaths(reuse.sourceStoragePaths)
+                WorkshopMetadataStore(context).rebindLocalJarPaths(
+                    oldLocalJarPaths = reuse.sourceStoragePaths,
+                    newLocalJarPath = targetPath,
+                )
                 applyDuplicateFileNameAlias(
                     context = context,
                     targetPath = targetPath,
