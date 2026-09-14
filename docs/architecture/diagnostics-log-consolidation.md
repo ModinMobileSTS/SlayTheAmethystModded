@@ -86,7 +86,7 @@
 ├── easytier/                         # ← 原 <storageRoot>/easytier
 ├── feedback/                         # 仅归档生成：issue_*、request.json、latest_log_digest.txt
 ├── crash/                            # 仅崩溃包生成：summary.txt
-└── （info/device_info.txt、info/launcher_settings.txt 仅归档生成）
+└── （info/device_info.txt、info/launcher_settings.txt、info/launcher_settings.zh.txt 仅归档生成）
 ```
 
 性能专项包（`sts-performance-logs-*.zip`）沿用同一原则：`sts/performance/` 下的条目同样改为源文件直通（`frame-probe-incidents.jsonl` 等迁入 `logs/` 后按新路径收录）。

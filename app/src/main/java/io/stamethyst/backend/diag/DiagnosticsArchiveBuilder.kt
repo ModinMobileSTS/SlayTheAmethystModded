@@ -6,11 +6,12 @@ import android.os.Build
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierDiagnosticsStore
-import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
+import io.stamethyst.backend.resources.ResourcePackInspection
+import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.backend.steamcloud.SteamGamePresenceDiagnosticsStore
@@ -21,6 +22,7 @@ import io.stamethyst.backend.workshop.WorkshopDownloadLogService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
 import io.stamethyst.config.RuntimePaths
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -30,6 +32,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -44,10 +47,32 @@ internal data class DiagnosticsArchiveResult(
     val entryCount: Int
 )
 
+/**
+ * Progress channel for diagnostics exports. Percent is 0..100 and is reported from a background
+ * thread; callers that touch UI must marshal it themselves.
+ */
+internal fun interface DiagnosticsProgressListener {
+    fun onProgress(percent: Int)
+}
+
 internal object DiagnosticsArchiveBuilder {
     private const val SHARE_DIR_NAME = "share"
     private const val MAX_WORKSHOP_DOWNLOAD_TASKS_IN_ARCHIVE = 10
     private const val MAX_JVM_HISTOGRAMS_IN_PERFORMANCE_ARCHIVE = 10
+
+    /** Zip entries are tiny; buffering avoids one syscall per 512-byte Deflater flush. */
+    private const val OUTPUT_BUFFER_BYTES = 64 * 1024
+
+    // Coarse phase weights. Reporting is phase-based because the exact entry count is only known
+    // after every optional file has been probed; the goal is a moving bar, not byte accounting.
+    private const val PROGRESS_START = 0
+    private const val PROGRESS_SETTINGS_DONE = 20
+    private const val PROGRESS_SUMMARY_DONE = 30
+    private const val PROGRESS_STEAM_DONE = 45
+    private const val PROGRESS_LOGS_DONE = 65
+    private const val PROGRESS_MEMORY_DONE = 78
+    private const val PROGRESS_LOGCAT_DONE = 90
+    private const val PROGRESS_DONE = 100
 
     fun buildJvmLogExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
@@ -68,7 +93,7 @@ internal object DiagnosticsArchiveBuilder {
     fun createJvmLogShareArchive(context: Context): DiagnosticsArchiveResult {
         val archiveFile = allocateShareArchiveFile(context, buildJvmLogExportFileName())
         val entryCount = FileOutputStream(archiveFile, false).use { output ->
-            writeDiagnosticsBundle(context, output, null)
+            writeDiagnosticsBundle(context, output, null, null)
         }
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
@@ -80,7 +105,7 @@ internal object DiagnosticsArchiveBuilder {
     ): DiagnosticsArchiveResult {
         val archiveFile = allocateShareArchiveFile(context, buildCrashExportFileName())
         val entryCount = FileOutputStream(archiveFile, false).use { output ->
-            writeDiagnosticsBundle(context, output, crashContext)
+            writeDiagnosticsBundle(context, output, crashContext, null)
         }
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
@@ -89,7 +114,7 @@ internal object DiagnosticsArchiveBuilder {
     fun createPerformanceShareArchive(context: Context): DiagnosticsArchiveResult {
         val archiveFile = allocateShareArchiveFile(context, buildPerformanceExportFileName())
         val entryCount = FileOutputStream(archiveFile, false).use { output ->
-            writePerformanceDiagnosticsBundle(context, output)
+            writePerformanceDiagnosticsBundle(context, output, null)
         }
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
@@ -100,32 +125,54 @@ internal object DiagnosticsArchiveBuilder {
      */
     @Throws(IOException::class)
     fun writeDiagnosticsBundlePublic(context: Context, output: OutputStream): Int =
-        writeDiagnosticsBundle(context, output, null)
+        writeDiagnosticsBundle(context, output, null, null)
 
     @Throws(IOException::class)
-    fun exportJvmLogBundle(context: Context, destination: Uri): Int {
+    fun exportJvmLogBundle(context: Context, destination: Uri): Int =
+        exportJvmLogBundle(context, destination, null)
+
+    @Throws(IOException::class)
+    fun exportJvmLogBundle(
+        context: Context,
+        destination: Uri,
+        progress: DiagnosticsProgressListener?
+    ): Int {
         context.contentResolver.openOutputStream(destination).use { output ->
             if (output == null) {
                 throw IOException("Unable to open destination file")
             }
-            return writeDiagnosticsBundle(context, output, null)
+            return writeDiagnosticsBundle(context, output, null, progress)
         }
     }
 
     @Throws(IOException::class)
-    fun exportPerformanceDiagnosticsBundle(context: Context, destination: Uri): Int {
+    fun exportPerformanceDiagnosticsBundle(context: Context, destination: Uri): Int =
+        exportPerformanceDiagnosticsBundle(context, destination, null)
+
+    @Throws(IOException::class)
+    fun exportPerformanceDiagnosticsBundle(
+        context: Context,
+        destination: Uri,
+        progress: DiagnosticsProgressListener?
+    ): Int {
         context.contentResolver.openOutputStream(destination).use { output ->
             if (output == null) {
                 throw IOException("Unable to open destination file")
             }
-            return writePerformanceDiagnosticsBundle(context, output)
+            return writePerformanceDiagnosticsBundle(context, output, progress)
         }
     }
 
     @Throws(IOException::class)
-    internal fun writePerformanceDiagnosticsBundle(context: Context, output: OutputStream): Int {
+    internal fun writePerformanceDiagnosticsBundle(
+        context: Context,
+        output: OutputStream,
+        progress: DiagnosticsProgressListener? = null
+    ): Int {
+        progress?.onProgress(PROGRESS_START)
         var exportedCount = 0
-        ZipOutputStream(output).use { zipOutput ->
+        ZipOutputStream(BufferedOutputStream(output, OUTPUT_BUFFER_BYTES)).use { zipOutput ->
+            zipOutput.setLevel(Deflater.BEST_SPEED)
             exportedCount += writeTextEntryAndCount(
                 zipOutput,
                 "sts/performance/readme.txt",
@@ -136,15 +183,8 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/performance/device_info.txt",
                 buildJvmLogDeviceInfo(context)
             )
-            exportedCount += writeTextEntryAndCount(
-                zipOutput,
-                "sts/performance/launcher_settings.txt",
-                runCatching {
-                    LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
-                }.getOrElse { error ->
-                    "launcher_settings_unavailable=${error.javaClass.simpleName}: ${error.message.orEmpty()}\n"
-                }
-            )
+            exportedCount += writeLauncherSettingsEntries(zipOutput, context, "sts/performance", null)
+            progress?.onProgress(PROGRESS_SETTINGS_DONE)
             val files = listOf(
                 RuntimePaths.frameProbeIncidents(context),
                 RuntimePaths.frameProbePreviousIncidents(context),
@@ -176,6 +216,7 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/performance/window/${file.name}"
                 )
             }
+            progress?.onProgress(PROGRESS_LOGS_DONE)
             exportedCount += writeOptionalDirectoryFiles(
                 zipOutput,
                 RuntimePaths.jvmHistogramsDir(context),
@@ -193,6 +234,7 @@ internal object DiagnosticsArchiveBuilder {
                 }
             )
         }
+        progress?.onProgress(PROGRESS_DONE)
         return exportedCount
     }
 
@@ -200,10 +242,16 @@ internal object DiagnosticsArchiveBuilder {
     internal fun writeDiagnosticsBundle(
         context: Context,
         output: OutputStream,
-        crashContext: CrashArchiveContext?
+        crashContext: CrashArchiveContext?,
+        progress: DiagnosticsProgressListener? = null
     ): Int {
+        progress?.onProgress(PROGRESS_START)
+        // Full resource-pack validation hashes every content file; run it once and share the
+        // result with both the settings export and resource_pack/state.txt.
+        val resourcePackInspection = runCatching { ResourcePackStore.inspect(context) }.getOrNull()
         var exportedCount = 0
-        ZipOutputStream(output).use { zipOutput ->
+        ZipOutputStream(BufferedOutputStream(output, OUTPUT_BUFFER_BYTES)).use { zipOutput ->
+            zipOutput.setLevel(Deflater.BEST_SPEED)
             writeTextEntry(
                 zipOutput,
                 "sts/readme.txt",
@@ -214,15 +262,17 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/info/device_info.txt",
                 buildJvmLogDeviceInfo(context)
             )
-            val latestCrashSummary = LatestLogCrashDetector.detect(context)
-            val lastNonBlankLogLine = LatestLogCrashDetector.readLastNonBlankLine(context)
+            writeLauncherSettingsEntries(zipOutput, context, "sts/info", resourcePackInspection)
+            progress?.onProgress(PROGRESS_SETTINGS_DONE)
+            // latest.log is read once for both the crash marker and the trailing line.
+            val latestLogTail = LatestLogCrashDetector.analyzeTail(RuntimePaths.latestLog(context))
             val processExitTrace = ProcessExitInfoCapture.readLatestInterestingProcessExitTrace(context)
             writeTextEntry(
                 zipOutput,
                 "sts/logs/latest_log_summary.txt",
                 DiagnosticsSummaryFormatter.buildLatestLogSummary(
-                    latestCrash = latestCrashSummary,
-                    lastNonBlankLine = lastNonBlankLogLine
+                    latestCrash = latestLogTail.crashSummary,
+                    lastNonBlankLine = latestLogTail.lastNonBlankLine
                 )
             )
             processExitTrace?.let { traceText ->
@@ -234,14 +284,10 @@ internal object DiagnosticsArchiveBuilder {
             }
             writeTextEntry(
                 zipOutput,
-                "sts/info/launcher_settings.txt",
-                LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
-            )
-            writeTextEntry(
-                zipOutput,
                 "sts/resource_pack/state.txt",
-                ResourcePackStore.buildDiagnostics(context)
+                ResourcePackStore.buildDiagnostics(context, resourcePackInspection)
             )
+            progress?.onProgress(PROGRESS_SUMMARY_DONE)
             exportedCount += writeOptionalFile(
                 zipOutput,
                 SteamCloudDiagnosticsStore.summaryFile(context),
@@ -290,6 +336,7 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/steam_login",
                 limit = 5
             )
+            progress?.onProgress(PROGRESS_STEAM_DONE)
             val writtenJvmEntries = LinkedHashSet<String>()
             JvmLogRotationManager.listLogFiles(context).forEach { logFile ->
                 val entryName = "sts/logs/${logFile.name}"
@@ -324,6 +371,7 @@ internal object DiagnosticsArchiveBuilder {
                 RuntimePaths.jvmSignalDump(context),
                 "sts/logs/${RuntimePaths.jvmSignalDump(context).name}"
             )
+            progress?.onProgress(PROGRESS_LOGS_DONE)
             RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { memoryLogFile ->
                 exportedCount += writeOptionalFile(
                     zipOutput,
@@ -333,6 +381,7 @@ internal object DiagnosticsArchiveBuilder {
             }
             exportedCount += writeAchievementSyncLogsForArchive(zipOutput, context)
             exportedCount += writeWindowDiagnosticsForArchive(zipOutput, context)
+            progress?.onProgress(PROGRESS_MEMORY_DONE)
             RuntimePaths.listLogcatCaptureFiles(context)
                 .groupBy { if (it.name.contains("system")) "system" else "app" }
                 .values
@@ -355,6 +404,7 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/logcat/${if (logcatFile.name.contains("system")) "system" else "app"}/${logcatFile.name}"
                 )
             }
+            progress?.onProgress(PROGRESS_LOGCAT_DONE)
             exportedCount += writeLauncherCrashReportsForArchive(zipOutput, context)
 
             exportedCount += writeWorkshopDownloadDiagnostics(zipOutput, context)
@@ -372,6 +422,7 @@ internal object DiagnosticsArchiveBuilder {
             }
 
         }
+        progress?.onProgress(PROGRESS_DONE)
         return exportedCount
     }
 
@@ -381,7 +432,7 @@ internal object DiagnosticsArchiveBuilder {
         目录说明：
         - easytier/：EasyTier 配置、当前状态，以及最近 5 条断开/重连/失败记录（含 :easytier 进程退出原因）。
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
-        - info/：设备信息和启动器设置。
+        - info/：设备信息，以及启动器设置导出（launcher_settings.txt 英文机器键值、launcher_settings.zh.txt 中文可读版，末尾均含原始 SharedPreferences 全量转储）。
         - resource_pack/：资源包 active generation、版本、校验和迁移状态。
         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
         - achievement_sync/：成就请求解析、游戏内弹窗、Steam 查询、上传及失败事件，最多保留 3 槽位，不包含 Steam 凭据。
@@ -824,6 +875,38 @@ internal object DiagnosticsArchiveBuilder {
         } catch (_: Throwable) {
             "unknown" to "unknown"
         }
+    }
+
+    @Throws(IOException::class)
+    private fun writeLauncherSettingsEntries(
+        zipOutput: ZipOutputStream,
+        context: Context,
+        entryDir: String,
+        resourcePackInspection: ResourcePackInspection?
+    ): Int {
+        // Capture once and render both languages from the same snapshot: the raw preference
+        // dump is the expensive part, so it must not be read twice.
+        val snapshot = try {
+            LauncherSettingsDiagnosticsFormatter.capture(context, resourcePackInspection)
+        } catch (error: Throwable) {
+            writeTextEntry(
+                zipOutput,
+                "$entryDir/launcher_settings.txt",
+                "launcher_settings_unavailable=${error.javaClass.simpleName}: ${error.message.orEmpty()}\n"
+            )
+            return 1
+        }
+        writeTextEntry(
+            zipOutput,
+            "$entryDir/launcher_settings.txt",
+            LauncherSettingsDiagnosticsFormatter.build(snapshot)
+        )
+        writeTextEntry(
+            zipOutput,
+            "$entryDir/launcher_settings.zh.txt",
+            LauncherSettingsDiagnosticsFormatter.buildChinese(snapshot)
+        )
+        return 2
     }
 
     @Throws(IOException::class)

@@ -11,6 +11,15 @@ data class LatestLogCrashSummary(
     val marker: String
 )
 
+/**
+ * Both values are derived from the same 256 KiB log tail, so callers that need both should use
+ * [LatestLogCrashDetector.analyzeTail] to read the file once instead of twice.
+ */
+data class LatestLogTailAnalysis(
+    val crashSummary: LatestLogCrashSummary?,
+    val lastNonBlankLine: String?
+)
+
 object LatestLogCrashDetector {
     private const val MAX_READ_BYTES = 256 * 1024
     private val strongCrashMarkers = listOf(
@@ -25,9 +34,21 @@ object LatestLogCrashDetector {
     fun detect(context: Context): LatestLogCrashSummary? = detect(RuntimePaths.latestLog(context))
 
     @JvmStatic
-    fun detect(logFile: File): LatestLogCrashSummary? {
+    fun detect(logFile: File): LatestLogCrashSummary? = analyzeTail(logFile).crashSummary
+
+    @JvmStatic
+    fun readLastNonBlankLine(context: Context): String? = readLastNonBlankLine(RuntimePaths.latestLog(context))
+
+    @JvmStatic
+    fun readLastNonBlankLine(logFile: File): String? = analyzeTail(logFile).lastNonBlankLine
+
+    /**
+     * Reads the log tail once and derives both the crash summary and the last non-blank line.
+     */
+    @JvmStatic
+    fun analyzeTail(logFile: File): LatestLogTailAnalysis {
         if (!logFile.isFile) {
-            return null
+            return LatestLogTailAnalysis(crashSummary = null, lastNonBlankLine = null)
         }
         val rawText = try {
             readTailText(logFile)
@@ -35,50 +56,28 @@ object LatestLogCrashDetector {
             ""
         }
         if (rawText.isBlank()) {
-            return null
+            return LatestLogTailAnalysis(crashSummary = null, lastNonBlankLine = null)
         }
         val lines = rawText.lineSequence()
             .map { it.trimEnd() }
             .filter { it.isNotBlank() }
             .toList()
         if (lines.isEmpty()) {
-            return null
+            return LatestLogTailAnalysis(crashSummary = null, lastNonBlankLine = null)
         }
+        val lastNonBlankLine = lines.last().trim().takeIf { it.isNotEmpty() }
         val markerIndex = lines.indexOfLast { line ->
             strongCrashMarkers.any { marker -> line.contains(marker, ignoreCase = true) }
         }
         if (markerIndex == -1) {
-            return null
+            return LatestLogTailAnalysis(crashSummary = null, lastNonBlankLine = lastNonBlankLine)
         }
         val marker = lines[markerIndex].trim()
         val detail = extractDetail(lines, markerIndex).ifBlank { marker }
-        return LatestLogCrashSummary(
-            detail = detail,
-            marker = marker
+        return LatestLogTailAnalysis(
+            crashSummary = LatestLogCrashSummary(detail = detail, marker = marker),
+            lastNonBlankLine = lastNonBlankLine
         )
-    }
-
-    @JvmStatic
-    fun readLastNonBlankLine(context: Context): String? = readLastNonBlankLine(RuntimePaths.latestLog(context))
-
-    @JvmStatic
-    fun readLastNonBlankLine(logFile: File): String? {
-        if (!logFile.isFile) {
-            return null
-        }
-        val rawText = try {
-            readTailText(logFile)
-        } catch (_: Throwable) {
-            ""
-        }
-        if (rawText.isBlank()) {
-            return null
-        }
-        return rawText.lineSequence()
-            .map { it.trimEnd() }
-            .lastOrNull { it.isNotBlank() }
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
     }
 
     private fun extractDetail(lines: List<String>, markerIndex: Int): String {

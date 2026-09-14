@@ -316,8 +316,15 @@ internal object ResourcePackStore {
     }
 
     @JvmStatic
-    fun buildDiagnostics(context: Context): String {
-        val inspection = runCatching { inspect(context) }.getOrElse { error ->
+    fun buildDiagnostics(context: Context): String = buildDiagnostics(context, inspection = null)
+
+    /**
+     * [inspection] lets a caller that already ran [inspect] (and paid for full content hashing)
+     * reuse the result instead of hashing the resource pack a second time in the same export.
+     */
+    @JvmStatic
+    fun buildDiagnostics(context: Context, inspection: ResourcePackInspection?): String {
+        val resolvedInspection = inspection ?: runCatching { inspect(context) }.getOrElse { error ->
             return "resourcePack.formatVersion=2\n" +
                 "resourcePack.state=inspection_failed\n" +
                 "resourcePack.error=${sanitize(summarizeError(error))}\n"
@@ -336,13 +343,13 @@ internal object ResourcePackStore {
             append("resourcePack.embeddedArchive=")
                 .append(embeddedArchiveExists(context))
                 .append('\n')
-            append("resourcePack.ready=").append(inspection.ready).append('\n')
-            append("resourcePack.packId=").append(inspection.packId ?: "none").append('\n')
-            append("resourcePack.version=").append(inspection.version ?: "none").append('\n')
+            append("resourcePack.ready=").append(resolvedInspection.ready).append('\n')
+            append("resourcePack.packId=").append(resolvedInspection.packId ?: "none").append('\n')
+            append("resourcePack.version=").append(resolvedInspection.version ?: "none").append('\n')
             append("resourcePack.generation=")
-                .append(inspection.generationDir?.absolutePath ?: "none")
+                .append(resolvedInspection.generationDir?.absolutePath ?: "none")
                 .append('\n')
-            append("resourcePack.state=").append(inspection.state ?: "none").append('\n')
+            append("resourcePack.state=").append(resolvedInspection.state ?: "none").append('\n')
             append("resourcePack.stateOperation=")
                 .append(stateProperties?.getProperty(STATE_OPERATION_ID_KEY) ?: "none")
                 .append('\n')
@@ -356,9 +363,9 @@ internal object ResourcePackStore {
                 .append(buildFileState(RuntimePaths.externalResourcesActivePointerFile(context)))
                 .append('\n')
             append("resourcePack.legacyPaths=")
-                .append(inspection.legacyPaths.joinToString("|"))
+                .append(resolvedInspection.legacyPaths.joinToString("|"))
                 .append('\n')
-            inspection.issues.forEachIndexed { index, issue ->
+            resolvedInspection.issues.forEachIndexed { index, issue ->
                 append("resourcePack.issue.").append(index).append('=').append(sanitize(issue)).append('\n')
             }
             append("resourcePack.staging=")
