@@ -39,9 +39,13 @@ class DiagnosticsProcessService : Service() {
         const val EXTRA_CRASH_CODE = "io.stamethyst.extra.CRASH_CODE"
         const val EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.extra.CRASH_IS_SIGNAL"
         const val EXTRA_CRASH_DETAIL = "io.stamethyst.extra.CRASH_DETAIL"
+        const val EXTRA_PROGRESS_PERCENT = "io.stamethyst.extra.PROGRESS_PERCENT"
 
         const val RESULT_SUCCESS = 1
         const val RESULT_FAILURE = 2
+
+        /** Intermediate, non-terminal update. The operation keeps running. */
+        const val RESULT_PROGRESS = 3
     }
 
     @Volatile
@@ -110,6 +114,12 @@ class DiagnosticsProcessService : Service() {
         intent: Intent,
         receiver: ResultReceiver
     ) {
+        val progress = DiagnosticsProgressListener { percent ->
+            receiver.send(
+                RESULT_PROGRESS,
+                Bundle().apply { putInt(EXTRA_PROGRESS_PERCENT, percent.coerceIn(0, 100)) }
+            )
+        }
         try {
             val resultData = when (intent.action) {
                 ACTION_EXPORT_JVM_LOG_BUNDLE -> {
@@ -117,7 +127,8 @@ class DiagnosticsProcessService : Service() {
                         ?: throw IllegalArgumentException("Missing export destination URI")
                     val exportedCount = DiagnosticsArchiveBuilder.exportJvmLogBundle(
                         applicationContext,
-                        destination
+                        destination,
+                        progress
                     )
                     Bundle().apply {
                         putInt(EXTRA_ENTRY_COUNT, exportedCount)
@@ -153,7 +164,8 @@ class DiagnosticsProcessService : Service() {
                         ?: throw IllegalArgumentException("Missing export destination URI")
                     val exportedCount = DiagnosticsArchiveBuilder.exportPerformanceDiagnosticsBundle(
                         applicationContext,
-                        destination
+                        destination,
+                        progress
                     )
                     Bundle().apply {
                         putInt(EXTRA_ENTRY_COUNT, exportedCount)

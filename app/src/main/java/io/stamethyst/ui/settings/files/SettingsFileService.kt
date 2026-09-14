@@ -40,6 +40,7 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.ui.main.ModAliasStore
 import io.stamethyst.ui.main.normalizeModExportFileName
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -52,6 +53,7 @@ import java.util.Date
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Locale
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -80,6 +82,9 @@ private fun interface ZipEntryWriteProgressCallback {
 }
 
 internal object SettingsFileService {
+    /** Zip entries are tiny; buffering avoids one syscall per 512-byte Deflater flush. */
+    private const val OUTPUT_BUFFER_BYTES = 64 * 1024
+
     fun buildSaveExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-saves-export-${formatter.format(Date())}.zip"
@@ -106,13 +111,13 @@ internal object SettingsFileService {
     }
 
     @Throws(IOException::class)
-    fun exportJvmLogBundle(host: Activity, uri: Uri): Int {
-        return DiagnosticsProcessClient.exportJvmLogBundle(host, uri)
+    fun exportJvmLogBundle(host: Activity, uri: Uri, onProgress: ((Int) -> Unit)? = null): Int {
+        return DiagnosticsProcessClient.exportJvmLogBundle(host, uri, onProgress)
     }
 
     @Throws(IOException::class)
-    fun exportPerformanceLogBundle(host: Activity, uri: Uri): Int {
-        return DiagnosticsProcessClient.exportPerformanceLogBundle(host, uri)
+    fun exportPerformanceLogBundle(host: Activity, uri: Uri, onProgress: ((Int) -> Unit)? = null): Int {
+        return DiagnosticsProcessClient.exportPerformanceLogBundle(host, uri, onProgress)
     }
 
     @Throws(IOException::class)
@@ -300,7 +305,8 @@ internal object SettingsFileService {
     @Throws(IOException::class)
     private fun writeJvmLogsBundle(host: Activity, output: OutputStream): Int {
         val logFiles = JvmLogRotationManager.listLogFiles(host)
-        ZipOutputStream(output).use { zipOutput ->
+        ZipOutputStream(BufferedOutputStream(output, OUTPUT_BUFFER_BYTES)).use { zipOutput ->
+            zipOutput.setLevel(Deflater.BEST_SPEED)
             var exportedCount = 0
             writeTextEntry(
                 zipOutput,

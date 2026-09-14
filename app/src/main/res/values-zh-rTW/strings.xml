@@ -1698,6 +1698,7 @@
     <string name="settings_render_scale_save_failed">儲存畫面清晰度失敗</string>
     <string name="settings_log_share_failed_prefix">分享日誌失敗</string>
     <string name="settings_busy_exporting_jvm_logs">正在匯出 JVM 日誌…</string>
+    <string name="settings_busy_exporting_jvm_logs_progress">正在匯出 JVM 日誌… %1$d%%</string>
     <string name="settings_logs_exported">日誌壓縮包已匯出（%1$d 個檔案）</string>
     <string name="settings_logs_exported_empty">日誌壓縮包已匯出（當前還沒有日誌）</string>
     <string name="settings_log_export_failed_prefix">匯出日誌失敗</string>
@@ -2150,6 +2151,7 @@
     <string name="settings_performance_logs_export">匯出效能日誌</string>
     <string name="settings_busy_preparing_performance_logs">正在準備效能日誌…</string>
     <string name="settings_busy_exporting_performance_logs">正在匯出效能日誌…</string>
+    <string name="settings_busy_exporting_performance_logs_progress">正在匯出效能日誌… %1$d%%</string>
     <string name="settings_performance_logs_exported">已匯出效能日誌，共 %1$d 個檔案。</string>
     <string name="settings_performance_logs_failed_prefix">效能日誌操作失敗</string>
     <string name="settings_share_performance_logs_chooser_title">分享效能日誌</string>

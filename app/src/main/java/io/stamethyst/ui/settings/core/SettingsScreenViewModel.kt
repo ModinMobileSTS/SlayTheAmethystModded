@@ -2842,10 +2842,22 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_performance_logs))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.settings_busy_exporting_performance_logs_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_LOGS,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val exportedCount = SettingsFileService.exportPerformanceLogBundle(host, uri)
+                val exportedCount = SettingsFileService.exportPerformanceLogBundle(
+                    host,
+                    uri,
+                    exportProgressReporter(host, R.string.settings_busy_exporting_performance_logs_progress)
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     showToast(
@@ -2875,10 +2887,19 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_jvm_logs))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_exporting_jvm_logs_progress, 0),
+            operation = UiBusyOperation.EXPORT_LOGS,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val exportedCount = SettingsFileService.exportJvmLogBundle(host, uri)
+                val exportedCount = SettingsFileService.exportJvmLogBundle(
+                    host,
+                    uri,
+                    exportProgressReporter(host, R.string.settings_busy_exporting_jvm_logs_progress)
+                )
                 host.runOnUiThread {
                     if (exportedCount > 0) {
                         showToast(
@@ -2892,6 +2913,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
+                    setBusy(false, null)
                     showToast(
                         host,
                         UiText.DynamicString(
@@ -2903,6 +2925,26 @@ class SettingsScreenViewModel : ViewModel() {
                         )
                     )
                     refreshStatus(host)
+                }
+            }
+        }
+    }
+
+    /**
+     * Progress arrives on the main looper from the diagnostics process; keep it resilient by
+     * ignoring updates that race with a finished or unrelated operation.
+     */
+    private fun exportProgressReporter(host: Activity, messageRes: Int): (Int) -> Unit {
+        return { percent ->
+            val clamped = percent.coerceIn(0, 100)
+            host.runOnUiThread {
+                if (uiState.busy && uiState.busyOperation == UiBusyOperation.EXPORT_LOGS) {
+                    setBusy(
+                        busy = true,
+                        message = UiText.StringResource(messageRes, clamped),
+                        operation = UiBusyOperation.EXPORT_LOGS,
+                        progressPercent = clamped
+                    )
                 }
             }
         }

@@ -1857,6 +1857,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_performance_logs_export">Export performance logs</string>
     <string name="settings_busy_preparing_performance_logs">Preparing performance logs…</string>
     <string name="settings_busy_exporting_performance_logs">Exporting performance logs…</string>
+    <string name="settings_busy_exporting_performance_logs_progress">Exporting performance logs… %1$d%%</string>
     <string name="settings_performance_logs_exported">Exported %1$d performance log files.</string>
     <string name="settings_performance_logs_failed_prefix">Performance log operation failed</string>
     <string name="settings_share_performance_logs_chooser_title">Share performance logs</string>
@@ -1877,6 +1878,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_render_scale_save_failed">Failed to save render scale</string>
     <string name="settings_log_share_failed_prefix">Log share failed</string>
     <string name="settings_busy_exporting_jvm_logs">Exporting JVM logs...</string>
+    <string name="settings_busy_exporting_jvm_logs_progress">Exporting JVM logs… %1$d%%</string>
     <string name="settings_logs_exported">Log archive exported (%1$d files)</string>
     <string name="settings_logs_exported_empty">Log archive exported (no logs yet)</string>
     <string name="settings_log_export_failed_prefix">Log export failed</string>
