@@ -95,6 +95,7 @@ internal data class MainScreenActions(
     val onUnlockEasyTierRoom: () -> Unit = {},
     val onCloseEasyTierRoom: () -> Unit = {},
     val onKickEasyTierRoomMember: (String, String) -> Unit = { _, _ -> },
+    val onJoinSharedEasyTierRoom: (String, String) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -280,6 +281,16 @@ internal fun rememberMainScreenActions(
                 },
                 onKickEasyTierRoomMember = { playerId, message ->
                     viewModel.kickEasyTierRoomMember(activity, playerId, message)
+                },
+                onJoinSharedEasyTierRoom = { roomId, password ->
+                    val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
+                    if (permissionIntent != null) {
+                        viewModel.queueEasyTierSharedRoomJoin(roomId, password)
+                        viewModel.onEasyTierVpnPermissionRequired(activity)
+                        easyTierVpnPermissionLauncher.launch(permissionIntent)
+                    } else {
+                        viewModel.joinEasyTierSharedRoom(activity, roomId, password)
+                    }
                 },
             )
         }

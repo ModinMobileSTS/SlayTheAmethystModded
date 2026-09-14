@@ -145,7 +145,13 @@ class MainScreenViewModel : ViewModel() {
         val allowNewJoins: Boolean,
     )
 
+    private data class PendingEasyTierRoomJoin(
+        val roomId: String,
+        val password: String,
+    )
+
     private var pendingEasyTierRoomCreation: PendingEasyTierRoomCreation? = null
+    private var pendingEasyTierRoomJoin: PendingEasyTierRoomJoin? = null
     data class ModFolder(
         val id: String,
         val name: String
@@ -388,6 +394,7 @@ class MainScreenViewModel : ViewModel() {
     private val steamAchievementExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val initialRefreshExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val workshopUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val modNameMigrationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mtsComponentUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -420,8 +427,14 @@ class MainScreenViewModel : ViewModel() {
     private var easyTierProcessEventReceiverContext: Context? = null
     private var easyTierHostActivityReference: WeakReference<Activity>? = null
     private var lastFullRefreshAtElapsedMs: Long? = null
+    private var initialRefreshHostReference: WeakReference<Activity>? = null
     @Volatile
     private var launchInFlight = false
+    @Volatile
+    private var initialRefreshInFlight = false
+    private var initialRefreshGeneration = 0L
+    private var pendingRefreshAfterInitial = false
+    private var pendingRepublishAfterInitial = false
     /**
      * Latched when [maybeLaunchFromDebugExtra] sees debug autoplay extras, and consumed in
      * [launchGameActivityInternal] so the autoplay settings flow to [StsGameActivity] without
@@ -497,6 +510,15 @@ class MainScreenViewModel : ViewModel() {
     )
 
     fun refresh(host: Activity) {
+        if (initialRefreshInFlight) {
+            initialRefreshHostReference = WeakReference(host)
+            pendingRefreshAfterInitial = true
+            return
+        }
+        refreshNow(host)
+    }
+
+    private fun refreshNow(host: Activity) {
         if (!launchInFlight) {
             clearLaunchInFlightState(clearPendingEnabledModSizeWarning = false)
         }
@@ -527,12 +549,113 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun refreshIfStale(host: Activity) {
+        if (uiState.initializing) {
+            startInitialRefreshInBackground(host)
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         val lastRefreshAt = lastFullRefreshAtElapsedMs
         if (lastRefreshAt != null && now - lastRefreshAt < PASSIVE_REFRESH_DEBOUNCE_MS) {
             return
         }
         refresh(host)
+    }
+
+    private data class InitialRefreshPreparation(
+        val storageIssue: StorageIssueUi?,
+        val dependencyAvailability: DependencyAvailabilitySnapshot,
+        val modSuggestions: Map<String, String>,
+        val readModSuggestionKeys: Set<String>,
+    )
+
+    private fun startInitialRefreshInBackground(host: Activity) {
+        if (initialRefreshInFlight || host.isFinishing || host.isDestroyed) {
+            if (initialRefreshInFlight) {
+                initialRefreshHostReference = WeakReference(host)
+                pendingRefreshAfterInitial = true
+            }
+            return
+        }
+        initialRefreshInFlight = true
+        initialRefreshHostReference = WeakReference(host)
+        val generation = ++initialRefreshGeneration
+        uiState = uiState.copy(controlsEnabled = false)
+        initialRefreshExecutor.execute {
+            val preparationResult = runCatching {
+                val storageIssue = detectStorageIssue(host)
+                val dependencyAvailability = resolveDependencyAvailability(host)
+                InitialRefreshPreparation(
+                    storageIssue = storageIssue,
+                    dependencyAvailability = dependencyAvailability,
+                    modSuggestions = ModSuggestionService.loadCachedSuggestionMap(host),
+                    readModSuggestionKeys = ModSuggestionReadStateStore.loadReadKeys(host),
+                )
+            }
+            val refreshFailure = preparationResult.fold(
+                onSuccess = { preparation ->
+                    runCatching {
+                        modManagementController.refresh(
+                            host = host,
+                            storageAccessible = preparation.storageIssue == null,
+                        )
+                    }.exceptionOrNull()
+                },
+                onFailure = { it },
+            )
+            host.runOnUiThread {
+                val activeHost = initialRefreshHostReference?.get()
+                    ?.takeUnless { it.isFinishing || it.isDestroyed }
+                    ?: host.takeUnless { it.isFinishing || it.isDestroyed }
+                if (generation != initialRefreshGeneration) {
+                    return@runOnUiThread
+                }
+                initialRefreshInFlight = false
+                if (activeHost == null) {
+                    // A configuration change can destroy the launching Activity while the
+                    // snapshot is being built. Leave the VM restartable for the replacement UI.
+                    uiState = uiState.copy(initializing = true, controlsEnabled = false)
+                    return@runOnUiThread
+                }
+                if (refreshFailure != null) {
+                    pendingRefreshAfterInitial = false
+                    pendingRepublishAfterInitial = false
+                    Log.e(LOGCAT_TAG, "Initial background refresh failed", refreshFailure)
+                    refreshNow(activeHost)
+                    return@runOnUiThread
+                }
+
+                val preparation = preparationResult.getOrThrow()
+                currentModSuggestions = preparation.modSuggestions
+                currentReadModSuggestionKeys = preparation.readModSuggestionKeys
+                initialRefreshHostReference = null
+
+                val shouldRefreshAgain = pendingRefreshAfterInitial
+                val shouldRepublish = pendingRepublishAfterInitial
+                pendingRefreshAfterInitial = false
+                pendingRepublishAfterInitial = false
+                publishUiState(
+                    host = activeHost,
+                    hasJar = preparation.dependencyAvailability.hasJar,
+                    hasMts = preparation.dependencyAvailability.hasMts,
+                    hasBaseMod = preparation.dependencyAvailability.hasBaseMod,
+                    hasStsLib = preparation.dependencyAvailability.hasStsLib,
+                    hasRuntimeCompat = preparation.dependencyAvailability.hasRuntimeCompat,
+                    hasFloatingTools = preparation.dependencyAvailability.hasFloatingTools,
+                    hasRamSaver = preparation.dependencyAvailability.hasRamSaver,
+                    storageIssue = preparation.storageIssue,
+                )
+                refreshSteamAchievementCache(activeHost)
+                syncEasyTierProcessEventReceiver(activeHost)
+                syncEasyTierRoomSelection(activeHost)
+                lastFullRefreshAtElapsedMs = SystemClock.elapsedRealtime()
+                maybeStartStoredModNameMigration(activeHost)
+                maybePromptPendingWorkshopJarSelection(activeHost)
+                when {
+                    shouldRefreshAgain -> refreshNow(activeHost)
+                    shouldRepublish -> republish(activeHost)
+                }
+            }
+        }
     }
 
     fun syncEasyTierUi(host: Activity) {
@@ -719,20 +842,30 @@ class MainScreenViewModel : ViewModel() {
 
     fun onEasyTierVpnPermissionResult(host: Activity, granted: Boolean) {
         if (granted && EasyTierPermissionCoordinator.hasVpnPermission(host)) {
-            pendingEasyTierRoomCreation?.let { pending ->
-                pendingEasyTierRoomCreation = null
-                createEasyTierRoom(
+            val pendingCreation = pendingEasyTierRoomCreation
+            val pendingJoin = pendingEasyTierRoomJoin
+            pendingEasyTierRoomCreation = null
+            pendingEasyTierRoomJoin = null
+            when {
+                pendingCreation != null -> createEasyTierRoom(
                     host,
-                    pending.roomId,
-                    pending.description,
-                    pending.password,
-                    pending.allowNewJoins,
+                    pendingCreation.roomId,
+                    pendingCreation.description,
+                    pendingCreation.password,
+                    pendingCreation.allowNewJoins,
                 )
-            } ?: onConnectEasyTier(host)
+                pendingJoin != null -> joinEasyTierSharedRoom(
+                    host,
+                    roomId = pendingJoin.roomId,
+                    password = pendingJoin.password,
+                )
+                else -> onConnectEasyTier(host)
+            }
             return
         }
         val deniedSummary = host.getString(R.string.main_easytier_vpn_permission_denied)
         pendingEasyTierRoomCreation = null
+        pendingEasyTierRoomJoin = null
         clearEasyTierRoomCreation(
             host = host,
             errorSummary = deniedSummary,
@@ -771,6 +904,31 @@ class MainScreenViewModel : ViewModel() {
                 roomInfoStale = false,
                 errorSummary = "",
             )
+        )
+    }
+
+    /**
+     * Starts joining a room that arrived as a shared clipboard invitation. The password travels
+     * with the invitation, so the normal password prompt is skipped when one is present.
+     */
+    fun joinEasyTierSharedRoom(host: Activity, roomId: String, password: String) {
+        val normalizedRoomId = roomId.trim()
+        if (normalizedRoomId.isBlank()) {
+            return
+        }
+        selectEasyTierRoom(host, normalizedRoomId)
+        onConnectEasyTier(
+            host = host,
+            roomIdOverride = normalizedRoomId,
+            password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
+        )
+    }
+
+    /** Remembers a shared-room join to resume after the system VPN permission dialog returns. */
+    fun queueEasyTierSharedRoomJoin(roomId: String, password: String) {
+        pendingEasyTierRoomJoin = PendingEasyTierRoomJoin(
+            roomId = roomId.trim(),
+            password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
         )
     }
 
@@ -1678,7 +1836,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     internal fun onLaunchRequested(host: Activity): LaunchRequestAction {
-        if (uiState.busy || launchInFlight) {
+        if (uiState.initializing || uiState.busy || launchInFlight) {
             return LaunchRequestAction.NONE
         }
         if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
@@ -1743,7 +1901,12 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onBackgroundUseLocalSteamCloudProgressAndLaunch(host: Activity) {
-        if (uiState.busy || launchInFlight || steamCloudCheckInFlight || steamCloudSyncInFlight) {
+        if (uiState.initializing ||
+            uiState.busy ||
+            launchInFlight ||
+            steamCloudCheckInFlight ||
+            steamCloudSyncInFlight
+        ) {
             return
         }
         if (!isSteamCloudSaveModeEnabled(host)) {
@@ -1764,7 +1927,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onBackgroundSteamCloudSyncAndLaunch(host: Activity) {
-        if (uiState.busy || launchInFlight) {
+        if (uiState.initializing || uiState.busy || launchInFlight) {
             return
         }
         val indicator = uiState.steamCloudIndicator
@@ -2810,7 +2973,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onLaunch(host: Activity) {
-        if (steamCloudSyncInFlight) {
+        if (uiState.initializing || steamCloudSyncInFlight) {
             return
         }
         if (!tryBeginLaunchRequest()) {
@@ -3036,7 +3199,8 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun canEditMainScreenState(): Boolean {
-        return resolveControlsEnabled(uiState.busy, uiState.busyOperation, uiState.storageIssue != null)
+        return !uiState.initializing &&
+            resolveControlsEnabled(uiState.busy, uiState.busyOperation, uiState.storageIssue != null)
     }
 
     private data class DependencyAvailabilitySnapshot(
@@ -3119,6 +3283,10 @@ class MainScreenViewModel : ViewModel() {
                 }
                 cacheImportedStsJarValidation(importedStsJarFingerprint, isValid)
                 if (host.isFinishing || host.isDestroyed) {
+                    return@runOnUiThread
+                }
+                if (initialRefreshInFlight) {
+                    pendingRepublishAfterInitial = true
                     return@runOnUiThread
                 }
                 val currentFingerprint = buildImportedStsJarFingerprint(host)
@@ -5297,6 +5465,10 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun republish(host: Activity) {
+        if (initialRefreshInFlight) {
+            pendingRepublishAfterInitial = true
+            return
+        }
         val dependencyAvailability = resolveDependencyAvailability(host)
         publishUiState(
             host = host,
@@ -5868,11 +6040,15 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        initialRefreshGeneration++
+        initialRefreshInFlight = false
+        initialRefreshHostReference = null
         steamCloudHostActivityReference = null
         easyTierHostActivityReference = null
         unregisterEasyTierProcessEventReceiver()
         unregisterSteamCloudProcessEventReceiver()
         importedStsJarValidationExecutor.shutdownNow()
+        initialRefreshExecutor.shutdownNow()
         launchExecutor.shutdownNow()
         diagnosticsExecutor.shutdownNow()
         suggestionExecutor.shutdownNow()

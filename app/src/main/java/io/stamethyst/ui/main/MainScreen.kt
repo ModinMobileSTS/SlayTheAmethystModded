@@ -1,6 +1,9 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
@@ -100,6 +103,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -148,6 +152,8 @@ import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
+import io.stamethyst.backend.easytier.EasyTierRoomShareCodec
+import io.stamethyst.backend.easytier.EasyTierSharedRoomInvite
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
@@ -195,7 +201,6 @@ import io.stamethyst.ui.workshop.WorkshopViewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -251,9 +256,12 @@ private fun LauncherGamePage(
         uiState.optionalMods.filter { mod -> mod.enabled && mod.installed && !mod.required }
     }
     val enabledModBytes = remember(enabledMods) {
-        enabledMods.sumOf { mod -> File(mod.storagePath).takeIf { it.isFile }?.length() ?: 0L }
+        enabledMods.sumOf { mod -> mod.fileSizeBytes.coerceAtLeast(0L) }
     }
-    val launchEnabled = !uiState.busy && uiState.storageIssue == null && !uiState.launchInFlight
+    val launchEnabled = !uiState.initializing &&
+        !uiState.busy &&
+        uiState.storageIssue == null &&
+        !uiState.launchInFlight
     val headerActionsEnabled = !uiState.busy &&
         steamCloudIndicator.state != MainScreenViewModel.SteamCloudIndicatorState.SYNCING
     val gameHeaderHazeState = rememberHazeState()
@@ -2687,6 +2695,7 @@ internal fun EasyTierBottomSheetContent(
     onKickMember: (String, String) -> Unit,
     onConnect: (String?) -> Unit,
     onDisconnect: () -> Unit,
+    onRoomInviteShared: (String) -> Unit = {},
     tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
         WorkshopModDownloadState.NotDownloaded
     },
@@ -2715,6 +2724,7 @@ internal fun EasyTierBottomSheetContent(
     // The launcher's snackbar host sits below this full-height sheet, so confirmations have to be
     // rendered inside the sheet to be visible at all.
     var sheetNotice by remember { mutableStateOf<LauncherTransientNoticeRequest?>(null) }
+    val context = LocalContext.current
     val sheetView = LocalView.current
     val memberWorkshopDetailViewModel: WorkshopViewModel = viewModel()
     // Secondary sheet pages own the system back gesture so it steps back one level
@@ -2986,6 +2996,81 @@ internal fun EasyTierBottomSheetContent(
                             text = targetSummary,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (targetPage == EasyTierRoomSheetPage.Rooms && joinedSelectedRoom) {
+                    selectedRoom?.let { joinedRoom ->
+                        EasyTierRoomHeaderBadge(
+                            iconRes = R.drawable.ic_lan_room_key,
+                            label = stringResource(R.string.main_easytier_badge_password),
+                            onClick = {
+                                LauncherHaptics.perform(
+                                    sheetView,
+                                    HapticFeedbackConstants.KEYBOARD_TAP,
+                                )
+                                val password = EasyTierCredentialStore
+                                    .roomPassword(context, joinedRoom.roomId)
+                                sheetNotice = if (password.isEmpty()) {
+                                    LauncherTransientNoticeRequest(
+                                        message = UiText.StringResource(
+                                            R.string.main_easytier_room_password_unavailable,
+                                        ),
+                                    )
+                                } else {
+                                    LauncherTransientNoticeRequest(
+                                        message = UiText.StringResource(
+                                            R.string.main_easytier_room_password_reveal,
+                                            password,
+                                        ),
+                                        duration = LauncherTransientNoticeDuration.LONG,
+                                        actionLabel = UiText.StringResource(
+                                            R.string.main_easytier_room_password_copy,
+                                        ),
+                                        onAction = {
+                                            copyEasyTierRoomTextToClipboard(
+                                                context = context,
+                                                label = "stamethyst-room-password",
+                                                value = password,
+                                            )
+                                            sheetNotice = LauncherTransientNoticeRequest(
+                                                message = UiText.StringResource(
+                                                    R.string.main_easytier_room_password_copied,
+                                                ),
+                                            )
+                                        },
+                                    )
+                                }
+                            },
+                        )
+                        EasyTierRoomHeaderBadge(
+                            iconRes = R.drawable.ic_lan_room_share,
+                            label = stringResource(R.string.main_easytier_badge_share),
+                            onClick = {
+                                LauncherHaptics.perform(
+                                    sheetView,
+                                    HapticFeedbackConstants.KEYBOARD_TAP,
+                                )
+                                val password = EasyTierCredentialStore
+                                    .roomPassword(context, joinedRoom.roomId)
+                                val shareText = buildEasyTierRoomShareText(
+                                    context = context,
+                                    room = joinedRoom,
+                                    password = password,
+                                )
+                                copyEasyTierRoomTextToClipboard(
+                                    context = context,
+                                    label = "stamethyst-easytier-room-invite",
+                                    value = shareText,
+                                )
+                                onRoomInviteShared(shareText)
+                                sheetNotice = LauncherTransientNoticeRequest(
+                                    message = UiText.StringResource(
+                                        R.string.main_easytier_share_room_copied,
+                                    ),
+                                    duration = LauncherTransientNoticeDuration.LONG,
+                                )
+                            },
                         )
                     }
                 }
@@ -3538,6 +3623,90 @@ internal fun isEasyTierRoomJoined(
         indicator.state == MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
 }
 
+@Composable
+private fun EasyTierRoomHeaderBadge(
+    @DrawableRes iconRes: Int,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+private fun buildEasyTierRoomShareText(
+    context: Context,
+    room: EasyTierRoomInfo,
+    password: String,
+): String {
+    val uri = EasyTierRoomShareCodec.buildShareUri(
+        roomId = room.roomId,
+        description = room.description,
+        password = password,
+    )
+    return buildString {
+        append(context.getString(R.string.main_easytier_share_invite_header))
+        append('\n')
+        append(context.getString(R.string.main_easytier_share_invite_room, room.roomId))
+        if (password.isNotEmpty()) {
+            append('\n')
+            append(context.getString(R.string.main_easytier_share_invite_password, password))
+        }
+        if (room.description.isNotBlank()) {
+            append('\n')
+            append(
+                context.getString(
+                    R.string.main_easytier_share_invite_description,
+                    room.description,
+                ),
+            )
+        }
+        append('\n')
+        append(context.getString(R.string.main_easytier_share_invite_hint))
+        append('\n')
+        append(uri)
+    }
+}
+
+private fun copyEasyTierRoomTextToClipboard(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+}
+
+internal fun readEasyTierRoomClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return null
+    if (!clipboard.hasPrimaryClip()) {
+        return null
+    }
+    val clip = clipboard.primaryClip ?: return null
+    if (clip.itemCount <= 0) {
+        return null
+    }
+    return clip.getItemAt(0).coerceToText(context)?.toString()
+}
+
 private enum class LauncherMainContentMode {
     GAME,
     MODS,
@@ -3819,7 +3988,7 @@ internal fun LauncherMainRoute(
             if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
                 viewModel.refreshWorkshopDownloadCards(hostActivity)
             }
-            viewModel.refresh(hostActivity)
+            viewModel.refreshIfStale(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
             // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
             // freshly completed sync does not immediately restart on recomposition.
@@ -3848,7 +4017,7 @@ internal fun LauncherMainRoute(
         } else {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
-                    viewModel.refresh(activity)
+                    viewModel.refreshIfStale(activity)
                     viewModel.syncModSuggestionsIfNeeded(activity)
                     viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = false)
                 }
@@ -4403,7 +4572,7 @@ private fun LauncherMainScreenContent(
         enabledMods.map { mod ->
             EnabledModSizeItem(
                 name = resolveModDisplayName(mod),
-                bytes = File(mod.storagePath).takeIf { it.isFile }?.length() ?: 0L,
+                bytes = mod.fileSizeBytes.coerceAtLeast(0L),
             )
         }
     }
@@ -4422,6 +4591,12 @@ private fun LauncherMainScreenContent(
     var showEasyTierBottomSheet by remember { mutableStateOf(false) }
     var showSteamAchievementsBottomSheet by remember { mutableStateOf(false) }
     var showEasyTierCompatibilityUpdateDialog by remember { mutableStateOf(false) }
+    // The clipboard invitation popup. `handledClipboardText` suppresses repeat popups for the same
+    // clipboard contents and also ignores the invitation this device just copied for someone else.
+    var sharedEasyTierRoomInvite by remember { mutableStateOf<EasyTierSharedRoomInvite?>(null) }
+    var handledEasyTierClipboardText by remember { mutableStateOf<String?>(null) }
+    val clipboardContext = LocalContext.current
+    val currentUiState = rememberUpdatedState(uiState)
     var easyTierRoomLoadBaselineAtOpen by remember { mutableStateOf<Long?>(null) }
     var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
     var steamCloudAutoRetryCurrentDelaySeconds by remember {
@@ -4569,6 +4744,38 @@ private fun LauncherMainScreenContent(
         }
     }
 
+    fun handleEasyTierClipboardText(text: String?) {
+        if (text.isNullOrBlank() || text == handledEasyTierClipboardText) {
+            return
+        }
+        val invite = EasyTierRoomShareCodec.parseShareText(text) ?: return
+        // Never prompt to join the room this device is already in. This also swallows the
+        // invitation this device just copied for someone else, including from the in-game overlay
+        // whose `:game` process cannot share Compose state with the launcher.
+        val indicator = currentUiState.value.easyTierIndicator
+        handledEasyTierClipboardText = text
+        if (isEasyTierRoomJoined(indicator, invite.roomId)) {
+            return
+        }
+        sharedEasyTierRoomInvite = invite
+    }
+
+    // Android only exposes clipboard contents to a focused app, so the invitation is read when the
+    // launcher returns to the foreground, plus once on entry in case it was already resumed.
+    DisposableEffect(lifecycleOwner, clipboardContext) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                handleEasyTierClipboardText(readEasyTierRoomClipboardText(clipboardContext))
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(clipboardContext) {
+        handleEasyTierClipboardText(readEasyTierRoomClipboardText(clipboardContext))
+    }
+
     if (pendingLaunchUnreadSuggestionModNames.isNotEmpty()) {
         val unreadMessage = buildUnreadSuggestionLaunchWarningMessage(
             pendingLaunchUnreadSuggestionModNames
@@ -4631,6 +4838,61 @@ private fun LauncherMainScreenContent(
                     }
                 ) {
                     Text(stringResource(R.string.main_easytier_compatibility_update_action))
+                }
+            },
+        )
+    }
+
+    sharedEasyTierRoomInvite?.let { invite ->
+        AlertDialog(
+            onDismissRequest = { sharedEasyTierRoomInvite = null },
+            title = {
+                Text(stringResource(R.string.main_easytier_shared_invite_dialog_title))
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.main_easytier_shared_invite_dialog_message))
+                    Text(
+                        stringResource(
+                            R.string.main_easytier_shared_invite_dialog_room,
+                            invite.roomId,
+                        ),
+                    )
+                    Text(
+                        if (invite.password.isEmpty()) {
+                            stringResource(R.string.main_easytier_shared_invite_dialog_no_password)
+                        } else {
+                            stringResource(
+                                R.string.main_easytier_shared_invite_dialog_password,
+                                invite.password,
+                            )
+                        },
+                    )
+                    if (invite.description.isNotBlank()) {
+                        Text(
+                            stringResource(
+                                R.string.main_easytier_shared_invite_dialog_description,
+                                invite.description,
+                            ),
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sharedEasyTierRoomInvite = null }) {
+                    Text(stringResource(R.string.main_easytier_action_cancel))
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val roomId = invite.roomId
+                        val password = invite.password
+                        sharedEasyTierRoomInvite = null
+                        actions.onJoinSharedEasyTierRoom(roomId, password)
+                    },
+                ) {
+                    Text(stringResource(R.string.main_easytier_shared_invite_dialog_join))
                 }
             },
         )
@@ -4851,6 +5113,7 @@ private fun LauncherMainScreenContent(
                 onKickMember = actions.onKickEasyTierRoomMember,
                 onConnect = actions.onConnectEasyTier,
                 onDisconnect = actions.onDisconnectEasyTier,
+                onRoomInviteShared = { shareText -> handledEasyTierClipboardText = shareText },
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,

@@ -161,6 +161,7 @@ internal class MainModManagementController(
         executor.shutdownNow()
     }
 
+    @Synchronized
     fun refresh(host: Activity, storageAccessible: Boolean) {
         folderStateStore.reload(host)
         associationStore.reload(host)
@@ -199,6 +200,7 @@ internal class MainModManagementController(
         persistFolderState(host)
     }
 
+    @Synchronized
     fun snapshot(): Snapshot {
         return Snapshot(
             optionalMods = resolveOptionalModsWithPendingSelection(),
@@ -412,6 +414,7 @@ internal class MainModManagementController(
         hostCallbacks.republish(host)
     }
 
+    @Synchronized
     fun suggestNextFolderName(): String {
         return buildNextFolderName()
     }

@@ -1613,6 +1613,11 @@ internal class WorkshopViewModel : ViewModel() {
     }
 
     fun download(context: Context, item: WorkshopItemSummary) {
+        // The market page is lazy in the launcher pager. Initialize the service on a tutorial-card
+        // click so deferring the hidden market page cannot turn the download action into a no-op.
+        if (service == null) {
+            load(context)
+        }
         val existingTask = WorkshopDownloadCenterStore.find(item.publishedFileId)
         if (blockBlockedWorkshopDownload(context, item, existingTask)) return
         if (existingTask?.status == WorkshopDownloadTaskStatus.Paused) {

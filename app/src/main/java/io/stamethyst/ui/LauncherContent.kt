@@ -1324,7 +1324,8 @@ private fun LauncherDockPager(
         HorizontalPager(
             state = pagerState,
             modifier = routeModifier,
-            beyondViewportPageCount = LauncherDockRoutes.lastIndex,
+            // Hidden pages own startup I/O and expensive list composition; keep them lazy.
+            beyondViewportPageCount = 0,
             userScrollEnabled = userScrollEnabled,
             key = { page -> LauncherDockRoutes[page].launcherDockTagSuffix() },
         ) { page ->
