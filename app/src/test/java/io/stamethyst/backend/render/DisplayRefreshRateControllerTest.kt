@@ -82,7 +82,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 82.5f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 1
             ),
             preference
         )
@@ -102,7 +102,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 60f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 1
             ),
             preference
         )
@@ -122,7 +122,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 30f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 2
             ),
             preference
         )
@@ -142,7 +142,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 60f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 1
             ),
             preference
         )
@@ -163,7 +163,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 120f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 2
             ),
             preference
         )
@@ -184,7 +184,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 90f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 2
             ),
             preference
         )
@@ -204,7 +204,7 @@ class DisplayRefreshRateControllerTest {
         assertEquals(
             WindowRefreshPreference(
                 preferredRefreshRateHz = 120f,
-                preferredDisplayModeId = null
+                preferredDisplayModeId = 1
             ),
             preference
         )
@@ -326,7 +326,7 @@ class DisplayRefreshRateControllerTest {
         // Initial switch, successful switch, repeated sync, then a vendor idle fallback.
         for (currentModeId in listOf(1, 2, 2, 1, 2)) {
             assertEquals(
-                 WindowRefreshPreference(90f, null),
+                 WindowRefreshPreference(90f, 2),
                 DisplayRefreshRateController.resolveWindowRefreshPreference(90f, currentModeId, modes)
             )
         }
