@@ -1609,10 +1609,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_bar_title_syncing">Steam Cloud sync in progress</string>
     <string name="main_steam_cloud_bar_title_failed">Steam connection failed</string>
     <string name="main_steam_cloud_bar_summary_hidden"></string>
-    <string name="main_steam_cloud_bar_summary_checking">Comparing local saves against the latest Steam Cloud state.</string>
     <string name="main_steam_cloud_bar_summary_conflict_missing">Conflict details are temporarily unavailable. Refresh once and try again.</string>
-    <string name="main_steam_cloud_bar_summary_syncing">Steam Cloud sync is running.</string>
-    <string name="main_steam_cloud_bar_summary_failed">Steam Cloud check failed. Retry to reconnect.</string>
     <string name="main_steam_cloud_service_start_blocked">Android blocked Steam Cloud background sync startup. Return to the launcher and retry while it is in the foreground.</string>
     <string name="main_steam_auth_circuit_logout_title">Steam sign-in ended</string>
     <string name="main_steam_auth_circuit_rate_limited_message">Steam rejected repeated authentication requests. The launcher has signed out this Steam account and stopped automatic retries. Please sign in again manually.</string>
@@ -1635,7 +1632,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_action_cancel_check">Cancel check</string>
     <string name="main_steam_cloud_check_cancelled_summary">Check cancelled. Your current saves are not synced.</string>
     <string name="main_steam_cloud_sync_cancelled_summary">Steam Cloud upload cancelled. Your current saves are not synced.</string>
-    <string name="main_steam_cloud_conflict_choice_hint">Your local saves and cloud saves conflict. Choose which save version to keep; the unselected save will be overwritten.</string>
+    <string name="main_steam_cloud_conflict_choice_hint">Choose which save version to keep; the unselected save will be overwritten.</string>
     <string name="main_steam_cloud_conflict_card_local_title">Local progress</string>
     <string name="main_steam_cloud_conflict_card_cloud_title">Steam Cloud progress</string>
     <string name="main_steam_cloud_conflict_card_conflicting_files">Conflicting files: %1$d</string>

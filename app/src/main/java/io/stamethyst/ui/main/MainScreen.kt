@@ -7332,8 +7332,7 @@ private fun steamCloudActionBarSummary(
         MainScreenViewModel.SteamCloudIndicatorState.HIDDEN ->
             stringResource(R.string.main_steam_cloud_bar_summary_hidden)
         MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE -> ""
-        MainScreenViewModel.SteamCloudIndicatorState.CHECKING ->
-            stringResource(R.string.main_steam_cloud_bar_summary_checking)
+        MainScreenViewModel.SteamCloudIndicatorState.CHECKING -> ""
         MainScreenViewModel.SteamCloudIndicatorState.CONFLICT -> {
             if (indicator.plan == null) {
                 stringResource(R.string.main_steam_cloud_bar_summary_conflict_missing)
@@ -7342,15 +7341,9 @@ private fun steamCloudActionBarSummary(
             }
         }
         MainScreenViewModel.SteamCloudIndicatorState.SYNCING ->
-            indicator.progressMessage.ifBlank {
-                stringResource(R.string.main_steam_cloud_bar_summary_syncing)
-            }
+            indicator.progressMessage
         MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED ->
-            if (indicator.errorSummary.isNotBlank()) {
-                indicator.errorSummary
-            } else {
-                stringResource(R.string.main_steam_cloud_bar_summary_failed)
-            }
+            indicator.errorSummary
     }
 }
 

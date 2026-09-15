@@ -4733,13 +4733,11 @@ class MainScreenViewModel : ViewModel() {
             ?: System.currentTimeMillis()
         val summary = data.getString(SteamCloudSyncProcessService.EXTRA_ERROR_SUMMARY)
             ?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(
-                if (isCancellation) {
-                    R.string.main_steam_cloud_sync_cancelled_summary
-                } else {
-                    R.string.main_steam_cloud_bar_summary_failed
-                }
-            )
+            ?: if (isCancellation) {
+                appContext.getString(R.string.main_steam_cloud_sync_cancelled_summary)
+            } else {
+                ""
+            }
         val failureCategory = data.steamCloudFailureCategoryOrNull()
             ?: if (isCancellation) SteamCloudFailureCategory.CANCELLED else SteamCloudFailureCategory.UNKNOWN
         steamCloudCheckInFlight = false

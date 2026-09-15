@@ -1608,10 +1608,7 @@
     <string name="main_steam_cloud_bar_title_syncing">Steam Cloud 正在同步</string>
     <string name="main_steam_cloud_bar_title_failed">Steam 连接失败</string>
     <string name="main_steam_cloud_bar_summary_hidden"></string>
-    <string name="main_steam_cloud_bar_summary_checking">正在检查云端变更。</string>
     <string name="main_steam_cloud_bar_summary_conflict_missing">暂时拿不到冲突详情，请先重新检查一次。</string>
-    <string name="main_steam_cloud_bar_summary_syncing">Steam Cloud 同步正在进行中。</string>
-    <string name="main_steam_cloud_bar_summary_failed">Steam Cloud 检查失败，请重试连接。</string>
     <string name="main_steam_cloud_service_start_blocked">Android 拦截了 Steam Cloud 后台同步启动。请回到启动器前台后重试。</string>
     <string name="main_steam_auth_circuit_logout_title">Steam 登录已退出</string>
     <string name="main_steam_auth_circuit_rate_limited_message">Steam 已拒绝频繁的认证请求。启动器已退出当前 Steam 账号并停止自动重试，请稍后手动重新登录。</string>
@@ -1634,7 +1631,7 @@
     <string name="main_steam_cloud_action_cancel_check">取消检查</string>
     <string name="main_steam_cloud_check_cancelled_summary">已取消检查，当前存档未同步。</string>
     <string name="main_steam_cloud_sync_cancelled_summary">已取消 Steam Cloud 上传，当前存档未同步。</string>
-    <string name="main_steam_cloud_conflict_choice_hint">您的本地存档和云存档冲突，选择保留哪一个存档版本，未选择的存档将被覆盖。</string>
+    <string name="main_steam_cloud_conflict_choice_hint">选择保留哪一个存档版本，未选择的存档将被覆盖。</string>
     <string name="main_steam_cloud_conflict_card_local_title">本地进度</string>
     <string name="main_steam_cloud_conflict_card_cloud_title">云端进度</string>
     <string name="main_steam_cloud_conflict_card_conflicting_files">冲突文件：%1$d</string>
