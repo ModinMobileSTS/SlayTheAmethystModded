@@ -2778,10 +2778,24 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.common_busy_preparing_jvm_log_bundle))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.common_busy_preparing_jvm_log_bundle_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val payload = JvmLogShareService.prepareSharePayload(host)
+                val payload = JvmLogShareService.prepareSharePayload(
+                    host,
+                    exportProgressReporter(
+                        host,
+                        R.string.common_busy_preparing_jvm_log_bundle_progress
+                    )
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     _effects.tryEmit(Effect.ShareJvmLogsBundle(payload))
@@ -2820,10 +2834,24 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_preparing_performance_logs))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.settings_busy_preparing_performance_logs_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val payload = JvmLogShareService.preparePerformanceSharePayload(host)
+                val payload = JvmLogShareService.preparePerformanceSharePayload(
+                    host,
+                    exportProgressReporter(
+                        host,
+                        R.string.settings_busy_preparing_performance_logs_progress
+                    )
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     _effects.tryEmit(Effect.SharePerformanceLogsBundle(payload))
@@ -2856,7 +2884,7 @@ class SettingsScreenViewModel : ViewModel() {
                 R.string.settings_busy_exporting_performance_logs_progress,
                 0
             ),
-            operation = UiBusyOperation.EXPORT_LOGS,
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
             progressPercent = 0
         )
         executor.execute {
@@ -2898,7 +2926,7 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(
             busy = true,
             message = UiText.StringResource(R.string.settings_busy_exporting_jvm_logs_progress, 0),
-            operation = UiBusyOperation.EXPORT_LOGS,
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
             progressPercent = 0
         )
         executor.execute {
@@ -2946,11 +2974,11 @@ class SettingsScreenViewModel : ViewModel() {
         return { percent ->
             val clamped = percent.coerceIn(0, 100)
             host.runOnUiThread {
-                if (uiState.busy && uiState.busyOperation == UiBusyOperation.EXPORT_LOGS) {
+                if (uiState.busy && uiState.busyOperation == UiBusyOperation.EXPORT_ARCHIVE) {
                     setBusy(
                         busy = true,
                         message = UiText.StringResource(messageRes, clamped),
-                        operation = UiBusyOperation.EXPORT_LOGS,
+                        operation = UiBusyOperation.EXPORT_ARCHIVE,
                         progressPercent = clamped
                     )
                 }
@@ -4539,7 +4567,11 @@ class SettingsScreenViewModel : ViewModel() {
         targetMode: SteamCloudSaveMode,
         targetLabel: String,
     ) {
-        setBusy(true, UiText.StringResource(R.string.settings_busy_importing_save_archive))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_importing_save_archive),
+            operation = UiBusyOperation.EXPORT_ARCHIVE
+        )
         executor.execute {
             try {
                 val result = SteamCloudOperationMutex.runExclusive(host) {
@@ -4587,7 +4619,11 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_save_archive))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_exporting_save_archive),
+            operation = UiBusyOperation.EXPORT_ARCHIVE
+        )
         executor.execute {
             try {
                 val exportedCount = SettingsFileService.exportSaveBundle(host, uri, sourceMode)

@@ -9,7 +9,7 @@ enum class UiBusyOperation {
     GAME_PROCESS_CLEANUP,
     GAME_STARTUP_WARMUP,
     STEAM_CLOUD_SYNC,
-    EXPORT_LOGS,
+    EXPORT_ARCHIVE,
     OTHER_BUSY
 
     ;
@@ -23,7 +23,7 @@ enum class UiBusyOperation {
             GAME_PROCESS_CLEANUP,
             GAME_STARTUP_WARMUP,
             STEAM_CLOUD_SYNC,
-            EXPORT_LOGS -> true
+            EXPORT_ARCHIVE -> true
             NONE,
             OTHER_BUSY -> false
         }

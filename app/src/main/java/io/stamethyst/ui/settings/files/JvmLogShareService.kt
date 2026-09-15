@@ -23,8 +23,11 @@ data class JvmLogsSharePayload(
 )
 
 internal object JvmLogShareService {
-    fun prepareSharePayload(host: Activity): JvmLogsSharePayload {
-        val archiveResult = DiagnosticsProcessClient.buildJvmLogShareArchive(host)
+    fun prepareSharePayload(
+        host: Activity,
+        onProgress: ((Int) -> Unit)? = null
+    ): JvmLogsSharePayload {
+        val archiveResult = DiagnosticsProcessClient.buildJvmLogShareArchive(host, onProgress)
         val fileName = archiveResult.archiveFile.name
         val shareUri = FileShareCompat.resolveShareUri(host, archiveResult.archiveFile)
         return JvmLogsSharePayload(
@@ -37,7 +40,8 @@ internal object JvmLogShareService {
         host: Activity,
         code: Int,
         isSignal: Boolean,
-        detail: String?
+        detail: String?,
+        onProgress: ((Int) -> Unit)? = null
     ): JvmLogsSharePayload {
         val archiveResult = DiagnosticsProcessClient.buildCrashShareArchive(
             host,
@@ -45,7 +49,8 @@ internal object JvmLogShareService {
                 code = code,
                 isSignal = isSignal,
                 detail = detail
-            )
+            ),
+            onProgress
         )
         val fileName = archiveResult.archiveFile.name
         val shareUri = FileShareCompat.resolveShareUri(host, archiveResult.archiveFile)
@@ -55,8 +60,14 @@ internal object JvmLogShareService {
         )
     }
 
-    fun preparePerformanceSharePayload(host: Activity): JvmLogsSharePayload {
-        val archiveResult = DiagnosticsProcessClient.buildPerformanceLogShareArchive(host)
+    fun preparePerformanceSharePayload(
+        host: Activity,
+        onProgress: ((Int) -> Unit)? = null
+    ): JvmLogsSharePayload {
+        val archiveResult = DiagnosticsProcessClient.buildPerformanceLogShareArchive(
+            host,
+            onProgress
+        )
         val fileName = archiveResult.archiveFile.name
         return JvmLogsSharePayload(
             uri = FileShareCompat.resolveShareUri(host, archiveResult.archiveFile),

@@ -136,7 +136,10 @@ class DiagnosticsProcessService : Service() {
                 }
 
                 ACTION_BUILD_JVM_LOG_SHARE -> {
-                    val result = DiagnosticsArchiveBuilder.createJvmLogShareArchive(applicationContext)
+                    val result = DiagnosticsArchiveBuilder.createJvmLogShareArchive(
+                        applicationContext,
+                        progress
+                    )
                     Bundle().apply {
                         putString(EXTRA_OUTPUT_PATH, result.archiveFile.absolutePath)
                         putInt(EXTRA_ENTRY_COUNT, result.entryCount)
@@ -151,7 +154,8 @@ class DiagnosticsProcessService : Service() {
                     )
                     val result = DiagnosticsArchiveBuilder.createCrashShareArchive(
                         applicationContext,
-                        crashContext
+                        crashContext,
+                        progress
                     )
                     Bundle().apply {
                         putString(EXTRA_OUTPUT_PATH, result.archiveFile.absolutePath)
@@ -173,7 +177,10 @@ class DiagnosticsProcessService : Service() {
                 }
 
                 ACTION_BUILD_PERFORMANCE_LOG_SHARE -> {
-                    val result = DiagnosticsArchiveBuilder.createPerformanceShareArchive(applicationContext)
+                    val result = DiagnosticsArchiveBuilder.createPerformanceShareArchive(
+                        applicationContext,
+                        progress
+                    )
                     Bundle().apply {
                         putString(EXTRA_OUTPUT_PATH, result.archiveFile.absolutePath)
                         putInt(EXTRA_ENTRY_COUNT, result.entryCount)

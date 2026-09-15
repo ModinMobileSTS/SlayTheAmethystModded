@@ -5353,14 +5353,23 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.common_busy_preparing_jvm_log_bundle))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.common_busy_preparing_jvm_log_bundle_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         diagnosticsExecutor.execute {
             runCatching {
                 val payload = JvmLogShareService.prepareCrashSharePayload(
                     host,
                     code,
                     isSignal,
-                    detail
+                    detail,
+                    exportArchiveProgressReporter(host)
                 )
                 val shareIntent = JvmLogShareService.buildShareIntent(host, payload)
                 Intent.createChooser(
@@ -5386,6 +5395,29 @@ class MainScreenViewModel : ViewModel() {
                             message = UiText.StringResource(R.string.sts_share_crash_report_failed),
                             duration = LauncherTransientNoticeDuration.LONG
                         )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Progress arrives on the main looper from the diagnostics process; keep it resilient by
+     * ignoring updates that race with a finished or unrelated operation.
+     */
+    private fun exportArchiveProgressReporter(host: Activity): (Int) -> Unit {
+        return { percent ->
+            val clamped = percent.coerceIn(0, 100)
+            host.runOnUiThread {
+                if (uiState.busy && uiState.busyOperation == UiBusyOperation.EXPORT_ARCHIVE) {
+                    setBusy(
+                        busy = true,
+                        message = UiText.StringResource(
+                            R.string.common_busy_preparing_jvm_log_bundle_progress,
+                            clamped
+                        ),
+                        operation = UiBusyOperation.EXPORT_ARCHIVE,
+                        progressPercent = clamped
                     )
                 }
             }

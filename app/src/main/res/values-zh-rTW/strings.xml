@@ -1089,6 +1089,7 @@
     <string name="search_history_delete_content_description">刪除搜尋歷史：%1$s</string>
     <string name="common_content_desc_back">返回</string>
     <string name="common_busy_preparing_jvm_log_bundle">正在準備 JVM 日誌包…</string>
+    <string name="common_busy_preparing_jvm_log_bundle_progress">正在準備 JVM 日誌包… %1$d%%</string>
     <string name="main_feedback_updates_content_description">反饋有更新</string>
     <string name="main_feedback_reply_card_title">反饋的議題有新回覆</string>
     <string name="main_feedback_reply_card_single">你關注的反饋議題有新的回覆</string>
@@ -2152,6 +2153,7 @@
     <string name="settings_performance_logs_share">分享效能日誌</string>
     <string name="settings_performance_logs_export">匯出效能日誌</string>
     <string name="settings_busy_preparing_performance_logs">正在準備效能日誌…</string>
+    <string name="settings_busy_preparing_performance_logs_progress">正在準備效能日誌… %1$d%%</string>
     <string name="settings_busy_exporting_performance_logs">正在匯出效能日誌…</string>
     <string name="settings_busy_exporting_performance_logs_progress">正在匯出效能日誌… %1$d%%</string>
     <string name="settings_performance_logs_exported">已匯出效能日誌，共 %1$d 個檔案。</string>

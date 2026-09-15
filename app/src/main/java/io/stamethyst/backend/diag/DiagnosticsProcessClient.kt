@@ -41,8 +41,11 @@ internal object DiagnosticsProcessClient {
         return result.getInt(DiagnosticsProcessService.EXTRA_ENTRY_COUNT, 0)
     }
 
-    fun buildJvmLogShareArchive(context: Context): DiagnosticsArchiveResult {
-        val result = execute(context, null) { serviceIntent ->
+    fun buildJvmLogShareArchive(
+        context: Context,
+        onProgress: ((Int) -> Unit)? = null
+    ): DiagnosticsArchiveResult {
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_JVM_LOG_SHARE
         }
         return parseArchiveResult(result)
@@ -63,8 +66,11 @@ internal object DiagnosticsProcessClient {
         return result.getInt(DiagnosticsProcessService.EXTRA_ENTRY_COUNT, 0)
     }
 
-    fun buildPerformanceLogShareArchive(context: Context): DiagnosticsArchiveResult {
-        val result = execute(context, null) { serviceIntent ->
+    fun buildPerformanceLogShareArchive(
+        context: Context,
+        onProgress: ((Int) -> Unit)? = null
+    ): DiagnosticsArchiveResult {
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_PERFORMANCE_LOG_SHARE
         }
         return parseArchiveResult(result)
@@ -72,9 +78,10 @@ internal object DiagnosticsProcessClient {
 
     fun buildCrashShareArchive(
         context: Context,
-        crashContext: CrashArchiveContext
+        crashContext: CrashArchiveContext,
+        onProgress: ((Int) -> Unit)? = null
     ): DiagnosticsArchiveResult {
-        val result = execute(context, null) { serviceIntent ->
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_CRASH_SHARE
             serviceIntent.putExtra(DiagnosticsProcessService.EXTRA_CRASH_CODE, crashContext.code)
             serviceIntent.putExtra(

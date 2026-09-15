@@ -1091,6 +1091,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="search_history_delete_content_description">Delete search history entry: %1$s</string>
     <string name="common_content_desc_back">Back</string>
     <string name="common_busy_preparing_jvm_log_bundle">Preparing JVM log bundle...</string>
+    <string name="common_busy_preparing_jvm_log_bundle_progress">Preparing JVM log bundle… %1$d%%</string>
     <string name="main_feedback_updates_content_description">Feedback updates available</string>
     <string name="main_feedback_reply_card_title">Feedback issues have new replies</string>
     <string name="main_feedback_reply_card_single">A feedback issue you follow has a new reply</string>
@@ -1858,6 +1859,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_performance_logs_share">Share performance logs</string>
     <string name="settings_performance_logs_export">Export performance logs</string>
     <string name="settings_busy_preparing_performance_logs">Preparing performance logs…</string>
+    <string name="settings_busy_preparing_performance_logs_progress">Preparing performance logs… %1$d%%</string>
     <string name="settings_busy_exporting_performance_logs">Exporting performance logs…</string>
     <string name="settings_busy_exporting_performance_logs_progress">Exporting performance logs… %1$d%%</string>
     <string name="settings_performance_logs_exported">Exported %1$d performance log files.</string>

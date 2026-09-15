@@ -90,10 +90,13 @@ internal object DiagnosticsArchiveBuilder {
     }
 
     @Throws(IOException::class)
-    fun createJvmLogShareArchive(context: Context): DiagnosticsArchiveResult {
+    fun createJvmLogShareArchive(
+        context: Context,
+        progress: DiagnosticsProgressListener? = null
+    ): DiagnosticsArchiveResult {
         val archiveFile = allocateShareArchiveFile(context, buildJvmLogExportFileName())
         val entryCount = FileOutputStream(archiveFile, false).use { output ->
-            writeDiagnosticsBundle(context, output, null, null)
+            writeDiagnosticsBundle(context, output, null, progress)
         }
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
@@ -101,20 +104,24 @@ internal object DiagnosticsArchiveBuilder {
     @Throws(IOException::class)
     fun createCrashShareArchive(
         context: Context,
-        crashContext: CrashArchiveContext
+        crashContext: CrashArchiveContext,
+        progress: DiagnosticsProgressListener? = null
     ): DiagnosticsArchiveResult {
         val archiveFile = allocateShareArchiveFile(context, buildCrashExportFileName())
         val entryCount = FileOutputStream(archiveFile, false).use { output ->
-            writeDiagnosticsBundle(context, output, crashContext, null)
+            writeDiagnosticsBundle(context, output, crashContext, progress)
         }
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
 
     @Throws(IOException::class)
-    fun createPerformanceShareArchive(context: Context): DiagnosticsArchiveResult {
+    fun createPerformanceShareArchive(
+        context: Context,
+        progress: DiagnosticsProgressListener? = null
+    ): DiagnosticsArchiveResult {
         val archiveFile = allocateShareArchiveFile(context, buildPerformanceExportFileName())
         val entryCount = FileOutputStream(archiveFile, false).use { output ->
-            writePerformanceDiagnosticsBundle(context, output, null)
+            writePerformanceDiagnosticsBundle(context, output, progress)
         }
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
