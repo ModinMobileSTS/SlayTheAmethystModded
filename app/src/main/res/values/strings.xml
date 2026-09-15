@@ -2738,6 +2738,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_troubleshooting_session_state">Session state: %1$s</string>
     <string name="main_easytier_troubleshooting_room_state">Room state: %1$s</string>
     <string name="main_easytier_unknown_error">Unknown error</string>
+    <string name="main_easytier_failure_copy">Copy error</string>
     <string name="main_easytier_action_connect">Connect</string>
     <string name="main_easytier_action_disconnect">Disconnect</string>
     <string name="main_easytier_action_working">Working</string>

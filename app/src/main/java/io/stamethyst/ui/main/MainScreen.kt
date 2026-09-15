@@ -1231,11 +1231,6 @@ private fun EasyTierOverviewDetails(
     }
 }
 
-private fun hasEasyTierFailureContext(
-    indicator: MainScreenViewModel.EasyTierIndicatorUi,
-): Boolean = indicator.failureCategory != EasyTierFailureCategory.None ||
-    indicator.errorSummary.isNotBlank()
-
 @Composable
 private fun easyTierStatusTitle(
     state: MainScreenViewModel.EasyTierIndicatorState,
@@ -1264,7 +1259,7 @@ private fun easyTierStatusTitle(
         stringResource(R.string.main_easytier_status_disconnecting)
     }
     MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED -> {
-        stringResource(R.string.main_easytier_status_failed)
+        stringResource(R.string.main_easytier_status_not_connected)
     }
 }
 
@@ -1277,11 +1272,7 @@ private fun easyTierOverviewSummary(
         stringResource(R.string.main_easytier_summary_not_connected)
     }
     MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED -> {
-        if (hasEasyTierFailureContext(indicator)) {
-            localizedEasyTierFailureSummary(indicator)
-        } else {
-            stringResource(R.string.main_easytier_summary_not_connected)
-        }
+        stringResource(R.string.main_easytier_summary_not_connected)
     }
     MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED -> {
         localizedEasyTierFailureSummary(indicator)
@@ -1302,10 +1293,7 @@ private fun easyTierOverviewSummary(
         stringResource(R.string.main_easytier_summary_disconnecting)
     }
     MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED -> {
-        stringResource(
-            R.string.main_easytier_summary_failed,
-            localizedEasyTierFailureSummary(indicator),
-        )
+        stringResource(R.string.main_easytier_summary_not_connected)
     }
 }
 
@@ -2710,7 +2698,6 @@ internal fun EasyTierBottomSheetContent(
     },
     onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
     onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
-    onReinstallResourcePack: () -> Unit = {},
     initialLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -2797,16 +2784,6 @@ internal fun EasyTierBottomSheetContent(
         roomsLoading = roomsLoading,
     )
     val pullToRefreshState = rememberPullToRefreshState()
-    val troubleshootingMessageResId = easyTierTroubleshootingMessageResId(
-        state = indicator.state,
-        failureCategory = indicator.failureCategory,
-        errorSummary = indicator.errorSummary,
-    )
-    val troubleshootingToastMessageResId = troubleshootingMessageResId.takeIf {
-        page != EasyTierRoomSheetPage.Tutorial &&
-            page != EasyTierRoomSheetPage.MemberMods &&
-            memberWorkshopDetailItem == null
-    }
     // Mirror launcher notices into the sheet. Room actions report success through the shared
     // notice bus, whose host is stacked below this sheet and therefore invisible while it is open.
     LaunchedEffect(Unit) {
@@ -2819,21 +2796,6 @@ internal fun EasyTierBottomSheetContent(
         if (sheetNotice != null) {
             delay(EASY_TIER_SHEET_NOTICE_DURATION_MS)
             sheetNotice = null
-        }
-    }
-    LaunchedEffect(troubleshootingToastMessageResId, indicator.errorSummary) {
-        if (troubleshootingToastMessageResId != null) {
-            val resourcePackMissing = isEasyTierResourcePackMissing(indicator)
-            LauncherTransientNoticeBus.show(
-                message = UiText.StringResource(troubleshootingToastMessageResId),
-                duration = LauncherTransientNoticeDuration.LONG,
-                actionLabel = if (resourcePackMissing) {
-                    UiText.StringResource(R.string.settings_reinstall_resource_pack_title)
-                } else {
-                    null
-                },
-                onAction = onReinstallResourcePack.takeIf { resourcePackMissing },
-            )
         }
     }
     LaunchedEffect(roomBrowser.creating, selectedRoom?.roomId, roomBrowser.errorSummary) {
@@ -4172,7 +4134,7 @@ internal fun LauncherMainRoute(
 
     uiState.pendingEasyTierKickDialog?.let { dialog ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = viewModel::dismissEasyTierKickDialog,
+            onDismissRequest = { viewModel.dismissEasyTierKickDialog(context) },
             title = { Text(stringResource(R.string.main_easytier_kicked_dialog_title)) },
             text = {
                 Text(
@@ -4182,7 +4144,7 @@ internal fun LauncherMainRoute(
                 )
             },
             confirmButton = {
-                Button(onClick = viewModel::dismissEasyTierKickDialog) {
+                Button(onClick = { viewModel.dismissEasyTierKickDialog(context) }) {
                     Text(stringResource(R.string.common_action_confirm))
                 }
             },
@@ -5126,7 +5088,6 @@ private fun LauncherMainScreenContent(
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
-                onReinstallResourcePack = actions.onReinstallResourcePack,
                 initialLoading = easyTierInitialLoadPending,
             )
         }
@@ -6056,11 +6017,6 @@ private fun isExternalResourcePackFailure(report: String): Boolean {
             normalized.contains("version")
         )
 }
-
-private fun isEasyTierResourcePackMissing(
-    indicator: MainScreenViewModel.EasyTierIndicatorUi,
-): Boolean = indicator.failureCategory == EasyTierFailureCategory.RuntimeBridgeUnavailable &&
-    isExternalResourcePackFailure(indicator.errorSummary)
 
 @Composable
 private fun CrashRecoveryCard(

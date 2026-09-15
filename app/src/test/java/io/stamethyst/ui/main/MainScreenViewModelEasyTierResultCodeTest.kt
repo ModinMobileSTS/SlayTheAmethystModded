@@ -8,6 +8,7 @@ import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.easytier.EasyTierProcessService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -202,6 +203,71 @@ class MainScreenViewModelEasyTierResultCodeTest {
                 state = MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
                 failureCategory = EasyTierFailureCategory.None,
             )
+        )
+    }
+
+    @Test
+    fun shouldShowEasyTierFailureNotice_coversFailuresButSkipsCleanDisconnectAndKick() {
+        assertTrue(
+            shouldShowEasyTierFailureNotice(
+                state = MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
+                failureCategory = EasyTierFailureCategory.Unknown,
+            )
+        )
+        assertTrue(
+            shouldShowEasyTierFailureNotice(
+                state = MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED,
+                failureCategory = EasyTierFailureCategory.VpnPermissionRequired,
+            )
+        )
+        assertTrue(
+            shouldShowEasyTierFailureNotice(
+                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
+                failureCategory = EasyTierFailureCategory.RoomClosed,
+            )
+        )
+        // A clean disconnect has no error worth surfacing.
+        assertFalse(
+            shouldShowEasyTierFailureNotice(
+                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
+                failureCategory = EasyTierFailureCategory.None,
+            )
+        )
+        // Kicked sessions own a dedicated dialog instead.
+        assertFalse(
+            shouldShowEasyTierFailureNotice(
+                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
+                failureCategory = EasyTierFailureCategory.SessionKicked,
+            )
+        )
+        assertFalse(
+            shouldShowEasyTierFailureNotice(
+                state = MainScreenViewModel.EasyTierIndicatorState.CONNECTED,
+                failureCategory = EasyTierFailureCategory.RuntimeBridgeUnavailable,
+            )
+        )
+    }
+
+    @Test
+    fun easyTierFailureNoticeEventKey_deduplicatesRedeliveryButAllowsNewFailures() {
+        val failure = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.FAILED,
+            mode = EasyTierNetworkMode.Room,
+            roomId = "room-a",
+            lastUpdatedAtMs = 1_000L,
+            lastErrorSummary = "session_status_poll_failed=true",
+        )
+        val category = EasyTierFailureCategory.Unknown
+
+        assertEquals(
+            easyTierFailureNoticeEventKey(failure, category),
+            easyTierFailureNoticeEventKey(failure.copy(), category),
+        )
+        assertNotEquals(
+            easyTierFailureNoticeEventKey(failure, category),
+            easyTierFailureNoticeEventKey(failure.copy(lastUpdatedAtMs = 2_000L), category),
         )
     }
 }

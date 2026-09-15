@@ -158,7 +158,7 @@ private fun InGameEasyTierDialogHost(
 
     kickDialog?.let { dialog ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = viewModel::dismissEasyTierKickDialog,
+            onDismissRequest = { viewModel.dismissEasyTierKickDialog(activity) },
             title = {
                 androidx.compose.material3.Text(
                     stringResource(R.string.main_easytier_kicked_dialog_title)
@@ -172,7 +172,9 @@ private fun InGameEasyTierDialogHost(
                 )
             },
             confirmButton = {
-                androidx.compose.material3.Button(onClick = viewModel::dismissEasyTierKickDialog) {
+                androidx.compose.material3.Button(
+                    onClick = { viewModel.dismissEasyTierKickDialog(activity) }
+                ) {
                     androidx.compose.material3.Text(stringResource(R.string.common_action_confirm))
                 }
             },

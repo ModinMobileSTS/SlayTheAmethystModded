@@ -2732,6 +2732,7 @@
     <string name="main_easytier_troubleshooting_session_state">會話狀態：%1$s</string>
     <string name="main_easytier_troubleshooting_room_state">房間狀態：%1$s</string>
     <string name="main_easytier_unknown_error">未知錯誤</string>
+    <string name="main_easytier_failure_copy">複製錯誤資訊</string>
     <string name="main_easytier_action_connect">連線</string>
     <string name="main_easytier_action_disconnect">中斷</string>
     <string name="main_easytier_action_working">處理中</string>

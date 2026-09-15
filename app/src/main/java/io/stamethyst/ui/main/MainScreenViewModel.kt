@@ -41,6 +41,7 @@ import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
+import io.stamethyst.backend.easytier.EasyTierKickAckStore
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
 import io.stamethyst.backend.easytier.EasyTierRoomApiClient
@@ -470,6 +471,7 @@ class MainScreenViewModel : ViewModel() {
     @Volatile
     private var easyTierRoomBrowserReloadPendingShowLoading = false
     private var lastQueuedEasyTierKickKey = ""
+    private var lastEasyTierFailureNoticeKey = ""
     @Volatile
     private var steamAchievementLoadInFlight = false
 
@@ -667,9 +669,17 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    fun dismissEasyTierKickDialog() {
-        if (uiState.pendingEasyTierKickDialog != null) {
-            uiState = uiState.copy(pendingEasyTierKickDialog = null)
+    fun dismissEasyTierKickDialog(context: Context) {
+        if (uiState.pendingEasyTierKickDialog == null) {
+            return
+        }
+        uiState = uiState.copy(pendingEasyTierKickDialog = null)
+        // Record the acknowledgement so the persisted kicked snapshot does not re-open this dialog
+        // on the next cold start.
+        runCatching {
+            EasyTierKickAckStore.writeAcknowledgedEventKey(context, lastQueuedEasyTierKickKey)
+        }.onFailure { failure ->
+            Log.w(LOGCAT_TAG, "Failed to persist EasyTier kick dialog acknowledgement", failure)
         }
     }
 
@@ -875,12 +885,7 @@ class MainScreenViewModel : ViewModel() {
             summaryOverride = deniedSummary,
             extraLines = listOf("vpn_permission_denied_from_ui=true"),
         )
-        _effects.tryEmit(
-            Effect.ShowSnackbar(
-                message = UiText.StringResource(R.string.main_easytier_vpn_permission_denied),
-                duration = LauncherTransientNoticeDuration.LONG,
-            )
-        )
+        emitEasyTierFailureNotice(host, deniedSummary)
     }
 
     fun queueEasyTierRoomCreation(
@@ -950,17 +955,12 @@ class MainScreenViewModel : ViewModel() {
                 snapshot = EasyTierSessionController.buildInitialSnapshot(host, config),
                 extraLines = listOf("connect_blocked_from_ui=config_unavailable"),
             )
-            publishEasyTierIndicator(snapshot)
+            publishEasyTierIndicator(host, snapshot)
             clearEasyTierRoomCreation(
                 host = host,
                 errorSummary = host.getString(R.string.main_easytier_config_missing),
             )
-            _effects.tryEmit(
-                Effect.ShowSnackbar(
-                    message = UiText.StringResource(R.string.main_easytier_config_missing),
-                    duration = LauncherTransientNoticeDuration.LONG,
-                )
-            )
+            emitEasyTierFailureNotice(host, host.getString(R.string.main_easytier_config_missing))
             return
         }
 
@@ -986,7 +986,7 @@ class MainScreenViewModel : ViewModel() {
             ),
             extraLines = listOf("connect_requested_from_ui=true"),
         )
-        publishEasyTierIndicator(connectingSnapshot)
+        publishEasyTierIndicator(host, connectingSnapshot)
         EasyTierSessionController.requestConnect(
             context = host,
             mode = config.defaultMode,
@@ -1797,7 +1797,7 @@ class MainScreenViewModel : ViewModel() {
             ),
             extraLines = listOf("disconnect_requested_from_ui=true"),
         )
-        publishEasyTierIndicator(disconnectingSnapshot)
+        publishEasyTierIndicator(host, disconnectingSnapshot)
         EasyTierSessionController.requestDisconnect(
             context = host,
             receiver = buildEasyTierConnectionReceiver(host),
@@ -4434,7 +4434,12 @@ class MainScreenViewModel : ViewModel() {
         val snapshot = data.easyTierSnapshotOrNull()
             ?: EasyTierSessionController.currentSnapshot(appContext)
         if (shouldPublishEasyTierIndicatorForResultCode(resultCode)) {
-            publishEasyTierIndicator(snapshot)
+            publishEasyTierIndicator(appContext, snapshot)
+            maybeShowEasyTierFailureNotice(
+                context = hostActivity ?: easyTierHostActivityReference?.get() ?: appContext,
+                snapshot = snapshot,
+                resultCode = resultCode,
+            )
         }
         updateEasyTierRoomCreationState(
             host = appContext,
@@ -5759,20 +5764,10 @@ class MainScreenViewModel : ViewModel() {
 
     private fun resolveEasyTierIndicatorAvailability(host: Activity): EasyTierIndicatorUi {
         val snapshot = EasyTierSessionController.currentSnapshot(host)
-        maybeQueueEasyTierKickDialog(snapshot)
+        maybeQueueEasyTierKickDialog(host, snapshot)
         return EasyTierIndicatorUi(
             visible = true,
-            state = when (snapshot.status) {
-                EasyTierConnectionStatus.IDLE -> EasyTierIndicatorState.IDLE
-                EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierIndicatorState.PERMISSION_REQUIRED
-                EasyTierConnectionStatus.CONNECTING -> EasyTierIndicatorState.CONNECTING
-                EasyTierConnectionStatus.SESSION_READY -> EasyTierIndicatorState.SESSION_READY
-                EasyTierConnectionStatus.CONNECTED -> EasyTierIndicatorState.CONNECTED
-                EasyTierConnectionStatus.RECONNECTING -> EasyTierIndicatorState.RECONNECTING
-                EasyTierConnectionStatus.DISCONNECTING -> EasyTierIndicatorState.DISCONNECTING
-                EasyTierConnectionStatus.DISCONNECTED -> EasyTierIndicatorState.DISCONNECTED
-                EasyTierConnectionStatus.FAILED -> EasyTierIndicatorState.CONNECTION_FAILED
-            },
+            state = easyTierIndicatorState(snapshot.status),
             mode = snapshot.mode,
             failureCategory = EasyTierErrorClassifier.classify(snapshot),
             errorSummary = snapshot.lastErrorSummary,
@@ -5857,25 +5852,15 @@ class MainScreenViewModel : ViewModel() {
             },
             extraLines = extraLines,
         )
-        publishEasyTierIndicator(snapshot)
+        publishEasyTierIndicator(host, snapshot)
     }
 
-    private fun publishEasyTierIndicator(snapshot: EasyTierConnectionSnapshot) {
-        maybeQueueEasyTierKickDialog(snapshot)
+    private fun publishEasyTierIndicator(context: Context, snapshot: EasyTierConnectionSnapshot) {
+        maybeQueueEasyTierKickDialog(context, snapshot)
         uiState = uiState.copy(
             easyTierIndicator = EasyTierIndicatorUi(
                 visible = true,
-                state = when (snapshot.status) {
-                EasyTierConnectionStatus.IDLE -> EasyTierIndicatorState.IDLE
-                EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierIndicatorState.PERMISSION_REQUIRED
-                EasyTierConnectionStatus.CONNECTING -> EasyTierIndicatorState.CONNECTING
-                EasyTierConnectionStatus.SESSION_READY -> EasyTierIndicatorState.SESSION_READY
-                EasyTierConnectionStatus.CONNECTED -> EasyTierIndicatorState.CONNECTED
-                EasyTierConnectionStatus.RECONNECTING -> EasyTierIndicatorState.RECONNECTING
-                EasyTierConnectionStatus.DISCONNECTING -> EasyTierIndicatorState.DISCONNECTING
-                    EasyTierConnectionStatus.DISCONNECTED -> EasyTierIndicatorState.DISCONNECTED
-                    EasyTierConnectionStatus.FAILED -> EasyTierIndicatorState.CONNECTION_FAILED
-                },
+                state = easyTierIndicatorState(snapshot.status),
                 mode = snapshot.mode,
                 failureCategory = EasyTierErrorClassifier.classify(snapshot),
                 errorSummary = snapshot.lastErrorSummary,
@@ -5896,9 +5881,14 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun maybeQueueEasyTierKickDialog(snapshot: EasyTierConnectionSnapshot) {
+    private fun maybeQueueEasyTierKickDialog(
+        context: Context,
+        snapshot: EasyTierConnectionSnapshot,
+    ) {
         val key = easyTierKickDialogEventKey(snapshot) ?: return
-        if (key == lastQueuedEasyTierKickKey) {
+        val acknowledgedKey = EasyTierKickAckStore.readAcknowledgedEventKey(context)
+        if (!shouldQueueEasyTierKickDialog(key, lastQueuedEasyTierKickKey, acknowledgedKey)) {
+            lastQueuedEasyTierKickKey = key
             return
         }
         lastQueuedEasyTierKickKey = key
@@ -5906,6 +5896,70 @@ class MainScreenViewModel : ViewModel() {
             pendingEasyTierKickDialog = EasyTierKickDialogUi(
                 message = snapshot.lastErrorSummary.trim(),
             ),
+        )
+    }
+
+    private fun easyTierIndicatorState(status: EasyTierConnectionStatus): EasyTierIndicatorState =
+        when (status) {
+            EasyTierConnectionStatus.IDLE -> EasyTierIndicatorState.IDLE
+            EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierIndicatorState.PERMISSION_REQUIRED
+            EasyTierConnectionStatus.CONNECTING -> EasyTierIndicatorState.CONNECTING
+            EasyTierConnectionStatus.SESSION_READY -> EasyTierIndicatorState.SESSION_READY
+            EasyTierConnectionStatus.CONNECTED -> EasyTierIndicatorState.CONNECTED
+            EasyTierConnectionStatus.RECONNECTING -> EasyTierIndicatorState.RECONNECTING
+            EasyTierConnectionStatus.DISCONNECTING -> EasyTierIndicatorState.DISCONNECTING
+            EasyTierConnectionStatus.DISCONNECTED -> EasyTierIndicatorState.DISCONNECTED
+            EasyTierConnectionStatus.FAILED -> EasyTierIndicatorState.CONNECTION_FAILED
+        }
+
+    /**
+     * Surfaces a connection failure as a transient, copyable snackbar.
+     *
+     * The overview card deliberately no longer renders [EasyTierConnectionSnapshot.lastErrorSummary]:
+     * that summary is persisted to disk and would keep showing a stale error after a restart, which
+     * reads as a live failure. The error is delivered once per failure event here instead, where the
+     * user can copy the exact text for a bug report.
+     */
+    private fun maybeShowEasyTierFailureNotice(
+        context: Context,
+        snapshot: EasyTierConnectionSnapshot,
+        resultCode: Int,
+    ) {
+        val state = easyTierIndicatorState(snapshot.status)
+        val category = EasyTierErrorClassifier.classify(snapshot, resultCode)
+        if (!shouldShowEasyTierFailureNotice(state, category)) {
+            return
+        }
+        val key = easyTierFailureNoticeEventKey(snapshot, category)
+        // One failure is delivered twice: to the per-request ResultReceiver and as a package-scoped
+        // broadcast. Only the first delivery becomes a snackbar.
+        if (key == lastEasyTierFailureNoticeKey) {
+            return
+        }
+        lastEasyTierFailureNoticeKey = key
+        val message = snapshot.lastErrorSummary.trim().ifBlank {
+            easyTierTroubleshootingMessageResId(state, category, snapshot.lastErrorSummary)
+                ?.let { resId -> context.getString(resId) }
+                .orEmpty()
+        }
+        emitEasyTierFailureNotice(context, message)
+    }
+
+    private fun emitEasyTierFailureNotice(context: Context, message: String) {
+        val resolved = message.trim().ifBlank {
+            context.getString(R.string.main_easytier_unknown_error)
+        }
+        _effects.tryEmit(
+            Effect.ShowSnackbar(
+                message = UiText.DynamicString(resolved),
+                duration = LauncherTransientNoticeDuration.LONG,
+                actionLabel = UiText.StringResource(R.string.main_easytier_failure_copy),
+                onAction = {
+                    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                        ClipData.newPlainText("stamethyst-easytier-error", resolved)
+                    )
+                },
+            )
         )
     }
 
@@ -6104,6 +6158,21 @@ internal fun easyTierKickDialogEventKey(snapshot: EasyTierConnectionSnapshot): S
     ).joinToString("|")
 }
 
+/**
+ * Decides whether a kicked event should open the dialog.
+ *
+ * [acknowledgedEventKey] is the on-disk record of an already-dismissed kick. The kicked snapshot is
+ * persisted, so without this check a cold start re-queues the identical event and the player sees
+ * "removed from room" every time the launcher restarts.
+ */
+internal fun shouldQueueEasyTierKickDialog(
+    eventKey: String?,
+    lastQueuedEventKey: String,
+    acknowledgedEventKey: String,
+): Boolean = eventKey != null &&
+    eventKey != lastQueuedEventKey &&
+    eventKey != acknowledgedEventKey
+
 internal fun shouldCloseEasyTierRoomWhenOwnerLeaves(
     state: EasyTierConnectionStatus,
     activeRoomId: String,
@@ -6191,6 +6260,35 @@ internal fun shouldDisconnectEasyTierUiState(
         state == MainScreenViewModel.EasyTierIndicatorState.RECONNECTING ||
         state == MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
 }
+
+/**
+ * Decides whether a snapshot state should surface a transient failure snackbar.
+ *
+ * Kicked sessions are excluded because they already own the [MainScreenViewModel.EasyTierKickDialogUi]
+ * dialog, and a clean disconnect carries no failure context worth reporting.
+ */
+internal fun shouldShowEasyTierFailureNotice(
+    state: MainScreenViewModel.EasyTierIndicatorState,
+    failureCategory: EasyTierFailureCategory,
+): Boolean = when (state) {
+    MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
+    MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED -> true
+    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED ->
+        failureCategory != EasyTierFailureCategory.None &&
+            failureCategory != EasyTierFailureCategory.SessionKicked
+    else -> false
+}
+
+internal fun easyTierFailureNoticeEventKey(
+    snapshot: EasyTierConnectionSnapshot,
+    failureCategory: EasyTierFailureCategory,
+): String = listOf(
+    snapshot.roomId.trim(),
+    snapshot.status.name,
+    failureCategory.name,
+    snapshot.lastUpdatedAtMs.toString(),
+    snapshot.lastErrorSummary.trim(),
+).joinToString("|")
 
 internal fun isSteamCloudStatusRefreshDue(
     lastCheckedAtMs: Long?,

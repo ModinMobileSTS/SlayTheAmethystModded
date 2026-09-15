@@ -2737,6 +2737,7 @@
     <string name="main_easytier_troubleshooting_session_state">会话状态：%1$s</string>
     <string name="main_easytier_troubleshooting_room_state">房间状态：%1$s</string>
     <string name="main_easytier_unknown_error">未知错误</string>
+    <string name="main_easytier_failure_copy">复制错误信息</string>
     <string name="main_easytier_action_connect">连接</string>
     <string name="main_easytier_action_disconnect">断开</string>
     <string name="main_easytier_action_working">处理中</string>
