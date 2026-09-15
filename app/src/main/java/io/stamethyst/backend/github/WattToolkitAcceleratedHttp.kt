@@ -16,7 +16,9 @@ import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HostnameVerifier
@@ -43,6 +45,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.ResponseBody
 import okhttp3.internal.tls.OkHostnameVerifier
 import org.json.JSONArray
 import org.json.JSONObject
@@ -906,6 +909,7 @@ internal class WattToolkitGithubRouteResolver(
     private val nowProvider: () -> Long = System::currentTimeMillis,
     private val sleepProvider: (Long) -> Unit = { delayMs -> Thread.sleep(delayMs) },
     private val backgroundExecutor: Executor = sharedBestPathBackgroundExecutor,
+    private val probeExecutor: ExecutorService = sharedWattProbeExecutor,
     private val requireHttps: Boolean = false,
 ) {
     private val lock = Any()
@@ -1143,19 +1147,30 @@ internal class WattToolkitGithubRouteResolver(
             ?.withoutExcludedForwardTargets(excludedForwardTargets)
             ?.restrictForwardTargets()
         val rankedForwardRoute = merged?.copy(isOfficial = false)
-        val officialProbe = if (excludedForwardTargets.contains(OFFICIAL_ROUTE_TARGET)) {
-            WattToolkitForwardTargetProbe.failed()
-        } else {
-            runCatching {
-                effectiveOfficialTargetProbe(normalizedHost, routeProfile.officialProbePath)
-            }.getOrDefault(WattToolkitForwardTargetProbe.failed())
+        val forwardTarget = rankedForwardRoute?.forwardTargets?.firstOrNull()
+        // Probe the official path and the preferred forward hop concurrently. Each
+        // probe now drains a body window and can take seconds on a slow node; running
+        // them serially would double the cold-start discovery latency.
+        val officialProbeFuture = probeExecutor.submit<WattToolkitForwardTargetProbe> {
+            if (excludedForwardTargets.contains(OFFICIAL_ROUTE_TARGET)) {
+                WattToolkitForwardTargetProbe.failed()
+            } else {
+                runCatching {
+                    effectiveOfficialTargetProbe(normalizedHost, routeProfile.officialProbePath)
+                }.getOrDefault(WattToolkitForwardTargetProbe.failed())
+            }
         }
-        val forwardProbe = rankedForwardRoute?.forwardTargets
-            ?.firstOrNull()
-            ?.let { target ->
+        val forwardProbeFuture = forwardTarget?.let { target ->
+            probeExecutor.submit<WattToolkitForwardTargetProbe> {
                 runCatching { effectiveForwardTargetProbe(target) }
                     .getOrDefault(WattToolkitForwardTargetProbe.failed())
             }
+        }
+        val officialProbe = runCatching { officialProbeFuture.get() }
+            .getOrDefault(WattToolkitForwardTargetProbe.failed())
+        val forwardProbe = forwardProbeFuture?.let { future ->
+            runCatching { future.get() }.getOrDefault(WattToolkitForwardTargetProbe.failed())
+        }
         val resolved = when {
             officialProbe.isBetterThan(forwardProbe) ->
                 (rankedForwardRoute ?: officialRouteForHost(normalizedHost)).copy(isOfficial = true)
@@ -1563,8 +1578,25 @@ internal class WattToolkitGithubRouteResolver(
         if (distinctTargets.size < 2) {
             return distinctTargets
         }
-        return distinctTargets
-            .mapIndexed { index, target ->
+        return probeForwardTargetsConcurrently(distinctTargets)
+            .sortedWith(
+                compareByDescending<RankedWattForwardTarget> { it.probe.successRate }
+                    .thenBy { it.probe.latencyMs ?: Long.MAX_VALUE }
+                    .thenBy { it.originalIndex },
+            )
+            .map(RankedWattForwardTarget::target)
+    }
+
+    /**
+     * Probes every candidate hop at once. Probing is dominated by a read window that
+     * can take seconds per node, so serial probing (N × window) made discovery slower
+     * than the real request it was trying to accelerate.
+     */
+    private fun probeForwardTargetsConcurrently(
+        targets: List<String>,
+    ): List<RankedWattForwardTarget> {
+        val futures = targets.mapIndexed { index, target ->
+            probeExecutor.submit<RankedWattForwardTarget> {
                 RankedWattForwardTarget(
                     target = target,
                     originalIndex = index,
@@ -1572,12 +1604,16 @@ internal class WattToolkitGithubRouteResolver(
                         .getOrDefault(WattToolkitForwardTargetProbe.failed()),
                 )
             }
-            .sortedWith(
-                compareByDescending<RankedWattForwardTarget> { it.probe.successRate }
-                    .thenBy { it.probe.latencyMs ?: Long.MAX_VALUE }
-                    .thenBy { it.originalIndex },
-            )
-            .map(RankedWattForwardTarget::target)
+        }
+        return futures.mapIndexed { index, future ->
+            runCatching { future.get() }.getOrElse {
+                RankedWattForwardTarget(
+                    target = targets[index],
+                    originalIndex = index,
+                    probe = WattToolkitForwardTargetProbe.failed(),
+                )
+            }
+        }
     }
 
     private fun isAllowedForwardTarget(target: String): Boolean {
@@ -1627,6 +1663,14 @@ internal class WattToolkitGithubRouteResolver(
         private val sharedBestPathBackgroundExecutor: Executor =
             Executors.newSingleThreadExecutor { runnable ->
                 Thread(runnable, "watt-best-path-search").apply {
+                    isDaemon = true
+                }
+            }
+
+        /** Shared pool for concurrently probing forward/official route candidates. */
+        private val sharedWattProbeExecutor: ExecutorService =
+            Executors.newFixedThreadPool(WATT_PROBE_PARALLELISM) { runnable ->
+                Thread(runnable, "watt-route-probe").apply {
                     isDaemon = true
                 }
             }
@@ -1938,7 +1982,7 @@ private fun probeWattToolkitOfficialTarget(
     return probeWattToolkitHttpTarget(client, url, requireHttps)
 }
 
-private fun probeWattToolkitHttpTarget(
+internal fun probeWattToolkitHttpTarget(
     client: OkHttpClient,
     url: HttpUrl,
     requireHttps: Boolean = false,
@@ -1963,15 +2007,23 @@ private fun probeWattToolkitHttpTarget(
             probeClient.newCall(
                 Request.Builder()
                     .url(url)
-                    .head()
+                    .get()
                     .build(),
-            ).execute().use {
-                // Any HTTP response proves the target completed transport and protocol setup.
+            ).execute().use { response ->
+                // Read a fixed body window instead of only the headers. A node that
+                // completes the TLS handshake quickly but then stalls on the body (the
+                // "slow tail" that plagues forward endpoints) must rank below a node
+                // that streams the window promptly. A HEAD probe only ever observed the
+                // handshake and ranked such nodes as equals, so a bad node could be
+                // preferred and then fail or hang on the real request.
+                drainProbeBodyWindow(response.body, FORWARD_TARGET_PROBE_BODY_BYTES)
                 successes++
                 latencies += ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(1L)
             }
         } catch (_: IOException) {
-            // Keep probing remaining samples so transient loss affects success rate.
+            // A read timeout while draining the window counts as failure: the node is
+            // too slow to carry real traffic. Keep sampling so transient loss still
+            // affects the success rate rather than the whole probe.
         }
     }
     return WattToolkitForwardTargetProbe(
@@ -1979,6 +2031,27 @@ private fun probeWattToolkitHttpTarget(
         attempts = FORWARD_TARGET_PROBE_ATTEMPTS,
         latencyMs = latencies.takeIf(List<Long>::isNotEmpty)?.average()?.toLong(),
     )
+}
+
+/**
+ * Reads up to [maxBytes] from [body] without buffering the whole response. A bounded
+ * window is enough to rank nodes by throughput while keeping each probe cheap, and
+ * lets a slow node trip the read timeout rather than draining an unbounded payload.
+ */
+private fun drainProbeBodyWindow(body: ResponseBody?, maxBytes: Int) {
+    if (body == null) {
+        return
+    }
+    val stream = body.byteStream()
+    val buffer = ByteArray(PROBE_DRAIN_BUFFER_BYTES)
+    var remaining = maxBytes
+    while (remaining > 0) {
+        val read = stream.read(buffer, 0, minOf(buffer.size, remaining))
+        if (read < 0) {
+            break
+        }
+        remaining -= read
+    }
 }
 
 /**
@@ -2078,8 +2151,11 @@ internal const val WATT_PROXY_TYPE_DIRECT = 0
 internal const val WATT_PROXY_TYPE_REVERSE_PROXY = 1
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000L
 private const val DEFAULT_READ_TIMEOUT_MS = 18_000L
-private const val FORWARD_TARGET_PROBE_ATTEMPTS = 3
-private const val FORWARD_TARGET_PROBE_TIMEOUT_MS = 1_200L
+private const val WATT_PROBE_PARALLELISM = 8
+private const val FORWARD_TARGET_PROBE_ATTEMPTS = 2
+private const val FORWARD_TARGET_PROBE_TIMEOUT_MS = 4_000L
+private const val FORWARD_TARGET_PROBE_BODY_BYTES = 64 * 1_024
+private const val PROBE_DRAIN_BUFFER_BYTES = 8 * 1_024
 private const val OFFICIAL_ROUTE_TARGET = "__official__"
 private const val MAX_FOLLOW_UPS = 10
 private const val HTTP_METHOD_GET = "GET"

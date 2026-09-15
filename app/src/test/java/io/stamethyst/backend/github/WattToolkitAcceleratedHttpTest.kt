@@ -3,6 +3,7 @@ package io.stamethyst.backend.github
 import java.net.InetAddress
 import java.net.ProtocolException
 import java.io.File
+import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.Dns
@@ -201,6 +202,49 @@ class WattToolkitAcceleratedHttpTest {
             assertEquals(42L, restored.cachedAtMs)
         } finally {
             file.delete()
+        }
+    }
+
+    @Test
+    fun probe_readsBodyWindow_andFailsSlowNodes() {
+        val fastServer = MockWebServer()
+        val slowServer = MockWebServer()
+        fastServer.start()
+        slowServer.start()
+        try {
+            // A fast node streams the body immediately; a slow node delays the body past
+            // the probe read window, so it must rank as failed rather than successful.
+            repeat(2) {
+                fastServer.enqueue(
+                    MockResponse.Builder().code(200).body("f".repeat(200_000)).build(),
+                )
+            }
+            repeat(2) {
+                slowServer.enqueue(
+                    MockResponse.Builder()
+                        .code(200)
+                        .body("s".repeat(200_000))
+                        .bodyDelay(6_000, TimeUnit.MILLISECONDS)
+                        .build(),
+                )
+            }
+            val client = OkHttpClient.Builder().build()
+
+            val fastProbe = probeWattToolkitHttpTarget(
+                client = client,
+                url = "http://localhost:${fastServer.port}/".toHttpUrl(),
+            )
+            val slowProbe = probeWattToolkitHttpTarget(
+                client = client,
+                url = "http://localhost:${slowServer.port}/".toHttpUrl(),
+            )
+
+            assertEquals(2, fastProbe.successes)
+            assertEquals(0, slowProbe.successes)
+            assertTrue(fastProbe.isBetterThan(slowProbe))
+        } finally {
+            fastServer.close()
+            slowServer.close()
         }
     }
 
