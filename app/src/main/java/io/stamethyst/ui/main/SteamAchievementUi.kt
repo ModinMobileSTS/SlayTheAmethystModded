@@ -100,7 +100,7 @@ internal fun SteamAchievementOverviewCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
+                SlidingTextSwap(
                     text = stringResource(
                         R.string.main_steam_achievements_progress,
                         state.unlockedCount,

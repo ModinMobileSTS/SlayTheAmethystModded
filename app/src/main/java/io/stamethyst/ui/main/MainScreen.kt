@@ -287,7 +287,7 @@ private fun LauncherGamePage(
             if (uiState.busy && !uiState.busyOperation.usesBlockingOverlay()) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 uiState.busyMessage?.let { message ->
-                    Text(
+                    SlidingTextSwap(
                         text = message.resolve(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -531,7 +531,7 @@ private fun GameLaunchActionBar(
             modifier = Modifier.size(20.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
-        Text(
+        SlidingTextSwap(
             text = if (gameRunning) {
                 stringResource(R.string.main_restart_game)
             } else {
@@ -539,6 +539,8 @@ private fun GameLaunchActionBar(
             },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -810,7 +812,7 @@ private fun GameStatusHeroCard(
                 )
             }
             TextButton(onClick = onEnabledModsClick) {
-                Text(
+                SlidingTextSwap(
                     text = when {
                         hasStorageIssue -> stringResource(R.string.main_status_storage_unavailable_os_issue)
                         gameRunning -> stringResource(R.string.main_status_game_running)
@@ -850,7 +852,7 @@ private fun GameMetricCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
+            SlidingTextSwap(
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
@@ -905,15 +907,17 @@ private fun FeedbackReplyUpdateCard(
                     )
                 }
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .animateContentSize(animationSpec = tween(durationMillis = 220)),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
+                    SlidingTextSwap(
                         text = stringResource(titleResId),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
+                    SlidingTextSwap(
                         text = summaryText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.82f),
@@ -968,7 +972,7 @@ private fun LauncherUpdateNoticeCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
+                SlidingTextSwap(
                     text = stringResource(
                         R.string.main_update_notice_card_version,
                         notice.currentVersion,
@@ -1037,7 +1041,9 @@ private fun SteamCloudOverviewCard(
                 )
             }
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .animateContentSize(animationSpec = tween(durationMillis = 220)),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
@@ -1045,7 +1051,7 @@ private fun SteamCloudOverviewCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
+                SlidingTextSwap(
                     text = if (visibleIndicator) {
                         steamCloudActionBarTitle(indicator.state)
                     } else {
@@ -1053,15 +1059,18 @@ private fun SteamCloudOverviewCard(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text(
-                    text = if (visibleIndicator) {
-                        steamCloudActionBarSummary(indicator)
-                    } else {
-                        stringResource(R.string.main_steam_cloud_disabled_summary)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                val summaryText = if (visibleIndicator) {
+                    steamCloudActionBarSummary(indicator)
+                } else {
+                    stringResource(R.string.main_steam_cloud_disabled_summary)
+                }
+                if (summaryText.isNotBlank()) {
+                    SlidingTextSwap(
+                        text = summaryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -7405,18 +7414,18 @@ private fun StorageIssueCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
+            SlidingTextSwap(
                 text = issue.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-            Text(
+            SlidingTextSwap(
                 text = issue.message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-            Text(
+            SlidingTextSwap(
                 text = issue.recovery,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer
