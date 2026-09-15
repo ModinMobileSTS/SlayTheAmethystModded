@@ -49,6 +49,7 @@ import io.stamethyst.backend.workshop.buildBaiduWorkshopCommentReference
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.isRunningDownload
 import io.stamethyst.backend.workshop.mapLocaleLanguageToBaiduLanguage
+import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -72,7 +73,7 @@ internal class WorkshopViewModel : ViewModel() {
     private var loaded = false
     private var activeListMode: WorkshopListMode = WorkshopListMode.Browse
     private var activeQueryText: String = ""
-    private var activeSort: WorkshopBrowseSort = WorkshopBrowseSort.MostPopular
+    private var activeSort: WorkshopBrowseSort = WorkshopBrowseSort.Default
     private var activeTimeFilter: WorkshopBrowseTimeFilter = WorkshopBrowseTimeFilter.OneWeek
     private var activeCategory: WorkshopModCategory = WorkshopModCategory.All
     private var browseRequestGeneration = 0
@@ -156,7 +157,11 @@ internal class WorkshopViewModel : ViewModel() {
         }
         refreshDownloadState(context)
         when (activeListMode) {
-            WorkshopListMode.Browse -> search(context, "")
+            WorkshopListMode.Browse -> search(
+                context,
+                "",
+                sort = LauncherPreferences.readWorkshopDefaultSort(context),
+            )
             WorkshopListMode.Subscriptions -> loadSubscribedPage(context, page = 1, append = false)
         }
     }
@@ -303,7 +308,7 @@ internal class WorkshopViewModel : ViewModel() {
     fun search(
         context: Context,
         queryText: String,
-        sort: WorkshopBrowseSort = WorkshopBrowseSort.MostPopular,
+        sort: WorkshopBrowseSort = WorkshopBrowseSort.Default,
         timeFilter: WorkshopBrowseTimeFilter = WorkshopBrowseTimeFilter.OneWeek,
         category: WorkshopModCategory = WorkshopModCategory.All,
     ) {

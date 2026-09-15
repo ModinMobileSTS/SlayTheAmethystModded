@@ -18,6 +18,8 @@
     <string name="settings_market_workshop_acceleration_desc">對 Steam 創意工坊、商店/CDN 和預覽圖請求使用優選路由。</string>
     <string name="settings_market_workshop_language_title">創意工坊語言</string>
     <string name="settings_market_workshop_language_desc">Steam 創意工坊瀏覽/搜尋語言</string>
+    <string name="settings_market_workshop_default_sort_title">預設排序方式</string>
+    <string name="settings_market_workshop_default_sort_desc">市場創意工坊列表的預設排序方式</string>
     <string name="settings_market_workshop_auto_import_enabled_title">工坊自動匯入</string>
     <string name="settings_market_workshop_auto_import_disabled_title">工坊自動匯入：已關閉</string>
     <string name="settings_market_workshop_auto_import_desc">下載到標準 jar 模組後自動匯入。關閉後會保留在工坊卡片中，手動點選匯入。</string>

@@ -221,6 +221,7 @@ object LauncherConfig {
     // Unified switch replacing the two legacy per-feature keys above.
     private const val PREF_KEY_WATT_ACCELERATION_ENABLED = "watt_acceleration_enabled"
     private const val PREF_KEY_WORKSHOP_STEAM_LANGUAGE = "workshop_steam_language"
+    private const val PREF_KEY_WORKSHOP_DEFAULT_SORT = "workshop_default_sort"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ENABLED = "workshop_auto_import_enabled"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED =
         "workshop_auto_import_atlas_downscale_enabled"
@@ -366,6 +367,7 @@ object LauncherConfig {
     const val MAX_WORKSHOP_DOWNLOAD_THREADS = 8
     const val DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_WORKSHOP_STEAM_LANGUAGE = "schinese"
+    const val DEFAULT_WORKSHOP_DEFAULT_SORT = "totaluniquesubscribers"
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED = true
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED = false
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_PX = 1024
@@ -2220,6 +2222,19 @@ object LauncherConfig {
     fun saveWorkshopSteamLanguage(context: Context, value: String) {
         prefs(context, crossProcess = true).edit(commit = true) {
             putString(PREF_KEY_WORKSHOP_STEAM_LANGUAGE, value.trim().ifBlank { DEFAULT_WORKSHOP_STEAM_LANGUAGE })
+        }
+    }
+
+    fun readWorkshopDefaultSort(context: Context): String {
+        return prefs(context, crossProcess = true).getString(
+            PREF_KEY_WORKSHOP_DEFAULT_SORT,
+            DEFAULT_WORKSHOP_DEFAULT_SORT
+        ) ?: DEFAULT_WORKSHOP_DEFAULT_SORT
+    }
+
+    fun saveWorkshopDefaultSort(context: Context, value: String) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putString(PREF_KEY_WORKSHOP_DEFAULT_SORT, value.trim().ifBlank { DEFAULT_WORKSHOP_DEFAULT_SORT })
         }
     }
 

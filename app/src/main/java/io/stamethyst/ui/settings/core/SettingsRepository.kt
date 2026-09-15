@@ -35,6 +35,7 @@ import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
@@ -142,6 +143,7 @@ internal object SettingsRepository {
         val workshopDownloadThreads: Int,
         val workshopWattAccelerationEnabled: Boolean,
         val workshopSteamLanguage: SteamLanguagePreference,
+        val workshopDefaultSort: WorkshopBrowseSort,
         val workshopAutoImportEnabled: Boolean,
         val workshopAutoImportAtlasDownscaleEnabled: Boolean,
         val workshopAutoImportAtlasDownscaleMaxEdgePx: Int,
@@ -298,6 +300,7 @@ internal object SettingsRepository {
                 workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(context),
                 workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(context),
                 workshopSteamLanguage = LauncherPreferences.readWorkshopSteamLanguage(context),
+                workshopDefaultSort = LauncherPreferences.readWorkshopDefaultSort(context),
                 workshopAutoImportEnabled = LauncherPreferences.isWorkshopAutoImportEnabled(context),
                 workshopAutoImportAtlasDownscaleEnabled =
                     ImportPatchRegistry.isEnabled(context, AtlasOfflineDownscalePatchModule.id),

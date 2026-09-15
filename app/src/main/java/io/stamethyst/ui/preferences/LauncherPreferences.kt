@@ -31,6 +31,7 @@ import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 
 object LauncherPreferences {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior
@@ -191,6 +192,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED
     val DEFAULT_WORKSHOP_STEAM_LANGUAGE: SteamLanguagePreference
         get() = SteamLanguagePreference.fromStorageValue(LauncherConfig.DEFAULT_WORKSHOP_STEAM_LANGUAGE)
+    val DEFAULT_WORKSHOP_DEFAULT_SORT: WorkshopBrowseSort
+        get() = WorkshopBrowseSort.fromStorageValue(LauncherConfig.DEFAULT_WORKSHOP_DEFAULT_SORT)
     val DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED
     val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED: Boolean
@@ -775,6 +778,14 @@ object LauncherPreferences {
 
     fun saveWorkshopSteamLanguage(context: Context, value: SteamLanguagePreference) {
         LauncherConfig.saveWorkshopSteamLanguage(context, value.storageValue)
+    }
+
+    fun readWorkshopDefaultSort(context: Context): WorkshopBrowseSort {
+        return WorkshopBrowseSort.fromStorageValue(LauncherConfig.readWorkshopDefaultSort(context))
+    }
+
+    fun saveWorkshopDefaultSort(context: Context, value: WorkshopBrowseSort) {
+        LauncherConfig.saveWorkshopDefaultSort(context, value.browseSortValue)
     }
 
     fun isWorkshopAutoImportEnabled(context: Context): Boolean {

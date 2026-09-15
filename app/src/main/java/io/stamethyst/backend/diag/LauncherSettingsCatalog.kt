@@ -13,6 +13,7 @@ import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
@@ -467,6 +468,9 @@ private fun steamServicesSection(
     val language = SteamLanguagePreference.fromStorageValue(
         LauncherConfig.readWorkshopSteamLanguage(context)
     )
+    val defaultSort = WorkshopBrowseSort.fromStorageValue(
+        LauncherConfig.readWorkshopDefaultSort(context)
+    )
     val blacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(context).sorted()
     val richPresence = LauncherConfig.readRichPresenceDisplayPreferences(context)
     val atlasDownscaleEnabled = LauncherConfig.isWorkshopAutoImportAtlasDownscaleEnabled(context)
@@ -552,6 +556,12 @@ private fun steamServicesSection(
                 zh.getString(R.string.settings_market_workshop_language_title),
                 language.storageValue,
                 language.displayName,
+            ),
+            field(
+                "workshopDefaultSort",
+                zh.getString(R.string.settings_market_workshop_default_sort_title),
+                defaultSort.browseSortValue,
+                defaultSort.displayName,
             ),
             boolField(
                 "workshopAutoImportEnabled",

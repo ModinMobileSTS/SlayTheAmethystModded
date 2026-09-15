@@ -118,6 +118,7 @@ import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.BaiduTranslationCredentials
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
@@ -485,6 +486,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED,
         val workshopSteamLanguage: SteamLanguagePreference =
             LauncherPreferences.DEFAULT_WORKSHOP_STEAM_LANGUAGE,
+        val workshopDefaultSort: WorkshopBrowseSort =
+            LauncherPreferences.DEFAULT_WORKSHOP_DEFAULT_SORT,
         val workshopAutoImportEnabled: Boolean =
             LauncherPreferences.DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED,
         val workshopAutoImportAtlasDownscaleEnabled: Boolean =
@@ -2301,6 +2304,11 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onWorkshopSteamLanguageChanged(host: Activity, language: SteamLanguagePreference) {
         LauncherPreferences.saveWorkshopSteamLanguage(host, language)
+        refreshStatus(host)
+    }
+
+    fun onWorkshopDefaultSortChanged(host: Activity, sort: WorkshopBrowseSort) {
+        LauncherPreferences.saveWorkshopDefaultSort(host, sort)
         refreshStatus(host)
     }
 
@@ -4426,6 +4434,7 @@ class SettingsScreenViewModel : ViewModel() {
             workshopDownloadThreads = market.workshopDownloadThreads,
             workshopWattAccelerationEnabled = market.workshopWattAccelerationEnabled,
             workshopSteamLanguage = market.workshopSteamLanguage,
+            workshopDefaultSort = market.workshopDefaultSort,
             workshopAutoImportEnabled = market.workshopAutoImportEnabled,
             workshopAutoImportAtlasDownscaleEnabled = market.workshopAutoImportAtlasDownscaleEnabled,
             workshopAutoImportAtlasDownscaleMaxEdgePx = market.workshopAutoImportAtlasDownscaleMaxEdgePx,

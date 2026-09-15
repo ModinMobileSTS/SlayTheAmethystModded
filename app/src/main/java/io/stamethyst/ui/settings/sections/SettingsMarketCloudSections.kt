@@ -64,6 +64,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudRemoteOnlyChangeKind
 import io.stamethyst.backend.steamcloud.SteamCloudUploadCandidate
 import io.stamethyst.backend.steamcloud.SteamCloudUploadCandidateKind
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.RichPresenceDisplayPreferences
 import io.stamethyst.config.RichPresencePrefix
@@ -94,6 +95,7 @@ internal data class MarketSettingsActions(
     val onWorkshopDownloadThreadsChanged: (Int) -> Unit,
     val onWorkshopWattAccelerationChanged: (Boolean) -> Unit,
     val onWorkshopSteamLanguageChanged: (SteamLanguagePreference) -> Unit,
+    val onWorkshopDefaultSortChanged: (WorkshopBrowseSort) -> Unit,
     val onWorkshopAutoImportChanged: (Boolean) -> Unit,
     val onOpenWorkshopAutoImportDefaults: () -> Unit,
     val onClearWorkshopPreviewCache: () -> Unit,
@@ -655,6 +657,16 @@ internal fun SettingsMarketSection(
         onOptionSelected = actions.onWorkshopSteamLanguageChanged,
     )
     Spacer(modifier = Modifier.size(8.dp))
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_market_workshop_default_sort_title),
+        valueText = workshopBrowseSortDisplayName(uiState.workshopDefaultSort),
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_market_workshop_default_sort_desc),
+        options = WorkshopBrowseSort.entries,
+        optionLabel = { workshopBrowseSortDisplayName(it) },
+        onOptionSelected = actions.onWorkshopDefaultSortChanged,
+    )
+    Spacer(modifier = Modifier.size(8.dp))
     SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.workshopAutoImportEnabled,
@@ -701,6 +713,15 @@ internal fun SettingsMarketSection(
 
 }
 
+
+
+@Composable
+private fun workshopBrowseSortDisplayName(sort: WorkshopBrowseSort): String = when (sort) {
+    WorkshopBrowseSort.MostPopular -> stringResource(R.string.workshop_sort_most_popular)
+    WorkshopBrowseSort.MostRecent -> stringResource(R.string.workshop_sort_most_recent)
+    WorkshopBrowseSort.LastUpdated -> stringResource(R.string.workshop_sort_last_updated)
+    WorkshopBrowseSort.MostSubscribed -> stringResource(R.string.workshop_sort_most_subscribed)
+}
 
 
 @Composable

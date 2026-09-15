@@ -275,6 +275,9 @@ fun LauncherSettingsMarketCloudScreen(
         onWorkshopSteamLanguageChanged = { language ->
             viewModel.onWorkshopSteamLanguageChanged(activity, language)
         },
+        onWorkshopDefaultSortChanged = { sort ->
+            viewModel.onWorkshopDefaultSortChanged(activity, sort)
+        },
         onWorkshopAutoImportChanged = { enabled ->
             viewModel.onWorkshopAutoImportChanged(activity, enabled)
         },

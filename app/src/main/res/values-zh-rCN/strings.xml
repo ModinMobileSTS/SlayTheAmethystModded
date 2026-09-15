@@ -17,6 +17,8 @@
     <string name="settings_market_workshop_acceleration_disabled_title">创意工坊加速：已关闭</string>
     <string name="settings_market_workshop_acceleration_desc">对 Steam 创意工坊、商店/CDN 和预览图请求使用优选路由。</string>
     <string name="settings_market_workshop_language_title">创意工坊语言</string>
+    <string name="settings_market_workshop_default_sort_title">默认排序方式</string>
+    <string name="settings_market_workshop_default_sort_desc">市场创意工坊列表的默认排序方式</string>
     <string name="settings_market_workshop_language_desc">Steam 创意工坊浏览/搜索语言</string>
     <string name="settings_market_workshop_auto_import_enabled_title">工坊自动导入</string>
     <string name="settings_market_workshop_auto_import_disabled_title">工坊自动导入：已关闭</string>

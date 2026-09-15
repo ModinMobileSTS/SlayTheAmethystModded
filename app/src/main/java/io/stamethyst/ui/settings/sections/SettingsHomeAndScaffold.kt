@@ -44,6 +44,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.navigation.Route
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
@@ -579,6 +580,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onWorkshopDownloadThreadsChanged: (Int) -> Unit = {},
     onWorkshopWattAccelerationChanged: (Boolean) -> Unit = {},
     onWorkshopSteamLanguageChanged: (SteamLanguagePreference) -> Unit = {},
+    onWorkshopDefaultSortChanged: (WorkshopBrowseSort) -> Unit = {},
     onWorkshopAutoImportChanged: (Boolean) -> Unit = {},
     onOpenWorkshopAutoImportDefaults: () -> Unit = {},
     onClearWorkshopPreviewCache: () -> Unit = {},
@@ -676,6 +678,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
                         onWorkshopDownloadThreadsChanged = onWorkshopDownloadThreadsChanged,
                         onWorkshopWattAccelerationChanged = onWorkshopWattAccelerationChanged,
                         onWorkshopSteamLanguageChanged = onWorkshopSteamLanguageChanged,
+                        onWorkshopDefaultSortChanged = onWorkshopDefaultSortChanged,
                         onWorkshopAutoImportChanged = onWorkshopAutoImportChanged,
                         onOpenWorkshopAutoImportDefaults = onOpenWorkshopAutoImportDefaults,
                         onClearWorkshopPreviewCache = onClearWorkshopPreviewCache,

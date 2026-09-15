@@ -18,6 +18,8 @@
     <string name="settings_market_workshop_acceleration_desc">Uses preferred routes for Steam Workshop, Store/CDN, and preview image requests.</string>
     <string name="settings_market_workshop_language_title">Workshop language</string>
     <string name="settings_market_workshop_language_desc">Steam Workshop browse/search language</string>
+    <string name="settings_market_workshop_default_sort_title">Default sort</string>
+    <string name="settings_market_workshop_default_sort_desc">Default ordering for the Workshop list in the market</string>
     <string name="settings_market_workshop_auto_import_enabled_title">Workshop auto import</string>
     <string name="settings_market_workshop_auto_import_disabled_title">Workshop auto import: Disabled</string>
     <string name="settings_market_workshop_auto_import_desc">Automatically imports downloaded Workshop jar mods. If disabled, downloaded jars stay in the Workshop card until you import them manually.</string>
