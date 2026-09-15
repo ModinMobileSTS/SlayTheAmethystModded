@@ -1,10 +1,20 @@
 {
-  "generated": "2026-08-05T07:11:49Z",
+  "generated": "2026-09-15T12:51:40.258Z",
   "sections": [
     {
       "id": "mockups",
       "label": "Mockups",
-      "groups": []
+      "groups": [
+        {
+          "slug": "renderer-switch",
+          "files": [
+            {
+              "label": "index.html",
+              "path": "mockups/renderer-switch/index.html"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "design-systems",
@@ -13,10 +23,39 @@
         {
           "slug": "launcher-product",
           "files": [
-            { "label": "README.md", "path": "design-systems/launcher-product/README.md" },
-            { "label": "SKILL.md", "path": "design-systems/launcher-product/SKILL.md" },
-            { "label": "style-notes.md", "path": "design-systems/launcher-product/brand/style-notes.md" },
-            { "label": "colors_and_type.css", "path": "design-systems/launcher-product/tokens/colors_and_type.css" }
+            {
+              "label": "README.md",
+              "path": "design-systems/launcher-product/README.md"
+            },
+            {
+              "label": "SKILL.md",
+              "path": "design-systems/launcher-product/SKILL.md"
+            },
+            {
+              "label": "style-notes.md",
+              "path": "design-systems/launcher-product/brand/style-notes.md"
+            },
+            {
+              "label": "colors_and_type.css",
+              "path": "design-systems/launcher-product/tokens/colors_and_type.css"
+            }
+          ]
+        },
+        {
+          "slug": "stamethyst-launcher",
+          "files": [
+            {
+              "label": "README.md",
+              "path": "design-systems/stamethyst-launcher/README.md"
+            },
+            {
+              "label": "SKILL.md",
+              "path": "design-systems/stamethyst-launcher/SKILL.md"
+            },
+            {
+              "label": "colors_and_type.css",
+              "path": "design-systems/stamethyst-launcher/tokens/colors_and_type.css"
+            }
           ]
         }
       ]
