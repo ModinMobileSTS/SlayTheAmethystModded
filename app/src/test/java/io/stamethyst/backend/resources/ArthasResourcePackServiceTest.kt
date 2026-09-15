@@ -64,6 +64,22 @@ class ArthasResourcePackServiceTest {
         }
     }
 
+    @Test
+    fun stateQuick_skipsContentHashesWhileStateRemainsAuthoritative() {
+        withTestContext { context, root ->
+            val archive = File(root, "valid.zip")
+            writePack(archive, version = "test-1")
+            ArthasResourcePackService.installArchive(context, archive)
+
+            val core = File(root, "arthas_resources/current/arthas-core.jar")
+            val originalSize = core.length().toInt()
+            core.writeBytes(ByteArray(originalSize) { 9 })
+
+            assertTrue(ArthasResourcePackService.stateQuick(context).valid)
+            assertFalse(ArthasResourcePackService.state(context).valid)
+        }
+    }
+
     private fun writePack(
         archive: File,
         version: String,

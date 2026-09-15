@@ -46,7 +46,26 @@ internal object ResourcePackStore {
     private val lockDepth = ThreadLocal.withInitial { 0 }
 
     @JvmStatic
-    fun inspect(context: Context): ResourcePackInspection {
+    fun inspect(context: Context): ResourcePackInspection = inspect(
+        context = context,
+        verifyContentHashes = true,
+    )
+
+    /**
+     * Reads the active generation metadata without hashing every resource file.
+     * Settings screens use this for status display; install, launch, and diagnostics
+     * continue to use [inspect] for the authoritative integrity check.
+     */
+    @JvmStatic
+    fun inspectQuick(context: Context): ResourcePackInspection = inspect(
+        context = context,
+        verifyContentHashes = false,
+    )
+
+    private fun inspect(
+        context: Context,
+        verifyContentHashes: Boolean,
+    ): ResourcePackInspection {
         val root = RuntimePaths.externalResourcesRoot(context)
         val pointer = readActivePointer(root)
         val legacyPaths = legacyCandidateRoots(context).map { file -> file.absolutePath }
@@ -82,7 +101,8 @@ internal object ResourcePackStore {
         val generation = generationDir(root, pointer.packId)
         val validation = ResourcePackArchive.validateGeneration(
             generation,
-            BuildConfig.RESOURCE_PACK_VERSION.trim()
+            BuildConfig.RESOURCE_PACK_VERSION.trim(),
+            verifyContentHashes = verifyContentHashes,
         )
         return ResourcePackInspection(
             ready = validation.issues.isEmpty(),

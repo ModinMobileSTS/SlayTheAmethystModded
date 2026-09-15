@@ -75,7 +75,9 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.resources.ArthasResourcePackService
+import io.stamethyst.backend.resources.ArthasResourcePackState
 import io.stamethyst.backend.resources.ResourcePackStore
+import io.stamethyst.backend.resources.ResourcePackInspection
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -158,6 +160,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -527,6 +530,38 @@ class SettingsScreenViewModel : ViewModel() {
         val totalMemoryBytes: Long
     )
 
+    private data class StatusRefreshResult(
+        val snapshot: SettingsRepository.SettingsSnapshot,
+        val targetFpsOptions: List<Float>,
+        val selectedTargetFps: Float,
+        val statusText: String,
+        val logPathText: String,
+        val resourcePack: ResourcePackInspection,
+        val arthasResource: ArthasResourcePackState,
+        val steamCloudAccountName: String,
+        val steamCloudRefreshTokenConfigured: Boolean,
+        val steamCloudGuardDataConfigured: Boolean,
+        val steamCloudPersonaName: String,
+        val steamCloudAvatarUrl: String,
+        val steamCloudSaveMode: SteamCloudSaveMode,
+        val steamCloudSyncBlacklistPaths: Set<String>,
+        val steamCloudSyncBlacklistCandidates: List<String>,
+        val steamCloudWattAccelerationEnabled: Boolean,
+        val steamCloudAutoLaunchAfterSyncEnabled: Boolean,
+        val steamGamePresenceEnabled: Boolean,
+        val richPresenceDisplayPreferences: RichPresenceDisplayPreferences,
+        val steamAchievementSyncEnabled: Boolean,
+        val achievementUnlockNotificationEnabled: Boolean,
+        val workshopMaxConcurrentDownloads: Int,
+        val workshopDownloadThreads: Int,
+        val workshopWattAccelerationEnabled: Boolean,
+        val steamCloudCredentialsSummary: String,
+        val steamCloudStatusText: String,
+        val steamCloudManifestSummary: String,
+        val steamCloudManifestAvailable: Boolean,
+        val easyTierSettings: EasyTierSettingsUiState,
+    )
+
     private class PauseController {
         private val lock = ReentrantLock()
         private val resumed: Condition = lock.newCondition()
@@ -557,9 +592,12 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val statusRefreshExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val steamCloudLoginCleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     // A slow refresh must not overwrite a newer setting change with its older snapshot.
     private val statusRefreshGeneration = AtomicLong(0L)
+    private var statusRefreshTask: Future<*>? = null
+    private var boundActivityReference: WeakReference<Activity>? = null
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
@@ -591,30 +629,21 @@ class SettingsScreenViewModel : ViewModel() {
         keepScreenOnTimeoutMinuteOptions: IntArray =
             LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS
     ) {
-        syncThemeAppearance(activity)
-        val options = resolveTargetFpsOptions(activity, uiState.nonRecommendedFpsEnabled)
-        if (uiState.targetFpsOptions != options) {
-            uiState = uiState.copy(targetFpsOptions = options)
-        }
         val keepScreenOnOptions = keepScreenOnTimeoutMinuteOptions.toList()
         if (uiState.keepScreenOnTimeoutMinuteOptions != keepScreenOnOptions) {
             uiState = uiState.copy(keepScreenOnTimeoutMinuteOptions = keepScreenOnOptions)
         }
+        if (boundActivityReference?.get() === activity) {
+            return
+        }
+        boundActivityReference = WeakReference(activity)
+
+        // LauncherActivity synchronizes the theme before composing the root content. The
+        // remaining settings snapshot is loaded by refreshStatus so entering settings does
+        // not synchronously scan storage on the UI thread.
         syncStoredUpdateState(activity)
-        runCatching {
-            SettingsRepository.loadSettingsSnapshot(activity)
-        }.getOrNull()?.let { snapshot ->
-            applySnapshot(activity, snapshot)
-        }
-        val selectedTargetFps = uiState.selectedTargetFps
-        if (!uiState.nonRecommendedFpsEnabled && selectedTargetFps !in uiState.targetFpsOptions) {
-            val recommendedTargetFps = uiState.targetFpsOptions.first()
-            uiState = uiState.copy(selectedTargetFps = recommendedTargetFps)
-            saveTargetFpsSelection(activity, recommendedTargetFps)
-        }
         seedSteamCloudIdentityFromStore(activity)
         refreshStatus(activity, clearBusy = false)
-        refreshArthasResourceState(activity)
     }
 
     /**
@@ -1250,23 +1279,45 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {
         val refreshGeneration = statusRefreshGeneration.incrementAndGet()
-        executor.execute {
+        val previousUiState = uiState
+        statusRefreshTask?.cancel(true)
+        statusRefreshTask = statusRefreshExecutor.submit {
             try {
+                throwIfStatusRefreshStale(refreshGeneration)
                 val hasJar = hasValidImportedStsJar(host)
-                val snapshot = SettingsRepository.loadSettingsSnapshot(host)
-                val rendering = snapshot.rendering
-                val jvm = snapshot.jvm
-                val input = snapshot.input
-                val diagnostics = snapshot.diagnostics
-                val compatibility = snapshot.compatibility
-                val rendererDecision = rendering.rendererDecision
-                val mobileGluesSettings = rendering.mobileGluesSettings
-                val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
-                    RendererBackendOptionState(
-                        backend = availability.backend,
-                        available = availability.available,
-                        reasonText = availability.describeUnavailable(host)
+                val loadedSnapshot = SettingsRepository.loadSettingsSnapshot(host)
+                throwIfStatusRefreshStale(refreshGeneration)
+                val targetFpsOptions = resolveTargetFpsOptions(
+                    host,
+                    loadedSnapshot.rendering.nonRecommendedFpsEnabled,
+                )
+                val shouldNormalizeTargetFps =
+                    !loadedSnapshot.rendering.nonRecommendedFpsEnabled &&
+                    loadedSnapshot.rendering.targetFps !in targetFpsOptions &&
+                    targetFpsOptions.isNotEmpty()
+                val selectedTargetFps = if (shouldNormalizeTargetFps) {
+                    targetFpsOptions.first()
+                } else {
+                    loadedSnapshot.rendering.targetFps
+                }
+                if (shouldNormalizeTargetFps) {
+                    throwIfStatusRefreshStale(refreshGeneration)
+                    val currentTargetFps = LauncherPreferences.readTargetFpsValue(host)
+                    val currentNonRecommendedFpsEnabled =
+                        LauncherPreferences.isNonRecommendedFpsEnabled(host)
+                    if (currentTargetFps == loadedSnapshot.rendering.targetFps &&
+                        currentNonRecommendedFpsEnabled ==
+                        loadedSnapshot.rendering.nonRecommendedFpsEnabled
+                    ) {
+                        saveTargetFpsSelection(host, selectedTargetFps)
+                    }
+                }
+                val snapshot = if (selectedTargetFps != loadedSnapshot.rendering.targetFps) {
+                    loadedSnapshot.copy(
+                        rendering = loadedSnapshot.rendering.copy(targetFps = selectedTargetFps),
                     )
+                } else {
+                    loadedSnapshot
                 }
 
                 val mods = ModManager.listInstalledMods(host)
@@ -1318,8 +1369,9 @@ class SettingsScreenViewModel : ViewModel() {
                     bundledAssetPath = "components/mods/RamSaver.jar"
                 )
                 val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
-                val resourcePack = ResourcePackStore.inspect(host)
-                val previousUiState = uiState
+                val resourcePack = ResourcePackStore.inspectQuick(host)
+                val arthasResource = ArthasResourcePackService.stateQuick(host)
+                throwIfStatusRefreshStale(refreshGeneration)
                 val steamCloudAuthRead = runCatching {
                     SteamCloudAuthStore.readSnapshotWithStatus(host)
                 }.getOrElse { error ->
@@ -1404,6 +1456,10 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                 }
 
+                if (!arthasResource.valid && snapshot.diagnostics.arthasAnalysisEnabled) {
+                    saveArthasAnalysisSelection(host, false)
+                }
+
                 val status = buildStatusText(
                     host = host,
                     snapshot = snapshot,
@@ -1425,6 +1481,10 @@ class SettingsScreenViewModel : ViewModel() {
                     steamCloudBaselineSnapshot,
                 )
                 val easyTierSettings = buildEasyTierSettingsUiState()
+                val logPathText = buildLogPathText(
+                    host = host,
+                    logs = JvmLogRotationManager.listLogFiles(host),
+                )
 
                 val displayedAccountName =
                     if (preserveSteamCloudDisplay) previousUiState.steamCloudAccountName
@@ -1454,49 +1514,86 @@ class SettingsScreenViewModel : ViewModel() {
                     if (preserveSteamCloudDisplay) previousUiState.steamCloudManifestAvailable
                     else steamCloudManifestSnapshot != null
 
+                val result = StatusRefreshResult(
+                    snapshot = snapshot,
+                    targetFpsOptions = targetFpsOptions,
+                    selectedTargetFps = selectedTargetFps,
+                    statusText = status,
+                    logPathText = logPathText,
+                    resourcePack = resourcePack,
+                    arthasResource = arthasResource,
+                    steamCloudAccountName = displayedAccountName,
+                    steamCloudRefreshTokenConfigured = displayedRefreshTokenConfigured,
+                    steamCloudGuardDataConfigured = displayedGuardDataConfigured,
+                    steamCloudPersonaName = displayedPersonaName,
+                    steamCloudAvatarUrl = displayedAvatarUrl,
+                    steamCloudSaveMode = steamCloudSaveMode,
+                    steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
+                    steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
+                    steamCloudWattAccelerationEnabled =
+                        LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
+                    steamCloudAutoLaunchAfterSyncEnabled =
+                        LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
+                    steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
+                    richPresenceDisplayPreferences =
+                        LauncherPreferences.readRichPresenceDisplayPreferences(host),
+                    steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
+                    achievementUnlockNotificationEnabled =
+                        LauncherPreferences.isAchievementUnlockNotificationEnabled(host),
+                    workshopMaxConcurrentDownloads = snapshot.market.workshopMaxConcurrentDownloads,
+                    workshopDownloadThreads = snapshot.market.workshopDownloadThreads,
+                    workshopWattAccelerationEnabled = snapshot.market.workshopWattAccelerationEnabled,
+                    steamCloudCredentialsSummary = displayedCredentialsSummary,
+                    steamCloudStatusText = displayedStatusText,
+                    steamCloudManifestSummary = displayedManifestSummary,
+                    steamCloudManifestAvailable = displayedManifestAvailable,
+                    easyTierSettings = easyTierSettings,
+                )
+
                 host.runOnUiThread {
                     if (refreshGeneration != statusRefreshGeneration.get()) {
                         return@runOnUiThread
                     }
-                    applySnapshot(host, snapshot)
+                    applySnapshot(host, result.snapshot)
                     uiState = uiState.copy(
                         busy = if (clearBusy) false else uiState.busy,
                         busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
                         busyMessage = if (clearBusy) null else uiState.busyMessage,
                         busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
-                        statusText = status,
-                        logPathText = buildLogPathText(host),
-                        steamCloudAccountName = displayedAccountName,
-                        steamCloudRefreshTokenConfigured = displayedRefreshTokenConfigured,
-                        steamCloudGuardDataConfigured = displayedGuardDataConfigured,
-                        steamCloudPersonaName = displayedPersonaName,
-                        steamCloudAvatarUrl = displayedAvatarUrl,
-                        steamCloudSaveMode = steamCloudSaveMode,
-                        steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
-                        steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
-                        steamCloudWattAccelerationEnabled =
-                            LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
-                        steamCloudAutoLaunchAfterSyncEnabled =
-                            LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
-                        steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
-                        richPresenceDisplayPreferences =
-                            LauncherPreferences.readRichPresenceDisplayPreferences(host),
-                        steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
-                        achievementUnlockNotificationEnabled =
-                            LauncherPreferences.isAchievementUnlockNotificationEnabled(host),
-                        workshopMaxConcurrentDownloads = LauncherPreferences.readWorkshopMaxConcurrentDownloads(host),
-                        workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
-                        workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host),
-                        baiduTranslationCredentialsConfigured = BaiduTranslationCredentialsRepository(host).hasConfiguredCredentials(),
-                        steamCloudCredentialsSummary = displayedCredentialsSummary,
-                        steamCloudStatusText = displayedStatusText,
-                        steamCloudManifestSummary = displayedManifestSummary,
-                        steamCloudManifestAvailable = displayedManifestAvailable,
-                        resourcePackReady = resourcePack.ready,
-                        resourcePackVersion = resourcePack.version.orEmpty(),
-                        resourcePackId = resourcePack.packId.orEmpty(),
-                        resourcePackIssues = resourcePack.issues.joinToString("; "),
-                        easyTierSettings = easyTierSettings,
+                        targetFpsOptions = result.targetFpsOptions,
+                        selectedTargetFps = result.selectedTargetFps,
+                        statusText = result.statusText,
+                        logPathText = result.logPathText,
+                        steamCloudAccountName = result.steamCloudAccountName,
+                        steamCloudRefreshTokenConfigured = result.steamCloudRefreshTokenConfigured,
+                        steamCloudGuardDataConfigured = result.steamCloudGuardDataConfigured,
+                        steamCloudPersonaName = result.steamCloudPersonaName,
+                        steamCloudAvatarUrl = result.steamCloudAvatarUrl,
+                        steamCloudSaveMode = result.steamCloudSaveMode,
+                        steamCloudSyncBlacklistPaths = result.steamCloudSyncBlacklistPaths,
+                        steamCloudSyncBlacklistCandidates = result.steamCloudSyncBlacklistCandidates,
+                        steamCloudWattAccelerationEnabled = result.steamCloudWattAccelerationEnabled,
+                        steamCloudAutoLaunchAfterSyncEnabled = result.steamCloudAutoLaunchAfterSyncEnabled,
+                        steamGamePresenceEnabled = result.steamGamePresenceEnabled,
+                        richPresenceDisplayPreferences = result.richPresenceDisplayPreferences,
+                        steamAchievementSyncEnabled = result.steamAchievementSyncEnabled,
+                        achievementUnlockNotificationEnabled = result.achievementUnlockNotificationEnabled,
+                        workshopMaxConcurrentDownloads = result.workshopMaxConcurrentDownloads,
+                        workshopDownloadThreads = result.workshopDownloadThreads,
+                        workshopWattAccelerationEnabled = result.workshopWattAccelerationEnabled,
+                        steamCloudCredentialsSummary = result.steamCloudCredentialsSummary,
+                        steamCloudStatusText = result.steamCloudStatusText,
+                        steamCloudManifestSummary = result.steamCloudManifestSummary,
+                        steamCloudManifestAvailable = result.steamCloudManifestAvailable,
+                        arthasAnalysisEnabled = uiState.arthasAnalysisEnabled &&
+                            result.arthasResource.valid,
+                        arthasResourceInstalled = result.arthasResource.valid,
+                        arthasResourceVersion = result.arthasResource.version,
+                        resourcePackReady = result.resourcePack.ready,
+                        resourcePackVersion = result.resourcePack.version.orEmpty(),
+                        resourcePackId = result.resourcePack.packId.orEmpty(),
+                        resourcePackIssues = result.resourcePack.issues.joinToString("; "),
+                        easyTierSettings = result.easyTierSettings,
                     )
                 }
             } catch (_: Throwable) {
@@ -1513,6 +1610,14 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                 }
             }
+        }
+    }
+
+    private fun throwIfStatusRefreshStale(refreshGeneration: Long) {
+        if (refreshGeneration != statusRefreshGeneration.get() ||
+            Thread.currentThread().isInterrupted
+        ) {
+            throw CancellationException("Settings status refresh was superseded")
         }
     }
 
@@ -3599,7 +3704,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        if (enabled && !ArthasResourcePackService.isInstalled(host)) {
+        if (enabled && !ArthasResourcePackService.isInstalledQuick(host)) {
             return
         }
         uiState = uiState.copy(gpuResourceDiagEnabled = enabled)
@@ -3611,7 +3716,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy || !uiState.gpuResourceDiagEnabled) {
             return
         }
-        if (enabled && !ArthasResourcePackService.isInstalled(host)) {
+        if (enabled && !ArthasResourcePackService.isInstalledQuick(host)) {
             return
         }
         uiState = uiState.copy(arthasAnalysisEnabled = enabled)
@@ -3663,22 +3768,10 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG
                     )
-                    refreshArthasResourceState(host)
+                    refreshStatus(host)
                 }
             }
         }
-    }
-
-    private fun refreshArthasResourceState(host: Activity) {
-        val state = ArthasResourcePackService.state(host)
-        if (!state.valid && uiState.arthasAnalysisEnabled) {
-            saveArthasAnalysisSelection(host, false)
-        }
-        uiState = uiState.copy(
-            arthasAnalysisEnabled = uiState.arthasAnalysisEnabled && state.valid,
-            arthasResourceInstalled = state.valid,
-            arthasResourceVersion = state.version,
-        )
     }
 
     fun onGdxPadCursorDebugChanged(host: Activity, enabled: Boolean) {
@@ -6065,11 +6158,10 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun buildLogPathText(host: Activity): String {
+    private fun buildLogPathText(host: Activity, logs: List<File>): String {
         val latestLog = RuntimePaths.latestLog(host)
         val archivedDir = RuntimePaths.jvmLogsDir(host)
         val logcatDir = RuntimePaths.logcatDir(host)
-        val logs = JvmLogRotationManager.listLogFiles(host)
         val lines = mutableListOf(
             host.getString(
                 R.string.settings_log_slots,
@@ -6092,6 +6184,9 @@ class SettingsScreenViewModel : ViewModel() {
 
     override fun onCleared() {
         cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
+        statusRefreshGeneration.incrementAndGet()
+        statusRefreshTask?.cancel(true)
+        statusRefreshExecutor.shutdownNow()
         executor.shutdownNow()
         steamCloudLoginCleanupExecutor.shutdown()
         super.onCleared()

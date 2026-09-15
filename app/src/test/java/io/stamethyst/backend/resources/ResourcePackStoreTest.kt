@@ -121,6 +121,24 @@ class ResourcePackStoreTest {
     }
 
     @Test
+    fun inspectQuick_skipsContentHashesWhileInspectRemainsAuthoritative() {
+        withTestContext { context, root ->
+            val archive = File(root, "resources.zip")
+            writeResourcePackArchive(archive)
+            ResourcePackStore.installArchive(context, archive, null, "test")
+
+            val generation = ResourcePackStore.activeGenerationDir(context)
+                ?: error("active generation was not installed")
+            val content = File(generation, "assets/${ResourcePackContract.requiredAssetFiles.first()}")
+            val originalSize = content.length().toInt()
+            content.writeBytes(ByteArray(originalSize) { 9 })
+
+            assertTrue(ResourcePackStore.inspectQuick(context).ready)
+            assertFalse(ResourcePackStore.inspect(context).ready)
+        }
+    }
+
+    @Test
     fun recover_importsLegacyCurrentIntoGenerationStore() {
         withTestContext { context, root ->
             val legacyCurrent = File(RuntimePaths.legacyInternalExternalResourcesRoot(context), "current")
