@@ -1348,9 +1348,9 @@
     <string name="settings_steam_game_presence_notification">实验性 Steam 游戏状态已启用</string>
     <string name="settings_steam_services_account_section_title">Steam 账号</string>
     <string name="settings_steam_services_presence_section_title">游戏在线状态</string>
-    <string name="settings_steam_services_presence_enabled_title">向 Steam 好友展示游玩状态</string>
-    <string name="settings_steam_services_presence_disabled_title">向 Steam 好友展示游玩状态</string>
-    <string name="settings_steam_services_presence_desc">开启后，向 Steam 好友展示游玩中的信息。</string>
+    <string name="settings_steam_services_presence_enabled_title">统计 Steam 游戏时长</string>
+    <string name="settings_steam_services_presence_disabled_title">统计 Steam 游戏时长</string>
+    <string name="settings_steam_services_presence_desc">开启后，将向 Steam 好友展示正在游玩的信息并在 Steam 上统计游戏时长。</string>
     <string name="settings_steam_services_rich_presence_display_title">富文本展示</string>
     <string name="settings_steam_services_rich_presence_prefix_title">前缀</string>
     <string name="settings_steam_services_rich_presence_prefix_game">在 Slay the Amethyst 上游玩</string>

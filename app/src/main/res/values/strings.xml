@@ -1349,9 +1349,9 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_steam_game_presence_notification">Experimental Steam game presence is active</string>
     <string name="settings_steam_services_account_section_title">Steam Account</string>
     <string name="settings_steam_services_presence_section_title">Game Online Status</string>
-    <string name="settings_steam_services_presence_enabled_title">Show play status to Steam friends</string>
-    <string name="settings_steam_services_presence_disabled_title">Show play status to Steam friends</string>
-    <string name="settings_steam_services_presence_desc">When enabled, shows that you are playing to your Steam friends.</string>
+    <string name="settings_steam_services_presence_enabled_title">Track Steam play time</string>
+    <string name="settings_steam_services_presence_disabled_title">Track Steam play time</string>
+    <string name="settings_steam_services_presence_desc">When enabled, shows that you are playing to your Steam friends and tracks play time on Steam.</string>
     <string name="settings_steam_services_rich_presence_display_title">Rich Presence display</string>
     <string name="settings_steam_services_rich_presence_prefix_title">Prefix</string>
     <string name="settings_steam_services_rich_presence_prefix_game">Playing on Slay the Amethyst</string>
