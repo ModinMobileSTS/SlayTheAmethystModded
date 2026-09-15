@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
+            android:name=".ui.main.RendererCardTestActivity"
+            android:screenOrientation="portrait"
+            android:exported="true" />
+        <activity
             android:name=".ui.main.ModFolderBenchmarkActivity"
             android:exported="true" />
         <activity

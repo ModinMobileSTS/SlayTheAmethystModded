@@ -52,6 +52,7 @@ object LauncherConfig {
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
     private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
+    private const val PREF_KEY_HIDDEN_MAIN_CARDS = "hidden_main_cards"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -326,6 +327,15 @@ object LauncherConfig {
         "alt",
         "lock",
         "wheel",
+    )
+    val DEFAULT_HIDDEN_MAIN_CARDS: Set<String> = emptySet()
+    val MAIN_CARD_IDS: List<String> = listOf(
+        "overview",
+        "feedback",
+        "update",
+        "steam_cloud",
+        "easytier",
+        "achievements",
     )
     const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
@@ -794,6 +804,21 @@ object LauncherConfig {
             putStringSet(
                 PREF_KEY_FLOATING_TOOL_BUTTONS,
                 buttons.intersect(FLOATING_TOOL_BUTTON_IDS.toSet()).toSet()
+            )
+        }
+    }
+
+    fun readHiddenMainCards(context: Context): Set<String> {
+        val stored = prefs(context).getStringSet(PREF_KEY_HIDDEN_MAIN_CARDS, null)
+            ?: return DEFAULT_HIDDEN_MAIN_CARDS
+        return stored.intersect(MAIN_CARD_IDS.toSet())
+    }
+
+    fun saveHiddenMainCards(context: Context, cardIds: Set<String>) {
+        prefs(context).edit {
+            putStringSet(
+                PREF_KEY_HIDDEN_MAIN_CARDS,
+                cardIds.intersect(MAIN_CARD_IDS.toSet()).toSet()
             )
         }
     }

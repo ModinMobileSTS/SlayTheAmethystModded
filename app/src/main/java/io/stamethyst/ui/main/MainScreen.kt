@@ -15,6 +15,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -64,6 +65,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -109,6 +111,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
@@ -159,6 +162,8 @@ import io.stamethyst.backend.easytier.EasyTierCredentialStore
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
 import io.stamethyst.backend.easytier.EASY_TIER_KICK_MESSAGE_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
 import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
@@ -217,6 +222,19 @@ private enum class SteamCloudNetworkPromptAction {
     USE_CLOUD,
 }
 
+private enum class GamePageCard(
+    val storageId: String,
+    @StringRes val labelResId: Int,
+) {
+    OVERVIEW("overview", R.string.main_game_card_visibility_overview),
+    FEEDBACK("feedback", R.string.main_game_card_visibility_feedback),
+    UPDATE("update", R.string.main_game_card_visibility_update),
+    STEAM_CLOUD("steam_cloud", R.string.main_game_card_visibility_steam_cloud),
+    EASY_TIER("easytier", R.string.main_game_card_visibility_easytier),
+    ACHIEVEMENTS("achievements", R.string.main_game_card_visibility_achievements),
+    RENDERER("renderer", R.string.main_game_card_visibility_renderer),
+}
+
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
 private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
 private const val EASY_TIER_WORKSHOP_APP_ID = 646570u
@@ -252,6 +270,20 @@ private fun LauncherGamePage(
 ) {
     val steamCloudIndicator = uiState.steamCloudIndicator
     val easyTierIndicator = uiState.easyTierIndicator
+    val context = LocalContext.current
+    var hiddenGameCards by remember {
+        mutableStateOf(LauncherPreferences.readHiddenMainCards(context))
+    }
+    fun isGameCardVisible(card: GamePageCard): Boolean = card.storageId !in hiddenGameCards
+    fun toggleGameCardVisibility(storageId: String) {
+        val updated = if (storageId in hiddenGameCards) {
+            hiddenGameCards - storageId
+        } else {
+            hiddenGameCards + storageId
+        }
+        hiddenGameCards = updated
+        LauncherPreferences.saveHiddenMainCards(context, updated)
+    }
     val enabledMods = remember(uiState.optionalMods) {
         uiState.optionalMods.filter { mod -> mod.enabled && mod.installed && !mod.required }
     }
@@ -306,17 +338,21 @@ private fun LauncherGamePage(
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                GameStatusHeroCard(
-                    enabledModCount = enabledMods.size,
-                    totalModCount = uiState.optionalMods.size,
-                    enabledModBytes = enabledModBytes,
-                    gameRunning = uiState.gameProcessRunning,
-                    hasStorageIssue = uiState.storageIssue != null,
-                    onEnabledModsClick = onEnabledModsClick,
-                    onModSizeClick = onModSizeClick,
-                )
+                if (isGameCardVisible(GamePageCard.OVERVIEW)) {
+                    GameStatusHeroCard(
+                        enabledModCount = enabledMods.size,
+                        totalModCount = uiState.optionalMods.size,
+                        enabledModBytes = enabledModBytes,
+                        gameRunning = uiState.gameProcessRunning,
+                        hasStorageIssue = uiState.storageIssue != null,
+                        onEnabledModsClick = onEnabledModsClick,
+                        onModSizeClick = onModSizeClick,
+                    )
+                }
 
-                if (feedbackUnreadCount > 0 || feedbackActiveIssueCount > 0) {
+                if ((feedbackUnreadCount > 0 || feedbackActiveIssueCount > 0) &&
+                    isGameCardVisible(GamePageCard.FEEDBACK)
+                ) {
                     FeedbackReplyUpdateCard(
                         unreadCount = feedbackUnreadCount,
                         activeIssueCount = feedbackActiveIssueCount,
@@ -324,28 +360,50 @@ private fun LauncherGamePage(
                     )
                 }
 
-                updateNotice?.let { notice ->
-                    LauncherUpdateNoticeCard(
-                        notice = notice,
-                        onClick = onUpdateNoticeClick,
+                if (isGameCardVisible(GamePageCard.UPDATE)) {
+                    updateNotice?.let { notice ->
+                        LauncherUpdateNoticeCard(
+                            notice = notice,
+                            onClick = onUpdateNoticeClick,
+                        )
+                    }
+                }
+
+                if (isGameCardVisible(GamePageCard.STEAM_CLOUD)) {
+                    SteamCloudOverviewCard(
+                        indicator = steamCloudIndicator,
+                        onClick = onSteamCloudClick,
                     )
                 }
 
-                SteamCloudOverviewCard(
-                    indicator = steamCloudIndicator,
-                    onClick = onSteamCloudClick,
-                )
+                if (isGameCardVisible(GamePageCard.EASY_TIER)) {
+                    EasyTierOverviewCard(
+                        indicator = easyTierIndicator,
+                        onClick = onEasyTierClick,
+                        onReinstallResourcePack = actions.onReinstallResourcePack,
+                    )
+                }
 
-                EasyTierOverviewCard(
-                    indicator = easyTierIndicator,
-                    onClick = onEasyTierClick,
-                    onReinstallResourcePack = actions.onReinstallResourcePack,
-                )
+                if (isGameCardVisible(GamePageCard.ACHIEVEMENTS)) {
+                    SteamAchievementOverviewCard(
+                        state = uiState.steamAchievements,
+                        onClick = onSteamAchievementsClick,
+                    )
+                }
 
-                SteamAchievementOverviewCard(
-                    state = uiState.steamAchievements,
-                    onClick = onSteamAchievementsClick,
-                )
+                if (isGameCardVisible(GamePageCard.RENDERER)) {
+                    RendererQuickSwitchCard(
+                        currentBackend = uiState.effectiveRendererBackend,
+                        selectionMode = uiState.rendererSelectionMode,
+                        mobileGluesAvailable = uiState.mobileGluesRendererAvailable,
+                        enabled = actions.isHostAvailable &&
+                            !uiState.busy &&
+                            !uiState.gameProcessRunning &&
+                            !uiState.launchInFlight,
+                        onSelect = actions.onSetQuickRenderer,
+                        onRestoreAuto = actions.onRestoreQuickRendererAuto,
+                    )
+                }
             }
         }
 
@@ -370,7 +428,9 @@ private fun LauncherGamePage(
                 GameHeader(
                     feedbackUnreadCount = feedbackUnreadCount,
                     headerActionsEnabled = headerActionsEnabled,
+                    hiddenGameCards = hiddenGameCards,
                     onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                    onToggleCardVisibility = ::toggleGameCardVisibility,
                 )
             },
         )
@@ -381,8 +441,12 @@ private fun LauncherGamePage(
 private fun GameHeader(
     feedbackUnreadCount: Int,
     headerActionsEnabled: Boolean,
+    hiddenGameCards: Set<String>,
     onOpenFeedbackUpdates: () -> Unit,
+    onToggleCardVisibility: (String) -> Unit,
 ) {
+    var cardVisibilityMenuExpanded by remember { mutableStateOf(false) }
+    val hasHiddenGameCard = hiddenGameCards.isNotEmpty()
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_game,
         iconContentDescription = null,
@@ -404,6 +468,39 @@ private fun GameHeader(
                     Icon(
                         painter = painterResource(R.drawable.ic_feedback_updates),
                         contentDescription = stringResource(R.string.main_feedback_updates_content_description),
+                    )
+                }
+            }
+        }
+        Box {
+            CompactTopBarIconButton(
+                onClick = { cardVisibilityMenuExpanded = true },
+                enabled = headerActionsEnabled,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_dashboard_customize),
+                    contentDescription = stringResource(R.string.main_game_card_visibility_title),
+                    tint = if (hasHiddenGameCard) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            DropdownMenu(
+                expanded = cardVisibilityMenuExpanded,
+                onDismissRequest = { cardVisibilityMenuExpanded = false },
+            ) {
+                GamePageCard.values().forEach { card ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(card.labelResId)) },
+                        onClick = { onToggleCardVisibility(card.storageId) },
+                        leadingIcon = {
+                            Checkbox(
+                                checked = card.storageId !in hiddenGameCards,
+                                onCheckedChange = null,
+                            )
+                        },
                     )
                 }
             }
@@ -811,16 +908,363 @@ private fun GameStatusHeroCard(
                     onClick = onModSizeClick,
                 )
             }
-            TextButton(onClick = onEnabledModsClick) {
-                SlidingTextSwap(
-                    text = when {
-                        hasStorageIssue -> stringResource(R.string.main_status_storage_unavailable_os_issue)
-                        gameRunning -> stringResource(R.string.main_status_game_running)
-                        else -> stringResource(R.string.main_status_mods_ok)
+            val statusText = when {
+                hasStorageIssue -> stringResource(R.string.main_status_storage_unavailable_os_issue)
+                gameRunning -> stringResource(R.string.main_status_game_running)
+                else -> null
+            }
+            if (statusText != null) {
+                TextButton(onClick = onEnabledModsClick) {
+                    SlidingTextSwap(
+                        text = statusText,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RendererQuickSwitchCard(
+    currentBackend: RendererBackend,
+    selectionMode: RendererSelectionMode,
+    mobileGluesAvailable: Boolean,
+    enabled: Boolean,
+    onSelect: (RendererBackend) -> Unit,
+    onRestoreAuto: () -> Unit,
+) {
+    val selectedBackend = when (currentBackend) {
+        RendererBackend.OPENGL_ES_MOBILEGLUES,
+        RendererBackend.OPENGL_ES2_NATIVE -> currentBackend
+        else -> null
+    }
+    val targetBackend = when (selectedBackend) {
+        RendererBackend.OPENGL_ES_MOBILEGLUES -> RendererBackend.OPENGL_ES2_NATIVE
+        RendererBackend.OPENGL_ES2_NATIVE -> RendererBackend.OPENGL_ES_MOBILEGLUES
+        null -> if (mobileGluesAvailable) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES
+        } else {
+            RendererBackend.OPENGL_ES2_NATIVE
+        }
+        else -> error("Unexpected quick renderer backend")
+    }
+    val mobileGluesFraction by animateFloatAsState(
+        targetValue = when (selectedBackend) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES -> 0.62264f
+            RendererBackend.OPENGL_ES2_NATIVE -> 0.37736f
+            null -> 0.5f
+            else -> error("Unexpected quick renderer backend")
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchFraction",
+    )
+    val selectedContainerColor by animateColorAsState(
+        targetValue = if (selectedBackend != RendererBackend.OPENGL_ES2_NATIVE) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchContainerColor",
+    )
+    val selectorOutlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.85f)
+    val selectorShape = RoundedCornerShape(8.dp)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ) {
+                    Icon(
+                        imageVector = RendererIcons.Cpu,
+                        contentDescription = null,
+                        modifier = Modifier.padding(10.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.main_renderer_quick_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.main_renderer_quick_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(164.dp)
+                    .clip(selectorShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .clickable(
+                        enabled = enabled &&
+                            (targetBackend != RendererBackend.OPENGL_ES_MOBILEGLUES || mobileGluesAvailable),
+                        role = Role.Button,
+                    ) {
+                        onSelect(targetBackend)
                     },
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val splitX = size.width * mobileGluesFraction
+                    val slant = 18.dp.toPx()
+                    val selectedPath = Path().apply {
+                        if (selectedBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                            moveTo(0f, 0f)
+                            lineTo(splitX + slant, 0f)
+                            lineTo(splitX - slant, size.height)
+                            lineTo(0f, size.height)
+                        } else if (selectedBackend == RendererBackend.OPENGL_ES2_NATIVE) {
+                            moveTo(splitX + slant, 0f)
+                            lineTo(size.width, 0f)
+                            lineTo(size.width, size.height)
+                            lineTo(splitX - slant, size.height)
+                        }
+                        close()
+                    }
+                    if (selectedBackend != null) {
+                        drawPath(path = selectedPath, color = selectedContainerColor)
+                    }
+                    drawLine(
+                        color = selectorOutlineColor,
+                        start = Offset(splitX + slant, 0f),
+                        end = Offset(splitX - slant, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+                Row(modifier = Modifier.fillMaxSize()) {
+                    RendererQuickSwitchOption(
+                        modifier = Modifier.weight(mobileGluesFraction),
+                        backend = RendererBackend.OPENGL_ES_MOBILEGLUES,
+                        selected = selectedBackend == RendererBackend.OPENGL_ES_MOBILEGLUES,
+                        accentColor = MaterialTheme.colorScheme.primary,
+                    )
+                    RendererQuickSwitchOption(
+                        modifier = Modifier.weight(1f - mobileGluesFraction),
+                        backend = RendererBackend.OPENGL_ES2_NATIVE,
+                        selected = selectedBackend == RendererBackend.OPENGL_ES2_NATIVE,
+                        accentColor = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 220)),
+            ) {
+                SlidingTextSwap(
+                    text = stringResource(
+                        when (selectedBackend) {
+                            RendererBackend.OPENGL_ES_MOBILEGLUES -> R.string.main_renderer_quick_mobileglues_summary
+                            RendererBackend.OPENGL_ES2_NATIVE -> R.string.main_renderer_quick_gles2_summary
+                            null -> R.string.main_renderer_quick_other_summary
+                            else -> error("Unexpected quick renderer backend")
+                        },
+                        *if (selectedBackend == null) arrayOf(currentBackend.displayName) else emptyArray(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (selectionMode == RendererSelectionMode.MANUAL) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    IconButton(
+                        onClick = onRestoreAuto,
+                        enabled = enabled,
+                    ) {
+                        Icon(
+                            imageVector = RendererIcons.Restore,
+                            contentDescription = stringResource(R.string.main_renderer_quick_restore_auto),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+@Composable
+private fun RendererQuickSwitchOption(
+    modifier: Modifier,
+    backend: RendererBackend,
+    selected: Boolean,
+    accentColor: Color,
+) {
+    val backgroundIcon = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+        RendererIcons.LayersBackground
+    } else {
+        RendererIcons.CpuBackground
+    }
+    val iconRotation by animateFloatAsState(
+        targetValue = when (backend) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES -> -12f
+            RendererBackend.OPENGL_ES2_NATIVE -> if (selected) 0f else 12f
+            else -> 0f
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconRotation",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.12f else 1f,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconScale",
+    )
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (selected) 0.19f else 0.10f,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconAlpha",
+    )
+    val iconRightOffset by animateDpAsState(
+        targetValue = if (selected) 14.dp else 30.dp,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconOffset",
+    )
+    val titleStyle = MaterialTheme.typography.titleMedium
+    val titleFontSize by animateFloatAsState(
+        targetValue = if (selected) {
+            MaterialTheme.typography.titleLarge.fontSize.value
+        } else {
+            titleStyle.fontSize.value
+        },
+        animationSpec = tween(durationMillis = 220),
+        label = "rendererQuickSwitchTitleSize",
+    )
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clipToBounds(),
+    ) {
+        Icon(
+            imageVector = backgroundIcon,
+            contentDescription = null,
+            tint = accentColor.copy(alpha = iconAlpha),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = iconRightOffset, y = 15.dp)
+                .size(116.dp)
+                .graphicsLayer {
+                    rotationZ = iconRotation
+                    scaleX = iconScale
+                    scaleY = iconScale
+                },
+        )
+        AnimatedVisibility(
+            visible = !selected,
+            modifier = Modifier
+                .align(
+                    if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                        Alignment.TopStart
+                    } else {
+                        Alignment.TopEnd
+                    },
+                )
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
+                scaleIn(initialScale = 0.82f, animationSpec = tween(durationMillis = 180)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 90)) +
+                scaleOut(targetScale = 0.82f, animationSpec = tween(durationMillis = 90)),
+        ) {
+            Icon(
+                imageVector = RendererIcons.SwitchTile,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AnimatedVisibility(
+            visible = selected,
+            modifier = Modifier.align(
+                if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                    Alignment.TopStart
+                } else {
+                    Alignment.TopEnd
+                },
+            ).padding(horizontal = 12.dp, vertical = 14.dp),
+            enter = fadeIn(animationSpec = tween(durationMillis = 160)) +
+                slideInHorizontally(
+                    initialOffsetX = { width ->
+                        if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) -width / 2 else width / 2
+                    },
+                    animationSpec = tween(durationMillis = 220),
+                ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 100)) +
+                slideOutHorizontally(
+                    targetOffsetX = { width ->
+                        if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) -width / 3 else width / 3
+                    },
+                    animationSpec = tween(durationMillis = 160),
+                ),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = RendererIcons.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = accentColor,
+                )
+                Text(
+                    text = stringResource(R.string.main_renderer_quick_selected),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accentColor,
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(
+                    start = if (backend == RendererBackend.OPENGL_ES2_NATIVE) 22.dp else 16.dp,
+                    end = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) 24.dp else 16.dp,
+                    bottom = 14.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) "MobileGlues" else "GLES2",
+                style = titleStyle.copy(fontSize = titleFontSize.sp),
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) accentColor else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+            )
+            Text(
+                text = stringResource(
+                    if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                        R.string.main_renderer_quick_mobileglues_caption
+                    } else {
+                        R.string.main_renderer_quick_gles2_caption
+                    },
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }

@@ -110,6 +110,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_FLOATING_TOOL_BUTTONS
     val FLOATING_TOOL_BUTTON_IDS: List<String>
         get() = LauncherConfig.FLOATING_TOOL_BUTTON_IDS
+    val DEFAULT_HIDDEN_MAIN_CARDS: Set<String>
+        get() = LauncherConfig.DEFAULT_HIDDEN_MAIN_CARDS
+    val MAIN_CARD_IDS: List<String>
+        get() = LauncherConfig.MAIN_CARD_IDS
     val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_HAPTIC_FEEDBACK_ENABLED
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
@@ -391,6 +395,14 @@ object LauncherPreferences {
 
     fun saveFloatingToolButtons(context: Context, buttons: Set<String>) {
         LauncherConfig.saveFloatingToolButtons(context, buttons)
+    }
+
+    fun readHiddenMainCards(context: Context): Set<String> {
+        return LauncherConfig.readHiddenMainCards(context)
+    }
+
+    fun saveHiddenMainCards(context: Context, cardIds: Set<String>) {
+        LauncherConfig.saveHiddenMainCards(context, cardIds)
     }
 
     fun isHapticFeedbackEnabled(context: Context): Boolean {

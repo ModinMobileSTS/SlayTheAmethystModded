@@ -84,6 +84,9 @@ import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.MtsComponentUpdateProgress
 import io.stamethyst.backend.update.MtsComponentUpdateService
@@ -357,6 +360,9 @@ class MainScreenViewModel : ViewModel() {
         val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
         val pendingEnabledModSizeLaunchWarning: PendingEnabledModSizeLaunchWarning? = null,
         val pendingMtsComponentUpdate: PendingMtsComponentUpdate? = null,
+        val rendererSelectionMode: RendererSelectionMode = RendererSelectionMode.AUTO,
+        val effectiveRendererBackend: RendererBackend = RendererBackend.OPENGL_ES_MOBILEGLUES,
+        val mobileGluesRendererAvailable: Boolean = true,
     )
 
     sealed interface Effect {
@@ -518,6 +524,36 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         refreshNow(host)
+    }
+
+    fun setQuickRendererBackend(host: Activity, backend: RendererBackend) {
+        if (uiState.busy || uiState.gameProcessRunning || uiState.launchInFlight) {
+            return
+        }
+        val decision = RendererBackendResolver.resolve(
+            context = host,
+            requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(host),
+            selectionMode = LauncherPreferences.readRendererSelectionMode(host),
+            manualBackend = LauncherPreferences.readManualRendererBackend(host),
+        )
+        if (decision.availableBackends.none { it.backend == backend && it.available }) {
+            _effects.tryEmit(
+                Effect.ShowSnackbar(UiText.StringResource(R.string.main_renderer_quick_unavailable)),
+            )
+            republish(host)
+            return
+        }
+        LauncherPreferences.saveManualRendererBackend(host, backend)
+        LauncherPreferences.saveRendererSelectionMode(host, RendererSelectionMode.MANUAL)
+        republish(host)
+    }
+
+    fun restoreQuickRendererAuto(host: Activity) {
+        if (uiState.busy || uiState.gameProcessRunning || uiState.launchInFlight) {
+            return
+        }
+        LauncherPreferences.saveRendererSelectionMode(host, RendererSelectionMode.AUTO)
+        republish(host)
     }
 
     private fun refreshNow(host: Activity) {
@@ -5544,6 +5580,14 @@ class MainScreenViewModel : ViewModel() {
                 .ifBlank { EasyTierRoomSelectionStore.read(host).preferredRoomId }
         )
         val gameProcessRunning = GameLaunchReturnTracker.isGameProcessRunning(host)
+        val rendererSelectionMode = LauncherPreferences.readRendererSelectionMode(host)
+        val manualRendererBackend = LauncherPreferences.readManualRendererBackend(host)
+        val rendererDecision = RendererBackendResolver.resolve(
+            context = host,
+            requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(host),
+            selectionMode = rendererSelectionMode,
+            manualBackend = manualRendererBackend,
+        )
         uiState = uiState.copy(
             initializing = false,
             busy = currentBusy,
@@ -5586,6 +5630,11 @@ class MainScreenViewModel : ViewModel() {
             steamCloudIndicator = currentSteamCloudIndicator,
             easyTierIndicator = currentEasyTierIndicator,
             easyTierRoomBrowser = currentEasyTierRoomBrowser,
+            rendererSelectionMode = rendererDecision.selectionMode,
+            effectiveRendererBackend = rendererDecision.effectiveBackend,
+            mobileGluesRendererAvailable = rendererDecision.availableBackends.any {
+                it.backend == RendererBackend.OPENGL_ES_MOBILEGLUES && it.available
+            },
         )
     }
 

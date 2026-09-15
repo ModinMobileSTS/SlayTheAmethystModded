@@ -6,6 +6,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
+import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.LauncherNavigationRequestBus
 
@@ -69,6 +70,8 @@ internal data class MainScreenActions(
     val onShareCrashRecoveryReport: () -> Unit = {},
     val onReturnToMainMenu: () -> Unit = {},
     val onReinstallResourcePack: () -> Unit = {},
+    val onSetQuickRenderer: (RendererBackend) -> Unit = {},
+    val onRestoreQuickRendererAuto: () -> Unit = {},
     val onImportMods: () -> Unit = {},
     val onOpenWorkshop: () -> Unit = {},
     val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
@@ -192,6 +195,8 @@ internal fun rememberMainScreenActions(
                 onShareCrashRecoveryReport = { viewModel.shareCrashRecoveryReport(activity) },
                 onReturnToMainMenu = { viewModel.dismissCrashRecovery() },
                 onReinstallResourcePack = LauncherNavigationRequestBus::requestResourcePack,
+                onSetQuickRenderer = { backend -> viewModel.setQuickRendererBackend(activity, backend) },
+                onRestoreQuickRendererAuto = { viewModel.restoreQuickRendererAuto(activity) },
                 onImportMods = {
                     importModsLauncher.launch(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")
