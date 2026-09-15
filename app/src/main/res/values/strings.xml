@@ -1573,8 +1573,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_bar_title_conflict">Direct save conflicts detected</string>
     <string name="main_steam_cloud_bar_title_syncing">Steam Cloud sync in progress</string>
     <string name="main_steam_cloud_bar_title_failed">Steam connection failed</string>
-    <string name="main_steam_cloud_bar_summary_hidden">Tap Check again to compare local saves with the latest Steam Cloud state.</string>
-    <string name="main_steam_cloud_bar_summary_up_to_date">Local saves and Steam Cloud are already in sync.</string>
+    <string name="main_steam_cloud_bar_summary_hidden"></string>
     <string name="main_steam_cloud_bar_summary_checking">Comparing local saves against the latest Steam Cloud state.</string>
     <string name="main_steam_cloud_bar_summary_conflict_missing">Conflict details are temporarily unavailable. Refresh once and try again.</string>
     <string name="main_steam_cloud_bar_summary_syncing">Steam Cloud sync is running.</string>

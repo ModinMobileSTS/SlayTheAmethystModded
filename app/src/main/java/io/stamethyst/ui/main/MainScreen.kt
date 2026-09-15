@@ -6428,11 +6428,13 @@ private fun SteamCloudBottomSheetContent(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (summary.isNotBlank()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -6929,8 +6931,7 @@ private fun steamCloudActionBarSummary(
     return when (indicator.state) {
         MainScreenViewModel.SteamCloudIndicatorState.HIDDEN ->
             stringResource(R.string.main_steam_cloud_bar_summary_hidden)
-        MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE ->
-            stringResource(R.string.main_steam_cloud_bar_summary_up_to_date)
+        MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE -> ""
         MainScreenViewModel.SteamCloudIndicatorState.CHECKING ->
             stringResource(R.string.main_steam_cloud_bar_summary_checking)
         MainScreenViewModel.SteamCloudIndicatorState.CONFLICT -> {

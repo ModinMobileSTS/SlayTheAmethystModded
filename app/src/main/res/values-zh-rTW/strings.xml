@@ -1569,8 +1569,7 @@
     <string name="main_steam_cloud_bar_title_conflict">雲存檔衝突</string>
     <string name="main_steam_cloud_bar_title_syncing">Steam Cloud 正在同步</string>
     <string name="main_steam_cloud_bar_title_failed">Steam 連線失敗</string>
-    <string name="main_steam_cloud_bar_summary_hidden">點選“重新檢查”即可對比本地存檔和最新 Steam Cloud 狀態。</string>
-    <string name="main_steam_cloud_bar_summary_up_to_date">本地存檔與 Steam Cloud 當前一致。</string>
+    <string name="main_steam_cloud_bar_summary_hidden"></string>
     <string name="main_steam_cloud_bar_summary_checking">正在檢查雲端變更。</string>
     <string name="main_steam_cloud_bar_summary_conflict_missing">暫時拿不到衝突詳情，請先重新檢查一次。</string>
     <string name="main_steam_cloud_bar_summary_syncing">Steam Cloud 同步正在進行中。</string>
