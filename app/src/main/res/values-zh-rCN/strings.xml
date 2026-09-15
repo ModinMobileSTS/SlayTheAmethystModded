@@ -2519,6 +2519,8 @@
     <string name="workshop_load_phase_failing_over">正在切换节点（已失败 %1$d 个）</string>
     <string name="workshop_load_phase_falling_back">正在退避到官方线路</string>
     <string name="workshop_load_phase_parsing">正在解析条目</string>
+    <string name="workshop_load_phase_loading_community_detail">正在加载模组详情</string>
+    <string name="workshop_load_phase_loading_dependencies">正在加载依赖</string>
     <string name="workshop_load_phase_completed">加载完成</string>
     <string name="workshop_load_phase_failed">加载失败</string>
     <string name="workshop_load_progress_node">节点 %1$s</string>
