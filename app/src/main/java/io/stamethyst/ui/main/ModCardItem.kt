@@ -63,6 +63,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
+import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
@@ -109,6 +110,8 @@ internal data class ModCardCallbacks(
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
     val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    val onOpenAiEditor: (ModItemUi) -> Unit = {},
+    val onSetAgentPatchEnabled: (ModItemUi, io.stamethyst.model.AgentPatchModUi, Boolean) -> Unit = { _, _, _ -> },
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
     val onDragCancel: () -> Unit = {},
@@ -353,6 +356,8 @@ internal fun ModCard(
             onAssociationBadgeClick = { callbacks.onAssociationBadgeClick(mod) },
             updateBadgeEnabled = !batchSelectionMode,
             onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(it) },
+            agentPatchMods = mod.agentPatchMods,
+            onSetAgentPatchEnabled = { patch, enabled -> callbacks.onSetAgentPatchEnabled(mod, patch, enabled) },
             workshopBadgeEnabled = !batchSelectionMode,
             onUpdateBadgeClick = {
                 updateChangeNotesState = WorkshopUpdateChangeNotesState.Idle
@@ -650,6 +655,7 @@ internal fun ModCard(
         onEditPriority = { showPriorityDialog = true },
         showOpenWorkshopDetails = mod.workshop != null,
         onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(mod) },
+        onOpenAiEditor = { callbacks.onOpenAiEditor(mod) },
         onAssociate = { callbacks.onAssociateMod(mod) },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },

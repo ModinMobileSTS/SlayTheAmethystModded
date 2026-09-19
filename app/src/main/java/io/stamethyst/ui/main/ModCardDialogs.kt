@@ -73,6 +73,7 @@ internal fun ModActionsDialog(
     onEditPriority: () -> Unit,
     showOpenWorkshopDetails: Boolean = false,
     onOpenWorkshopDetails: () -> Unit = {},
+    onOpenAiEditor: () -> Unit = {},
     onAssociate: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
@@ -140,6 +141,13 @@ internal fun ModActionsDialog(
                             onDismiss()
                             onOpenWorkshopDetails()
                         }
+                    }
+                    ModActionDialogListItem(
+                        text = stringResource(R.string.main_mod_ai_edit),
+                        enabled = controlsEnabled,
+                    ) {
+                        onDismiss()
+                        onOpenAiEditor()
                     }
                     ModActionDialogListItem(
                         text = stringResource(R.string.main_mod_export),

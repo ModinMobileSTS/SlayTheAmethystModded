@@ -117,6 +117,7 @@ import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
+import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModUi
 import io.stamethyst.model.WorkshopModState
@@ -2127,6 +2128,16 @@ class MainScreenViewModel : ViewModel() {
             _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("找不到导入修补：$moduleId")))
             return
         }
+        refresh(host)
+    }
+
+    fun onSetAgentPatchEnabled(
+        host: Activity,
+        mod: ModItemUi,
+        patch: AgentPatchModUi,
+        enabled: Boolean,
+    ) {
+        modManagementController.onSetAgentPatchEnabled(host, mod, patch, enabled)
         refresh(host)
     }
 
@@ -6128,7 +6139,7 @@ class MainScreenViewModel : ViewModel() {
         operation: UiBusyOperation,
         hasStorageIssue: Boolean
     ): Boolean {
-        return !hasStorageIssue && (!busy || operation.usesBlockingOverlay())
+        return !hasStorageIssue && (!busy || operation.locksInteraction(busy))
     }
 
     private fun isRequiredModAvailable(host: Activity, modId: String): Boolean {

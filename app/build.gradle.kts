@@ -189,8 +189,9 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     externalNativeBuild {
@@ -238,7 +239,7 @@ android {
 
 kotlin {
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_1_8
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
@@ -326,6 +327,7 @@ configurations.configureEach {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":lan-core"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
@@ -358,7 +360,14 @@ dependencies {
     implementation(libs.android.zstd)
     implementation(libs.ow2.asm)
     implementation(libs.ow2.asm.tree)
+    implementation(libs.eclipse.ecj)
+    implementation(libs.cfr.decompiler)
     implementation(libs.lottie.compose)
+    implementation(libs.langchain4j.open.ai)
+    implementation(libs.langchain4j.http.client.okhttp) {
+        // LangChain4j publishes a JVM variant, but Android already provides the same OkHttp API.
+        exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
+    }
     implementation(project(":workshop-core"))
     implementation(project(":steam-protocol"))
 
@@ -370,6 +379,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.apache.commons.compress)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

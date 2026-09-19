@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
 import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.LauncherNavigationRequestBus
 
@@ -32,6 +33,8 @@ internal data class MainScreenActions(
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
     val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    val onOpenAiEditor: (ModItemUi) -> Unit = {},
+    val onSetAgentPatchEnabled: (ModItemUi, AgentPatchModUi, Boolean) -> Unit = { _, _, _ -> },
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onAssociateMods: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },
@@ -109,6 +112,7 @@ internal fun rememberMainScreenActions(
     easyTierVpnPermissionLauncher: ActivityResultLauncher<Intent>,
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
 ): MainScreenActions {
     return remember(
         viewModel,
@@ -117,6 +121,7 @@ internal fun rememberMainScreenActions(
         easyTierVpnPermissionLauncher,
         onOpenWorkshop,
         onOpenWorkshopDetails,
+        onOpenAiEditor,
     ) {
         val activity = hostActivity
         if (activity == null) {
@@ -141,6 +146,10 @@ internal fun rememberMainScreenActions(
                     viewModel.onUpgradeWorkshopImportPatches(activity, mod)
                 },
                 onOpenWorkshopDetails = onOpenWorkshopDetails,
+                onOpenAiEditor = onOpenAiEditor,
+                onSetAgentPatchEnabled = { mod, patch, enabled ->
+                    viewModel.onSetAgentPatchEnabled(activity, mod, patch, enabled)
+                },
                 onSetImportPatchEnabled = { mod, moduleId, enabled ->
                     viewModel.onSetImportPatchEnabled(activity, mod, moduleId, enabled)
                 },

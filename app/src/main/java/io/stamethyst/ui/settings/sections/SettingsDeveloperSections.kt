@@ -132,6 +132,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onExportPerformanceLogs: () -> Unit = {},
     onInstallArthasResource: () -> Unit = {},
     onRepairResourcePack: () -> Unit = {},
+    onOpenSlingBreak: () -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onClearJunkFiles: () -> Unit = {},
@@ -348,6 +349,17 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         description = stringResource(R.string.settings_steam_achievement_debug_mode_desc),
                         onCheckedChange = onSteamAchievementDebugModeEnabledChanged,
                     )
+                )
+            }
+        }
+
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_developer_experiments_title)) {
+                SettingsActionListItem(
+                    title = stringResource(R.string.settings_developer_slingbreak_title),
+                    supportingText = stringResource(R.string.settings_developer_slingbreak_summary),
+                    enabled = !uiState.busy,
+                    onClick = onOpenSlingBreak,
                 )
             }
         }

@@ -40,6 +40,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object SettingsMarketCloud : Route
     @Serializable
+    data object SettingsLlm : Route
+    @Serializable
     data object SettingsWorkshopAutoImportDefaults : Route
     @Serializable
     data object SettingsFeedback : Route
@@ -91,5 +93,11 @@ sealed interface Route : NavKey {
     @Serializable
     data class FeedbackIssuePreview(
         val issueNumber: Long
+    ) : Route
+    @Serializable
+    data class AiModEditor(
+        val storagePath: String,
+        val modName: String,
+        val modId: String,
     ) : Route
 }

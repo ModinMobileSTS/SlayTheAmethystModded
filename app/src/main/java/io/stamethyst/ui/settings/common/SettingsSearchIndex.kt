@@ -12,6 +12,12 @@ internal data class SettingsSearchEntry(
 )
 
 internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
+    entry(
+        titleResId = R.string.settings_llm_title,
+        subtitleResId = R.string.settings_llm_description,
+        categoryTitleResId = R.string.settings_category_llm_title,
+        route = Route.SettingsLlm,
+    ),
     // Launcher
     entry(
         titleResId = R.string.settings_basic_tutorial_action,

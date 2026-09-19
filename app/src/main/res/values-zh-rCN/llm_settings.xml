@@ -1,0 +1,34 @@
+<resources>
+    <string name="llm_connection">服务连接</string>
+    <string name="llm_organization">OpenAI 组织 ID（可选）</string>
+    <string name="llm_credentials">凭证</string>
+    <string name="llm_key_hint">留空保留当前密钥。</string>
+    <string name="llm_current_key">当前密钥</string>
+    <string name="llm_no_key">尚未保存密钥</string>
+    <string name="llm_verify_key">验证身份以显示 API 密钥</string>
+    <string name="llm_hide_key">隐藏密钥</string>
+    <string name="llm_show_key">显示密钥</string>
+    <string name="llm_copy_key">复制密钥</string>
+    <string name="llm_auth_unavailable">设备身份验证不可用，请在 Android 设置中配置屏幕锁定后再查看密钥。</string>
+    <string name="llm_models">模型</string>
+    <string name="llm_model_count">已添加 %1$d 个</string>
+    <string name="llm_models_empty">尚未添加模型</string>
+    <string name="llm_remove_model">移除 %1$s</string>
+    <string name="llm_active_model">当前使用：%1$s</string>
+    <string name="llm_add_models">添加模型</string>
+    <string name="llm_models_hint">多个模型 ID 使用逗号或换行分隔。</string>
+    <string name="llm_fetch_models">从上游获取</string>
+    <string name="llm_copy_models">全部复制</string>
+    <string name="llm_clear_models">清除全部</string>
+    <string name="llm_remote_empty">上游未返回可用模型。</string>
+    <string name="llm_fetch_failed">获取模型失败（%1$s），请检查地址、凭证和网络后重试。</string>
+    <string name="llm_request_options">请求选项</string>
+    <string name="llm_save_failed">设置保存失败，请重试。</string>
+    <string name="llm_manage_models">管理模型（%1$d）</string>
+    <string name="llm_search_models">搜索模型</string>
+    <string name="llm_no_matches">没有匹配的模型</string>
+    <string name="llm_select_model">选择模型</string>
+    <string name="llm_done">完成</string>
+    <string name="llm_retry">重试</string>
+    <string name="llm_invalid_url">请输入有效的 HTTP 或 HTTPS API 地址，当前仍使用上一次有效地址。</string>
+</resources>

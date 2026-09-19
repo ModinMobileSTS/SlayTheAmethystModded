@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -79,6 +80,8 @@ internal fun ModCardBodyContent(
     onUpdateBadgeClick: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     workshopBadgeEnabled: Boolean = true,
+    agentPatchMods: List<io.stamethyst.model.AgentPatchModUi> = emptyList(),
+    onSetAgentPatchEnabled: (io.stamethyst.model.AgentPatchModUi, Boolean) -> Unit = { _, _ -> },
     headerLeading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
@@ -161,6 +164,43 @@ internal fun ModCardBodyContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary
         )
+    }
+    if (isExpanded && agentPatchMods.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.main_mod_agent_patches),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        agentPatchMods.forEach { patch ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = patch.name.ifBlank { patch.patchModId },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = buildString {
+                            append(patch.version)
+                            append(" · ")
+                            append(patch.patchId)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Checkbox(
+                    checked = patch.enabled,
+                    enabled = mod.enabled,
+                    onCheckedChange = { enabled -> onSetAgentPatchEnabled(patch, enabled) },
+                )
+            }
+        }
     }
     if (showActionsButton && isExpanded) {
         Spacer(modifier = Modifier.height(10.dp))

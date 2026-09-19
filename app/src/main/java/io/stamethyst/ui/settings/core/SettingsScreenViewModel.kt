@@ -591,12 +591,28 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    internal class StatusRefreshBusyTracker {
+        private var clearBusyRequested = false
+
+        @Synchronized
+        fun begin(clearBusy: Boolean): Boolean {
+            clearBusyRequested = clearBusyRequested || clearBusy
+            return clearBusyRequested
+        }
+
+        @Synchronized
+        fun complete() {
+            clearBusyRequested = false
+        }
+    }
+
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val statusRefreshExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val steamCloudLoginCleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     // A slow refresh must not overwrite a newer setting change with its older snapshot.
     private val statusRefreshGeneration = AtomicLong(0L)
     private var statusRefreshTask: Future<*>? = null
+    private val statusRefreshBusyTracker = StatusRefreshBusyTracker()
     private var boundActivityReference: WeakReference<Activity>? = null
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
@@ -1279,6 +1295,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {
         val refreshGeneration = statusRefreshGeneration.incrementAndGet()
+        val refreshClearBusy = statusRefreshBusyTracker.begin(clearBusy)
         val previousUiState = uiState
         statusRefreshTask?.cancel(true)
         statusRefreshTask = statusRefreshExecutor.submit {
@@ -1287,38 +1304,15 @@ class SettingsScreenViewModel : ViewModel() {
                 val hasJar = hasValidImportedStsJar(host)
                 val loadedSnapshot = SettingsRepository.loadSettingsSnapshot(host)
                 throwIfStatusRefreshStale(refreshGeneration)
-                val targetFpsOptions = resolveTargetFpsOptions(
-                    host,
-                    loadedSnapshot.rendering.nonRecommendedFpsEnabled,
+                val selectedTargetFps = loadedSnapshot.rendering.targetFps
+                val targetFpsOptions = DisplayRefreshRateController.includeSelectedTargetFpsOption(
+                    options = resolveTargetFpsOptions(
+                        host,
+                        loadedSnapshot.rendering.nonRecommendedFpsEnabled,
+                    ),
+                    selectedTargetFps = selectedTargetFps,
                 )
-                val shouldNormalizeTargetFps =
-                    !loadedSnapshot.rendering.nonRecommendedFpsEnabled &&
-                    loadedSnapshot.rendering.targetFps !in targetFpsOptions &&
-                    targetFpsOptions.isNotEmpty()
-                val selectedTargetFps = if (shouldNormalizeTargetFps) {
-                    targetFpsOptions.first()
-                } else {
-                    loadedSnapshot.rendering.targetFps
-                }
-                if (shouldNormalizeTargetFps) {
-                    throwIfStatusRefreshStale(refreshGeneration)
-                    val currentTargetFps = LauncherPreferences.readTargetFpsValue(host)
-                    val currentNonRecommendedFpsEnabled =
-                        LauncherPreferences.isNonRecommendedFpsEnabled(host)
-                    if (currentTargetFps == loadedSnapshot.rendering.targetFps &&
-                        currentNonRecommendedFpsEnabled ==
-                        loadedSnapshot.rendering.nonRecommendedFpsEnabled
-                    ) {
-                        saveTargetFpsSelection(host, selectedTargetFps)
-                    }
-                }
-                val snapshot = if (selectedTargetFps != loadedSnapshot.rendering.targetFps) {
-                    loadedSnapshot.copy(
-                        rendering = loadedSnapshot.rendering.copy(targetFps = selectedTargetFps),
-                    )
-                } else {
-                    loadedSnapshot
-                }
+                val snapshot = loadedSnapshot
 
                 val mods = ModManager.listInstalledMods(host)
                 var optionalTotal = 0
@@ -1556,10 +1550,10 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                     applySnapshot(host, result.snapshot)
                     uiState = uiState.copy(
-                        busy = if (clearBusy) false else uiState.busy,
-                        busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
-                        busyMessage = if (clearBusy) null else uiState.busyMessage,
-                        busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
+                        busy = if (refreshClearBusy) false else uiState.busy,
+                        busyOperation = if (refreshClearBusy) UiBusyOperation.NONE else uiState.busyOperation,
+                        busyMessage = if (refreshClearBusy) null else uiState.busyMessage,
+                        busyProgressPercent = if (refreshClearBusy) null else uiState.busyProgressPercent,
                         targetFpsOptions = result.targetFpsOptions,
                         selectedTargetFps = result.selectedTargetFps,
                         statusText = result.statusText,
@@ -1595,19 +1589,22 @@ class SettingsScreenViewModel : ViewModel() {
                         resourcePackIssues = result.resourcePack.issues.joinToString("; "),
                         easyTierSettings = result.easyTierSettings,
                     )
+                    statusRefreshBusyTracker.complete()
                 }
             } catch (_: Throwable) {
                 host.runOnUiThread {
                     if (refreshGeneration != statusRefreshGeneration.get()) {
                         return@runOnUiThread
                     }
-                    if (clearBusy) {
+                    if (refreshClearBusy) {
                         uiState = uiState.copy(
                             busy = false,
+                            busyOperation = UiBusyOperation.NONE,
                             busyMessage = null,
                             busyProgressPercent = null
                         )
                     }
+                    statusRefreshBusyTracker.complete()
                 }
             }
         }
@@ -2258,22 +2255,29 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onSteamCloudWattAccelerationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudWattAccelerationEnabled(host, enabled)
-        refreshStatus(host)
+        val effectiveEnabled = LauncherPreferences.isSteamCloudWattAccelerationEnabled(host)
+        uiState = uiState.copy(
+            steamCloudWattAccelerationEnabled = effectiveEnabled,
+            workshopWattAccelerationEnabled = effectiveEnabled,
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onSteamCloudAutoLaunchAfterSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudAutoLaunchAfterSyncEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(steamCloudAutoLaunchAfterSyncEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onSteamGamePresenceChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamGamePresenceEnabled(host, enabled)
+        uiState = uiState.copy(steamGamePresenceEnabled = enabled)
         if (enabled) {
             SteamGamePresenceService.startIfEnabled(host)
         } else {
             SteamGamePresenceService.stop(host)
         }
-        refreshStatus(host)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onRichPresenceDisplayPreferencesChanged(
@@ -2281,17 +2285,20 @@ class SettingsScreenViewModel : ViewModel() {
         settings: RichPresenceDisplayPreferences,
     ) {
         LauncherPreferences.saveRichPresenceDisplayPreferences(host, settings)
-        refreshStatus(host)
+        uiState = uiState.copy(richPresenceDisplayPreferences = settings)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onSteamAchievementSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamAchievementSyncEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(steamAchievementSyncEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onAchievementUnlockNotificationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setAchievementUnlockNotificationEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(achievementUnlockNotificationEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onClearSteamCloudNetworkCache(host: Activity) {
@@ -2311,17 +2318,28 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onWorkshopMaxConcurrentDownloadsChanged(host: Activity, value: Int) {
         LauncherPreferences.saveWorkshopMaxConcurrentDownloads(host, value)
-        refreshStatus(host)
+        uiState = uiState.copy(
+            workshopMaxConcurrentDownloads = LauncherConfig.normalizeWorkshopMaxConcurrentDownloads(value)
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopDownloadThreadsChanged(host: Activity, value: Int) {
         LauncherPreferences.saveWorkshopDownloadThreads(host, value)
-        refreshStatus(host)
+        uiState = uiState.copy(
+            workshopDownloadThreads = LauncherConfig.normalizeWorkshopDownloadThreads(value)
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopWattAccelerationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setWorkshopWattAccelerationEnabled(host, enabled)
-        refreshStatus(host)
+        val effectiveEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host)
+        uiState = uiState.copy(
+            steamCloudWattAccelerationEnabled = effectiveEnabled,
+            workshopWattAccelerationEnabled = effectiveEnabled,
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onQuickStartSteamAccelerationChanged(host: Activity, enabled: Boolean) {
@@ -2409,27 +2427,35 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onWorkshopSteamLanguageChanged(host: Activity, language: SteamLanguagePreference) {
         LauncherPreferences.saveWorkshopSteamLanguage(host, language)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopSteamLanguage = language)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopDefaultSortChanged(host: Activity, sort: WorkshopBrowseSort) {
         LauncherPreferences.saveWorkshopDefaultSort(host, sort)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopDefaultSort = sort)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setWorkshopAutoImportEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopAutoImportEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportAtlasDownscaleChanged(host: Activity, enabled: Boolean) {
         ImportPatchRegistry.setEnabled(host, AtlasOfflineDownscalePatchModule.id, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopAutoImportAtlasDownscaleEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportAtlasDownscaleMaxEdgeChanged(host: Activity, maxEdgePx: Int) {
         LauncherPreferences.saveWorkshopAutoImportAtlasDownscaleMaxEdgePx(host, maxEdgePx)
-        refreshStatus(host)
+        uiState = uiState.copy(
+            workshopAutoImportAtlasDownscaleMaxEdgePx =
+                LauncherConfig.normalizeWorkshopAutoImportAtlasDownscaleMaxEdgePx(maxEdgePx)
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onClearWorkshopPreviewCache(host: Activity) {
@@ -5979,7 +6005,9 @@ class SettingsScreenViewModel : ViewModel() {
         return if (includeNonRecommended) {
             LauncherPreferences.NON_RECOMMENDED_TARGET_FPS_OPTIONS.map(Int::toFloat)
         } else {
-            DisplayRefreshRateController.resolveIdealTargetFpsOptions(context)
+            DisplayRefreshRateController.resolveIdealTargetFpsOptions(context).ifEmpty {
+                LauncherPreferences.TARGET_FPS_OPTIONS.map(Int::toFloat)
+            }
         }
     }
 

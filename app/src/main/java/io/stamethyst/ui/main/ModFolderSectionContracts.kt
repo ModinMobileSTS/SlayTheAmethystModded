@@ -1,6 +1,7 @@
 package io.stamethyst.ui.main
 
 import androidx.compose.ui.state.ToggleableState
+import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 
 internal data class ModFolderSectionCallbacks(
@@ -16,6 +17,8 @@ internal data class ModFolderSectionCallbacks(
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
     val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    val onOpenAiEditor: (ModItemUi) -> Unit = {},
+    val onSetAgentPatchEnabled: (ModItemUi, AgentPatchModUi, Boolean) -> Unit = { _, _, _ -> },
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onAssociateMods: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },
     val onRemoveModAssociation: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },

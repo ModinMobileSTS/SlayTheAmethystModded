@@ -63,13 +63,18 @@ internal val SettingsMarketCloudRouteSpec = SettingsRouteSpec(
     iconResId = R.drawable.ic_steam,
 )
 
+internal val SettingsLlmRouteSpec = SettingsRouteSpec(
+    titleResId = R.string.settings_category_llm_title,
+    subtitleResId = R.string.settings_category_llm_subtitle,
+    iconResId = R.drawable.ic_llm_support,
+)
+
 
 internal val SettingsFeedbackRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_feedback_logs_title,
     subtitleResId = R.string.settings_feedback_logs_subtitle,
     iconResId = R.drawable.ic_feedback_updates,
 )
-
 
 internal val SettingsNativeLibraryMarketRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_native_library_market_title,
@@ -104,9 +109,9 @@ internal val SettingsHomeDestinations = listOf(
     SettingsHomeDestination(Route.SettingsGame, SettingsGameRouteSpec),
     SettingsHomeDestination(Route.SettingsPerformance, SettingsPerformanceRouteSpec),
     SettingsHomeDestination(Route.SettingsMarketCloud, SettingsMarketCloudRouteSpec),
+    SettingsHomeDestination(Route.SettingsLlm, SettingsLlmRouteSpec),
     SettingsHomeDestination(Route.SettingsFeedback, SettingsFeedbackRouteSpec),
     SettingsHomeDestination(Route.NativeLibraryMarket, SettingsNativeLibraryMarketRouteSpec),
     SettingsHomeDestination(Route.DeveloperSettings, SettingsDeveloperRouteSpec),
     SettingsHomeDestination(Route.SettingsAbout, SettingsAboutRouteSpec),
 )
-

@@ -1,0 +1,34 @@
+<resources>
+    <string name="llm_connection">Connection</string>
+    <string name="llm_organization">OpenAI organization ID (optional)</string>
+    <string name="llm_credentials">Credentials</string>
+    <string name="llm_key_hint">Leave blank to keep the current key.</string>
+    <string name="llm_current_key">Saved key</string>
+    <string name="llm_no_key">No saved key</string>
+    <string name="llm_verify_key">Verify to reveal your API key</string>
+    <string name="llm_hide_key">Hide key</string>
+    <string name="llm_show_key">Reveal key</string>
+    <string name="llm_copy_key">Copy key</string>
+    <string name="llm_auth_unavailable">Device verification is unavailable. Set up a screen lock in Android settings to reveal the saved key.</string>
+    <string name="llm_models">Models</string>
+    <string name="llm_model_count">%1$d models</string>
+    <string name="llm_models_empty">No models added</string>
+    <string name="llm_remove_model">Remove %1$s</string>
+    <string name="llm_active_model">Active model: %1$s</string>
+    <string name="llm_add_models">Add models</string>
+    <string name="llm_models_hint">Separate model IDs with commas or new lines.</string>
+    <string name="llm_fetch_models">Fetch from provider</string>
+    <string name="llm_copy_models">Copy all</string>
+    <string name="llm_clear_models">Clear all</string>
+    <string name="llm_remote_empty">The provider returned no available models.</string>
+    <string name="llm_fetch_failed">Could not load models (%1$s). Check the address, credentials and network, then retry.</string>
+    <string name="llm_request_options">Request options</string>
+    <string name="llm_save_failed">Could not save settings. Please retry.</string>
+    <string name="llm_manage_models">Manage models (%1$d)</string>
+    <string name="llm_search_models">Search models</string>
+    <string name="llm_no_matches">No matching models</string>
+    <string name="llm_select_model">Select model</string>
+    <string name="llm_done">Done</string>
+    <string name="llm_retry">Retry</string>
+    <string name="llm_invalid_url">Enter a valid HTTP or HTTPS API address. The last valid address is still in use.</string>
+</resources>
