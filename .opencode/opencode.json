@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "tdd": {
+      "description": "Develop a requested change using a strict TDD red-green-refactor loop.",
+      "template": "Use $tdd-development in Full TDD mode for the requested change. First identify the smallest behavior to test, add or update the minimal failing test, run the smallest relevant Gradle test command to confirm Red, implement the smallest production change, rerun the same test to confirm Green, then refactor only if useful and rerun verification. Prefer module-scoped commands such as ./gradlew :app:testDebugUnitTest or ./gradlew :module:test. Report Red, Green, Refactor, commands run, and any skipped verification."
+    },
+    "tdd-red": {
+      "description": "Add the smallest failing test for a requested behavior.",
+      "template": "Use $tdd-development in Red-only mode. Locate the smallest relevant test surface, add or update one behavior-focused test for the requested change, run the narrowest relevant Gradle test command to confirm it fails for the expected reason, then stop and report the failing test, command, and failure evidence. Do not implement production behavior unless a pre-existing test seam requires a minimal compile fix."
+    },
+    "tdd-green": {
+      "description": "Make the existing failing test pass with the smallest implementation.",
+      "template": "Use $tdd-development in Green-only mode. Start from the existing failing test or the failure described by the user, implement the smallest production change that makes it pass, rerun the same focused test command, and report the implementation files changed plus verification results. Avoid unrelated refactors."
+    },
+    "tdd-refactor": {
+      "description": "Refactor under passing tests and rerun verification.",
+      "template": "Use $tdd-development in Refactor-only mode. Confirm the relevant tests are passing or identify the existing passing command, make only behavior-preserving cleanup, rerun the focused test command afterward, and report what changed and how behavior was protected. Do not add unrelated features or fixes."
+    },
+    "tdd-review": {
+      "description": "Review whether a change follows effective TDD practice.",
+      "template": "Use $tdd-development in Review mode. Inspect the current change or requested files for meaningful behavior tests, Red/Green evidence, minimal implementation scope, brittle assertions, missing edge cases, and verification gaps. Return findings first with file and line references when available. Do not modify files unless explicitly asked."
+    }
+  }
+}
