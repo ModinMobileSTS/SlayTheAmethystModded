@@ -21,7 +21,7 @@ test('presence config reads qq group number for cloud-control', () => {
   );
   assert.equal(
     loadConfig({ LOG_LEVEL: 'silent', QQ_GROUP_NUMBER: 'not-a-group' }).qqGroupNumber,
-    '1029305387'
+    '675545914'
   );
 });
 
@@ -1660,7 +1660,7 @@ test('cloud-control exposes websocket heartbeat settings', async (t) => {
       wsUrl: 'wss://presence.example.com/api/presence/ws'
     },
     qqGroup: {
-      number: '1029305387'
+      number: '675545914'
     },
     easyTier: {
       enabled: false,
