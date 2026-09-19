@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>游戏页 · 图标提案</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { font-family: system-ui, -apple-system, "Noto Sans CJK SC", sans-serif; letter-spacing: 0; color: #252629; background: #f7f7f8; }
+    body { margin: 0; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .definitions { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .icon { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    .page-head { max-width: 1160px; margin: auto; padding: 48px 36px 28px; display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+    .eyebrow { font-size: 11px; font-weight: 600; color: #77777e; margin: 0 0 10px; }
+    h1 { font-size: 26px; line-height: 1.4; font-weight: 600; margin: 0; }
+    .switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+    .switch input { appearance: none; width: 36px; height: 22px; border-radius: 20px; background: #d5d5dc; margin: 0; position: relative; cursor: pointer; }
+    .switch input::after { content: ""; position: absolute; width: 16px; height: 16px; top: 3px; left: 3px; background: white; border-radius: 50%; transition: transform 160ms; }
+    .switch input:checked { background: #655180; }
+    .switch input:checked::after { transform: translateX(14px); }
+    :focus-visible { outline: 3px solid #a780d0; outline-offset: 5px; }
+    .sheet { --paper: #ffffff; --ink: #28292d; --muted: #74747c; --line: #eae9ee; --blue: #36618e; --green: #397463; --gold: #8e681d; --violet: #795792; --tile-blue: #edf3fa; --tile-green: #edf6f2; --tile-gold: #faf4e7; --tile-violet: #f3edf8; color: var(--ink); background: var(--paper); padding: 32px 36px 36px; }
+    .sheet.dark { --paper: #1b1b1e; --ink: #e5e3e8; --muted: #a4a0ab; --line: #363438; --blue: #a6c9ec; --green: #98cbb8; --gold: #e1c387; --violet: #cfb2e6; --tile-blue: #29333f; --tile-green: #263831; --tile-gold: #3c3426; --tile-violet: #352c40; }
+    .inner { max-width: 1088px; margin: auto; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
+    h2 { font-size: 12px; font-weight: 500; margin: 0; color: var(--muted); }
+    .swatch { width: 12px; height: 12px; border: 1px solid var(--muted); border-radius: 50%; background: var(--paper); }
+    .gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .specimen { text-align: center; min-width: 0; padding: 8px 12px 24px; }
+    .specimen + .specimen { border-left: 1px solid var(--line); }
+    .drawing { display: flex; justify-content: center; align-items: center; height: 96px; color: var(--accent); }
+    .drawing > .icon { width: 60px; height: 60px; }
+    .cloud { --accent: var(--blue); --tile: var(--tile-blue); }
+    .network { --accent: var(--green); --tile: var(--tile-green); }
+    .medal { --accent: var(--gold); --tile: var(--tile-gold); }
+    .render { --accent: var(--blue); --tile: var(--tile-blue); }
+    .gem { --accent: var(--violet); --tile: var(--tile-violet); }
+    .name { margin: 18px 0 6px; font-size: 14px; font-weight: 600; line-height: 1.5; }
+    .metaphor { margin: 0; font-size: 12px; color: var(--muted); }
+    .sizes { display: flex; align-items: flex-end; justify-content: center; gap: 20px; margin-top: 28px; color: var(--ink); }
+    .size { display: flex; flex-direction: column; align-items: center; gap: 12px; font: 10px ui-monospace, monospace; color: var(--muted); }
+    .size .icon { color: var(--ink); }
+    .size-20 { width: 20px; height: 20px; }
+    .size-32 { width: 32px; height: 32px; }
+    .context { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark { display: grid; place-items: center; width: 48px; height: 48px; background: var(--tile); color: var(--accent); border-radius: 16px; flex: none; }
+    .brand-mark .icon { width: 28px; height: 28px; }
+    .brand-title { margin: 0; font-size: 17px; font-weight: 600; }
+    .brand-subtitle { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+    .tools { display: flex; gap: 12px; }
+    .tool { position: relative; width: 48px; height: 48px; display: grid; place-items: center; background: var(--tile); color: var(--accent); border-radius: 16px; }
+    .tool::after { content: attr(data-label); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); white-space: nowrap; border-radius: 4px; padding: 6px 9px; background: var(--ink); color: var(--paper); font-size: 11px; opacity: 0; pointer-events: none; }
+    .tool:hover::after, .tool:focus-visible::after { opacity: 1; }
+    body.mono .drawing, body.mono .brand-mark, body.mono .tool { color: var(--ink); }
+    body.mono .brand-mark, body.mono .tool { background: var(--line); }
+    footer { max-width: 1160px; margin: auto; padding: 22px 36px 32px; color: #77777e; font: 11px ui-monospace, monospace; display: flex; justify-content: space-between; gap: 16px; }
+    @media (max-width: 720px) {
+      .page-head { padding: 28px 20px 24px; }
+      h1 { font-size: 22px; }
+      .sheet { padding: 24px 20px 28px; }
+      .gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 24px; }
+      .specimen { padding: 4px 6px 12px; }
+      .specimen:nth-child(4) { border-left: 0; }
+      .drawing { height: 76px; }
+      .drawing > .icon { width: 48px; height: 48px; }
+      .sizes { gap: 12px; margin-top: 22px; }
+      .name { font-size: 12px; }
+      .metaphor { font-size: 11px; }
+      .context { align-items: flex-start; flex-direction: column; gap: 20px; }
+      .tools { width: 100%; justify-content: space-between; }
+      footer { padding: 22px 20px; flex-wrap: wrap; }
+    }
+    @media (max-width: 360px) {
+      .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .specimen:nth-child(4) { border-left: 1px solid var(--line); }
+      .specimen:nth-child(odd) { border-left: 0; }
+      .page-head { gap: 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <!--
+    Geometry: Lucide 0.468.0 (cloud, check, network, medal, box, scan-line, gem).
+    Cloud/check and scan/box are composed from those source primitives.
+    ISC License
+    Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part
+    of Feather (MIT). All other copyright (c) for Lucide are held by Lucide
+    Contributors 2022.
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  -->
+  <svg class="definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-cloud" viewBox="0 0 24 24">
+        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+        <path d="m8.5 12.5 2.3 2.3 4.2-4.2" stroke-width="1.8"></path>
+      </symbol>
+      <symbol id="i-network" viewBox="0 0 24 24">
+        <rect x="16" y="16" width="6" height="6" rx="1"></rect>
+        <rect x="2" y="16" width="6" height="6" rx="1"></rect>
+        <rect x="9" y="2" width="6" height="6" rx="1"></rect>
+        <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"></path>
+      </symbol>
+      <symbol id="i-medal" viewBox="0 0 24 24">
+        <path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15M11 12 5.12 2.2m7.88 9.8 5.88-9.8M8 7h8"></path>
+        <circle cx="12" cy="17" r="5"></circle>
+        <path d="M12 18v-2h-.5"></path>
+      </symbol>
+      <symbol id="i-render" viewBox="0 0 24 24">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"></path>
+        <path d="M16.95 9.8A1.1 1.1 0 0 0 16.4 8.849L12.55 6.649A1.1 1.1 0 0 0 11.45 6.649L7.6 8.849A1.1 1.1 0 0 0 7.05 9.8L7.05 14.2A1.1 1.1 0 0 0 7.6 15.152L11.45 17.352A1.1 1.1 0 0 0 12.55 17.352L16.4 15.152A1.1 1.1 0 0 0 16.95 14.2ZM7.215 9.25L12 12L16.785 9.25M12 17.5L12 12" stroke-width="1.65"></path>
+      </symbol>
+      <symbol id="i-gem" viewBox="0 0 24 24">
+        <path d="M6 3h12l4 6-10 13L2 9ZM11 3 8 9l4 13 4-13-3-6M2 9h20"></path>
+      </symbol>
+    </defs>
+  </svg>
+  <header class="page-head">
+    <div><p class="eyebrow">SLAY THE AMETHYST / 01</p><h1>游戏页 · 图标提案</h1></div>
+    <label class="switch"><input id="color" type="checkbox" checked><span>主题色</span></label>
+  </header>
+  <main id="sheets"></main>
+  <footer><span>24 × 24 GRID · 2 PX STROKE</span><span>LUCIDE / COMPOSED ICON STUDY</span></footer>
+  <script>
+    const items = [
+      { id: 'cloud', name: '云存档状态', metaphor: '云端 · 确认' },
+      { id: 'network', name: '虚拟局域网', metaphor: '节点 · 互联' },
+      { id: 'medal', name: '成就', metaphor: '绶带 · 勋章' },
+      { id: 'render', name: '图形渲染', metaphor: '视口 · 几何' },
+      { id: 'gem', name: '左上角装饰', metaphor: '紫晶 · 切面' }
+    ];
+    const icon = (id, extra = '') => `<svg class="icon ${extra}" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-${id}"></use></svg>`;
+    document.getElementById('sheets').innerHTML = ['light', 'dark'].map((theme, index) => `
+      <section class="sheet ${theme}" aria-labelledby="heading-${theme}">
+        <div class="inner">
+          <div class="section-head"><h2 id="heading-${theme}">${index === 0 ? '01 / 浅色' : '02 / 深色'}</h2><span class="swatch" aria-hidden="true"></span></div>
+          <div class="gallery">${items.map(item => `
+            <article class="specimen ${item.id}">
+              <div class="drawing">${icon(item.id)}</div>
+              <h3 class="name">${item.name}</h3><p class="metaphor">${item.metaphor}</p>
+              <div class="sizes">${[20, 24, 32].map(size => `<div class="size">${icon(item.id, `size-${size}`)}<span>${size}</span></div>`).join('')}</div>
+            </article>`).join('')}
+          </div>
+          <div class="context">
+            <div class="brand gem"><div class="brand-mark">${icon('gem')}</div><div><p class="brand-title">游戏</p><p class="brand-subtitle">Slay the Amethyst</p></div></div>
+            <div class="tools" aria-label="游戏页图标尺寸预览">${items.slice(0, 4).map(item => `<span class="tool ${item.id}" tabindex="0" role="img" aria-label="${item.name}" data-label="${item.name}">${icon(item.id)}</span>`).join('')}</div>
+          </div>
+        </div>
+      </section>`).join('');
+    document.getElementById('color').addEventListener('change', event => {
+      document.body.classList.toggle('mono', !event.target.checked);
+    });
+  </script>
+</body>
+</html>

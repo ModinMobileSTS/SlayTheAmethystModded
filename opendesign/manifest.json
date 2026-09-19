@@ -1,10 +1,19 @@
 {
-  "generated": "2026-09-15T12:51:40.258Z",
+  "generated": "2026-09-16T00:57:57Z",
   "sections": [
     {
       "id": "mockups",
       "label": "Mockups",
       "groups": [
+        {
+          "slug": "game-icons",
+          "files": [
+            {
+              "label": "index.html",
+              "path": "mockups/game-icons/index.html"
+            }
+          ]
+        },
         {
           "slug": "renderer-switch",
           "files": [
