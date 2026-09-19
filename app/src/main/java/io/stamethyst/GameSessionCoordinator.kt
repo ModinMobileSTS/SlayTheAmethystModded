@@ -204,11 +204,17 @@ internal class GameSessionCoordinator(
         manualDismissBootOverlay = config.manualDismissBootOverlay,
         useTextureViewSurface = config.useTextureViewSurface,
         onDismissed = {
+            if (!backExitRequested) {
+                syncRuntimeForegroundState(true)
+            }
             renderSurfaceManager.setBootOverlayActive(false)
             updateFloatingMouseVisibility()
             updatePerformanceOverlayVisibility()
             updateSystemGameState()
             trySchedulePostBootSurfaceSoftRefresh("overlay_dismissed")
+        },
+        onRuntimePauseRequested = {
+            syncRuntimeForegroundState(false)
         },
         onRequestEarlyDismiss = {
             bootOverlayController.setEarlyDismissRequestTimestamp(
@@ -333,6 +339,7 @@ internal class GameSessionCoordinator(
         if (destroyed) {
             return
         }
+        bootOverlayController.onActivityResumed()
         activityResumed = true
         activityStopped = false
         userLeaveHintReceived = false
@@ -347,6 +354,7 @@ internal class GameSessionCoordinator(
     }
 
     fun onPause() {
+        bootOverlayController.onActivityPaused()
         activityResumed = false
         // A paused-but-visible multi-window session must keep rendering and playing audio, so the
         // runtime is only pushed into the background state once the window actually leaves screen.

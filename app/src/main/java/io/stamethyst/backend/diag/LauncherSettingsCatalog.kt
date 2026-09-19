@@ -1153,6 +1153,7 @@ private fun bootOverlayStyleZh(zh: Context, style: BootOverlayStyle): String = w
     BootOverlayStyle.LEGACY -> zh.getString(R.string.settings_boot_overlay_style_legacy)
     BootOverlayStyle.CLASSIC_LOG -> zh.getString(R.string.settings_boot_overlay_style_classic_log)
     BootOverlayStyle.MATERIAL_LOG -> zh.getString(R.string.settings_boot_overlay_style_material_log)
+    BootOverlayStyle.SLING_BREAK -> zh.getString(R.string.settings_boot_overlay_style_sling_break)
 }
 
 private fun bootOverlayAnimationZh(zh: Context, animation: BootOverlayAnimation): String =

@@ -11,6 +11,19 @@
         android:layout_height="match_parent"
         android:background="#000000" />
 
+    <FrameLayout
+        android:id="@+id/slingBreakBootOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#F5F6F3">
+
+        <WebView
+            android:id="@+id/slingBreakBootGame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </FrameLayout>
+
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/bootOverlay"
         android:layout_width="match_parent"

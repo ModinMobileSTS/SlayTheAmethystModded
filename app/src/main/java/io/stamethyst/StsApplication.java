@@ -5,6 +5,7 @@ import android.app.Application;
 import io.stamethyst.backend.crash.LauncherCrashReporter;
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger;
 import io.stamethyst.backend.feedback.StreamChatPreviewInitializer;
+import io.stamethyst.backend.network.AcceleratedRouteLogStore;
 import io.stamethyst.backend.presence.GamePresenceReporter;
 import io.stamethyst.backend.process.AppProcess;
 import io.stamethyst.backend.steamcloud.SteamCloudLegacySensitiveDataCleanup;
@@ -21,6 +22,7 @@ public class StsApplication extends Application {
         LauncherCrashReporter.recordLatestLauncherProcessExitIfNeeded(getApplicationContext());
         LauncherThemeController.applySavedThemeMode(getApplicationContext());
         MemoryDiagnosticsLogger.install(getApplicationContext());
+        AcceleratedRouteLogStore.install(getApplicationContext());
         MainActivity.init(getApplicationContext());
         if (AppProcess.isDefaultProcess(getApplicationContext())) {
             SteamCloudLegacySensitiveDataCleanup.clear(getApplicationContext());

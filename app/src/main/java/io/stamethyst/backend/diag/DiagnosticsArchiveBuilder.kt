@@ -419,6 +419,7 @@ internal object DiagnosticsArchiveBuilder {
             exportedCount += writeWorkshopAutoImportPatchLogsForArchive(zipOutput, context)
             exportedCount += writeStsJarImportLogsForArchive(zipOutput, context)
             exportedCount += writeEasyTierDiagnosticsForArchive(zipOutput, context)
+            exportedCount += writeAcceleratedRouteLogsForArchive(zipOutput, context)
 
             if (crashContext != null) {
                 writeTextEntry(
@@ -451,6 +452,7 @@ internal object DiagnosticsArchiveBuilder {
         - steam_login/：Steam credentials 登录失败记录，最多 5 槽位。
         - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
         - steam-game-presence/：Steam 在线状态上报的最后摘要和连续事件日志，最多保留 3 槽位。
+        - network/：Watt 加速层的路由决策日志（线路发现、节点尝试/失败、官方回退），用于诊断市场或 Steam 服务无法加载的根因。
         - workshop/market_failed/：Workshop 市场查询失败日志，最多 5 槽位。
         - workshop/download_tasks/：最近 10 条 Workshop 下载任务日志。
         - workshop/auto_import_patch_logs/：自动导入补丁日志，最多 10 槽位。
@@ -778,6 +780,19 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 achievementLogFile,
                 "sts/achievement_sync/${achievementLogFile.name}"
+            )
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeAcceleratedRouteLogsForArchive(zipOutput: ZipOutputStream, context: Context): Int {
+        var exportedCount = 0
+        RuntimePaths.listAcceleratedRouteLogFiles(context).forEach { routeLogFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                routeLogFile,
+                "sts/network/${routeLogFile.name}"
             )
         }
         return exportedCount

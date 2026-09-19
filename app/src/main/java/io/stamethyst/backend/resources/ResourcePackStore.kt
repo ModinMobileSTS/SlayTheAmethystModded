@@ -145,6 +145,14 @@ internal object ResourcePackStore {
         return ResourcePackContract.collectMissingContent(generation).isEmpty()
     }
 
+    /**
+     * Resolves the active generation directory using metadata checks only.
+     *
+     * This is a hot lookup used by [RuntimeResourceProvider] and the launcher refresh path,
+     * so it must never hash content: the resource pack is hundreds of megabytes and a full
+     * SHA-256 sweep on the UI thread stalls startup into an ANR. Authoritative content
+     * verification stays in [inspect]/[recover], which run on the install/launch path.
+     */
     @JvmStatic
     fun activeGenerationDir(context: Context): File? {
         val root = RuntimePaths.externalResourcesRoot(context)
@@ -154,7 +162,8 @@ internal object ResourcePackStore {
             generation.takeIf {
                 ResourcePackArchive.validateGeneration(
                     it,
-                    BuildConfig.RESOURCE_PACK_VERSION.trim()
+                    BuildConfig.RESOURCE_PACK_VERSION.trim(),
+                    verifyContentHashes = false,
                 ).issues.isEmpty()
             }
         }.getOrNull()

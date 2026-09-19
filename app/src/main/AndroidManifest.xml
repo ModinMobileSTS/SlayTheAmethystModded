@@ -46,7 +46,7 @@
             android:enableOnBackInvokedCallback="true"
             android:process=":game"
             android:resizeableActivity="true"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="unspecified"
             android:theme="@style/Theme.SlayTheAmethyst.Game"
             tools:targetApi="33">
 
@@ -57,6 +57,13 @@
                 android:minHeight="360dp"
                 android:gravity="center" />
         </activity>
+
+        <activity
+            android:name="io.stamethyst.SlingBreakActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.SlayTheAmethyst" />
 
         <activity
             android:name="io.stamethyst.backend.file_interactive.SafExportActivity"
@@ -140,6 +147,7 @@
             android:exported="true"
             android:enableOnBackInvokedCallback="false"
             android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
             android:screenOrientation="fullUser"
             tools:targetApi="33">
             <intent-filter>

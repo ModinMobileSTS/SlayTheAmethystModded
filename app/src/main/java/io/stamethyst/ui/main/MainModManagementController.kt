@@ -8,6 +8,7 @@ import androidx.appcompat.app.AlertDialog
 import io.stamethyst.R
 import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.file_interactive.SafFileExporter
+import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModJarSupport
@@ -30,6 +31,7 @@ import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.ModImportPatchUi
 import io.stamethyst.model.WorkshopModState
@@ -1079,6 +1081,16 @@ internal class MainModManagementController(
         hostCallbacks.republish(host)
     }
 
+    fun onSetAgentPatchEnabled(host: Activity, mod: ModItemUi, patch: AgentPatchModUi, enabled: Boolean) {
+        if (!hostCallbacks.canEditMainScreenState() || !mod.enabled && enabled) return
+        runCatching {
+            AgentPatchModManager.setEnabled(host, mod.modId, patch.patchId, enabled)
+        }.onFailure { error ->
+            emitSnackbar(error.message ?: "无法切换 AI 补丁模组")
+        }
+        hostCallbacks.republish(host)
+    }
+
     private fun toggleTexturePack(host: Activity, mod: ModItemUi, enabled: Boolean) {
         if (!hostCallbacks.canEditMainScreenState()) return
         val workshop = mod.workshop ?: return
@@ -1836,7 +1848,26 @@ internal class MainModManagementController(
             }
             .toMap()
         val downloadTasksByPublishedFileId = loadDownloadCenterTaskRecords(host)
-        return ModManager.listInstalledMods(host).map { mod ->
+        var installedMods = ModManager.listInstalledMods(host)
+        if (AgentPatchModManager.migrateLegacyLibraryPatches(host, installedMods)) {
+            installedMods = ModManager.listInstalledMods(host)
+        }
+        val agentPatchesByParent = installedMods
+            .flatMap { parent ->
+                AgentPatchModManager.listPackaged(host, parent.modId).map { patch ->
+                    AgentPatchModUi(
+                        patchId = patch.patchId,
+                        patchModId = patch.patchModId,
+                        name = patch.name,
+                        version = patch.version,
+                        description = patch.description,
+                        enabled = patch.enabled,
+                    )
+                }.map { patch -> ModManager.normalizeModId(parent.modId) to patch }
+            }
+            .groupBy({ it.first }, { it.second })
+        return installedMods.asSequence()
+            .map { mod ->
             val workshopRecord = workshopRecordsByInstalledPath[mod.jarFile.absolutePath]
             val importPatchInfo = if (mod.required) {
                 null
@@ -1895,9 +1926,11 @@ internal class MainModManagementController(
                         representedByInstalledMod = true,
                         task = downloadTasksByPublishedFileId[record.publishedFileId],
                     )
-                }
+                },
+                agentPatchMods = agentPatchesByParent[ModManager.normalizeModId(mod.modId)].orEmpty(),
             )
-        }
+            }
+            .toList()
     }
 
     private fun deleteDownloadedWorkshopMod(host: Activity, mod: ModItemUi) {

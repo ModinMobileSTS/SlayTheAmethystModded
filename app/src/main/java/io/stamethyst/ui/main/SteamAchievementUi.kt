@@ -34,7 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -45,15 +44,13 @@ import androidx.compose.ui.zIndex
 import io.stamethyst.R
 import io.stamethyst.backend.steamcloud.SteamAchievementService
 
-private val AchievementBadgeBackground = Color(0xFFFFF8E1)
-private val AchievementBadgeContent = Color(0xFF8A6A1F)
-
 @Composable
 internal fun SteamAchievementOverviewCard(
     state: MainScreenViewModel.SteamAchievementUi,
     onClick: () -> Unit,
 ) {
     val signedIn = state.accountName.isNotBlank()
+    val achievementAccent = GameCardAccents.achievements
     Card(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
@@ -73,12 +70,12 @@ internal fun SteamAchievementOverviewCard(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = if (signedIn) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    accentTileColor(achievementAccent)
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant
                 },
                 contentColor = if (signedIn) {
-                    MaterialTheme.colorScheme.primary
+                    achievementAccent
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -90,7 +87,11 @@ internal fun SteamAchievementOverviewCard(
                     if (state.loading) {
                         CircularProgressIndicator(modifier = Modifier.size(21.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(painterResource(R.drawable.ic_achievement), null, Modifier.size(24.dp))
+                        Icon(
+                            imageVector = RendererIcons.Medal,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
                     }
                 }
             }

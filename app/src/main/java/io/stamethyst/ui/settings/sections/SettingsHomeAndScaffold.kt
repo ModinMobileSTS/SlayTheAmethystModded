@@ -140,7 +140,7 @@ internal fun LauncherSettingsScreenContent(
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
-    val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    val blockingInteractionLocked = uiState.busyOperation.locksInteraction(uiState.busy)
     val context = LocalContext.current.applicationContext
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current

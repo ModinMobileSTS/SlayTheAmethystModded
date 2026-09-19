@@ -280,6 +280,16 @@ internal class DisplayRefreshRateController(
             }
         }
 
+        internal fun includeSelectedTargetFpsOption(
+            options: List<Float>,
+            selectedTargetFps: Float
+        ): List<Float> {
+            if (selectedTargetFps <= 0f || selectedTargetFps.isNaN() || selectedTargetFps in options) {
+                return options
+            }
+            return (options + selectedTargetFps).distinct().sortedDescending()
+        }
+
         @Suppress("DEPRECATION")
         fun resolveAutomaticTargetFps(context: Context): Float {
             val display = try {
@@ -356,7 +366,48 @@ internal class DisplayRefreshRateController(
             } catch (_: Throwable) {
                 null
             }
-            return resolveIdealTargetFpsOptions(display?.refreshRate ?: 0f)
+            val supportedModes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                display?.supportedModes
+                    ?.map { mode ->
+                        DisplayModeCandidate(
+                            modeId = mode.modeId,
+                            width = mode.physicalWidth,
+                            height = mode.physicalHeight,
+                            refreshRateHz = mode.refreshRate
+                        )
+                    }
+                    .orEmpty()
+            } else {
+                emptyList()
+            }
+            val currentModeId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                display?.mode?.modeId
+            } else {
+                null
+            }
+            return resolveIdealTargetFpsOptions(
+                currentDisplayRefreshRateHz = display?.refreshRate ?: 0f,
+                currentDisplayModeId = currentModeId,
+                supportedModes = supportedModes
+            )
+        }
+
+        internal fun resolveIdealTargetFpsOptions(
+            currentDisplayRefreshRateHz: Float,
+            currentDisplayModeId: Int?,
+            supportedModes: List<DisplayModeCandidate>
+        ): List<Float> {
+            val refreshRateHz = currentDisplayRefreshRateHz
+                .takeIf { it > 0f && !it.isNaN() }
+                ?: currentDisplayModeId
+                    ?.let { modeId -> supportedModes.firstOrNull { it.modeId == modeId }?.refreshRateHz }
+                    ?.takeIf { it > 0f && !it.isNaN() }
+                ?: supportedModes
+                    .map { it.refreshRateHz }
+                    .filter { it > 0f && !it.isNaN() }
+                    .maxOrNull()
+                ?: return emptyList()
+            return resolveIdealTargetFpsOptions(refreshRateHz)
         }
 
         internal fun resolveRequestedRefreshRateHz(targetFpsLimit: Float): Float? {

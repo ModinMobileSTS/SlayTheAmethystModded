@@ -89,7 +89,7 @@ internal fun SettingsRouteScaffold(
     onGoBack: () -> Unit = {},
     content: LazyListScope.() -> Unit,
 ) {
-    val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    val blockingInteractionLocked = uiState.busyOperation.locksInteraction(uiState.busy)
     val headerHazeState = rememberHazeState()
     val headerContentTopInset = 88.dp + 16.dp
     val bottomContentInset = if (showBackButton) 32.dp else 132.dp
@@ -313,5 +313,4 @@ internal fun SettingsHeaderPinnedContent(
         }
     }
 }
-
 

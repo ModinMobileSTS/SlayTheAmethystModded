@@ -28,4 +28,8 @@ enum class UiBusyOperation {
             OTHER_BUSY -> false
         }
     }
+
+    fun locksInteraction(busy: Boolean): Boolean {
+        return busy && usesBlockingOverlay()
+    }
 }

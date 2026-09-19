@@ -24,4 +24,12 @@ internal object LauncherNavigationRequestBus {
     fun requestResourcePack() {
         mutableResourcePackRequests.tryEmit(Unit)
     }
+
+    private val mutableModsRefreshRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val modsRefreshRequests = mutableModsRefreshRequests.asSharedFlow()
+
+    fun requestModsRefresh() {
+        mutableModsRefreshRequests.tryEmit(Unit)
+    }
+
 }

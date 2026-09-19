@@ -316,7 +316,7 @@ private fun LauncherGamePage(
         ) {
             Spacer(modifier = Modifier.height(gameHeaderContentTopInset))
 
-            if (uiState.busy && !uiState.busyOperation.usesBlockingOverlay()) {
+            if (uiState.busy && !uiState.busyOperation.locksInteraction(uiState.busy)) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 uiState.busyMessage?.let { message ->
                     SlidingTextSwap(
@@ -968,8 +968,19 @@ private fun RendererQuickSwitchCard(
         animationSpec = tween(durationMillis = 360),
         label = "rendererQuickSwitchContainerColor",
     )
-    val selectorOutlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.85f)
+    val selectionDepth by animateFloatAsState(
+        targetValue = when (selectedBackend) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES -> 1f
+            RendererBackend.OPENGL_ES2_NATIVE -> -1f
+            else -> 0f
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererSelectionDepth",
+    )
+    val selectorOutlineColor = MaterialTheme.colorScheme.outlineVariant
+    val edgeHighlight = MaterialTheme.colorScheme.surface
     val selectorShape = RoundedCornerShape(8.dp)
+    val rendererAccent = GameCardAccents.renderer
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -988,11 +999,11 @@ private fun RendererQuickSwitchCard(
             ) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                    contentColor = MaterialTheme.colorScheme.primary,
+                    color = accentTileColor(rendererAccent),
+                    contentColor = rendererAccent,
                 ) {
                     Icon(
-                        imageVector = RendererIcons.Cpu,
+                        imageVector = RendererIcons.RenderViewport,
                         contentDescription = null,
                         modifier = Modifier.padding(10.dp),
                     )
@@ -1029,12 +1040,12 @@ private fun RendererQuickSwitchCard(
                     val splitX = size.width * mobileGluesFraction
                     val slant = 18.dp.toPx()
                     val selectedPath = Path().apply {
-                        if (selectedBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                        if (selectionDepth > 0f) {
                             moveTo(0f, 0f)
                             lineTo(splitX + slant, 0f)
                             lineTo(splitX - slant, size.height)
                             lineTo(0f, size.height)
-                        } else if (selectedBackend == RendererBackend.OPENGL_ES2_NATIVE) {
+                        } else if (selectionDepth < 0f) {
                             moveTo(splitX + slant, 0f)
                             lineTo(size.width, 0f)
                             lineTo(size.width, size.height)
@@ -1042,11 +1053,31 @@ private fun RendererQuickSwitchCard(
                         }
                         close()
                     }
-                    if (selectedBackend != null) {
-                        drawPath(path = selectedPath, color = selectedContainerColor)
+                    val depth = kotlin.math.abs(selectionDepth)
+                    val direction = if (selectionDepth > 0f) 1f else -1f
+                    if (depth > 0f) {
+                        drawPath(path = selectedPath, color = selectedContainerColor, alpha = depth)
+                        // A soft cast shadow sits exclusively on the lower panel.
+                        for (step in 8 downTo 1) {
+                            val distance = step / 8f
+                            val offset = direction * step.dp.toPx() * depth
+                            drawLine(
+                                color = Color.Black.copy(alpha = 0.065f * depth * (1f - distance) * (1f - distance)),
+                                start = Offset(splitX + slant + offset, 0f),
+                                end = Offset(splitX - slant + offset, size.height),
+                                strokeWidth = 1.5.dp.toPx(),
+                            )
+                        }
+                        val rimOffset = -direction * 1.dp.toPx()
+                        drawLine(
+                            color = edgeHighlight.copy(alpha = 0.3f * depth),
+                            start = Offset(splitX + slant + rimOffset, 0f),
+                            end = Offset(splitX - slant + rimOffset, size.height),
+                            strokeWidth = 1.dp.toPx(),
+                        )
                     }
                     drawLine(
-                        color = selectorOutlineColor,
+                        color = selectorOutlineColor.copy(alpha = 0.25f + 0.1f * depth),
                         start = Offset(splitX + slant, 0f),
                         end = Offset(splitX - slant, size.height),
                         strokeWidth = 1.dp.toPx(),
@@ -1113,11 +1144,11 @@ private fun RendererQuickSwitchOption(
     selected: Boolean,
     accentColor: Color,
 ) {
-    val backgroundIcon = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
-        RendererIcons.LayersBackground
-    } else {
-        RendererIcons.CpuBackground
-    }
+    val lift by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererOptionLift",
+    )
     val iconRotation by animateFloatAsState(
         targetValue = when (backend) {
             RendererBackend.OPENGL_ES_MOBILEGLUES -> -12f
@@ -1157,20 +1188,46 @@ private fun RendererQuickSwitchOption(
             .fillMaxHeight()
             .clipToBounds(),
     ) {
-        Icon(
-            imageVector = backgroundIcon,
-            contentDescription = null,
-            tint = accentColor.copy(alpha = iconAlpha),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = iconRightOffset, y = 15.dp)
-                .size(116.dp)
-                .graphicsLayer {
-                    rotationZ = iconRotation
-                    scaleX = iconScale
-                    scaleY = iconScale
-                },
-        )
+        if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 8.dp, y = 4.dp)
+                    .size(108.dp),
+            ) {
+                for (layer in 0..2) {
+                    Icon(
+                        imageVector = RendererIcons.RenderLayer,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val separation = 7.dp.toPx() + 8.dp.toPx() * lift
+                                translationY = (1 - layer) * separation - 3.dp.toPx() * lift
+                                scaleX = 0.9f + layer * 0.04f
+                                scaleY = scaleX
+                                alpha = (0.09f + layer * 0.035f) + lift * 0.09f
+                            },
+                    )
+                }
+            }
+        } else {
+            Icon(
+                imageVector = RendererIcons.CpuBackground,
+                contentDescription = null,
+                tint = accentColor.copy(alpha = iconAlpha),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = iconRightOffset, y = 15.dp)
+                    .size(116.dp)
+                    .graphicsLayer {
+                        rotationZ = iconRotation
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    },
+            )
+        }
         AnimatedVisibility(
             visible = !selected,
             modifier = Modifier
@@ -1238,6 +1295,9 @@ private fun RendererQuickSwitchOption(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
+                .graphicsLayer {
+                    translationY = -4.dp.toPx() * lift
+                }
                 .padding(
                     start = if (backend == RendererBackend.OPENGL_ES2_NATIVE) 22.dp else 16.dp,
                     end = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) 24.dp else 16.dp,
@@ -1578,7 +1638,7 @@ private fun EasyTierOverviewCard(
                             )
                         } else {
                             Icon(
-                                painter = painterResource(R.drawable.ic_link),
+                                imageVector = RendererIcons.Network,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                             )
@@ -1836,12 +1896,13 @@ internal fun easyTierTroubleshootingMessageResId(
 private fun easyTierIndicatorTint(
     state: MainScreenViewModel.EasyTierIndicatorState,
 ): Color = when (state) {
-    MainScreenViewModel.EasyTierIndicatorState.CONNECTED -> MaterialTheme.colorScheme.tertiary
-    MainScreenViewModel.EasyTierIndicatorState.SESSION_READY -> MaterialTheme.colorScheme.secondary
+    MainScreenViewModel.EasyTierIndicatorState.CONNECTED,
+    MainScreenViewModel.EasyTierIndicatorState.SESSION_READY,
     MainScreenViewModel.EasyTierIndicatorState.CONNECTING,
     MainScreenViewModel.EasyTierIndicatorState.RECONNECTING,
-    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING -> MaterialTheme.colorScheme.primary
-    MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED -> MaterialTheme.colorScheme.secondary
+    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING,
+    MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED ->
+        GameCardAccents.virtualLan
     MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED -> MaterialTheme.colorScheme.error
     MainScreenViewModel.EasyTierIndicatorState.HIDDEN,
     MainScreenViewModel.EasyTierIndicatorState.IDLE,
@@ -3166,6 +3227,8 @@ internal fun EasyTierBottomSheetContent(
     var sheetNotice by remember { mutableStateOf<LauncherTransientNoticeRequest?>(null) }
     val context = LocalContext.current
     val sheetView = LocalView.current
+    val uriHandler = LocalUriHandler.current
+    val cloudControlSettings by rememberCloudControlSettings()
     val memberWorkshopDetailViewModel: WorkshopViewModel = viewModel()
     // Secondary sheet pages own the system back gesture so it steps back one level
     // instead of tearing down the whole sheet and discarding in-progress form drafts.
@@ -3411,6 +3474,28 @@ internal fun EasyTierBottomSheetContent(
                             text = targetSummary,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (targetPage == EasyTierRoomSheetPage.Rooms) {
+                    OutlinedButton(
+                        onClick = { uriHandler.openUri(cloudControlSettings.qqGroupUrl) },
+                        modifier = Modifier.heightIn(min = 40.dp),
+                        shape = CircleShape,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.main_easytier_create_room_join_group),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
                         )
                     }
                 }
@@ -4173,6 +4258,7 @@ fun LauncherMainScreen(
     onOpenFeedback: () -> Unit = {},
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
     updateNotice: LauncherUpdateNoticeUiState? = null,
     feedbackUnreadCount: Int = 0,
     feedbackActiveIssueCount: Int = 0,
@@ -4186,6 +4272,7 @@ fun LauncherMainScreen(
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
     ) { routeModifier, uiState, actions ->
         LauncherGameScreenContent(
             modifier = routeModifier,
@@ -4211,6 +4298,7 @@ fun LauncherModsScreen(
     onOpenFeedback: () -> Unit = {},
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
@@ -4234,6 +4322,7 @@ fun LauncherModsScreen(
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
     ) { routeModifier, uiState, actions ->
         LauncherModsScreenContent(
             modifier = routeModifier,
@@ -4329,6 +4418,7 @@ internal fun LauncherMainRoute(
     viewModel: MainScreenViewModel,
     onOpenWorkshop: () -> Unit,
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
     handleEffects: Boolean = true,
     pollWorkshopDownloads: Boolean = true,
     content: @Composable (
@@ -4393,6 +4483,7 @@ internal fun LauncherMainRoute(
         easyTierVpnPermissionLauncher = easyTierVpnPermissionLauncher,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
     )
 
     LaunchedEffect(hostActivity) {
@@ -5384,7 +5475,7 @@ private fun LauncherMainScreenContent(
                                     .padding(start = 16.dp, top = 18.dp, end = 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                if (uiState.busy && !uiState.busyOperation.usesBlockingOverlay()) {
+                                if (uiState.busy && !uiState.busyOperation.locksInteraction(uiState.busy)) {
                                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                                     uiState.busyMessage?.let {
                                         Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
@@ -7582,8 +7673,10 @@ private fun ColumnScope.MainContentSwitcher(
                         onRetryWorkshopDownload = actions.onRetryWorkshopDownload,
                         onUpdateWorkshopMod = actions.onUpdateWorkshopMod,
                         onUpgradeWorkshopImportPatches = actions.onUpgradeWorkshopImportPatches,
-                        onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
-                        onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
+                         onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
+                         onOpenAiEditor = actions.onOpenAiEditor,
+                         onSetAgentPatchEnabled = actions.onSetAgentPatchEnabled,
+                         onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
                         onAssociateMods = actions.onAssociateMods,
                         onRemoveModAssociation = actions.onRemoveModAssociation,
                         onClearModAssociationGroup = actions.onClearModAssociationGroup,

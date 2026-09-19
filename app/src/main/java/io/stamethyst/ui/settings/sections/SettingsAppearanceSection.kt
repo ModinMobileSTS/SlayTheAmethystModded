@@ -314,6 +314,7 @@ internal fun bootOverlayStyleDisplayName(style: BootOverlayStyle): String {
             BootOverlayStyle.LEGACY -> R.string.settings_boot_overlay_style_legacy
             BootOverlayStyle.CLASSIC_LOG -> R.string.settings_boot_overlay_style_classic_log
             BootOverlayStyle.MATERIAL_LOG -> R.string.settings_boot_overlay_style_material_log
+            BootOverlayStyle.SLING_BREAK -> R.string.settings_boot_overlay_style_sling_break
         }
     )
 }
@@ -828,6 +829,12 @@ internal fun BootOverlayStyleWireframePreview(
                 strokeWidth = strokeWidth
             )
             BootOverlayStyle.MATERIAL_LOG -> drawMaterialLogBootOverlayWireframe(
+                frameColor = frameColor,
+                mutedFrameColor = mutedFrameColor,
+                accentFillColor = accentFillColor,
+                strokeWidth = strokeWidth
+            )
+            BootOverlayStyle.SLING_BREAK -> drawModernBootOverlayWireframe(
                 frameColor = frameColor,
                 mutedFrameColor = mutedFrameColor,
                 accentFillColor = accentFillColor,

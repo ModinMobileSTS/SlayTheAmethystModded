@@ -36,6 +36,7 @@ import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -147,6 +148,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var gyroscopeForwardFailureLogged = false
     private var gyroscopeFirstForwardLogged = false
     private var swappyFramePacingInitialized = false
+    private var slingBreakBootActive = false
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -164,6 +166,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         val startupBackground = StartupWindowBackground.gameColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        slingBreakBootActive = LauncherConfig.readBootOverlayStyle(this) == BootOverlayStyle.SLING_BREAK
         StartupTraceEvents.append(
             this,
             "game_activity_on_create",
@@ -187,7 +190,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         EasyTierGameProcessPriorityBinding.attach(this)
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
-        GameOrientationPolicy.apply(this, isInMultiWindowMode)
+        applyGameActivityOrientation()
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
@@ -470,7 +473,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        GameOrientationPolicy.apply(this, isInMultiWindowMode)
+        applyGameActivityOrientation()
         if (::renderSurfaceManager.isInitialized) {
             renderSurfaceManager.onWindowConfigurationChanged("window_configuration")
         }
@@ -479,7 +482,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
         super.onMultiWindowModeChanged(isInMultiWindowMode)
-        GameOrientationPolicy.apply(this, isInMultiWindowMode)
+        applyGameActivityOrientation()
         if (::renderSurfaceManager.isInitialized) {
             renderSurfaceManager.onWindowConfigurationChanged("multi_window_mode")
         }
@@ -487,7 +490,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
-        GameOrientationPolicy.apply(this, isInMultiWindowMode)
+        applyGameActivityOrientation()
         if (::renderSurfaceManager.isInitialized) {
             renderSurfaceManager.onWindowConfigurationChanged("multi_window_mode")
         }
@@ -661,6 +664,22 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             inputHandler.handleTouchEvent(event)
         }
         renderSurfaceManager.renderView.requestFocus()
+    }
+
+    internal fun finishSlingBreakBoot() {
+        if (!slingBreakBootActive) {
+            return
+        }
+        slingBreakBootActive = false
+        applyGameActivityOrientation()
+    }
+
+    private fun applyGameActivityOrientation() {
+        if (slingBreakBootActive) {
+            GameOrientationPolicy.applyBootOverlayOrientation(this, isInMultiWindowMode)
+        } else {
+            GameOrientationPolicy.apply(this, isInMultiWindowMode)
+        }
     }
 
     fun setBootOverlayKeepScreenOn(enabled: Boolean) {

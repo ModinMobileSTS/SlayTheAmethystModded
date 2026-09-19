@@ -69,6 +69,58 @@ class DisplayRefreshRateControllerTest {
     }
 
     @Test
+    fun resolveIdealTargetFpsOptions_usesCurrentModeWhenDisplayRateIsTemporarilyUnavailable() {
+        assertEquals(
+            listOf(120f, 60f, 40f, 30f, 24f),
+            DisplayRefreshRateController.resolveIdealTargetFpsOptions(
+                currentDisplayRefreshRateHz = 0f,
+                currentDisplayModeId = 2,
+                supportedModes = listOf(
+                    mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                    mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 120f)
+                )
+            )
+        )
+    }
+
+    @Test
+    fun resolveIdealTargetFpsOptions_usesHighestKnownModeWhenCurrentModeIsUnavailable() {
+        assertEquals(
+            listOf(144f, 72f, 48f, 36f, 28.8f, 24f),
+            DisplayRefreshRateController.resolveIdealTargetFpsOptions(
+                currentDisplayRefreshRateHz = 0f,
+                currentDisplayModeId = null,
+                supportedModes = listOf(
+                    mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                    mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 144f)
+                )
+            )
+        )
+    }
+
+    @Test
+    fun includeSelectedTargetFpsOption_preservesSelectionDuringTemporary60HzFallback() {
+        assertEquals(
+            listOf(120f, 60f, 30f),
+            DisplayRefreshRateController.includeSelectedTargetFpsOption(
+                options = listOf(60f, 30f),
+                selectedTargetFps = 120f
+            )
+        )
+    }
+
+    @Test
+    fun includeSelectedTargetFpsOption_doesNotDuplicateAvailableSelection() {
+        assertEquals(
+            listOf(120f, 60f, 40f, 30f, 24f),
+            DisplayRefreshRateController.includeSelectedTargetFpsOption(
+                options = listOf(120f, 60f, 40f, 30f, 24f),
+                selectedTargetFps = 60f
+            )
+        )
+    }
+
+    @Test
     fun resolveWindowRefreshPreference_preservesFractionalContentRate() {
         val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
             targetFpsLimit = 82.5f,

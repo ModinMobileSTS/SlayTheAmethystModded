@@ -383,7 +383,7 @@ class CloudControlConfigTest {
             "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws",
             defaults.heartbeatWsUrl
         )
-        assertEquals("1029305387", defaults.qqGroupNumber)
+        assertEquals("675545914", defaults.qqGroupNumber)
         assertTrue(defaults.steamDepotKeys.isEmpty())
         assertFalse(defaults.easyTier.enabled)
         assertEquals("", defaults.easyTier.entryNodeUrl)

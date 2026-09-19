@@ -19,6 +19,7 @@ object RuntimePaths {
     private const val STS_JAR_IMPORT_LOG_DIR_NAME = "sts_jar_import_logs"
     private const val WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME = "workshop_browse_failure_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
+    private const val ACCELERATED_ROUTE_LOG_FILE_NAME = "accelerated_route.log"
     private const val ACHIEVEMENT_SYNC_LOG_FILE_NAME = "achievement_sync.log"
     private const val PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME = "performance_launch_audit.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
@@ -173,6 +174,28 @@ object RuntimePaths {
     fun optionalModsLibraryDir(context: Context): File = File(stsRoot(context), "mods_library")
 
     @JvmStatic
+    fun agentWorkspaceRoot(context: Context): File = File(stsRoot(context), "agent_workspace")
+
+    @JvmStatic
+    fun agentModWorkspaceRoot(context: Context, modId: String): File =
+        File(agentWorkspaceRoot(context), modId)
+
+    @JvmStatic
+    fun agentModInspectionRoot(context: Context, modId: String): File =
+        File(agentModWorkspaceRoot(context, modId), "inspection")
+
+    @JvmStatic
+    fun agentModConversationsRoot(context: Context, modId: String): File =
+        File(File(agentWorkspaceRoot(context), ".conversations"), modId)
+
+    @JvmStatic
+    fun agentModsRoot(context: Context): File = File(stsRoot(context), "agent_mods")
+
+    @JvmStatic
+    fun agentModsForModRoot(context: Context, modId: String): File =
+        File(agentModsRoot(context), modId)
+
+    @JvmStatic
     fun importedBaseModJar(context: Context): File = File(requiredModsDir(context), "BaseMod.jar")
 
     @JvmStatic
@@ -198,6 +221,17 @@ object RuntimePaths {
 
     @JvmStatic
     fun enabledModsConfig(context: Context): File = File(stsRoot(context), "enabled_mods.txt")
+
+    /**
+     * Stores the `patchModId` of every enabled AI patch mod under `agent_mods/`.
+     *
+     * AI patch mods are loaded straight from `agent_mods/`, so they keep their own enablement
+     * list instead of sharing `enabled_mods.txt`, whose normalization only recognizes JARs in
+     * the optional-mod library.
+     */
+    @JvmStatic
+    fun enabledAgentPatchModsConfig(context: Context): File =
+        File(stsRoot(context), "enabled_agent_patch_mods.txt")
 
     @JvmStatic
     fun priorityModsConfig(context: Context): File = File(stsRoot(context), "priority_mod_roots.txt")
@@ -317,6 +351,10 @@ object RuntimePaths {
     @JvmStatic
     fun memoryDiagnosticsLog(context: Context): File =
         File(jvmLogsDir(context), MEMORY_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun acceleratedRouteLog(context: Context): File =
+        File(jvmLogsDir(context), ACCELERATED_ROUTE_LOG_FILE_NAME)
 
     @JvmStatic
     fun achievementSyncLog(context: Context): File =
@@ -488,6 +526,23 @@ object RuntimePaths {
             ?.toList()
             .orEmpty()
             .ifEmpty { listOf(achievementSyncLog(context)) }
+    }
+
+    @JvmStatic
+    fun listAcceleratedRouteLogFiles(context: Context): List<File> {
+        val directory = jvmLogsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(acceleratedRouteLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isAcceleratedRouteLogFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareAcceleratedRouteLogFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(acceleratedRouteLog(context)) }
     }
 
     @JvmStatic
@@ -991,6 +1046,11 @@ object RuntimePaths {
             name.startsWith("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.")
     }
 
+    internal fun isAcceleratedRouteLogFileName(name: String): Boolean {
+        return name == ACCELERATED_ROUTE_LOG_FILE_NAME ||
+            name.startsWith("$ACCELERATED_ROUTE_LOG_FILE_NAME.")
+    }
+
     internal fun isWindowDiagnosticsFileName(name: String): Boolean {
         return name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME ||
             name.startsWith("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.")
@@ -1031,6 +1091,15 @@ object RuntimePaths {
     internal fun compareAchievementSyncLogFileNames(left: String, right: String): Int {
         val byRotationIndex = rotationIndexForAchievementSyncLogFile(left)
             .compareTo(rotationIndexForAchievementSyncLogFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareAcceleratedRouteLogFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForAcceleratedRouteLogFile(left)
+            .compareTo(rotationIndexForAcceleratedRouteLogFile(right))
         if (byRotationIndex != 0) {
             return byRotationIndex
         }
@@ -1117,6 +1186,18 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForAcceleratedRouteLogFile(name: String): Int {
+        if (!isAcceleratedRouteLogFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == ACCELERATED_ROUTE_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$ACCELERATED_ROUTE_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }
