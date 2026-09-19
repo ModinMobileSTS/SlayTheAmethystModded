@@ -1,0 +1,14 @@
+.skill-live{--skill-color:#438b81;display:flex;align-items:center;gap:12px;height:88px;padding:12px 14px;border:1px solid #dce2d6;border-radius:7px;margin:10px 12px;color:#293525;min-width:0}
+.skill-live[hidden]{display:none}
+.skill-live-icon{display:grid;place-items:center;flex:0 0 42px;height:42px;color:var(--skill-color);background:color-mix(in srgb,var(--skill-color) 12%,white);border:1px solid color-mix(in srgb,var(--skill-color) 45%,white);border-radius:6px}
+.skill-live-icon svg{width:23px;height:23px}
+.skill-live-copy{flex:1;min-width:0}.skill-live-copy strong{font-size:14px}.skill-live-copy small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:11px;line-height:1.6;color:#6b7862;overflow-wrap:anywhere}
+.skill-live-state{font-size:12px;font-weight:600;color:var(--skill-color);text-align:right;max-width:42%;overflow-wrap:anywhere}
+.skill-live-meter{display:block;height:3px;width:100%;background:#e3e8dd;margin-top:5px;overflow:hidden}.skill-live-meter i{display:block;height:100%;background:var(--skill-color);transform-origin:left;transition:transform .18s;width:100%}
+.skill-live.is-triggered .skill-live-icon{animation:skill-trigger .5s ease-out}.skill-live.is-acquired{animation:skill-acquire 1s ease-out}
+.skill-economy-flash{animation:skill-economy .7s ease-out}
+@keyframes skill-trigger{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--skill-color) 60%,transparent);transform:scale(1.12)}100%{box-shadow:0 0 0 13px transparent;transform:scale(1)}}
+@keyframes skill-acquire{0%{background:color-mix(in srgb,var(--skill-color) 25%,transparent)}100%{background:transparent}}
+@keyframes skill-economy{0%,35%{background:#5f6f2c;color:#f2f6ea}100%{background:#252e20;color:#f2f6ea}}
+@media(max-width:600px){.skill-live{gap:9px;height:74px;padding:9px 10px;margin:8px 10px}.skill-live-copy strong{font-size:13px}.skill-live-copy small{-webkit-line-clamp:1}.skill-live-state{font-size:11px}.skill-live-icon{flex-basis:36px;height:36px}}
+@media(prefers-reduced-motion:reduce){.skill-live *,.skill-live,.skill-economy-flash{animation:none!important;transition:none!important}}

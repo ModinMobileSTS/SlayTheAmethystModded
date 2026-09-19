@@ -1,0 +1,41 @@
+.launcher-progress{display:none}
+
+.launcher-mode-pending .launcher-progress{display:grid}
+.launcher-mode .brand{display:none}
+.launcher-mode .site-header{position:relative;display:flex;height:calc(58px + env(safe-area-inset-top));min-height:calc(58px + env(safe-area-inset-top));flex-shrink:0;padding:env(safe-area-inset-top) 12px 0;gap:8px;background:#f5f6f3;border-bottom:1px solid #ccd4c4}
+.launcher-mode .header-right{position:static;flex-shrink:0}
+.launcher-mode .header-right:empty{display:none}
+.launcher-mode .launcher-progress{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:30px 6px;align-content:center;gap:4px 12px;flex:1;min-width:0;height:56px;color:var(--ink);letter-spacing:0}
+.launcher-kicker{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.launcher-signal{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:#a25743;box-shadow:0 0 0 4px #f67b6515;animation:launcher-signal 2s ease-in-out infinite}
+.launcher-progress-top{grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+#launcher-progress-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700;line-height:1.5}
+#launcher-progress-percent{flex-shrink:0;min-width:53px;text-align:right;font-family:"Barlow Condensed",var(--font);font-size:29px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;color:#252923}
+#launcher-progress-percent span{font-family:var(--font);font-size:11px;margin-left:2px;color:#78816f}
+.launcher-progress-track{grid-column:1;grid-row:2;height:6px;margin:0;overflow:hidden;background:#dfe4da;border-radius:2px}
+.launcher-progress-track>span{position:relative;display:block;width:0;height:100%;border-radius:inherit;background:#85b64d;transition:width .4s cubic-bezier(.2,.7,.3,1),background .4s;box-shadow:0 0 12px #85b64d40}
+.launcher-progress-track>span::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 20%,#ffffff80 50%,transparent 80%);transform:translateX(-100%);animation:launcher-shimmer 2.2s ease-in-out infinite}
+.launcher-action{display:none}
+.launcher-progress.is-ready{grid-template-columns:minmax(0,1fr) 100px}
+.launcher-progress.is-ready .launcher-action{grid-column:2;grid-row:1/3;display:grid;align-self:center;align-items:center;height:44px}
+.launcher-waiting{display:flex;align-items:center;justify-content:center;gap:8px;color:#76806d;font-size:11px}
+.launcher-loader{width:12px;height:12px;border:1.5px solid #cdd5c4;border-top-color:#658746;border-radius:50%;animation:launcher-spin 1s linear infinite}
+.launcher-waiting-dots{margin-left:-5px;letter-spacing:0}
+.launcher-ready-button{width:100%;height:44px;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 8px;border:1px solid #252923;border-radius:6px;background:#252923;color:#c4f589;font-weight:700;font-size:12px;white-space:nowrap;box-shadow:0 2px 0 #25292314;transition:background .2s,transform .2s,box-shadow .2s}
+.launcher-ready-button svg{width:15px;height:15px;flex-shrink:0}
+.launcher-ready-button svg:last-child{display:none}
+.launcher-ready-button span{text-align:center}
+.launcher-ready-button:hover{background:#394730;box-shadow:0 3px 10px #25292325}
+.launcher-ready-button:focus-visible{outline:3px solid #659f24;outline-offset:3px}
+.launcher-progress [hidden]{display:none!important}
+.launcher-progress.is-ready .launcher-signal{background:#6f9f3d;box-shadow:0 0 0 4px #85b64d20;animation:none}
+.launcher-progress.is-ready .launcher-kicker{color:#557934}
+.launcher-progress.is-ready .launcher-progress-track>span{background:#9ad451}
+.launcher-progress.is-ready .launcher-progress-track>span::after{animation:none;opacity:0}
+.launcher-progress.is-ready .launcher-ready-button{animation:launcher-arrive .45s ease-out,launcher-invite 2.6s .45s ease-in-out 3}
+@keyframes launcher-shimmer{0%{transform:translateX(-100%)}75%,100%{transform:translateX(100%)}}
+@keyframes launcher-signal{50%{opacity:.5}}
+@keyframes launcher-spin{to{transform:rotate(360deg)}}
+@keyframes launcher-arrive{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes launcher-invite{50%{box-shadow:0 0 0 4px #85b64d30}}
+@media(prefers-reduced-motion:reduce){.launcher-progress *,.launcher-progress *::after{animation:none!important;transition:none!important}}

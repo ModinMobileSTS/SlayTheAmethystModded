@@ -1,0 +1,152 @@
+.shop-trigger{position:absolute;right:22px;bottom:52px;z-index:12;display:inline-flex;align-items:center;gap:8px;min-height:46px;padding:0 15px;border:1px solid #91b75a;border-radius:7px;background:#252e20;color:#f4f8ec;box-shadow:0 12px 30px #26342130;font-size:12px;font-weight:700;animation:shop-trigger-in .32s cubic-bezier(.22,1,.36,1) both}
+.shop-trigger.is-leaving{animation:shop-trigger-out .2s ease-in both;pointer-events:none}
+.shop-trigger:hover{background:#3d5528;transform:translateY(-2px)}
+.shop-trigger svg{width:19px;height:19px}
+.shop-trigger[hidden]{display:none}
+
+#shop {
+  width: min(436px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbf7;
+  box-shadow: 0 24px 80px #1e291b38;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-align: left;
+}
+#shop::backdrop{background:#26302380;backdrop-filter:blur(6px);animation:shop-backdrop-in .24s ease-out both}
+#shop[open]{animation:shop-in .32s cubic-bezier(.22,1,.36,1) both}
+#shop.is-closing{animation:shop-out .2s ease-in both}
+#shop.is-closing::backdrop{animation:shop-backdrop-out .2s ease-in both}
+
+/* Override the shared dialog action-row layout for the whole shop panel. */
+#shop .shop-panel {
+  display: block;
+  padding: 24px;
+  min-width: 0;
+}
+#shop .shop-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#shop .shop-heading > div { min-width: 0; }
+#shop .eyebrow { font-size: 10px; letter-spacing: 0; }
+#shop .shop-heading h2 {
+  margin: 6px 0 0;
+  font-size: 23px;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+#shop .shop-heading .icon-button {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+#shop .shop-intro {
+  margin: 12px 0 20px;
+  color: #71806a;
+  font-size: 12px;
+  line-height: 1.7;
+}
+#shop .shop-balance {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: #66745d;
+  font-size: 12px;
+}
+#shop .shop-balance strong {
+  min-width: 0;
+  color: #33442a;
+  font-size: 23px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+#shop .upgrades-section { padding: 6px 0 0; border: 0; }
+#shop .upgrade-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+#shop .upgrade {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 100px;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+#shop .upgrade:last-child { padding-bottom: 0; border-bottom: 0; }
+#shop .upgrade > div { min-width: 0; }
+#shop .upgrade-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 44px;
+  color: #5d6a51;
+}
+#shop .upgrade-icon svg { width: 24px; height: 24px; }
+#shop .upgrade-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+#shop .upgrade-title b { font-size: 14px; font-weight: 600; line-height: 1.4; }
+#shop .upgrade-title small { color: #78816e; font-size: 10px; white-space: nowrap; }
+#shop .upgrade-desc {
+  margin: 5px 0 0;
+  color: #78816e;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#shop .buy-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  height: auto;
+  padding: 10px 8px;
+  border: 1px solid #a4c77b;
+  border-radius: 6px;
+  background: #c6efa0;
+  color: #31491e;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+#shop .buy-button svg { flex: 0 0 14px; width: 14px; height: 14px; }
+#shop .buy-button span { min-width: 0; overflow-wrap: anywhere; }
+#shop .buy-button:hover:not(:disabled) { background: #aee571; }
+#shop .buy-button:disabled { background: #eceee6; color: #89917f; border-color: #e1e5d8; }
+
+@keyframes shop-in{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes shop-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(12px) scale(.98)}}
+@keyframes shop-trigger-in{from{opacity:0;transform:translateY(10px) scale(.92)}to{opacity:1;transform:none}}
+@keyframes shop-trigger-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(8px) scale(.92)}}
+@keyframes shop-backdrop-in{from{opacity:0}to{opacity:1}}
+@keyframes shop-backdrop-out{from{opacity:1}to{opacity:0}}
+@media(max-width:720px){
+  .shop-trigger{right:16px;bottom:calc(42px + env(safe-area-inset-bottom));min-width:46px;width:46px;height:46px;justify-content:center;padding:0;border-radius:50%}
+  .shop-trigger span{display:none}
+}
+@media(max-width:380px){
+  #shop .shop-panel { padding: 20px 16px; }
+  #shop .shop-heading h2 { font-size: 21px; }
+  #shop .upgrade { grid-template-columns: 28px minmax(0, 1fr) 84px; gap: 8px; }
+  #shop .upgrade-icon { width: 28px; }
+}
+@media(prefers-reduced-motion:reduce){
+  .shop-trigger,#shop[open],#shop.is-closing,#shop::backdrop,#shop.is-closing::backdrop{animation:none}
+}

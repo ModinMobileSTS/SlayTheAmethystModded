@@ -1,0 +1,21 @@
+.earnings{order:3;flex:none;padding:11px 16px calc(8px + env(safe-area-inset-bottom));background:#252e20;color:#f2f6ea;position:relative;overflow:hidden;border-top:1px solid #556943}
+.earnings-top{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#c1cbb7;gap:8px}
+.earnings-top small{margin-left:6px;color:#b6ed66;font-size:9px}.earnings-top b{font-variant-numeric:tabular-nums;color:#f2f6ea}
+.earnings-main{display:flex;align-items:center;gap:8px;min-height:56px;position:relative}
+#shot-money{font-family:"Barlow Condensed","Noto Sans SC",sans-serif;font-size:42px;font-weight:700;line-height:1.1;letter-spacing:-.5px;color:#b6ed66;font-variant-numeric:tabular-nums;white-space:nowrap;transform-origin:left center}
+.multiplier{margin-left:auto;text-align:right;white-space:nowrap}.multiplier>b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:28px;line-height:1.1;color:#e4f7c7}.multiplier small{font-size:9px;color:#c1cbb7}
+.achievement-ticker{display:none}
+.achievement-ticker.hot{color:#d8ff98}.earnings.paying #shot-money{animation:cash-pop .28s ease-out}.earnings.celebrating{animation:cash-flash .6s ease-out}
+#money-burst{position:absolute;left:38%;top:5px;font-size:12px;font-weight:700;color:#e2ffa6;pointer-events:none;opacity:0}.paying #money-burst{animation:cash-rise .65s ease-out}
+.achievement-library{border-bottom:1px solid var(--line);padding:14px 0}.achievement-library summary{min-height:44px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:700;font-size:13px}.achievement-library summary b{font-size:11px;color:#648d25}.achievement-library p{font-size:11px;line-height:1.8;color:#747d6c}.achievement-item{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:12px 0;border-top:1px solid var(--line);font-size:12px}.achievement-item small{grid-column:1/-1;font-size:10px;color:#747d6c}.achievement-item>span{font-size:11px;color:#648d25}.achievement-item.earned b:before{content:"✓ ";color:#648d25}
+@keyframes cash-pop{0%{transform:scale(1)}35%{transform:scale(1.09)}100%{transform:scale(1)}}
+@keyframes cash-rise{0%{opacity:1;transform:translateY(12px)}100%{opacity:0;transform:translateY(-13px)}}
+@keyframes cash-flash{0%{background:#587636}100%{background:#252e20}}
+.achievement-pops{position:absolute;left:0;right:0;top:85%;height:0;pointer-events:none;z-index:5}
+.achievement-pop{position:absolute;left:var(--pop-x,50%);top:0;width:calc(100% - 24px);text-align:center;opacity:0;transform:translate(-50%,-100%);transform-origin:center bottom;will-change:transform,opacity}
+.achievement-pop strong{display:block;font-size:28px;line-height:1.25;overflow-wrap:anywhere;font-weight:800;letter-spacing:0;color:#426d19;text-shadow:0 2px 0 #fff,2px 0 0 #fff,-2px 0 0 #fff,0 -2px 0 #fff,0 4px 14px #fafbf7}
+.achievement-pop span{display:block;margin-top:3px;font-size:11px;font-weight:700;color:#364629;text-shadow:0 1px 3px #fff,0 0 8px #fff}
+@media(max-width:360px){#shot-money{font-size:35px}.earnings{padding-left:12px;padding-right:12px}.multiplier>b{font-size:24px}.earnings-top{font-size:9px}}
+@media(max-height:680px){.earnings{padding-top:6px}.earnings-main{min-height:43px}#shot-money{font-size:34px}.achievement-ticker{padding:5px 0;min-height:25px}}
+@media(prefers-reduced-motion:reduce){.earnings,.earnings *{animation:none!important}#money-burst{display:none}}
+@media(prefers-reduced-motion:reduce){.achievement-pop{animation:none}}
