@@ -14,12 +14,6 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +37,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.CardPlayOptimizationMode
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
@@ -54,8 +49,7 @@ import kotlin.math.roundToInt
 internal data class PerformanceSettingsActions(
     val onRenderScaleSelected: (Float) -> Unit,
     val onTargetFpsSelected: (Float) -> Unit,
-    val onNonRecommendedFpsEnabledChanged: (Boolean) -> Unit,
-    val onSwappyFramePacingEnabledChanged: (Boolean) -> Unit,
+    val onFramePacingModeChanged: (FramePacingMode) -> Unit,
     val onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
@@ -140,14 +134,17 @@ internal fun SettingsPerformanceSection(
         )
     )
 
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.swappyFramePacingEnabled,
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_frame_pacing_mode_title),
+            valueText = framePacingModeDisplayName(uiState.framePacingMode),
             enabled = !uiState.busy,
-            title = stringResource(R.string.settings_swappy_frame_pacing_title),
-            description = stringResource(R.string.settings_swappy_frame_pacing_desc),
-            onCheckedChange = actions.onSwappyFramePacingEnabledChanged,
-            chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
+            selectedValue = uiState.framePacingMode,
+            options = FramePacingMode.entries,
+            optionLabel = { mode -> framePacingModeDisplayName(mode) },
+            onOptionSelected = actions.onFramePacingModeChanged,
+            description = framePacingModeDescription(uiState.framePacingMode),
+            dialogDescription = framePacingModeDescription(uiState.framePacingMode),
         )
     )
 
@@ -181,30 +178,6 @@ internal fun SettingsPerformanceSection(
         modifier = Modifier.fillMaxWidth()
     )
 
-    androidx.compose.foundation.layout.Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = uiState.nonRecommendedFpsEnabled,
-            onCheckedChange = actions.onNonRecommendedFpsEnabledChanged,
-            enabled = !uiState.busy
-        )
-        Text(
-            text = stringResource(R.string.settings_non_recommended_fps_enabled),
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
-    AnimatedVisibility(
-        visible = uiState.nonRecommendedFpsEnabled,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut()
-    ) {
-        Text(
-            text = stringResource(R.string.settings_non_recommended_fps_notice),
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
     SettingsChoiceDialogItem(
         SettingsChoiceSpec(
             title = stringResource(R.string.settings_target_fps_title),
@@ -649,6 +622,30 @@ private fun virtualResolutionModeDisplayName(mode: VirtualResolutionMode): Strin
         VirtualResolutionMode.RATIO_16_9 ->
             stringResource(R.string.settings_virtual_resolution_mode_16_9)
     }
+}
+
+
+@Composable
+private fun framePacingModeDisplayName(mode: FramePacingMode): String {
+    return stringResource(
+        when (mode) {
+            FramePacingMode.BUILT_IN -> R.string.settings_frame_pacing_mode_built_in
+            FramePacingMode.SWAPPY -> R.string.settings_frame_pacing_mode_swappy
+            FramePacingMode.OFF -> R.string.settings_frame_pacing_mode_off
+        }
+    )
+}
+
+
+@Composable
+private fun framePacingModeDescription(mode: FramePacingMode): String {
+    return stringResource(
+        when (mode) {
+            FramePacingMode.BUILT_IN -> R.string.settings_frame_pacing_mode_built_in_desc
+            FramePacingMode.SWAPPY -> R.string.settings_frame_pacing_mode_swappy_desc
+            FramePacingMode.OFF -> R.string.settings_frame_pacing_mode_off_desc
+        }
+    )
 }
 
 

@@ -481,6 +481,7 @@ object StsLaunchSpec {
             args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
         }
         args.add("-Damethyst.gdx.paced_fps=$effectiveTargetFps")
+        args.add("-Damethyst.gdx.frame_pacing_mode=${LauncherConfig.readFramePacingMode(context).persistedValue}")
         try {
             // DesktopLauncher reads this file before LibGDX starts. Keep its first Settings
             // initialization aligned with the fixed fullscreen-priority logical canvas.

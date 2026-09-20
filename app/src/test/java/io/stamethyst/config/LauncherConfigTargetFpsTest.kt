@@ -6,22 +6,22 @@ import org.junit.Test
 
 class LauncherConfigTargetFpsTest {
     @Test
-    fun defaultTargetFps_is144FpsAutomaticCeiling() {
-        assertEquals(144, LauncherConfig.DEFAULT_TARGET_FPS)
+    fun defaultTargetFps_isASelectableFixedCap() {
+        assertEquals(60, LauncherConfig.DEFAULT_TARGET_FPS)
     }
 
     @Test
     fun targetFpsOptions_include90Fps() {
         assertArrayEquals(
-            intArrayOf(24, 30, 60, 90, 120, 144),
+            intArrayOf(24, 30, 60, 90, 120, 240),
             LauncherConfig.TARGET_FPS_OPTIONS
         )
     }
 
     @Test
-    fun nonRecommendedTargetFpsOptions_preserveTheLegacy240FpsChoice() {
+    fun nonRecommendedTargetFpsOptions_matchTheSelectableChoices() {
         assertArrayEquals(
-            intArrayOf(24, 30, 60, 90, 120, 144, 240),
+            intArrayOf(24, 30, 60, 90, 120, 240),
             LauncherConfig.NON_RECOMMENDED_TARGET_FPS_OPTIONS
         )
     }

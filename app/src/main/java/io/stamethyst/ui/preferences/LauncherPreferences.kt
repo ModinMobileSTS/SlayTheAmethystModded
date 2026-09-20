@@ -22,6 +22,7 @@ import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -144,6 +145,9 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MTS_PATCH_CACHE_ENABLED
     val DEFAULT_SWAPPY_FRAME_PACING_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_SWAPPY_FRAME_PACING_ENABLED
+
+    val DEFAULT_FRAME_PACING_MODE: FramePacingMode
+        get() = LauncherConfig.DEFAULT_FRAME_PACING_MODE
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED: Boolean
@@ -599,6 +603,13 @@ object LauncherPreferences {
 
     fun setSwappyFramePacingEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSwappyFramePacingEnabled(context, enabled)
+    }
+
+    fun readFramePacingMode(context: Context): FramePacingMode =
+        LauncherConfig.readFramePacingMode(context)
+
+    fun saveFramePacingMode(context: Context, mode: FramePacingMode) {
+        LauncherConfig.saveFramePacingMode(context, mode)
     }
 
     fun isGamePerformanceOverlayEnabled(context: Context): Boolean {

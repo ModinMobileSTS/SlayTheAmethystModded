@@ -68,18 +68,18 @@ public final class DisplaySettingsControlsCompatPatches {
 
     private static float valueX(String label) {
         return 410.0f * Settings.xScale
-            + FontHelper.getWidth(FontHelper.tipBodyFont, label, 1.0f)
+            + FontHelper.getWidth(FontHelper.cardDescFont_N, label, 1.0f)
             + 8.0f * Settings.scale;
     }
 
     private static void renderFixedValue(SpriteBatch sb, String value, String label, float y) {
-        FontHelper.renderFontLeft(
+        FontHelper.renderFont(
             sb,
-            FontHelper.tipBodyFont,
+            FontHelper.cardDescFont_N,
             value,
             valueX(label),
             y,
-            com.badlogic.gdx.graphics.Color.GOLD
+            Settings.GOLD_COLOR
         );
     }
 
@@ -89,7 +89,7 @@ public final class DisplaySettingsControlsCompatPatches {
         }
         if (text == OptionsPanel.TEXT[4]) {
             String[] labels = text.split(" NL ");
-            return labels.length > 2 ? labels[2] : "";
+            return labels.length > 2 ? "NL NL " + labels[2] : "";
         }
         if (text == OptionsPanel.TEXT[17]) {
             return "";
@@ -262,13 +262,13 @@ public final class DisplaySettingsControlsCompatPatches {
                 sb,
                 savedWidth() + " x " + savedHeight(),
                 labels[0],
-                centerY + 206.0f * Settings.scale
+                centerY + 196.0f * Settings.scale
             );
             renderFixedValue(
                 sb,
                 Integer.toString(Settings.MAX_FPS),
                 labels[1],
-                centerY + 160.0f * Settings.scale
+                centerY + 156.0f * Settings.scale
             );
         }
     }

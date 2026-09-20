@@ -63,7 +63,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         const val EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE = "io.stamethyst.autoplay_single_room_bench_mode"
         const val EXTRA_AUTOPLAY_CHOICE_DELAY_MS = "io.stamethyst.autoplay_choice_delay_ms"
         const val EXTRA_TARGET_FPS = "io.stamethyst.target_fps"
-        const val EXTRA_SWAPPY_FRAME_PACING_ENABLED = "io.stamethyst.swappy_frame_pacing_enabled"
+        const val EXTRA_FRAME_PACING_MODE = "io.stamethyst.frame_pacing_mode"
         const val EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS = "io.stamethyst.performance_deep_diagnostics"
         const val EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED =
             "io.stamethyst.card_obtain_effect_ownership_compat_enabled"
@@ -87,6 +87,9 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             debugMode: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
+            if (context !is android.app.Activity) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
             intent.putExtra(EXTRA_BACK_BEHAVIOR, backBehavior.persistedValue)
             intent.putExtra(
@@ -104,10 +107,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             intent.putExtra(EXTRA_AUTOPLAY_CHOICE_DELAY_MS, autoplayChoiceDelayMs)
             intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, autoplaySingleRoomBenchMode)
             intent.putExtra(EXTRA_TARGET_FPS, LauncherConfig.readTargetFpsValue(context))
-            intent.putExtra(
-                EXTRA_SWAPPY_FRAME_PACING_ENABLED,
-                LauncherConfig.isSwappyFramePacingEnabled(context)
-            )
+            intent.putExtra(EXTRA_FRAME_PACING_MODE, LauncherConfig.readFramePacingMode(context).persistedValue)
             if (performanceDeepDiagnostics != null) {
                 intent.putExtra(EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS, performanceDeepDiagnostics)
             }
@@ -599,8 +599,8 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         if (swappyFramePacingInitialized) {
             return
         }
-        if (!sessionConfig.swappyFramePacingEnabled) {
-            Log.i("STS-FramePacing", "Swappy disabled reason=user_preference")
+        if (sessionConfig.framePacingMode != io.stamethyst.config.FramePacingMode.SWAPPY) {
+            Log.i("STS-FramePacing", "Swappy disabled reason=mode_${sessionConfig.framePacingMode.persistedValue}")
             return
         }
         if (!BuildConfig.SWAPPY_FRAME_PACING_ENABLED) {

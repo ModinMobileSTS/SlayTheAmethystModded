@@ -203,11 +203,8 @@ fun LauncherSettingsPerformanceScreen(
         onGoBack = navigator::goBack,
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
-        onNonRecommendedFpsEnabledChanged = { enabled ->
-            viewModel.onNonRecommendedFpsEnabledChanged(activity, enabled)
-        },
-        onSwappyFramePacingEnabledChanged = { enabled ->
-            viewModel.onSwappyFramePacingEnabledChanged(activity, enabled)
+        onFramePacingModeChanged = { mode ->
+            viewModel.onFramePacingModeChanged(activity, mode)
         },
         onVirtualResolutionModeChanged = { mode ->
             viewModel.onVirtualResolutionModeChanged(activity, mode)

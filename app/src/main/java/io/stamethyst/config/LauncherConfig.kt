@@ -105,6 +105,7 @@ object LauncherConfig {
     private const val PREF_KEY_RAM_SAVER_ENABLED = "ram_saver_enabled"
     private const val PREF_KEY_MTS_PATCH_CACHE_ENABLED = "mts_patch_cache_enabled"
     private const val PREF_KEY_SWAPPY_FRAME_PACING_ENABLED = "swappy_frame_pacing_enabled"
+    private const val PREF_KEY_FRAME_PACING_MODE = "frame_pacing_mode"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
         "sustained_performance_mode_enabled"
@@ -271,9 +272,10 @@ object LauncherConfig {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED = true
-    const val DEFAULT_TARGET_FPS = 144
-    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 144)
-    val NON_RECOMMENDED_TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 144, 240)
+    const val DEFAULT_TARGET_FPS = 60
+    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 240)
+    // Kept as an API alias for older callers; all six choices are now supported directly.
+    val NON_RECOMMENDED_TARGET_FPS_OPTIONS = TARGET_FPS_OPTIONS
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
     const val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
     val KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS = intArrayOf(
@@ -351,6 +353,7 @@ object LauncherConfig {
     const val DEFAULT_RAM_SAVER_ENABLED = true
     const val DEFAULT_MTS_PATCH_CACHE_ENABLED = false
     const val DEFAULT_SWAPPY_FRAME_PACING_ENABLED = false
+    val DEFAULT_FRAME_PACING_MODE: FramePacingMode = FramePacingMode.BUILT_IN
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
@@ -1229,15 +1232,33 @@ object LauncherConfig {
     }
 
     fun isSwappyFramePacingEnabled(context: Context): Boolean {
-        return prefs(context, crossProcess = true).getBoolean(
-            PREF_KEY_SWAPPY_FRAME_PACING_ENABLED,
-            DEFAULT_SWAPPY_FRAME_PACING_ENABLED
-        )
+        return readFramePacingMode(context) == FramePacingMode.SWAPPY
     }
 
     fun setSwappyFramePacingEnabled(context: Context, enabled: Boolean) {
+        saveFramePacingMode(
+            context,
+            if (enabled) FramePacingMode.SWAPPY else FramePacingMode.BUILT_IN
+        )
+    }
+
+    fun readFramePacingMode(context: Context): FramePacingMode {
+        val preferences = prefs(context, crossProcess = true)
+        FramePacingMode.fromPersistedValue(
+            preferences.getString(PREF_KEY_FRAME_PACING_MODE, null)
+        )?.let { return it }
+        return if (preferences.getBoolean(
+                PREF_KEY_SWAPPY_FRAME_PACING_ENABLED,
+                DEFAULT_SWAPPY_FRAME_PACING_ENABLED
+            )
+        ) FramePacingMode.SWAPPY else DEFAULT_FRAME_PACING_MODE
+    }
+
+    fun saveFramePacingMode(context: Context, mode: FramePacingMode) {
         prefs(context, crossProcess = true).edit(commit = true) {
-            putBoolean(PREF_KEY_SWAPPY_FRAME_PACING_ENABLED, enabled)
+            putString(PREF_KEY_FRAME_PACING_MODE, mode.persistedValue)
+            // Keep the legacy key synchronized for older launcher/runtime builds.
+            putBoolean(PREF_KEY_SWAPPY_FRAME_PACING_ENABLED, mode == FramePacingMode.SWAPPY)
         }
     }
 
@@ -1289,7 +1310,7 @@ object LauncherConfig {
         // setting changed in the launcher process cannot leave the game process on an old value.
         val preferences = prefs(context, crossProcess = true)
         readExactTargetFps(preferences)?.let {
-            return it.roundToInt()
+            return normalizeTargetFps(it.roundToInt())
         }
         if (preferences.contains(PREF_KEY_TARGET_FPS)) {
             val value = normalizeTargetFps(
@@ -1316,20 +1337,19 @@ object LauncherConfig {
     fun readTargetFpsValue(context: Context): Float {
         val preferences = prefs(context, crossProcess = true)
         readExactTargetFps(preferences)?.let {
-            return it
+            return normalizeTargetFps(it.roundToInt()).toFloat()
         }
         return readTargetFps(context).toFloat()
     }
 
     fun isTargetFpsAutomatic(context: Context): Boolean {
-        val preferences = prefs(context, crossProcess = true)
-        return readExactTargetFps(preferences) == null &&
-            readTargetFps(context) == DEFAULT_TARGET_FPS
+        return false
     }
 
     fun saveTargetFps(context: Context, targetFps: Float) {
-        val normalizedTargetFps = targetFps.takeIf { it > 0f && !it.isNaN() }
-            ?: DEFAULT_TARGET_FPS.toFloat()
+        val normalizedTargetFps = normalizeTargetFps(
+            targetFps.takeIf { it > 0f && !it.isNaN() }?.roundToInt() ?: DEFAULT_TARGET_FPS
+        ).toFloat()
         prefs(context, crossProcess = true).edit(commit = true) {
             putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps.roundToInt())
             putString(PREF_KEY_TARGET_FPS_EXACT, normalizedTargetFps.toString())

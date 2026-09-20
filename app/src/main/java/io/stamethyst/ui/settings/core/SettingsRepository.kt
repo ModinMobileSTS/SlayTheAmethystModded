@@ -37,6 +37,7 @@ import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
@@ -76,7 +77,7 @@ internal object SettingsRepository {
         val renderScale: Float,
         val targetFps: Float,
         val nonRecommendedFpsEnabled: Boolean,
-        val swappyFramePacingEnabled: Boolean,
+        val framePacingMode: FramePacingMode,
         val virtualResolutionMode: VirtualResolutionMode,
         val renderSurfaceBackend: RenderSurfaceBackend,
         val rendererSelectionMode: RendererSelectionMode,
@@ -226,7 +227,7 @@ internal object SettingsRepository {
                     LauncherPreferences.readTargetFpsValue(context)
                 },
                 nonRecommendedFpsEnabled = LauncherPreferences.isNonRecommendedFpsEnabled(context),
-                swappyFramePacingEnabled = LauncherPreferences.isSwappyFramePacingEnabled(context),
+                framePacingMode = LauncherPreferences.readFramePacingMode(context),
                 virtualResolutionMode = LauncherPreferences.readVirtualResolutionMode(context),
                 renderSurfaceBackend = renderSurfaceBackend,
                 rendererSelectionMode = rendererSelectionMode,

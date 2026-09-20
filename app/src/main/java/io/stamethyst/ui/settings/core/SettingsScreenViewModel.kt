@@ -124,6 +124,7 @@ import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.FramePacingMode
 import kotlin.math.roundToInt
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
@@ -317,7 +318,7 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Float = LauncherPreferences.DEFAULT_TARGET_FPS.toFloat(),
         val nonRecommendedFpsEnabled: Boolean = false,
-        val swappyFramePacingEnabled: Boolean = LauncherPreferences.DEFAULT_SWAPPY_FRAME_PACING_ENABLED,
+        val framePacingMode: FramePacingMode = LauncherPreferences.DEFAULT_FRAME_PACING_MODE,
         val virtualResolutionMode: VirtualResolutionMode =
             LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
@@ -1305,13 +1306,7 @@ class SettingsScreenViewModel : ViewModel() {
                 val loadedSnapshot = SettingsRepository.loadSettingsSnapshot(host)
                 throwIfStatusRefreshStale(refreshGeneration)
                 val selectedTargetFps = loadedSnapshot.rendering.targetFps
-                val targetFpsOptions = DisplayRefreshRateController.includeSelectedTargetFpsOption(
-                    options = resolveTargetFpsOptions(
-                        host,
-                        loadedSnapshot.rendering.nonRecommendedFpsEnabled,
-                    ),
-                    selectedTargetFps = selectedTargetFps,
-                )
+                val targetFpsOptions = resolveTargetFpsOptions()
                 val snapshot = loadedSnapshot
 
                 val mods = ModManager.listInstalledMods(host)
@@ -3186,29 +3181,6 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onNonRecommendedFpsEnabledChanged(host: Activity, enabled: Boolean) {
-        if (uiState.busy || uiState.nonRecommendedFpsEnabled == enabled) {
-            return
-        }
-        LauncherPreferences.setNonRecommendedFpsEnabled(host, enabled)
-        val options = resolveTargetFpsOptions(host, enabled)
-        val targetFps = if (uiState.selectedTargetFps in options) {
-            uiState.selectedTargetFps
-        } else {
-            options.first()
-        }
-        val targetFpsChanged = targetFps != uiState.selectedTargetFps
-        uiState = uiState.copy(
-            nonRecommendedFpsEnabled = enabled,
-            targetFpsOptions = options,
-            selectedTargetFps = targetFps
-        )
-        if (targetFpsChanged) {
-            saveTargetFpsSelection(host, targetFps)
-        }
-        refreshStatus(host)
-    }
-
     fun onVirtualResolutionModeChanged(host: Activity, mode: VirtualResolutionMode) {
         if (uiState.busy || uiState.virtualResolutionMode == mode) {
             return
@@ -3934,12 +3906,12 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onSwappyFramePacingEnabledChanged(host: Activity, enabled: Boolean) {
+    fun onFramePacingModeChanged(host: Activity, mode: FramePacingMode) {
         if (uiState.busy) {
             return
         }
-        uiState = uiState.copy(swappyFramePacingEnabled = enabled)
-        saveSwappyFramePacingEnabledSelection(host, enabled)
+        uiState = uiState.copy(framePacingMode = mode)
+        LauncherPreferences.saveFramePacingMode(host, mode)
         refreshStatus(host)
     }
 
@@ -4501,7 +4473,7 @@ class SettingsScreenViewModel : ViewModel() {
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
             nonRecommendedFpsEnabled = rendering.nonRecommendedFpsEnabled,
-            swappyFramePacingEnabled = rendering.swappyFramePacingEnabled,
+            framePacingMode = rendering.framePacingMode,
             virtualResolutionMode = rendering.virtualResolutionMode,
             renderSurfaceBackend = rendering.renderSurfaceBackend,
             rendererSelectionMode = rendering.rendererSelectionMode,
@@ -5872,9 +5844,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun saveSwappyFramePacingEnabledSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setSwappyFramePacingEnabled(host, enabled)
-    }
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
@@ -6001,14 +5970,8 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveTargetFps(host, targetFps)
     }
 
-    private fun resolveTargetFpsOptions(context: Activity, includeNonRecommended: Boolean): List<Float> {
-        return if (includeNonRecommended) {
-            LauncherPreferences.NON_RECOMMENDED_TARGET_FPS_OPTIONS.map(Int::toFloat)
-        } else {
-            DisplayRefreshRateController.resolveIdealTargetFpsOptions(context).ifEmpty {
-                LauncherPreferences.TARGET_FPS_OPTIONS.map(Int::toFloat)
-            }
-        }
+    private fun resolveTargetFpsOptions(): List<Float> {
+        return LauncherPreferences.TARGET_FPS_OPTIONS.map(Int::toFloat)
     }
 
     private fun formatTargetFps(targetFps: Float): String {

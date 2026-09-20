@@ -274,11 +274,12 @@ private fun renderingSection(
                 LauncherConfig.isNonRecommendedFpsEnabled(context),
                 zh,
             ),
-            boolField(
-                "swappyFramePacingEnabled",
-                R.string.settings_swappy_frame_pacing_title,
-                LauncherConfig.isSwappyFramePacingEnabled(context),
-                zh,
+            field(
+                "framePacingMode",
+                zh.getString(R.string.settings_frame_pacing_mode_title),
+                LauncherConfig.readFramePacingMode(context).persistedValue,
+                zh.getString(R.string.settings_frame_pacing_mode_title) + ": " +
+                    LauncherConfig.readFramePacingMode(context).persistedValue,
             ),
             textField(
                 "render.scale",
