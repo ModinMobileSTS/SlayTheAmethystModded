@@ -181,8 +181,16 @@ object RuntimePaths {
         File(agentWorkspaceRoot(context), modId)
 
     @JvmStatic
-    fun agentModInspectionRoot(context: Context, modId: String): File =
-        File(agentModWorkspaceRoot(context, modId), "inspection")
+    fun agentModSourceRoot(context: Context, modId: String): File =
+        File(agentModWorkspaceRoot(context, modId), "source")
+
+    @JvmStatic
+    fun agentModPatchSourcesRoot(context: Context, modId: String): File =
+        File(agentModWorkspaceRoot(context, modId), "patch_source")
+
+    @JvmStatic
+    fun agentModPatchSourceRoot(context: Context, modId: String, patchId: String): File =
+        File(agentModPatchSourcesRoot(context, modId), patchId)
 
     @JvmStatic
     fun agentModConversationsRoot(context: Context, modId: String): File =

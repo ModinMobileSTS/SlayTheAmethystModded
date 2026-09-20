@@ -44,3 +44,9 @@
 -keep class in.dragonbra.javasteam.** { *; }
 -keep class com.google.protobuf.** { *; }
 -keep class top.apricityx.workshop.steam.proto.** { *; }
+
+# LangChain4j OpenAI request/response DTOs are serialized by Jackson through
+# field annotations. R8 full mode cannot infer those reflective accesses, and
+# obfuscating or removing the fields changes the wire names or leaves Jackson
+# with no properties (notably StreamOptions.includeUsage).
+-keep class dev.langchain4j.model.openai.internal.** { *; }

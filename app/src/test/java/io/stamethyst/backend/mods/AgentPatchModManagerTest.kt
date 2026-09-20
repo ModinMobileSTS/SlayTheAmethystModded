@@ -38,6 +38,13 @@ class AgentPatchModManagerTest {
 
         val workspace = AgentPatchModManager.createWorkspace(context, "Parent", source)
         assertTrue(workspace.sourceRoot.resolve("data/config.txt").isFile)
+        assertEquals(RuntimePaths.agentModWorkspaceRoot(context, "parent"), workspace.root)
+        assertEquals(RuntimePaths.agentModSourceRoot(context, "parent"), workspace.sourceRoot)
+        assertEquals(
+            RuntimePaths.agentModPatchSourceRoot(context, "parent", workspace.patchId),
+            workspace.patchRoot,
+        )
+        assertEquals(RuntimePaths.agentModPatchSourcesRoot(context, "parent"), workspace.patchRoot.parentFile)
         workspace.patchRoot.resolve("data").mkdirs()
         workspace.patchRoot.resolve("data/config.txt").writeText("patched", StandardCharsets.UTF_8)
 
@@ -145,7 +152,23 @@ class AgentPatchModManagerTest {
     }
 
     @Test
-    fun packagePatchMod_excludesJavaSourcesUnderSrc() {
+    fun createWorkspace_keepsEachPatchModInItsOwnDirectory() {
+        val root = Files.createTempDirectory("agent-patch-multiple").toFile()
+        val context = testContext(root)
+        val source = sourceJar(root, modId = "parent")
+
+        val first = AgentPatchModManager.createWorkspace(context, "parent", source, name = "First")
+        val second = AgentPatchModManager.createWorkspace(context, "parent", source, name = "Second")
+
+        assertTrue(first.patchId != second.patchId)
+        assertEquals(RuntimePaths.agentModPatchSourcesRoot(context, "parent"), first.patchRoot.parentFile)
+        assertEquals(RuntimePaths.agentModPatchSourcesRoot(context, "parent"), second.patchRoot.parentFile)
+        assertEquals("First", JSONObject(first.patchRoot.resolve("ModTheSpire.json").readText()).getString("name"))
+        assertEquals("Second", JSONObject(second.patchRoot.resolve("ModTheSpire.json").readText()).getString("name"))
+    }
+
+    @Test
+    fun packagePatchMod_excludesJavaSourcesUnderPatchSourceSrc() {
         withWorkspace { context, workspace ->
             File(workspace.patchRoot, "src/com/example/Tweak.java").apply {
                 parentFile?.mkdirs()
@@ -219,6 +242,108 @@ class AgentPatchModManagerTest {
             }.exceptionOrNull()
 
             assertTrue(error is IOException)
+        }
+    }
+
+    @Test
+    fun updatePatchMod_replacesSameJarWithNewVersionAndKeepsEnabledState() {
+        withWorkspace { context, workspace ->
+            val packaged = AgentPatchModManager.packagePatchMod(context, workspace, "Parent tweak", "1.0.0", "first")
+            RuntimePaths.enabledAgentPatchModsConfig(context).apply {
+                parentFile?.mkdirs()
+                writeText(packaged.patchModId + "\n", StandardCharsets.UTF_8)
+            }
+
+            val updated = AgentPatchModManager.updatePatchMod(
+                context = context,
+                parentModId = "parent",
+                patchId = workspace.patchId,
+                version = "2.0.0",
+            )
+
+            assertEquals(packaged.jarFile, updated.jarFile)
+            assertEquals("2.0.0", updated.version)
+            assertEquals("Parent tweak", updated.name)
+            assertEquals("first", updated.description)
+            assertTrue(updated.enabled)
+            ZipFile(updated.jarFile).use { jar ->
+                val manifest = JSONObject(
+                    jar.getInputStream(jar.getEntry("ModTheSpire.json"))
+                        .use { it.readBytes() }
+                        .toString(StandardCharsets.UTF_8),
+                )
+                assertEquals("2.0.0", manifest.getString("version"))
+                assertEquals("parent", manifest.getJSONArray("dependencies").getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun updatePatchMod_keepsParentDependencyManifestCase() {
+        val root = Files.createTempDirectory("agent-patch-update-case").toFile()
+        val context = testContext(root)
+        val source = sourceJar(root, modId = "ShoujoKageki")
+        val workspace = AgentPatchModManager.createWorkspace(context, "ShoujoKageki", source)
+        val packaged = AgentPatchModManager.packagePatchMod(context, workspace, "Case", "1.0.0", "test")
+
+        val updated = AgentPatchModManager.updatePatchMod(
+            context = context,
+            parentModId = "shoujokageki",
+            patchId = workspace.patchId,
+            version = "1.1.0",
+            sourceJar = source,
+        )
+
+        assertEquals(packaged.jarFile, updated.jarFile)
+        ZipFile(updated.jarFile).use { jar ->
+            val manifest = JSONObject(
+                jar.getInputStream(jar.getEntry("ModTheSpire.json"))
+                    .use { it.readBytes() }
+                    .toString(StandardCharsets.UTF_8),
+            )
+            assertEquals("ShoujoKageki", manifest.getJSONArray("dependencies").getString(0))
+        }
+    }
+
+    @Test
+    fun updatePatchMod_rejectsUnknownPatchId() {
+        withWorkspace { context, workspace ->
+            AgentPatchModManager.packagePatchMod(context, workspace, "Parent tweak", "1.0.0", "test")
+
+            val error = runCatching {
+                AgentPatchModManager.updatePatchMod(context, "parent", "patch-missing", version = "2.0.0")
+            }.exceptionOrNull()
+
+            assertTrue(error is IOException)
+        }
+    }
+
+    @Test
+    fun updatePatchMod_rejectsUncompiledSources() {
+        withWorkspace { context, workspace ->
+            AgentPatchModManager.packagePatchMod(context, workspace, "Parent tweak", "1.0.0", "test")
+            File(workspace.patchRoot, "src/com/example/Tweak.java").apply {
+                parentFile?.mkdirs()
+                writeText("package com.example; class Tweak {}")
+            }
+
+            val error = runCatching {
+                AgentPatchModManager.updatePatchMod(context, "parent", workspace.patchId, version = "2.0.0")
+            }.exceptionOrNull()
+
+            assertTrue(error is IOException)
+            assertTrue(error!!.message.orEmpty().contains("patch_sources_not_compiled"))
+        }
+    }
+
+    @Test
+    fun resolvePatchWorkspace_returnsNullForMissingRevision() {
+        withWorkspace { context, workspace ->
+            assertTrue(AgentPatchModManager.resolvePatchWorkspace(context, "parent", "patch-missing") == null)
+            assertEquals(
+                RuntimePaths.agentModPatchSourceRoot(context, "parent", workspace.patchId),
+                AgentPatchModManager.resolvePatchWorkspace(context, "parent", workspace.patchId)?.patchRoot,
+            )
         }
     }
 

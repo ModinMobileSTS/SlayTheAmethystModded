@@ -3,6 +3,7 @@ package io.stamethyst.backend.mods
 import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
+import io.stamethyst.config.RuntimePaths
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,7 +16,7 @@ import java.util.zip.ZipOutputStream
 
 class AgentModInspectionManagerTest {
     @Test
-    fun createInspection_extractsSourceWithoutCreatingPatchWorkspace() {
+    fun createInspection_extractsSourceIntoSharedModWorkspace() {
         val root = Files.createTempDirectory("agent-mod-inspection").toFile()
         val context = testContext(root)
         val source = File(root, "source.jar")
@@ -37,8 +38,9 @@ class AgentModInspectionManagerTest {
         assertEquals("ShoujoKageki", inspection.parentModId)
         assertTrue(inspection.sourceRoot.resolve("ModTheSpire.json").isFile)
         assertTrue(inspection.sourceRoot.resolve("com/example/Parent.class").isFile)
-        assertFalse(inspection.root.resolve("patch").exists())
-        val metadata = JSONObject(inspection.root.resolve("inspection-metadata.json").readText())
+        assertEquals(RuntimePaths.agentModWorkspaceRoot(context, "shoujokageki"), inspection.root)
+        assertFalse(inspection.root.resolve("patch_source").exists())
+        val metadata = JSONObject(inspection.root.resolve("source-metadata.json").readText())
         assertEquals("ShoujoKageki", metadata.getString("parent_mod_id"))
         assertFalse(metadata.getBoolean("source_decompiled"))
     }

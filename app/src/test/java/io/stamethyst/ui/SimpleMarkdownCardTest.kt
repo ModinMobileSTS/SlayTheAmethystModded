@@ -2,10 +2,43 @@ package io.stamethyst.ui
 
 import androidx.compose.ui.text.LinkAnnotation
 import org.junit.Test
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 
 class SimpleMarkdownCardTest {
+
+    @Test
+    fun parseSimpleMarkdownTables_parsesGfmTableAndNormalizesRows() {
+        val tables = parseSimpleMarkdownTablesForTest(
+            """
+            | Name | Result |
+            | :--- | ---: |
+            | **A** | 1 |
+            | B |
+            """.trimIndent()
+        )
+
+        assertEquals(1, tables.size)
+        assertEquals(listOf("Name", "Result"), tables.single().first)
+        assertEquals(
+            listOf(listOf("**A**", "1"), listOf("B", "")),
+            tables.single().second
+        )
+    }
+
+    @Test
+    fun parseSimpleMarkdownTables_supportsEscapedPipes() {
+        val tables = parseSimpleMarkdownTablesForTest(
+            """
+            | Key | Description |
+            | --- | --- |
+            | a\|b | value |
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("Key", "Description"), tables.single().first)
+        assertEquals(listOf(listOf("a|b", "value")), tables.single().second)
+    }
 
     @Test
     fun buildSimpleMarkdownAnnotatedString_marksMarkdownLinksAsLinkAnnotations() {

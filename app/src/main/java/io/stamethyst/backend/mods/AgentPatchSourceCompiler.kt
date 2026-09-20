@@ -21,7 +21,7 @@ internal data class CompileClasspathResolution(
 )
 
 /**
- * Compiles the agent-authored Java sources of a patch revision on-device with ECJ.
+ * Compiles one patch mod's agent-authored Java sources on-device with ECJ.
  *
  * The launcher's own runtime is Android/ART, which has no `javax.tools` compiler. ECJ is pure
  * Java and ships in the APK, so it runs inside the launcher process while emitting standard
@@ -30,7 +30,7 @@ internal data class CompileClasspathResolution(
  * ART's `java.*` surface differs from the JRE the resulting mod actually runs on.
  */
 object AgentPatchSourceCompiler {
-    /** Java sources live here inside the patch tree; compiled classes land at the patch root. */
+    /** Java sources live here inside a patch workspace; compiled classes land at its root. */
     const val PATCH_SOURCE_DIR = "src"
 
     private const val MAX_DIAGNOSTICS_CHARS = 16_000
@@ -45,7 +45,7 @@ object AgentPatchSourceCompiler {
             return AgentPatchCompileResult(
                 success = false,
                 compiledClassCount = 0,
-                diagnostics = "No .java sources found under patch/. Write sources to patch/$PATCH_SOURCE_DIR/ first.",
+                diagnostics = "No .java sources found in the current patch workspace. Write sources under its $PATCH_SOURCE_DIR/ directory first.",
             )
         }
 

@@ -38,7 +38,7 @@ data class AgentPatchModInfo(
 )
 
 /**
- * Owns the isolated source workspace and the packaged AI patch mods.
+ * Owns the shared source workspace, per-patch source workspaces, and packaged AI patch mods.
  *
  * Packaged patch mods live under `agent_mods/<parent>/` and are loaded by the launcher directly
  * from there, so there is no separate "installed copy" in the optional-mod library. Enablement
@@ -51,6 +51,7 @@ object AgentPatchModManager {
     private const val MAX_FILES = 4096
     private const val MAX_ENTRY_BYTES = 128L * 1024L * 1024L
     private const val MAX_JAR_BYTES = 512L * 1024L * 1024L
+    private val SAFE_PATH_SEGMENT = Regex("[A-Za-z0-9._-]+")
 
     /**
      * Resolves the lowercased, filesystem-safe segment used for a parent mod's workspace paths.
@@ -78,9 +79,9 @@ object AgentPatchModManager {
         val resolvedParent = resolveParentModId(sourceJar, parentModId)
         val parentSegment = safeSegment(resolvedParent)
         val patchId = "patch-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
-        val root = RuntimePaths.agentModWorkspaceRoot(context, parentSegment).resolve(patchId)
-        val sourceRoot = root.resolve("source")
-        val patchRoot = root.resolve("patch")
+        val root = RuntimePaths.agentModWorkspaceRoot(context, parentSegment)
+        val sourceRoot = RuntimePaths.agentModSourceRoot(context, parentSegment)
+        val patchRoot = RuntimePaths.agentModPatchSourceRoot(context, parentSegment, patchId)
         sourceRoot.mkdirs()
         patchRoot.mkdirs()
         extractJar(sourceJar, sourceRoot)
@@ -116,6 +117,7 @@ object AgentPatchModManager {
                 .put("source_path", sourceJar.canonicalPath)
                 .put("source_sha256", sha256(sourceJar))
                 .put("source_root", "source")
+                .put("patch_source_root", "patch_source/$patchId")
                 .toString(2),
             StandardCharsets.UTF_8,
         )
@@ -200,6 +202,92 @@ object AgentPatchModManager {
             jarFile = outputJar,
             enabled = readEnabledPatchModIds(context).contains(patchModId),
         )
+    }
+
+    /**
+     * Resolves the on-disk workspace of a patch revision by [patchId], whether or not it is
+     * packaged and whether or not it was created in the current session.
+     *
+     * The returned [AgentPatchWorkspace.parentModId] keeps the parent's manifest casing: it comes
+     * from [sourceJar] when readable, otherwise from the dependency recorded in the revision's own
+     * `ModTheSpire.json`. ModTheSpire matches dependencies case-sensitively, so an update must not
+     * rewrite the dependency with a lowercased id.
+     */
+    fun resolvePatchWorkspace(
+        context: Context,
+        parentModId: String,
+        patchId: String,
+        sourceJar: File? = null,
+    ): AgentPatchWorkspace? {
+        val parentSegment = safeSegmentOrNull(parentModId) ?: return null
+        if (!patchId.matches(SAFE_PATH_SEGMENT)) return null
+        val patchRoot = RuntimePaths.agentModPatchSourceRoot(context, parentSegment, patchId)
+        if (!patchRoot.isDirectory) return null
+        val resolvedParent = sourceJar?.takeIf { it.isFile }?.let { resolveParentModId(it, parentModId) }
+            ?: readWorkspaceParentDependency(patchRoot, parentModId)
+            ?: parentModId.trim()
+        return AgentPatchWorkspace(
+            parentModId = resolvedParent,
+            parentModSegment = parentSegment,
+            patchId = patchId,
+            root = RuntimePaths.agentModWorkspaceRoot(context, parentSegment),
+            sourceRoot = RuntimePaths.agentModSourceRoot(context, parentSegment),
+            patchRoot = patchRoot,
+        )
+    }
+
+    /**
+     * Repackages an existing revision from its patch workspace with a new version, keeping the same
+     * [patchId], patch mod id, and enabled state. Name and description default to the current values
+     * when omitted. Sources must already be compiled.
+     */
+    @Throws(IOException::class)
+    fun updatePatchMod(
+        context: Context,
+        parentModId: String,
+        patchId: String,
+        name: String = "",
+        version: String = "",
+        description: String = "",
+        sourceJar: File? = null,
+    ): AgentPatchModInfo {
+        val existing = listPackaged(context, parentModId).firstOrNull { it.patchId == patchId }
+            ?: throw IOException("AI patch not found: $patchId")
+        val workspace = resolvePatchWorkspace(context, existing.parentModId, patchId, sourceJar)
+            ?: throw IOException("The patch workspace for $patchId is missing.")
+        requireCompiledPatchSources(workspace.patchRoot)
+        return packagePatchMod(
+            context = context,
+            workspace = workspace,
+            name = name.trim().ifBlank { existing.name },
+            version = version.trim().ifBlank { existing.version },
+            description = description.trim().ifBlank { existing.description },
+        )
+    }
+
+    /** Rejects packaging a revision whose Java sources have not been compiled yet. */
+    @Throws(IOException::class)
+    private fun requireCompiledPatchSources(patchRoot: File) {
+        val hasSources = AgentPatchSourceCompiler.collectSources(patchRoot).isNotEmpty()
+        val hasClasses = patchRoot.walkTopDown()
+            .any { it.isFile && it.extension.equals("class", ignoreCase = true) }
+        if (hasSources && !hasClasses) {
+            throw IOException("patch_sources_not_compiled: call compile_agent_patch_source first")
+        }
+    }
+
+    /** Reads the parent dependency's original casing from the revision's own manifest. */
+    private fun readWorkspaceParentDependency(patchRoot: File, fallback: String): String? {
+        val manifestFile = patchRoot.resolve(MANIFEST_ENTRY)
+        val normalizedFallback = ModManager.normalizeModId(fallback)
+        return runCatching {
+            if (!manifestFile.isFile) return@runCatching null
+            val dependencies = JSONObject(manifestFile.readText(StandardCharsets.UTF_8))
+                .optJSONArray("dependencies") ?: return@runCatching null
+            (0 until dependencies.length())
+                .map { dependencies.optString(it) }
+                .firstOrNull { it.isNotBlank() && ModManager.normalizeModId(it) == normalizedFallback }
+        }.getOrNull()
     }
 
     /** Enables or disables a packaged AI patch revision. */
@@ -463,7 +551,7 @@ object AgentPatchModManager {
         }
     }
 
-    /** Java sources under `patch/src/` are build input; only their compiled classes ship. */
+    /** Java sources under the patch workspace's `src/` are build input; only compiled classes ship. */
     private fun isSourceEntry(file: File, source: File): Boolean {
         val relative = file.relativeTo(source).invariantSeparatorsPath
         val sourceDir = AgentPatchSourceCompiler.PATCH_SOURCE_DIR

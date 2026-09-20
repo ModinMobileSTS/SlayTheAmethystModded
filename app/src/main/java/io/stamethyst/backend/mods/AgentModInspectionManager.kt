@@ -16,7 +16,7 @@ data class AgentModInspectionWorkspace(
     val sourceRoot: File,
 )
 
-/** Owns source inspections that are independent of patch revisions. */
+/** Owns the shared, read-only decompiled source tree for a selected parent mod. */
 object AgentModInspectionManager {
     private const val MAX_FILES = 4096
     private const val MAX_ENTRY_BYTES = 128L * 1024L * 1024L
@@ -31,11 +31,11 @@ object AgentModInspectionManager {
         val resolvedParent = resolveParentModId(sourceJar, parentModId)
         val parentSegment = safeSegment(resolvedParent)
         val inspectionId = "inspection-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
-        val root = RuntimePaths.agentModInspectionRoot(context, parentSegment).resolve(inspectionId)
-        val sourceRoot = root.resolve("source")
+        val root = RuntimePaths.agentModWorkspaceRoot(context, parentSegment)
+        val sourceRoot = RuntimePaths.agentModSourceRoot(context, parentSegment)
         sourceRoot.mkdirs()
         extractJar(sourceJar, sourceRoot)
-        root.resolve("inspection-metadata.json").writeText(
+        root.resolve("source-metadata.json").writeText(
             JSONObject()
                 .put("parent_mod_id", resolvedParent)
                 .put("inspection_id", inspectionId)
@@ -53,7 +53,7 @@ object AgentModInspectionManager {
         workspace: AgentModInspectionWorkspace,
         result: AgentPatchJarDecompileResult,
     ) {
-        val metadataFile = workspace.root.resolve("inspection-metadata.json")
+        val metadataFile = workspace.root.resolve("source-metadata.json")
         val metadata = runCatching {
             if (metadataFile.isFile) JSONObject(metadataFile.readText(StandardCharsets.UTF_8)) else JSONObject()
         }.getOrElse { JSONObject() }

@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.backend.mods.AgentPatchWorkspace
 import dev.langchain4j.agent.tool.ToolSpecification
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema
@@ -18,6 +19,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import kotlin.io.path.createTempDirectory
 
@@ -68,8 +70,8 @@ class PolicyGatedAgentGatewayTest {
     }
 
     @Test
-    fun respond_allowsLongerWorkspaceInspectionBeforeApplyingRoundLimit() {
-        repeat(9) { server.enqueue(toolCallResponse()) }
+    fun respond_continuesBeyondFormerToolRoundLimit() {
+        repeat(25) { server.enqueue(toolCallResponse()) }
         server.enqueue(finalResponse("Inspection complete."))
         val workspace = createTempDirectory("agent-workspace").toFile().apply {
             resolve("note.txt").writeText("artifact validation passed")
@@ -81,7 +83,7 @@ class PolicyGatedAgentGatewayTest {
         )
 
         assertEquals("Inspection complete.", reply.text)
-        assertEquals(9, reply.toolRounds)
+        assertEquals(25, reply.toolRounds)
     }
 
     @Test
@@ -195,7 +197,7 @@ class PolicyGatedAgentGatewayTest {
     }
 
     @Test
-    fun createPatchModTool_usesAgentChosenNameAndReusesExistingWorkspace() {
+    fun createPatchModTool_usesAgentChosenNameAndCreatesDistinctWorkspaces() {
         val root = createTempDirectory("agent-patch-create").toFile()
         val context = testContext(root)
         val source = sourceJar(root)
@@ -204,7 +206,6 @@ class PolicyGatedAgentGatewayTest {
             context = context,
             parentModId = "parent",
             sourceJar = source,
-            currentWorkspace = { created },
             onCreated = { created = it },
         )
 
@@ -220,67 +221,124 @@ class PolicyGatedAgentGatewayTest {
         assertEquals("1.2.0", manifest.getString("version"))
         assertEquals("Buff a card.", manifest.getString("description"))
         assertEquals("parent", manifest.getJSONArray("dependencies").getString(0))
+        assertEquals("patch_source/${workspace.patchId}", first["patch_workspace_path"]!!.jsonPrimitive.content)
 
         val second = Json.parseToJsonElement(tool.execute("""{"name":"Another name"}""")).jsonObject
-        assertEquals("exists", second["status"]!!.jsonPrimitive.content)
-        assertEquals(workspace.patchId, created!!.patchId)
+        assertEquals("created", second["status"]!!.jsonPrimitive.content)
+        val secondWorkspace = requireNotNull(created)
+        assertTrue(workspace.patchId != secondWorkspace.patchId)
+        assertTrue(workspace.patchRoot.resolve("ModTheSpire.json").isFile)
+        assertEquals(
+            "Another name",
+            JSONObject(secondWorkspace.patchRoot.resolve("ModTheSpire.json").readText()).getString("name"),
+        )
     }
 
     @Test
-    fun writeTool_canCreateFilesAnywhereInsideWorkspaceWithoutPatchRevision() {
+    fun updatePatchModTool_isAdvertisedWithPackageSafetyAndUpdatesVersion() {
+        val root = createTempDirectory("agent-patch-update").toFile()
+        val context = testContext(root)
+        val source = sourceJar(root)
+        val workspace = AgentPatchModManager.createWorkspace(context, "parent", source, name = "Tweak")
+        AgentPatchModManager.packagePatchMod(context, workspace, "Tweak", "1.0.0", "test")
+        val tool = AgentPatchModUpdateTool(
+            context = context,
+            parentModId = "parent",
+            parentJar = source,
+        )
+
+        assertEquals("update_agent_patch_mod", tool.specification.name())
+        assertEquals(AgentToolSafety.PATCH_PACKAGE, tool.safety)
+
+        val result = Json.parseToJsonElement(
+            tool.execute("""{"patch_id":"${workspace.patchId}","version":"1.1.0"}"""),
+        ).jsonObject
+        assertEquals("updated", result["status"]!!.jsonPrimitive.content)
+        assertEquals("1.1.0", result["version"]!!.jsonPrimitive.content)
+
+        ZipFile(File(result["jar_path"]!!.jsonPrimitive.content)).use { jar ->
+            val manifest = JSONObject(
+                jar.getInputStream(jar.getEntry("ModTheSpire.json"))
+                    .use { it.readBytes() }
+                    .toString(Charsets.UTF_8),
+            )
+            assertEquals("1.1.0", manifest.getString("version"))
+        }
+    }
+
+    @Test
+    fun updatePatchModTool_rejectsUnknownPatchId() {
+        val root = createTempDirectory("agent-patch-update-missing").toFile()
+        val context = testContext(root)
+        val source = sourceJar(root)
+        val tool = AgentPatchModUpdateTool(
+            context = context,
+            parentModId = "parent",
+            parentJar = source,
+        )
+
+        val result = tool.execute("""{"patch_id":"patch-missing","version":"1.1.0"}""")
+
+        assertTrue(result.contains("patch_not_found"))
+    }
+
+    @Test
+    fun writeTool_canCreateFilesOnlyUnderPatchSource() {
         val root = createTempDirectory("agent-patch-write").toFile()
         val workspaceRoot = File(root, "workspace").apply { mkdirs() }
         val tool = AgentWorkspaceWriteTool(workspaceRoot)
 
         val result = Json.parseToJsonElement(
-            tool.execute("""{"path":"inspection/old/source/Notes.java","content":"class Notes {}"}"""),
+            tool.execute("""{"path":"patch_source/patch-test/src/Notes.java","content":"class Notes {}"}"""),
         ).jsonObject
 
-        assertEquals("inspection/old/source/Notes.java", result["path"]!!.jsonPrimitive.content)
-        assertTrue(File(workspaceRoot, "inspection/old/source/Notes.java").isFile)
-        assertTrue(tool.execute("""{"path":"../secret.txt","content":"secret"}""").contains("path_outside_workspace"))
+        assertEquals("patch_source/patch-test/src/Notes.java", result["path"]!!.jsonPrimitive.content)
+        assertTrue(File(workspaceRoot, "patch_source/patch-test/src/Notes.java").isFile)
+        assertTrue(tool.execute("""{"path":"patch_source/Notes.java","content":"class Notes {}"}""").contains("path_outside_patch_source"))
+        assertTrue(tool.execute("""{"path":"source/Notes.java","content":"class Notes {}"}""").contains("path_outside_patch_source"))
+        assertTrue(tool.execute("""{"path":"../secret.txt","content":"secret"}""").contains("path_outside_patch_source"))
     }
 
     @Test
-    fun deleteTool_removesFilesFromPreviousRevisionsAndInspectionTrees() {
+    fun deleteTool_canDeleteOnlyFromPatchSource() {
         val root = createTempDirectory("agent-patch-delete").toFile()
         val workspaceRoot = File(root, "workspace").apply { mkdirs() }
-        val sourceFile = File(workspaceRoot, "inspection/old/source/original.txt").apply {
+        val sourceFile = File(workspaceRoot, "source/original.txt").apply {
             parentFile?.mkdirs()
             writeText("original")
         }
-        val staleFile = File(workspaceRoot, "patch-old/patch/data/stale.txt").apply {
+        val staleFile = File(workspaceRoot, "patch_source/patch-test/data/stale.txt").apply {
             parentFile?.mkdirs()
             writeText("stale")
         }
         val tool = AgentWorkspaceDeleteTool(workspaceRoot)
 
         val result = Json.parseToJsonElement(
-            tool.execute("""{"path":"patch-old/patch/data/stale.txt"}"""),
+            tool.execute("""{"path":"patch_source/patch-test/data/stale.txt"}"""),
         ).jsonObject
         assertEquals("file", result["type"]!!.jsonPrimitive.content)
         assertTrue(!staleFile.exists())
 
         val sourceResult = Json.parseToJsonElement(
-            tool.execute("""{"path":"inspection/old/source/original.txt"}"""),
+            tool.execute("""{"path":"source/original.txt"}"""),
         ).jsonObject
-        assertEquals("file", sourceResult["type"]!!.jsonPrimitive.content)
-        assertTrue(!sourceFile.exists())
+        assertTrue(sourceResult["error"]!!.jsonPrimitive.content == "path_outside_patch_source")
+        assertTrue(sourceFile.exists())
     }
 
     @Test
     fun deleteTool_removesNonEmptyDirectoryOnlyWhenRecursive() {
         val root = createTempDirectory("agent-patch-delete-dir").toFile()
         val workspaceRoot = File(root, "workspace").apply { mkdirs() }
-        val directory = File(workspaceRoot, "inspection/old/assets").apply { mkdirs() }
+        val directory = File(workspaceRoot, "patch_source/patch-test/assets").apply { mkdirs() }
         File(directory, "a.txt").writeText("a")
         val tool = AgentWorkspaceDeleteTool(workspaceRoot)
 
-        val notRecursive = tool.execute("""{"path":"inspection/old/assets"}""")
+        val notRecursive = tool.execute("""{"path":"patch_source/patch-test/assets"}""")
         assertTrue(notRecursive.contains("delete_failed") || directory.exists())
 
         val recursive = Json.parseToJsonElement(
-            tool.execute("""{"path":"inspection/old/assets","recursive":true}"""),
+            tool.execute("""{"path":"patch_source/patch-test/assets","recursive":true}"""),
         ).jsonObject
         assertEquals("directory", recursive["type"]!!.jsonPrimitive.content)
         assertEquals(1, recursive["files_deleted"]!!.jsonPrimitive.content.toInt())
@@ -288,14 +346,14 @@ class PolicyGatedAgentGatewayTest {
     }
 
     @Test
-    fun deleteTool_refusesToDeleteWorkspaceRoot() {
+    fun deleteTool_refusesToDeletePatchSourceRoot() {
         val root = createTempDirectory("agent-patch-delete-root").toFile()
         val workspaceRoot = File(root, "workspace").apply { mkdirs() }
         val tool = AgentWorkspaceDeleteTool(workspaceRoot)
 
-        val result = tool.execute("""{"path":".","recursive":true}""")
+        val result = tool.execute("""{"path":"patch_source","recursive":true}""")
 
-        assertTrue(result.contains("cannot_delete_workspace_root"))
+        assertTrue(result.contains("cannot_delete_patch_source_root"))
         assertTrue(workspaceRoot.exists())
     }
 
@@ -321,14 +379,23 @@ class PolicyGatedAgentGatewayTest {
         val workspace = createTempDirectory("agent-workspace-cap").toFile()
         val tools = listOf(HugeResultTool(payload))
 
-        newGateway(workspace, tools).respond(systemPrompt = "Use the tool.", userPrompt = "Go.")
+        newGateway(workspace, tools, agentWorkspaceRoot = workspace)
+            .respond(systemPrompt = "Use the tool.", userPrompt = "Go.")
 
         server.takeRequest()
         val secondRequest = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
         val toolMessage = secondRequest["messages"]!!.jsonArray.last().jsonObject["content"]!!
             .jsonPrimitive.content
-        assertTrue("tool result must be capped, was ${toolMessage.length}", toolMessage.length < 25_000)
+        assertTrue(
+            "tool result must be capped, was ${toolMessage.toByteArray().size} bytes",
+            toolMessage.toByteArray().size < 53_000,
+        )
         assertTrue("truncation must be signalled", toolMessage.contains("truncated"))
+
+        val overflow = File(workspace, "tool_output").listFiles().orEmpty()
+        assertEquals(1, overflow.size)
+        assertEquals(payload, overflow.single().readText())
+        assertTrue("the model must be told where the full output is", toolMessage.contains("tool_output/"))
     }
 
     @Test
@@ -350,22 +417,49 @@ class PolicyGatedAgentGatewayTest {
     }
 
     @Test
-    fun readTool_returnsLargeFilesInChunks() {
-        val root = createTempDirectory("agent-workspace-chunk").toFile()
-        val content = "abcdefghij".repeat(100)
-        File(root, "big.txt").writeText(content)
-        val tool = AgentWorkspaceFileTool(root, maxBytes = 64)
+    fun readTool_returnsTextByLineAndSignalsContinuation() {
+        val root = createTempDirectory("agent-workspace-lines").toFile()
+        val lines = (1..50).map { "line $it" }
+        File(root, "big.txt").writeText(lines.joinToString("\n"))
+        val tool = AgentWorkspaceFileTool(root, maxLines = 10)
 
         val first = Json.parseToJsonElement(tool.execute("""{"path":"big.txt"}""")).jsonObject
         assertTrue(first["truncated"]!!.jsonPrimitive.content.toBoolean())
-        assertEquals(64, first["returned_bytes"]!!.jsonPrimitive.content.toInt())
+        assertEquals(10, first["returned_lines"]!!.jsonPrimitive.content.toInt())
+        assertEquals("1: line 1\n2: line 2\n", first["content"]!!.jsonPrimitive.content.take(20))
         val nextOffset = first["next_offset"]!!.jsonPrimitive.content.toInt()
+        assertEquals(11, nextOffset)
 
         val second = Json.parseToJsonElement(
             tool.execute("""{"path":"big.txt","offset":"$nextOffset"}"""),
         ).jsonObject
-        val rebuilt = first["content"]!!.jsonPrimitive.content + second["content"]!!.jsonPrimitive.content
-        assertTrue(rebuilt.startsWith(content.take(64)))
+        assertTrue(second["content"]!!.jsonPrimitive.content.startsWith("11: line 11\n"))
+    }
+
+    @Test
+    fun readTool_truncatesVeryLongLines() {
+        val root = createTempDirectory("agent-workspace-longline").toFile()
+        File(root, "long.txt").writeText("a".repeat(5000))
+        val tool = AgentWorkspaceFileTool(root, maxLineChars = 2000)
+
+        val result = Json.parseToJsonElement(tool.execute("""{"path":"long.txt"}""")).jsonObject
+
+        assertEquals("1: " + "a".repeat(2000) + "\n", result["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun readTool_readsBinaryAsBase64ByByteRange() {
+        val root = createTempDirectory("agent-workspace-base64").toFile()
+        File(root, "blob.bin").writeBytes(ByteArray(200) { it.toByte() })
+        val tool = AgentWorkspaceFileTool(root, maxBytes = 64)
+
+        val first = Json.parseToJsonElement(
+            tool.execute("""{"path":"blob.bin","encoding":"base64"}"""),
+        ).jsonObject
+
+        assertTrue(first["truncated"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals(64, first["returned_bytes"]!!.jsonPrimitive.content.toInt())
+        assertEquals(64, first["next_offset"]!!.jsonPrimitive.content.toInt())
     }
 
     @Test
@@ -433,6 +527,7 @@ class PolicyGatedAgentGatewayTest {
     private fun newGateway(
         workspace: File,
         tools: List<AgentTool> = listOf(WorkspaceTextFileTool(workspace)),
+        agentWorkspaceRoot: File? = null,
     ): PolicyGatedAgentGateway = PolicyGatedAgentGateway(
         chatModel = AgentChatModelFactory.create(
             OpenAiCompatibleModelConfig(
@@ -442,6 +537,7 @@ class PolicyGatedAgentGatewayTest {
             ),
         ),
         toolRegistry = AgentToolRegistry(tools),
+        agentWorkspaceRoot = agentWorkspaceRoot,
     )
 
     /** Returns a caller-supplied payload so tool-result bounding can be exercised. */

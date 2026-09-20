@@ -21,9 +21,9 @@ data class AgentPatchJarDecompileResult(
 /**
  * Decompiles the selected parent mod's extracted classes to Java source on-device with CFR.
  *
- * The workspace only holds the parent mod's bytecode, so a patch author needs readable source to
- * know what to override. CFR is pure Java (class file 50) and runs inside the launcher process on
- * ART; it never executes the class it decompiles, it only parses it.
+ * The shared source tree holds the parent mod's bytecode and decompiled Java, so a patch author has
+ * readable context to know what to override. CFR is pure Java (class file 50) and runs inside the
+ * launcher process on ART; it never executes the class it decompiles, it only parses it.
  */
 object AgentPatchClassDecompiler {
     const val DEFAULT_MAX_DECOMPILE_CLASSES = 3000

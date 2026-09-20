@@ -56,9 +56,14 @@ internal fun agentToolDescriptionRes(name: String): Int = when (name) {
     "decompile_agent_mod_source" -> R.string.ai_mod_editor_tool_desc_decompile_agent_mod_source
     "compile_agent_patch_source" -> R.string.ai_mod_editor_tool_desc_compile_agent_patch_source
     "package_agent_patch_mod" -> R.string.ai_mod_editor_tool_desc_package_agent_patch_mod
+    "update_agent_patch_mod" -> R.string.ai_mod_editor_tool_desc_update_agent_patch_mod
     "set_agent_patch_mod_enabled" -> R.string.ai_mod_editor_tool_desc_set_agent_patch_mod_enabled
     "list_agent_patch_mods" -> R.string.ai_mod_editor_tool_desc_list_agent_patch_mods
     "delete_agent_patch_mod" -> R.string.ai_mod_editor_tool_desc_delete_agent_patch_mod
+    "smoke_test_agent_patch_mod" -> R.string.ai_mod_editor_tool_desc_smoke_test_agent_patch_mod
+    "read_agent_skill" -> R.string.ai_mod_editor_tool_desc_read_agent_skill
+    "search_agent_api" -> R.string.ai_mod_editor_tool_desc_search_agent_api
+    "describe_agent_api_class" -> R.string.ai_mod_editor_tool_desc_describe_agent_api_class
     else -> R.string.ai_mod_editor_tool_desc_unknown
 }
 
