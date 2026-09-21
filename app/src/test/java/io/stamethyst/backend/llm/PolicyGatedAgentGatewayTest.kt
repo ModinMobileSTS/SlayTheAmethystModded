@@ -202,13 +202,14 @@ class PolicyGatedAgentGatewayTest {
         val context = testContext(root)
         val source = sourceJar(root)
         var created: AgentPatchWorkspace? = null
-        val tool = AgentPatchModCreateTool(
+        val tool = AgentPatchWorkspaceCreateTool(
             context = context,
             parentModId = "parent",
             sourceJar = source,
             onCreated = { created = it },
         )
 
+        assertEquals("create_agent_patch_workspace", tool.specification.name())
         assertEquals(AgentToolSafety.PATCH_CREATE, tool.safety)
         val first = Json.parseToJsonElement(
             tool.execute("""{"name":"Rare card tweak","version":"1.2.0","description":"Buff a card."}"""),
@@ -445,6 +446,47 @@ class PolicyGatedAgentGatewayTest {
         val result = Json.parseToJsonElement(tool.execute("""{"path":"long.txt"}""")).jsonObject
 
         assertEquals("1: " + "a".repeat(2000) + "\n", result["content"]!!.jsonPrimitive.content)
+        assertTrue(result["long_lines_truncated"]!!.jsonPrimitive.content.toBoolean())
+    }
+
+    @Test
+    fun readTool_characterPagingRecoversEntireSingleLineJson() {
+        val root = createTempDirectory("agent-workspace-char-pages").toFile()
+        try {
+            val text = """{"content":"${"\u6c49\u5b57".repeat(30_000)}"}"""
+            File(root, "output.txt").writeText(text)
+            val tool = AgentWorkspaceFileTool(root)
+            val recovered = StringBuilder()
+            var offset = 0
+            do {
+                val page = Json.parseToJsonElement(tool.execute(
+                    """{"path":"output.txt","encoding":"utf8_chars","offset":"$offset","limit":"4000"}""",
+                )).jsonObject
+                recovered.append(page["content"]!!.jsonPrimitive.content)
+                val next = page["next_offset"]?.jsonPrimitive?.content?.toInt()
+                if (next == null) break
+                assertTrue(next > offset)
+                offset = next
+            } while (true)
+            assertEquals(text, recovered.toString())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
+    fun respond_capsMultibyteSingleLineByBytes() {
+        val workspace = createTempDirectory("agent-workspace-multibyte").toFile()
+        try {
+            server.enqueue(toolCallResponse("huge_tool"))
+            server.enqueue(finalResponse("done"))
+            val payload = "\u6c49".repeat(100_000)
+            newGateway(workspace, listOf(HugeResultTool(payload)), workspace).respond("system", "go")
+            server.takeRequest()
+            val request = Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+            val text = request["messages"]!!.jsonArray.last().jsonObject["content"]!!.jsonPrimitive.content
+            assertTrue(text.toByteArray(Charsets.UTF_8).size < 53_000)
+            assertTrue(text.contains("encoding=utf8_chars"))
+            assertEquals(payload, File(workspace, "tool_output").listFiles()!!.single().readText())
+        } finally { workspace.deleteRecursively() }
     }
 
     @Test

@@ -1,11 +1,11 @@
 package io.stamethyst.backend.launch
 
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import com.oracle.dalvik.VMLauncher
 import io.stamethyst.BootOverlayController
 import io.stamethyst.R
-import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.mods.ModJarSupport
@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  * Manages JVM launch lifecycle: preparation, argument building, and thread management.
  */
 class JvmLaunchController(
-    private val activity: StsGameActivity,
+    private val context: Context,
     private val launchMode: String,
     private val debugMode: Boolean,
     private val rendererDecision: RendererDecision,
@@ -181,15 +181,15 @@ class JvmLaunchController(
         bootInteractiveSignalSeen = false
         cancelRequested = false
         lastBootPhaseProgress = 8
-        lastBootPhaseMessage = activity.progressText(R.string.boot_overlay_status_starting_jvm)
+        lastBootPhaseMessage = context.progressText(R.string.boot_overlay_status_starting_jvm)
         lastLatestLogLine = ""
         lastLoggedHeapPressureBucket = -1
         startupStepTimings.clear()
 
         latestLogRuntimeCrashDetected = false
-        onProgressUpdate(8, activity.progressText(R.string.boot_overlay_status_starting_jvm))
+        onProgressUpdate(8, context.progressText(R.string.boot_overlay_status_starting_jvm))
         MemoryDiagnosticsLogger.logEvent(
-            activity,
+            context,
             "jvm_launch_controller_start",
             mapOf(
                 "launchMode" to launchMode,
@@ -200,7 +200,7 @@ class JvmLaunchController(
             )
         )
         StartupTraceEvents.append(
-            activity,
+            context,
             "jvm_launch_controller_start",
             mapOf("launchMode" to launchMode)
         )
@@ -212,13 +212,13 @@ class JvmLaunchController(
             var launchFailure: Throwable? = null
             try {
                 throwIfCancelled()
-                if (LauncherConfig.isSteamCloudIndependentSwitchPending(activity)) {
-                    SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(activity)
+                if (LauncherConfig.isSteamCloudIndependentSwitchPending(context)) {
+                    SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(context)
                 }
                 throwIfCancelled()
-                liveSaveLease = SteamCloudLiveSaveLease.acquireForGame(activity)
+                liveSaveLease = SteamCloudLiveSaveLease.acquireForGame(context)
                 throwIfCancelled()
-                val runtimeRoot = RuntimePaths.runtimeRoot(activity)
+                val runtimeRoot = RuntimePaths.runtimeRoot(context)
                 val resolvedJavaHome = measureStartupStep("resolve_java_home") {
                     RuntimePackInstaller.locateJavaHome(runtimeRoot)
                         ?: javaHome.takeIf { it.exists() }
@@ -227,36 +227,36 @@ class JvmLaunchController(
 
                 throwIfCancelled()
                 measureStartupStep("ensure_base_dirs") {
-                    RuntimePaths.ensureBaseDirs(activity)
+                    RuntimePaths.ensureBaseDirs(context)
                 }
                 measureStartupStep("prepare_jvm_logs") {
                     try {
-                        JvmLogRotationManager.prepareForNewSession(activity)
+                        JvmLogRotationManager.prepareForNewSession(context)
                     } catch (_: Throwable) {
                     }
                     try {
-                        val jvmGcLogFile = RuntimePaths.jvmGcLog(activity)
+                        val jvmGcLogFile = RuntimePaths.jvmGcLog(context)
                         if (jvmGcLogFile.exists()) {
                             jvmGcLogFile.delete()
                         }
                     } catch (_: Throwable) {
                     }
                     try {
-                        val jvmHeapSnapshotFile = RuntimePaths.jvmHeapSnapshot(activity)
+                        val jvmHeapSnapshotFile = RuntimePaths.jvmHeapSnapshot(context)
                         if (jvmHeapSnapshotFile.exists()) {
                             jvmHeapSnapshotFile.delete()
                         }
                     } catch (_: Throwable) {
                     }
                     try {
-                        val signalDumpFile = RuntimePaths.jvmSignalDump(activity)
+                        val signalDumpFile = RuntimePaths.jvmSignalDump(context)
                         if (signalDumpFile.exists()) {
                             signalDumpFile.delete()
                         }
                     } catch (_: Throwable) {
                     }
                 }
-                val latestLogFile = RuntimePaths.latestLog(activity)
+                val latestLogFile = RuntimePaths.latestLog(context)
                 measureStartupStep("redirect_stdio") {
                     try {
                         JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)
@@ -266,23 +266,23 @@ class JvmLaunchController(
                 measureStartupStep("start_monitors") {
                     startLatestLogLogcatMirror(latestLogFile)
                     startLatestLogCapMonitor(latestLogFile)
-                    startRuntimeHeapSnapshotMonitor(RuntimePaths.jvmHeapSnapshot(activity))
+                    startRuntimeHeapSnapshotMonitor(RuntimePaths.jvmHeapSnapshot(context))
                     startBootBridgeEventMonitor(
-                        RuntimePaths.bootBridgeEventsLog(activity),
+                        RuntimePaths.bootBridgeEventsLog(context),
                         bootOverlayController
                     )
                 }
 
                 if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
                     measureStartupStep("compat_diagnostic_snapshot") {
-                        ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
+                        ModJarSupport.appendCompatDiagnosticSnapshot(context, "game_pre_jvm")
                     }
                 }
 
                 throwIfCancelled()
                 measureStartupStep("sync_autoplay_config") {
                     AutoplayConfigFile.syncForLaunch(
-                        context = activity,
+                        context = context,
                         enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode),
                         saveMode = autoplaySaveMode,
                         mode = autoplayMode,
@@ -307,13 +307,13 @@ class JvmLaunchController(
                 throwIfCancelled()
                 val extraNativeLibraryDirs = measureStartupStep("collect_native_library_dirs") {
                     NativeLibraryPathResolver
-                        .collectAdditionalSearchDirectories(activity)
+                        .collectAdditionalSearchDirectories(context)
                         .map(File::getAbsolutePath)
                         .toTypedArray()
                 }
                 measureStartupStep("relocate_lib_path") {
                     JREUtils.relocateLibPath(
-                        activity.applicationInfo.nativeLibraryDir,
+                        context.applicationInfo.nativeLibraryDir,
                         resolvedJavaHome.absolutePath,
                         extraNativeLibraryDirs
                     )
@@ -321,7 +321,7 @@ class JvmLaunchController(
                 if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
                     measureStartupStep("sync_mobile_glues_config") {
                         try {
-                            MobileGluesConfigFile.syncFromLauncherPreferences(activity)
+                            MobileGluesConfigFile.syncFromLauncherPreferences(context)
                         } catch (error: IOException) {
                             Log.w(LOGCAT_TAG, "Failed to sync MobileGlues config", error)
                         }
@@ -329,7 +329,7 @@ class JvmLaunchController(
                 }
                 measureStartupStep("set_java_environment") {
                     JREUtils.setJavaEnvironment(
-                        activity,
+                        context,
                         resolvedJavaHome.absolutePath,
                         getWindowWidth().coerceAtLeast(1),
                         getWindowHeight().coerceAtLeast(1),
@@ -338,19 +338,19 @@ class JvmLaunchController(
                 }
                 throwIfCancelled()
                 measureStartupStep("preload_native_libraries") {
-                    AdditionalNativeLibraryPreloader.preload(activity)
+                    AdditionalNativeLibraryPreloader.preload(context)
                 }
                 throwIfCancelled()
                 measureStartupStep("init_java_runtime") {
-                    JREUtils.initJavaRuntime(activity.applicationContext, resolvedJavaHome.absolutePath)
+                    JREUtils.initJavaRuntime(context.applicationContext, resolvedJavaHome.absolutePath)
                 }
                 throwIfCancelled()
                 measureStartupStep("setup_exit_and_hooks") {
-                    JREUtils.setupExitMethod(activity.applicationContext)
+                    JREUtils.setupExitMethod(context.applicationContext)
                     JREUtils.initializeHooks()
                 }
                 measureStartupStep("chdir_sts_root") {
-                    JREUtils.chdir(RuntimePaths.stsRoot(activity).absolutePath)
+                    JREUtils.chdir(RuntimePaths.stsRoot(context).absolutePath)
                 }
 
                 // ModTheSpire can load Settings before LWJGL enters its main loop. Rewrite the
@@ -376,7 +376,7 @@ class JvmLaunchController(
                     args.add("java")
                     args.addAll(
                         StsLaunchSpec.buildArgs(
-                            activity,
+                            context,
                             resolvedJavaHome,
                             launchMode,
                             rendererDecision,
@@ -398,7 +398,7 @@ class JvmLaunchController(
                     args
                 }
                 MemoryDiagnosticsLogger.logEvent(
-                    activity,
+                    context,
                     "jvm_launch_args_ready",
                     mapOf(
                         "launchMode" to launchMode,
@@ -425,7 +425,7 @@ class JvmLaunchController(
                 )
                 logPerformanceLaunchAudit(launchArgs)
                 StartupTraceEvents.append(
-                    activity,
+                    context,
                     "jvm_handoff_to_vm_launcher",
                     mapOf(
                         "launchMode" to launchMode,
@@ -434,11 +434,11 @@ class JvmLaunchController(
                 )
 
                 if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
-                    val launchingMessage = activity.progressText(R.string.startup_progress_launching_modthespire)
+                    val launchingMessage = context.progressText(R.string.startup_progress_launching_modthespire)
                     recordBootContext(28, launchingMessage)
                     onProgressUpdate(28, launchingMessage)
                 } else {
-                    val launchingMessage = activity.progressText(R.string.startup_progress_launching_game)
+                    val launchingMessage = context.progressText(R.string.startup_progress_launching_game)
                     recordBootContext(85, launchingMessage)
                     onProgressUpdate(85, launchingMessage)
                 }
@@ -734,7 +734,7 @@ class JvmLaunchController(
             "PHASE" -> {
                 val phaseProgress = progress?.takeIf { it >= 0 }
                 val phaseMessage = StartupMessageResolver.resolveProgress(
-                    activity,
+                    context,
                     message,
                     R.string.startup_progress_loading
                 )
@@ -752,7 +752,7 @@ class JvmLaunchController(
                     .coerceAtLeast(BOOT_BRIDGE_SPLASH_PROGRESS)
                     .coerceAtMost(100)
                 val splashMessage = StartupMessageResolver.resolveProgress(
-                    activity,
+                    context,
                     message,
                     R.string.startup_progress_showing_game_splash
                 )
@@ -764,7 +764,7 @@ class JvmLaunchController(
 
             "READY" -> {
                 val readyMessage = StartupMessageResolver.resolveProgress(
-                    activity,
+                    context,
                     message,
                     R.string.startup_progress_game_ready
                 )
@@ -780,7 +780,7 @@ class JvmLaunchController(
 
             "FAIL" -> {
                 val detail = StartupMessageResolver.resolveFailure(
-                    activity,
+                    context,
                     message,
                     R.string.startup_failure_boot_bridge_signaled
                 )
@@ -903,7 +903,7 @@ class JvmLaunchController(
             return null
         }
 
-        val currentHeapMaxMb = LauncherConfig.readJvmHeapMaxMb(activity)
+        val currentHeapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
         val suggestedHeapMaxMb = LauncherConfig.normalizeJvmHeapMaxMb(
             (currentHeapMaxMb + LauncherConfig.JVM_HEAP_STEP_MB)
                 .coerceAtMost(LauncherConfig.MAX_JVM_HEAP_MAX_MB)
@@ -919,21 +919,21 @@ class JvmLaunchController(
     }
 
     fun buildExitedBeforeInteractiveDetail(): String {
-        val context = ArrayList<String>(2)
+        val details = ArrayList<String>(2)
         val phaseMessage = lastBootPhaseMessage.trim()
         if (phaseMessage.isNotEmpty()) {
             val normalizedProgress = lastBootPhaseProgress.coerceAtLeast(0)
             if (normalizedProgress > 0) {
-                context.add(
-                    activity.progressText(
+                details.add(
+                    context.progressText(
                         R.string.startup_failure_context_last_phase_with_percent,
                         normalizedProgress,
                         phaseMessage
                     )
                 )
             } else {
-                context.add(
-                    activity.progressText(
+                details.add(
+                    context.progressText(
                         R.string.startup_failure_context_last_phase,
                         phaseMessage
                     )
@@ -944,19 +944,19 @@ class JvmLaunchController(
         if (lastLogLine.isNotEmpty() &&
             !lastLogLine.equals(phaseMessage, ignoreCase = true)
         ) {
-            context.add(
-                activity.progressText(
+            details.add(
+                context.progressText(
                     R.string.startup_failure_context_last_log,
                     lastLogLine
                 )
             )
         }
-        if (context.isEmpty()) {
-            return activity.progressText(R.string.startup_failure_jvm_exited_before_interactive)
+        if (details.isEmpty()) {
+            return context.progressText(R.string.startup_failure_jvm_exited_before_interactive)
         }
-        return activity.progressText(
+        return context.progressText(
             R.string.startup_failure_jvm_exited_before_interactive_with_context,
-            context.joinToString(activity.progressText(R.string.startup_failure_context_separator))
+            details.joinToString(context.progressText(R.string.startup_failure_context_separator))
         )
     }
 
@@ -1013,7 +1013,7 @@ class JvmLaunchController(
         bootBridgeDismissSignaled = true
         bootOverlayController?.signalSplashPhase(
             if (message.isEmpty()) {
-                activity.progressText(R.string.startup_progress_showing_game_splash)
+                context.progressText(R.string.startup_progress_showing_game_splash)
             } else {
                 message
             }
@@ -1048,7 +1048,7 @@ class JvmLaunchController(
         }
         lastLoggedHeapPressureBucket = bucket
         MemoryDiagnosticsLogger.logJvmHeapSnapshot(
-            activity,
+            context,
             "jvm_heap_pressure_bucket_reached",
             snapshot,
             mapOf(
@@ -1061,17 +1061,15 @@ class JvmLaunchController(
 
     private fun logPerformanceLaunchAudit(launchArgs: List<String>) {
         val extras = LinkedHashMap<String, String>()
-        val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(activity)
+        val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
         extras["launchMode"] = launchMode
         extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
         extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()
         extras["javaEnvSwapProfilerExpected"] = performanceDeepDiagnostics.toString()
         extras["launcher.requestedTargetFps"] =
-            LauncherConfig.readTargetFpsValue(activity).toString()
-        extras["launcher.targetFpsAutomatic"] =
-            LauncherConfig.isTargetFpsAutomatic(activity).toString()
+            LauncherConfig.readTargetFpsValue(context).toString()
         extras["displayConfig.targetFps"] =
-            DisplayConfigSync.readTargetFpsLimit(activity).toString()
+            DisplayConfigSync.readTargetFpsLimit(context).toString()
         extras["session.effectiveTargetFps"] = effectiveTargetFps.toString()
         startupStepTimings.forEach { (label, tookMs) ->
             extras["jvmStartup.$label"] = tookMs.toString()
@@ -1079,7 +1077,7 @@ class JvmLaunchController(
         for (key in PERFORMANCE_AUDIT_JVM_PROPERTIES) {
             extras[key] = readEffectiveJvmProperty(launchArgs, key) ?: "<unset>"
         }
-        val auditFile = RuntimePaths.performanceLaunchAuditLog(activity)
+        val auditFile = RuntimePaths.performanceLaunchAuditLog(context)
         val auditText = buildString {
             append("event=jvm_performance_args_audit\n")
             extras.forEach { (key, value) ->

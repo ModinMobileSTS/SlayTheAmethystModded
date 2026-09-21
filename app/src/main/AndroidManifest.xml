@@ -82,6 +82,14 @@
             android:exported="false"
             android:process=":diag" />
 
+        <!-- Runs the AI patch smoke test's game session with no window and no display. It lives in
+             :game because that is the process the game JVM is loaded into. It is only ever bound
+             (never started), so no foreground-service notification is required. -->
+        <service
+            android:name="io.stamethyst.backend.launch.AgentPatchSmokeTestService"
+            android:exported="false"
+            android:process=":game" />
+
         <!-- Exported receiver so adb can trigger DiagnosticsProcessService
              without the service itself being exported. -->
         <receiver
@@ -105,6 +113,11 @@
 
         <service
             android:name="io.stamethyst.backend.workshop.WorkshopDownloadProcessService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name="io.stamethyst.ui.aimod.AiAgentExecutionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

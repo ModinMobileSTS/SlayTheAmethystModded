@@ -30,6 +30,7 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.LauncherContent
+import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.modimport.ModImportRequestBus
@@ -71,6 +72,10 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_HEAP_PRESSURE_HEAP_MAX_BYTES = "io.stamethyst.heap_pressure_heap_max_bytes"
         const val EXTRA_HEAP_PRESSURE_CURRENT_HEAP_MB = "io.stamethyst.heap_pressure_current_heap_mb"
         const val EXTRA_HEAP_PRESSURE_SUGGESTED_HEAP_MB = "io.stamethyst.heap_pressure_suggested_heap_mb"
+        const val EXTRA_OPEN_AI_STORAGE_PATH = "io.stamethyst.open_ai_storage_path"
+        const val EXTRA_OPEN_AI_MOD_NAME = "io.stamethyst.open_ai_mod_name"
+        const val EXTRA_OPEN_AI_MOD_ID = "io.stamethyst.open_ai_mod_id"
+        const val EXTRA_OPEN_AI_CONVERSATION_ID = "io.stamethyst.open_ai_conversation_id"
         private const val EXTRA_EXTERNAL_STS_IMPORT_NOTICE = "io.stamethyst.external_sts_import_notice"
         private const val EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME = "io.stamethyst.external_sts_import_file_name"
         private const val STS_JAR_FILE_NAME = "desktop-1.0.jar"
@@ -166,7 +171,7 @@ class LauncherActivity : AppCompatActivity() {
         val hasImportedStsJar = StsJarValidator.isValid(RuntimePaths.importedStsJar(this))
         launchedWithoutImportedStsJar = !hasImportedStsJar
         val initialRoute = if (hasImportedStsJar) {
-            if (LauncherPreferences.isFirstRunSetupCompleted(this)) {
+            aiEditorRouteFromIntent(intent) ?: if (LauncherPreferences.isFirstRunSetupCompleted(this)) {
                 Route.Main
             } else {
                 Route.FirstRunSetup
@@ -207,7 +212,7 @@ class LauncherActivity : AppCompatActivity() {
         if (!startupAfterResourcesCompleted) {
             return
         }
-        handleIncomingLauncherIntent(intent)
+        handleIncomingLauncherIntent(intent, navigateAiEditor = true)
         maybeShowExternalStsImportNotice(intent)
         maybeHandleJarIntent(intent)
         maybeScheduleGameReturnAnalysis()
@@ -240,8 +245,34 @@ class LauncherActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun handleIncomingLauncherIntent(incomingIntent: Intent?) {
+    private fun handleIncomingLauncherIntent(
+        incomingIntent: Intent?,
+        navigateAiEditor: Boolean = false,
+    ) {
         mainViewModel.handleIncomingIntent(this, incomingIntent)
+        if (navigateAiEditor) {
+            aiEditorRouteFromIntent(incomingIntent)?.let(LauncherNavigationRequestBus::requestAiEditor)
+        }
+    }
+
+    private fun aiEditorRouteFromIntent(source: Intent?): Route.AiModEditor? {
+        val intent = source ?: return null
+        val storagePath = intent.getStringExtra(EXTRA_OPEN_AI_STORAGE_PATH)
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: return null
+        val modId = intent.getStringExtra(EXTRA_OPEN_AI_MOD_ID)
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: return null
+        return Route.AiModEditor(
+            storagePath = storagePath,
+            modName = intent.getStringExtra(EXTRA_OPEN_AI_MOD_NAME).orEmpty(),
+            modId = modId,
+            conversationId = intent.getStringExtra(EXTRA_OPEN_AI_CONVERSATION_ID)
+                ?.trim()
+                ?.takeIf(String::isNotEmpty),
+        )
     }
 
     fun markBackgroundForGameLaunch() {

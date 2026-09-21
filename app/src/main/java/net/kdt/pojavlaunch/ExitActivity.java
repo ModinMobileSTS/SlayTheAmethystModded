@@ -19,6 +19,7 @@ import io.stamethyst.backend.crash.LatestLogCrashSummary;
 import io.stamethyst.backend.launch.BackExitNotice;
 import io.stamethyst.backend.launch.ExpectedGameExitNotice;
 import io.stamethyst.backend.launch.LauncherReturnCoordinator;
+import io.stamethyst.backend.mods.AgentPatchSmokeTestRunGuard;
 
 public class ExitActivity extends AppCompatActivity {
     private static final String EXTRA_CODE = "code";
@@ -38,6 +39,12 @@ public class ExitActivity extends AppCompatActivity {
     }
 
     public static void showExitMessage(Context context, int code, boolean isSignal, @Nullable String detail) {
+        // An AI patch smoke test runs the game invisibly from a bound service. Its JVM exit must not
+        // restart the launcher (this method does so with FLAG_ACTIVITY_CLEAR_TASK), because that
+        // would destroy the AI editor and cancel the tool call waiting for the run's verdict.
+        if (AgentPatchSmokeTestRunGuard.isRunActive(context)) {
+            return;
+        }
         if (BackExitNotice.isLauncherReturnHandledInProcess()) {
             return;
         }

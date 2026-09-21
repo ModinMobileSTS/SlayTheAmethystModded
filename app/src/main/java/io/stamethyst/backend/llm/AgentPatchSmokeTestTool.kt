@@ -7,9 +7,12 @@ import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.backend.mods.AgentPatchSmokeTest
 import io.stamethyst.backend.mods.AgentPatchWorkspace
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
@@ -20,8 +23,9 @@ import java.io.File
  *
  * This is the runtime half of the patch workflow: compilation and bytecode preflight prove the
  * patch targets existing code, but only a real launch proves the patch does not break mod loading.
- * The launch uses the parent mod, the patch, the parent's prerequisites, and the launcher's built-in
- * mods, so an unrelated optional mod cannot influence the result.
+ * The baseline set is the parent mod, the patch, the parent's prerequisites, and the launcher's
+ * built-in mods, so an unrelated optional mod cannot influence the result. The agent may add mods on
+ * top of that baseline with `mod_ids` when the patch is meant to interact with them.
  */
 class AgentPatchSmokeTestTool(
     private val context: Context,
@@ -35,9 +39,13 @@ class AgentPatchSmokeTestTool(
             "Launch the game once with the parent mod, one packaged patch mod, the parent mod's " +
                 "prerequisites, and the launcher's built-in mods, then report whether the game reached " +
                 "the main menu. This is the only check that proves the patch does not break mod loading; " +
-                "compilation and validation cannot catch runtime failures. The game opens and closes " +
-                "itself, takes roughly 1-4 minutes, and blocks until it finishes. Call it after " +
-                "package_agent_patch_mod, and fix the patch and re-run it if it fails.",
+                "compilation and validation cannot catch runtime failures. The game runs in the " +
+                "background with no visible window, so the user's screen does not change. It takes " +
+                "roughly 1-4 minutes and blocks until it finishes. Call it after package_agent_patch_mod, " +
+                "and fix the patch and re-run it if it fails. The baseline always loads the parent mod, " +
+                "its prerequisites, and the built-in mods; use mod_ids (from list_installed_mods) to " +
+                "also enable the optional mods this patch is meant to work with. The user's own " +
+                "optional-mod selection is not used, so the result is reproducible.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -48,6 +56,12 @@ class AgentPatchSmokeTestTool(
                 .addStringProperty(
                     "timeout_seconds",
                     "How long to wait for the main menu before failing. Defaults to 240.",
+                )
+                .addStringProperty(
+                    "mod_ids",
+                    "Optional comma- or newline-separated mod ids to enable for this run, from " +
+                        "list_installed_mods. They are loaded on top of the parent mod, its " +
+                        "prerequisites, and the built-in mods.",
                 )
                 .additionalProperties(false)
                 .build(),
@@ -66,6 +80,7 @@ class AgentPatchSmokeTestTool(
             ?.toLongOrNull()
             ?.coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS)
             ?: DEFAULT_TIMEOUT_SECONDS
+        val selectedModIds = readModIds(json)
         val patchInfo = AgentPatchModManager.listPackaged(context, parentModId)
             .firstOrNull { it.patchId == patchId }
             ?: return failure("patch_not_found: call package_agent_patch_mod first, or pass a patch_id from list_agent_patch_mods")
@@ -75,6 +90,7 @@ class AgentPatchSmokeTestTool(
             parentJar = parentJar,
             patchJar = patchInfo.jarFile,
             timeoutMs = timeoutSeconds * 1_000L,
+            selectedModIds = selectedModIds,
         )
         return buildJsonObject {
             put("status", JsonPrimitive(result.status))
@@ -85,6 +101,15 @@ class AgentPatchSmokeTestTool(
             put("patch_id", JsonPrimitive(patchInfo.patchId))
             put("patch_mod_id", JsonPrimitive(patchInfo.patchModId))
             put("launch_mod_ids", buildJsonArray { result.launchModIds.forEach { add(JsonPrimitive(it)) } })
+            if (selectedModIds.isNotEmpty()) {
+                put("requested_mod_ids", buildJsonArray { selectedModIds.forEach { add(JsonPrimitive(it)) } })
+            }
+            if (result.unknownModIds.isNotEmpty()) {
+                put(
+                    "unknown_mod_ids",
+                    buildJsonArray { result.unknownModIds.forEach { add(JsonPrimitive(it)) } },
+                )
+            }
             if (result.unresolvedDependencies.isNotEmpty()) {
                 put(
                     "unresolved_dependencies",
@@ -104,6 +129,27 @@ class AgentPatchSmokeTestTool(
                 ),
             )
         }.toString()
+    }
+
+    /**
+     * Reads `mod_ids` defensively.
+     *
+     * The property is declared as a string for provider compatibility, but some models still emit a
+     * JSON array, so both shapes are accepted.
+     */
+    private fun readModIds(json: JsonObject): List<String> {
+        val element = json["mod_ids"] ?: return emptyList()
+        val raw = runCatching {
+            when (element) {
+                is JsonArray -> element.mapNotNull { it.jsonPrimitive.contentOrNull }
+                else -> listOfNotNull(element.jsonPrimitive.contentOrNull)
+            }
+        }.getOrDefault(emptyList())
+        return raw
+            .flatMap { it.split(',', '\n', ';') }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
     }
 
     private fun failure(code: String): String = buildJsonObject {

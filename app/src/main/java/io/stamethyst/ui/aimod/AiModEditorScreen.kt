@@ -4,9 +4,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.provider.OpenableColumns
-import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,9 +41,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -71,6 +76,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -82,40 +88,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import io.stamethyst.R
-import io.stamethyst.backend.llm.AgentApiDescribeTool
-import io.stamethyst.backend.llm.AgentApiSearchTool
-import io.stamethyst.backend.llm.AgentChatModelFactory
-import io.stamethyst.backend.llm.AgentPatchModCompileTool
-import io.stamethyst.backend.llm.AgentPatchModCreateTool
-import io.stamethyst.backend.llm.AgentModSourceDecompileTool
-import io.stamethyst.backend.llm.AgentPatchModDeleteTool
-import io.stamethyst.backend.llm.AgentPatchModListTool
-import io.stamethyst.backend.llm.AgentPatchModPackageTool
-import io.stamethyst.backend.llm.AgentPatchModSetEnabledTool
-import io.stamethyst.backend.llm.AgentPatchModUpdateTool
-import io.stamethyst.backend.llm.AgentPatchPreflightTool
-import io.stamethyst.backend.llm.AgentPatchSmokeTestTool
-import io.stamethyst.backend.llm.AgentPatchSkeletonTool
-import io.stamethyst.backend.llm.AgentPatchTargetInspectTool
-import io.stamethyst.backend.llm.AgentSkillTool
-import io.stamethyst.backend.llm.AgentTool
-import io.stamethyst.backend.llm.AgentToolExecutionEvent
-import io.stamethyst.backend.llm.AgentToolPolicyGate
-import io.stamethyst.backend.llm.AgentToolRegistry
-import io.stamethyst.backend.llm.AgentToolSafety
-import io.stamethyst.backend.llm.AgentWorkspaceDeleteTool
-import io.stamethyst.backend.llm.AgentWorkspaceFileTool
-import io.stamethyst.backend.llm.AgentWorkspaceListTool
-import io.stamethyst.backend.llm.AgentWorkspaceWriteTool
 import io.stamethyst.backend.llm.JarPatch
 import io.stamethyst.backend.llm.JarPatchApplier
 import io.stamethyst.backend.llm.JarPatchCodec
 import io.stamethyst.backend.llm.LlmReasoningEffort
 import io.stamethyst.backend.llm.LlmSettingsRepository
-import io.stamethyst.backend.llm.OpenAiCompatibleModelConfig
-import io.stamethyst.backend.llm.PolicyGatedAgentGateway
 import io.stamethyst.backend.mods.AgentPatchModManager
-import io.stamethyst.backend.mods.AgentPatchWorkspace
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
@@ -128,18 +106,15 @@ import io.stamethyst.ui.icon.Description
 import io.stamethyst.ui.icon.KeyboardArrowUp
 import io.stamethyst.ui.icon.Pending
 import io.stamethyst.ui.icon.Refresh
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.util.UUID
 
@@ -169,6 +144,7 @@ internal data class AiEditorMessage(
     val thinking: String = "",
     val streaming: Boolean = false,
     val failed: Boolean = false,
+    val errorMessage: String = "",
     val tools: List<AiToolCall> = emptyList(),
     val modelName: String = "",
     val elapsedMs: Long? = null,
@@ -180,6 +156,8 @@ internal data class AiEditorSession(
     val id: String,
     val messages: List<AiEditorMessage> = emptyList(),
     val title: String = "",
+    val revision: Long = 0,
+    val context: io.stamethyst.backend.llm.AgentContextState? = null,
 )
 
 internal fun AiEditorSession.hasUserPrompt(): Boolean =
@@ -197,6 +175,7 @@ internal class AiModEditorViewModel(
     private val storagePath: String,
     private val modName: String,
     private val modId: String,
+    private val requestedSessionId: String? = null,
 ) : ViewModel() {
     val messages = mutableStateListOf<AiEditorMessage>()
     val sessions = mutableStateListOf<AiEditorSession>()
@@ -212,34 +191,16 @@ internal class AiModEditorViewModel(
         private set
 
     private var nextMessageId = 1L
-    private var generationJob: Job? = null
-    private var activeAssistantId: Long? = null
     private val settingsRepository = LlmSettingsRepository(context)
     var llmSettings by mutableStateOf(settingsRepository.get())
         private set
-    private val json = Json { ignoreUnknownKeys = true }
     private val parentModSegment = AgentPatchModManager.parentModSegment(modId)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(context, parentModSegment)
 
-    // The patch-mod workspace is created on demand by the agent's create_agent_patch_mod tool,
-    // never automatically when the editor opens.
-    @Volatile
-    private var activePatchWorkspace: AgentPatchWorkspace? = null
-    private val agentToolPolicyGate = AgentToolPolicyGate(
-        allowedSafety = setOf(
-            AgentToolSafety.READ_ONLY,
-            AgentToolSafety.WORKSPACE_WRITE,
-            AgentToolSafety.PATCH_CREATE,
-            AgentToolSafety.MOD_INSPECTION,
-            AgentToolSafety.PATCH_COMPILE,
-            AgentToolSafety.PATCH_PACKAGE,
-            AgentToolSafety.PATCH_ENABLE,
-            AgentToolSafety.PATCH_DELETE,
-            AgentToolSafety.PATCH_SMOKE_TEST,
-        ),
-    )
     private val conversationsRoot = RuntimePaths.agentModConversationsRoot(context, parentModSegment)
     private val conversationsFile get() = conversationsRoot.resolve("conversations.json")
+    private val conversationStore = AiConversationStore(conversationsFile)
+    private val jobStore = AiAgentJobStore(context, modId)
     var currentSessionId: String by mutableStateOf("")
         private set
 
@@ -249,17 +210,17 @@ internal class AiModEditorViewModel(
         workspaceAccessRoot.mkdirs()
         conversationsRoot.mkdirs()
         loadConversation()
+        startConversationPolling()
     }
 
     private fun loadConversation() {
         runCatching {
-            val stored = if (conversationsFile.exists()) {
-                json.decodeFromString<List<AiEditorSession>>(conversationsFile.readText())
-            } else {
-                emptyList()
-            }.filter { it.hasUserPrompt() }
+            recoverInterruptedJobs()
+            val stored = conversationStore.load()
             sessions += stored
-            val latest = sessions.lastOrNull()
+            val latest = requestedSessionId?.let { requestedId ->
+                sessions.firstOrNull { it.id == requestedId }
+            } ?: sessions.lastOrNull()
             if (latest == null) {
                 val session = AiEditorSession(UUID.randomUUID().toString())
                 sessions += session
@@ -270,7 +231,7 @@ internal class AiModEditorViewModel(
                 nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1L
                 pendingPatch = messages.lastOrNull { !it.fromUser }?.let { JarPatchCodec.extract(it.text) }
             }
-            persistConversation()
+            refreshBusyState()
         }.onFailure {
             sessions.clear()
             messages.clear()
@@ -280,17 +241,77 @@ internal class AiModEditorViewModel(
         }
     }
 
-    private fun persistConversation() {
-        val index = sessions.indexOfFirst { it.id == currentSessionId }
-        if (index >= 0) {
-            val hadPrompt = messages.any { it.fromUser }
-            sessions[index] = sessions[index].copy(
-                messages = messages.toList(),
-                title = if (hadPrompt) sessions[index].title else "",
-            )
+    private fun installSession(session: AiEditorSession) {
+        val index = sessions.indexOfFirst { it.id == session.id }
+        if (index >= 0) sessions[index] = session else sessions += session
+        if (session.id != currentSessionId) return
+        if (session.messages != messages.toList()) {
+            messages.clear()
+            messages += session.messages
         }
-        val stored = sessions.filter { it.hasUserPrompt() }
-        runCatching { conversationsFile.writeText(json.encodeToString(stored)) }
+        nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1
+        pendingPatch = messages.lastOrNull { !it.fromUser }?.let { JarPatchCodec.extract(it.text) }
+    }
+
+    private fun mutateCurrent(transform: (AiEditorSession) -> AiEditorSession): AiEditorSession {
+        val next = requireNotNull(conversationStore.mutate(
+            currentSessionId, create = AiEditorSession(currentSessionId), transform = transform,
+        ))
+        installSession(next)
+        return next
+    }
+
+    private fun startConversationPolling() {
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(500L)
+                runCatching {
+                    recoverInterruptedJobs()
+                    val stored = conversationStore.load()
+                    withContext(Dispatchers.Main.immediate) {
+                        applyExternalState(stored)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyExternalState(stored: List<AiEditorSession>) {
+        val merged = mergeAiSessions(sessions.toList(), stored)
+        sessions.clear()
+        sessions += merged
+        merged.firstOrNull { it.id == currentSessionId }?.let(::installSession)
+        // The job snapshot may predate a send/cancel on the main thread too.
+        refreshBusyState()
+    }
+
+    private fun recoverInterruptedJobs() {
+        val interruptedMessage = context.getString(R.string.ai_mod_editor_error_interrupted)
+        val interrupted = jobStore.markInterrupted(
+            interruptedMessage = interruptedMessage,
+            isRunning = { job -> AiAgentExecutionService.isJobRunning(job.jobId) },
+        )
+        interrupted.forEach { job ->
+            conversationStore.update(job.conversationId) { session ->
+                session.copy(messages = session.messages.map { message ->
+                    if (message.id == job.assistantMessageId) {
+                        message.copy(
+                            streaming = false,
+                            failed = true,
+                            errorMessage = interruptedMessage,
+                        )
+                    } else {
+                        message
+                    }
+                })
+            }
+        }
+    }
+
+    private fun refreshBusyState(jobs: List<AiAgentJobRecord> = jobStore.list()) {
+        busy = jobs.any {
+            it.conversationId == currentSessionId && it.status == AiAgentJobStatus.RUNNING
+        }
     }
 
     fun updateReasoningEffort(value: LlmReasoningEffort) {
@@ -310,28 +331,18 @@ internal class AiModEditorViewModel(
     fun send(prompt: String, attachments: List<AiAttachment> = emptyList()) {
         val trimmed = prompt.trim()
         if ((trimmed.isEmpty() && attachments.isEmpty()) || busy) return
-        val isFirstUserTurn = messages.none { it.fromUser }
-        messages += AiEditorMessage(nextMessageId++, true, trimmed, attachments)
-        if (isFirstUserTurn) {
-            val title = trimmed.lineSequence().firstOrNull()?.trim().orEmpty()
-                .ifBlank { attachments.firstOrNull()?.name.orEmpty() }
-            if (title.isNotBlank()) {
-                val index = sessions.indexOfFirst { it.id == currentSessionId }
-                if (index >= 0 && sessions[index].title.isBlank()) {
-                    sessions[index] = sessions[index].copy(title = title.take(120))
-                }
+        runCatching {
+            mutateCurrent { session ->
+                val id = (session.messages.maxOfOrNull { it.id } ?: 0L) + 1
+                session.copy(
+                    messages = session.messages + AiEditorMessage(id, true, trimmed, attachments),
+                    title = session.title.ifBlank {
+                        trimmed.lineSequence().firstOrNull().orEmpty().ifBlank { attachments.firstOrNull()?.name.orEmpty() }.take(120)
+                    },
+                    context = session.context?.copy(estimatedTokens = null),
+                )
             }
-        }
-        persistConversation()
-        startRequest()
-    }
-
-    fun retry(messageId: Long) {
-        if (busy) return
-        val index = messages.indexOfFirst { it.id == messageId }
-        if (index < 0) return
-        messages.subList(index, messages.size).clear()
-        persistConversation()
+        }.onFailure { error = it.message; return }
         startRequest()
     }
 
@@ -339,8 +350,7 @@ internal class AiModEditorViewModel(
         if (busy) return
         val index = messages.indexOfFirst { it.id == messageId }
         if (index <= 0 || messages[index].fromUser) return
-        messages.subList(index, messages.size).clear()
-        persistConversation()
+        truncateConversation(messageId)
         startRequest()
     }
 
@@ -348,15 +358,23 @@ internal class AiModEditorViewModel(
         if (busy) return
         val index = messages.indexOfFirst { it.id == messageId }
         if (index < 0) return
-        messages.subList(index, messages.size).clear()
+        truncateConversation(messageId)
         pendingPatch = null
         error = null
-        persistConversation()
+    }
+
+    private fun truncateConversation(messageId: Long) {
+        mutateCurrent { session ->
+            val index = session.messages.indexOfFirst { it.id == messageId }
+            if (index < 0) session else {
+                val retained = session.messages.take(index)
+                session.copy(messages = retained, context = session.context?.retainSources(retained.mapTo(HashSet()) { it.id }))
+            }
+        }
     }
 
     fun newConversation() {
         if (busy) return
-        persistConversation()
         val current = sessions.firstOrNull { it.id == currentSessionId }
         if (current == null || current.hasUserPrompt()) {
             val session = AiEditorSession(UUID.randomUUID().toString())
@@ -371,8 +389,7 @@ internal class AiModEditorViewModel(
 
     fun switchConversation(sessionId: String) {
         if (busy || sessionId == currentSessionId) return
-        persistConversation()
-        val session = sessions.firstOrNull { it.id == sessionId } ?: return
+        val session = conversationStore.load().firstOrNull { it.id == sessionId } ?: return
         currentSessionId = session.id
         messages.clear()
         messages += session.messages
@@ -380,249 +397,63 @@ internal class AiModEditorViewModel(
         pendingPatch = messages.lastOrNull { !it.fromUser }?.let { JarPatchCodec.extract(it.text) }
         error = null
         appliedBackupPath = null
+        installSession(session)
+        refreshBusyState()
     }
 
     fun cancelGeneration() {
-        generationJob?.cancel()
-        generationJob = null
-        activeAssistantId?.let { id ->
-            messages.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { index ->
-                messages[index] = messages[index].copy(streaming = false, failed = false)
-            }
-        }
-        activeAssistantId = null
-        busy = false
-        persistConversation()
+        val job = jobStore.list().firstOrNull {
+            it.conversationId == currentSessionId && it.status == AiAgentJobStatus.RUNNING
+        } ?: return
+        AiAgentExecutionService.cancel(context, job.jobId, job.modId)
     }
 
     private fun startRequest() {
         if (busy) return
-        val assistantId = nextMessageId++
-        val startedAt = SystemClock.elapsedRealtime()
-        activeAssistantId = assistantId
-        messages += AiEditorMessage(assistantId, false, "", streaming = true, modelName = settingsRepository.get().modelName)
-        busy = true
-        error = null
-        persistConversation()
-        generationJob = viewModelScope.launch {
-            val result = try {
-                withContext(Dispatchers.IO) { requestAssistant(assistantId) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Throwable) {
-                Result.failure<AgentResult>(failure)
-            }
-            result.onSuccess { reply ->
-                updateAssistant(assistantId) { message ->
-                    // Streaming already accumulated every round into `text`; only replace it with the
-                    // gateway's final answer when that answer is non-blank, so a stray empty final
-                    // turn can never wipe out content the user already saw.
-                    val finalText = reply.text.ifBlank { message.text }
-                    message.copy(
-                        streaming = false,
-                        failed = false,
-                        text = finalText,
-                        elapsedMs = SystemClock.elapsedRealtime() - startedAt,
-                        contextTokens = reply.contextTokens,
-                    )
-                }
-                pendingPatch = JarPatchCodec.extract(reply.text)
-            }.onFailure { failure ->
-                error = failure.message ?: failure.javaClass.simpleName
-                updateAssistant(assistantId) { message -> message.copy(streaming = false, failed = true, elapsedMs = SystemClock.elapsedRealtime() - startedAt) }
-            }
-            busy = false
-            activeAssistantId = null
-            persistConversation()
+        val jobId = UUID.randomUUID().toString()
+        if (!AiAgentExecutionService.reserve(jobId)) {
+            error = "Another AI task is running."
+            return
         }
-    }
-
-    private fun requestAssistant(assistantId: Long): Result<AgentResult> {
-        val settings = settingsRepository.get()
-        check(settings.isConfigured()) { "LLM is not configured" }
-        val config = OpenAiCompatibleModelConfig(
-            baseUrl = settings.baseUrl,
-            apiKey = settings.apiKey,
-            organizationId = settings.organizationId,
-            modelName = settings.modelName,
-            endpoint = settings.endpoint,
-            requestTimeoutSeconds = settings.requestTimeoutSeconds,
-            reasoningEffort = reasoningEffort,
-        )
-        val gateway = PolicyGatedAgentGateway(
-            chatModel = AgentChatModelFactory.create(config),
-            agentWorkspaceRoot = workspaceAccessRoot,
-            toolRegistry = AgentToolRegistry(
-                tools = createAgentTools(),
-                policyGate = agentToolPolicyGate,
-                onToolExecution = { event ->
-                    updateAssistant(assistantId) { message ->
-                        if (event.result == null) {
-                            message.copy(
-                                text = "",
-                                tools = message.tools + AiToolCall(
-                                    id = event.id,
-                                    name = event.name,
-                                    arguments = event.arguments,
-                                    precedingText = message.text,
-                                ),
-                            )
-                        } else {
-                            val displayResult = runCatching {
-                                Json.parseToJsonElement(event.result).jsonObject["content"]?.jsonPrimitive?.content
-                            }.getOrNull() ?: event.result
-                            message.copy(tools = message.tools.map { tool ->
-                                if (tool.id == event.id) tool.copy(
-                                    result = displayResult.take(12_000),
-                                    failed = event.failed,
-                                    truncated = displayResult.length > 12_000,
-                                ) else tool
-                            })
-                        }
-                    }
-                },
-            ),
-        )
-        val transcript = messages.dropLast(1).joinToString("\n\n") { message ->
-            "${if (message.fromUser) "User" else "Assistant"}: ${message.text}" +
-                message.attachments.joinToString(prefix = "\nAttachments:\n", separator = "\n") { attachment ->
-                    "[${attachment.name}]\n${attachment.content}"
-                }.takeIf { message.attachments.isNotEmpty() }.orEmpty()
-        }
-        val systemPrompt = """
-            You are a safe mod editing assistant inside a mobile launcher.
-            The selected parent mod is '$modName' ($modId).
-            Your agent workspace root is '$workspaceAccessRoot'. It contains source/ and patch_source/ for the selected mod.
-            Use workspace tools for listing and reading the entire workspace. source/ is read-only context generated by decompile_agent_mod_source; never try to write or delete it. patch_source/ is the agent-owned patch tree and is the only directory writable or deletable through workspace tools.
-            No patch workspace exists yet for this session. Do not create one unless the user actually asked for a change. When they do, call create_agent_patch_mod once for each new patch mod with a short descriptive name you choose, an optional semantic version, and a description; it prepares source/ and a dedicated patch_source/<patch_id>/ directory, then returns the exact paths to use.
-            If the user asks to inspect or explain the parent mod, call decompile_agent_mod_source; it extracts and decompiles the parent directly into source/ in the selected mod workspace.
-            Use write_agent_workspace_file to create or replace files under the current patch_workspace_path returned by create_agent_patch_mod, and delete_agent_workspace_file to remove files or directories there with recursive=true when needed. Do not attempt to modify source/ or another patch mod's directory.
-            The launcher creates ModTheSpire.json and agent-patch.json in the current patch_source/<patch_id>/ directory. Keep the patch mod's modid and parent dependency intact.
-            ModTheSpire resolves dependencies case-sensitively: copy the exact 'modid' text from source/ModTheSpire.json when listing the parent or any dependency, and never change its casing.
-            To implement a requested change, call create_agent_patch_mod first; source/ is shared readable context and the returned patch_workspace_path is the writable tree for that patch mod.
-            Before writing any Java against the game, BaseMod, or StSLib, read the bundled reference with read_agent_skill (skill name: basemod-and-stslib). It covers the registration lifecycle and ordering, where each content type is registered, hook names, StSLib keywords, and the mistakes that crash the game when it loads.
-            Never write an API call from memory. Find the type with search_agent_api, then confirm the exact overload with describe_agent_api_class before calling or extending it; the declarations come from the installed bytecode.
-            Prefer the BaseMod API over ModTheSpire patches: content such as cards, relics, potions, events, keywords, characters, and colors is registered through BaseMod from one @SpireInitializer class. Use @SpirePatch2 only where no API exists, and never use a Replace patch.
-            For code changes, write Java 8 sources under <patch_workspace_path>/src/<package>/... using ModTheSpire's @SpirePatch2 and the game/BaseMod APIs, then call compile_agent_patch_source to compile them into that patch workspace. A patch mod does not have to be a @SpirePatch2 hook set: a resource-only patch mod and a mod that registers content through a single @SpireInitializer class with a public static void initialize() are valid too.
-            Compilation is fixed to Java 8 and the classpath already contains the game jar, ModTheSpire, the required mods and the parent mod; do not add a build file or a classpath argument.
-            If compile_agent_patch_source reports errors, read the diagnostics and fix the sources before packaging.
-            When the patch mod is complete, call package_agent_patch_mod with a useful name, semantic version, and description.
-            To change a patch mod you already packaged, call list_agent_patch_mods to get its patch_id, edit the files under patch_source/<patch_id>/, call compile_agent_patch_source with that patch_id, then call update_agent_patch_mod with the patch_id and a new version. This replaces the same revision and keeps its enabled state; do not create a duplicate patch mod for an update.
-            Packaged patch mods are stored under agent_mods and are loaded by the launcher directly; there is no separate install step.
-            After packaging, call smoke_test_agent_patch_mod to launch the game with the patch, the parent mod, the parent mod's prerequisites, and the built-in mods. It succeeds only when the game reaches the main menu; on failure it returns the boot events and log excerpt. If it fails, fix the patch, recompile, update the patch mod, and run it again.
-            Ask before enabling a packaged patch mod unless the user explicitly requested activation. Use set_agent_patch_mod_enabled to enable or disable it.
-            Use list_agent_patch_mods to check existing revisions and their enabled state before creating a duplicate.
-            Use delete_agent_patch_mod with a patch_id to remove a patch revision entirely.
-            Never claim that a patch mod was created, packaged, updated, enabled, disabled, or deleted until the corresponding tool confirms it.
-            Ask before calling delete_agent_patch_mod unless the user explicitly requested the removal.
-        """.trimIndent()
-        val streamingModel = AgentChatModelFactory.createStreaming(config)
-        return if (streamingModel == null) {
-            val reply = gateway.respond(systemPrompt, transcript)
-            Result.success(AgentResult(reply.text, reply.contextTokens))
-        } else {
-            val reply = gateway.respondStreaming(
-                systemPrompt = systemPrompt,
-                userPrompt = transcript,
-                streamingModel = streamingModel,
-                onText = { delta -> updateAssistant(assistantId) { it.copy(text = it.text + delta) } },
-                onThinking = { delta -> updateAssistant(assistantId) { it.copy(thinking = it.thinking + delta) } },
+        var assistantId: Long? = null
+        runCatching {
+            mutateCurrent { session ->
+                val id = (session.messages.maxOfOrNull { it.id } ?: 0L) + 1
+                assistantId = id
+                session.copy(messages = session.messages + AiEditorMessage(
+                    id, false, "", streaming = true, modelName = settingsRepository.get().modelName,
+                ))
+            }
+            val job = AiAgentJobRecord(
+                jobId = jobId, conversationId = currentSessionId, modId = modId,
+                modName = modName, storagePath = storagePath, assistantMessageId = requireNotNull(assistantId),
             )
-            Result.success(AgentResult(reply.text, reply.contextTokens))
+            jobStore.upsert(job)
+            error = null
+            busy = true
+            AiAgentExecutionService.start(context, job)
         }
+            .onFailure { failure ->
+                AiAgentExecutionService.release(jobId)
+                val message = failure.message ?: failure.javaClass.simpleName
+                jobStore.update(jobId) {
+                    it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
+                }
+                runCatching { mutateCurrent { session ->
+                    session.copy(messages = session.messages.map {
+                        if (it.id == assistantId) it.copy(streaming = false, failed = true, errorMessage = message) else it
+                    })
+                } }
+                busy = false
+                error = message
+            }
     }
 
-    private fun updateAssistant(id: Long, transform: (AiEditorMessage) -> AiEditorMessage) {
-        viewModelScope.launch(Dispatchers.Main.immediate) {
-            if (id != activeAssistantId) return@launch
-            val index = messages.indexOfFirst { it.id == id }
-            if (index >= 0) messages[index] = transform(messages[index])
-        }
+    private val toolInfo by lazy {
+        AiModAgentExecutor(context, storagePath, modName, modId, reasoningEffort).availableTools()
     }
 
-    /** Resolves a patch revision that already exists on disk, even from a previous session. */
-    private fun resolveExistingPatchWorkspace(patchId: String): AgentPatchWorkspace? =
-        AgentPatchModManager.resolvePatchWorkspace(context, modId, patchId, File(storagePath))
-
-    /** Single source of truth for the tools exposed to the agent and shown in the context dialog. */
-    private fun createAgentTools(): List<AgentTool> = listOf(
-        AgentWorkspaceListTool(workspaceAccessRoot),
-        AgentWorkspaceFileTool(workspaceAccessRoot),
-        AgentSkillTool(context),
-        AgentApiSearchTool(context, File(storagePath)),
-        AgentApiDescribeTool(context, File(storagePath)),
-        AgentPatchModCreateTool(
-            context = context,
-            parentModId = modId,
-            sourceJar = File(storagePath),
-            onCreated = { activePatchWorkspace = it },
-        ),
-        AgentWorkspaceWriteTool(workspaceAccessRoot),
-        AgentWorkspaceDeleteTool(workspaceAccessRoot),
-        AgentModSourceDecompileTool(
-            context = context,
-            parentModId = modId,
-            parentJar = File(storagePath),
-        ),
-        AgentPatchTargetInspectTool(
-            context = context,
-            parentJar = File(storagePath),
-        ),
-        AgentPatchSkeletonTool(
-            context = context,
-            parentJar = File(storagePath),
-            workspace = { activePatchWorkspace },
-        ),
-        AgentPatchModCompileTool(
-            context = context,
-            parentJar = File(storagePath),
-            workspace = { activePatchWorkspace },
-            resolveWorkspace = ::resolveExistingPatchWorkspace,
-        ),
-        AgentPatchPreflightTool(
-            context = context,
-            parentJar = File(storagePath),
-            workspace = { activePatchWorkspace },
-            resolveWorkspace = ::resolveExistingPatchWorkspace,
-        ),
-        AgentPatchModPackageTool(
-            context = context,
-            parentJar = File(storagePath),
-            workspace = { activePatchWorkspace },
-        ),
-        AgentPatchModUpdateTool(
-            context = context,
-            parentModId = modId,
-            parentJar = File(storagePath),
-            onUpdated = { LauncherNavigationRequestBus.requestModsRefresh() },
-        ),
-        AgentPatchSmokeTestTool(
-            context = context,
-            parentModId = modId,
-            parentJar = File(storagePath),
-            workspace = { activePatchWorkspace },
-        ),
-        AgentPatchModSetEnabledTool(
-            context = context,
-            parentModId = modId,
-            workspace = { activePatchWorkspace },
-            onChanged = { LauncherNavigationRequestBus.requestModsRefresh() },
-        ),
-        AgentPatchModListTool(context, modId),
-        AgentPatchModDeleteTool(
-            context = context,
-            parentModId = modId,
-            onDeleted = { LauncherNavigationRequestBus.requestModsRefresh() },
-        ),
-    )
-
-    /** Metadata for the context dialog, filtered by the same policy gate the agent runs under. */
-    fun availableTools(): List<AiToolInfo> = createAgentTools()
-        .filter(agentToolPolicyGate::allows)
-        .map { tool ->
-            val name = tool.specification.name()
-            AiToolInfo(name = name, descriptionRes = agentToolDescriptionRes(name))
-        }
+    fun availableTools(): List<AiToolInfo> = toolInfo
 
     fun applyPendingPatch() {
         val patch = pendingPatch ?: return
@@ -657,18 +488,27 @@ internal class AiModEditorViewModel(
     }
 
     override fun onCleared() {
-        generationJob?.cancel()
         super.onCleared()
     }
 
-    private data class AgentResult(val text: String, val contextTokens: Int? = null)
-
     companion object {
-        fun factory(context: Context, storagePath: String, modName: String, modId: String) =
+        fun factory(
+            context: Context,
+            storagePath: String,
+            modName: String,
+            modId: String,
+            requestedSessionId: String? = null,
+        ) =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    AiModEditorViewModel(context.applicationContext, storagePath, modName, modId) as T
+                    AiModEditorViewModel(
+                        context.applicationContext,
+                        storagePath,
+                        modName,
+                        modId,
+                        requestedSessionId,
+                    ) as T
             }
     }
 }
@@ -679,12 +519,16 @@ fun LauncherAiModEditorScreen(
     storagePath: String,
     modName: String,
     modId: String,
+    conversationId: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val historyContentDescription = stringResource(R.string.ai_mod_editor_history)
     val navigator = currentNavigator
-    val viewModel: AiModEditorViewModel = viewModel(factory = AiModEditorViewModel.factory(context, storagePath, modName, modId))
+    val viewModel: AiModEditorViewModel = viewModel(
+        key = "${modId}:${conversationId.orEmpty()}",
+        factory = AiModEditorViewModel.factory(context, storagePath, modName, modId, conversationId),
+    )
     val listState = rememberLazyListState()
     val scrollScope = rememberCoroutineScope()
     val showJumpToLatest by remember { derivedStateOf { listState.canScrollForward } }
@@ -788,11 +632,19 @@ fun LauncherAiModEditorScreen(
             }
     }
 
-    Scaffold(
+    AnimatedVisibility(
+        visible = true,
         modifier = modifier,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
+        enter = fadeIn(animationSpec = tween(260)) +
+            slideInVertically(
+                animationSpec = tween(320),
+                initialOffsetY = { fullHeight -> fullHeight / 14 },
+            ),
+    ) {
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = {
+                TopAppBar(
                 title = {
                     Box {
                         Row(
@@ -854,21 +706,24 @@ fun LauncherAiModEditorScreen(
                 },
                 actions = {
                     AiMessageAction(
-                        icon = Icons.Description,
+                        icon = ImageVector.vectorResource(R.drawable.ic_chat_add),
                         label = stringResource(R.string.ai_mod_editor_new_chat),
                         onClick = viewModel::newConversation,
                         enabled = !viewModel.busy,
                     )
                     AiContextCounter(
-                        tokens = if (viewModel.messages.isEmpty()) 0 else viewModel.messages.lastOrNull { !it.fromUser && !it.streaming }?.contextTokens,
+                        tokens = if (viewModel.messages.isEmpty()) 0 else viewModel.sessions
+                            .firstOrNull { it.id == viewModel.currentSessionId }?.context
+                            ?.takeIf { it.modelKey == AiContextLimits.key(settings.baseUrl, settings.modelName) }?.estimatedTokens,
                         modelKey = "${settings.baseUrl}/${settings.modelName}",
                         busy = viewModel.busy,
                         tools = viewModel.availableTools(),
+                        contextState = viewModel.sessions.firstOrNull { it.id == viewModel.currentSessionId }?.context,
                     )
                 },
-            )
-        },
-    ) { paddingValues ->
+                )
+            },
+        ) { paddingValues ->
         if (!configured) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
@@ -931,7 +786,7 @@ fun LauncherAiModEditorScreen(
                 AiMessageCard(
                     message = message,
                     onCopy = { copyToClipboard(context, (message.tools.map { it.precedingText } + message.text).filter { it.isNotBlank() }.joinToString("\n\n")) },
-                    onRetry = { viewModel.retry(message.id) },
+                    onCopyError = { copyToClipboard(context, message.errorMessage) },
                     onRegenerate = { viewModel.regenerate(message.id) },
                     onRollback = { rollbackTargetId = message.id },
                     enabled = !viewModel.busy,
@@ -951,15 +806,6 @@ fun LauncherAiModEditorScreen(
                         TextButton(onClick = { showRestoreConfirmation = true }, enabled = !viewModel.busy) {
                             Text(stringResource(R.string.ai_mod_editor_restore))
                         }
-                    }
-                }
-            }
-            viewModel.error?.let { failure ->
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.ai_mod_editor_error, failure), color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                        val retryId = viewModel.messages.lastOrNull { it.failed }?.id
-                        if (retryId != null) TextButton(onClick = { viewModel.retry(retryId) }) { Text(stringResource(R.string.ai_mod_editor_retry)) }
                     }
                 }
             }
@@ -1047,6 +893,7 @@ fun LauncherAiModEditorScreen(
                 }) { Text(stringResource(R.string.ai_mod_editor_rollback)) }
             },
         )
+        }
     }
 }
 
@@ -1054,7 +901,7 @@ fun LauncherAiModEditorScreen(
 private fun AiMessageCard(
     message: AiEditorMessage,
     onCopy: () -> Unit,
-    onRetry: () -> Unit,
+    onCopyError: () -> Unit,
     onRegenerate: () -> Unit,
     onRollback: () -> Unit,
     enabled: Boolean,
@@ -1187,6 +1034,27 @@ private fun AiMessageCard(
                         )
                     }
                 }
+                if (message.failed) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = colors.errorContainer,
+                        contentColor = colors.onErrorContainer,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.ai_mod_editor_error, message.errorMessage),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            TextButton(onClick = onCopyError) {
+                                Text(stringResource(R.string.ai_mod_editor_copy))
+                            }
+                        }
+                    }
+                }
                 if (message.streaming && message.text.isBlank() && message.thinking.isBlank()) {
                     CircularProgressIndicator(
                         modifier = Modifier.padding(vertical = 12.dp).size(18.dp),
@@ -1212,30 +1080,27 @@ private fun AiMessageCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (message.failed) {
-                    TextButton(onClick = onRetry, enabled = enabled) {
-                        Text(stringResource(R.string.ai_mod_editor_retry), color = colors.error)
-                    }
-                }
-                Box {
-                    IconButton(onClick = { showActions = true }, modifier = Modifier.semantics { contentDescription = actionsLabel }) {
-                        Text("···", color = colors.onSurfaceVariant, style = MaterialTheme.typography.titleLarge)
-                    }
-                    DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
-                        if (message.text.isNotBlank() || message.tools.any { it.precedingText.isNotBlank() }) {
+                if (!message.failed) {
+                    Box {
+                        IconButton(onClick = { showActions = true }, modifier = Modifier.semantics { contentDescription = actionsLabel }) {
+                            Text("···", color = colors.onSurfaceVariant, style = MaterialTheme.typography.titleLarge)
+                        }
+                        DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                            if (message.text.isNotBlank() || message.tools.any { it.precedingText.isNotBlank() }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.ai_mod_editor_copy)) },
+                                    onClick = { showActions = false; onCopy() },
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.ai_mod_editor_copy)) },
-                                onClick = { showActions = false; onCopy() },
+                                text = { Text(stringResource(if (message.fromUser) R.string.ai_mod_editor_rollback else R.string.ai_mod_editor_regenerate)) },
+                                enabled = enabled && !message.streaming,
+                                onClick = {
+                                    showActions = false
+                                    if (message.fromUser) onRollback() else onRegenerate()
+                                },
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(if (message.fromUser) R.string.ai_mod_editor_rollback else if (message.failed) R.string.ai_mod_editor_retry else R.string.ai_mod_editor_regenerate)) },
-                            enabled = enabled && !message.streaming,
-                            onClick = {
-                                showActions = false
-                                if (message.fromUser) onRollback() else if (message.failed) onRetry() else onRegenerate()
-                            },
-                        )
                     }
                 }
             }
@@ -1250,19 +1115,26 @@ internal fun AiMessageAction(
     label: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    prominent: Boolean = false,
 ) {
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } },
         state = rememberTooltipState(),
     ) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
-            Icon(
-                icon,
-                contentDescription = label,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.8f else 0.38f),
-            )
+        if (prominent) {
+            FilledIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+                Icon(icon, contentDescription = label, modifier = Modifier.size(24.dp))
+            }
+        } else {
+            IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.8f else 0.38f),
+                )
+            }
         }
     }
 }

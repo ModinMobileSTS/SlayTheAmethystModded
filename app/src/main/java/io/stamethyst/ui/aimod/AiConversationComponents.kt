@@ -34,8 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -50,10 +52,8 @@ import io.stamethyst.ui.Icons
 import io.stamethyst.ui.FrostedGlassChrome
 import io.stamethyst.ui.icon.AttachFile
 import io.stamethyst.ui.icon.Close
-import io.stamethyst.ui.icon.Description
 import io.stamethyst.ui.icon.KeyboardArrowUp
 import io.stamethyst.ui.icon.Pending
-import io.stamethyst.ui.icon.Send
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -156,10 +156,11 @@ internal fun AiChatComposer(
                         }
                     }
                     AiMessageAction(
-                        icon = if (busy) Icons.Close else Icons.Send,
+                        icon = ImageVector.vectorResource(if (busy) R.drawable.ic_stop else R.drawable.ic_arrow_upward),
                         label = stringResource(if (busy) R.string.ai_mod_editor_stop else R.string.ai_mod_editor_send),
                         onClick = if (busy) onStop else onSend,
                         enabled = busy || (configured && (draft.isNotBlank() || attachments.isNotEmpty())),
+                        prominent = true,
                     )
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -264,10 +265,9 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (tool.result == null && streaming) {
+            Icon(agentToolIcon(tool.name), null, Modifier.size(16.dp), tint = if (tool.failed) colors.error else colors.onSurfaceVariant)
+            if (tool.result == null && streaming && !tool.failed) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp, color = colors.onSurfaceVariant)
-            } else {
-                Icon(Icons.Description, null, Modifier.size(16.dp), tint = if (tool.failed) colors.error else colors.onSurfaceVariant)
             }
             Text(title, modifier = Modifier.widthIn(max = 160.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
             Text(path, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)

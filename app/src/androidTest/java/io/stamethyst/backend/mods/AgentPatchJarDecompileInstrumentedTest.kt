@@ -43,7 +43,7 @@ class AgentPatchJarDecompileInstrumentedTest {
         val rawClass = File(workspace.sourceRoot, entryName)
         assertTrue("workspace should keep the raw class: ${rawClass.absolutePath}", rawClass.isFile)
         assertTrue(
-            "create_agent_patch_mod must not decompile",
+            "create_agent_patch_workspace must not decompile",
             !File(workspace.sourceRoot, entryName.removeSuffix(".class") + ".java").exists(),
         )
 

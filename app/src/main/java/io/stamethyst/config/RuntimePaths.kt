@@ -203,6 +203,33 @@ object RuntimePaths {
     fun agentModsForModRoot(context: Context, modId: String): File =
         File(agentModsRoot(context), modId)
 
+    /**
+     * Coordinates the AI patch smoke test between the launcher process (which writes the request and
+     * reads the verdict) and the `:game` process service that actually runs the game.
+     */
+    @JvmStatic
+    fun agentSmokeTestDir(context: Context): File =
+        File(stsRoot(context), "agent_smoke_test")
+
+    @JvmStatic
+    fun agentSmokeTestRequestFile(context: Context): File =
+        File(agentSmokeTestDir(context), "request.json")
+
+    @JvmStatic
+    fun agentSmokeTestResultFile(context: Context): File =
+        File(agentSmokeTestDir(context), "result.json")
+
+    /**
+     * Present for the whole duration of a smoke-test run.
+     *
+     * ExitActivity consults this to stay silent: the native JVM exit trap normally restarts the
+     * launcher (with FLAG_ACTIVITY_CLEAR_TASK), which would destroy the AI editor and cancel the
+     * tool call that is waiting for this run.
+     */
+    @JvmStatic
+    fun agentSmokeTestRunMarker(context: Context): File =
+        File(agentSmokeTestDir(context), "run.active")
+
     @JvmStatic
     fun importedBaseModJar(context: Context): File = File(requiredModsDir(context), "BaseMod.jar")
 

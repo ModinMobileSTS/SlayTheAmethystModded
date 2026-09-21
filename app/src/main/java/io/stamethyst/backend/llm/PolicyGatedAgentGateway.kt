@@ -58,7 +58,6 @@ private const val MAX_TOOL_RESULT_BYTES = 51_200
 
 /** Workspace subdirectory where oversized tool results are persisted for later reading. */
 private const val TOOL_OUTPUT_DIR = "tool_output"
-private const val TOOL_OUTPUT_KEEP = 20
 
 /** How many extra times an empty model turn is retried before it is reported as a failure. */
 private const val MAX_EMPTY_RETRIES = 1
@@ -348,12 +347,13 @@ class AgentWorkspaceFileTool(
                 "and returned with line-number prefixes: 'offset' is the 1-indexed first line (default 1) " +
                 "and 'limit' the number of lines (default $DEFAULT_MAX_READ_LINES); a line longer than " +
                 "$MAX_READ_LINE_CHARS characters is truncated. Continue from 'next_offset' while 'truncated' " +
-                "is true. Use encoding=base64 for binary files, where 'offset' and 'limit' are bytes.",
+                "is true. For long lines or tool_output files use encoding=utf8_chars with a zero-based character " +
+                "offset and limit; follow next_offset. Use encoding=base64 for binary files, where offsets are bytes.",
         )
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("path", "Relative path inside the agent workspace.")
-                .addStringProperty("encoding", "utf8 or base64; defaults to utf8.")
+                .addStringProperty("encoding", "utf8, utf8_chars (lossless character paging), or base64; defaults to utf8.")
                 .addStringProperty(
                     "offset",
                     "1-indexed first line for utf8 (default 1), or byte offset for base64 (default 0).",
@@ -379,9 +379,28 @@ class AgentWorkspaceFileTool(
         if (!file.isFile) return failure("file_not_found")
         return when (json["encoding"]?.jsonPrimitive?.content?.lowercase() ?: "utf8") {
             "utf8" -> readText(relativePath, file, json)
+            "utf8_chars" -> readCharacters(relativePath, file, json)
             "base64" -> readBytes(relativePath, file, json)
             else -> failure("unsupported_encoding")
         }
+    }
+
+    private fun readCharacters(path: String, file: File, json: JsonObject): String {
+        if (file.length() > MAX_TEXT_READ_BYTES) return failure("file_too_large")
+        val offset = json.intParam("offset")?.coerceAtLeast(0) ?: 0
+        val limit = (json.intParam("limit") ?: 8_000).coerceIn(2, 8_000)
+        val text = runCatching { file.readText(Charsets.UTF_8) }.getOrElse { return failure("read_failed") }
+        if (offset > text.length) return failure("offset_past_end_of_file")
+        var end = minOf(text.length.toLong(), offset.toLong() + limit).toInt()
+        if (end < text.length && end > offset && Character.isHighSurrogate(text[end - 1])) end--
+        return buildJsonObject {
+            put("path", JsonPrimitive(path))
+            put("encoding", JsonPrimitive("utf8_chars"))
+            put("offset", JsonPrimitive(offset))
+            put("content", JsonPrimitive(text.substring(offset, end)))
+            put("truncated", JsonPrimitive(end < text.length))
+            if (end < text.length) put("next_offset", JsonPrimitive(end))
+        }.toString()
     }
 
     /** Reads a window of lines and prefixes each with its 1-indexed line number, like the host's read tool. */
@@ -393,6 +412,7 @@ class AgentWorkspaceFileTool(
         val content = StringBuilder()
         var linesReturned = 0
         var hasMore = false
+        var longLines = false
         try {
             java.io.BufferedReader(
                 java.io.InputStreamReader(java.io.FileInputStream(file), Charsets.UTF_8),
@@ -404,6 +424,7 @@ class AgentWorkspaceFileTool(
                 }
                 while (linesReturned < lineLimit) {
                     val line = reader.readLine() ?: break
+                    if (line.length > maxLineChars) longLines = true
                     content.append(skipped + linesReturned + 1).append(": ")
                     content.append(if (line.length > maxLineChars) line.take(maxLineChars) else line)
                     content.append('\n')
@@ -420,6 +441,8 @@ class AgentWorkspaceFileTool(
             put("start_line", JsonPrimitive(startLine))
             put("returned_lines", JsonPrimitive(linesReturned))
             put("truncated", JsonPrimitive(hasMore))
+            put("long_lines_truncated", JsonPrimitive(longLines))
+            if (longLines) put("hint", JsonPrimitive("Use encoding=utf8_chars to read long lines without losing content."))
             if (hasMore) put("next_offset", JsonPrimitive(startLine + linesReturned))
             put("content", JsonPrimitive(content.toString()))
         }.toString()
@@ -471,7 +494,7 @@ class AgentWorkspaceWriteTool(
 ) : AgentTool {
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("write_agent_workspace_file")
-        .description("Create or replace a file under patch_source/<patch_id>/ in the selected mod's agent workspace. Use the patch_workspace_path returned by create_agent_patch_mod. The source/ tree is read-only and cannot be modified by the agent.")
+        .description("Create or replace a file under patch_source/<patch_id>/ in the selected mod's agent workspace. Use the patch_workspace_path returned by create_agent_patch_workspace. The source/ tree is read-only and cannot be modified by the agent.")
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("path", "Workspace-relative path under patch_source/<patch_id>/.")
@@ -564,19 +587,21 @@ class AgentWorkspaceDeleteTool(
     }.toString()
 }
 
-class AgentPatchModCreateTool(
+class AgentPatchWorkspaceCreateTool(
     private val context: Context,
     private val parentModId: String,
     private val sourceJar: File,
     private val onCreated: (AgentPatchWorkspace) -> Unit = {},
 ) : AgentTool {
     override val specification: ToolSpecification = ToolSpecification.builder()
-        .name("create_agent_patch_mod")
+        .name("create_agent_patch_workspace")
         .description(
-            "Create a new patch-mod workspace for the selected parent mod. Extracts the " +
-                "complete original mod under source/ and prepares an editable patch_source/<patch_id>/ tree. Call this " +
-                "once for each new patch mod before writing its files; do not call it unless the user asked for a change. " +
-                "Call decompile_agent_mod_source independently if you need to read the parent mod's classes.",
+            "Create a new writable workspace for preparing a patch mod for the selected parent mod. Extracts the " +
+                "complete original mod under source/ and prepares an editable patch_source/<patch_id>/ tree. This does " +
+                "not compile, package, install, or enable a mod. Call this once only when the user requests a new " +
+                "patch and no existing patch workspace should be reused. For changes to an existing patch, reuse its " +
+                "patch_source/<patch_id>/ tree and update it instead. Call decompile_agent_mod_source independently " +
+                "if you only need to read the parent mod's classes.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -1268,9 +1293,11 @@ class PolicyGatedAgentGateway(
      * full result back with the workspace read tool instead of losing it to truncation.
      */
     private val agentWorkspaceRoot: File? = null,
+    private val contextManager: AgentContextManager? = null,
+    private val checkCancelled: () -> Unit = {},
 ) {
     fun respond(systemPrompt: String, userPrompt: String): AgentReply {
-        val messages = mutableListOf<ChatMessage>(
+        val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
             SystemMessage.from(systemPrompt),
             UserMessage.from(userPrompt),
         )
@@ -1280,7 +1307,7 @@ class PolicyGatedAgentGateway(
             var lastResponse: ChatResponse? = null
             var response: ChatResponse? = null
             for (attempt in 0..MAX_EMPTY_RETRIES) {
-                val candidate = chatModel.chat(chatRequest(messages))
+                val candidate = modelTurn(messages) { chatModel.chat(chatRequest(it)) }
                 val message = candidate.aiMessage()
                 lastResponse = candidate
                 if (message.hasToolExecutionRequests() || message.text().orEmpty().isNotBlank()) {
@@ -1294,14 +1321,19 @@ class PolicyGatedAgentGateway(
                 throw AgentEmptyResponseException(finishReason(lastResponse))
             }
             val aiMessage = completed.aiMessage()
+            contextManager?.let { it.observe(completed, it.requestEstimate()) }
             messages += aiMessage
+            contextManager?.append(aiMessage)
             val text = aiMessage.text().orEmpty()
             logAssistantRound(round, text, aiMessage, "non-streaming", completed)
             if (!aiMessage.hasToolExecutionRequests()) {
                 return AgentReply(text = text, toolRounds = round, contextTokens = completed.tokenUsage()?.totalTokenCount())
             }
             aiMessage.toolExecutionRequests().forEach { request ->
-                messages += ToolExecutionResultMessage.from(request, boundedToolResult(toolRegistry.execute(request)))
+                checkCancelled()
+                val result = ToolExecutionResultMessage.from(request, boundedToolResult(toolRegistry.execute(request)))
+                messages += result
+                contextManager?.append(result)
             }
             round++
         }
@@ -1314,7 +1346,7 @@ class PolicyGatedAgentGateway(
         onText: (String) -> Unit,
         onThinking: (String) -> Unit = {},
     ): AgentReply {
-        val messages = mutableListOf<ChatMessage>(
+        val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
             SystemMessage.from(systemPrompt),
             UserMessage.from(userPrompt),
         )
@@ -1324,12 +1356,12 @@ class PolicyGatedAgentGateway(
             var lastResult: StreamingResult? = null
             var accepted: StreamingResult? = null
             for (attempt in 0..MAX_EMPTY_RETRIES) {
-                val candidate = streamRequest(
+                val candidate = modelTurn(messages) { activeMessages -> streamRequest(
                     streamingModel = streamingModel,
-                    messages = messages,
+                    messages = activeMessages,
                     onText = onText,
                     onThinking = onThinking,
-                )
+                ) }
                 val message = candidate.response.aiMessage()
                 lastResult = candidate
                 val candidateText = candidate.text.ifBlank { message.text().orEmpty() }
@@ -1347,7 +1379,7 @@ class PolicyGatedAgentGateway(
                 // cannot assemble, so the round arrives with no text and no tool call. Retrying the
                 // same streamed request rarely helps; re-issue it non-streaming, where the tool call
                 // is read straight from the response body.
-                val fallback = runCatching { chatModel.chat(chatRequest(messages)) }.getOrNull()
+                val fallback = modelTurn(messages) { chatModel.chat(chatRequest(it)) }
                 val fallbackMessage = fallback?.aiMessage()
                 val fallbackText = fallbackMessage?.text().orEmpty()
                 if (fallback != null && fallbackMessage != null &&
@@ -1369,22 +1401,41 @@ class PolicyGatedAgentGateway(
                 throw AgentEmptyResponseException(finishReason(lastResult.response))
             }
             val aiMessage = result.response.aiMessage()
+            contextManager?.let { it.observe(result.response, it.requestEstimate()) }
             messages += aiMessage
+            contextManager?.append(aiMessage)
             val text = result.text.ifBlank { aiMessage.text().orEmpty() }
             logAssistantRound(round, text, aiMessage, "streaming", result.response)
             if (!aiMessage.hasToolExecutionRequests()) {
                 return AgentReply(text = text, toolRounds = round, contextTokens = result.response.tokenUsage()?.totalTokenCount())
             }
             aiMessage.toolExecutionRequests().forEach { request ->
-                messages += ToolExecutionResultMessage.from(request, boundedToolResult(toolRegistry.execute(request)))
+                checkCancelled()
+                val toolResult = ToolExecutionResultMessage.from(request, boundedToolResult(toolRegistry.execute(request)))
+                messages += toolResult
+                contextManager?.append(toolResult)
             }
             round++
+        }
+    }
+
+    private fun <T> modelTurn(history: List<ChatMessage>, request: (List<ChatMessage>) -> T): T {
+        checkCancelled()
+        val active = contextManager?.prepare() ?: history
+        return try {
+            request(active)
+        } catch (error: Exception) {
+            checkCancelled()
+            if (contextManager == null || !isAgentContextOverflow(error)) throw error
+            // One bounded recovery attempt; executing tools is outside this retry block.
+            request(contextManager.prepare(force = true))
         }
     }
 
     private fun chatRequest(messages: List<ChatMessage>) = ChatRequest.builder()
         .messages(messages)
         .toolSpecifications(toolRegistry.toolSpecifications())
+        .apply { contextManager?.let { maxOutputTokens(it.budget.outputReserve) } }
         .build()
 
     /**
@@ -1402,7 +1453,7 @@ class PolicyGatedAgentGateway(
         val preview = truncateToolResult(result)
         val overflowPath = persistToolResult(result)
         val recovery = if (overflowPath != null) {
-            "the full output was written to $overflowPath; read it with read_agent_workspace_file"
+            "the full output was written to $overflowPath; read it with read_agent_workspace_file using encoding=utf8_chars and next_offset"
         } else {
             "narrow the request or read the source in smaller chunks"
         }
@@ -1425,7 +1476,14 @@ class PolicyGatedAgentGateway(
             lines++
             index = end
         }
-        if (builder.isEmpty()) builder.append(result.take(MAX_TOOL_RESULT_BYTES))
+        if (builder.isEmpty()) {
+            var end = minOf(result.length, MAX_TOOL_RESULT_BYTES)
+            while (end > 0 && result.substring(0, end).toByteArray(Charsets.UTF_8).size > MAX_TOOL_RESULT_BYTES) {
+                end = end * 3 / 4
+            }
+            if (end > 0 && Character.isHighSurrogate(result[end - 1])) end--
+            builder.append(result, 0, end)
+        }
         return builder.toString()
     }
 
@@ -1437,18 +1495,8 @@ class PolicyGatedAgentGateway(
             if (!directory.isDirectory && !directory.mkdirs()) return null
             val name = "tool-output-${System.currentTimeMillis()}-${java.util.UUID.randomUUID().toString().take(8)}.txt"
             File(directory, name).writeText(result, Charsets.UTF_8)
-            pruneToolResults(directory)
             "$TOOL_OUTPUT_DIR/$name"
         }.getOrNull()
-    }
-
-    private fun pruneToolResults(directory: File) {
-        directory.listFiles().orEmpty()
-            .asSequence()
-            .filter { it.isFile }
-            .sortedByDescending { it.lastModified() }
-            .drop(TOOL_OUTPUT_KEEP)
-            .forEach { it.delete() }
     }
 
     private fun finishReason(response: ChatResponse?): String =
@@ -1485,46 +1533,51 @@ class PolicyGatedAgentGateway(
         onThinking: (String) -> Unit,
     ): StreamingResult {
         val lock = Object()
-        var response: ChatResponse? = null
-        var failure: Throwable? = null
+        val response = java.util.concurrent.atomic.AtomicReference<ChatResponse?>()
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val closed = java.util.concurrent.atomic.AtomicBoolean(false)
         val text = StringBuilder()
         streamingModel.chat(
-            ChatRequest.builder()
-                .messages(messages)
-                .toolSpecifications(toolRegistry.toolSpecifications())
-                .build(),
+            chatRequest(messages),
             object : StreamingChatResponseHandler {
                 override fun onPartialResponse(partialResponse: String) {
+                    if (closed.get()) return
                     text.append(partialResponse)
                     onText(partialResponse)
                 }
 
                 override fun onPartialThinking(partialThinking: dev.langchain4j.model.chat.response.PartialThinking) {
+                    if (closed.get()) return
                     val value = partialThinking.text()
                     if (value.isNotEmpty()) onThinking(value)
                 }
 
                 override fun onCompleteResponse(completed: ChatResponse) {
-                    response = completed
+                    response.set(completed)
                     synchronized(lock) { lock.notifyAll() }
                 }
 
                 override fun onError(error: Throwable) {
-                    failure = error
+                    failure.set(error)
                     synchronized(lock) { lock.notifyAll() }
                 }
             },
         )
         try {
             synchronized(lock) {
-                while (response == null && failure == null) lock.wait(1000L)
+                while (response.get() == null && failure.get() == null) {
+                    checkCancelled()
+                    lock.wait(1000L)
+                }
             }
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
             throw java.util.concurrent.CancellationException("Streaming request cancelled")
+        } finally {
+            closed.set(true)
         }
-        failure?.let { throw it }
-        return StreamingResult(requireNotNull(response), text.toString())
+        failure.get()?.let { throw it }
+        return StreamingResult(requireNotNull(response.get()), text.toString())
     }
 
     private data class StreamingResult(val response: ChatResponse, val text: String)

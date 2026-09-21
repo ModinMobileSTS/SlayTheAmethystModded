@@ -398,6 +398,12 @@ fun LauncherContent(
         }
     }
 
+    LaunchedEffect(Unit) {
+        LauncherNavigationRequestBus.aiEditorRequests.collect { route ->
+            navigator.push(route)
+        }
+    }
+
     LaunchedEffect(currentRoute) {
         onCurrentDockRouteChanged(currentRoute.launcherDockRoute())
         if (currentRoute != Route.Mods) {
@@ -828,6 +834,7 @@ fun LauncherContent(
                                 storagePath = route.storagePath,
                                 modName = route.modName,
                                 modId = route.modId,
+                                conversationId = route.conversationId,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }

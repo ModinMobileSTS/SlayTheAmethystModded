@@ -99,5 +99,6 @@ sealed interface Route : NavKey {
         val storagePath: String,
         val modName: String,
         val modId: String,
+        val conversationId: String? = null,
     ) : Route
 }

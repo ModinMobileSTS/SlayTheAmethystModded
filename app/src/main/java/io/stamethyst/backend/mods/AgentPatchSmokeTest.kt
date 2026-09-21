@@ -1,24 +1,23 @@
 package io.stamethyst.backend.mods
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
-import io.stamethyst.StsGameActivity
-import io.stamethyst.backend.crash.LatestLogCrashDetector
-import io.stamethyst.backend.launch.ExpectedGameExitNotice
+import io.stamethyst.backend.launch.AgentPatchSmokeTestService
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.launch.MainProcessLaunchPreparationCoordinator
 import io.stamethyst.backend.launch.MtsStartupCacheCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
-import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.backend.process.AppProcess
-import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.RandomAccessFile
-import java.nio.charset.StandardCharsets
 
-/** Outcome of launching the parent mod together with one AI patch mod and waiting for the main menu. */
+/** Outcome of running the parent mod together with one AI patch mod and waiting for the main menu. */
 data class AgentPatchSmokeTestResult(
     val passed: Boolean,
     val status: String,
@@ -29,28 +28,32 @@ data class AgentPatchSmokeTestResult(
     val unresolvedDependencies: List<String>,
     val events: String,
     val logExcerpt: String,
+    /** Mod ids the agent requested that the launcher does not have installed. */
+    val unknownModIds: List<String> = emptyList(),
 )
 
 /**
- * Launches the game with a fixed mod set and reports whether the main menu was reached.
+ * Verifies that a packaged AI patch mod does not break mod loading.
+ *
+ * The launcher process owns the parts that must run here — resolving the mod set and preparing the
+ * MTS classpath with it — while the game itself runs in the `:game` process, driven by
+ * [AgentPatchSmokeTestService]. That split is what keeps the run invisible: no Activity is ever
+ * started, so the launcher keeps the foreground and the agent page the user is looking at never
+ * moves.
  *
  * The mod set is deterministic and independent of the user's optional-mod selection: the parent mod,
- * the AI patch, the parent mod's prerequisites, and the launcher's built-in mods. The run prepares
- * the MTS classpath with that snapshot, starts [StsGameActivity] with a bounded timeout, watches the
- * boot bridge terminal event (`READY`/`FAIL`), then closes the game again.
- *
- * Android cannot run the GL game headless: this launches the real game Activity. It is "silent" only
- * in the sense that it needs no user interaction and closes itself as soon as the verdict is known.
+ * the AI patch, the parent mod's prerequisites, and the launcher's built-in mods. A failure is
+ * therefore attributable to the patch instead of an unrelated enabled mod.
  */
 object AgentPatchSmokeTest {
     private const val TAG = "AgentSmokeTest"
     const val DEFAULT_TIMEOUT_MS = 240_000L
-    private const val SETTLE_AFTER_READY_MS = 2_500L
-    private const val PROCESS_APPEAR_GRACE_MS = 30_000L
+    private const val SERVICE_START_TIMEOUT_MS = 30_000L
+    private const val GAME_EXIT_GRACE_MS = 25_000L
     private const val POLL_INTERVAL_MS = 250L
-    private const val MAX_EVENTS_CHARS = 4_000
-    private const val MAX_LOG_EXCERPT_CHARS = 6_000
-    private const val TAIL_READ_CHARS = 64 * 1024
+    private const val EVENTS_TAIL_CHARS = 4_000
+    private const val LOG_TAIL_CHARS = 6_000
+    private const val LOG_TAIL_READ_CHARS = 64 * 1024
 
     private val BUILT_IN_MOD_IDS = listOf(
         ModManager.MOD_ID_BASEMOD,
@@ -61,21 +64,18 @@ object AgentPatchSmokeTest {
         ModManager.MOD_ID_AMETHYST_FRAME_PROBE,
     )
 
-    private val STRONG_CRASH_MARKERS = listOf(
-        "Game crashed.",
-        "Exception occurred in CardCrawlGame render method!",
-        "Exception in thread \"LWJGL Application\"",
-    )
-
     fun run(
         context: Context,
         parentModId: String,
         parentJar: File,
         patchJar: File,
         timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+        selectedModIds: Collection<String> = emptyList(),
     ): AgentPatchSmokeTestResult {
         val startedAtMs = SystemClock.elapsedRealtime()
         val appContext = context.applicationContext
+        // The MTS classpath must be prepared in the main process: it repairs desktop-1.0.jar, which
+        // the `:game` process is not allowed to do.
         if (!AppProcess.isDefaultProcess(appContext)) {
             return failure(startedAtMs, "main_process_required", "The smoke test must run in the launcher process.")
         }
@@ -86,93 +86,186 @@ object AgentPatchSmokeTest {
             return failure(startedAtMs, "patch_jar_missing", "The packaged patch mod jar is missing: ${patchJar.absolutePath}")
         }
 
-        val selection = try {
-            resolveSelection(appContext, parentModId, parentJar, patchJar)
+        val resolved = try {
+            resolveSelection(appContext, parentModId, parentJar, patchJar, selectedModIds)
         } catch (error: Throwable) {
             return failure(startedAtMs, "mod_resolution_failed", error.message ?: error.javaClass.simpleName)
+        }
+        val selection = resolved.selection
+        val launchModIds = selection.filesByModId.keys.toList()
+        if (selection.unknownSelectedModIds.isNotEmpty()) {
+            return failure(
+                startedAtMs,
+                "unknown_mod_ids",
+                "These mod ids are not installed, so they cannot be enabled: " +
+                    selection.unknownSelectedModIds.joinToString(", ") +
+                    ". Call list_installed_mods for the ids the launcher actually has.",
+                unknownModIds = selection.unknownSelectedModIds,
+                launchModIds = launchModIds,
+            )
         }
         if (selection.unresolvedDependencies.isNotEmpty()) {
             return failure(
                 startedAtMs,
                 "unresolved_dependencies",
-                "Missing prerequisites for the parent mod: ${selection.unresolvedDependencies.joinToString(", ")}",
+                "Missing prerequisites: ${selection.unresolvedDependencies.joinToString(", ")}",
                 unresolvedDependencies = selection.unresolvedDependencies,
-                launchModIds = selection.filesByModId.keys.toList(),
+                launchModIds = launchModIds,
+            )
+        }
+        // The run happens in :game, the same process a normal session uses, and one process can only
+        // host one JVM. A live session must be closed before a smoke test can start.
+        if (GameLaunchReturnTracker.isGameProcessRunning(appContext)) {
+            return failure(
+                startedAtMs,
+                "game_already_running",
+                "A game session is already running. Close the game and run the smoke test again.",
+                launchModIds = launchModIds,
             )
         }
 
-        val snapshot = buildSnapshot(selection)
         val eventsFile = RuntimePaths.bootBridgeEventsLog(appContext)
-        val logFile = RuntimePaths.latestLog(appContext)
-        val preLaunchLogLength = logFile.takeIf(File::isFile)?.length() ?: 0L
-
         // A smoke test must exercise the real patch pass, and the mod list must reach the game JVM.
         // Invalidate the MTS caches so the classpath and patch caches rebuild against this mod set.
         runCatching { MtsStartupCacheCoordinator.invalidate(appContext) }
         runCatching { eventsFile.delete() }
-        GameLaunchReturnTracker.markGameLaunchStarted(appContext)
-        ExpectedGameExitNotice.clearExpectedGameExit(appContext)
 
         try {
             MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(
                 context = appContext,
                 launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
                 progressCallback = null,
-                launchSnapshotOverride = snapshot,
+                launchSnapshotOverride = buildSnapshot(selection),
             )
         } catch (error: Throwable) {
-            GameLaunchReturnTracker.clearPendingGameLaunch(appContext)
             runCatching { MtsStartupCacheCoordinator.invalidate(appContext) }
             return failure(
                 startedAtMs,
                 "launch_preparation_failed",
                 error.message ?: error.javaClass.simpleName,
-                launchModIds = selection.filesByModId.keys.toList(),
+                launchModIds = launchModIds,
+                events = readEvents(eventsFile),
             )
         }
 
-        val launchError = runCatching {
-            StsGameActivity.launch(
-                context = appContext,
-                launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
-                backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
-                manualDismissBootOverlay = false,
-                debugMode = false,
-            )
-        }.exceptionOrNull()
-        if (launchError != null) {
-            GameLaunchReturnTracker.clearPendingGameLaunch(appContext)
+        val runId = AgentPatchSmokeTestProtocol.newRunId()
+        AgentPatchSmokeTestProtocol.writeRequest(
+            appContext,
+            AgentPatchSmokeTestRequest(
+                runId = runId,
+                parentModId = resolved.parentModId,
+                patchJarPath = patchJar.absolutePath,
+                timeoutMs = timeoutMs,
+            ),
+        )
+        AgentPatchSmokeTestProtocol.clearResult(appContext)
+
+        val outcome = try {
+            driveService(appContext, runId, timeoutMs)
+        } finally {
+            AgentPatchSmokeTestProtocol.clearRequest(appContext)
+            // The verdict is written before the game JVM shuts down, and the JVM exit trap consults
+            // the run marker to decide whether to restart the launcher. The marker must therefore
+            // outlive the game process, not just the service binding.
+            awaitGameProcessExit(appContext)
+            AgentPatchSmokeTestProtocol.clearRunActive(appContext)
             runCatching { MtsStartupCacheCoordinator.invalidate(appContext) }
+        }
+
+        if (outcome == null) {
             return failure(
                 startedAtMs,
-                "game_launch_failed",
-                launchError.message ?: launchError.javaClass.simpleName,
-                launchModIds = selection.filesByModId.keys.toList(),
+                "game_process_did_not_report",
+                "The game process did not report a result. It may have been killed or failed to start.",
+                launchModIds = launchModIds,
+                events = readEvents(eventsFile),
             )
         }
-
-        val outcome = awaitOutcome(
-            context = appContext,
-            eventsFile = eventsFile,
-            logFile = logFile,
-            preLaunchLogLength = preLaunchLogLength,
-            startedAtMs = startedAtMs,
-            timeoutMs = timeoutMs.coerceAtLeast(15_000L),
-        )
-        closeGame(appContext)
-        runCatching { MtsStartupCacheCoordinator.invalidate(appContext) }
-
         return AgentPatchSmokeTestResult(
             passed = outcome.passed,
-            status = if (outcome.passed) "passed" else "failed",
+            status = outcome.status,
             reason = outcome.reason,
             reachedMainMenu = outcome.reachedMainMenu,
-            durationMs = SystemClock.elapsedRealtime() - startedAtMs,
-            launchModIds = selection.filesByModId.keys.toList(),
-            unresolvedDependencies = selection.unresolvedDependencies,
-            events = outcome.events,
-            logExcerpt = outcome.logExcerpt,
+            durationMs = outcome.durationMs,
+            launchModIds = launchModIds,
+            unresolvedDependencies = emptyList(),
+            events = readEvents(eventsFile),
+            logExcerpt = logExcerpt(appContext),
         )
+    }
+
+    /**
+     * Binds the `:game` process service and waits for its verdict.
+     *
+     * The binding is what keeps the game process at a visible importance for the whole run: the
+     * client here is a foreground Activity, and the service is bound rather than started, so no
+     * foreground-service notification is ever shown.
+     */
+    private fun driveService(
+        context: Context,
+        runId: String,
+        timeoutMs: Long,
+    ): AgentPatchSmokeTestOutcome? {
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) = Unit
+
+            override fun onServiceDisconnected(name: ComponentName?) = Unit
+        }
+        val bound = runCatching {
+            context.bindService(
+                Intent(context, AgentPatchSmokeTestService::class.java),
+                connection,
+                Context.BIND_AUTO_CREATE,
+            )
+        }.getOrDefault(false)
+        if (!bound) {
+            return null
+        }
+        try {
+            val bindStartedAtMs = SystemClock.elapsedRealtime()
+            val hardDeadlineMs = bindStartedAtMs + timeoutMs + SERVICE_START_TIMEOUT_MS * 2
+            var runObserved = false
+            while (SystemClock.elapsedRealtime() < hardDeadlineMs) {
+                AgentPatchSmokeTestProtocol.readOutcome(context, runId)?.let { return it }
+                if (AgentPatchSmokeTestProtocol.isRunActive(context)) {
+                    runObserved = true
+                } else if (!runObserved &&
+                    SystemClock.elapsedRealtime() - bindStartedAtMs > SERVICE_START_TIMEOUT_MS
+                ) {
+                    // The service never started its run; no verdict is coming.
+                    return null
+                }
+                sleepQuietly(POLL_INTERVAL_MS)
+            }
+            return AgentPatchSmokeTestProtocol.readOutcome(context, runId)
+        } finally {
+            runCatching { context.unbindService(connection) }
+        }
+    }
+
+    private data class ResolvedSelection(
+        val parentModId: String,
+        val selection: AgentPatchSmokeModSelection,
+    )
+
+    /**
+     * Waits for the `:game` process to disappear.
+     *
+     * The service writes its verdict before it shuts the JVM down, so the launcher can observe a
+     * finished run while the game is still closing. Unbinding (and hence destroying the service)
+     * during that window would clear the run marker early and let the JVM exit trap restart the
+     * launcher, destroying the AI editor and cancelling the tool call.
+     */
+    private fun awaitGameProcessExit(context: Context) {
+        val deadlineMs = SystemClock.elapsedRealtime() + GAME_EXIT_GRACE_MS
+        while (SystemClock.elapsedRealtime() < deadlineMs) {
+            if (!GameLaunchReturnTracker.isGameProcessRunning(context)) {
+                return
+            }
+            sleepQuietly(POLL_INTERVAL_MS)
+        }
+        // The service could not stop the game in time; make sure no session outlives the run.
+        GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(context)
     }
 
     private fun resolveSelection(
@@ -180,7 +273,8 @@ object AgentPatchSmokeTest {
         parentModId: String,
         parentJar: File,
         patchJar: File,
-    ): AgentPatchSmokeModSelection {
+        selectedModIds: Collection<String>,
+    ): ResolvedSelection {
         val installed = ModManager.listInstalledMods(context)
         val jarByModId = LinkedHashMap<String, File>()
         val dependenciesByModId = LinkedHashMap<String, List<String>>()
@@ -217,22 +311,24 @@ object AgentPatchSmokeTest {
             builtInJars[modId] = jar
             presentRequiredIds.add(modId)
         }
-        return AgentPatchSmokeTestModList.resolve(
-            builtInJars = builtInJars,
-            requiredModIds = presentRequiredIds,
-            rootModIds = listOf(resolvedParentModId, patchManifestId),
-            explicitJars = linkedMapOf(
-                resolvedParentModId to parentJar,
-                patchManifestId.ifEmpty { "amethyst.ai.patch" } to patchJar,
+        return ResolvedSelection(
+            parentModId = resolvedParentModId,
+            selection = AgentPatchSmokeTestModList.resolve(
+                builtInJars = builtInJars,
+                requiredModIds = presentRequiredIds,
+                rootModIds = listOf(resolvedParentModId, patchManifestId),
+                rootJars = linkedMapOf(
+                    resolvedParentModId to parentJar,
+                    patchManifestId.ifEmpty { "amethyst.ai.patch" } to patchJar,
+                ),
+                dependenciesByModId = dependenciesByModId,
+                jarByModId = jarByModId,
+                selectedModIds = selectedModIds,
             ),
-            dependenciesByModId = dependenciesByModId,
-            jarByModId = jarByModId,
         )
     }
 
-    private fun buildSnapshot(
-        selection: AgentPatchSmokeModSelection,
-    ): ModManager.LaunchModSnapshot {
+    private fun buildSnapshot(selection: AgentPatchSmokeModSelection): ModManager.LaunchModSnapshot {
         val requiredIds = LinkedHashSet<String>(BUILT_IN_MOD_IDS)
         val filesByModId = LinkedHashMap(selection.filesByModId)
         val enabledOptionalModIds = filesByModId.keys
@@ -247,183 +343,27 @@ object AgentPatchSmokeTest {
         )
     }
 
-    private data class Outcome(
-        val passed: Boolean,
-        val reason: String,
-        val reachedMainMenu: Boolean,
-        val events: String,
-        val logExcerpt: String,
-    )
-
-    private fun awaitOutcome(
-        context: Context,
-        eventsFile: File,
-        logFile: File,
-        preLaunchLogLength: Long,
-        startedAtMs: Long,
-        timeoutMs: Long,
-    ): Outcome {
-        val deadlineMs = startedAtMs + timeoutMs
-        var processSeen = false
-        while (SystemClock.elapsedRealtime() < deadlineMs) {
-            val events = readEvents(eventsFile)
-            val failMessage = terminalMessage(events, "FAIL")
-            if (failMessage != null) {
-                return Outcome(
-                    passed = false,
-                    reason = "boot_failure: $failMessage",
-                    reachedMainMenu = false,
-                    events = events,
-                    logExcerpt = logExcerpt(logFile),
-                )
-            }
-            val readyMessage = terminalMessage(events, "READY")
-            if (readyMessage != null) {
-                sleepQuietly(SETTLE_AFTER_READY_MS)
-                val crashAfterReady = crashMarker(logFile, preLaunchLogLength)
-                if (crashAfterReady != null) {
-                    return Outcome(
-                        passed = false,
-                        reason = "crash_after_main_menu: $crashAfterReady",
-                        reachedMainMenu = true,
-                        events = readEvents(eventsFile),
-                        logExcerpt = logExcerpt(logFile),
-                    )
-                }
-                if (!GameLaunchReturnTracker.isGameProcessRunning(context)) {
-                    return Outcome(
-                        passed = false,
-                        reason = "game_process_exited_after_main_menu",
-                        reachedMainMenu = true,
-                        events = readEvents(eventsFile),
-                        logExcerpt = logExcerpt(logFile),
-                    )
-                }
-                return Outcome(
-                    passed = true,
-                    reason = "main_menu_reached",
-                    reachedMainMenu = true,
-                    events = readEvents(eventsFile),
-                    logExcerpt = logExcerpt(logFile),
-                )
-            }
-            if (GameLaunchReturnTracker.isGameProcessRunning(context)) {
-                processSeen = true
-            } else if (processSeen) {
-                val crash = crashMarker(logFile, preLaunchLogLength)
-                return Outcome(
-                    passed = false,
-                    reason = crash?.let { "game_process_exited: $it" } ?: "game_process_exited_before_main_menu",
-                    reachedMainMenu = false,
-                    events = events,
-                    logExcerpt = logExcerpt(logFile),
-                )
-            } else if (SystemClock.elapsedRealtime() - startedAtMs > PROCESS_APPEAR_GRACE_MS) {
-                return Outcome(
-                    passed = false,
-                    reason = "game_process_never_started",
-                    reachedMainMenu = false,
-                    events = events,
-                    logExcerpt = logExcerpt(logFile),
-                )
-            }
-            sleepQuietly(POLL_INTERVAL_MS)
-        }
-        val crash = crashMarker(logFile, preLaunchLogLength)
-        return Outcome(
-            passed = false,
-            reason = crash?.let { "timeout: $it" } ?: "timeout_waiting_for_main_menu",
-            reachedMainMenu = false,
-            events = readEvents(eventsFile),
-            logExcerpt = logExcerpt(logFile),
-        )
-    }
-
-    /**
-     * Stops the game again without disturbing the launcher.
-     *
-     * The `.harness_exit_request` route is deliberately not used: it ends with
-     * `LauncherReturnCoordinator.createReturnIntent`, which restarts `LauncherActivity` with
-     * `FLAG_ACTIVITY_CLEAR_TASK` and would destroy the AI editor and cancel this very tool call.
-     * Instead the pending-launch marker is cleared first, so the launcher's return analysis stays
-     * inert and simply resumes the editor when the game process disappears.
-     */
-    private fun closeGame(context: Context) {
-        GameLaunchReturnTracker.clearPendingGameLaunch(context)
-        ExpectedGameExitNotice.clearExpectedGameExit(context)
-        GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(context)
-        GamePresenceStateMarker.markLauncherActive(context)
-    }
-
-    private fun terminalMessage(events: String, type: String): String? {
-        events.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .forEach { line ->
-                val parts = line.split('\t', limit = 3)
-                if (parts[0].trim().equals(type, ignoreCase = true)) {
-                    return parts.getOrNull(2)?.trim().orEmpty().ifBlank { type }
-                }
-            }
-        return null
-    }
-
     private fun readEvents(eventsFile: File): String =
-        runCatching {
-            if (!eventsFile.isFile) "" else eventsFile.readText(StandardCharsets.UTF_8)
-        }.getOrDefault("").takeLast(MAX_EVENTS_CHARS)
+        runCatching { if (eventsFile.isFile) eventsFile.readText(Charsets.UTF_8) else "" }
+            .getOrDefault("")
+            .takeLast(EVENTS_TAIL_CHARS)
 
-    /**
-     * Looks for a crash marker in the part of `latest.log` written by this launch.
-     *
-     * The game JVM truncates `latest.log` when it starts, so a shorter file than the pre-launch
-     * length means the whole file is new content and the pre-launch offset must be discarded.
-     */
-    private fun crashMarker(logFile: File, fromOffset: Long): String? {
-        val currentLength = runCatching { logFile.length() }.getOrDefault(0L)
-        if (currentLength <= 0L) {
-            return null
-        }
-        val newContentStart = if (currentLength < fromOffset) 0L else fromOffset
-        val start = maxOf(newContentStart, currentLength - TAIL_READ_CHARS)
-        val appended = readTextFrom(logFile, start, TAIL_READ_CHARS)
-        if (appended.isBlank()) {
-            return null
-        }
-        val marker = STRONG_CRASH_MARKERS.firstOrNull { appended.contains(it, ignoreCase = true) }
-        if (marker != null) {
-            return marker
-        }
-        // The detector scans a wider tail; only accept its verdict when its own marker also
-        // appears in the content this launch wrote, so a pre-launch crash cannot be misreported.
-        val summary = runCatching { LatestLogCrashDetector.detect(logFile) }.getOrNull()
-        return summary?.takeIf { appended.contains(it.marker, ignoreCase = true) }?.detail
-    }
+    private fun logExcerpt(context: Context): String = readTail(context, LOG_TAIL_READ_CHARS)
+        .takeLast(LOG_TAIL_CHARS)
 
-    private fun logExcerpt(logFile: File): String {
-        val length = runCatching { logFile.length() }.getOrDefault(0L)
-        if (length <= 0L) {
-            return ""
-        }
-        return readTextFrom(logFile, (length - TAIL_READ_CHARS).coerceAtLeast(0L), TAIL_READ_CHARS)
-            .takeLast(MAX_LOG_EXCERPT_CHARS)
-    }
-
-    private fun readTextFrom(file: File, offset: Long, maxChars: Int): String {
-        if (!file.isFile) {
+    private fun readTail(context: Context, maxChars: Int): String {
+        val logFile = RuntimePaths.latestLog(context)
+        if (!logFile.isFile) {
             return ""
         }
         return runCatching {
-            RandomAccessFile(file, "r").use { raf ->
-                val safeOffset = offset.coerceIn(0L, raf.length())
-                raf.seek(safeOffset)
-                val available = (raf.length() - safeOffset).coerceAtMost(maxChars.toLong()).toInt()
-                if (available <= 0) {
-                    return@use ""
-                }
-                val buffer = ByteArray(available)
+            RandomAccessFile(logFile, "r").use { raf ->
+                val length = raf.length()
+                val start = (length - maxChars).coerceAtLeast(0L)
+                raf.seek(start)
+                val buffer = ByteArray((length - start).toInt())
                 raf.readFully(buffer)
-                String(buffer, StandardCharsets.UTF_8)
+                String(buffer, Charsets.UTF_8)
             }
         }.getOrDefault("")
     }
@@ -433,7 +373,9 @@ object AgentPatchSmokeTest {
         status: String,
         reason: String,
         unresolvedDependencies: List<String> = emptyList(),
+        unknownModIds: List<String> = emptyList(),
         launchModIds: List<String> = emptyList(),
+        events: String = "",
     ): AgentPatchSmokeTestResult {
         Log.i(TAG, "smoke status=$status reason=$reason")
         return AgentPatchSmokeTestResult(
@@ -444,7 +386,8 @@ object AgentPatchSmokeTest {
             durationMs = SystemClock.elapsedRealtime() - startedAtMs,
             launchModIds = launchModIds,
             unresolvedDependencies = unresolvedDependencies,
-            events = "",
+            unknownModIds = unknownModIds,
+            events = events,
             logExcerpt = "",
         )
     }
