@@ -76,6 +76,7 @@ internal data class MainScreenActions(
     val onSetQuickRenderer: (RendererBackend) -> Unit = {},
     val onRestoreQuickRendererAuto: () -> Unit = {},
     val onImportMods: () -> Unit = {},
+    val onRefreshMods: () -> Unit = {},
     val onOpenWorkshop: () -> Unit = {},
     val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
     val onLaunchAfterSteamCloudError: () -> Unit = {},
@@ -211,6 +212,7 @@ internal fun rememberMainScreenActions(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")
                     )
                 },
+                onRefreshMods = { viewModel.refresh(activity) },
                 onOpenWorkshop = onOpenWorkshop,
                 onLaunch = { viewModel.onLaunchRequested(activity) },
                 onLaunchAfterSteamCloudError = { viewModel.onLaunchAfterSteamCloudError(activity) },

@@ -236,6 +236,7 @@ private enum class GamePageCard(
 }
 
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
+private const val MODS_PULL_REFRESH_MIN_DURATION_MS = 500L
 private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
 private const val EASY_TIER_WORKSHOP_APP_ID = 646570u
 private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3766232527UL
@@ -5452,15 +5453,26 @@ private fun LauncherMainScreenContent(
                         var modsHeaderHeightPx by remember { mutableIntStateOf(0) }
                         var modsHeaderCollapsed by remember { mutableStateOf(false) }
                         var modsContentMountReady by remember { mutableStateOf(false) }
+                        var modsRefreshing by remember { mutableStateOf(false) }
                         var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
                         var showUpdateAvailableModsOnly by rememberSaveable { mutableStateOf(false) }
+                        val modsPullToRefreshState = rememberPullToRefreshState()
                         val measuredModsHeaderHeight = with(density) { modsHeaderHeightPx.toDp() }
                         val modsHeaderContentTopInset =
                             (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) - 20.dp
+                        val modsRefreshIndicatorTopInset =
+                            (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) + 8.dp
 
                         LaunchedEffect(Unit) {
                             delay(MODS_CONTENT_MOUNT_DELAY_MS)
                             modsContentMountReady = true
+                        }
+
+                        LaunchedEffect(modsRefreshing) {
+                            if (modsRefreshing) {
+                                delay(MODS_PULL_REFRESH_MIN_DURATION_MS)
+                                modsRefreshing = false
+                            }
                         }
 
                         Box(
@@ -5468,31 +5480,53 @@ private fun LauncherMainScreenContent(
                                 .fillMaxSize()
                                 .testTag(MODS_SCREEN_ROOT_TAG)
                         ) {
-                            Column(
+                            PullToRefreshBox(
+                                isRefreshing = modsRefreshing,
+                                onRefresh = {
+                                    if (!modsRefreshing && !batchSelectionMode && !uiState.busy) {
+                                        modsRefreshing = true
+                                        actions.onRefreshMods()
+                                    }
+                                },
+                                state = modsPullToRefreshState,
+                                indicator = {
+                                    PullToRefreshDefaults.Indicator(
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = modsRefreshIndicatorTopInset),
+                                        isRefreshing = modsRefreshing,
+                                        state = modsPullToRefreshState,
+                                    )
+                                },
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .hazeSource(state = hazeState)
-                                    .padding(start = 16.dp, top = 18.dp, end = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    .hazeSource(state = hazeState),
                             ) {
-                                if (uiState.busy && !uiState.busyOperation.locksInteraction(uiState.busy)) {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                    uiState.busyMessage?.let {
-                                        Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(start = 16.dp, top = 18.dp, end = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    if (uiState.busy && !uiState.busyOperation.locksInteraction(uiState.busy)) {
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                        uiState.busyMessage?.let {
+                                            Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+                                        }
                                     }
-                                }
 
-                                MainContentSwitcher(
-                                    uiState = uiState,
-                                    showInitializing = showInitializing || !modsContentMountReady,
-                                    contentTopInset = modsHeaderContentTopInset,
-                                    actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
-                                    showEnabledModsOnly = showEnabledModsOnly,
-                                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
-                                    onHeaderCollapsedChange = { modsHeaderCollapsed = it },
-                                    onBatchEditBarStateChange = { batchEditBarState = it },
-                                    actions = actions
-                                )
+                                    MainContentSwitcher(
+                                        uiState = uiState,
+                                        showInitializing = showInitializing || !modsContentMountReady,
+                                        contentTopInset = modsHeaderContentTopInset,
+                                        actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
+                                        showEnabledModsOnly = showEnabledModsOnly,
+                                        showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
+                                        onHeaderCollapsedChange = { modsHeaderCollapsed = it },
+                                        onBatchEditBarStateChange = { batchEditBarState = it },
+                                        actions = actions
+                                    )
+                                }
                             }
 
                             CollapsibleFloatingGlassHeader(
