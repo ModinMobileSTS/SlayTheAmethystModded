@@ -5,6 +5,7 @@ import android.system.ErrnoException
 import android.system.Os
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.fs.FileTreeCleaner
+import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileOutputStream
@@ -31,7 +32,7 @@ internal object OptionalModStorageCoordinator {
         if (migrationMarker.isFile) {
             return
         }
-        migrateLegacyOptionalMods(
+        val movedPaths = migrateLegacyOptionalMods(
             legacyRuntimeModsDir = RuntimePaths.modsDir(context),
             libraryDir = libraryDir,
             enabledModsConfig = RuntimePaths.enabledModsConfig(context),
@@ -40,6 +41,7 @@ internal object OptionalModStorageCoordinator {
                 RuntimePaths.normalizeLegacyStsPath(context, raw)
             }
         )
+        rebindWorkshopMetadata(context, movedPaths)
         writeMigrationMarker(migrationMarker)
     }
 
@@ -63,7 +65,7 @@ internal object OptionalModStorageCoordinator {
     ): ModManager.LaunchModSnapshot {
         ensureOptionalModLibraryReady(context)
         val runtimeModsDir = RuntimePaths.modsDir(context)
-        salvageLegacyOptionalModsForRuntimeCleanup(
+        val movedPaths = salvageLegacyOptionalModsForRuntimeCleanup(
             legacyRuntimeModsDir = runtimeModsDir,
             libraryDir = RuntimePaths.optionalModsLibraryDir(context),
             enabledModsConfig = RuntimePaths.enabledModsConfig(context),
@@ -72,6 +74,7 @@ internal object OptionalModStorageCoordinator {
                 RuntimePaths.normalizeLegacyStsPath(context, raw)
             }
         )
+        rebindWorkshopMetadata(context, movedPaths)
         val snapshot = launchSnapshot ?: ModManager.buildLaunchModSnapshot(context)
         val enabledLibraryFiles = snapshot.enabledLibraryFiles
         val launchModFiles = snapshot.launchModFiles
@@ -101,14 +104,14 @@ internal object OptionalModStorageCoordinator {
         enabledModsConfig: File,
         priorityModsConfig: File,
         normalizeSelectionPath: ((String) -> String?)? = null
-    ) {
+    ): Map<String, String> {
         ensureDirectory(libraryDir)
         if (!legacyRuntimeModsDir.isDirectory) {
-            return
+            return emptyMap()
         }
         val legacyOptionalFiles = listOptionalJarFiles(legacyRuntimeModsDir)
         if (legacyOptionalFiles.isEmpty()) {
-            return
+            return emptyMap()
         }
 
         val movedPaths = LinkedHashMap<String, String>()
@@ -119,6 +122,7 @@ internal object OptionalModStorageCoordinator {
         }
         rewriteSelectionConfig(enabledModsConfig, movedPaths, normalizeSelectionPath)
         rewriteSelectionConfig(priorityModsConfig, movedPaths, normalizeSelectionPath)
+        return movedPaths
     }
 
     @Throws(IOException::class)
@@ -128,14 +132,14 @@ internal object OptionalModStorageCoordinator {
         enabledModsConfig: File,
         priorityModsConfig: File,
         normalizeSelectionPath: ((String) -> String?)? = null
-    ) {
+    ): Map<String, String> {
         ensureDirectory(libraryDir)
         if (!legacyRuntimeModsDir.isDirectory) {
-            return
+            return emptyMap()
         }
         val legacyOptionalFiles = listOptionalJarFiles(legacyRuntimeModsDir)
         if (legacyOptionalFiles.isEmpty()) {
-            return
+            return emptyMap()
         }
 
         val movedPaths = LinkedHashMap<String, String>()
@@ -154,6 +158,15 @@ internal object OptionalModStorageCoordinator {
         }
         rewriteSelectionConfig(enabledModsConfig, movedPaths, normalizeSelectionPath)
         rewriteSelectionConfig(priorityModsConfig, movedPaths, normalizeSelectionPath)
+        return movedPaths
+    }
+
+    private fun rebindWorkshopMetadata(context: Context, movedPaths: Map<String, String>) {
+        if (movedPaths.isEmpty()) return
+        val metadataStore = WorkshopMetadataStore(context)
+        movedPaths.forEach { (oldPath, newPath) ->
+            metadataStore.rebindLocalJarPaths(listOf(oldPath), newPath)
+        }
     }
 
     @Throws(IOException::class)
