@@ -12,7 +12,8 @@ class ForegroundAudioPolicyTest {
         assertFalse(
             policy.shouldRestoreForegroundAudio(
                 runtimeLifecycleReady = true,
-                backExitRequested = false
+                backExitRequested = false,
+                runtimeAudioSuppressed = false
             )
         )
 
@@ -20,7 +21,8 @@ class ForegroundAudioPolicyTest {
         assertTrue(
             policy.shouldRestoreForegroundAudio(
                 runtimeLifecycleReady = true,
-                backExitRequested = false
+                backExitRequested = false,
+                runtimeAudioSuppressed = false
             )
         )
     }
@@ -33,13 +35,22 @@ class ForegroundAudioPolicyTest {
         assertFalse(
             policy.shouldRestoreForegroundAudio(
                 runtimeLifecycleReady = false,
-                backExitRequested = false
+                backExitRequested = false,
+                runtimeAudioSuppressed = false
             )
         )
         assertFalse(
             policy.shouldRestoreForegroundAudio(
                 runtimeLifecycleReady = true,
-                backExitRequested = true
+                backExitRequested = true,
+                runtimeAudioSuppressed = false
+            )
+        )
+        assertFalse(
+            policy.shouldRestoreForegroundAudio(
+                runtimeLifecycleReady = true,
+                backExitRequested = false,
+                runtimeAudioSuppressed = true
             )
         )
 
@@ -47,7 +58,8 @@ class ForegroundAudioPolicyTest {
         assertFalse(
             policy.shouldRestoreForegroundAudio(
                 runtimeLifecycleReady = true,
-                backExitRequested = false
+                backExitRequested = false,
+                runtimeAudioSuppressed = false
             )
         )
     }

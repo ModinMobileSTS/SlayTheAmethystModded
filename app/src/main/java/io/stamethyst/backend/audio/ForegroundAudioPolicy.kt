@@ -9,10 +9,12 @@ internal class ForegroundAudioPolicy {
 
     fun shouldRestoreForegroundAudio(
         runtimeLifecycleReady: Boolean,
-        backExitRequested: Boolean
+        backExitRequested: Boolean,
+        runtimeAudioSuppressed: Boolean
     ): Boolean {
         return activityResumed &&
             runtimeLifecycleReady &&
-            !backExitRequested
+            !backExitRequested &&
+            !runtimeAudioSuppressed
     }
 }

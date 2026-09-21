@@ -133,6 +133,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onInstallArthasResource: () -> Unit = {},
     onRepairResourcePack: () -> Unit = {},
     onOpenSlingBreak: () -> Unit = {},
+    onClearSlingBreakData: () -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onClearJunkFiles: () -> Unit = {},
@@ -355,12 +356,43 @@ internal fun LauncherDeveloperSettingsScreenContent(
 
         item {
             SettingsSectionCard(title = stringResource(R.string.settings_developer_experiments_title)) {
+                var showClearSlingBreakDialog by rememberSaveable { mutableStateOf(false) }
+
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_developer_slingbreak_title),
                     supportingText = stringResource(R.string.settings_developer_slingbreak_summary),
                     enabled = !uiState.busy,
                     onClick = onOpenSlingBreak,
                 )
+                SettingsActionListItem(
+                    title = stringResource(R.string.settings_developer_slingbreak_clear_title),
+                    supportingText = stringResource(R.string.settings_developer_slingbreak_clear_summary),
+                    enabled = !uiState.busy,
+                    onClick = { showClearSlingBreakDialog = true },
+                )
+
+                if (showClearSlingBreakDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showClearSlingBreakDialog = false },
+                        title = { Text(stringResource(R.string.settings_developer_slingbreak_clear_confirm_title)) },
+                        text = { Text(stringResource(R.string.settings_developer_slingbreak_clear_confirm_message)) },
+                        dismissButton = {
+                            HapticTextButton(onClick = { showClearSlingBreakDialog = false }) {
+                                Text(stringResource(R.string.main_folder_dialog_cancel))
+                            }
+                        },
+                        confirmButton = {
+                            HapticTextButton(
+                                onClick = {
+                                    showClearSlingBreakDialog = false
+                                    onClearSlingBreakData()
+                                }
+                            ) {
+                                Text(stringResource(R.string.settings_developer_slingbreak_clear_confirm_action))
+                            }
+                        },
+                    )
+                }
             }
         }
 

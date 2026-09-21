@@ -205,7 +205,7 @@ internal class GameSessionCoordinator(
         useTextureViewSurface = config.useTextureViewSurface,
         onDismissed = {
             if (!backExitRequested) {
-                syncRuntimeForegroundState(true)
+                applyForegroundWindowState()
             }
             renderSurfaceManager.setBootOverlayActive(false)
             updateFloatingMouseVisibility()
@@ -214,7 +214,9 @@ internal class GameSessionCoordinator(
             trySchedulePostBootSurfaceSoftRefresh("overlay_dismissed")
         },
         onRuntimePauseRequested = {
+            cancelForegroundAudioRestoreRetries()
             syncRuntimeForegroundState(false)
+            setRuntimeAudioMuted(true)
         },
         onRequestEarlyDismiss = {
             bootOverlayController.setEarlyDismissRequestTimestamp(
@@ -225,7 +227,7 @@ internal class GameSessionCoordinator(
     )
 
     private val jvmLaunchController: JvmLaunchController = JvmLaunchController(
-        activity = activity,
+        context = activity,
         launchMode = config.launchMode,
         debugMode = config.debugMode,
         rendererDecision = config.rendererDecision,
@@ -1023,6 +1025,12 @@ internal class GameSessionCoordinator(
     }
 
     private fun applyForegroundWindowState() {
+        if (bootOverlayController.shouldPauseRuntimeUntilEntry) {
+            cancelForegroundAudioRestoreRetries()
+            syncRuntimeForegroundState(false)
+            setRuntimeAudioMuted(true)
+            return
+        }
         syncRuntimeForegroundState(true)
         if (!jvmLaunchController.runtimeLifecycleReady) {
             return
@@ -1453,7 +1461,8 @@ internal class GameSessionCoordinator(
         // window still counts as foreground audio here.
         return foregroundAudioPolicy.shouldRestoreForegroundAudio(
             runtimeLifecycleReady = jvmLaunchController.runtimeLifecycleReady,
-            backExitRequested = backExitRequested
+            backExitRequested = backExitRequested,
+            runtimeAudioSuppressed = bootOverlayController.shouldPauseRuntimeUntilEntry
         )
     }
 

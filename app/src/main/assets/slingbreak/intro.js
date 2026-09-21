@@ -3,10 +3,11 @@
   const dialog = document.getElementById('game-intro');
   const canvas = document.getElementById('intro-canvas');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const intro = window.SlingBreakIntro = {active: false};
-  if (reduced.matches) return;
+  const intro = window.SlingBreakIntro;
+  const reveal = () => document.documentElement.classList.remove('intro-pending');
+  if (reduced.matches) { intro.active = false; reveal(); Game.ui?.(); return; }
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) { intro.active = false; reveal(); Game.ui?.(); return; }
 
   const ratio = Math.min(devicePixelRatio || 1, 2);
   canvas.width = 640 * ratio;
@@ -122,6 +123,7 @@
 
   intro.active = true;
   dialog.showModal();
+  reveal();
   document.getElementById('intro-skip').addEventListener('click', finish);
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
   dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });

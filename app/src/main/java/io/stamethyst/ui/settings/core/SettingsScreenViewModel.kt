@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
+import io.stamethyst.clearSlingBreakWebViewData
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.fs.LauncherJunkFileCleaner
@@ -88,7 +89,6 @@ import io.stamethyst.backend.render.MobileGluesMultidrawMode
 import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesPreset
 import io.stamethyst.backend.render.MobileGluesSettings
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.RendererAvailability
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
@@ -2486,6 +2486,12 @@ class SettingsScreenViewModel : ViewModel() {
             host.runOnUiThread {
                 showToast(host, message)
             }
+        }
+    }
+
+    fun onClearSlingBreakData(host: Activity) {
+        clearSlingBreakWebViewData(host) {
+            showToast(host, UiText.StringResource(R.string.settings_developer_slingbreak_clear_done))
         }
     }
 

@@ -1,3 +1,5 @@
+html.intro-pending { background: var(--bg); }
+.intro-pending body > :not(#game-intro) { visibility: hidden; }
 #game-intro {
   position: fixed;
   inset: 0;

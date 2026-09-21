@@ -156,7 +156,11 @@
   G.chooseSkill=id=>{
     const skill=byId.get(id);
     if(G.phase!=='draft'||G.paused||!skill||S.draft?.level!==S.level||!S.draft.options.includes(id)||S.skillChosenLevel===S.level||rank(id)>=skill.max)return false;
-    S.skills={[id]:1};S.skillChosenLevel=S.level;S.draft=null;G.phase='ready';applyLevelPassives();G.save();G.ui();G.sound('upgrade');G.toast?.(skill.name+' · 仅本关有效');return true;
+    S.skills={[id]:1};S.skillChosenLevel=S.level;S.draft=null;
+    const duration=G.reduced?0:.85;
+    G.boardEntrance=duration?{start:G.time,end:G.time+duration}:null;
+    G.phase=duration?'entering':'ready';
+    applyLevelPassives();G.save();G.ui();G.sound('upgrade');G.toast?.(skill.name+' · 仅本关有效');return true;
   };
   let jobs=[],uses={},effectBudget=0;
   const resetShot=()=>{uses={};effectBudget=120;};

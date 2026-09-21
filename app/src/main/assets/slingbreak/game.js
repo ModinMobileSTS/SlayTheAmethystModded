@@ -52,6 +52,7 @@
     return items;
   };
    G.generate = (restore=false) => {
+     G.boardEntrance = null;
      G.nextShotAt=0;
      G.predictionVersion++;Composite.clear(engine.world);G.bricks=[];G.obstacles=[];G.arrows=[];G.core=null;G.combo=0;G.shotMoney=0;G.killed=0;G.shots=0;G.phase='ready';G.particles=[];G.rings=[];G.bolts=[];G.texts=[];G.coreFlash=0;
     const board=state.board;
@@ -164,6 +165,8 @@
   };
   // Slab intersection supplies an exact entry order and face normal for swept ricochets.
   G.sweep=(bounds,from,to,padding=2.5)=>{
+    // Reject disjoint swept bounds before allocating slab-intersection state.
+    if(Math.max(from.x,to.x)<bounds.min.x-padding||Math.min(from.x,to.x)>bounds.max.x+padding||Math.max(from.y,to.y)<bounds.min.y-padding||Math.min(from.y,to.y)>bounds.max.y+padding)return null;
     let enter=0,exit=1,normal={x:0,y:0};
     for(const axis of ['x','y']){
       const delta=to[axis]-from[axis],min=bounds.min[axis]-padding,max=bounds.max[axis]+padding;
@@ -187,11 +190,13 @@
     if(p.x<20||p.x>760){Body.setPosition(body,{x:Math.max(20,Math.min(760,p.x)),y:p.y});Body.setVelocity(body,{x:-body.velocity.x*.86,y:body.velocity.y});onBounce();}
     if(p.y<22){Body.setPosition(body,{x:p.x,y:22});Body.setVelocity(body,{x:body.velocity.x,y:Math.abs(body.velocity.y)*.85});onBounce();}
   };
+  const previewBody=Bodies.circle(0,0,3,{frictionAir:.0005,isSensor:true,collisionFilter:{mask:0},label:'arrow'});
+  Composite.add(previewEngine.world,previewBody);
   G.predictPath=(x,y,vx,vy,maxDistance=720)=>{
     // A separate world uses Matter's integration without touching live bodies or effects.
-     const preview=previewEngine;preview.gravity.x=engine.gravity.x;preview.gravity.y=engine.gravity.y;Composite.clear(preview.world);preview.timing.timestamp=0;
-    const body=Bodies.circle(x,y,3,{frictionAir:.0005,isSensor:true,collisionFilter:{mask:0},label:'arrow'});
-    Body.setVelocity(body,{x:vx,y:vy});Composite.add(preview.world,body);
+     const preview=previewEngine;preview.gravity.x=engine.gravity.x;preview.gravity.y=engine.gravity.y;preview.gravity.scale=engine.gravity.scale;preview.timing.timestamp=0;
+    const body=previewBody;body.deltaTime=1000/60;body.force.x=0;body.force.y=0;body.torque=0;
+    Body.setPosition(body,{x,y});Body.setAngle(body,0);Body.setAngularVelocity(body,0);Body.setVelocity(body,{x:vx,y:vy});
     const arrow={body,hit:new Set()},path=[{x,y}];let distance=0;
      const stepSeconds=G.physicsStep;
      for(let step=0;step<Math.ceil(4.5/stepSeconds)&&distance<maxDistance;step++){
@@ -209,16 +214,19 @@
   G.tick=dt=>{
     if(G.paused)return;
     G.time+=dt;
+    if(G.phase==='entering'&&G.time>=G.boardEntrance.end){G.boardEntrance=null;G.phase='ready';G.ui();}
     if(G.phase==='clearing'&&G.time>=G.clearAt){G.generate();G.toast?.('LEVEL '+state.level+' · 新的局面');}
     if(G.phase==='flying'){
       G.beforePhysics?.(dt);
        for(const a of G.arrows){a.previousPosition??={x:0,y:0};a.previousPosition.x=a.body.position.x;a.previousPosition.y=a.body.position.y;}
-       const bodies=[...G.bricks.map(b=>b.body),...G.obstacles.map(o=>o.body)];
+       const bodies=[],bricksById=new Map();
+       for(const b of G.bricks){bodies.push(b.body);bricksById.set(b.body.id,b);}
+       for(const o of G.obstacles)bodies.push(o.body);
        if(G.core)bodies.push(G.core.body);
        Engine.update(engine,dt*1000);
       for(const a of [...G.arrows]){
         if(G.phase==='clearing')break;
-         a.life+=dt;const p=a.body.position,from=a.previousPosition||p;a.trail.push({x:p.x,y:p.y});if(a.trail.length>14)a.trail.shift();
+         a.life+=dt;const p=a.body.position,from=a.previousPosition||p,trailPoint=a.trail.length>=14?a.trail.shift():{};trailPoint.x=p.x;trailPoint.y=p.y;a.trail.push(trailPoint);
          const collisions=[];for(const body of bodies){const contact=G.sweep(body.bounds,from,p);if(contact)collisions.push({body,contact});}collisions.sort((a,b)=>a.contact.t-b.contact.t);
         for(const {body,contact} of collisions){
           if(body.label==='obstacle'){
@@ -235,17 +243,18 @@
         }
         if(G.phase==='clearing')break;
         G.reflectWalls(a.body,()=>G.onRicochet?.(a));
-        for(const id of [...a.overlap]){
-          const brick=G.bricks.find(x=>x.body.id===id);
-          if(!brick||!G.sweep(brick.body.bounds,a.body.position,a.body.position))a.overlap.delete(id);
+        for(const id of a.overlap){
+          const brick=bricksById.get(id);
+          if(!brick||brick.hp<=0||!G.sweep(brick.body.bounds,a.body.position,a.body.position))a.overlap.delete(id);
         }
         if(a.pierce<=0||p.y>G.H-20||a.life>4.5){Composite.remove(engine.world,a.body);G.arrows=G.arrows.filter(v=>v!==a);}
       }
       if(G.phase==='flying'&&G.arrows.length===0&&!G.hasPendingEffects?.()){G.phase='ready';G.save();G.ui();}
     }
-    G.particles.forEach(p=>{p.x+=p.vx*dt*60;p.y+=p.vy*dt*60;p.vy+=dt*7;p.life-=dt;p.rot+=dt*3;});G.particles=G.particles.filter(p=>p.life>0);
-    G.texts.forEach(p=>{p.y-=dt*25;p.life-=dt;});G.texts=G.texts.filter(p=>p.life>0);
-    G.rings.forEach(p=>p.life-=dt);G.rings=G.rings.filter(p=>p.life>0);G.bolts.forEach(p=>p.life-=dt);G.bolts=G.bolts.filter(p=>p.life>0);
+    let alive=0;
+    for(const p of G.particles){p.x+=p.vx*dt*60;p.y+=p.vy*dt*60;p.vy+=dt*7;p.life-=dt;p.rot+=dt*3;if(p.life>0)G.particles[alive++]=p;}G.particles.length=alive;
+    alive=0;for(const p of G.texts){p.y-=dt*25;p.life-=dt;if(p.life>0)G.texts[alive++]=p;}G.texts.length=alive;
+    for(const items of [G.rings,G.bolts]){alive=0;for(const p of items){p.life-=dt;if(p.life>0)items[alive++]=p;}items.length=alive;}
     G.bricks.forEach(b=>b.flash=Math.max(0,b.flash-dt));G.obstacles.forEach(o=>o.flash=Math.max(0,o.flash-dt));G.shake=Math.max(0,G.shake-dt*28);G.coreFlash=Math.max(0,G.coreFlash-dt*1.4);
   };
   G.sound=()=>{};

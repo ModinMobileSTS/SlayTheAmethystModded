@@ -13,7 +13,7 @@
     $('core-required').textContent=G.threshold;$('core-bonus').textContent='+ '+G.fmt(G.phase==='clearing'&&G.settledBonus!==undefined?G.settledBonus:G.bonus(G.phase==='clearing'?G.state.level-1:G.state.level));
     const arrowScore=G.latestAchievement;
     $('combo').classList.toggle('visible',!!arrowScore&&arrowScore.kills>=2&&G.phase==='flying');$('combo-count').textContent=arrowScore?.kills||0;$('combo-mult').textContent='本箭连击';
-     $('play-status').textContent=G.paused?'已暂停':G.phase==='clearing'?'下一关即将开始':G.drag?'蓄力中':G.phase==='flying'?'可继续射击':'就绪';
+     $('play-status').textContent=G.paused?'已暂停':G.phase==='clearing'?'下一关即将开始':G.phase==='entering'?'砖块入场中':G.drag?'蓄力中':G.phase==='flying'?'可继续射击':'就绪';
     if(!G.drag)$('power-readout').querySelector('b').textContent='0%';
     for(const [key,u] of Object.entries(upgrades)){
       $(key+'-level').textContent='LV. '+(G.state.up[key]+1);$(key+'-desc').textContent=u.desc();const b=$('buy-'+key),cost=G.cost(key);b.querySelector('span').textContent=G.fmt(cost);b.disabled=G.state.coins<cost||G.phase!=='ready'||G.paused;

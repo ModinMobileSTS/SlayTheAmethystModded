@@ -465,6 +465,9 @@ fun LauncherDeveloperSettingsScreen(
         onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },
         onRepairResourcePack = LauncherNavigationRequestBus::requestResourcePack,
         onOpenSlingBreak = { SlingBreakActivity.launch(activity) },
+        onClearSlingBreakData = {
+            viewModel.onClearSlingBreakData(activity)
+        },
         onGdxPadCursorDebugChanged = { enabled ->
             viewModel.onGdxPadCursorDebugChanged(activity, enabled)
         },

@@ -81,9 +81,7 @@
   }
   function pulse(name){panel.classList.remove(name);void panel.offsetWidth;panel.classList.add(name);}
   panel.addEventListener('animationend',e=>{if(e.animationName==='cash-rise')panel.classList.remove('paying');if(e.animationName==='cash-flash')panel.classList.remove('celebrating');});
-  const baseUI=G.ui;
-  G.ui=()=>{
-    baseUI();
+  G.updateAchievementUI=()=>{
     const delta=G.state.coins-targetWallet;
     if(delta>0){$('money-burst').textContent='+'+G.fmt(delta);pulse('paying');}
     if(G.shotMoney<targetMoney||G.reduced)shownMoney=G.shotMoney;

@@ -24,3 +24,25 @@
 @keyframes riseIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes cardIn{0%{opacity:0;transform:translateY(26px) rotate(var(--deal-angle)) scale(.94)}65%{opacity:1;transform:translateY(-4px) rotate(0deg) scale(1.012)}100%{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){#skill-draft[open],#skill-draft::backdrop,.draft-header,.draft-intro,#skill-draft h2,.skill-card{animation:none!important}.skill-card,.skill-emblem,.skill-pick svg{transition:none!important;transform:none!important}}
+
+/* Keep the choice surface focused and cheap to composite while it opens. */
+#skill-draft,#skill-library{padding:20px}
+#skill-draft::backdrop,#skill-library::backdrop{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#skill-draft .draft-options{margin:0}
+#skill-draft .skill-card{animation:skillCardDeal .48s cubic-bezier(.22,1,.36,1) both;will-change:transform,opacity}
+#skill-draft .skill-card:nth-child(1){animation-delay:0s;--deal-angle:-2.5deg}
+#skill-draft .skill-card:nth-child(2){animation-delay:.07s;--deal-angle:.8deg}
+#skill-draft .skill-card:nth-child(3){animation-delay:.14s;--deal-angle:2.5deg}
+#skill-library .library-grid{grid-template-columns:repeat(3,minmax(0,1fr));margin:0}
+#skill-library .library-item{min-height:280px}
+#skill-library .library-item .skill-emblem{display:grid}
+#skill-library .library-item{display:flex;flex-direction:column;gap:10px;padding:20px;border:1px solid #d6dfcc;border-radius:7px;background:#f3f6ee;color:var(--ink)}
+#skill-library .library-item h3{margin:8px 0 0;font-size:19px}
+#skill-library .library-item p{margin:0;color:#68785b;font-size:12px;line-height:1.85}
+#skill-library .library-item{animation:skillCardDeal .42s cubic-bezier(.22,1,.36,1) both;will-change:transform,opacity}
+#skill-library .library-item:nth-child(1){animation-delay:0s;--deal-angle:-2deg}
+#skill-library .library-item:nth-child(2){animation-delay:.06s;--deal-angle:.5deg}
+#skill-library .library-item:nth-child(3){animation-delay:.12s;--deal-angle:2deg}
+@keyframes skillCardDeal{0%{opacity:0;transform:translate3d(0,22px,0) rotate(var(--deal-angle)) scale(.94)}65%{opacity:1;transform:translate3d(0,-3px,0) rotate(calc(var(--deal-angle) * -.3)) scale(1.01)}100%{opacity:1;transform:translate3d(0,0,0) rotate(0) scale(1)}}
+@media(max-width:720px){#skill-library .library-grid{grid-template-columns:1fr}#skill-library .library-item{min-height:0}}
+@media(prefers-reduced-motion:reduce){#skill-draft .skill-card,#skill-library .library-item{animation:none;will-change:auto}}

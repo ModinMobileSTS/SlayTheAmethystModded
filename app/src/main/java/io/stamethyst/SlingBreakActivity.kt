@@ -4,8 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.os.Bundle
+import android.webkit.CookieManager
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
@@ -15,6 +19,33 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 internal const val SLING_BREAK_GAME_URL = "file:///android_asset/slingbreak/index.html"
+
+/** Clears the WebView state used by both the standalone game and the boot overlay. */
+internal fun clearSlingBreakWebViewData(context: Context, onComplete: () -> Unit) {
+    val clearOnMainThread = Runnable {
+        runCatching {
+            WebView(context).apply {
+                clearCache(true)
+                clearHistory()
+                clearFormData()
+                clearSslPreferences()
+                destroy()
+            }
+        }
+        runCatching { WebStorage.getInstance().deleteAllData() }
+
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.removeAllCookies {
+            cookieManager.flush()
+            onComplete()
+        }
+    }
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        clearOnMainThread.run()
+    } else {
+        Handler(Looper.getMainLooper()).post(clearOnMainThread)
+    }
+}
 
 @SuppressLint("SetJavaScriptEnabled", "DEPRECATION")
 @Suppress("DEPRECATION")

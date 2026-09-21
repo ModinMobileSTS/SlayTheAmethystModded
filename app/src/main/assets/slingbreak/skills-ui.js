@@ -1,6 +1,6 @@
 (() => {
   const G=Game,$=id=>document.getElementById(id),draft=$('skill-draft'),library=$('skill-library');
-  const baseUi=G.ui;let draftKey='',ownedKey='',libraryPaused=false,selecting=false;
+  const baseUi=G.ui;let draftKey='',ownedKey='',libraryPaused=false,selecting=false,lastOptions=[];
   const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
   async function selectSkill(id,button){
     if(selecting||G.phase!=='draft'||G.paused)return;
@@ -27,7 +27,6 @@
   const icons=()=>lucide.createIcons();
   const rarity=skill=>`<span class="skill-rarity" data-tier="${skill.tier}"><span class="rarity-dot"></span>${G.skillTiers[skill.tier].name}</span>`;
   const chance=skill=>`<span class="skill-chance" title="每关按权重不重复抽取三个技能，此值为该技能进入三选一的概率">本轮出现率 ${(skill.chance*100).toFixed(2)}%</span>`;
-  $('library-total').textContent='PASSIVE COLLECTION / '+G.skillCatalog.length;
   function update(){
     const owned=G.skillCatalog.filter(s=>G.skillRank(s.id)),key=JSON.stringify(G.state.skills);
     $('skill-count').textContent=owned.length?'本关生效':'待选择';
@@ -37,11 +36,12 @@
       for(const skill of owned){const tag=document.createElement('span');tag.textContent=G.skillTiers[skill.tier].name+' · '+skill.name+' · 通关失效';tag.title=skill.describe(1);$('owned-skills').append(tag);}
       if(owned.length>6){const tag=document.createElement('span');tag.textContent='另 '+(owned.length-6)+' 种';$('owned-skills').append(tag);}
     }
-    if(G.phase==='draft'){
-      $('play-status').textContent='选择本关被动';
+     if(G.phase==='draft'){
+       $('play-status').textContent='选择本关被动';
+       lastOptions=G.state.draft?.options||lastOptions;
       const nextKey=JSON.stringify(G.state.draft)+key;
       if(nextKey!==draftKey){
-        draftKey=nextKey;$('draft-level').textContent='LEVEL '+String(G.state.level).padStart(2,'0');$('draft-options').replaceChildren();
+         draftKey=nextKey;$('draft-options').replaceChildren();
         for(const id of G.state.draft.options){
           const skill=G.skillCatalog.find(s=>s.id===id),rank=G.skillRank(id),button=document.createElement('button');
           button.className='skill-card';button.dataset.skill=id;button.setAttribute('aria-label','本关选择'+skill.name);
@@ -59,18 +59,17 @@
    G.ui=()=>{
      if(uiQueued)return;
      uiQueued=true;
-     requestAnimationFrame(()=>{uiQueued=false;baseUi();update();});
+      requestAnimationFrame(()=>{uiQueued=false;baseUi();update();G.updateAchievementUI?.();});
    };
   draft.addEventListener('cancel',e=>e.preventDefault());
   draft.addEventListener('keydown',e=>{if(e.key==='Escape')e.stopPropagation();});
   $('open-skills').onclick=()=>{
     libraryPaused=G.paused;G.paused=true;G.drag=null;G.audio.sync();$('library-grid').replaceChildren();
-    const sorted=[...G.skillCatalog].sort((a,b)=>Number(G.skillRank(b.id)>0)-Number(G.skillRank(a.id)>0));
-    for(const skill of sorted){const rank=G.skillRank(skill.id),item=document.createElement('article');item.className='library-item'+(rank?' is-owned':'');item.innerHTML=`<header><i data-lucide="${skill.icon}"></i><h3>${skill.name}</h3><small>${rank?'本关生效':'候选技能'}</small></header><div class="skill-meta">${rarity(skill)}${chance(skill)}</div><span class="skill-family">${skill.family} · 仅本关有效</span><p>${skill.describe(1)}</p>`;$('library-grid').append(item);}
-    icons();library.showModal();G.ui();
+     const options=G.state.draft?.options||lastOptions;
+     for(const id of options){const skill=G.skillCatalog.find(s=>s.id===id);if(!skill)continue;const item=document.createElement('article');item.className='library-item';item.innerHTML=`<span class="skill-emblem"><i data-lucide="${skill.icon}"></i></span><h3>${skill.name}</h3><span class="skill-family">${skill.family}</span><p>${skill.describe(1)}</p>`;$('library-grid').append(item);}
+     if(!library.open)library.showModal();if(options.length)icons();
   };
-  $('close-skills').onclick=()=>library.close();
+   library.addEventListener('click',e=>{if(e.target===library)library.close();});
   library.addEventListener('close',()=>{G.paused=libraryPaused;G.audio.sync();G.ui();});
-  library.addEventListener('keydown',e=>{if(e.key==='Escape')e.stopPropagation();});
   G.ui();
 })();

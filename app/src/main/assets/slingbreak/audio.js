@@ -1,32 +1,42 @@
 (() => {
   'use strict';
   const G=Game;
-  let context,master,compressor,echo,noiseBuffer;
-  const sources=new Set(),last=new Map(),specialSlots=new Map();
+  let context,master,mix,echo,noiseBuffer,resumeAttempt=null;
+  const sources=new Set(),last=new Map();
   let currentType='',priorityVoice=false;
-  let breakSlot=0;
-  const ensure=()=>{
+  const intervals={draw:.065,break:.018,boom:.055,lightning:.06,frost:.07,prism:.06,gold:.06,ricochet:.035,tap:.03};
+  const ensure=(fromGesture=false)=>{
     if(!context){
       const Audio=window.AudioContext||window.webkitAudioContext;
       if(!Audio)return false;
-      try{context=new Audio({latencyHint:'interactive'});}catch{context=new Audio();}
-      master=context.createGain();master.gain.value=.7;
-      compressor=context.createDynamicsCompressor();
-      compressor.threshold.value=-14;compressor.knee.value=10;compressor.ratio.value=12;
-      compressor.attack.value=.003;compressor.release.value=.16;
-      // A soft ceiling keeps dense chains punchy without clipped output.
+      // Request the smallest supported output buffer; keep the device's native
+      // sample rate so the browser does not need an extra resampling stage.
+      try{context=new Audio({latencyHint:0});}catch{
+        try{context=new Audio({latencyHint:'interactive'});}catch{context=new Audio();}
+      }
+      master=context.createGain();master.gain.value=G.paused?0:.7;
+      mix=context.createGain();
+      // Limit peaks without the DynamicsCompressor's mandatory look-ahead delay.
       const ceiling=context.createWaveShaper(),curve=new Float32Array(2048);
       for(let i=0;i<curve.length;i++)curve[i]=.9*Math.tanh((i/(curve.length-1)*2-1)*1.4);
       ceiling.curve=curve;ceiling.oversample='2x';
-      compressor.connect(master);master.connect(ceiling);ceiling.connect(context.destination);
+      mix.connect(master);master.connect(ceiling);ceiling.connect(context.destination);
       echo=context.createDelay(.4);echo.delayTime.value=.105;
       const feedback=context.createGain(),wet=context.createGain();feedback.gain.value=.18;wet.gain.value=.16;
-      echo.connect(feedback);feedback.connect(echo);echo.connect(wet);wet.connect(compressor);
-       noiseBuffer=context.createBuffer(1,context.sampleRate,Math.ceil(context.sampleRate*.25));
+      echo.connect(feedback);feedback.connect(echo);echo.connect(wet);wet.connect(mix);
+       noiseBuffer=context.createBuffer(1,Math.ceil(context.sampleRate*.25),context.sampleRate);
       const samples=noiseBuffer.getChannelData(0);for(let i=0;i<samples.length;i++)samples[i]=Math.random()*2-1;
     }
-     if(context.state==='suspended')context.resume().catch(()=>{});
-    return true;
+    if((context.state==='suspended'||context.state==='interrupted')&&(fromGesture||!resumeAttempt)){
+      // A touch-down resume can stay pending until activation. Always retry
+      // synchronously on a later gesture, especially touch-end or click.
+      const attempt=context.resume();resumeAttempt=attempt;
+      attempt.then(()=>G.audio.sync()).catch(()=>{}).finally(()=>{
+        if(resumeAttempt===attempt)resumeAttempt=null;
+      });
+    }
+    // Never queue stale impact sounds while the output device is waking up.
+    return context.state==='running';
   };
    function voice(source,t,duration,volume,x,filter,spacious=false){
      const envelope=context.createGain(),pan=context.createStereoPanner?context.createStereoPanner():context.createGain();
@@ -34,7 +44,7 @@
     envelope.gain.exponentialRampToValueAtTime(.0001,t+duration);
      if(pan.pan)pan.pan.value=Math.max(-.65,Math.min(.65,(x-390)/520));
     if(filter){source.connect(filter);filter.connect(envelope);}else source.connect(envelope);
-    envelope.connect(pan);pan.connect(compressor);if(spacious)pan.connect(echo);
+    envelope.connect(pan);pan.connect(mix);if(spacious)pan.connect(echo);
     source.effectType=currentType;source.priority=priorityVoice;sources.add(source);
     source.onended=()=>{sources.delete(source);source.disconnect();filter?.disconnect();envelope.disconnect();pan.disconnect();};
     source.start(t);source.stop(t+duration+.025);
@@ -51,33 +61,37 @@
     voice(source,t,duration,volume,x,filter);
   };
   G.audio={
-    unlock(){if(G.state.sound)try{ensure();}catch{}},
+    get latency(){
+      return context?{state:context.state,sampleRate:context.sampleRate,baseLatency:context.baseLatency??null,outputLatency:context.outputLatency??null}:null;
+    },
+    unlock(){if(G.state.sound)try{ensure(true);}catch{}},
     sync(){
       if(!context)return;
       const silent=!G.state.sound||G.paused,t=context.currentTime;
       master.gain.cancelScheduledValues(t);master.gain.setTargetAtTime(silent?0:.7,t,.012);
-      if(silent){for(const source of sources)try{source.stop(t+.04);}catch{}breakSlot=t;last.clear();specialSlots.clear();}
+      if(silent){for(const source of sources)try{source.stop(t+.04);}catch{}last.clear();}
     }
   };
+  const unlock=()=>G.audio.unlock();
+  document.addEventListener('pointerdown',unlock,{capture:true,passive:true});
+  document.addEventListener('pointerup',unlock,{capture:true,passive:true});
+  document.addEventListener('touchend',unlock,{capture:true,passive:true});
+  document.addEventListener('click',unlock,{capture:true,passive:true});
+  document.addEventListener('keydown',unlock,{capture:true});
   G.sound=(type,n=1,x=390,priority=false)=>{
     if(!G.state.sound||G.paused)return;
     try{
       if(!ensure())return;
-      let t=context.currentTime+.004;
+      const t=context.currentTime;
        if(priority){
          // Keep decisive destruction cues immediate instead of building an audible backlog.
-         t=Math.min(t+.025,Math.max(t,specialSlots.get(type)||0));specialSlots.set(type,t+.012);
          const priorityLimit=36;
          if(sources.size>priorityLimit){
           const victims=[...sources].sort((a,b)=>(a.priority?(a.effectType===type?1:2):0)-(b.priority?(b.effectType===type?1:2):0));
            for(const source of victims){if(sources.size<=priorityLimit)break;try{source.stop(context.currentTime+.006);}catch{}sources.delete(source);}
         }
-      }else if(type==='break'){
-        // Stagger simultaneous chain hits into a short, rising cascade.
-        if(breakSlot>t+.14)return;
-        t=Math.max(t,breakSlot);breakSlot=t+.018;
       }else{
-        const interval={draw:.065,boom:.055,lightning:.06,frost:.07,prism:.06,gold:.06,ricochet:.035,tap:.03}[type]||0;
+        const interval=intervals[type]||0;
         if(t-(last.get(type)??-Infinity)<interval)return;
         last.set(type,t);
       }
