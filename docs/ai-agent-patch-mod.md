@@ -6,7 +6,7 @@ The AI mod editor lets the agent build a separate, versioned patch-mod revision 
 The original mod JAR is extracted for inspection and is never rewritten.
 
 The patch-mod workspace is **not** created when the editor opens. It is created on demand by the
-agent through the `create_agent_patch_mod` tool, and only when the user actually asks for a change.
+agent through the `create_agent_patch_workspace` tool, and only when the user actually asks for a new change with no existing patch workspace to reuse.
 Opening the editor or starting a new conversation must not generate a workspace.
 
 ## Storage Layout
@@ -39,18 +39,72 @@ Packaged patch mods are loaded by the launcher directly from `agent_mods/`; ther
 Conversation history lives in `agent_workspace/.conversations/<modid>/conversations.json` and is
 independent of any `patch_id`, so multiple conversations share one workspace within an editor session.
 
+## Context Management
+
+The editor uses an archived protocol transcript separately from the display transcript. Each session
+stores structured user messages, assistant messages (including tool call IDs and reasoning when
+provided), tool results, the active patch ID, and a successful summary boundary. Tool previews in the
+UI are not used as the source of truth for subsequent requests. Legacy conversations migrate on first
+use; old tool previews are explicitly marked incomplete because omitted output cannot be recovered.
+
+Context limits are configured per service URL and model. An unset or legacy zero limit defaults to
+**200,000 tokens**. A task snapshots the limit when it starts. The budget reserves up to 16,000 output
+tokens (10% for smaller windows) plus 5% safety headroom. With the default limit, compaction starts
+at an estimated 174,000 input tokens. Model requests explicitly cap output to the reserved amount.
+The estimate includes system instructions, tool schemas, summary and retained protocol messages;
+provider-reported input usage calibrates it upwards. It is an estimate, not a provider tokenizer.
+The UI separately displays the latest reported input/output usage and successful compaction count.
+Switching models resets the usage calibration; a model without usage metadata still has a local estimate.
+
+Inspired by OpenCode's session compaction and overflow handling:
+
+- Before every model request, check the entire active context budget, including within long tool loops.
+- Retain a recent tail of up to 15,000 estimated tokens, reduced for smaller windows. Never split a
+  tool-call message from its result group. Preserve the latest user request verbatim even when the
+  beginning of its long tool loop has been summarized.
+- Summarize older history sequentially in bounded chunks with no tools enabled. Carry forward goals,
+  constraints, exact patch IDs/paths, verified signatures, changes, approvals, results and pending work.
+- Atomically checkpoint a new summary only after all chunks succeed, the response is nonempty and
+  complete, and the resulting active context is smaller. On cancellation, errors, empty summaries or
+  output truncation, keep the original context. Compaction never deletes the archived messages.
+- On a recognized provider context-overflow error, compact and retry the model request once. This
+  retry never re-executes tools. Summary overflow retries use progressively smaller chunks, with a
+  finite retry limit. An oversized current request/attachment that cannot fit produces an explicit
+  capacity error rather than silently dropping user instructions.
+- Persist assistant tool calls before execution and results afterwards. After interruption, unmatched
+  calls receive an explicit unknown-outcome result; the agent must inspect state before retrying.
+  Restore the active patch workspace on the next task. Rollback discards affected protocol messages
+  and invalidates summaries that covered them; filesystem side effects are not undone by chat rollback.
+
+Session edits are per-session read/modify/write transactions under a file lock, with monotonically
+increasing revisions. Delayed UI polls cannot overwrite newer local state. The foreground task is
+reserved before its RUNNING record is published, and only one task is admitted per process. Streamed
+display text is flushed at most every 250 ms and at tool/final checkpoints to reduce whole-file writes;
+an abrupt process kill may lose the last unflushed display fragment, not completed protocol checkpoints.
+
+Oversized tool results retain a bounded UTF-8 preview and a durable `tool_output/` file. Referenced
+outputs are no longer deleted by a global last-20-files policy. Use `read_agent_workspace_file` with
+`encoding=utf8_chars`, zero-based character `offset`, and `next_offset` to recover long single-line
+JSON without the normal line reader's 2,000-character truncation. Archives and overflow files currently
+remain on disk; automatic storage garbage collection is not part of context compaction.
+
+References: [OpenCode compaction](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/compaction.ts)
+and [overflow budgeting](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/overflow.ts).
+
 ## Agent Tools
 
 The editor exposes these tools for the selected mod workspace:
 
 - `list_agent_workspace`: list all extracted and generated files.
 - `read_agent_workspace_file`: read UTF-8 or base64 content from any workspace file.
-- `create_agent_patch_mod`: create and activate a new patch revision. Required arguments: `name` (the agent
+- `create_agent_patch_workspace`: create and activate a new patch workspace/revision. Required arguments: `name` (the agent
   chooses it), optional `version` and `description`. Extracts the full parent JAR into the shared
   `source/` tree and seeds a new `patch_source/<patch_id>/` with `ModTheSpire.json` and
-  `agent-patch.json`. Calling it again creates and activates another isolated patch revision.
+  `agent-patch.json`. This only prepares a workspace; it does not compile, package, install, or enable a mod.
+  Do not call it for changes to an existing patch revision: reuse that revision's `patch_source/<patch_id>/` tree,
+  compile it with the same `patch_id`, and call `update_agent_patch_mod`.
 - `write_agent_workspace_file`: create or replace files only under `patch_source/`. For patch-mod
-  work, the agent uses the `patch_workspace_path` returned by `create_agent_patch_mod`, while
+  work, the agent uses the `patch_workspace_path` returned by `create_agent_patch_workspace`, while
   `source/` remains read-only context.
 - `delete_agent_workspace_file`: delete files or, with `recursive=true`, non-empty directories only
   under `patch_source/`. The `source/` tree and `patch_source/` root cannot be deleted.
@@ -84,8 +138,12 @@ The editor exposes these tools for the selected mod workspace:
   and enabled state are unchanged, so updating never creates a duplicate or forces re-enabling.
   Runs the same bytecode preflight as packaging and refuses to replace the JAR when it fails.
 - `smoke_test_agent_patch_mod`: launch the game with one packaged revision and report whether the
-  main menu was reached. Optional `patch_id` (defaults to the current session's revision) and
-  `timeout_seconds` (default `240`). See "Smoke test" below.
+  main menu was reached. Optional `patch_id` (defaults to the current session's revision),
+  `timeout_seconds` (default `240`), and `mod_ids` (extra optional mods to enable for the run). See
+  "Smoke test" below.
+- `list_installed_mods`: list the mods the launcher has installed with their `mod_id`,
+  `manifest_mod_id`, name, version, dependencies, built-in flag, and current enabled state. This is
+  how the agent learns which ids it can pass in `mod_ids`.
 - `set_agent_patch_mod_enabled`: enable or disable a packaged patch revision for the parent mod.
 - `list_agent_patch_mods`: list packaged revisions and their enabled state.
 - `delete_agent_patch_mod`: delete a packaged revision by `patch_id` and clear its enablement.
@@ -113,31 +171,66 @@ This keeps a failure attributable to the patch instead of an unrelated enabled m
 launcher does not have installed fails the run immediately with `unresolved_dependencies` rather than
 being silently dropped.
 
-`AgentPatchSmokeTestModList` holds the ordering logic; `AgentPatchSmokeTest` owns the run:
+On top of that baseline the agent may enable additional optional mods with `mod_ids`. A patch that is
+only meaningful alongside another mod has to be verified together with it, so the selected mods are
+resolved through `list_installed_mods`, added after the baseline, and bring their own dependency
+closure. Selecting a built-in mod is a no-op, and a mod id the launcher does not have fails the run
+with `unknown_mod_ids` instead of being ignored.
 
-- It runs in the launcher (main) process and reuses the normal launch path by passing this mod set as
+`AgentPatchSmokeTestModList` holds the ordering logic. The run itself is split across the two
+processes the launcher already uses:
+
+- The launcher (main) process resolves the mod set and reuses the normal launch path by passing it as
   a `LaunchModSnapshot` override into `MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch`,
-  which writes it to `.mts_mod_file_list`.
+  which writes it to `.mts_mod_file_list`. This part must run here because it repairs
+  `desktop-1.0.jar`, which the `:game` process is not allowed to do.
 - It invalidates the MTS classpath and patch caches before and after the run, because otherwise the
   patch cache would skip the patch pass and the test would be meaningless. Interactive launches are
   unaffected: they still reuse the cache.
-- It opens the real `StsGameActivity`; Android cannot run the GL game headless. The test is silent in
-  that it needs no user interaction and shuts the game down as soon as the verdict is known.
+- It then writes `.agent_smoke_test/request.json`, binds `AgentPatchSmokeTestService` in the `:game`
+  process, and polls `.agent_smoke_test/result.json`. The binding is what keeps the game process at a
+  visible importance for the whole run: the client is a foreground Activity and the service is bound
+  rather than started, so no foreground-service notification is ever shown.
+
+`AgentPatchSmokeTestService` runs the game with no UI of any kind:
+
+- The game JVM is loaded into `:game`, the same process a normal session uses, so one process can
+  only host one game. A live session makes the tool return `game_already_running`.
+- It renders into `HeadlessGameSurface`: a standalone `ImageReader` surface handed to
+  `JREUtils.setupBridgeWindow`. The surface belongs to no display and no window, so the game gets a
+  real render target while nothing is composited anywhere and the launcher never loses the
+  foreground. The image queue is drained continuously; otherwise the producer would block once the
+  queue filled and the game would stall in `eglSwapBuffers`.
+- A display-based variant was rejected by the platform and must not be reintroduced. Launching an
+  Activity onto an app-created virtual display requires
+  `VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY`/`PUBLIC`, which are signature-protected, so `startActivity`
+  failed with `Permission Denial ... with launchDisplayId`. An `ImageReader` the app owns has no such
+  restriction.
+- The session is muted, because it is deliberately invisible and its audio would have no source the
+  user could attribute it to.
 - The verdict comes from the boot bridge terminal events plus a crash-marker scan of the part of
-  `latest.log` this launch wrote. A failure returns the boot events and a log excerpt so the agent
-  can fix the patch.
-- The game is stopped by terminating the `:game` process with the pending-launch marker cleared,
-  never through `.harness_exit_request`: that route restarts `LauncherActivity` with
-  `FLAG_ACTIVITY_CLEAR_TASK`, which would destroy the AI editor and cancel the tool call in flight.
+  `latest.log` this run wrote. A failure returns the boot events and a log excerpt so the agent can
+  fix the patch.
+- `ExitActivity.showExitMessage` short-circuits while the run marker
+  (`.agent_smoke_test/run.active`) exists. The native JVM exit trap would otherwise restart
+  `LauncherActivity` with `FLAG_ACTIVITY_CLEAR_TASK`, destroying the AI editor and cancelling the
+  tool call that is waiting for this verdict.
+- After writing the verdict the service closes the game with
+  `CallbackBridge.nativeRequestCloseWindow`, the same graceful path an in-game back exit uses, and
+  kills the process only if the JVM does not exit within the grace period.
+- As a guard rail, if the launcher process ever drops below `IMPORTANCE_BACKGROUND` for a full
+  second, the run aborts with `game_took_over_the_screen` and the game is closed, so the user can
+  never be left staring at the game.
 
 ## Launcher Lifecycle
 
 1. Opening AI Edit creates no workspace. It only prepares the parent's conversation directory.
 2. When the user asks for inspection, the agent calls `decompile_agent_mod_source`, which extracts
    and decompiles the parent directly into `<modid>/source/`.
-3. When the user asks for a change, the agent calls `create_agent_patch_mod`, which prepares the
-   shared `source/`, allocates a `patch_id`, and creates writable
-   `<modid>/patch_source/<patch_id>/` for packaging.
+3. When the user asks for a new change and no existing patch revision can be reused, the agent calls
+   `create_agent_patch_workspace`, which prepares the shared `source/`, allocates a `patch_id`, and creates writable
+   `<modid>/patch_source/<patch_id>/` for packaging. For follow-up changes, the agent edits the existing
+   `patch_source/<patch_id>/` directly and updates that revision instead of creating another workspace.
 4. The agent reads the shared read-only source tree and writes a self-contained patch mod under its
    dedicated `patch_source/<patch_id>/`.
 5. Packaging writes a JAR under `agent_mods/<modid>/` and injects the parent dependency into its manifest.

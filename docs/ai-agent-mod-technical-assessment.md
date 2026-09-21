@@ -24,7 +24,7 @@
 流程是：
 
 1. 用户选择父模组，Agent 通过 `decompile_agent_mod_source` 提取并反编译父 JAR。
-2. 用户提出修改后，Agent 调用 `create_agent_patch_mod`，生成独立的 `patch_source/<patch_id>/`，原模组不被覆盖。
+2. 用户提出新的修改且没有可复用 revision 后，Agent 调用 `create_agent_patch_workspace`，生成独立的 `patch_source/<patch_id>/`，原模组不被覆盖；已有 revision 的后续修改直接复用其工作区并 update。
 3. Agent 通过 workspace tools 写 Java 8 源码。
 4. Agent 可调用 `inspect_agent_patch_target` 读取真实 classfile 的方法描述符、重载和字段，再调用 `generate_agent_patch_skeleton` 生成带精确 `paramtypez` 的骨架。
 5. App 使用 ECJ，以 Java 8 source/target 编译到 patch 目录。
