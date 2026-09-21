@@ -252,7 +252,6 @@ private fun renderingSection(
     zh: Context,
 ): LauncherSettingsDiagnosticsSection {
     val targetFps = LauncherConfig.readTargetFps(context)
-    val automaticFps = LauncherConfig.isTargetFpsAutomatic(context)
     val renderScale = LauncherConfig.readRenderScale(context)
     val fontScale = LauncherConfig.readGameplayFontScale(context)
     val virtualResolution = LauncherConfig.readVirtualResolutionMode(context)
@@ -266,7 +265,7 @@ private fun renderingSection(
                 "targetFps",
                 zh.getString(R.string.settings_target_fps_title),
                 targetFps.toString(),
-                if (automaticFps) "${targetFps}（自动）" else targetFps.toString(),
+                targetFps.toString(),
             ),
             boolField(
                 "nonRecommendedFpsEnabled",

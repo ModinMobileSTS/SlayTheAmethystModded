@@ -7,7 +7,6 @@ import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.VirtualResolutionMode
@@ -86,11 +85,7 @@ internal data class GameSessionConfig(
                 ?: LauncherConfig.readTargetFpsValue(context)
             val effectiveRenderScale =
                 AndroidGameModeSupport.resolveRenderScale(requestedRenderScale, systemGameMode)
-            val effectiveTargetFps = if (LauncherConfig.isTargetFpsAutomatic(context)) {
-                DisplayRefreshRateController.resolveAutomaticTargetFps(context)
-            } else {
-                requestedTargetFps
-            }
+            val effectiveTargetFps = requestedTargetFps
 
             val specialKeyInputMode = LauncherConfig.readSpecialKeyInputMode(context)
 

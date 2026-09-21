@@ -49,7 +49,6 @@ import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -221,11 +220,7 @@ internal object SettingsRepository {
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),
-                targetFps = if (LauncherPreferences.isTargetFpsAutomatic(context)) {
-                    DisplayRefreshRateController.resolveAutomaticTargetFps(context)
-                } else {
-                    LauncherPreferences.readTargetFpsValue(context)
-                },
+                targetFps = LauncherPreferences.readTargetFpsValue(context),
                 nonRecommendedFpsEnabled = LauncherPreferences.isNonRecommendedFpsEnabled(context),
                 framePacingMode = LauncherPreferences.readFramePacingMode(context),
                 virtualResolutionMode = LauncherPreferences.readVirtualResolutionMode(context),

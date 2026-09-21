@@ -943,10 +943,6 @@ object LauncherPreferences {
         return LauncherConfig.readTargetFpsValue(context)
     }
 
-    fun isTargetFpsAutomatic(context: Context): Boolean {
-        return LauncherConfig.isTargetFpsAutomatic(context)
-    }
-
     fun saveTargetFps(context: Context, targetFps: Int) {
         LauncherConfig.saveTargetFps(context, targetFps)
     }

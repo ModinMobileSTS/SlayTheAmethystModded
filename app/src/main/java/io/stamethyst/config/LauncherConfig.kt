@@ -1342,10 +1342,6 @@ object LauncherConfig {
         return readTargetFps(context).toFloat()
     }
 
-    fun isTargetFpsAutomatic(context: Context): Boolean {
-        return false
-    }
-
     fun saveTargetFps(context: Context, targetFps: Float) {
         val normalizedTargetFps = normalizeTargetFps(
             targetFps.takeIf { it > 0f && !it.isNaN() }?.roundToInt() ?: DEFAULT_TARGET_FPS

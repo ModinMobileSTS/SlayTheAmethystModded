@@ -14,7 +14,6 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.DisplayConfigSync
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.FullscreenCanvasSize
 import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.RendererBackendResolver
@@ -157,11 +156,7 @@ object StsLaunchSpec {
             LauncherConfig.isArthasAnalysisEnabled(context) &&
             ArthasResourcePackService.isInstalled(context)
         val requestedTargetFps = LauncherConfig.readTargetFpsValue(context)
-        val effectiveTargetFps = effectiveTargetFpsOverride ?: if (LauncherConfig.isTargetFpsAutomatic(context)) {
-            DisplayRefreshRateController.resolveAutomaticTargetFps(context)
-        } else {
-            requestedTargetFps
-        }
+        val effectiveTargetFps = effectiveTargetFpsOverride ?: requestedTargetFps
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.
@@ -473,10 +468,9 @@ object StsLaunchSpec {
         val virtualHeight = launchVirtualSize.height
         // The in-JVM LWJGL shim cannot read the real panel refresh rate, so publish the value the
         // launcher itself requested. Without this the game assumes 60Hz and mis-paces every frame.
-        val expectedRefreshRateHz = DisplayRefreshRateController.resolveExpectedActiveRefreshRateHz(
-            context,
-            effectiveTargetFps
-        )
+        val expectedRefreshRateHz = context.display?.refreshRate
+            ?.takeIf { it > 0f && !it.isNaN() }
+            ?: 0f
         if (expectedRefreshRateHz > 0f) {
             args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
         }

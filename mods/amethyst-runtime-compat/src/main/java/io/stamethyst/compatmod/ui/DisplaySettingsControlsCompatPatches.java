@@ -30,8 +30,16 @@ public final class DisplaySettingsControlsCompatPatches {
         return dropdown != null && FIXED_DROPDOWNS.containsKey(dropdown);
     }
 
+    public static boolean shouldRenderDropdown(DropdownMenu dropdown) {
+        return !isFixedDropdown(dropdown);
+    }
+
     private static boolean isDisabledToggle(ToggleButton toggle) {
         return toggle != null && DISABLED_TOGGLES.containsKey(toggle);
+    }
+
+    public static boolean shouldRenderToggle(ToggleButton toggle) {
+        return !isDisabledToggle(toggle);
     }
 
     private static void clearHitbox(ToggleButton toggle) {
@@ -87,12 +95,12 @@ public final class DisplaySettingsControlsCompatPatches {
         if (text == null || OptionsPanel.TEXT == null || OptionsPanel.TEXT.length <= 17) {
             return text;
         }
-        if (text == OptionsPanel.TEXT[4]) {
+        if (OptionsPanel.TEXT[4].equals(text)) {
             String[] labels = text.split(" NL ");
             return labels.length > 2 ? "NL NL " + labels[2] : "";
         }
-        if (text == OptionsPanel.TEXT[17]) {
-            return "";
+        if (OptionsPanel.TEXT[17].equals(text)) {
+            return null;
         }
         return text;
     }
@@ -176,6 +184,39 @@ public final class DisplaySettingsControlsCompatPatches {
                             + DisplaySettingsControlsCompatPatches.class.getName()
                             + ".filterHiddenGraphicsLabel($3), $4, $5, $6, $7, $8); }"
                     );
+                }
+            };
+        }
+    }
+
+    @SpirePatch2(
+        clz = OptionsPanel.class,
+        method = "renderGraphics",
+        paramtypez = {SpriteBatch.class}
+    )
+    public static class HiddenGraphicsControlsPatch {
+        @SpireInstrumentPatch
+        public static ExprEditor Instrument() {
+            return new ExprEditor() {
+                @Override
+                public void edit(MethodCall call) throws CannotCompileException {
+                    if (DropdownMenu.class.getName().equals(call.getClassName())
+                        && "render".equals(call.getMethodName())) {
+                        call.replace(
+                            "{ if ("
+                                + DisplaySettingsControlsCompatPatches.class.getName()
+                                + ".shouldRenderDropdown($0)) { $proceed($$); } }"
+                        );
+                        return;
+                    }
+                    if (ToggleButton.class.getName().equals(call.getClassName())
+                        && "render".equals(call.getMethodName())) {
+                        call.replace(
+                            "{ if ("
+                                + DisplaySettingsControlsCompatPatches.class.getName()
+                                + ".shouldRenderToggle($0)) { $proceed($$); } }"
+                        );
+                    }
                 }
             };
         }
