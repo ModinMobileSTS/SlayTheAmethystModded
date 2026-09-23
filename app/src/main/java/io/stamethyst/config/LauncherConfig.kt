@@ -277,8 +277,13 @@ object LauncherConfig {
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED = true
     const val DEFAULT_TARGET_FPS = 60
-    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 240)
-    // Kept as an API alias for older callers; all six choices are now supported directly.
+    const val UNLIMITED_TARGET_FPS = 0
+    const val MIN_TARGET_FPS = 5
+    const val MAX_TARGET_FPS = 240
+    const val TARGET_FPS_STEP = 5
+    val TARGET_FPS_OPTIONS = intArrayOf(UNLIMITED_TARGET_FPS) +
+        (MIN_TARGET_FPS..MAX_TARGET_FPS step TARGET_FPS_STEP).toList().toIntArray()
+    // Kept as an API alias for callers that still enumerate the supported values.
     val NON_RECOMMENDED_TARGET_FPS_OPTIONS = TARGET_FPS_OPTIONS
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
     const val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
@@ -357,7 +362,7 @@ object LauncherConfig {
     const val DEFAULT_RAM_SAVER_ENABLED = true
     const val DEFAULT_MTS_PATCH_CACHE_ENABLED = false
     const val DEFAULT_SWAPPY_FRAME_PACING_ENABLED = false
-    val DEFAULT_FRAME_PACING_MODE: FramePacingMode = FramePacingMode.BUILT_IN
+    val DEFAULT_FRAME_PACING_MODE: FramePacingMode = FramePacingMode.OFF
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
@@ -1313,11 +1318,10 @@ object LauncherConfig {
     }
 
     fun normalizeTargetFps(targetFps: Int): Int {
-        return if (TARGET_FPS_OPTIONS.contains(targetFps)) {
-            targetFps
-        } else {
-            DEFAULT_TARGET_FPS
-        }
+        if (targetFps == UNLIMITED_TARGET_FPS) return UNLIMITED_TARGET_FPS
+        if (targetFps !in 1..MAX_TARGET_FPS) return DEFAULT_TARGET_FPS
+        val snapped = ((targetFps + TARGET_FPS_STEP / 2) / TARGET_FPS_STEP) * TARGET_FPS_STEP
+        return snapped.coerceIn(MIN_TARGET_FPS, MAX_TARGET_FPS)
     }
 
     fun readTargetFps(context: Context): Int {
@@ -1382,7 +1386,7 @@ object LauncherConfig {
         val value = preferences.getString(PREF_KEY_TARGET_FPS_EXACT, null)
             ?.toFloatOrNull()
             ?: return null
-        return value.takeIf { it > 0f && !it.isNaN() }
+        return value.takeIf { it >= 0f && !it.isNaN() }
     }
 
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {

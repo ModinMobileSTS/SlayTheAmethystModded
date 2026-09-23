@@ -42,6 +42,12 @@ final class LwjglFramePacerSchedule {
 		return Math.min(frameRate, refreshRate);
 	}
 
+	/** Off disables the display-rate cap for active frames, but keeps the user FPS limit in force. */
+	static boolean shouldCapToActiveRefreshRate (boolean framePacingOff, boolean shouldRender,
+		boolean isActive, boolean runtimeForeground) {
+		return !framePacingOff || !shouldRender || !isActive || !runtimeForeground;
+	}
+
 	/**
 	 * Whether the schedule has to be seeded from the current time.
 	 *

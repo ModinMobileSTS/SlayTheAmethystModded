@@ -5105,7 +5105,7 @@ class SettingsScreenViewModel : ViewModel() {
         )
         lines += host.getString(
             R.string.settings_status_target_fps,
-            formatTargetFps(rendering.targetFps)
+            formatTargetFps(host, rendering.targetFps)
         )
         lines += host.getString(
             R.string.settings_status_virtual_resolution_mode,
@@ -6013,7 +6013,8 @@ class SettingsScreenViewModel : ViewModel() {
         return LauncherPreferences.TARGET_FPS_OPTIONS.map(Int::toFloat)
     }
 
-    private fun formatTargetFps(targetFps: Float): String {
+    private fun formatTargetFps(host: Activity, targetFps: Float): String {
+        if (targetFps <= 0f) return host.getString(R.string.settings_target_fps_unlimited)
         if (targetFps == targetFps.roundToInt().toFloat()) {
             return targetFps.roundToInt().toString()
         }

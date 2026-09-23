@@ -81,7 +81,7 @@ internal data class GameSessionConfig(
             val requestedTargetFps = intent.getFloatExtra(
                 StsGameActivity.EXTRA_TARGET_FPS,
                 Float.NaN
-            ).takeIf { it > 0f && !it.isNaN() }
+            ).takeIf { it >= LauncherConfig.UNLIMITED_TARGET_FPS.toFloat() && !it.isNaN() }
                 ?: LauncherConfig.readTargetFpsValue(context)
             val effectiveRenderScale =
                 AndroidGameModeSupport.resolveRenderScale(requestedRenderScale, systemGameMode)

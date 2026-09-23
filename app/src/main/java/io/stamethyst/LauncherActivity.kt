@@ -24,6 +24,7 @@ import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.launch.MainProcessLaunchPreparationCoordinator
 import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.launch.StsLaunchSpec
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.config.LegacyStsStorageMigration
@@ -140,6 +141,7 @@ class LauncherActivity : AppCompatActivity() {
         val startupBackground = StartupWindowBackground.launcherColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        DisplayRefreshRatePolicy.requestHighestRefreshRate(this, window)
         StartupTraceEvents.append(
             this,
             "launcher_activity_on_create",
@@ -221,6 +223,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        DisplayRefreshRatePolicy.requestHighestRefreshRate(this, window)
         LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
         WorkshopDownloadProcessService.startNextQueued(this)

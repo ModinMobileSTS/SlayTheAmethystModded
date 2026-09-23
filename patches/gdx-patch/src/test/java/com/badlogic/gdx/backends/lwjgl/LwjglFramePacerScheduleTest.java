@@ -99,6 +99,18 @@ public class LwjglFramePacerScheduleTest {
 	}
 
 	@Test
+	public void shouldCapToActiveRefreshRate_offModeSkipsOnlyTheActiveFrameCap () {
+		assertFalse(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, true, true, true));
+		assertTrue(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, false, true, true));
+		assertTrue(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, true, false, false));
+	}
+
+	@Test
+	public void shouldCapToActiveRefreshRate_keepsBuiltInRefreshCap () {
+		assertTrue(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(false, true, true, true));
+	}
+
+	@Test
 	public void shouldSeed_onlyWhenUnseededOrTheTargetChanged () {
 		assertTrue("no schedule yet", LwjglFramePacerSchedule.shouldSeed(0, 90, 0L));
 		assertTrue("target changed", LwjglFramePacerSchedule.shouldSeed(60, 90, 12345L));

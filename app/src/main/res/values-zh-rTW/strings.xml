@@ -515,6 +515,8 @@
     <string name="main_renderer_quick_restore_confirm">恢復自動</string>
     <string name="main_renderer_quick_restore_auto_backend">根據裝置支援情況選擇可用的圖形後端。目前自動選擇為 %1$s。</string>
     <string name="main_renderer_quick_subtitle">遊戲使用的圖形後端</string>
+    <string name="main_refresh_rate_mismatch_title">實際螢幕更新率低於申請值</string>
+    <string name="main_refresh_rate_mismatch_message">啟動器申請了 %1$.0f Hz，但目前螢幕實際執行在 %2$.0f Hz。</string>
     <string name="main_renderer_quick_mobileglues_caption">相容轉譯</string>
     <string name="main_renderer_quick_gles2_caption">原生渲染</string>
     <string name="main_renderer_quick_mobileglues_summary">相容性更好，但有輕微效能損耗。</string>
@@ -2141,6 +2143,12 @@
     <string name="settings_render_scale_title">渲染縮放</string>
     <string name="settings_render_scale_desc">數值越高畫面越清晰，越低則越省效能。</string>
     <string name="settings_target_fps_title">FPS 上限</string>
+    <string name="settings_target_fps_unlimited">不限制</string>
+    <string name="settings_target_fps_recommendation_button">查看影格率建議</string>
+    <string name="settings_target_fps_recommendation_title">影格率建議</string>
+    <string name="settings_target_fps_recommendation_message">此裝置的螢幕更新率為 %1$.1f Hz。建議將影格率上限設為 %2$d FPS（更新率的 1.5 倍），以兼顧遊玩流暢度與裝置能效。</string>
+    <string name="settings_target_fps_set_recommended">設為建議值</string>
+    <string name="settings_target_fps_recommendation_confirm">確定</string>
     <string name="settings_non_recommended_fps_enabled">選擇不建議的幀數</string>
     <string name="settings_non_recommended_fps_notice">啟用不建議的幀數後，可能會出現一些小卡頓。</string>
     <string name="settings_target_fps_option_decimal">%1$.3f FPS</string>
@@ -2216,6 +2224,7 @@
     <string name="settings_frame_pacing_mode_built_in">內建同步策略</string>
     <string name="settings_frame_pacing_mode_swappy">Swappy同步策略</string>
     <string name="settings_frame_pacing_mode_off">關閉</string>
+    <string name="settings_frame_pacing_mode_hint">如果出現畫面撕裂，請開啟影格同步。</string>
     <string name="settings_frame_pacing_mode_built_in_desc">使用內建影格同步策略，並依照所選目標影格率限制影格數。</string>
     <string name="settings_frame_pacing_mode_swappy_desc">使用 Google Swappy 進行顯示同步，不支援的裝置可能出現卡頓。</string>
     <string name="settings_frame_pacing_mode_off_desc">關閉影格同步，不再受所選目標影格率限制。</string>

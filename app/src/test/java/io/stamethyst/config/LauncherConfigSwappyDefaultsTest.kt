@@ -11,7 +11,7 @@ class LauncherConfigSwappyDefaultsTest {
     }
 
     @Test
-    fun framePacingMode_defaultsToBuiltIn() {
-        assertEquals(FramePacingMode.BUILT_IN, LauncherConfig.DEFAULT_FRAME_PACING_MODE)
+    fun framePacingMode_defaultsToOff() {
+        assertEquals(FramePacingMode.OFF, LauncherConfig.DEFAULT_FRAME_PACING_MODE)
     }
 }

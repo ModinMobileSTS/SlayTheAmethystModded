@@ -514,6 +514,8 @@
     <string name="main_renderer_quick_restore_confirm">恢复自动</string>
     <string name="main_renderer_quick_restore_auto_backend">根据设备支持情况选择可用的图形后端。当前自动选择为 %1$s。</string>
     <string name="main_renderer_quick_subtitle">游戏使用的图形后端</string>
+    <string name="main_refresh_rate_mismatch_title">实际屏幕刷新率低于申请值</string>
+    <string name="main_refresh_rate_mismatch_message">启动器申请了 %1$.0f Hz，但当前屏幕实际运行在 %2$.0f Hz。</string>
     <string name="main_renderer_quick_mobileglues_caption">兼容转译</string>
     <string name="main_renderer_quick_gles2_caption">原生渲染</string>
     <string name="main_renderer_quick_mobileglues_summary">兼容性更好，有轻微性能损耗。</string>
@@ -2150,6 +2152,12 @@
     <string name="settings_render_scale_title">渲染缩放</string>
     <string name="settings_render_scale_desc">数值越高画面越清晰，越低则越省性能。</string>
     <string name="settings_target_fps_title">FPS 上限</string>
+    <string name="settings_target_fps_unlimited">不限制</string>
+    <string name="settings_target_fps_recommendation_button">查看帧率建议</string>
+    <string name="settings_target_fps_recommendation_title">帧率建议</string>
+    <string name="settings_target_fps_recommendation_message">此设备的屏幕刷新率为 %1$.1f Hz。建议将帧率上限设置为 %2$d FPS（刷新率的 1.5 倍），以兼顾游玩流畅度与设备能效。</string>
+    <string name="settings_target_fps_set_recommended">设置为推荐值</string>
+    <string name="settings_target_fps_recommendation_confirm">确定</string>
     <string name="settings_non_recommended_fps_enabled">选择不推荐的帧数</string>
     <string name="settings_non_recommended_fps_notice">启用不推荐的帧数后，可能会出现一些小卡顿。</string>
     <string name="settings_target_fps_option_decimal">%1$.3f FPS</string>
@@ -2225,6 +2233,7 @@
     <string name="settings_frame_pacing_mode_built_in">内置同步策略</string>
     <string name="settings_frame_pacing_mode_swappy">Swappy同步策略</string>
     <string name="settings_frame_pacing_mode_off">关闭</string>
+    <string name="settings_frame_pacing_mode_hint">如果出现画面撕裂的问题，请开启帧同步。</string>
     <string name="settings_frame_pacing_mode_built_in_desc">使用内置帧同步策略，并按照所选目标帧率限制帧数。</string>
     <string name="settings_frame_pacing_mode_swappy_desc">使用 Google Swappy 进行显示同步，不支持的设备可能出现卡顿。</string>
     <string name="settings_frame_pacing_mode_off_desc">关闭帧同步，不再受所选目标帧率限制。</string>

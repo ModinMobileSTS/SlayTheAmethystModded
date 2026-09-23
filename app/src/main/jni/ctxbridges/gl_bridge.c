@@ -31,6 +31,7 @@ static bool g_swap_heartbeat_logging_enabled = false;
 static bool g_swap_profiler_initialized = false;
 static bool g_swap_profiler_enabled = false;
 static int64_t g_swap_profiler_slow_ns = 16000000LL;
+static int g_last_swap_interval = -1;
 
 
 #define GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS 30
@@ -840,7 +841,12 @@ void gl_swap_interval(int swapInterval) {
         ;
         return;
     }
-    eglSwapInterval_p(g_EglDisplay, swapInterval);
+    EGLBoolean applied = eglSwapInterval_p(g_EglDisplay, swapInterval);
+    if (g_last_swap_interval != swapInterval || applied != EGL_TRUE) {
+        g_last_swap_interval = swapInterval;
+        printf("EGLBridge: swap interval=%d applied=%d\n", swapInterval, applied == EGL_TRUE ? 1 : 0);
+        fflush(stdout);
+    }
 }
 
 JNIEXPORT void JNICALL

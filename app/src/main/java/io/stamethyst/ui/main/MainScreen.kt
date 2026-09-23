@@ -164,6 +164,7 @@ import io.stamethyst.backend.easytier.EASY_TIER_KICK_MESSAGE_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
 import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
@@ -272,6 +273,18 @@ private fun LauncherGamePage(
     val steamCloudIndicator = uiState.steamCloudIndicator
     val easyTierIndicator = uiState.easyTierIndicator
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var refreshRateSnapshot by remember {
+        mutableStateOf(DisplayRefreshRatePolicy.Snapshot(0f, 0f))
+    }
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                refreshRateSnapshot = DisplayRefreshRatePolicy.readSnapshot(context)
+                delay(500L)
+            }
+        }
+    }
     var hiddenGameCards by remember {
         mutableStateOf(LauncherPreferences.readHiddenMainCards(context))
     }
@@ -404,6 +417,9 @@ private fun LauncherGamePage(
                         onSelect = actions.onSetQuickRenderer,
                         onRestoreAuto = actions.onRestoreQuickRendererAuto,
                     )
+                    if (refreshRateSnapshot.shouldShowMismatch) {
+                        RefreshRateMismatchCard(snapshot = refreshRateSnapshot)
+                    }
                 }
             }
         }
@@ -921,6 +937,58 @@ private fun GameStatusHeroCard(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RefreshRateMismatchCard(
+    snapshot: DisplayRefreshRatePolicy.Snapshot,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ) {
+                Icon(
+                    imageVector = RendererIcons.Clock,
+                    contentDescription = null,
+                    modifier = Modifier.padding(10.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.main_refresh_rate_mismatch_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.main_refresh_rate_mismatch_message,
+                        snapshot.requestedRefreshRateHz,
+                        snapshot.actualRefreshRateHz,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

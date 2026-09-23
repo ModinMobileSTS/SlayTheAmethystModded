@@ -14,6 +14,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.render.FullscreenCanvasSize
 import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.ForegroundResyncScheduler
@@ -160,6 +161,14 @@ class RenderSurfaceManager(
             override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
                 state.markSurfaceAvailable(surfaceGeneration, width, height)
                 println("RenderSurfaceRefresh: surface_lifecycle event=available surfaceGeneration=$surfaceGeneration")
+                val requestedRefreshRateHz = DisplayRefreshRatePolicy.requestHighestRefreshRate(
+                    context = activity,
+                    surface = renderHost.currentSurface,
+                )
+                println(
+                    "RenderSurfaceRefresh: highest_rate_request=" +
+                        if (requestedRefreshRateHz > 0f) "${requestedRefreshRateHz}Hz" else "unavailable"
+                )
                 publishActiveRefreshRateForPacing("surface_available")
                 connectBridgeSurfaceIfNeeded()
                 pendingSurfaceReadyCallback = true

@@ -515,6 +515,8 @@ Do you still want to continue?</string>
     <string name="main_renderer_quick_restore_confirm">Restore auto</string>
     <string name="main_renderer_quick_restore_auto_backend">Choose an available graphics backend based on device support. The current automatic choice is %1$s.</string>
     <string name="main_renderer_quick_subtitle">Graphics backend used by the game</string>
+    <string name="main_refresh_rate_mismatch_title">Display refresh rate is lower than requested</string>
+    <string name="main_refresh_rate_mismatch_message">The launcher requested %1$.0f Hz, but the display is currently running at %2$.0f Hz.</string>
     <string name="main_renderer_quick_mobileglues_caption">Compatibility translation</string>
     <string name="main_renderer_quick_gles2_caption">Native rendering</string>
     <string name="main_renderer_quick_mobileglues_summary">Better compatibility with a small performance cost.</string>
@@ -1851,6 +1853,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_render_scale_title">Render scale</string>
     <string name="settings_render_scale_desc">Higher is sharper, lower is lighter on performance.</string>
     <string name="settings_target_fps_title">FPS cap</string>
+    <string name="settings_target_fps_unlimited">Unlimited</string>
+    <string name="settings_target_fps_recommendation_button">Show FPS recommendation</string>
+    <string name="settings_target_fps_recommendation_title">FPS recommendation</string>
+    <string name="settings_target_fps_recommendation_message">This device display refresh rate is %1$.1f Hz. A cap of %2$d FPS (1.5 times the refresh rate) is recommended for smooth gameplay while balancing power efficiency.</string>
+    <string name="settings_target_fps_set_recommended">Set recommended value</string>
+    <string name="settings_target_fps_recommendation_confirm">Confirm</string>
     <string name="settings_non_recommended_fps_enabled">Choose non-recommended FPS</string>
     <string name="settings_non_recommended_fps_notice">Using non-recommended FPS may cause minor stutters.</string>
     <string name="settings_target_fps_option_decimal">%1$.3f FPS</string>
@@ -1926,6 +1934,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_frame_pacing_mode_built_in">Built-in pacing</string>
     <string name="settings_frame_pacing_mode_swappy">Swappy pacing</string>
     <string name="settings_frame_pacing_mode_off">Off</string>
+    <string name="settings_frame_pacing_mode_hint">If you notice screen tearing, turn on frame pacing.</string>
     <string name="settings_frame_pacing_mode_built_in_desc">Uses the built-in frame pacing strategy and the selected target FPS.</string>
     <string name="settings_frame_pacing_mode_swappy_desc">Uses Google Swappy for presentation pacing. Unsupported devices may stutter.</string>
     <string name="settings_frame_pacing_mode_off_desc">Disables frame pacing. The game is no longer limited by the selected target FPS.</string>
