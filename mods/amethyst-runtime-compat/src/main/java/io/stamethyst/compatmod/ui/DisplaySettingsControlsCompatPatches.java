@@ -169,32 +169,7 @@ public final class DisplaySettingsControlsCompatPatches {
         method = "renderGraphics",
         paramtypez = {SpriteBatch.class}
     )
-    public static class HiddenGraphicsLabelsPatch {
-        @SpireInstrumentPatch
-        public static ExprEditor Instrument() {
-            return new ExprEditor() {
-                @Override
-                public void edit(MethodCall call) throws CannotCompileException {
-                    if (!FontHelper.class.getName().equals(call.getClassName())
-                        || !"renderSmartText".equals(call.getMethodName())) {
-                        return;
-                    }
-                    call.replace(
-                        "{ $proceed($1, $2, "
-                            + DisplaySettingsControlsCompatPatches.class.getName()
-                            + ".filterHiddenGraphicsLabel($3), $4, $5, $6, $7, $8); }"
-                    );
-                }
-            };
-        }
-    }
-
-    @SpirePatch2(
-        clz = OptionsPanel.class,
-        method = "renderGraphics",
-        paramtypez = {SpriteBatch.class}
-    )
-    public static class HiddenGraphicsControlsPatch {
+    public static class HiddenGraphicsRenderPatch {
         @SpireInstrumentPatch
         public static ExprEditor Instrument() {
             return new ExprEditor() {
@@ -202,11 +177,7 @@ public final class DisplaySettingsControlsCompatPatches {
                 public void edit(MethodCall call) throws CannotCompileException {
                     if (DropdownMenu.class.getName().equals(call.getClassName())
                         && "render".equals(call.getMethodName())) {
-                        call.replace(
-                            "{ if ("
-                                + DisplaySettingsControlsCompatPatches.class.getName()
-                                + ".shouldRenderDropdown($0)) { $proceed($$); } }"
-                        );
+                        call.replace("{ }");
                         return;
                     }
                     if (ToggleButton.class.getName().equals(call.getClassName())
@@ -216,7 +187,17 @@ public final class DisplaySettingsControlsCompatPatches {
                                 + DisplaySettingsControlsCompatPatches.class.getName()
                                 + ".shouldRenderToggle($0)) { $proceed($$); } }"
                         );
+                        return;
                     }
+                    if (!FontHelper.class.getName().equals(call.getClassName())
+                        || !"renderSmartText".equals(call.getMethodName())) {
+                        return;
+                    }
+                    call.replace(
+                        "{ $proceed($1, $2, "
+                            + DisplaySettingsControlsCompatPatches.class.getName()
+                            + ".filterHiddenGraphicsLabel($3), $4, $5, $6, $7, $8); }"
+                    );
                 }
             };
         }
