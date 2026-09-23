@@ -41,6 +41,25 @@ class StsAndroidAppBuildPlugin : Plugin<Project> {
 
 private const val RESOURCE_PACK_ABI = "arm64-v8a"
 
+private const val DEFAULT_SLING_BREAK_REPOSITORY = "https://github.com/Apricityx/slingbreak"
+private const val DEFAULT_SLING_BREAK_REF = "master"
+
+// Sling Break is a remote build input: the bundle is re-fetched from its upstream archive on
+// every packaging build. `slingBreak.sourceUrl` (or `slingBreak.repository`/`slingBreak.ref`)
+// pins the source, and `slingBreak.sourceDir` opts into a local checkout for offline builds.
+private fun Project.slingBreakSourceUrl(): String {
+    readGradleProperty("slingBreak.sourceUrl").takeIf { it.isNotBlank() }?.let { return it }
+    val repository = readGradleProperty("slingBreak.repository", DEFAULT_SLING_BREAK_REPOSITORY)
+        .trimEnd('/')
+    val ref = readGradleProperty("slingBreak.ref", DEFAULT_SLING_BREAK_REF)
+    val archiveRef = when {
+        ref.matches(Regex("[0-9a-fA-F]{7,40}")) -> ref
+        ref.startsWith("refs/") -> ref
+        else -> "refs/heads/$ref"
+    }
+    return "$repository/archive/$archiveRef.tar.gz"
+}
+
 private val externalizedModAssetPatterns = listOf(
     "components/mods/ModTheSpire.jar",
     "components/mods/BaseMod.jar",
@@ -306,17 +325,45 @@ private fun Project.registerPackagedRuntimeAssetTasks(
 ): PackagedRuntimeAssetTasks {
     val sourceAssetsDir = layout.projectDirectory.dir("src/main/assets")
     val resourcePackSourceDir = layout.projectDirectory.dir("src/main/resource-pack")
+    val localSlingBreakOverride = providers.gradleProperty("slingBreak.sourceDir")
+
+    // Remote fetch is the default; a local checkout is only used when explicitly requested.
+    val fetchSlingBreakSource = tasks.register<FetchSlingBreakSourceTask>("fetchSlingBreakSource") {
+        sourceUrl.set(project.slingBreakSourceUrl())
+        outputDirectory.set(layout.buildDirectory.dir("generated/slingbreak-source"))
+        stateFile.set(layout.buildDirectory.file("generated/slingbreak-source.state"))
+    }
+    val slingBreakSourceDir: Provider<Directory> = if (localSlingBreakOverride.isPresent) {
+        layout.dir(providers.provider { rootProject.file(localSlingBreakOverride.get()) })
+    } else {
+        fetchSlingBreakSource.flatMap { it.outputDirectory }
+    }
 
     val prepareCommonAssets = tasks.register<Sync>("prepareCommonRuntimeAssets") {
         dependsOn(generatedAssetTasks)
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
         from(sourceAssetsDir) {
-            exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns)
+            exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns + "slingbreak/**")
+        }
+        from(slingBreakSourceDir) {
+            into("slingbreak")
+            exclude(".git/**", "**/*.test.cjs", "**/*.txt", "libghostty")
         }
         from(generatedRuntimeAssetsDir) {
             exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns)
         }
         into(packagedCommonAssetsDir)
+        doFirst {
+            val resolvedSlingBreakSource = slingBreakSourceDir.get().asFile
+            if (!File(resolvedSlingBreakSource, "index.html").isFile ||
+                !File(resolvedSlingBreakSource, "launcher-mode.js").isFile
+            ) {
+                throw GradleException(
+                    "Sling Break source is missing at $resolvedSlingBreakSource; " +
+                        "set -PslingBreak.sourceDir=<source-directory>"
+                )
+            }
+        }
     }
 
     val prepareExternalizedAssets = tasks.register<Sync>("prepareExternalizedRuntimeAssets") {
