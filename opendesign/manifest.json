@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-16T00:57:57Z",
+  "generated": "2026-09-23T14:03:11Z",
   "sections": [
     {
       "id": "mockups",
@@ -8,19 +8,19 @@
         {
           "slug": "game-icons",
           "files": [
-            {
-              "label": "index.html",
-              "path": "mockups/game-icons/index.html"
-            }
+            { "label": "index.html", "path": "mockups/game-icons/index.html" }
+          ]
+        },
+        {
+          "slug": "mod-actions",
+          "files": [
+            { "label": "index.html", "path": "mockups/mod-actions/index.html" }
           ]
         },
         {
           "slug": "renderer-switch",
           "files": [
-            {
-              "label": "index.html",
-              "path": "mockups/renderer-switch/index.html"
-            }
+            { "label": "index.html", "path": "mockups/renderer-switch/index.html" }
           ]
         }
       ]
@@ -32,39 +32,18 @@
         {
           "slug": "launcher-product",
           "files": [
-            {
-              "label": "README.md",
-              "path": "design-systems/launcher-product/README.md"
-            },
-            {
-              "label": "SKILL.md",
-              "path": "design-systems/launcher-product/SKILL.md"
-            },
-            {
-              "label": "style-notes.md",
-              "path": "design-systems/launcher-product/brand/style-notes.md"
-            },
-            {
-              "label": "colors_and_type.css",
-              "path": "design-systems/launcher-product/tokens/colors_and_type.css"
-            }
+            { "label": "README.md", "path": "design-systems/launcher-product/README.md" },
+            { "label": "SKILL.md", "path": "design-systems/launcher-product/SKILL.md" },
+            { "label": "style-notes.md", "path": "design-systems/launcher-product/brand/style-notes.md" },
+            { "label": "colors_and_type.css", "path": "design-systems/launcher-product/tokens/colors_and_type.css" }
           ]
         },
         {
           "slug": "stamethyst-launcher",
           "files": [
-            {
-              "label": "README.md",
-              "path": "design-systems/stamethyst-launcher/README.md"
-            },
-            {
-              "label": "SKILL.md",
-              "path": "design-systems/stamethyst-launcher/SKILL.md"
-            },
-            {
-              "label": "colors_and_type.css",
-              "path": "design-systems/stamethyst-launcher/tokens/colors_and_type.css"
-            }
+            { "label": "README.md", "path": "design-systems/stamethyst-launcher/README.md" },
+            { "label": "SKILL.md", "path": "design-systems/stamethyst-launcher/SKILL.md" },
+            { "label": "colors_and_type.css", "path": "design-systems/stamethyst-launcher/tokens/colors_and_type.css" }
           ]
         }
       ]
