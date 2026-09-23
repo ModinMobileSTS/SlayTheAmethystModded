@@ -1161,6 +1161,8 @@
     <string name="ai_mod_editor_tool_desc_unknown">暫無說明。</string>
     <string name="ai_mod_editor_tool_desc_list_agent_workspace">列出補丁工作區中的檔案。</string>
     <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">以文字或 base64 讀取工作區檔案。</string>
+    <string name="ai_mod_editor_tool_desc_glob_agent_workspace">依通配符模式尋找工作區檔案。</string>
+    <string name="ai_mod_editor_tool_desc_grep_agent_workspace">以正規表達式搜尋工作區檔案內容。</string>
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">建立新的補丁工作區；不會封裝、安裝或啟用模組。</string>
     <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">在此模組工作目錄內建立或覆寫任意檔案。</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">刪除此模組工作目錄內的任意檔案或目錄。</string>

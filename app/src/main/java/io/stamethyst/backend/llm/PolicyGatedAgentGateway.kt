@@ -29,6 +29,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -57,6 +58,16 @@ private const val MAX_TOOL_RESULT_BYTES = 51_200
 
 /** Workspace subdirectory where oversized tool results are persisted for later reading. */
 private const val TOOL_OUTPUT_DIR = "tool_output"
+
+/** Upper bound on files returned by one workspace glob. */
+private const val DEFAULT_MAX_GLOB_RESULTS = 300
+
+/** Upper bound on matching lines returned by one workspace grep, and the preview width of each. */
+private const val DEFAULT_MAX_GREP_MATCHES = 200
+private const val MAX_GREP_LINE_CHARS = 300
+
+/** Files larger than this are skipped by grep instead of being loaded into a line buffer. */
+private const val MAX_GREP_FILE_BYTES = 2L * 1024L * 1024L
 
 /** How many extra times an empty model turn is retried before it is reported as a failure. */
 private const val MAX_EMPTY_RETRIES = 1
@@ -488,6 +499,212 @@ class AgentWorkspaceFileTool(
     private fun failure(code: String): String = buildJsonObject {
         put("error", JsonPrimitive(code))
     }.toString()
+}
+
+/**
+ * Finds files in the agent workspace whose path matches a glob pattern.
+ *
+ * The companion to [AgentWorkspaceGrepTool]: grep locates files by their contents, glob locates them
+ * by their name or extension before the agent reads them. Without it the agent can only page through
+ * [AgentWorkspaceListTool], which is capped and gives no way to ask "where are the .java sources".
+ */
+class AgentWorkspaceGlobTool(
+    private val workspaceRoot: File,
+    private val maxResults: Int = DEFAULT_MAX_GLOB_RESULTS,
+) : AgentTool {
+    override val specification: ToolSpecification = ToolSpecification.builder()
+        .name("glob_agent_workspace")
+        .description(
+            "Find files in the selected mod's isolated agent workspace by glob pattern, for example " +
+                "'**/*.java' or 'source/ThMod/cards/**'. Paths are workspace-relative and always use '/' " +
+                "separators. Prefer this over list_agent_workspace when you know the extension or a path " +
+                "fragment; the result is capped at $DEFAULT_MAX_GLOB_RESULTS matches.",
+        )
+        .parameters(
+            JsonObjectSchema.builder()
+                .addStringProperty("pattern", "Glob pattern, for example '**/*.java' or 'source/ThMod/**'.")
+                .addStringProperty("path", "Optional workspace-relative directory to scope the search.")
+                .required("pattern")
+                .additionalProperties(false)
+                .build(),
+        )
+        .build()
+
+    override val safety: AgentToolSafety = AgentToolSafety.READ_ONLY
+
+    override fun execute(arguments: String): String {
+        val json = runCatching { Json.parseToJsonElement(arguments).jsonObject }.getOrNull()
+            ?: return failure("invalid_arguments")
+        val rawPattern = json["pattern"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+            ?: return failure("invalid_arguments")
+        val scopeArg = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+        val base = if (scopeArg == null) {
+            workspaceRoot
+        } else {
+            resolveWorkspaceFile(workspaceRoot, scopeArg) ?: return failure("path_outside_workspace")
+        }
+        if (!base.exists()) return failure("path_not_found")
+        if (!base.isDirectory) return failure("not_a_directory")
+
+        val normalized = rawPattern.replace('\\', '/')
+        if (normalized.startsWith("/") || normalized.split('/').any { it == ".." }) {
+            return failure("invalid_pattern")
+        }
+        val matches = compileGlob(normalized) ?: return failure("invalid_pattern")
+
+        val matched = ArrayList<String>()
+        var truncated = false
+        base.walkTopDown().filter { it.isFile }.forEach { file ->
+            if (matched.size >= maxResults) {
+                truncated = true
+                return@forEach
+            }
+            val relative = file.relativeTo(workspaceRoot).invariantSeparatorsPath
+            if (matches(relative)) matched += relative
+        }
+        matched.sort()
+        val capped = truncated || matched.size > maxResults
+        val returned = matched.take(maxResults)
+        return buildJsonObject {
+            put("pattern", JsonPrimitive(normalized))
+            put("root", JsonPrimitive(scopeArg ?: "."))
+            put("returned", JsonPrimitive(returned.size))
+            put("truncated", JsonPrimitive(capped))
+            if (capped) {
+                put(
+                    "hint",
+                    JsonPrimitive("More than $maxResults matches. Add a 'path' scope or a narrower pattern."),
+                )
+            }
+            put("files", buildJsonArray { returned.forEach { add(JsonPrimitive(it)) } })
+        }.toString()
+    }
+
+    private fun failure(code: String): String = buildJsonObject {
+        put("error", JsonPrimitive(code))
+    }.toString()
+}
+
+/**
+ * Searches the text of the agent workspace for a regular expression.
+ *
+ * This is the locate step that was missing: the agent can search every source file for a symbol or
+ * string instead of reading files one by one. Only whole matching lines come back, with file, line
+ * number, and a truncated line preview, and the result stops at [DEFAULT_MAX_GREP_MATCHES] lines.
+ */
+class AgentWorkspaceGrepTool(
+    private val workspaceRoot: File,
+    private val maxMatches: Int = DEFAULT_MAX_GREP_MATCHES,
+    private val maxLineChars: Int = MAX_GREP_LINE_CHARS,
+) : AgentTool {
+    override val specification: ToolSpecification = ToolSpecification.builder()
+        .name("grep_agent_workspace")
+        .description(
+            "Search the text of files in the selected mod's isolated agent workspace by regular " +
+                "expression. Returns matching lines as file:line: text, capped at $DEFAULT_MAX_GREP_MATCHES " +
+                "matches. Use 'include' to restrict files (for example '*.java' or '*.json'). Matches that " +
+                "contain NUL bytes are treated as binary and skipped.",
+        )
+        .parameters(
+            JsonObjectSchema.builder()
+                .addStringProperty("pattern", "Java regular expression, for example 'CustomRelic|addCard'.")
+                .addStringProperty("path", "Optional workspace-relative directory to scope the search.")
+                .addStringProperty("include", "Optional glob applied to the workspace-relative path, for example '*.java'.")
+                .required("pattern")
+                .additionalProperties(false)
+                .build(),
+        )
+        .build()
+
+    override val safety: AgentToolSafety = AgentToolSafety.READ_ONLY
+
+    override fun execute(arguments: String): String {
+        val json = runCatching { Json.parseToJsonElement(arguments).jsonObject }.getOrNull()
+            ?: return failure("invalid_arguments")
+        val patternArg = json["pattern"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+            ?: return failure("invalid_arguments")
+        val scopeArg = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+        val includeArg = json["include"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+        val base = if (scopeArg == null) {
+            workspaceRoot
+        } else {
+            resolveWorkspaceFile(workspaceRoot, scopeArg) ?: return failure("path_outside_workspace")
+        }
+        if (!base.exists()) return failure("path_not_found")
+
+        val regex = try {
+            Regex(patternArg, RegexOption.MULTILINE)
+        } catch (error: IllegalArgumentException) {
+            return failure("invalid_pattern")
+        }
+        val includeGlob = includeArg?.let { compileGlob(it.replace('\\', '/')) }
+        if (includeArg != null && includeGlob == null) return failure("invalid_include")
+        val include = includeGlob
+
+        val files = ArrayList<File>()
+        if (base.isFile) {
+            files += base
+        } else {
+            base.walkTopDown().filter { it.isFile }.forEach { files += it }
+        }
+        files.sortBy { it.relativeTo(workspaceRoot).invariantSeparatorsPath }
+
+        val matches = ArrayList<GrepMatch>()
+        var truncated = false
+        var searchedFiles = 0
+        for (file in files) {
+            val relative = file.relativeTo(workspaceRoot).invariantSeparatorsPath
+            if (include != null && !include(relative) && !include(file.name)) continue
+            if (file.length() > MAX_GREP_FILE_BYTES) continue
+            val content = runCatching { file.readText(Charsets.UTF_8) }.getOrElse { continue }
+            if (content.indexOf('\u0000') >= 0) continue
+            searchedFiles++
+            val lines = content.split('\n')
+            for (lineIndex in lines.indices) {
+                if (matches.size >= maxMatches) {
+                    truncated = true
+                    break
+                }
+                val line = lines[lineIndex]
+                if (regex.containsMatchIn(line)) {
+                    matches += GrepMatch(relative, lineIndex + 1, line)
+                }
+            }
+            if (truncated) break
+        }
+        return buildJsonObject {
+            put("pattern", JsonPrimitive(patternArg))
+            if (includeArg != null) put("include", JsonPrimitive(includeArg))
+            put("root", JsonPrimitive(scopeArg ?: "."))
+            put("searched_files", JsonPrimitive(searchedFiles))
+            put("returned", JsonPrimitive(matches.size))
+            put("truncated", JsonPrimitive(truncated))
+            if (truncated) {
+                put(
+                    "hint",
+                    JsonPrimitive("Match limit ($maxMatches) reached. Scope with 'path' or 'include', or use a narrower pattern."),
+                )
+            }
+            put("matches", buildJsonArray {
+                matches.forEach { match ->
+                    add(buildJsonObject {
+                        put("path", JsonPrimitive(match.path))
+                        put("line", JsonPrimitive(match.line))
+                        put(
+                            "text",
+                            JsonPrimitive(match.text.take(maxLineChars)),
+                        )
+                    })
+                }
+            })
+        }.toString()
+    }
+
+    private fun failure(code: String): String = buildJsonObject {
+        put("error", JsonPrimitive(code))
+    }.toString()
+
+    private data class GrepMatch(val path: String, val line: Int, val text: String)
 }
 
 class AgentWorkspaceWriteTool(
@@ -1271,6 +1488,45 @@ private fun resolvePatchSourceFile(root: File, relativePath: String): File? {
 private fun failure(code: String): String = buildJsonObject {
     put("error", JsonPrimitive(code))
 }.toString()
+
+/**
+ * Compiles a double-star-aware glob into a matcher over workspace-relative paths.
+ *
+ * Regex alone cannot express "recursive" vs "single segment", so the pattern is walked in one pass:
+ * a double star followed by a slash spans zero or more path segments, a bare double star spans any
+ * characters, `*` and `?` stay within a segment, and everything else is quoted literally. Returns
+ * null when the pattern cannot compile.
+ */
+private fun compileGlob(pattern: String): ((String) -> Boolean)? {
+    val regex = StringBuilder("^")
+    var index = 0
+    while (index < pattern.length) {
+        when (val char = pattern[index]) {
+            '*' -> {
+                val isDoubled = index + 1 < pattern.length && pattern[index + 1] == '*'
+                if (isDoubled) {
+                    val hasSlash = index + 2 < pattern.length && pattern[index + 2] == '/'
+                    if (hasSlash) {
+                        regex.append("(?:.*/)?")
+                        index += 3
+                    } else {
+                        regex.append(".*")
+                        index += 2
+                    }
+                    continue
+                }
+                regex.append("[^/]*")
+            }
+            '?' -> regex.append("[^/]")
+            else -> regex.append(Regex.escape(char.toString()))
+        }
+        index++
+    }
+    regex.append('$')
+    return runCatching { Regex(regex.toString()) }.getOrNull()?.let { compiled ->
+        { candidate: String -> compiled.matches(candidate) }
+    }
+}
 
 data class AgentReply(
     val text: String,

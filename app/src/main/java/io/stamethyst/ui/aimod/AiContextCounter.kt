@@ -53,6 +53,8 @@ internal data class AiToolInfo(
 internal fun agentToolDescriptionRes(name: String): Int = when (name) {
     "list_agent_workspace" -> R.string.ai_mod_editor_tool_desc_list_agent_workspace
     "read_agent_workspace_file" -> R.string.ai_mod_editor_tool_desc_read_agent_workspace_file
+    "glob_agent_workspace" -> R.string.ai_mod_editor_tool_desc_glob_agent_workspace
+    "grep_agent_workspace" -> R.string.ai_mod_editor_tool_desc_grep_agent_workspace
     "create_agent_patch_workspace" -> R.string.ai_mod_editor_tool_desc_create_agent_patch_workspace
     "write_agent_workspace_file" -> R.string.ai_mod_editor_tool_desc_write_agent_workspace_file
     "delete_agent_workspace_file" -> R.string.ai_mod_editor_tool_desc_delete_agent_workspace_file

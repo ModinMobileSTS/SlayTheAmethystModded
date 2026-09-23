@@ -1157,6 +1157,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tool_desc_unknown">No description.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_workspace">List the files in the patch workspace.</string>
     <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">Read a workspace file as text or base64.</string>
+    <string name="ai_mod_editor_tool_desc_glob_agent_workspace">Find workspace files by glob pattern.</string>
+    <string name="ai_mod_editor_tool_desc_grep_agent_workspace">Search workspace file contents by regular expression.</string>
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">Create a new patch workspace; this does not package, install, or enable a mod.</string>
     <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">Create or replace any file in this mod workspace.</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">Delete any file or directory in this mod workspace.</string>

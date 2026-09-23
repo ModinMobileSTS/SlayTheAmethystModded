@@ -168,6 +168,107 @@ class PolicyGatedAgentGatewayTest {
     }
 
     @Test
+    fun globTool_matchesRecursivePatternAndScopes() {
+        val workspace = createTempDirectory("agent-glob").toFile().apply {
+            resolve("source/ThMod/cards/Marisa/Spark.java").apply { parentFile!!.mkdirs(); writeText("class Spark {}") }
+            resolve("source/ThMod/relics/Hakkero.java").apply { parentFile!!.mkdirs(); writeText("class Hakkero {}") }
+            resolve("source/localization/cards.json").apply { parentFile!!.mkdirs(); writeText("{}") }
+            resolve("patch_source/patch-1/src/Patch.java").apply { parentFile!!.mkdirs(); writeText("class Patch {}") }
+        }
+
+        val javaFiles = AgentWorkspaceGlobTool(workspace).execute("""{"pattern":"**/*.java"}""")
+        assertTrue(javaFiles.contains("source/ThMod/cards/Marisa/Spark.java"))
+        assertTrue(javaFiles.contains("source/ThMod/relics/Hakkero.java"))
+        assertTrue(javaFiles.contains("patch_source/patch-1/src/Patch.java"))
+        assertTrue(!javaFiles.contains("cards.json"))
+
+        val scoped = AgentWorkspaceGlobTool(workspace).execute("""{"pattern":"**/*.java","path":"source/ThMod/cards"}""")
+        assertTrue(scoped.contains("source/ThMod/cards/Marisa/Spark.java"))
+        assertTrue(!scoped.contains("source/ThMod/relics/Hakkero.java"))
+
+        val singleSegment = AgentWorkspaceGlobTool(workspace).execute("""{"pattern":"*.java"}""")
+        assertTrue(!singleSegment.contains("source/ThMod/cards/Marisa/Spark.java"))
+    }
+
+    @Test
+    fun globTool_rejectsEscapingPatternAndPath() {
+        val workspace = createTempDirectory("agent-glob-guard").toFile().apply {
+            resolve("source/ThMod/ThMod.java").apply { parentFile!!.mkdirs(); writeText("class ThMod {}") }
+        }
+
+        assertTrue(
+            AgentWorkspaceGlobTool(workspace).execute("""{"pattern":"../secret/*"}""")
+                .contains("invalid_pattern"),
+        )
+        assertTrue(
+            AgentWorkspaceGlobTool(workspace).execute("""{"pattern":"**/*.java","path":"../../etc"}""")
+                .contains("path_outside_workspace"),
+        )
+    }
+
+    @Test
+    fun grepTool_returnsLineMatchesWithPathAndLineNumber() {
+        val workspace = createTempDirectory("agent-grep").toFile().apply {
+            resolve("source/ThMod/relics/Hakkero.java").apply {
+                parentFile!!.mkdirs()
+                writeText("class Hakkero {\n    void atBattleStart() { addCard(); }\n}\n")
+            }
+            resolve("source/ThMod/cards/Spark.java").apply {
+                parentFile!!.mkdirs()
+                writeText("class Spark {\n    // no relic here\n}\n")
+            }
+            resolve("source/data.json").apply {
+                parentFile!!.mkdirs()
+                writeText("{\"relic\":\"Hakkero\"}\n")
+            }
+        }
+
+        val result = AgentWorkspaceGrepTool(workspace).execute("""{"pattern":"Hakkero"}""")
+        assertTrue(result.contains("source/ThMod/relics/Hakkero.java"))
+        assertTrue(result.contains("source/data.json"))
+        assertTrue(result.contains("\"line\":1"))
+        assertTrue(!result.contains("Spark.java"))
+
+        val scoped = AgentWorkspaceGrepTool(workspace).execute("""{"pattern":"Hakkero","include":"*.java"}""")
+        assertTrue(scoped.contains("Hakkero.java"))
+        assertTrue(!scoped.contains("data.json"))
+    }
+
+    @Test
+    fun grepTool_reportsInvalidPatternAndSkipsBinary() {
+        val workspace = createTempDirectory("agent-grep-binary").toFile().apply {
+            resolve("source/Bin.class").apply {
+                parentFile!!.mkdirs()
+                writeBytes(byteArrayOf(0x00, 0x01, 0x48, 0x61, 0x6B, 0x00))
+            }
+            resolve("source/Note.java").apply {
+                parentFile!!.mkdirs()
+                writeText("class Note {}\n")
+            }
+        }
+
+        assertTrue(
+            AgentWorkspaceGrepTool(workspace).execute("""{"pattern":"["}""").contains("invalid_pattern"),
+        )
+        val binary = AgentWorkspaceGrepTool(workspace).execute("""{"pattern":"Hak"}""")
+        assertTrue(binary.contains("\"searched_files\":1"))
+        assertTrue(binary.contains("\"returned\":0"))
+    }
+
+    @Test
+    fun globAndGrepTools_areReadOnlyAndScopedToWorkspace() {
+        val workspace = createTempDirectory("agent-scope").toFile()
+        val glob = AgentWorkspaceGlobTool(workspace)
+        val grep = AgentWorkspaceGrepTool(workspace)
+
+        assertEquals(AgentToolSafety.READ_ONLY, glob.safety)
+        assertEquals(AgentToolSafety.READ_ONLY, grep.safety)
+        assertEquals("glob_agent_workspace", glob.specification.name())
+        assertEquals("grep_agent_workspace", grep.specification.name())
+        assertTrue(grep.execute("""{"pattern":"x","path":"../outside"}""").contains("path_outside_workspace"))
+    }
+
+    @Test
     fun registry_doesNotAdvertiseOrExecuteApprovalTool() {
         val registry = AgentToolRegistry(listOf(ApprovalTool()))
 

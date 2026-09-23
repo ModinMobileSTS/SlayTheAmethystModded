@@ -11,7 +11,7 @@ import io.stamethyst.ui.icon.Search
 @Composable
 internal fun agentToolIcon(name: String): ImageVector = when (name) {
     "read_workspace_file", "read_agent_workspace_file" -> Icons.Description
-    "search_agent_api", "inspect_agent_patch_target" -> Icons.Search
+    "search_agent_api", "inspect_agent_patch_target", "grep_agent_workspace", "glob_agent_workspace" -> Icons.Search
     else -> ImageVector.vectorResource(
         when (name) {
             "list_agent_workspace" -> R.drawable.ic_settings_resources

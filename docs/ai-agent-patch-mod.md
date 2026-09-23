@@ -97,6 +97,8 @@ The editor exposes these tools for the selected mod workspace:
 
 - `list_agent_workspace`: list all extracted and generated files.
 - `read_agent_workspace_file`: read UTF-8 or base64 content from any workspace file.
+- `glob_agent_workspace`: find files by glob pattern (for example `**/*.java`), optionally scoped with `path`.
+- `grep_agent_workspace`: search workspace file contents by regular expression, optionally scoped with `path` and filtered by an `include` glob. Returns file, line number, and a preview of each matching line.
 - `create_agent_patch_workspace`: create and activate a new patch workspace/revision. Required arguments: `name` (the agent
   chooses it), optional `version` and `description`. Extracts the full parent JAR into the shared
   `source/` tree and seeds a new `patch_source/<patch_id>/` with `ModTheSpire.json` and
