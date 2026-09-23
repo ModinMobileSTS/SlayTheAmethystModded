@@ -2,6 +2,7 @@ package io.stamethyst.backend.mods
 
 import android.content.Context
 import io.stamethyst.config.RuntimePaths
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -18,6 +19,10 @@ internal data class AgentPatchSmokeTestRequest(
     val parentModId: String,
     val patchJarPath: String,
     val timeoutMs: Long,
+    /** Absolute jar paths this run must load, in launch order. */
+    val modJarPaths: List<String>,
+    /** Raw manifest modids for the same jars; ModTheSpire's `--mods` list for the run. */
+    val launchModIds: List<String>,
 )
 
 /** Verdict produced by the `:game` process after running the game with the patch enabled. */
@@ -29,6 +34,10 @@ internal data class AgentPatchSmokeTestOutcome(
     val reachedMainMenu: Boolean,
     val durationMs: Long,
     val error: String = "",
+    /** Jar paths ModTheSpire actually loaded, as reported by its own file-list override. */
+    val loadedModJarPaths: List<String> = emptyList(),
+    /** True when the loaded mod set could be read back and matched the request. */
+    val modSetVerified: Boolean = false,
 )
 
 /**
@@ -50,6 +59,8 @@ internal object AgentPatchSmokeTestProtocol {
                 .put("parent_mod_id", request.parentModId)
                 .put("patch_jar_path", request.patchJarPath)
                 .put("timeout_ms", request.timeoutMs)
+                .put("mod_jar_paths", JSONArray(request.modJarPaths))
+                .put("launch_mod_ids", JSONArray(request.launchModIds))
                 .toString(2),
             StandardCharsets.UTF_8,
         )
@@ -66,6 +77,12 @@ internal object AgentPatchSmokeTestProtocol {
             parentModId = json.getString("parent_mod_id"),
             patchJarPath = json.getString("patch_jar_path"),
             timeoutMs = json.getLong("timeout_ms"),
+            modJarPaths = json.optJSONArray("mod_jar_paths")
+                ?.let { array -> (0 until array.length()).map { array.getString(it) } }
+                .orEmpty(),
+            launchModIds = json.optJSONArray("launch_mod_ids")
+                ?.let { array -> (0 until array.length()).map { array.getString(it) } }
+                .orEmpty(),
         )
     }.getOrNull()?.takeIf { it.runId.isNotBlank() }
 
@@ -82,6 +99,8 @@ internal object AgentPatchSmokeTestProtocol {
                 .put("reached_main_menu", outcome.reachedMainMenu)
                 .put("duration_ms", outcome.durationMs)
                 .put("error", outcome.error)
+                .put("mod_set_verified", outcome.modSetVerified)
+                .put("loaded_mod_jar_paths", JSONArray(outcome.loadedModJarPaths))
                 .toString(2),
             StandardCharsets.UTF_8,
         )
@@ -112,6 +131,10 @@ internal object AgentPatchSmokeTestProtocol {
             reachedMainMenu = json.optBoolean("reached_main_menu", false),
             durationMs = json.optLong("duration_ms", 0L),
             error = json.optString("error"),
+            modSetVerified = json.optBoolean("mod_set_verified", false),
+            loadedModJarPaths = json.optJSONArray("loaded_mod_jar_paths")
+                ?.let { array -> (0 until array.length()).map { array.getString(it) } }
+                .orEmpty(),
         )
     }.getOrNull()
 

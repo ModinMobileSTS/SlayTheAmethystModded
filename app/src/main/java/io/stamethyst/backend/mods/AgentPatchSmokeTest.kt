@@ -30,6 +30,10 @@ data class AgentPatchSmokeTestResult(
     val logExcerpt: String,
     /** Mod ids the agent requested that the launcher does not have installed. */
     val unknownModIds: List<String> = emptyList(),
+    /** True when ModTheSpire's own record confirms it loaded exactly the requested mod set. */
+    val modSetVerified: Boolean = false,
+    /** Jar paths ModTheSpire actually loaded, as reported by its own file-list override. */
+    val loadedModJarPaths: List<String> = emptyList(),
 )
 
 /**
@@ -50,10 +54,21 @@ object AgentPatchSmokeTest {
     const val DEFAULT_TIMEOUT_MS = 240_000L
     private const val SERVICE_START_TIMEOUT_MS = 30_000L
     private const val GAME_EXIT_GRACE_MS = 25_000L
+    private const val GAME_PROCESS_MISSING_POLLS = 12
     private const val POLL_INTERVAL_MS = 250L
     private const val EVENTS_TAIL_CHARS = 4_000
     private const val LOG_TAIL_CHARS = 6_000
     private const val LOG_TAIL_READ_CHARS = 64 * 1024
+
+    private val CRASH_MARKERS = listOf(
+        "Fatal signal",
+        "signo: 11",
+        "SIGSEGV",
+        "SIGABRT",
+        "Game crashed.",
+        "Exception in thread \"LWJGL Application\"",
+        "Exception occurred in CardCrawlGame render method!",
+    )
 
     private val BUILT_IN_MOD_IDS = listOf(
         ModManager.MOD_ID_BASEMOD,
@@ -92,7 +107,7 @@ object AgentPatchSmokeTest {
             return failure(startedAtMs, "mod_resolution_failed", error.message ?: error.javaClass.simpleName)
         }
         val selection = resolved.selection
-        val launchModIds = selection.filesByModId.keys.toList()
+        val resolvedModIds = selection.filesByModId.keys.toList()
         if (selection.unknownSelectedModIds.isNotEmpty()) {
             return failure(
                 startedAtMs,
@@ -101,7 +116,7 @@ object AgentPatchSmokeTest {
                     selection.unknownSelectedModIds.joinToString(", ") +
                     ". Call list_installed_mods for the ids the launcher actually has.",
                 unknownModIds = selection.unknownSelectedModIds,
-                launchModIds = launchModIds,
+                launchModIds = resolvedModIds,
             )
         }
         if (selection.unresolvedDependencies.isNotEmpty()) {
@@ -110,7 +125,7 @@ object AgentPatchSmokeTest {
                 "unresolved_dependencies",
                 "Missing prerequisites: ${selection.unresolvedDependencies.joinToString(", ")}",
                 unresolvedDependencies = selection.unresolvedDependencies,
-                launchModIds = launchModIds,
+                launchModIds = resolvedModIds,
             )
         }
         // The run happens in :game, the same process a normal session uses, and one process can only
@@ -120,7 +135,7 @@ object AgentPatchSmokeTest {
                 startedAtMs,
                 "game_already_running",
                 "A game session is already running. Close the game and run the smoke test again.",
-                launchModIds = launchModIds,
+                launchModIds = resolvedModIds,
             )
         }
 
@@ -143,10 +158,20 @@ object AgentPatchSmokeTest {
                 startedAtMs,
                 "launch_preparation_failed",
                 error.message ?: error.javaClass.simpleName,
-                launchModIds = launchModIds,
+                launchModIds = resolvedModIds,
                 events = readEvents(eventsFile),
             )
         }
+
+        val modJarPaths = selection.files.map { it.absolutePath }
+        // ModTheSpire's --mods list must name each loaded mod by its raw manifest modid, and those
+        // ids are validated against the loaded mods, so they come from the same resolved set.
+        val launchModIds = selection.filesByModId.keys
+            .map { normalized -> resolved.rawModIdByNormalizedId[normalized] ?: normalized }
+            .filter { it.isNotBlank() }
+        writeRunModFileList(appContext, modJarPaths)
+        val auditFile = RuntimePaths.agentSmokeTestModFileListAudit(appContext)
+        runCatching { auditFile.delete() }
 
         val runId = AgentPatchSmokeTestProtocol.newRunId()
         AgentPatchSmokeTestProtocol.writeRequest(
@@ -156,6 +181,8 @@ object AgentPatchSmokeTest {
                 parentModId = resolved.parentModId,
                 patchJarPath = patchJar.absolutePath,
                 timeoutMs = timeoutMs,
+                modJarPaths = modJarPaths,
+                launchModIds = launchModIds,
             ),
         )
         AgentPatchSmokeTestProtocol.clearResult(appContext)
@@ -173,12 +200,25 @@ object AgentPatchSmokeTest {
         }
 
         if (outcome == null) {
+            // A native crash in :game kills the process before the service can write a verdict, so
+            // fall back to ModTheSpire's own mod-list audit, the boot events, and the game log
+            // instead of reporting nothing useful.
+            val events = readEvents(eventsFile)
+            val excerpt = logExcerpt(appContext)
+            val loaded = readAuditedModJarPaths(appContext)
+            val context = describeLastProgress(events, excerpt)
             return failure(
                 startedAtMs,
                 "game_process_did_not_report",
-                "The game process did not report a result. It may have been killed or failed to start.",
-                launchModIds = launchModIds,
-                events = readEvents(eventsFile),
+                "The game process stopped before reporting a result" +
+                    context?.let { " (last progress: $it)" }.orEmpty() +
+                    ". It most likely crashed natively, which leaves no JVM-level verdict; " +
+                    "the loaded_mod_jars, boot events, and log excerpt show how far it got.",
+                launchModIds = resolvedModIds,
+                events = events,
+                logExcerpt = excerpt,
+                modSetVerified = matchesRequestedMods(loaded, modJarPaths),
+                loadedModJarPaths = loaded,
             )
         }
         return AgentPatchSmokeTestResult(
@@ -187,10 +227,12 @@ object AgentPatchSmokeTest {
             reason = outcome.reason,
             reachedMainMenu = outcome.reachedMainMenu,
             durationMs = outcome.durationMs,
-            launchModIds = launchModIds,
+            launchModIds = resolvedModIds,
             unresolvedDependencies = emptyList(),
             events = readEvents(eventsFile),
             logExcerpt = logExcerpt(appContext),
+            modSetVerified = outcome.modSetVerified,
+            loadedModJarPaths = outcome.loadedModJarPaths,
         )
     }
 
@@ -225,6 +267,7 @@ object AgentPatchSmokeTest {
             val bindStartedAtMs = SystemClock.elapsedRealtime()
             val hardDeadlineMs = bindStartedAtMs + timeoutMs + SERVICE_START_TIMEOUT_MS * 2
             var runObserved = false
+            var processMissingPolls = 0
             while (SystemClock.elapsedRealtime() < hardDeadlineMs) {
                 AgentPatchSmokeTestProtocol.readOutcome(context, runId)?.let { return it }
                 if (AgentPatchSmokeTestProtocol.isRunActive(context)) {
@@ -235,6 +278,18 @@ object AgentPatchSmokeTest {
                     // The service never started its run; no verdict is coming.
                     return null
                 }
+                // The game JVM lives in :game, so a dead process means the service died with it and
+                // no verdict will ever be written. Report that instead of waiting out the deadline.
+                // includeCached: the smoke session has no Activity, so Android reports its process as
+                // cached. Treating that as "gone" would abandon a run that is still working.
+                if (runObserved && !GameLaunchReturnTracker.isGameProcessRunning(context, includeCached = true)) {
+                    processMissingPolls += 1
+                    if (processMissingPolls >= GAME_PROCESS_MISSING_POLLS) {
+                        return AgentPatchSmokeTestProtocol.readOutcome(context, runId)
+                    }
+                } else {
+                    processMissingPolls = 0
+                }
                 sleepQuietly(POLL_INTERVAL_MS)
             }
             return AgentPatchSmokeTestProtocol.readOutcome(context, runId)
@@ -243,9 +298,29 @@ object AgentPatchSmokeTest {
         }
     }
 
+    /**
+     * Writes the run-scoped MTS mod list.
+     *
+     * The game JVM is told to read this file through `amethyst.mts.mod_file_list`, so the shared
+     * `.mts_mod_file_list` — which other launcher components rebuild from the user's enabled-mod
+     * selection — can no longer change which mods this run loads.
+     */
+    private fun writeRunModFileList(context: Context, modJarPaths: List<String>) {
+        val file = RuntimePaths.agentSmokeTestModFileList(context)
+        file.parentFile?.mkdirs()
+        file.writeText(modJarPaths.joinToString(separator = "\n", postfix = "\n"), Charsets.UTF_8)
+    }
+
     private data class ResolvedSelection(
         val parentModId: String,
         val selection: AgentPatchSmokeModSelection,
+        /**
+         * Normalized mod id to the raw manifest `modid`.
+         *
+         * ModTheSpire resolves its `--mods` ids case-sensitively against the manifest text, so the
+         * original casing has to be preserved rather than the normalized form used internally.
+         */
+        val rawModIdByNormalizedId: Map<String, String>,
     )
 
     /**
@@ -259,7 +334,7 @@ object AgentPatchSmokeTest {
     private fun awaitGameProcessExit(context: Context) {
         val deadlineMs = SystemClock.elapsedRealtime() + GAME_EXIT_GRACE_MS
         while (SystemClock.elapsedRealtime() < deadlineMs) {
-            if (!GameLaunchReturnTracker.isGameProcessRunning(context)) {
+            if (!GameLaunchReturnTracker.isGameProcessRunning(context, includeCached = true)) {
                 return
             }
             sleepQuietly(POLL_INTERVAL_MS)
@@ -278,29 +353,38 @@ object AgentPatchSmokeTest {
         val installed = ModManager.listInstalledMods(context)
         val jarByModId = LinkedHashMap<String, File>()
         val dependenciesByModId = LinkedHashMap<String, List<String>>()
+        val rawModIdByNormalizedId = LinkedHashMap<String, String>()
         installed.forEach { mod ->
             val normalizedModId = ModManager.normalizeModId(mod.modId)
             val normalizedManifestId = ModManager.normalizeModId(mod.manifestModId)
+            val rawModId = mod.manifestModId.trim().ifEmpty { mod.modId.trim() }
             if (mod.installed && mod.jarFile.isFile) {
                 if (normalizedModId.isNotEmpty()) jarByModId.putIfAbsent(normalizedModId, mod.jarFile)
                 if (normalizedManifestId.isNotEmpty()) jarByModId.putIfAbsent(normalizedManifestId, mod.jarFile)
             }
             if (normalizedModId.isNotEmpty()) {
                 dependenciesByModId[normalizedModId] = mod.dependencies
+                if (rawModId.isNotEmpty()) rawModIdByNormalizedId[normalizedModId] = rawModId
             }
             if (normalizedManifestId.isNotEmpty()) {
                 dependenciesByModId.putIfAbsent(normalizedManifestId, mod.dependencies)
+                if (rawModId.isNotEmpty()) rawModIdByNormalizedId.putIfAbsent(normalizedManifestId, rawModId)
             }
         }
         val parentManifest = ModJarManifestParser.readModManifest(parentJar)
         val parentManifestId = ModManager.normalizeModId(parentManifest.modId)
         dependenciesByModId[parentManifestId] = parentManifest.dependencies
         jarByModId[parentManifestId] = parentJar
+        parentManifest.modId.trim().takeIf { it.isNotEmpty() }?.let {
+            rawModIdByNormalizedId[parentManifestId] = it
+        }
         val resolvedParentModId = parentManifestId.ifEmpty { ModManager.normalizeModId(parentModId) }
 
-        val patchManifestId = runCatching {
-            ModManager.normalizeModId(ModJarManifestParser.readModManifest(patchJar).modId)
-        }.getOrDefault("")
+        val patchManifest = runCatching { ModJarManifestParser.readModManifest(patchJar) }.getOrNull()
+        val patchManifestId = ModManager.normalizeModId(patchManifest?.modId)
+        patchManifest?.modId?.trim()?.takeIf { it.isNotEmpty() && patchManifestId.isNotEmpty() }?.let {
+            rawModIdByNormalizedId[patchManifestId] = it
+        }
 
         // Built-in mods come from the installed-mod list so a missing optional library entry can
         // never break resolution; a required jar that is not installed is simply left out.
@@ -313,6 +397,7 @@ object AgentPatchSmokeTest {
         }
         return ResolvedSelection(
             parentModId = resolvedParentModId,
+            rawModIdByNormalizedId = rawModIdByNormalizedId,
             selection = AgentPatchSmokeTestModList.resolve(
                 builtInJars = builtInJars,
                 requiredModIds = presentRequiredIds,
@@ -341,6 +426,57 @@ object AgentPatchSmokeTest {
             enabledOptionalModIds,
             filesByModId,
         )
+    }
+
+    /** Reads back what ModTheSpire actually loaded, written by its own file-list override. */
+    private fun readAuditedModJarPaths(context: Context): List<String> {
+        val auditFile = RuntimePaths.agentSmokeTestModFileListAudit(context)
+        return runCatching {
+            if (!auditFile.isFile) {
+                emptyList()
+            } else {
+                auditFile.readLines(Charsets.UTF_8).map { it.trim() }.filter { it.isNotEmpty() }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** Compares by canonical path and order, since launch order is part of the mod set. */
+    private fun matchesRequestedMods(loaded: List<String>, requested: List<String>): Boolean {
+        if (loaded.isEmpty() || loaded.size != requested.size) {
+            return false
+        }
+        return loaded.map(::canonicalPathOrSelf) == requested.map(::canonicalPathOrSelf)
+    }
+
+    private fun canonicalPathOrSelf(path: String): String =
+        runCatching { File(path).canonicalPath }.getOrDefault(path)
+
+    /**
+     * Summarises how far the run got, for a crash that left no JVM-level report.
+     *
+     * The last boot-bridge phase is the most useful clue: a native fatal signal is only visible in
+     * logcat, which the launcher cannot read, so the phase and the last log line stand in for it.
+     */
+    private fun describeLastProgress(events: String, logExcerptText: String): String? {
+        val lastPhase = events.lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("PHASE", ignoreCase = true) || it.startsWith("FAIL", ignoreCase = true) }
+            .map { line ->
+                val parts = line.split('\t', limit = 3)
+                parts.getOrNull(2)?.trim().orEmpty().removePrefix("@amethyst.startup/")
+            }
+            .filter { it.isNotEmpty() }
+            .lastOrNull()
+        val crash = CRASH_MARKERS.firstOrNull { logExcerptText.contains(it, ignoreCase = true) }
+        val lastLogLine = logExcerptText.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .lastOrNull()
+        return listOfNotNull(
+            lastPhase?.let { "phase=$it" },
+            crash?.let { "marker=$it" },
+            lastLogLine?.take(120),
+        ).joinToString(", ").ifBlank { null }
     }
 
     private fun readEvents(eventsFile: File): String =
@@ -376,6 +512,9 @@ object AgentPatchSmokeTest {
         unknownModIds: List<String> = emptyList(),
         launchModIds: List<String> = emptyList(),
         events: String = "",
+        logExcerpt: String = "",
+        modSetVerified: Boolean = false,
+        loadedModJarPaths: List<String> = emptyList(),
     ): AgentPatchSmokeTestResult {
         Log.i(TAG, "smoke status=$status reason=$reason")
         return AgentPatchSmokeTestResult(
@@ -388,7 +527,9 @@ object AgentPatchSmokeTest {
             unresolvedDependencies = unresolvedDependencies,
             unknownModIds = unknownModIds,
             events = events,
-            logExcerpt = "",
+            logExcerpt = logExcerpt,
+            modSetVerified = modSetVerified,
+            loadedModJarPaths = loadedModJarPaths,
         )
     }
 

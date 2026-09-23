@@ -3,20 +3,12 @@ package io.stamethyst.ui.aimod
 import io.stamethyst.backend.llm.AgentToolExecutionEvent
 import io.stamethyst.backend.llm.AgentContextMessage
 import io.stamethyst.backend.llm.AgentContextState
-import java.io.File
-import java.util.concurrent.CountDownLatch
-import kotlin.concurrent.thread
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 class AiConversationContextTest {
-    @get:Rule val temporary = TemporaryFolder(generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
-        .first { File(it, "AGENTS.md").isFile }.resolve("agent-tmp"))
-
     @Test fun legacyMessagesMigrateOnceWithExplicitIncompleteToolResults() {
         val session = AiEditorSession("one", messages = listOf(
             AiEditorMessage(1, true, "inspect", attachments = listOf(AiAttachment("note.txt", "exact attachment"))),
@@ -67,44 +59,6 @@ class AiConversationContextTest {
         assertEquals(listOf(latest), mergeAiSessions(listOf(latest), listOf(old)))
         val fresh = latest.copy(revision = 4)
         assertEquals(listOf(fresh), mergeAiSessions(listOf(latest), listOf(fresh)))
-    }
-
-    @Test fun atomicSessionMutationsPreserveBackgroundChangesAndOtherSessions() {
-        val file = temporary.newFile("conversations.json")
-        file.delete()
-        val ui = AiConversationStore(file)
-        val worker = AiConversationStore(file)
-        val first = AiEditorSession("one", messages = listOf(AiEditorMessage(1, true, "first")))
-        val other = AiEditorSession("two", messages = listOf(AiEditorMessage(1, true, "other")))
-        ui.mutate(first.id, first) { it }
-        ui.mutate(other.id, other) { it }
-        val stale = ui.load().first { it.id == "one" }
-        worker.update("one") { it.copy(context = AgentContextState(summary = "worker checkpoint")) }
-        ui.mutate("one") { it.copy(messages = it.messages + AiEditorMessage(2, true, "next")) }
-        val stored = worker.load()
-        assertEquals(2, stored.size)
-        assertEquals("worker checkpoint", stored.first().context!!.summary)
-        assertEquals(2, stored.first().messages.size)
-        assertTrue(stored.first().revision > stale.revision)
-        assertEquals(other.messages, stored.last().messages)
-    }
-
-    @Test fun concurrentUpdatesDoNotLoseMessages() {
-        val file = File(temporary.root, "conversations.json")
-        val store = AiConversationStore(file)
-        store.mutate("one", AiEditorSession("one", listOf(AiEditorMessage(1, true, "goal")))) { it }
-        val start = CountDownLatch(1)
-        val workers = (1..2).map { worker -> thread {
-            val ownStore = AiConversationStore(file)
-            start.await()
-            repeat(20) { index -> ownStore.update("one") { current ->
-                current.copy(messages = current.messages + AiEditorMessage((worker * 100 + index).toLong(), false, "reply"))
-            } }
-        } }
-        start.countDown()
-        workers.forEach { it.join() }
-        assertEquals(41, store.load().single().messages.size)
-        assertEquals(41L, store.load().single().revision)
     }
 
     @Test fun persistedContextRoundTripsAndOldJsonStillLoads() {

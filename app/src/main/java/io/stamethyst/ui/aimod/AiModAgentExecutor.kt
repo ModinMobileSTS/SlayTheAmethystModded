@@ -53,6 +53,7 @@ internal class AiModAgentExecutor(
     private val onToolExecution: (AgentToolExecutionEvent) -> Unit = {},
     private val onText: (String) -> Unit = {},
     private val onThinking: (String) -> Unit = {},
+    private val onRetry: (retryNumber: Int, delaySeconds: Long) -> Unit = { _, _ -> },
     private val onContext: (AgentContextState) -> Unit = {},
     private val checkCancelled: () -> Unit = {},
 ) {
@@ -85,13 +86,19 @@ internal class AiModAgentExecutor(
         val config = OpenAiCompatibleModelConfig(
             baseUrl = settings.baseUrl,
             apiKey = settings.apiKey,
-            organizationId = settings.organizationId,
             modelName = settings.modelName,
             endpoint = settings.endpoint,
             requestTimeoutSeconds = settings.requestTimeoutSeconds,
             reasoningEffort = reasoningEffort,
         )
         val model = AgentChatModelFactory.create(config)
+        // Compaction needs visible factual text. Reasoning tokens can consume the summary
+        // output budget and leave the provider with an empty or truncated answer.
+        val compactionModel = if (reasoningEffort == LlmReasoningEffort.OFF) {
+            model
+        } else {
+            AgentChatModelFactory.create(config.copy(reasoningEffort = LlmReasoningEffort.OFF))
+        }
         val saved = session.modelContext(assistantMessageId)
         activePatchWorkspace = saved.activePatchId?.let(::resolveExistingPatchWorkspace)
         val registry = AgentToolRegistry(
@@ -110,7 +117,7 @@ internal class AiModAgentExecutor(
             toolSchema = registry.toolSpecifications().joinToString("\n"),
             budget = AgentContextBudget(AiContextLimits.get(context, modelKey)),
             sourceMessageId = assistantMessageId,
-            model = model,
+            model = compactionModel,
             checkpoint = onContext,
             checkCancelled = checkCancelled,
         )
@@ -122,6 +129,7 @@ internal class AiModAgentExecutor(
             toolRegistry = registry,
             contextManager = manager,
             checkCancelled = checkCancelled,
+            onRetry = onRetry,
         )
         val streamingModel = AgentChatModelFactory.createStreaming(config)
         return if (streamingModel == null) {

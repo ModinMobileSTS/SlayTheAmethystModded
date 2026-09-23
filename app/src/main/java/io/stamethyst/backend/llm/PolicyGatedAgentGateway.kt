@@ -16,7 +16,6 @@ import io.stamethyst.backend.mods.AgentPatchPreflight
 import io.stamethyst.backend.mods.AgentPatchSourceCompiler
 import io.stamethyst.backend.mods.AgentPatchTargetInspector
 import io.stamethyst.backend.mods.AgentPatchWorkspace
-import dev.langchain4j.http.client.okhttp.OkHttpClientBuilder
 import dev.langchain4j.model.chat.ChatModel
 import dev.langchain4j.model.chat.request.ChatRequest
 import dev.langchain4j.model.openai.OpenAiChatModel
@@ -61,6 +60,8 @@ private const val TOOL_OUTPUT_DIR = "tool_output"
 
 /** How many extra times an empty model turn is retried before it is reported as a failure. */
 private const val MAX_EMPTY_RETRIES = 1
+private const val MAX_REQUEST_RETRIES = 5
+private const val INITIAL_RETRY_DELAY_SECONDS = 1L
 
 data class OpenAiCompatibleModelConfig(
     val baseUrl: String,
@@ -69,7 +70,6 @@ data class OpenAiCompatibleModelConfig(
     val endpoint: LlmEndpoint = LlmEndpoint.CHAT_COMPLETIONS,
     val requestTimeoutSeconds: Int = DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS,
     val reasoningEffort: LlmReasoningEffort = LlmReasoningEffort.OFF,
-    val organizationId: String = "",
 )
 
 enum class LlmEndpoint {
@@ -80,24 +80,26 @@ enum class LlmEndpoint {
 object AgentChatModelFactory {
     private const val CONNECT_TIMEOUT_SECONDS = 30L
 
-    private fun httpClientBuilder(config: OpenAiCompatibleModelConfig): OkHttpClientBuilder {
+    private fun httpClientBuilder(config: OpenAiCompatibleModelConfig): AndroidCompatibleSseHttpClientBuilder {
         val timeoutSeconds = config.requestTimeoutSeconds
             .coerceIn(MIN_LLM_REQUEST_TIMEOUT_SECONDS, MAX_LLM_REQUEST_TIMEOUT_SECONDS)
             .toLong()
+        val connectTimeout = java.time.Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS)
+        val readTimeout = java.time.Duration.ofSeconds(timeoutSeconds)
         val okHttpClient = okhttp3.OkHttpClient.Builder()
-            .addInterceptor { chain ->
-                val request = chain.request().newBuilder().apply {
-                    if (config.organizationId.isNotBlank()) {
-                        header("OpenAI-Organization", config.organizationId.trim())
-                    }
-                }.build()
-                chain.proceed(request)
-            }
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
-        return OkHttpClientBuilder().okHttpClientBuilder(okHttpClient)
+        // Record the timeouts on langchain4j's own builder as well. Its client reads the builder's
+        // getters during construction; leaving them unset makes them null and lets the library fall
+        // back to its own defaults (15s/60s) instead of the values configured here.
+        return AndroidCompatibleSseHttpClientBuilder(
+            dev.langchain4j.http.client.okhttp.OkHttpClientBuilder()
+                .okHttpClientBuilder(okHttpClient)
+                .connectTimeout(connectTimeout)
+                .readTimeout(readTimeout),
+        )
     }
 
     fun create(config: OpenAiCompatibleModelConfig): ChatModel = when (config.endpoint) {
@@ -1295,6 +1297,7 @@ class PolicyGatedAgentGateway(
     private val agentWorkspaceRoot: File? = null,
     private val contextManager: AgentContextManager? = null,
     private val checkCancelled: () -> Unit = {},
+    private val onRetry: (retryNumber: Int, delaySeconds: Long) -> Unit = { _, _ -> },
 ) {
     fun respond(systemPrompt: String, userPrompt: String): AgentReply {
         val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
@@ -1421,15 +1424,31 @@ class PolicyGatedAgentGateway(
 
     private fun <T> modelTurn(history: List<ChatMessage>, request: (List<ChatMessage>) -> T): T {
         checkCancelled()
-        val active = contextManager?.prepare() ?: history
-        return try {
-            request(active)
-        } catch (error: Exception) {
-            checkCancelled()
-            if (contextManager == null || !isAgentContextOverflow(error)) throw error
-            // One bounded recovery attempt; executing tools is outside this retry block.
-            request(contextManager.prepare(force = true))
+        var active = contextManager?.prepare() ?: history
+        var lastError: Exception? = null
+        repeat(MAX_REQUEST_RETRIES + 1) { attempt ->
+            try {
+                return request(active)
+            } catch (error: Exception) {
+                checkCancelled()
+                lastError = error
+                if (attempt == MAX_REQUEST_RETRIES) throw error
+                if (contextManager != null && isAgentContextOverflow(error)) {
+                    // Context overflow gets an immediate compaction retry, not a delayed network retry.
+                    active = contextManager.prepare(force = true)
+                    return request(active)
+                }
+                val delaySeconds = INITIAL_RETRY_DELAY_SECONDS shl attempt
+                onRetry(attempt + 1, delaySeconds)
+                try {
+                    Thread.sleep(delaySeconds * 1_000L)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw java.util.concurrent.CancellationException("LLM retry cancelled")
+                }
+            }
         }
+        throw requireNotNull(lastError)
     }
 
     private fun chatRequest(messages: List<ChatMessage>) = ChatRequest.builder()
@@ -1537,19 +1556,20 @@ class PolicyGatedAgentGateway(
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
         val closed = java.util.concurrent.atomic.AtomicBoolean(false)
         val text = StringBuilder()
+        val thinking = StringBuilder()
         streamingModel.chat(
             chatRequest(messages),
             object : StreamingChatResponseHandler {
                 override fun onPartialResponse(partialResponse: String) {
                     if (closed.get()) return
                     text.append(partialResponse)
-                    onText(partialResponse)
+                    // Deliver only after the request completes, so a retry cannot duplicate output.
                 }
 
                 override fun onPartialThinking(partialThinking: dev.langchain4j.model.chat.response.PartialThinking) {
                     if (closed.get()) return
                     val value = partialThinking.text()
-                    if (value.isNotEmpty()) onThinking(value)
+                    if (value.isNotEmpty()) thinking.append(value)
                 }
 
                 override fun onCompleteResponse(completed: ChatResponse) {
@@ -1577,6 +1597,8 @@ class PolicyGatedAgentGateway(
             closed.set(true)
         }
         failure.get()?.let { throw it }
+        onText(text.toString())
+        onThinking(thinking.toString())
         return StreamingResult(requireNotNull(response.get()), text.toString())
     }
 

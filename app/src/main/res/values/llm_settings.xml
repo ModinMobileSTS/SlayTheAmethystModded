@@ -1,6 +1,5 @@
 <resources>
     <string name="llm_connection">Connection</string>
-    <string name="llm_organization">OpenAI organization ID (optional)</string>
     <string name="llm_credentials">Credentials</string>
     <string name="llm_key_hint">Leave blank to keep the current key.</string>
     <string name="llm_current_key">Saved key</string>

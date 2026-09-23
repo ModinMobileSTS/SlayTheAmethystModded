@@ -1,6 +1,5 @@
 package io.stamethyst.backend.launch
 
-import android.app.ActivityManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -10,6 +9,7 @@ import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
@@ -61,6 +61,14 @@ class AgentPatchSmokeTestService : Service() {
 
     /** Set once `launchJVM` has returned, so shutdown knows the game JVM is really gone. */
     private val jvmExited = AtomicBoolean(false)
+
+    /**
+     * Keeps the CPU running for the length of the run.
+     *
+     * The session has no window, so it cannot rely on FLAG_KEEP_SCREEN_ON the way the normal game
+     * Activity does. Without this the run can be suspended mid-patch on an idle device.
+     */
+    private var wakeLock: PowerManager.WakeLock? = null
 
     inner class LocalBinder : Binder() {
         fun isRunning(): Boolean = runStarted && !cancelRequested
@@ -123,6 +131,7 @@ class AgentPatchSmokeTestService : Service() {
             return
         }
         AgentPatchSmokeTestProtocol.markRunActive(this)
+        acquireWakeLock(request.timeoutMs)
 
         if (!GameProcessLaunchGuard.tryAcquire(LAUNCH_GUARD_TOKEN)) {
             finish(
@@ -150,6 +159,20 @@ class AgentPatchSmokeTestService : Service() {
             return
         }
 
+        val modFileList = RuntimePaths.agentSmokeTestModFileList(this)
+        val modFileListAudit = RuntimePaths.agentSmokeTestModFileListAudit(this)
+        if (request.modJarPaths.isEmpty() || request.launchModIds.isEmpty() || !modFileList.isFile) {
+            finish(
+                request = request,
+                startedAtMs = startedAtMs,
+                passed = false,
+                status = "mod_file_list_missing",
+                reason = "The smoke test did not receive a run-scoped mod list to launch with.",
+                reachedMainMenu = false,
+            )
+            return
+        }
+
         val size = resolveSurfaceSize()
         val surface = HeadlessGameSurface.create(size.first, size.second)
         if (surface == null) {
@@ -169,6 +192,7 @@ class AgentPatchSmokeTestService : Service() {
         val logFile = RuntimePaths.latestLog(this)
         val preLaunchLogLength = logFile.takeIf(File::isFile)?.length() ?: 0L
         runCatching { eventsFile.delete() }
+        runCatching { modFileListAudit.delete() }
 
         val rendererDecision = RendererBackendResolver.resolve(
             context = this,
@@ -216,6 +240,9 @@ class AgentPatchSmokeTestService : Service() {
             onSurfaceSizeSync = { syncSurfaceSize(surface) },
             getWindowWidth = { surface.width },
             getWindowHeight = { surface.height },
+            mtsModFileListOverride = modFileList,
+            mtsModFileListAudit = modFileListAudit,
+            mtsLaunchModIdsOverride = request.launchModIds,
         )
         jvmLaunchController = controller
 
@@ -233,13 +260,28 @@ class AgentPatchSmokeTestService : Service() {
             startedAtMs = startedAtMs,
             timeoutMs = request.timeoutMs.coerceAtLeast(MIN_TIMEOUT_MS),
         )
+        val loadedModJarPaths = readLoadedModJarPaths(modFileListAudit)
+        val modSetVerified = matchesRequestedMods(loadedModJarPaths, request.modJarPaths)
+        // The whole point of the smoke test is that a failure is attributable to the patch. If the
+        // game did not load the requested mods, any verdict would describe a different session, so
+        // an unverifiable run can never be reported as a pass.
+        val passed = outcome.passed && modSetVerified
+        val reason = when {
+            outcome.passed && !modSetVerified && loadedModJarPaths.isEmpty() ->
+                "mod_set_unverified: no record of which mods the game loaded was produced"
+            outcome.passed && !modSetVerified ->
+                "mod_set_mismatch: the game loaded a different mod set than requested"
+            else -> outcome.reason
+        }
         finish(
             request = request,
             startedAtMs = startedAtMs,
-            passed = outcome.passed,
-            status = if (outcome.passed) "passed" else "failed",
-            reason = outcome.reason,
+            passed = passed,
+            status = if (passed) "passed" else "failed",
+            reason = reason,
             reachedMainMenu = outcome.reachedMainMenu,
+            loadedModJarPaths = loadedModJarPaths,
+            modSetVerified = modSetVerified,
         )
     }
 
@@ -250,6 +292,8 @@ class AgentPatchSmokeTestService : Service() {
         status: String,
         reason: String,
         reachedMainMenu: Boolean,
+        loadedModJarPaths: List<String> = emptyList(),
+        modSetVerified: Boolean = false,
     ) {
         writeOutcome(
             AgentPatchSmokeTestOutcome(
@@ -259,6 +303,8 @@ class AgentPatchSmokeTestService : Service() {
                 reason = reason,
                 reachedMainMenu = reachedMainMenu,
                 durationMs = SystemClock.elapsedRealtime() - startedAtMs,
+                loadedModJarPaths = loadedModJarPaths,
+                modSetVerified = modSetVerified,
             ),
         )
         shutdownGame()
@@ -298,7 +344,18 @@ class AgentPatchSmokeTestService : Service() {
      * Releases everything the run owns. Called on every exit path, including the launcher unbinding
      * while the run is still in flight.
      */
+    private fun acquireWakeLock(timeoutMs: Long) {
+        runCatching {
+            val powerManager = getSystemService(POWER_SERVICE) as? PowerManager ?: return
+            wakeLock = powerManager
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:agent-smoke-test")
+                .apply { acquire(timeoutMs + WAKE_LOCK_MARGIN_MS) }
+        }.onFailure { Log.w(TAG, "Unable to acquire the smoke test wake lock", it) }
+    }
+
     private fun releaseResources() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
         jvmLaunchController?.cleanup()
         jvmLaunchController = null
         headlessSurface?.release()
@@ -390,7 +447,6 @@ class AgentPatchSmokeTestService : Service() {
         timeoutMs: Long,
     ): RunOutcome {
         val deadlineMs = startedAtMs + timeoutMs
-        var launcherOffScreenPolls = 0
         var jvmExitGraceDeadlineMs = 0L
         while (!cancelRequested && SystemClock.elapsedRealtime() < deadlineMs) {
             val events = readEvents(eventsFile)
@@ -403,15 +459,6 @@ class AgentPatchSmokeTestService : Service() {
                     return RunOutcome(false, "crash_after_main_menu: $crash", true)
                 }
                 return RunOutcome(true, "main_menu_reached", true)
-            }
-            // Guard rail: if the game ever took the foreground, the user would be staring at it.
-            if (launcherIsOffScreen()) {
-                launcherOffScreenPolls += 1
-                if (launcherOffScreenPolls >= OFF_SCREEN_ABORT_POLLS) {
-                    return RunOutcome(false, "game_took_over_the_screen", false)
-                }
-            } else {
-                launcherOffScreenPolls = 0
             }
             // The game JVM lives in this very process, so process liveness says nothing about the
             // session. Its exit is the real signal: without a terminal boot event the mod set never
@@ -450,23 +497,34 @@ class AgentPatchSmokeTestService : Service() {
         )
     }
 
-    /**
-     * True when the launcher process is no longer on screen.
-     *
-     * `runningAppProcesses` is only guaranteed to include the calling app, so a missing launcher
-     * entry means "unknown" and must not be treated as a takeover. The launcher and this service are
-     * different processes, so both are visible here.
-     */
-    private fun launcherIsOffScreen(): Boolean {
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            ?: return false
-        val importance = runCatching {
-            activityManager.runningAppProcesses
-                ?.firstOrNull { it.processName == packageName }
-                ?.importance
-        }.getOrNull() ?: return false
-        return importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_BACKGROUND
+    private fun readLoadedModJarPaths(auditFile: File): List<String> {
+        // The audit is written while the game JVM starts; give it a moment to appear.
+        val deadlineMs = SystemClock.elapsedRealtime() + MOD_AUDIT_WAIT_MS
+        while (SystemClock.elapsedRealtime() < deadlineMs) {
+            if (auditFile.isFile) break
+            sleepQuietly(100L)
+        }
+        return runCatching {
+            if (!auditFile.isFile) {
+                emptyList()
+            } else {
+                auditFile.readLines(StandardCharsets.UTF_8)
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            }
+        }.getOrDefault(emptyList())
     }
+
+    /** Compares by canonical path and order, since launch order is part of the mod set. */
+    private fun matchesRequestedMods(loaded: List<String>, requested: List<String>): Boolean {
+        if (loaded.isEmpty() || loaded.size != requested.size) {
+            return false
+        }
+        return loaded.map(::canonicalPathOrSelf) == requested.map(::canonicalPathOrSelf)
+    }
+
+    private fun canonicalPathOrSelf(path: String): String =
+        runCatching { File(path).canonicalPath }.getOrDefault(path)
 
     private fun terminalMessage(events: String, type: String): String? {
         events.lineSequence()
@@ -542,8 +600,9 @@ class AgentPatchSmokeTestService : Service() {
         private const val LAUNCH_GUARD_TOKEN = "agent-smoke-test"
         private const val SETTLE_AFTER_READY_MS = 2_500L
         private const val POLL_INTERVAL_MS = 250L
-        private const val OFF_SCREEN_ABORT_POLLS = 4
         private const val MIN_TIMEOUT_MS = 15_000L
+        private const val MOD_AUDIT_WAIT_MS = 10_000L
+        private const val WAKE_LOCK_MARGIN_MS = 120_000L
         private const val JVM_EXIT_GRACE_MS = 8_000L
         private const val TAIL_READ_CHARS = 64 * 1024
         private val STRONG_CRASH_MARKERS = listOf(

@@ -218,9 +218,11 @@ processes the launcher already uses:
 - After writing the verdict the service closes the game with
   `CallbackBridge.nativeRequestCloseWindow`, the same graceful path an in-game back exit uses, and
   kills the process only if the JVM does not exit within the grace period.
-- As a guard rail, if the launcher process ever drops below `IMPORTANCE_BACKGROUND` for a full
-  second, the run aborts with `game_took_over_the_screen` and the game is closed, so the user can
-  never be left staring at the game.
+- The game cannot take the foreground at all: the session has no Activity and no display window, so
+  the run is safe whether or not the launcher is visible. There is deliberately no check on launcher
+  visibility — such a check would abort a run whenever the user switches away.
+- A debug build exposes `AgentPatchSmokeTestAdbReceiver` so this flow can be run over adb without
+  driving the AI editor, which is how it is regression-checked.
 
 ## Launcher Lifecycle
 

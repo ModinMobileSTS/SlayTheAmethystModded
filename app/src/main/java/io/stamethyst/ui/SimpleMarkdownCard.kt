@@ -8,10 +8,13 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
@@ -23,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +71,10 @@ private val htmlAttributeRegex =
 private val bareUrlRegex =
     Regex("""https?://[^\s<>()]+(?:\([^\s<>()]*\)[^\s<>()]*)*""", RegexOption.IGNORE_CASE)
 private val markdownTableSeparatorRegex = Regex(":?-{3,}:?")
+
+/** `---`, `***`, `___` (with optional spaces) on a line of their own. */
+private val markdownHorizontalRuleRegex =
+    Regex("""^(?:\*[ \t]*){3,}$|^(?:-[ \t]*){3,}$|^(?:_[ \t]*){3,}$""")
 
 @Composable
 internal fun SimpleMarkdownCard(
@@ -185,6 +193,38 @@ internal fun SimpleMarkdownContent(
                             textColor = textColor,
                             codeContainerColor = codeContainerColor
                         )
+                    }
+
+                    is MarkdownBlock.HorizontalRule -> {
+                        HorizontalDivider(color = textColor.copy(alpha = 0.25f))
+                    }
+
+                    is MarkdownBlock.BlockQuote -> {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Min),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .fillMaxHeight()
+                                    .background(textColor.copy(alpha = 0.35f), RoundedCornerShape(2.dp))
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                block.lines.forEach { line ->
+                                    MarkdownRichText(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        textColor = textColor
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     is MarkdownBlock.Image -> {
@@ -395,19 +435,22 @@ private fun MarkdownRichText(
         background = MaterialTheme.colorScheme.surfaceContainerHighest,
         color = MaterialTheme.colorScheme.onSurface
     )
+    val strikeStyle = SpanStyle(textDecoration = TextDecoration.LineThrough)
     val annotatedText = remember(
         text,
         linkStyles,
         boldStyle,
         italicStyle,
-        codeStyle
+        codeStyle,
+        strikeStyle
     ) {
         buildMarkdownAnnotatedString(
             text = text,
             linkStyles = linkStyles,
             boldStyle = boldStyle,
             italicStyle = italicStyle,
-            codeStyle = codeStyle
+            codeStyle = codeStyle,
+            strikeStyle = strikeStyle
         )
     }
     Text(
@@ -424,6 +467,8 @@ private sealed interface MarkdownBlock {
     data class CodeBlock(val text: String) : MarkdownBlock
     data class Table(val headers: List<String>, val rows: List<List<String>>) : MarkdownBlock
     data class Image(val alt: String, val url: String) : MarkdownBlock
+    data object HorizontalRule : MarkdownBlock
+    data class BlockQuote(val lines: List<String>) : MarkdownBlock
 }
 
 private sealed class RemoteImageState {
@@ -493,6 +538,26 @@ private fun parseSimpleMarkdown(markdown: String): List<MarkdownBlock> {
             continue
         }
 
+        if (markdownHorizontalRuleRegex.matches(trimmed)) {
+            flushParagraph()
+            flushList()
+            blocks += MarkdownBlock.HorizontalRule
+            index += 1
+            continue
+        }
+
+        if (trimmed.startsWith(">")) {
+            flushParagraph()
+            flushList()
+            val quoted = mutableListOf<String>()
+            while (index < lines.size && lines[index].trim().startsWith(">")) {
+                quoted += lines[index].trim().removePrefix(">").trimStart()
+                index += 1
+            }
+            blocks += MarkdownBlock.BlockQuote(quoted)
+            continue
+        }
+
         if (index + 1 < lines.size) {
             val tableHeader = parseTableRow(lines[index])
             val tableSeparator = parseTableSeparator(lines[index + 1], tableHeader?.size ?: 0)
@@ -514,7 +579,7 @@ private fun parseSimpleMarkdown(markdown: String): List<MarkdownBlock> {
             }
         }
 
-        val headingMatch = Regex("""^(#{1,3})\s+(.+?)\s*#*$""").matchEntire(trimmed)
+        val headingMatch = Regex("""^(#{1,6})\s+(.+?)\s*#*$""").matchEntire(trimmed)
         if (headingMatch != null) {
             flushParagraph()
             flushList()
@@ -576,6 +641,21 @@ internal fun parseSimpleMarkdownTablesForTest(
         .filterIsInstance<MarkdownBlock.Table>()
         .map { table -> table.headers to table.rows }
 }
+
+/** Stable, type-free view of the parsed block structure for unit tests. */
+internal fun parseSimpleMarkdownOutlineForTest(markdown: String): List<String> =
+    parseSimpleMarkdown(markdown).map { block ->
+        when (block) {
+            is MarkdownBlock.Heading -> "heading${block.level}"
+            is MarkdownBlock.Paragraph -> "paragraph"
+            is MarkdownBlock.ListBlock -> if (block.ordered) "olist" else "ulist"
+            is MarkdownBlock.CodeBlock -> "code"
+            is MarkdownBlock.Table -> "table"
+            is MarkdownBlock.Image -> "image"
+            MarkdownBlock.HorizontalRule -> "hr"
+            is MarkdownBlock.BlockQuote -> "quote:" + block.lines.joinToString("|")
+        }
+    }
 
 private fun parseTableRow(line: String): List<String>? {
     val trimmed = line.trim()
@@ -733,6 +813,7 @@ private fun buildMarkdownAnnotatedString(
     boldStyle: SpanStyle,
     italicStyle: SpanStyle,
     codeStyle: SpanStyle,
+    strikeStyle: SpanStyle,
 ): AnnotatedString {
     return buildAnnotatedString {
         appendMarkdownInline(
@@ -740,7 +821,8 @@ private fun buildMarkdownAnnotatedString(
             linkStyles = linkStyles,
             boldStyle = boldStyle,
             italicStyle = italicStyle,
-            codeStyle = codeStyle
+            codeStyle = codeStyle,
+            strikeStyle = strikeStyle
         )
     }
 }
@@ -751,7 +833,8 @@ internal fun buildSimpleMarkdownAnnotatedStringForTest(text: String): AnnotatedS
         linkStyles = TextLinkStyles(),
         boldStyle = SpanStyle(fontWeight = FontWeight.Bold),
         italicStyle = SpanStyle(fontStyle = FontStyle.Italic),
-        codeStyle = SpanStyle(fontFamily = FontFamily.Monospace)
+        codeStyle = SpanStyle(fontFamily = FontFamily.Monospace),
+        strikeStyle = SpanStyle(textDecoration = TextDecoration.LineThrough)
     )
 }
 
@@ -761,6 +844,7 @@ private fun AnnotatedString.Builder.appendMarkdownInline(
     boldStyle: SpanStyle,
     italicStyle: SpanStyle,
     codeStyle: SpanStyle,
+    strikeStyle: SpanStyle,
 ) {
     var index = 0
     while (index < text.length) {
@@ -768,6 +852,26 @@ private fun AnnotatedString.Builder.appendMarkdownInline(
             text[index] == '\\' && index + 1 < text.length -> {
                 append(text[index + 1])
                 index += 2
+            }
+
+            text.startsWith("~~", index) -> {
+                val end = text.indexOf("~~", startIndex = index + 2)
+                if (end > index + 2) {
+                    pushStyle(strikeStyle)
+                    appendMarkdownInline(
+                        text = text.substring(index + 2, end),
+                        linkStyles = linkStyles,
+                        boldStyle = boldStyle,
+                        italicStyle = italicStyle,
+                        codeStyle = codeStyle,
+                        strikeStyle = strikeStyle
+                    )
+                    pop()
+                    index = end + 2
+                } else {
+                    append("~~")
+                    index += 2
+                }
             }
 
             text.startsWith("**", index) -> {
@@ -779,7 +883,8 @@ private fun AnnotatedString.Builder.appendMarkdownInline(
                         linkStyles = linkStyles,
                         boldStyle = boldStyle,
                         italicStyle = italicStyle,
-                        codeStyle = codeStyle
+                        codeStyle = codeStyle,
+                        strikeStyle = strikeStyle
                     )
                     pop()
                     index = end + 2
@@ -799,7 +904,8 @@ private fun AnnotatedString.Builder.appendMarkdownInline(
                         linkStyles = linkStyles,
                         boldStyle = boldStyle,
                         italicStyle = italicStyle,
-                        codeStyle = codeStyle
+                        codeStyle = codeStyle,
+                        strikeStyle = strikeStyle
                     )
                     pop()
                     index = end + 1
@@ -844,7 +950,8 @@ private fun AnnotatedString.Builder.appendMarkdownInline(
                                 linkStyles = linkStyles,
                                 boldStyle = boldStyle,
                                 italicStyle = italicStyle,
-                                codeStyle = codeStyle
+                                codeStyle = codeStyle,
+                                strikeStyle = strikeStyle
                             )
                         }
                         index = closeParen + 1

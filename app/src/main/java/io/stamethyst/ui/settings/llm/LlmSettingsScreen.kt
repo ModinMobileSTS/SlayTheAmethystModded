@@ -141,7 +141,7 @@ class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : View
         remoteModels = emptyList()
     }
 
-    fun refreshModels(baseUrl: String, apiKey: String, organizationId: String) {
+    fun refreshModels(baseUrl: String, apiKey: String) {
         if (refreshingModels || baseUrl.isBlank() || apiKey.isBlank()) return
         refreshingModels = true
         modelFetchError = null
@@ -149,7 +149,7 @@ class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : View
         remoteModels = emptyList()
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) {
-                NewApiModelService().fetchModels(baseUrl, apiKey, organizationId = organizationId)
+                NewApiModelService().fetchModels(baseUrl, apiKey)
             } }
                 .onSuccess { models -> remoteModels = models; remoteModelsEmpty = models.isEmpty() }
                 .onFailure { error ->
@@ -189,7 +189,6 @@ fun LauncherLlmSettingsScreen(
         mutableStateOf(current.requestTimeoutSeconds)
     }
     var reasoningEffort by rememberSaveable { mutableStateOf(current.reasoningEffort) }
-    var organizationId by rememberSaveable { mutableStateOf(current.organizationId) }
     var models by rememberSaveable {
         mutableStateOf(current.models)
     }
@@ -211,7 +210,6 @@ fun LauncherLlmSettingsScreen(
         endpoint = endpoint,
         requestTimeoutSeconds = requestTimeoutSeconds,
         reasoningEffort = reasoningEffort,
-        organizationId = organizationId.trim(),
         models = models,
     )
     LaunchedEffect(draft) { viewModel.save(draft) }
@@ -265,13 +263,6 @@ fun LauncherLlmSettingsScreen(
                     isError = !validUrl,
                     singleLine = true,
                 )
-                OutlinedTextField(
-                    value = organizationId,
-                    onValueChange = { organizationId = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.llm_organization)) },
-                    singleLine = true,
-                )
             }
         }
         item {
@@ -285,41 +276,42 @@ fun LauncherLlmSettingsScreen(
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                 )
-                Text(stringResource(R.string.llm_current_key), style = MaterialTheme.typography.labelLarge)
-                OutlinedTextField(
-                    value = if (keyVisible) current.apiKey else if (current.apiKey.isNotEmpty()) "********" else "",
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.llm_no_key)) },
-                    visualTransformation = VisualTransformation.None,
-                    singleLine = true,
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        enabled = current.apiKey.isNotBlank(),
-                        onClick = {
-                            if (keyVisible) keyVisible = false else {
-                                val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-                                val intent = keyguard.createConfirmDeviceCredentialIntent(
-                                    verifyKeyTitle, null,
-                                )
-                                authError = intent == null
-                                if (intent != null) runCatching { authLauncher.launch(intent) }.onFailure { authError = true }
-                            }
-                        },
-                    ) {
-                        Icon(painterResource(if (keyVisible) R.drawable.ic_lock else R.drawable.ic_lock_open), null, Modifier.size(18.dp))
-                        Text(stringResource(if (keyVisible) R.string.llm_hide_key else R.string.llm_show_key), Modifier.padding(start = 8.dp))
-                    }
-                    TextButton(enabled = keyVisible, onClick = {
-                        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("API key", current.apiKey)
-                        clip.description.extras = android.os.PersistableBundle().apply {
-                            putBoolean("android.content.extra.IS_SENSITIVE", true)
+                if (current.apiKey.isNotBlank()) {
+                    Text(stringResource(R.string.llm_current_key), style = MaterialTheme.typography.labelLarge)
+                    OutlinedTextField(
+                        value = if (keyVisible) current.apiKey else "********",
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(stringResource(R.string.llm_no_key)) },
+                        visualTransformation = VisualTransformation.None,
+                        singleLine = true,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                if (keyVisible) keyVisible = false else {
+                                    val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+                                    val intent = keyguard.createConfirmDeviceCredentialIntent(
+                                        verifyKeyTitle, null,
+                                    )
+                                    authError = intent == null
+                                    if (intent != null) runCatching { authLauncher.launch(intent) }.onFailure { authError = true }
+                                }
+                            },
+                        ) {
+                            Icon(painterResource(if (keyVisible) R.drawable.ic_lock else R.drawable.ic_lock_open), null, Modifier.size(18.dp))
+                            Text(stringResource(if (keyVisible) R.string.llm_hide_key else R.string.llm_show_key), Modifier.padding(start = 8.dp))
                         }
-                        manager.setPrimaryClip(clip)
-                    }) { Text(stringResource(R.string.llm_copy_key)) }
+                        TextButton(enabled = keyVisible, onClick = {
+                            val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("API key", current.apiKey)
+                            clip.description.extras = android.os.PersistableBundle().apply {
+                                putBoolean("android.content.extra.IS_SENSITIVE", true)
+                            }
+                            manager.setPrimaryClip(clip)
+                        }) { Text(stringResource(R.string.llm_copy_key)) }
+                    }
                 }
                 if (authError) Text(stringResource(R.string.llm_auth_unavailable), color = MaterialTheme.colorScheme.error)
             }
@@ -401,7 +393,7 @@ fun LauncherLlmSettingsScreen(
                             )
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
-                                    onClick = { viewModel.refreshModels(baseUrl, effectiveKey, organizationId) },
+                                    onClick = { viewModel.refreshModels(baseUrl, effectiveKey) },
                                     enabled = !viewModel.refreshingModels && effectiveKey.isNotBlank() && validUrl,
                                 ) {
                                     Icon(painterResource(R.drawable.ic_cloud_sync), null, Modifier.size(18.dp))

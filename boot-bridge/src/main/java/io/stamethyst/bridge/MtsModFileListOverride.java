@@ -12,10 +12,26 @@ import java.util.Locale;
 public final class MtsModFileListOverride {
     public static final String PROPERTY_NAME = "amethyst.mts.mod_file_list";
 
+    /**
+     * Optional path where the list actually handed to ModTheSpire is recorded.
+     *
+     * This is the authoritative record of which jars MTS loaded: it is written by the same call that
+     * produces the array passed to {@code Loader.runMods}. The AI patch smoke test reads it back to
+     * prove the run really used the mod set it asked for, instead of trusting that nothing else
+     * overwrote the list in the meantime.
+     */
+    public static final String AUDIT_PROPERTY_NAME = "amethyst.mts.mod_file_list.audit";
+
     private MtsModFileListOverride() {
     }
 
     public static File[] resolve(File[] fallback) {
+        File[] resolved = resolveInternal(fallback);
+        writeAudit(resolved);
+        return resolved;
+    }
+
+    private static File[] resolveInternal(File[] fallback) {
         String rawListPath = System.getProperty(PROPERTY_NAME);
         if (rawListPath == null || rawListPath.trim().isEmpty()) {
             return fallbackOrEmpty(fallback);
@@ -64,6 +80,33 @@ public final class MtsModFileListOverride {
         }
         log("Using MTS mod file list with " + files.size() + " jar(s)");
         return files.toArray(new File[files.size()]);
+    }
+
+    private static void writeAudit(File[] resolved) {
+        String auditPath = System.getProperty(AUDIT_PROPERTY_NAME);
+        if (auditPath == null || auditPath.trim().isEmpty()) {
+            return;
+        }
+        File auditFile = new File(auditPath.trim());
+        File parent = auditFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            log("Failed to create MTS mod file list audit directory: " + parent.getAbsolutePath());
+            return;
+        }
+        StringBuilder out = new StringBuilder();
+        if (resolved != null) {
+            for (File file : resolved) {
+                if (file == null) {
+                    continue;
+                }
+                out.append(file.getAbsolutePath()).append('\n');
+            }
+        }
+        try {
+            Files.write(auditFile.toPath(), out.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException error) {
+            log("Failed to write MTS mod file list audit: " + error.getMessage());
+        }
     }
 
     private static File[] fallbackOrEmpty(File[] fallback) {

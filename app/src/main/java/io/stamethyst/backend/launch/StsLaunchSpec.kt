@@ -1,8 +1,10 @@
 package io.stamethyst.backend.launch
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.util.Log
+import android.view.Display
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
@@ -130,7 +132,10 @@ object StsLaunchSpec {
         autoplaySingleRoomBenchMode: Boolean = false,
         cardObtainEffectOwnershipCompatEnabled: Boolean = true,
         performanceDeepDiagnosticsOverride: Boolean? = null,
-        effectiveTargetFpsOverride: Float? = null
+        effectiveTargetFpsOverride: Float? = null,
+        mtsModFileListOverride: File? = null,
+        mtsModFileListAudit: File? = null,
+        mtsLaunchModIdsOverride: List<String>? = null
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -468,9 +473,7 @@ object StsLaunchSpec {
         val virtualHeight = launchVirtualSize.height
         // The in-JVM LWJGL shim cannot read the real panel refresh rate, so publish the value the
         // launcher itself requested. Without this the game assumes 60Hz and mis-paces every frame.
-        val expectedRefreshRateHz = context.display?.refreshRate
-            ?.takeIf { it > 0f && !it.isNaN() }
-            ?: 0f
+        val expectedRefreshRateHz = resolveExpectedRefreshRateHz(context)
         if (expectedRefreshRateHz > 0f) {
             args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
         }
@@ -785,7 +788,13 @@ object StsLaunchSpec {
         args.add("-Damethyst.autoplay.wait_for_agent=false")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
-            args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
+            // The AI patch smoke test points these at a run-scoped file so a concurrent rewrite of the
+            // shared .mts_mod_file_list by another component cannot change which mods this run loads.
+            val modFileList = mtsModFileListOverride ?: RuntimePaths.mtsModFileList(context)
+            args.add("-Damethyst.mts.mod_file_list=${modFileList.absolutePath}")
+            if (mtsModFileListAudit != null) {
+                args.add("-Damethyst.mts.mod_file_list.audit=${mtsModFileListAudit.absolutePath}")
+            }
             MtsPatchCacheCoordinator.appendRuntimeProperties(
                 context = context,
                 args = args,
@@ -856,7 +865,10 @@ object StsLaunchSpec {
             // and exiting the Android process immediately.
             args.add("--jre51")
             args.add("--skip-launcher")
-            val launchMods: List<String> = try {
+            // ModTheSpire treats these as required: every id here must resolve to a loaded mod.
+            // The smoke test therefore has to pass its own set. Using the user's selection instead
+            // makes MTS fail with MissingModIDException for mods the run deliberately did not load.
+            val launchMods: List<String> = mtsLaunchModIdsOverride ?: try {
                 ModManager.resolveLaunchModIds(context)
             } catch (_: Exception) {
                 Arrays.asList(ModManager.MOD_ID_BASEMOD, ModManager.MOD_ID_STSLIB)
@@ -1042,6 +1054,23 @@ object StsLaunchSpec {
         } else {
             ""
         }
+    }
+
+    /**
+     * Resolves the panel refresh rate to publish to the game JVM.
+     *
+     * `Context.getDisplay()` is deliberately avoided: it requires API 30 and throws
+     * `UnsupportedOperationException` for a context that is not associated with a display, which is
+     * exactly what the AI patch smoke test launches the game from (a Service). The game renders
+     * fullscreen on the default display, so `DisplayManager` gives the same value from any context.
+     */
+    private fun resolveExpectedRefreshRateHz(context: Context): Float {
+        val refreshRateHz = runCatching {
+            val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+            @Suppress("DEPRECATION")
+            displayManager?.getDisplay(Display.DEFAULT_DISPLAY)?.refreshRate
+        }.getOrNull()
+        return refreshRateHz?.takeIf { it > 0f && !it.isNaN() } ?: 0f
     }
 
     private fun addDebugGpuGuardianTestProperties(

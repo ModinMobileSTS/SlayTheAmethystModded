@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.stamethyst.LauncherActivity
@@ -17,7 +18,6 @@ import io.stamethyst.backend.llm.AgentToolExecutionEvent
 import io.stamethyst.backend.llm.LlmSettingsRepository
 import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.config.RuntimePaths
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 import kotlinx.serialization.json.Json
@@ -66,6 +66,7 @@ class AiAgentExecutionService : Service() {
 
         private const val CHANNEL_ID = "ai_agent_execution"
         private const val NOTIFICATION_ID = 646571
+        private const val LOG_TAG = "AiAgentService"
 
         private val runningJobs = ConcurrentHashMap.newKeySet<String>()
 
@@ -122,9 +123,23 @@ class AiAgentExecutionService : Service() {
 
         ensureNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("正在准备 AI 任务"))
+        // Storage failures must not escape onStartCommand: an uncaught exception here takes the
+        // whole launcher process down. Report the job as failed and leave the app alive instead.
         when (safeIntent.action) {
-            ACTION_CANCEL -> cancelJob(jobId, modId)
-            ACTION_RUN -> startJob(jobId, modId, startId)
+            ACTION_CANCEL -> runCatching { cancelJob(jobId, modId) }
+                .onFailure { Log.w(LOG_TAG, "Failed to cancel AI job $jobId", it) }
+            ACTION_RUN -> runCatching { startJob(jobId, modId, startId) }
+                .onFailure { error ->
+                    Log.w(LOG_TAG, "Failed to start AI job $jobId", error)
+                    runningJobs.remove(jobId)
+                    runCatching {
+                        val store = AiAgentJobStore(applicationContext, modId)
+                        store.find(jobId)?.let {
+                            markFailed(it, store, error.message ?: error.javaClass.simpleName)
+                        }
+                    }.onFailure { Log.w(LOG_TAG, "Failed to record AI job failure $jobId", it) }
+                    stopWhenIdle(startId)
+                }
         }
         return START_NOT_STICKY
     }
@@ -199,8 +214,8 @@ class AiAgentExecutionService : Service() {
         jobStore: AiAgentJobStore,
         startId: Int,
     ) {
-        val conversationStore = AiConversationStore(conversationFile(job.modId))
-        val session = conversationStore.load().firstOrNull { it.id == job.conversationId }
+        val conversationStore = conversationStore(job.modId)
+        val session = conversationStore.load(job.conversationId)
         val assistant = session?.messages?.firstOrNull { it.id == job.assistantMessageId }
         if (session == null || assistant == null) {
             markFailed(job, jobStore, "Conversation state is missing.")
@@ -257,9 +272,20 @@ class AiAgentExecutionService : Service() {
                     }
                 }
             },
+            onRetry = { retryNumber, delaySeconds ->
+                updateAssistant(job, conversationStore) { message ->
+                    message.copy(
+                        retryMessage = getString(
+                            R.string.ai_mod_editor_retrying,
+                            retryNumber,
+                            delaySeconds,
+                        ),
+                    )
+                }
+            },
             onContext = { state ->
                 checkActive()
-                conversationStore.update(job.conversationId) { it.copy(context = state) }
+                conversationStore.updateContext(job.conversationId, state)
             },
             checkCancelled = ::checkActive,
         )
@@ -278,6 +304,7 @@ class AiAgentExecutionService : Service() {
                         streaming = false,
                         failed = false,
                         errorMessage = "",
+                        retryMessage = "",
                         text = result.text.ifBlank { message.text },
                         elapsedMs = System.currentTimeMillis() - startedAt,
                         contextTokens = result.contextTokens,
@@ -301,7 +328,7 @@ class AiAgentExecutionService : Service() {
             if (cancellationRequested || interrupted || error is InterruptedException || error is java.util.concurrent.CancellationException) {
                 markCancelled(job, jobStore)
             } else {
-                val message = error.message ?: error.javaClass.simpleName
+                val message = describeError(error)
                 markFailed(job, jobStore, message)
             }
         } finally {
@@ -325,17 +352,13 @@ class AiAgentExecutionService : Service() {
         conversationStore: AiConversationStore,
         transform: (AiEditorMessage) -> AiEditorMessage,
     ) {
-        conversationStore.update(job.conversationId) { session ->
-            session.copy(messages = session.messages.map { message ->
-                if (message.id == job.assistantMessageId) transform(message) else message
-            })
-        }
+        conversationStore.updateMessage(job.conversationId, job.assistantMessageId, transform)
     }
 
     private fun markFailed(job: AiAgentJobRecord, jobStore: AiAgentJobStore, message: String) {
-        val conversationStore = AiConversationStore(conversationFile(job.modId))
+        val conversationStore = conversationStore(job.modId)
         updateAssistant(job, conversationStore) {
-            it.copy(streaming = false, failed = true, errorMessage = message)
+            it.copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
@@ -343,11 +366,23 @@ class AiAgentExecutionService : Service() {
         updateNotification("AI 任务失败")
     }
 
+    private fun describeError(error: Throwable): String {
+        val parts = buildList {
+            var current: Throwable? = error
+            val seen = HashSet<Throwable>()
+            while (current != null && seen.add(current)) {
+                add("${current.javaClass.simpleName}: ${current.message ?: "no message"}")
+                current = current.cause
+            }
+        }
+        return parts.joinToString("; caused by ")
+    }
+
     private fun markCancelled(job: AiAgentJobRecord, jobStore: AiAgentJobStore) {
         val message = getString(R.string.ai_mod_editor_error_stopped)
-        val conversationStore = AiConversationStore(conversationFile(job.modId))
+        val conversationStore = conversationStore(job.modId)
         updateAssistant(job, conversationStore) {
-            it.copy(streaming = false, failed = true, errorMessage = message)
+            it.copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.CANCELLED, errorMessage = message)
@@ -370,12 +405,11 @@ class AiAgentExecutionService : Service() {
         if (startId > 0) stopSelfResult(startId) else stopSelf()
     }
 
-    private fun conversationFile(modId: String): File = File(
+    private fun conversationStore(modId: String): AiConversationStore = AiConversationStore(
         RuntimePaths.agentModConversationsRoot(
             applicationContext,
             AgentPatchModManager.parentModSegment(modId),
         ),
-        "conversations.json",
     )
 
     private fun ensureNotificationChannel() {

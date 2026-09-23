@@ -91,6 +91,20 @@ class AgentConversationContextTest {
         }
     }
 
+    @Test fun transientEmptySummaryRetriesWithSmallerFragment() {
+        var calls = 0
+        val original = longHistory()
+        val manager = manager(original, limit = 8000, model = fake {
+            if (++calls == 1) response("") else response("Recovered memory")
+        })
+
+        manager.prepare()
+
+        assertTrue(calls > 1)
+        assertEquals("Recovered memory", manager.state.summary)
+        assertEquals(original.messages, manager.state.messages)
+    }
+
     @Test fun oneHugeCurrentUserMessageFailsWithoutLossySummarization() {
         val original = AgentContextState(messages = listOf(AgentContextMessage(1, "user", "x".repeat(50_000))))
         val manager = manager(original, limit = 8000, model = fake { error("must not summarize latest user alone") })

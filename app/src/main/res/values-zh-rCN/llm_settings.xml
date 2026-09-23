@@ -1,6 +1,5 @@
 <resources>
     <string name="llm_connection">服务连接</string>
-    <string name="llm_organization">OpenAI 组织 ID（可选）</string>
     <string name="llm_credentials">凭证</string>
     <string name="llm_key_hint">留空保留当前密钥。</string>
     <string name="llm_current_key">当前密钥</string>

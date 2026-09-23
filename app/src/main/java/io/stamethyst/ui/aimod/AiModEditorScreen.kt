@@ -145,6 +145,7 @@ internal data class AiEditorMessage(
     val streaming: Boolean = false,
     val failed: Boolean = false,
     val errorMessage: String = "",
+    val retryMessage: String = "",
     val tools: List<AiToolCall> = emptyList(),
     val modelName: String = "",
     val elapsedMs: Long? = null,
@@ -181,6 +182,8 @@ internal class AiModEditorViewModel(
     val sessions = mutableStateListOf<AiEditorSession>()
     var busy by mutableStateOf(false)
         private set
+    var storageReady by mutableStateOf(false)
+        private set
     var error by mutableStateOf<String?>(null)
         private set
     var pendingPatch by mutableStateOf<JarPatch?>(null)
@@ -198,8 +201,8 @@ internal class AiModEditorViewModel(
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(context, parentModSegment)
 
     private val conversationsRoot = RuntimePaths.agentModConversationsRoot(context, parentModSegment)
-    private val conversationsFile get() = conversationsRoot.resolve("conversations.json")
-    private val conversationStore = AiConversationStore(conversationsFile)
+    private val conversationStore = AiConversationStore(conversationsRoot)
+    private val storageDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val jobStore = AiAgentJobStore(context, modId)
     var currentSessionId: String by mutableStateOf("")
         private set
@@ -209,35 +212,61 @@ internal class AiModEditorViewModel(
     init {
         workspaceAccessRoot.mkdirs()
         conversationsRoot.mkdirs()
-        loadConversation()
+        viewModelScope.launch(storageDispatcher) { loadConversation() }
         startConversationPolling()
     }
 
     private fun loadConversation() {
         runCatching {
             recoverInterruptedJobs()
-            val stored = conversationStore.load()
-            sessions += stored
-            val latest = requestedSessionId?.let { requestedId ->
-                sessions.firstOrNull { it.id == requestedId }
-            } ?: sessions.lastOrNull()
+            val stored = conversationStore.loadSummaries()
+            val jobs = jobStore.list()
+            val latestSummary = requestedSessionId?.let { requestedId ->
+                stored.firstOrNull { it.id == requestedId }
+            } ?: stored.lastOrNull()
+            val latest = latestSummary?.let { conversationStore.load(it.id) }
             if (latest == null) {
+                val session = AiEditorSession(UUID.randomUUID().toString())
+                viewModelScope.launch(Dispatchers.Main.immediate) {
+                    sessions += session
+                    currentSessionId = session.id
+                    persistSession(session)
+                    refreshBusyState(jobs)
+                    storageReady = true
+                }
+            } else {
+                viewModelScope.launch(Dispatchers.Main.immediate) {
+                    sessions += stored
+                    currentSessionId = latest.id
+                    installSession(latest)
+                    refreshBusyState(jobs)
+                    storageReady = true
+                }
+            }
+        }.onFailure {
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                sessions.clear()
+                messages.clear()
                 val session = AiEditorSession(UUID.randomUUID().toString())
                 sessions += session
                 currentSessionId = session.id
-            } else {
-                currentSessionId = latest.id
-                messages += latest.messages
-                nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1L
-                pendingPatch = messages.lastOrNull { !it.fromUser }?.let { JarPatchCodec.extract(it.text) }
+                persistSession(session)
+                storageReady = true
             }
-            refreshBusyState()
-        }.onFailure {
-            sessions.clear()
-            messages.clear()
-            val session = AiEditorSession(UUID.randomUUID().toString())
-            sessions += session
-            currentSessionId = session.id
+        }
+    }
+
+    private fun persistSession(session: AiEditorSession) {
+        launchStorage {
+            conversationStore.mutate(session.id, create = session) { session }
+        }
+    }
+
+    /** Serialized storage work; a database failure must never crash the editor process. */
+    private fun launchStorage(block: suspend () -> Unit) {
+        viewModelScope.launch(storageDispatcher) {
+            runCatching { block() }
+                .onFailure { android.util.Log.w("AiModStore", "AI conversation storage failed", it) }
         }
     }
 
@@ -254,10 +283,18 @@ internal class AiModEditorViewModel(
     }
 
     private fun mutateCurrent(transform: (AiEditorSession) -> AiEditorSession): AiEditorSession {
-        val next = requireNotNull(conversationStore.mutate(
-            currentSessionId, create = AiEditorSession(currentSessionId), transform = transform,
-        ))
+        val current = sessions.firstOrNull { it.id == currentSessionId }
+            ?: AiEditorSession(currentSessionId)
+        val sessionId = currentSessionId
+        val next = transform(current).copy(revision = current.revision + 1)
         installSession(next)
+        launchStorage {
+            conversationStore.mutate(
+                sessionId,
+                create = current,
+                transform = transform,
+            )
+        }
         return next
     }
 
@@ -267,9 +304,20 @@ internal class AiModEditorViewModel(
                 delay(500L)
                 runCatching {
                     recoverInterruptedJobs()
-                    val stored = conversationStore.load()
+                    val activeState = withContext(Dispatchers.Main.immediate) {
+                        currentSessionId to sessions.firstOrNull { it.id == currentSessionId }?.revision
+                    }
+                    val activeSessionId = activeState.first
+                    if (activeSessionId.isBlank()) return@runCatching
+                    val stored = conversationStore.revision(activeSessionId)
+                        ?.takeIf { it > (activeState.second ?: -1L) }
+                        ?.let { conversationStore.load(activeSessionId) }
+                        ?.let(::listOf)
+                        .orEmpty()
+                    val jobs = jobStore.listForConversation(activeSessionId)
                     withContext(Dispatchers.Main.immediate) {
                         applyExternalState(stored)
+                        refreshBusyState(jobs)
                     }
                 }
             }
@@ -277,12 +325,12 @@ internal class AiModEditorViewModel(
     }
 
     private fun applyExternalState(stored: List<AiEditorSession>) {
-        val merged = mergeAiSessions(sessions.toList(), stored)
-        sessions.clear()
-        sessions += merged
-        merged.firstOrNull { it.id == currentSessionId }?.let(::installSession)
-        // The job snapshot may predate a send/cancel on the main thread too.
-        refreshBusyState()
+        val incoming = stored.firstOrNull { it.id == currentSessionId } ?: return
+        val current = sessions.firstOrNull { it.id == currentSessionId }
+        if (current != null && incoming.revision <= current.revision) return
+        val index = sessions.indexOfFirst { it.id == incoming.id }
+        if (index >= 0) sessions[index] = incoming else sessions += incoming
+        installSession(incoming)
     }
 
     private fun recoverInterruptedJobs() {
@@ -292,25 +340,27 @@ internal class AiModEditorViewModel(
             isRunning = { job -> AiAgentExecutionService.isJobRunning(job.jobId) },
         )
         interrupted.forEach { job ->
-            conversationStore.update(job.conversationId) { session ->
-                session.copy(messages = session.messages.map { message ->
-                    if (message.id == job.assistantMessageId) {
-                        message.copy(
-                            streaming = false,
-                            failed = true,
-                            errorMessage = interruptedMessage,
-                        )
-                    } else {
-                        message
-                    }
-                })
+            conversationStore.updateMessage(job.conversationId, job.assistantMessageId) { message ->
+                message.copy(
+                    streaming = false,
+                    failed = true,
+                    errorMessage = interruptedMessage,
+                )
             }
         }
     }
 
-    private fun refreshBusyState(jobs: List<AiAgentJobRecord> = jobStore.list()) {
-        busy = jobs.any {
-            it.conversationId == currentSessionId && it.status == AiAgentJobStatus.RUNNING
+    private fun refreshBusyState(jobs: List<AiAgentJobRecord>? = null) {
+        if (jobs != null) {
+            busy = jobs.any {
+                it.conversationId == currentSessionId && it.status == AiAgentJobStatus.RUNNING
+            }
+            return
+        }
+        val sessionId = currentSessionId
+        launchStorage {
+            val storedJobs = jobStore.listForConversation(sessionId)
+            withContext(Dispatchers.Main.immediate) { refreshBusyState(storedJobs) }
         }
     }
 
@@ -330,7 +380,7 @@ internal class AiModEditorViewModel(
 
     fun send(prompt: String, attachments: List<AiAttachment> = emptyList()) {
         val trimmed = prompt.trim()
-        if ((trimmed.isEmpty() && attachments.isEmpty()) || busy) return
+        if (!storageReady || currentSessionId.isBlank() || (trimmed.isEmpty() && attachments.isEmpty()) || busy) return
         runCatching {
             mutateCurrent { session ->
                 val id = (session.messages.maxOfOrNull { it.id } ?: 0L) + 1
@@ -374,7 +424,7 @@ internal class AiModEditorViewModel(
     }
 
     fun newConversation() {
-        if (busy) return
+        if (!storageReady || busy) return
         val current = sessions.firstOrNull { it.id == currentSessionId }
         if (current == null || current.hasUserPrompt()) {
             val session = AiEditorSession(UUID.randomUUID().toString())
@@ -388,28 +438,36 @@ internal class AiModEditorViewModel(
     }
 
     fun switchConversation(sessionId: String) {
-        if (busy || sessionId == currentSessionId) return
-        val session = conversationStore.load().firstOrNull { it.id == sessionId } ?: return
-        currentSessionId = session.id
-        messages.clear()
-        messages += session.messages
-        nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1L
-        pendingPatch = messages.lastOrNull { !it.fromUser }?.let { JarPatchCodec.extract(it.text) }
-        error = null
-        appliedBackupPath = null
-        installSession(session)
-        refreshBusyState()
+        if (!storageReady || busy || sessionId == currentSessionId) return
+        launchStorage {
+            val session = conversationStore.load(sessionId) ?: return@launchStorage
+            withContext(Dispatchers.Main.immediate) {
+                currentSessionId = session.id
+                messages.clear()
+                messages += session.messages
+                nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1L
+                pendingPatch = messages.lastOrNull { !it.fromUser }?.let { JarPatchCodec.extract(it.text) }
+                error = null
+                appliedBackupPath = null
+                installSession(session)
+                refreshBusyState()
+            }
+        }
     }
 
     fun cancelGeneration() {
-        val job = jobStore.list().firstOrNull {
-            it.conversationId == currentSessionId && it.status == AiAgentJobStatus.RUNNING
-        } ?: return
-        AiAgentExecutionService.cancel(context, job.jobId, job.modId)
+        val sessionId = currentSessionId
+        launchStorage {
+            val job = jobStore.listForConversation(sessionId)
+                .firstOrNull { it.status == AiAgentJobStatus.RUNNING } ?: return@launchStorage
+            withContext(Dispatchers.Main.immediate) {
+                AiAgentExecutionService.cancel(context, job.jobId, job.modId)
+            }
+        }
     }
 
     private fun startRequest() {
-        if (busy) return
+        if (!storageReady || currentSessionId.isBlank() || busy) return
         val jobId = UUID.randomUUID().toString()
         if (!AiAgentExecutionService.reserve(jobId)) {
             error = "Another AI task is running."
@@ -428,17 +486,38 @@ internal class AiModEditorViewModel(
                 jobId = jobId, conversationId = currentSessionId, modId = modId,
                 modName = modName, storagePath = storagePath, assistantMessageId = requireNotNull(assistantId),
             )
-            jobStore.upsert(job)
             error = null
             busy = true
-            AiAgentExecutionService.start(context, job)
+            viewModelScope.launch(storageDispatcher) {
+                runCatching {
+                    jobStore.upsert(job)
+                    withContext(Dispatchers.Main.immediate) {
+                        AiAgentExecutionService.start(context, job)
+                    }
+                }
+                    .onFailure { failure ->
+                        AiAgentExecutionService.release(jobId)
+                        val message = failure.message ?: failure.javaClass.simpleName
+                        runCatching {
+                            jobStore.update(jobId) {
+                                it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
+                            }
+                        }
+                        withContext(Dispatchers.Main.immediate) {
+                            runCatching { mutateCurrent { session ->
+                                session.copy(messages = session.messages.map {
+                                    if (it.id == assistantId) it.copy(streaming = false, failed = true, errorMessage = message) else it
+                                })
+                            } }
+                            busy = false
+                            error = message
+                        }
+                    }
+            }
         }
             .onFailure { failure ->
                 AiAgentExecutionService.release(jobId)
                 val message = failure.message ?: failure.javaClass.simpleName
-                jobStore.update(jobId) {
-                    it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
-                }
                 runCatching { mutateCurrent { session ->
                     session.copy(messages = session.messages.map {
                         if (it.id == assistantId) it.copy(streaming = false, failed = true, errorMessage = message) else it
@@ -762,7 +841,33 @@ fun LauncherAiModEditorScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             if (allMessages.isEmpty()) {
-                item { Text(stringResource(R.string.ai_mod_editor_empty), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item(key = "prompt-examples") {
+                    val examples = listOf(
+                        stringResource(R.string.ai_mod_editor_example_translate),
+                        stringResource(R.string.ai_mod_editor_example_remove_starter_cards),
+                        stringResource(R.string.ai_mod_editor_example_fix_crash),
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(R.string.ai_mod_editor_empty),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        examples.forEach { example ->
+                            Surface(
+                                onClick = { draft = example },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            ) {
+                                Text(
+                                    text = example,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                }
             }
             if (hiddenMessageCount > 0) {
                 item(key = "earlier-messages") {
@@ -840,7 +945,7 @@ fun LauncherAiModEditorScreen(
             attachments = draftAttachments,
             onRemoveAttachment = { draftAttachments.remove(it) },
             onAttach = { picker.launch(arrayOf("text/*", "application/json", "application/octet-stream")) },
-            configured = configured,
+            configured = configured && viewModel.storageReady,
             busy = viewModel.busy,
             modelName = settings.modelName,
             models = settings.models,
@@ -1055,12 +1160,19 @@ private fun AiMessageCard(
                         }
                     }
                 }
-                if (message.streaming && message.text.isBlank() && message.thinking.isBlank()) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.padding(vertical = 12.dp).size(18.dp),
-                        strokeWidth = 2.dp,
+                if (message.streaming && message.retryMessage.isNotBlank()) {
+                    Text(
+                        message.retryMessage,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
                     )
+                } else if (message.streaming && message.text.isBlank() && message.thinking.isBlank()) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(vertical = 12.dp).size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.onSurfaceVariant,
+                        )
                 }
             }
             Row(

@@ -24,7 +24,6 @@ class NewApiModelService {
         baseUrl: String,
         apiKey: String,
         timeoutSeconds: Int = 30,
-        organizationId: String = "",
     ): List<NewApiModel> {
         val endpoint = baseUrl.trim().trimEnd('/') + "/models"
         val client = OkHttpClient.Builder()
@@ -36,7 +35,6 @@ class NewApiModelService {
             .url(endpoint)
             .header("Authorization", "Bearer ${apiKey.trim()}")
             .header("Accept", "application/json")
-            .apply { if (organizationId.isNotBlank()) header("OpenAI-Organization", organizationId.trim()) }
             .get()
             .build()
         client.newCall(request).execute().use { response ->

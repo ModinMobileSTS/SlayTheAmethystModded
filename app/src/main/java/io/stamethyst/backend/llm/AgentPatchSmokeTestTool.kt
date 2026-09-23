@@ -101,6 +101,13 @@ class AgentPatchSmokeTestTool(
             put("patch_id", JsonPrimitive(patchInfo.patchId))
             put("patch_mod_id", JsonPrimitive(patchInfo.patchModId))
             put("launch_mod_ids", buildJsonArray { result.launchModIds.forEach { add(JsonPrimitive(it)) } })
+            put("mod_set_verified", JsonPrimitive(result.modSetVerified))
+            if (result.loadedModJarPaths.isNotEmpty()) {
+                put(
+                    "loaded_mod_jars",
+                    buildJsonArray { result.loadedModJarPaths.forEach { add(JsonPrimitive(it)) } },
+                )
+            }
             if (selectedModIds.isNotEmpty()) {
                 put("requested_mod_ids", buildJsonArray { selectedModIds.forEach { add(JsonPrimitive(it)) } })
             }
@@ -122,7 +129,9 @@ class AgentPatchSmokeTestTool(
                 "next_step",
                 JsonPrimitive(
                     if (result.passed) {
-                        "The patch loads and reaches the main menu. Report success to the user."
+                        "The game loaded exactly the requested mod set and reached the main menu. Report success to the user."
+                    } else if (result.reason.startsWith("mod_set_")) {
+                        "The run did not load the requested mod set, so its result is not trustworthy. Re-run it; if it persists, report this as a harness problem rather than a patch problem."
                     } else {
                         "The patch failed to reach the main menu. Read log_excerpt/boot_events, fix the patch, recompile, repackage, and run this tool again."
                     },

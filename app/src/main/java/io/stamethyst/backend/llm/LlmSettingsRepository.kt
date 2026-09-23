@@ -11,11 +11,10 @@ private const val DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
 data class LlmSettings(
     val apiKey: String = "",
     val baseUrl: String = DEFAULT_LLM_BASE_URL,
-    val modelName: String = "gpt-4o-mini",
+    val modelName: String = "deepseek-v4-flash",
     val endpoint: LlmEndpoint = LlmEndpoint.CHAT_COMPLETIONS,
     val requestTimeoutSeconds: Int = DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS,
     val reasoningEffort: LlmReasoningEffort = LlmReasoningEffort.OFF,
-    val organizationId: String = "",
     val models: List<String> = listOf(modelName),
 ) {
     fun isConfigured(): Boolean = apiKey.isNotBlank() && modelName.isNotBlank() && baseUrl.isNotBlank()
@@ -42,7 +41,6 @@ class LlmSettingsRepository(context: Context) {
             apiKey = settings.apiKey.trim(),
             baseUrl = settings.baseUrl.trim().trimEnd('/'),
             modelName = settings.modelName.trim(),
-            organizationId = settings.organizationId.trim(),
             models = settings.models.map(String::trim).filter(String::isNotEmpty).distinct(),
         )
         val savedEncrypted = encryptedPrefs?.let { write(it, normalized) } == true
@@ -58,12 +56,11 @@ class LlmSettingsRepository(context: Context) {
             LlmSettings(
                 apiKey = it.getString(KEY_API_KEY, "").orEmpty(),
                 baseUrl = it.getString(KEY_BASE_URL, DEFAULT_LLM_BASE_URL).orEmpty(),
-                modelName = it.getString(KEY_MODEL_NAME, "gpt-4o-mini").orEmpty(),
-                organizationId = it.getString("organization_id", "").orEmpty(),
+                modelName = it.getString(KEY_MODEL_NAME, "deepseek-v4-flash").orEmpty(),
                 models = it.getString("models", null)?.let { value ->
                     val array = org.json.JSONArray(value)
                     List(array.length()) { index -> array.getString(index) }
-                } ?: listOf(it.getString(KEY_MODEL_NAME, "gpt-4o-mini").orEmpty()),
+                } ?: listOf(it.getString(KEY_MODEL_NAME, "deepseek-v4-flash").orEmpty()),
                 endpoint = it.getString(KEY_ENDPOINT, LlmEndpoint.CHAT_COMPLETIONS.name)
                     ?.let { value -> runCatching { LlmEndpoint.valueOf(value) }.getOrDefault(LlmEndpoint.CHAT_COMPLETIONS) }
                     ?: LlmEndpoint.CHAT_COMPLETIONS,
@@ -86,7 +83,6 @@ class LlmSettingsRepository(context: Context) {
             .putString(KEY_API_KEY, settings.apiKey)
             .putString(KEY_BASE_URL, settings.baseUrl)
             .putString(KEY_MODEL_NAME, settings.modelName)
-            .putString("organization_id", settings.organizationId)
             .putString("models", org.json.JSONArray(settings.models).toString())
             .putString(KEY_ENDPOINT, settings.endpoint.name)
             .putInt(

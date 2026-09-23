@@ -284,9 +284,19 @@ class AgentContextManager(
                     throw AgentCompactionException("Context summarization failed; original messages were retained.", error)
                 }
                 val text = response.aiMessage().text().orEmpty().trim()
-                if (text.isBlank() || response.aiMessage().hasToolExecutionRequests() ||
-                    response.finishReason()?.name == "LENGTH" || AgentTokenEstimate.text(text) > outputLimit * 2) {
-                    throw AgentCompactionException("The summary was empty, incomplete or oversized; original messages were retained.")
+                val invalid = text.isBlank() || response.aiMessage().hasToolExecutionRequests() ||
+                    response.finishReason() == dev.langchain4j.model.output.FinishReason.LENGTH ||
+                    AgentTokenEstimate.text(text) > outputLimit * 2
+                if (invalid) {
+                    // Some providers return an empty/truncated completion transiently. Retry the
+                    // same fragment with a smaller prompt before abandoning the atomic compaction.
+                    if (retries++ < 3 && chunkChars > 512) {
+                        chunkChars /= 2
+                        continue
+                    }
+                    throw AgentCompactionException(
+                        "The summary was empty, incomplete or oversized; original messages were retained.",
+                    )
                 }
                 summary = text
                 offset = end

@@ -13,7 +13,8 @@ object AppProcess {
         return processName.isNullOrEmpty() || processName == context.packageName
     }
 
-    private fun currentProcessName(context: Context): String? {
+    @JvmStatic
+    fun currentProcessName(context: Context): String? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching { Application.getProcessName().trim() }
                 .getOrNull()

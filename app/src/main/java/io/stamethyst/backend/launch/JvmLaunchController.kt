@@ -55,7 +55,15 @@ class JvmLaunchController(
     private val onRuntimeReady: () -> Unit,
     private val onSurfaceSizeSync: () -> Unit,
     private val getWindowWidth: () -> Int,
-    private val getWindowHeight: () -> Int
+    private val getWindowHeight: () -> Int,
+    /**
+     * Run-scoped MTS mod list and its audit file. The AI patch smoke test sets these so the mods it
+     * loads cannot be changed by a concurrent rewrite of the shared `.mts_mod_file_list`.
+     */
+    private val mtsModFileListOverride: File? = null,
+    private val mtsModFileListAudit: File? = null,
+    /** ModTheSpire's `--mods` list for this run; those ids must all resolve to loaded mods. */
+    private val mtsLaunchModIdsOverride: List<String>? = null
 ) {
     private class LaunchCancelledException : IOException("Launch cancelled")
 
@@ -392,7 +400,10 @@ class JvmLaunchController(
                             autoplaySingleRoomBenchMode,
                             cardObtainEffectOwnershipCompatEnabled,
                             performanceDeepDiagnostics,
-                            effectiveTargetFps
+                            effectiveTargetFps,
+                            mtsModFileListOverride,
+                            mtsModFileListAudit,
+                            mtsLaunchModIdsOverride
                         )
                     )
                     args
