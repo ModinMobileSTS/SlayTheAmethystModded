@@ -132,6 +132,7 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
@@ -361,6 +362,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE,
         val gpuResourceGuardianPressureDownscaleEnabled: Boolean =
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
+        val accelerationStrategy: AccelerationStrategy =
+            LauncherPreferences.DEFAULT_ACCELERATION_STRATEGY,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
         val launcherIconMode: LauncherIconMode = LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE,
@@ -406,6 +409,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
         val localTestCloudControlEnabled: Boolean = false,
         val steamAchievementDebugModeEnabled: Boolean = false,
+        val slingBreakAudioDebugModeEnabled: Boolean = false,
         val localTestOnlineServiceBaseUrl: String = "http://10.126.126.2:3001",
         val localTestConfigServerUrl: String = "udp://10.126.126.2:22020",
         val localTestEntryNodeUrl: String = "tcp://10.126.126.2:11010",
@@ -1574,6 +1578,8 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudStatusText = result.steamCloudStatusText,
                         steamCloudManifestSummary = result.steamCloudManifestSummary,
                         steamCloudManifestAvailable = result.steamCloudManifestAvailable,
+                        slingBreakAudioDebugModeEnabled = LauncherPreferences
+                            .isSlingBreakAudioDebugModeEnabled(host),
                         arthasAnalysisEnabled = uiState.arthasAnalysisEnabled &&
                             result.arthasResource.valid,
                         arthasResourceInstalled = result.arthasResource.valid,
@@ -3241,6 +3247,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onAccelerationStrategyChanged(host: Activity, strategy: AccelerationStrategy) {
+        if (uiState.busy || uiState.accelerationStrategy == strategy) {
+            return
+        }
+        uiState = uiState.copy(accelerationStrategy = strategy)
+        saveAccelerationStrategySelection(host, strategy)
+        refreshStatus(host)
+    }
+
     fun onMobileGluesAnglePolicyChanged(host: Activity, policy: MobileGluesAnglePolicy) {
         if (uiState.busy || uiState.mobileGluesAnglePolicy == policy) {
             return
@@ -3847,6 +3862,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(steamAchievementDebugModeEnabled = enabled)
         LauncherPreferences.setSteamAchievementDebugModeEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onSlingBreakAudioDebugModeChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(slingBreakAudioDebugModeEnabled = enabled)
+        LauncherPreferences.setSlingBreakAudioDebugModeEnabled(host, enabled)
         refreshStatus(host)
     }
 
@@ -4503,6 +4527,7 @@ class SettingsScreenViewModel : ViewModel() {
             gpuResourceGuardianMode = rendering.gpuResourceGuardianMode,
             gpuResourceGuardianPressureDownscaleEnabled =
                 rendering.gpuResourceGuardianPressureDownscaleEnabled,
+            accelerationStrategy = LauncherPreferences.readAccelerationStrategy(host),
             selectedJvmHeapMaxMb = jvm.heapMaxMb,
             compressedPointersEnabled = jvm.compressedPointersEnabled,
             stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
@@ -5189,6 +5214,10 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_string_dedup,
             toggleStateText(host, jvm.stringDeduplicationEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_acceleration_strategy,
+            LauncherPreferences.readAccelerationStrategy(host).displayName(host)
         )
         lines += host.getString(
             R.string.settings_status_back_behavior,
@@ -5902,6 +5931,10 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveGpuResourceGuardianMode(host, mode)
     }
 
+    private fun saveAccelerationStrategySelection(host: Activity, strategy: AccelerationStrategy) {
+        LauncherPreferences.saveAccelerationStrategy(host, strategy)
+    }
+
     private fun persistMobileGluesSettings(
         host: Activity,
         @StringRes failureMessageResId: Int,
@@ -6584,6 +6617,15 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.settings_gpu_resource_guardian_mode_ultra_aggressive)
             GpuResourceGuardianMode.LEGACY ->
                 host.getString(R.string.settings_gpu_resource_guardian_mode_legacy)
+        }
+    }
+
+    private fun AccelerationStrategy.displayName(host: Activity): String {
+        return when (this) {
+            AccelerationStrategy.RMBGAME_FIRST ->
+                host.getString(R.string.settings_developer_acceleration_strategy_rmbgame_first)
+            AccelerationStrategy.BEST_PATH ->
+                host.getString(R.string.settings_developer_acceleration_strategy_best_path)
         }
     }
 }

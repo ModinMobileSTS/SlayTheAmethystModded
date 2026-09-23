@@ -15,6 +15,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayAnimation
@@ -170,6 +171,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
     val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED
+    val DEFAULT_ACCELERATION_STRATEGY: AccelerationStrategy
+        get() = LauncherConfig.DEFAULT_ACCELERATION_STRATEGY
     val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
@@ -306,6 +309,14 @@ object LauncherPreferences {
 
     fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamAchievementDebugModeEnabled(context, enabled)
+    }
+
+    fun isSlingBreakAudioDebugModeEnabled(context: Context): Boolean {
+        return LauncherConfig.isSlingBreakAudioDebugModeEnabled(context)
+    }
+
+    fun setSlingBreakAudioDebugModeEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSlingBreakAudioDebugModeEnabled(context, enabled)
     }
 
     fun isSteamAchievementSyncEnabled(context: Context): Boolean {
@@ -704,6 +715,18 @@ object LauncherPreferences {
 
     fun resetGpuResourceGuardianMode(context: Context) {
         LauncherConfig.resetGpuResourceGuardianMode(context)
+    }
+
+    fun readAccelerationStrategy(context: Context): AccelerationStrategy {
+        return LauncherConfig.readAccelerationStrategy(context)
+    }
+
+    fun saveAccelerationStrategy(context: Context, strategy: AccelerationStrategy) {
+        LauncherConfig.saveAccelerationStrategy(context, strategy)
+    }
+
+    fun resetAccelerationStrategy(context: Context) {
+        LauncherConfig.resetAccelerationStrategy(context)
     }
 
     fun isGdxPadCursorDebugEnabled(context: Context): Boolean {

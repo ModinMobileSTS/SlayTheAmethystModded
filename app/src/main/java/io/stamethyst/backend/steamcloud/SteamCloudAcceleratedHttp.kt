@@ -14,6 +14,7 @@ import io.stamethyst.backend.github.addHttpsOnlyTransport
 import io.stamethyst.backend.github.createWattToolkitRuntime
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
@@ -36,6 +37,9 @@ internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     supportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
     bootstrapForwardTargets = listOf("https://steamcommunity.rmbgame.net"),
     bootstrapSupportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+    // Mirrors the Watt "Steam 社区" rule: the hop is an Akamai edge, so the handshake must
+    // validate against this name rather than the rmbgame hostname.
+    bootstrapFakeServerName = "steamstore-a.akamaihd.net",
 )
 
 internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -55,6 +59,8 @@ internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
         "help.steampowered.com",
         "checkout.steampowered.com",
     ),
+    // Same Akamai edge certificate as the community hop; see "Steam 商店" in the Watt rules.
+    bootstrapFakeServerName = "steamstore-a.akamaihd.net",
 )
 
 internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -82,6 +88,8 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
         ".akamaihd.net",
         ".steamusercontent.com",
     ),
+    // Watt marks the "Steam 图片" rule as IgnoreSSLCertVerification.
+    bootstrapIgnoreSslCertVerification = true,
 )
 
 internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -90,6 +98,8 @@ internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(
     supportedHosts = setOf("media.steampowered.com"),
     bootstrapForwardTargets = listOf("https://steammedia.rmbgame.net"),
     bootstrapSupportedHosts = setOf("media.steampowered.com"),
+    // Watt marks the "Steam 更新" rule as IgnoreSSLCertVerification.
+    bootstrapIgnoreSslCertVerification = true,
 )
 
 internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -184,8 +194,14 @@ object SteamCloudAcceleratedHttp {
             )
         }
         val filesDir = RuntimePaths.transientFilesRoot(context)
+        val applicationContext = context.applicationContext
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
-            createSteamCloudWattToolkitRuntime(filesDir)
+            createSteamCloudWattToolkitRuntime(
+                filesDir = filesDir,
+                accelerationStrategyProvider = {
+                    NetworkAccelerationPolicy.currentAccelerationStrategy(applicationContext)
+                },
+            )
         }
         return builder
             .hostnameVerifier(runtime.hostnameVerifier)
@@ -223,8 +239,14 @@ object SteamCloudAcceleratedHttp {
         client: OkHttpClient,
     ): SteamWebSocketFactory {
         val filesDir = RuntimePaths.transientFilesRoot(context)
+        val applicationContext = context.applicationContext
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
-            createSteamCloudWattToolkitRuntime(filesDir)
+            createSteamCloudWattToolkitRuntime(
+                filesDir = filesDir,
+                accelerationStrategyProvider = {
+                    NetworkAccelerationPolicy.currentAccelerationStrategy(applicationContext)
+                },
+            )
         }
         val officialClient = client.newBuilder().apply {
             interceptors().removeAll { interceptor ->
@@ -427,6 +449,7 @@ internal fun requireSecureWebSocketUrl(url: HttpUrl) {
 internal fun createSteamCloudWattToolkitRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultSteamCloudWattToolkitRouteProfiles,
+    accelerationStrategyProvider: () -> AccelerationStrategy = { AccelerationStrategy.BEST_PATH },
 ): ExperimentalGithubDirectAccessRuntime = createWattToolkitRuntime(
     filesDir = filesDir,
     cacheSubDirectory = "steam-cloud/network",
@@ -435,6 +458,7 @@ internal fun createSteamCloudWattToolkitRuntime(
     readTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS,
     requireHttps = true,
     allowInsecureUrl = ::allowsSteamContentCdnHttp,
+    accelerationStrategyProvider = accelerationStrategyProvider,
 )
 
 private const val STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS = 8_000L

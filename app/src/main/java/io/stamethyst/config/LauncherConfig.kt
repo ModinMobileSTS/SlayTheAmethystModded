@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
@@ -165,6 +166,7 @@ object LauncherConfig {
     private const val PREF_KEY_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE =
         "compat_gpu_resource_guardian_safe_pressure_downscale"
     private const val LEGACY_GPU_RESOURCE_GUARDIAN_DIAGNOSTIC_MODE = "diagnostic"
+    private const val PREF_KEY_ACCELERATION_STRATEGY = "network_acceleration_strategy"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_HINA_CHARACTER_RENDER_COMPAT =
         "compat_hina_character_render"
@@ -253,6 +255,8 @@ object LauncherConfig {
         "developer_settings_warning_dismissed"
     private const val PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE =
         "steam_achievement_debug_mode"
+    private const val PREF_KEY_SLING_BREAK_AUDIO_DEBUG_MODE =
+        "sling_break_audio_debug_mode"
     private const val PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED =
         "steam_achievement_sync_enabled"
     private const val PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED =
@@ -421,6 +425,7 @@ object LauncherConfig {
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.OFF
     const val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED = false
+    val DEFAULT_ACCELERATION_STRATEGY: AccelerationStrategy = AccelerationStrategy.DEFAULT
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
@@ -643,6 +648,16 @@ object LauncherConfig {
     fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE, enabled)
+        }
+    }
+
+    fun isSlingBreakAudioDebugModeEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_SLING_BREAK_AUDIO_DEBUG_MODE, false)
+    }
+
+    fun setSlingBreakAudioDebugModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SLING_BREAK_AUDIO_DEBUG_MODE, enabled)
         }
     }
 
@@ -1813,6 +1828,23 @@ object LauncherConfig {
     @Suppress("UNUSED_PARAMETER")
     fun resolveDefaultGpuResourceGuardianMode(totalMemoryBytes: Long): GpuResourceGuardianMode {
         return DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
+    }
+
+    fun readAccelerationStrategy(context: Context): AccelerationStrategy {
+        val persisted = prefs(context).getString(PREF_KEY_ACCELERATION_STRATEGY, null)
+        return AccelerationStrategy.fromPersistedValue(persisted) ?: DEFAULT_ACCELERATION_STRATEGY
+    }
+
+    fun saveAccelerationStrategy(context: Context, strategy: AccelerationStrategy) {
+        prefs(context).edit {
+            putString(PREF_KEY_ACCELERATION_STRATEGY, strategy.persistedValue)
+        }
+    }
+
+    fun resetAccelerationStrategy(context: Context) {
+        prefs(context).edit {
+            remove(PREF_KEY_ACCELERATION_STRATEGY)
+        }
     }
 
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {

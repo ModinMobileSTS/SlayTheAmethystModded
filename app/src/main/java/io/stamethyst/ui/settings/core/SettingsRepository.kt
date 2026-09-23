@@ -485,10 +485,12 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED
         )
         LauncherPreferences.resetGpuResourceGuardianMode(context)
+        LauncherPreferences.resetAccelerationStrategy(context)
         LauncherPreferences.setGdxPadCursorDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG
         )
+        LauncherPreferences.setSlingBreakAudioDebugModeEnabled(context, false)
         LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG

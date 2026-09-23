@@ -1139,7 +1139,10 @@
     <string name="ai_mod_editor_title">模組編輯器</string>
     <string name="ai_mod_editor_history">歷史會話</string>
     <string name="ai_mod_editor_history_empty">暫時沒有歷史會話</string>
-    <string name="ai_mod_editor_empty">描述你想做的修改。助手可以檢查模組中繼資料，並產生安全的工作區修改建議。</string>
+    <string name="ai_mod_editor_empty">快來試試用自然語言編輯模組吧！下方展示了一些典型的用例！</string>
+    <string name="ai_mod_editor_example_translate">翻譯該模組。</string>
+    <string name="ai_mod_editor_example_remove_starter_cards">從該模組角色的初始牌組移除一張打擊和一張防禦。</string>
+    <string name="ai_mod_editor_example_fix_crash">介紹一下這個模組添加的新角色，怎麼玩比較好？</string>
     <string name="ai_mod_editor_placeholder">詢問這個模組...</string>
     <string name="ai_mod_editor_send">傳送</string>
     <string name="ai_mod_editor_context">上下文用量</string>
@@ -1185,6 +1188,7 @@
     <string name="ai_mod_editor_attach">附件</string>
     <string name="ai_mod_editor_copy">複製</string>
     <string name="ai_mod_editor_retry">重試</string>
+    <string name="ai_mod_editor_retrying">%2$d 秒後重試（第 %1$d/5 次）</string>
     <string name="ai_mod_editor_regenerate">重新產生</string>
     <string name="ai_mod_editor_rollback">回退到這裡</string>
     <string name="ai_mod_editor_rollback_confirm_title">回退到這則訊息？</string>
@@ -1198,6 +1202,7 @@
     <string name="ai_mod_editor_user_label">你</string>
     <string name="ai_mod_editor_assistant_label">AI</string>
     <string name="ai_mod_editor_error">助手無法回答：%1$s</string>
+    <string name="ai_mod_editor_error_stopped">生成已被使用者停止。</string>
     <string name="ai_mod_editor_error_interrupted">產生在收到回覆前已中斷。</string>
     <string name="ai_mod_editor_apply_patch">套用 JAR 修改</string>
     <string name="ai_mod_editor_apply_title">要套用這個 JAR 修改嗎？</string>
@@ -1418,6 +1423,8 @@
     <string name="settings_developer_experiments_title">實驗功能</string>
     <string name="settings_developer_slingbreak_title">啟動弓引力</string>
     <string name="settings_developer_slingbreak_summary">在 WebView 中啟動內建遊戲原型。</string>
+    <string name="settings_developer_slingbreak_audio_debug_title">小遊戲音訊偵錯模式</string>
+    <string name="settings_developer_slingbreak_audio_debug_summary">進入小遊戲時追加 &amp;audioDebug=1，顯示音訊診斷面板並支援匯出日誌。</string>
     <string name="sling_break_boot_ready_action">原遊戲已就緒，點擊進入</string>
     <string name="settings_reset_defaults_section_title">重置設定</string>
     <string name="settings_reset_defaults_title">恢復到預設設定</string>
@@ -1516,6 +1523,13 @@
     <string name="settings_cloud_control_test_entry_node_label">EasyTier 入口節點位址</string>
     <string name="settings_cloud_control_test_endpoint_error">請輸入有效的 HTTP(S) 基礎位址和 EasyTier 端點位址。</string>
     <string name="settings_cloud_control_test_save_endpoints">儲存測試位址</string>
+    <string name="settings_developer_acceleration_title">網路加速</string>
+    <string name="settings_developer_acceleration_strategy_title">加速線路選擇</string>
+    <string name="settings_developer_acceleration_strategy_desc">控制加速鏈路如何選擇上游節點。預設優先使用內建 rmbgame.net 節點，線路異常時回退到官方來源；舊版邏輯會拉取 Watt 規則並逐一探測後選出最快的線路。</string>
+    <string name="settings_developer_acceleration_strategy_rmbgame_first">優先 rmbgame</string>
+    <string name="settings_developer_acceleration_strategy_rmbgame_first_desc">直接使用內建 rmbgame.net 節點，節點異常時在同一次請求內回退到官方來源。不做規則拉取和延遲探測。沒有內建節點的鏈路仍按舊版邏輯處理。</string>
+    <string name="settings_developer_acceleration_strategy_best_path">舊版線路探測</string>
+    <string name="settings_developer_acceleration_strategy_best_path_desc">拉取 Watt Toolkit 加速規則，並探測所有候選節點，按成功率與延遲排序後選擇最佳線路，失敗時回退到官方來源。</string>
     <string name="settings_together_in_spire_title">Together in Spire</string>
     <string name="settings_together_in_spire_route_lock_enabled">全域路線鎖</string>
     <string name="settings_together_in_spire_route_lock_disabled">全域路線鎖已關閉</string>
@@ -2358,6 +2372,7 @@
     <string name="settings_status_jvm_heap">JVM 初始 / 最大堆：%1$d/%2$d MB</string>
     <string name="settings_status_compressed_pointers">壓縮 Oops / 類指標：%1$s</string>
     <string name="settings_status_string_dedup">字串去重：%1$s</string>
+    <string name="settings_status_acceleration_strategy">加速線路選擇：%1$s</string>
     <string name="settings_status_back_behavior">返回鍵行為：%1$s</string>
     <string name="settings_status_touchscreen">觸屏輸入：%1$s</string>
     <string name="settings_status_touchscreen_mode">觸屏模式：%1$s</string>

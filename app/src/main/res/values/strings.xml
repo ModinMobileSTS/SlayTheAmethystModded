@@ -1180,7 +1180,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tool_failed">Failed</string>
     <string name="ai_mod_editor_tool_stopped">Interrupted</string>
     <string name="ai_mod_editor_tool_truncated">Result preview truncated</string>
-    <string name="ai_mod_editor_empty">Describe the change you want. The assistant can inspect mod metadata and produce a safe workspace patch proposal.</string>
+    <string name="ai_mod_editor_empty">Try editing a mod with natural language! Here are some typical examples.</string>
+    <string name="ai_mod_editor_example_translate">Translate this mod.</string>
+    <string name="ai_mod_editor_example_remove_starter_cards">Remove one Strike and one Defend from this mod character\'s starting deck.</string>
+    <string name="ai_mod_editor_example_fix_crash">Introduce the new character added by this mod and explain how to play them effectively.</string>
     <string name="ai_mod_editor_placeholder">Ask about this mod...</string>
     <string name="ai_mod_editor_send">Send</string>
     <string name="ai_mod_editor_stop">Stop</string>
@@ -1202,6 +1205,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_error">The assistant could not answer: %1$s</string>
     <string name="ai_mod_editor_error_interrupted">Generation was interrupted before a response was received.</string>
     <string name="ai_mod_editor_error_stopped">Generation was stopped by the user.</string>
+    <string name="ai_mod_editor_retrying">Retry %1$d/5 in %2$d seconds</string>
     <string name="ai_mod_editor_apply_patch">Apply JAR patch</string>
     <string name="ai_mod_editor_apply_title">Apply this JAR patch?</string>
     <string name="ai_mod_editor_apply_message">This can modify any JAR entry in the installed optional mod after verifying its SHA-256. A timestamped backup will be kept. Binary, code, native, and signature entries may be affected.</string>
@@ -1421,6 +1425,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_developer_experiments_title">Experiments</string>
     <string name="settings_developer_slingbreak_title">Play SlingBreak</string>
     <string name="settings_developer_slingbreak_summary">Launch the bundled WebView game prototype.</string>
+    <string name="settings_developer_slingbreak_audio_debug_title">SlingBreak audio debug mode</string>
+    <string name="settings_developer_slingbreak_audio_debug_summary">Append &amp;audioDebug=1 when entering SlingBreak to show audio diagnostics and export logs.</string>
     <string name="settings_developer_slingbreak_clear_title">Clear SlingBreak data and cache</string>
     <string name="settings_developer_slingbreak_clear_summary">Remove the game WebView cache, cookies, storage, and saved browser state.</string>
     <string name="settings_developer_slingbreak_clear_confirm_title">Clear SlingBreak data and cache?</string>
@@ -1525,6 +1531,13 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_cloud_control_test_entry_node_label">EasyTier entry node URL</string>
     <string name="settings_cloud_control_test_endpoint_error">Enter a valid HTTP(S) base URL and valid EasyTier endpoint URLs.</string>
     <string name="settings_cloud_control_test_save_endpoints">Save test endpoints</string>
+    <string name="settings_developer_acceleration_title">Network acceleration</string>
+    <string name="settings_developer_acceleration_strategy_title">Accelerated route selection</string>
+    <string name="settings_developer_acceleration_strategy_desc">Controls how accelerated links choose their upstream hop. The default prefers the bundled rmbgame.net hop and falls back to the official origin when the hop misbehaves; the legacy logic fetches Watt Toolkit rules, probes every candidate and picks the fastest route.</string>
+    <string name="settings_developer_acceleration_strategy_rmbgame_first">Prefer rmbgame</string>
+    <string name="settings_developer_acceleration_strategy_rmbgame_first_desc">Uses the bundled rmbgame.net hop directly and falls back to the official origin inside the same request when the hop fails. No rule fetching and no latency probing. Links without a bundled hop keep using the legacy logic.</string>
+    <string name="settings_developer_acceleration_strategy_best_path">Legacy route probing</string>
+    <string name="settings_developer_acceleration_strategy_best_path_desc">Fetches Watt Toolkit accelerator rules, probes every candidate hop, ranks them by success rate and latency, and falls back to the official origin on failure.</string>
     <string name="settings_together_in_spire_title">Together in Spire</string>
     <string name="settings_together_in_spire_route_lock_enabled">Global route lock</string>
     <string name="settings_together_in_spire_route_lock_disabled">Global route lock disabled</string>
@@ -2371,6 +2384,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_status_jvm_heap">JVM heap start/max: %1$d/%2$d MB</string>
     <string name="settings_status_compressed_pointers">Compressed Oops / Class Pointers: %1$s</string>
     <string name="settings_status_string_dedup">String Deduplication: %1$s</string>
+    <string name="settings_status_acceleration_strategy">Accelerated route selection: %1$s</string>
     <string name="settings_status_back_behavior">Back behavior: %1$s</string>
     <string name="settings_status_touchscreen">Touchscreen input: %1$s</string>
     <string name="settings_status_touchscreen_mode">Touchscreen mode: %1$s</string>

@@ -21,6 +21,7 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -673,6 +674,7 @@ private fun advancedRenderSection(
     val selectionMode = LauncherConfig.readRendererSelectionMode(context)
     val manualBackend = LauncherConfig.readManualRendererBackend(context)
     val guardianMode = LauncherConfig.readGpuResourceGuardianMode(context)
+    val accelerationStrategy = LauncherConfig.readAccelerationStrategy(context)
     val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
     val heapStartMb = LauncherConfig.resolveJvmHeapStartMb(heapMaxMb)
 
@@ -703,6 +705,12 @@ private fun advancedRenderSection(
                 zh.getString(R.string.settings_gpu_resource_guardian_title),
                 persisted(guardianMode.name, guardianMode.persistedValue),
                 gpuResourceGuardianModeZh(zh, guardianMode),
+            ),
+            field(
+                "network.accelerationStrategy",
+                zh.getString(R.string.settings_developer_acceleration_strategy_title),
+                persisted(accelerationStrategy.name, accelerationStrategy.persistedValue),
+                accelerationStrategyZh(zh, accelerationStrategy),
             ),
             boolField(
                 "gpuResourceGuardianPressureDownscale",
@@ -1274,6 +1282,13 @@ private fun gpuResourceGuardianModeZh(zh: Context, mode: GpuResourceGuardianMode
     GpuResourceGuardianMode.ULTRA_AGGRESSIVE ->
         zh.getString(R.string.settings_gpu_resource_guardian_mode_ultra_aggressive)
     GpuResourceGuardianMode.LEGACY -> zh.getString(R.string.settings_gpu_resource_guardian_mode_legacy)
+}
+
+private fun accelerationStrategyZh(zh: Context, strategy: AccelerationStrategy): String = when (strategy) {
+    AccelerationStrategy.RMBGAME_FIRST ->
+        zh.getString(R.string.settings_developer_acceleration_strategy_rmbgame_first)
+    AccelerationStrategy.BEST_PATH ->
+        zh.getString(R.string.settings_developer_acceleration_strategy_best_path)
 }
 
 private fun textureAtlasDownscaleZh(zh: Context, policy: RuntimeDownscaleMaterialPolicy): String =

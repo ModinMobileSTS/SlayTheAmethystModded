@@ -411,6 +411,9 @@ fun LauncherDeveloperSettingsScreen(
         onSteamAchievementDebugModeEnabledChanged = { enabled ->
             viewModel.onSteamAchievementDebugModeEnabledChanged(activity, enabled)
         },
+        onSlingBreakAudioDebugModeChanged = { enabled ->
+            viewModel.onSlingBreakAudioDebugModeChanged(activity, enabled)
+        },
         onLocalTestEndpointsChanged = { onlineServiceBaseUrl, configServerUrl, entryNodeUrl ->
             viewModel.onLocalTestEndpointsChanged(
                 activity,
@@ -434,6 +437,9 @@ fun LauncherDeveloperSettingsScreen(
         },
         onGpuResourceGuardianPressureDownscaleChanged = { enabled ->
             viewModel.onGpuResourceGuardianPressureDownscaleChanged(activity, enabled)
+        },
+        onAccelerationStrategyChanged = { strategy ->
+            viewModel.onAccelerationStrategyChanged(activity, strategy)
         },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onJvmCompressedPointersChanged = { enabled ->

@@ -1140,7 +1140,10 @@
     <string name="ai_mod_editor_title">模组编辑器</string>
     <string name="ai_mod_editor_history">历史会话</string>
     <string name="ai_mod_editor_history_empty">暂时没有历史会话</string>
-    <string name="ai_mod_editor_empty">描述你想做的修改。助手可以检查模组元数据，并生成安全的工作区修改建议。</string>
+    <string name="ai_mod_editor_empty">快来试试用自然语言编辑模组吧！下方展示了一些典型的用例！</string>
+    <string name="ai_mod_editor_example_translate">翻译该模组。</string>
+    <string name="ai_mod_editor_example_remove_starter_cards">从该模组角色的初始卡组去除一张打击和一张防御。</string>
+    <string name="ai_mod_editor_example_fix_crash">介绍一下这个模组添加的新角色，怎么玩比较好？</string>
     <string name="ai_mod_editor_placeholder">询问这个模组...</string>
     <string name="ai_mod_editor_send">发送</string>
     <string name="ai_mod_editor_context">上下文用量</string>
@@ -1186,6 +1189,7 @@
     <string name="ai_mod_editor_attach">附件</string>
     <string name="ai_mod_editor_copy">复制</string>
     <string name="ai_mod_editor_retry">重试</string>
+    <string name="ai_mod_editor_retrying">%2$d 秒后重试（第 %1$d/5 次）</string>
     <string name="ai_mod_editor_regenerate">重新生成</string>
     <string name="ai_mod_editor_rollback">回退到这里</string>
     <string name="ai_mod_editor_rollback_confirm_title">回退到这条消息？</string>
@@ -1199,6 +1203,7 @@
     <string name="ai_mod_editor_user_label">你</string>
     <string name="ai_mod_editor_assistant_label">AI</string>
     <string name="ai_mod_editor_error">助手无法回答：%1$s</string>
+    <string name="ai_mod_editor_error_stopped">生成已被用户停止。</string>
     <string name="ai_mod_editor_error_interrupted">生成在收到回复前已中断。</string>
     <string name="ai_mod_editor_apply_patch">应用 JAR 修改</string>
     <string name="ai_mod_editor_apply_title">应用这个 JAR 修改吗？</string>
@@ -1419,6 +1424,8 @@
     <string name="settings_developer_experiments_title">实验功能</string>
     <string name="settings_developer_slingbreak_title">启动弓引力</string>
     <string name="settings_developer_slingbreak_summary">在 WebView 中启动内置游戏原型。</string>
+    <string name="settings_developer_slingbreak_audio_debug_title">小游戏音频调试模式</string>
+    <string name="settings_developer_slingbreak_audio_debug_summary">进入小游戏时追加 &amp;audioDebug=1，显示音频诊断面板并支持导出日志。</string>
     <string name="settings_developer_slingbreak_clear_title">清除小游戏数据和缓存</string>
     <string name="settings_developer_slingbreak_clear_summary">清除小游戏 WebView 的缓存、Cookie、存储和浏览状态。</string>
     <string name="settings_developer_slingbreak_clear_confirm_title">清除小游戏数据和缓存？</string>
@@ -1523,6 +1530,13 @@
     <string name="settings_cloud_control_test_entry_node_label">EasyTier 入口节点地址</string>
     <string name="settings_cloud_control_test_endpoint_error">请输入有效的 HTTP(S) 基础地址和 EasyTier 端点地址。</string>
     <string name="settings_cloud_control_test_save_endpoints">保存测试地址</string>
+    <string name="settings_developer_acceleration_title">网络加速</string>
+    <string name="settings_developer_acceleration_strategy_title">加速线路选择</string>
+    <string name="settings_developer_acceleration_strategy_desc">控制加速链路如何选择上游节点。默认优先使用内置 rmbgame.net 节点，线路异常时回退到官方源；旧版逻辑会拉取 Watt 规则并逐个探测后选出最快的线路。</string>
+    <string name="settings_developer_acceleration_strategy_rmbgame_first">优先 rmbgame</string>
+    <string name="settings_developer_acceleration_strategy_rmbgame_first_desc">直接使用内置 rmbgame.net 节点，节点异常时在同一次请求内回退到官方源。不做规则拉取和延迟探测。没有内置节点的链路仍按旧版逻辑处理。</string>
+    <string name="settings_developer_acceleration_strategy_best_path">旧版线路探测</string>
+    <string name="settings_developer_acceleration_strategy_best_path_desc">拉取 Watt Toolkit 加速规则，并探测所有候选节点，按成功率和延迟排序后选择最佳线路，失败时回退到官方源。</string>
     <string name="settings_together_in_spire_title">Together in Spire</string>
     <string name="settings_together_in_spire_route_lock_enabled">全局路线锁</string>
     <string name="settings_together_in_spire_route_lock_disabled">全局路线锁已关闭</string>
@@ -2369,6 +2383,7 @@
     <string name="settings_status_jvm_heap">JVM 初始 / 最大堆：%1$d/%2$d MB</string>
     <string name="settings_status_compressed_pointers">压缩 Oops / 类指针：%1$s</string>
     <string name="settings_status_string_dedup">字符串去重：%1$s</string>
+    <string name="settings_status_acceleration_strategy">加速线路选择：%1$s</string>
     <string name="settings_status_back_behavior">返回键行为：%1$s</string>
     <string name="settings_status_touchscreen">触屏输入：%1$s</string>
     <string name="settings_status_touchscreen_mode">触屏模式：%1$s</string>

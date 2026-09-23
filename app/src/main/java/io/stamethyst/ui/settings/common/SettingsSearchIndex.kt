@@ -426,6 +426,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.DeveloperSettings,
     ),
     entry(
+        titleResId = R.string.settings_developer_acceleration_strategy_title,
+        subtitleResId = R.string.settings_developer_acceleration_strategy_desc,
+        categoryTitleResId = R.string.settings_developer_title,
+        route = Route.DeveloperSettings,
+    ),
+    entry(
         titleResId = R.string.settings_jvm_compressed_pointers_enabled,
         categoryTitleResId = R.string.settings_developer_title,
         route = Route.DeveloperSettings,

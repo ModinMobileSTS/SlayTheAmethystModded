@@ -45,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.GpuResourceGuardianMode
@@ -69,6 +70,11 @@ internal data class DeveloperRuntimeSettingsActions(
 internal data class TogetherInSpireSettingsActions(
     val onRouteLockEnabledChanged: (Boolean) -> Unit,
     val onEasyTierAutofillEnabledChanged: (Boolean) -> Unit,
+)
+
+
+internal data class AccelerationSettingsActions(
+    val onAccelerationStrategyChanged: (AccelerationStrategy) -> Unit,
 )
 
 
@@ -108,8 +114,10 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
+    onAccelerationStrategyChanged: (AccelerationStrategy) -> Unit = {},
     onLocalTestCloudControlEnabledChanged: (Boolean) -> Unit = {},
     onSteamAchievementDebugModeEnabledChanged: (Boolean) -> Unit = {},
+    onSlingBreakAudioDebugModeChanged: (Boolean) -> Unit = {},
     onLocalTestEndpointsChanged: (String, String, String) -> Boolean = { _, _, _ -> false },
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
@@ -294,6 +302,17 @@ internal fun LauncherDeveloperSettingsScreenContent(
         }
 
         item {
+            SettingsSectionCard(title = stringResource(R.string.settings_developer_acceleration_title)) {
+                SettingsAccelerationSection(
+                    uiState = uiState,
+                    actions = AccelerationSettingsActions(
+                        onAccelerationStrategyChanged = onAccelerationStrategyChanged,
+                    ),
+                )
+            }
+        }
+
+        item {
             SettingsSectionCard(title = stringResource(R.string.settings_developer_render_title)) {
                 SettingsAdvancedRenderSection(
                     uiState = uiState,
@@ -357,6 +376,16 @@ internal fun LauncherDeveloperSettingsScreenContent(
         item {
             SettingsSectionCard(title = stringResource(R.string.settings_developer_experiments_title)) {
                 var showClearSlingBreakDialog by rememberSaveable { mutableStateOf(false) }
+
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.slingBreakAudioDebugModeEnabled,
+                        enabled = !uiState.busy,
+                        title = stringResource(R.string.settings_developer_slingbreak_audio_debug_title),
+                        description = stringResource(R.string.settings_developer_slingbreak_audio_debug_summary),
+                        onCheckedChange = onSlingBreakAudioDebugModeChanged,
+                    )
+                )
 
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_developer_slingbreak_title),
@@ -443,6 +472,54 @@ internal fun SettingsTogetherInSpireSection(
             description = stringResource(R.string.settings_together_in_spire_autofill_desc),
             onCheckedChange = actions.onEasyTierAutofillEnabledChanged,
         )
+    )
+}
+
+
+@Composable
+internal fun SettingsAccelerationSection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: AccelerationSettingsActions,
+) {
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_developer_acceleration_strategy_title),
+            valueText = accelerationStrategyDisplayName(uiState.accelerationStrategy),
+            enabled = !uiState.busy,
+            selectedValue = uiState.accelerationStrategy,
+            options = AccelerationStrategy.entries,
+            optionLabel = { strategy -> accelerationStrategyDisplayName(strategy) },
+            optionDescription = { strategy -> accelerationStrategyDescription(strategy) },
+            onOptionSelected = actions.onAccelerationStrategyChanged,
+            description = stringResource(R.string.settings_developer_acceleration_strategy_desc),
+            dialogDescription = null,
+        )
+    )
+}
+
+
+@Composable
+internal fun accelerationStrategyDisplayName(strategy: AccelerationStrategy): String {
+    return stringResource(
+        when (strategy) {
+            AccelerationStrategy.RMBGAME_FIRST ->
+                R.string.settings_developer_acceleration_strategy_rmbgame_first
+            AccelerationStrategy.BEST_PATH ->
+                R.string.settings_developer_acceleration_strategy_best_path
+        }
+    )
+}
+
+
+@Composable
+internal fun accelerationStrategyDescription(strategy: AccelerationStrategy): String {
+    return stringResource(
+        when (strategy) {
+            AccelerationStrategy.RMBGAME_FIRST ->
+                R.string.settings_developer_acceleration_strategy_rmbgame_first_desc
+            AccelerationStrategy.BEST_PATH ->
+                R.string.settings_developer_acceleration_strategy_best_path_desc
+        }
     )
 }
 

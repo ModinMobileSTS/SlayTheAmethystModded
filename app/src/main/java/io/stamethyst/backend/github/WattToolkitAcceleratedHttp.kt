@@ -1,6 +1,7 @@
 package io.stamethyst.backend.github
 
 import android.content.Context
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.network.AcceleratedRouteEvent
 import io.stamethyst.backend.network.AcceleratedRouteEvents
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
@@ -68,6 +69,18 @@ internal data class WattToolkitRouteProfile(
      * unaccelerated even though a working route already existed.
      */
     val supportedHostSuffixes: Set<String> = emptySet(),
+    /**
+     * TLS metadata of the Watt Toolkit rule the bundled hop was copied from.
+     *
+     * The bundled rmbgame.net hops are reverse proxies in front of Akamai and GitHub edges, so
+     * their own certificates do not cover the rmbgame hostname. Watt declares one of two
+     * workarounds per rule — validate against [bootstrapFakeServerName] instead, or skip
+     * validation entirely with [bootstrapIgnoreSslCertVerification] — and the bundled-hop
+     * strategy never fetches that rule, so the same metadata has to be declared here or every
+     * bundled hop would fail its TLS handshake and silently fall back to the official origin.
+     */
+    val bootstrapFakeServerName: String = "",
+    val bootstrapIgnoreSslCertVerification: Boolean = false,
 )
 
 internal val GithubApiWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -76,6 +89,9 @@ internal val GithubApiWattToolkitRouteProfile = WattToolkitRouteProfile(
     supportedHosts = setOf("api.github.com"),
     bootstrapForwardTargets = listOf("githubapi.rmbgame.net"),
     officialProbePath = "/rate_limit",
+    // Mirrors the Watt "Github Api" rule; the hop resolves to the api.github.com edge whose
+    // certificate does not cover the rmbgame hostname.
+    bootstrapIgnoreSslCertVerification = true,
 )
 
 internal val GithubWebWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -156,8 +172,14 @@ internal object WattToolkitAcceleratedHttp {
         followRedirects: Boolean = true,
     ): OkHttpClient {
         val filesDir = RuntimePaths.transientFilesRoot(context)
+        val applicationContext = context.applicationContext
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
-            createExperimentalGithubDirectAccessRuntime(filesDir)
+            createExperimentalGithubDirectAccessRuntime(
+                filesDir = filesDir,
+                accelerationStrategyProvider = {
+                    NetworkAccelerationPolicy.currentAccelerationStrategy(applicationContext)
+                },
+            )
         }
         return OkHttpClient.Builder()
             .connectTimeout(connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
@@ -220,6 +242,7 @@ internal fun createPlainClient(
 internal fun createExperimentalGithubDirectAccessRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultExperimentalGithubDirectAccessProfiles,
+    accelerationStrategyProvider: () -> AccelerationStrategy = { AccelerationStrategy.BEST_PATH },
 ): ExperimentalGithubDirectAccessRuntime = createWattToolkitRuntime(
     filesDir = filesDir,
     cacheSubDirectory = "github/network",
@@ -227,6 +250,7 @@ internal fun createExperimentalGithubDirectAccessRuntime(
     connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
     readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
     requireHttps = true,
+    accelerationStrategyProvider = accelerationStrategyProvider,
 )
 
 /**
@@ -244,6 +268,7 @@ internal fun createWattToolkitRuntime(
     readTimeoutMs: Long,
     requireHttps: Boolean = false,
     allowInsecureUrl: (HttpUrl) -> Boolean = { false },
+    accelerationStrategyProvider: () -> AccelerationStrategy = { AccelerationStrategy.BEST_PATH },
 ): ExperimentalGithubDirectAccessRuntime {
     val forwardDns = WattToolkitForwardDns()
     val routeClient = defaultWattToolkitRouteClient(requireHttps = requireHttps)
@@ -263,6 +288,7 @@ internal fun createWattToolkitRuntime(
                 probeWattToolkitOfficialTarget(routeClient, host, path, requireHttps = requireHttps)
             },
             requireHttps = requireHttps,
+            accelerationStrategyProvider = accelerationStrategyProvider,
         )
     }
     val unsafeHostProvider: (String) -> Boolean = { host ->
@@ -507,6 +533,10 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 }
             }
             if (usedOfficial) {
+                resolver?.recordFailedForwardTargets(
+                    host = logicalRequest.url.host,
+                    forwardTargets = failedForwardTargets,
+                )
                 resolver?.confirmSuccessfulOfficialPath(logicalRequest.url.host)
                 return response
             }
@@ -911,6 +941,9 @@ internal class WattToolkitGithubRouteResolver(
     private val backgroundExecutor: Executor = sharedBestPathBackgroundExecutor,
     private val probeExecutor: ExecutorService = sharedWattProbeExecutor,
     private val requireHttps: Boolean = false,
+    private val accelerationStrategyProvider: () -> AccelerationStrategy = {
+        AccelerationStrategy.BEST_PATH
+    },
 ) {
     private val lock = Any()
     private val normalizedSupportedHosts = routeProfile.supportedHosts.map { it.lowercase(Locale.ROOT) }.toSet()
@@ -960,13 +993,78 @@ internal class WattToolkitGithubRouteResolver(
         return normalizedSupportedHostSuffixes.any { suffix -> normalizedHost.endsWith(suffix) }
     }
 
-    fun allowsUnsafeHostnameBypass(host: String): Boolean =
-        cachedRoute?.shouldBypassHostnameVerification(host) == true
+    fun allowsUnsafeHostnameBypass(host: String): Boolean {
+        if (cachedRoute?.shouldBypassHostnameVerification(host) == true) {
+            return true
+        }
+        // Bundled-hop routes are built from configuration on each call instead of being installed
+        // into [cachedRoute], and several rmbgame hops are only reachable with certificate
+        // validation relaxed (the same relaxation the Watt rule declares).
+        return bundledHopRouteForHost(host.lowercase(Locale.ROOT))
+            ?.shouldBypassHostnameVerification(host) == true
+    }
+
+    /**
+     * Route for [AccelerationStrategy.RMBGAME_FIRST], or null to keep the discovery path.
+     *
+     * Returns null when the strategy is not bundled-hop-first or when this profile ships no
+     * bundled hop, so profiles such as github.com and Steam CM keep the old rule-discovery
+     * behaviour instead of silently losing their acceleration.
+     */
+    private fun bundledHopRouteForHost(normalizedHost: String): WattToolkitGithubRoute? {
+        if (accelerationStrategyProvider() != AccelerationStrategy.RMBGAME_FIRST) {
+            return null
+        }
+        val bootstrap = bootstrapRouteProvider(routeProfile) ?: return null
+        if (bootstrap.forwardTargets.isEmpty()) {
+            return null
+        }
+        // Every host this resolver accepts is forwarded through the bundled hop, including the
+        // subdomain families Watt publishes as one rule (avatars.steamstatic.com, for example).
+        return bootstrap.copy(
+            isOfficial = false,
+            logicalHosts = bootstrap.logicalHosts + normalizedHost,
+            logicalHostSuffixes = normalizedSupportedHostSuffixes,
+            fakeServerName = routeProfile.bootstrapFakeServerName.ifBlank { bootstrap.fakeServerName },
+            ignoreSslCertVerification = routeProfile.bootstrapIgnoreSslCertVerification ||
+                bootstrap.ignoreSslCertVerification,
+        )
+            .restrictForwardTargets()
+            ?.takeIf { it.forwardTargets.isNotEmpty() }
+    }
+
+    /**
+     * Bundled hop while it is healthy, official origin once it has failed real traffic.
+     *
+     * The official origin is tried by the request pipeline after a failed hop, so a failed
+     * bundled hop is only remembered until [FAILED_FORWARD_TARGET_TTL_MS] passes.
+     */
+    private fun resolveBundledHopRoute(normalizedHost: String): WattToolkitGithubRoute? {
+        val bundledRoute = bundledHopRouteForHost(normalizedHost) ?: return null
+        val preferred = bundledRoute.forwardTargets.firstOrNull().orEmpty()
+        val preferredFailed = synchronized(lock) {
+            pruneFailedTargetsLocked(nowProvider())
+            preferred.isNotEmpty() && recentlyFailedForwardTargets.keys.any { failed ->
+                forwardTargetsEquivalent(failed, preferred)
+            }
+        }
+        return if (preferredFailed) officialRouteForHost(normalizedHost) else bundledRoute
+    }
 
     fun resolveRouteForHost(host: String): WattToolkitGithubRoute? {
         val normalizedHost = host.lowercase(Locale.ROOT)
         if (!isProfileHost(normalizedHost)) {
             return null
+        }
+        resolveBundledHopRoute(normalizedHost)?.let { bundledRoute ->
+            AcceleratedRouteEvents.emit(
+                AcceleratedRouteEvent.RouteDiscovered(
+                    host = normalizedHost,
+                    forwardTargetCount = bundledRoute.forwardTargets.size,
+                    preferOfficial = bundledRoute.isOfficial,
+                ),
+            )
+            return bundledRoute
         }
         val now = nowProvider()
         val cachedMatch = synchronized(lock) {
@@ -1017,6 +1115,20 @@ internal class WattToolkitGithubRouteResolver(
         if (!isProfileHost(normalizedHost)) {
             return null
         }
+        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
+            synchronized(lock) { markFailedTargetsLocked(excludedForwardTargets) }
+            val bundledRoute = bundledHopRouteForHost(normalizedHost) ?: return null
+            val preferred = bundledRoute.forwardTargets.firstOrNull().orEmpty()
+            val preferredFailed = synchronized(lock) {
+                pruneFailedTargetsLocked(nowProvider())
+                preferred.isNotEmpty() && recentlyFailedForwardTargets.keys.any { failed ->
+                    forwardTargetsEquivalent(failed, preferred)
+                }
+            }
+            // The official origin is tried by the request pipeline itself, so a failed
+            // bundled hop leaves nothing to hand back; a null rethrows the original error.
+            return if (preferredFailed) null else bundledRoute
+        }
         val excluded = synchronized(lock) {
             markFailedTargetsLocked(excludedForwardTargets)
             recentlyFailedForwardTargets.keys.toSet()
@@ -1044,6 +1156,14 @@ internal class WattToolkitGithubRouteResolver(
         if (!isProfileHost(normalizedHost) || normalizedTarget.isEmpty()) {
             return
         }
+        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
+            synchronized(lock) {
+                recentlyFailedForwardTargets.keys
+                    .filter { failed -> forwardTargetsEquivalent(failed, normalizedTarget) }
+                    .forEach(recentlyFailedForwardTargets::remove)
+            }
+            return
+        }
         synchronized(lock) {
             restorePersistedRouteLocked()
             // A hop that just served real traffic is no longer considered failed.
@@ -1060,6 +1180,14 @@ internal class WattToolkitGithubRouteResolver(
     fun confirmSuccessfulOfficialPath(host: String) {
         val normalizedHost = host.lowercase(Locale.ROOT)
         if (!isProfileHost(normalizedHost)) {
+            return
+        }
+        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
+            // The bundled hop is resolved from configuration, not from a cache, so there is
+            // nothing to pin or persist here; only drop a stale official-path failure mark.
+            synchronized(lock) {
+                recentlyFailedForwardTargets.remove(OFFICIAL_ROUTE_TARGET)
+            }
             return
         }
         synchronized(lock) {
@@ -1083,6 +1211,27 @@ internal class WattToolkitGithubRouteResolver(
         }
     }
 
+    /**
+     * Remembers hops that failed during a real request and were bypassed by the official origin.
+     *
+     * [AccelerationStrategy.BEST_PATH] keeps learning failures through [refreshRouteForHost]
+     * alone, so this is a no-op there. The bundled-hop strategy has no discovery step to
+     * re-learn from, so without this a dead bundled hop would be retried on every request
+     * until its failure entry expired.
+     */
+    fun recordFailedForwardTargets(host: String, forwardTargets: Collection<String>) {
+        if (accelerationStrategyProvider() != AccelerationStrategy.RMBGAME_FIRST) {
+            return
+        }
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        if (!isProfileHost(normalizedHost) || forwardTargets.isEmpty()) {
+            return
+        }
+        synchronized(lock) {
+            markFailedTargetsLocked(forwardTargets)
+        }
+    }
+
     fun markOfficialPathFailed(host: String) {
         val normalizedHost = host.lowercase(Locale.ROOT)
         if (!isProfileHost(normalizedHost)) {
@@ -1100,6 +1249,10 @@ internal class WattToolkitGithubRouteResolver(
     fun scheduleBackgroundBestPathSearch(host: String, force: Boolean = false) {
         val normalizedHost = host.lowercase(Locale.ROOT)
         if (!isProfileHost(normalizedHost)) {
+            return
+        }
+        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
+            // Rule discovery and probe ranking are exactly what this strategy opts out of.
             return
         }
         val now = nowProvider()
