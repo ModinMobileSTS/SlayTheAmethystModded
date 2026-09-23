@@ -1,10 +1,6 @@
 package io.stamethyst.ui.settings.llm
 
 import android.content.Context
-import android.app.Activity
-import android.app.KeyguardManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.imePadding
@@ -22,11 +18,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.semantics.Role
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import androidx.compose.foundation.layout.Arrangement
@@ -177,7 +169,6 @@ fun LauncherLlmSettingsScreen(
     uiState: SettingsScreenViewModel.UiState,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val verifyKeyTitle = stringResource(R.string.llm_verify_key)
     val navigator = currentNavigator
     val viewModel: LlmSettingsViewModel = viewModel(factory = LlmSettingsViewModel.factory(context))
     val current = viewModel.settings
@@ -193,12 +184,9 @@ fun LauncherLlmSettingsScreen(
         mutableStateOf(current.models)
     }
     var modelInput by rememberSaveable { mutableStateOf("") }
-    var keyVisible by remember { mutableStateOf(false) }
-    var authError by remember { mutableStateOf(false) }
     var showModels by rememberSaveable { mutableStateOf(false) }
     var modelQuery by rememberSaveable { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val effectiveKey = apiKey.trim().ifEmpty { current.apiKey }
     val validUrl = baseUrl.trim().toHttpUrlOrNull()?.let {
         it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null
@@ -216,19 +204,6 @@ fun LauncherLlmSettingsScreen(
     val latestDraft by rememberUpdatedState(draft)
     DisposableEffect(viewModel) {
         onDispose { viewModel.save(latestDraft) }
-    }
-    val authLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        keyVisible = it.resultCode == Activity.RESULT_OK
-    }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) keyVisible = false
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    LaunchedEffect(keyVisible) {
-        if (keyVisible) { delay(30_000); keyVisible = false }
     }
     LaunchedEffect(viewModel.remoteModels) {
         if (viewModel.remoteModels.isNotEmpty()) {
@@ -276,44 +251,6 @@ fun LauncherLlmSettingsScreen(
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                 )
-                if (current.apiKey.isNotBlank()) {
-                    Text(stringResource(R.string.llm_current_key), style = MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(
-                        value = if (keyVisible) current.apiKey else "********",
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.llm_no_key)) },
-                        visualTransformation = VisualTransformation.None,
-                        singleLine = true,
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                if (keyVisible) keyVisible = false else {
-                                    val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-                                    val intent = keyguard.createConfirmDeviceCredentialIntent(
-                                        verifyKeyTitle, null,
-                                    )
-                                    authError = intent == null
-                                    if (intent != null) runCatching { authLauncher.launch(intent) }.onFailure { authError = true }
-                                }
-                            },
-                        ) {
-                            Icon(painterResource(if (keyVisible) R.drawable.ic_lock else R.drawable.ic_lock_open), null, Modifier.size(18.dp))
-                            Text(stringResource(if (keyVisible) R.string.llm_hide_key else R.string.llm_show_key), Modifier.padding(start = 8.dp))
-                        }
-                        TextButton(enabled = keyVisible, onClick = {
-                            val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            val clip = android.content.ClipData.newPlainText("API key", current.apiKey)
-                            clip.description.extras = android.os.PersistableBundle().apply {
-                                putBoolean("android.content.extra.IS_SENSITIVE", true)
-                            }
-                            manager.setPrimaryClip(clip)
-                        }) { Text(stringResource(R.string.llm_copy_key)) }
-                    }
-                }
-                if (authError) Text(stringResource(R.string.llm_auth_unavailable), color = MaterialTheme.colorScheme.error)
             }
         }
         item {

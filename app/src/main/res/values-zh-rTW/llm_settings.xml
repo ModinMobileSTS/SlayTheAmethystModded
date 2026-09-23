@@ -2,13 +2,6 @@
     <string name="llm_connection">服務連線</string>
     <string name="llm_credentials">憑證</string>
     <string name="llm_key_hint">留空保留目前金鑰。</string>
-    <string name="llm_current_key">目前金鑰</string>
-    <string name="llm_no_key">尚未儲存金鑰</string>
-    <string name="llm_verify_key">驗證身分以顯示 API 金鑰</string>
-    <string name="llm_hide_key">隱藏金鑰</string>
-    <string name="llm_show_key">顯示金鑰</string>
-    <string name="llm_copy_key">複製金鑰</string>
-    <string name="llm_auth_unavailable">裝置身分驗證無法使用，請在 Android 設定中設定螢幕鎖定後再查看金鑰。</string>
     <string name="llm_models">模型</string>
     <string name="llm_model_count">已新增 %1$d 個</string>
     <string name="llm_models_empty">尚未新增模型</string>

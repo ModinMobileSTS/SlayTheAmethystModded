@@ -2,13 +2,6 @@
     <string name="llm_connection">Connection</string>
     <string name="llm_credentials">Credentials</string>
     <string name="llm_key_hint">Leave blank to keep the current key.</string>
-    <string name="llm_current_key">Saved key</string>
-    <string name="llm_no_key">No saved key</string>
-    <string name="llm_verify_key">Verify to reveal your API key</string>
-    <string name="llm_hide_key">Hide key</string>
-    <string name="llm_show_key">Reveal key</string>
-    <string name="llm_copy_key">Copy key</string>
-    <string name="llm_auth_unavailable">Device verification is unavailable. Set up a screen lock in Android settings to reveal the saved key.</string>
     <string name="llm_models">Models</string>
     <string name="llm_model_count">%1$d models</string>
     <string name="llm_models_empty">No models added</string>
