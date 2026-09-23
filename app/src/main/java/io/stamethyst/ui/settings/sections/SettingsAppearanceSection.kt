@@ -13,7 +13,6 @@ import io.stamethyst.ui.settings.steamcloud.*
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -51,12 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
@@ -73,6 +68,7 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -210,6 +206,8 @@ internal fun SettingsAppearanceSection(
                 BootOverlayStylePreviewGrid(
                     selectedStyle = uiState.bootOverlayStyle,
                     enabled = !uiState.busy,
+                    imageConfig = uiState.bootOverlayImageConfig,
+                    loadingAnimation = uiState.bootOverlayAnimation,
                     onSelect = { style ->
                         actions.onBootOverlayStyleChanged(style)
                         showBootOverlayStyleDialog = false
@@ -686,6 +684,8 @@ internal fun BootOverlayStylePreviewGrid(
     enabled: Boolean,
     onSelect: (BootOverlayStyle) -> Unit,
     modifier: Modifier = Modifier,
+    imageConfig: BootOverlayImageConfig = BootOverlayImageConfig(),
+    loadingAnimation: BootOverlayAnimation = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION,
 ) {
     val spacing = 10.dp
     Column(
@@ -702,6 +702,8 @@ internal fun BootOverlayStylePreviewGrid(
                         style = style,
                         selected = selectedStyle == style,
                         enabled = enabled,
+                        imageConfig = imageConfig,
+                        loadingAnimation = loadingAnimation,
                         onSelect = { onSelect(style) },
                         modifier = Modifier.weight(1f)
                     )
@@ -722,6 +724,8 @@ internal fun BootOverlayStyleOption(
     enabled: Boolean,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
+    imageConfig: BootOverlayImageConfig = BootOverlayImageConfig(),
+    loadingAnimation: BootOverlayAnimation = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(8.dp)
@@ -743,9 +747,10 @@ internal fun BootOverlayStyleOption(
             .padding(8.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            BootOverlayStyleWireframePreview(
+            BootOverlayStyleAnimatedPreview(
                 style = style,
-                selected = selected,
+                imageConfig = imageConfig,
+                loadingAnimation = loadingAnimation,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
@@ -772,296 +777,6 @@ internal fun BootOverlayStyleOption(
                 )
             }
         }
-    }
-}
-
-
-@Composable
-internal fun BootOverlayStyleWireframePreview(
-    style: BootOverlayStyle,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    val frameColor = if (selected) {
-        colorScheme.primary.copy(alpha = 0.92f)
-    } else {
-        colorScheme.onSurfaceVariant.copy(alpha = 0.74f)
-    }
-    val mutedFrameColor = frameColor.copy(alpha = 0.42f)
-    val fillColor = colorScheme.surface.copy(alpha = 0.64f)
-    val accentFillColor = colorScheme.primary.copy(alpha = if (selected) 0.22f else 0.12f)
-    val strokeWidth = if (selected) 2.2f else 1.6f
-
-    Canvas(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(colorScheme.surface.copy(alpha = 0.72f))
-    ) {
-        drawRoundRect(
-            color = fillColor,
-            size = size,
-            cornerRadius = CornerRadius(10f, 10f)
-        )
-        drawRoundRect(
-            color = mutedFrameColor,
-            size = size,
-            cornerRadius = CornerRadius(10f, 10f),
-            style = Stroke(width = strokeWidth)
-        )
-        when (style) {
-            BootOverlayStyle.MODERN -> drawModernBootOverlayWireframe(
-                frameColor = frameColor,
-                mutedFrameColor = mutedFrameColor,
-                accentFillColor = accentFillColor,
-                strokeWidth = strokeWidth
-            )
-            BootOverlayStyle.LEGACY -> drawLegacyBootOverlayWireframe(
-                frameColor = frameColor,
-                mutedFrameColor = mutedFrameColor,
-                accentFillColor = accentFillColor,
-                strokeWidth = strokeWidth
-            )
-            BootOverlayStyle.CLASSIC_LOG -> drawClassicLogBootOverlayWireframe(
-                frameColor = frameColor,
-                mutedFrameColor = mutedFrameColor,
-                accentFillColor = accentFillColor,
-                strokeWidth = strokeWidth
-            )
-            BootOverlayStyle.MATERIAL_LOG -> drawMaterialLogBootOverlayWireframe(
-                frameColor = frameColor,
-                mutedFrameColor = mutedFrameColor,
-                accentFillColor = accentFillColor,
-                strokeWidth = strokeWidth
-            )
-            BootOverlayStyle.SLING_BREAK -> drawModernBootOverlayWireframe(
-                frameColor = frameColor,
-                mutedFrameColor = mutedFrameColor,
-                accentFillColor = accentFillColor,
-                strokeWidth = strokeWidth
-            )
-        }
-    }
-}
-
-
-internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawModernBootOverlayWireframe(
-    frameColor: Color,
-    mutedFrameColor: Color,
-    accentFillColor: Color,
-    strokeWidth: Float,
-) {
-    val revealWidth = size.width * 0.58f
-    val bottomPanelTop = size.height * 0.68f
-    val progressLeft = size.width * 0.08f
-    val progressTop = size.height * 0.86f
-    val progressWidth = size.width * 0.84f
-    val progressHeight = size.height * 0.065f
-
-    drawRect(
-        color = accentFillColor,
-        size = Size(width = revealWidth, height = size.height)
-    )
-    drawLine(
-        color = frameColor,
-        start = Offset(revealWidth, 0f),
-        end = Offset(revealWidth, size.height),
-        strokeWidth = strokeWidth
-    )
-    drawRect(
-        color = mutedFrameColor.copy(alpha = 0.18f),
-        topLeft = Offset(0f, bottomPanelTop),
-        size = Size(size.width, size.height - bottomPanelTop)
-    )
-    drawRoundRect(
-        color = frameColor.copy(alpha = 0.82f),
-        topLeft = Offset(progressLeft, progressTop),
-        size = Size(progressWidth * 0.62f, progressHeight),
-        cornerRadius = CornerRadius(progressHeight / 2f, progressHeight / 2f)
-    )
-    drawRoundRect(
-        color = mutedFrameColor,
-        topLeft = Offset(progressLeft, progressTop),
-        size = Size(progressWidth, progressHeight),
-        cornerRadius = CornerRadius(progressHeight / 2f, progressHeight / 2f),
-        style = Stroke(width = strokeWidth)
-    )
-    drawLine(
-        color = frameColor,
-        start = Offset(progressLeft, size.height * 0.76f),
-        end = Offset(size.width * 0.48f, size.height * 0.76f),
-        strokeWidth = strokeWidth
-    )
-    drawLine(
-        color = mutedFrameColor,
-        start = Offset(progressLeft, size.height * 0.81f),
-        end = Offset(size.width * 0.68f, size.height * 0.81f),
-        strokeWidth = strokeWidth
-    )
-}
-
-
-internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLegacyBootOverlayWireframe(
-    frameColor: Color,
-    mutedFrameColor: Color,
-    accentFillColor: Color,
-    strokeWidth: Float,
-) {
-    val gutter = size.width * 0.08f
-    val panelTop = size.height * 0.14f
-    val panelHeight = size.height * 0.62f
-    val leftWidth = size.width * 0.34f
-    val rightLeft = size.width * 0.48f
-    val rightWidth = size.width * 0.44f
-    val progressTop = size.height * 0.86f
-    val progressHeight = size.height * 0.06f
-
-    drawRoundRect(
-        color = accentFillColor,
-        topLeft = Offset(gutter, panelTop),
-        size = Size(leftWidth, panelHeight),
-        cornerRadius = CornerRadius(8f, 8f),
-        style = Stroke(width = strokeWidth)
-    )
-    drawRoundRect(
-        color = mutedFrameColor.copy(alpha = 0.18f),
-        topLeft = Offset(rightLeft, panelTop),
-        size = Size(rightWidth, panelHeight),
-        cornerRadius = CornerRadius(8f, 8f)
-    )
-    drawRoundRect(
-        color = mutedFrameColor,
-        topLeft = Offset(rightLeft, panelTop),
-        size = Size(rightWidth, panelHeight),
-        cornerRadius = CornerRadius(8f, 8f),
-        style = Stroke(width = strokeWidth)
-    )
-    repeat(5) { index ->
-        val y = panelTop + panelHeight * (0.18f + index * 0.13f)
-        drawLine(
-            color = if (index == 0) frameColor else mutedFrameColor,
-            start = Offset(rightLeft + rightWidth * 0.12f, y),
-            end = Offset(rightLeft + rightWidth * (0.86f - index * 0.05f), y),
-            strokeWidth = strokeWidth
-        )
-    }
-    drawRoundRect(
-        color = frameColor.copy(alpha = 0.82f),
-        topLeft = Offset(gutter, progressTop),
-        size = Size(size.width * 0.52f, progressHeight),
-        cornerRadius = CornerRadius(progressHeight / 2f, progressHeight / 2f)
-    )
-    drawRoundRect(
-        color = mutedFrameColor,
-        topLeft = Offset(gutter, progressTop),
-        size = Size(size.width * 0.84f, progressHeight),
-        cornerRadius = CornerRadius(progressHeight / 2f, progressHeight / 2f),
-        style = Stroke(width = strokeWidth)
-    )
-}
-
-
-internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawClassicLogBootOverlayWireframe(
-    frameColor: Color,
-    mutedFrameColor: Color,
-    accentFillColor: Color,
-    strokeWidth: Float,
-) {
-    val panelLeft = size.width * 0.12f
-    val panelTop = size.height * 0.24f
-    val panelWidth = size.width * 0.76f
-    val progressTop = size.height * 0.42f
-    val logTop = size.height * 0.58f
-    val logHeight = size.height * 0.24f
-
-    drawRect(
-        color = mutedFrameColor.copy(alpha = 0.22f),
-        size = size
-    )
-    drawLine(
-        color = frameColor,
-        start = Offset(panelLeft, panelTop),
-        end = Offset(panelLeft + panelWidth * 0.36f, panelTop),
-        strokeWidth = strokeWidth
-    )
-    drawRoundRect(
-        color = frameColor.copy(alpha = 0.82f),
-        topLeft = Offset(panelLeft, progressTop),
-        size = Size(panelWidth * 0.58f, size.height * 0.055f),
-        cornerRadius = CornerRadius(8f, 8f)
-    )
-    drawRoundRect(
-        color = mutedFrameColor,
-        topLeft = Offset(panelLeft, progressTop),
-        size = Size(panelWidth, size.height * 0.055f),
-        cornerRadius = CornerRadius(8f, 8f),
-        style = Stroke(width = strokeWidth)
-    )
-    drawRoundRect(
-        color = accentFillColor.copy(alpha = 0.42f),
-        topLeft = Offset(panelLeft, logTop),
-        size = Size(panelWidth, logHeight),
-        cornerRadius = CornerRadius(6f, 6f)
-    )
-    repeat(4) { index ->
-        val y = logTop + logHeight * (0.20f + index * 0.17f)
-        drawLine(
-            color = if (index == 0) frameColor else mutedFrameColor,
-            start = Offset(panelLeft + panelWidth * 0.08f, y),
-            end = Offset(panelLeft + panelWidth * (0.86f - index * 0.08f), y),
-            strokeWidth = strokeWidth
-        )
-    }
-}
-
-
-internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMaterialLogBootOverlayWireframe(
-    frameColor: Color,
-    mutedFrameColor: Color,
-    accentFillColor: Color,
-    strokeWidth: Float,
-) {
-    val gutter = size.width * 0.08f
-    val titleTop = size.height * 0.16f
-    val progressTop = size.height * 0.32f
-    val logTop = size.height * 0.48f
-    val logWidth = size.width * 0.84f
-    val logHeight = size.height * 0.38f
-    val progressHeight = size.height * 0.06f
-
-    drawLine(
-        color = frameColor,
-        start = Offset(gutter, titleTop),
-        end = Offset(size.width * 0.46f, titleTop),
-        strokeWidth = strokeWidth
-    )
-    drawRoundRect(
-        color = frameColor.copy(alpha = 0.82f),
-        topLeft = Offset(gutter, progressTop),
-        size = Size(logWidth * 0.60f, progressHeight),
-        cornerRadius = CornerRadius(progressHeight / 2f, progressHeight / 2f)
-    )
-    drawRoundRect(
-        color = mutedFrameColor,
-        topLeft = Offset(gutter, progressTop),
-        size = Size(logWidth, progressHeight),
-        cornerRadius = CornerRadius(progressHeight / 2f, progressHeight / 2f),
-        style = Stroke(width = strokeWidth)
-    )
-    drawRoundRect(
-        color = accentFillColor.copy(alpha = 0.20f),
-        topLeft = Offset(gutter, logTop),
-        size = Size(logWidth, logHeight),
-        cornerRadius = CornerRadius(8f, 8f)
-    )
-    repeat(6) { index ->
-        val y = logTop + logHeight * (0.14f + index * 0.13f)
-        drawLine(
-            color = if (index == 0) frameColor else mutedFrameColor,
-            start = Offset(gutter + logWidth * 0.06f, y),
-            end = Offset(gutter + logWidth * (0.92f - index * 0.06f), y),
-            strokeWidth = strokeWidth
-        )
     }
 }
 
