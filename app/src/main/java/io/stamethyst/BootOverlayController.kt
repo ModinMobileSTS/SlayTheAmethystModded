@@ -1,8 +1,11 @@
 package io.stamethyst
 
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.view.ViewStub
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
@@ -220,6 +224,7 @@ class BootOverlayController(
     private var slingBreakBootOverlay: View? = null
     private var slingBreakBootGame: android.webkit.WebView? = null
     private var slingBreakLauncherPageReady = false
+    private var slingBreakPageReadyTimeoutScheduled = false
     private var usesSlingBreakBootOverlay = false
     private var bootOverlayProgress = 0
     private var bootOverlayMessage = ""
@@ -285,11 +290,20 @@ class BootOverlayController(
 
     fun init() {
         bootOverlay = activity.findViewById(R.id.bootOverlay)
+        val wantsSlingBreakOverlay =
+            LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK
+        if (wantsSlingBreakOverlay) {
+            // The Sling Break overlay is the only WebView hosted by the :game process, so its
+            // stub is inflated on demand. Inflating it eagerly would create a WebView in :game
+            // on every launch (whatever the overlay style) and kill the process whenever the
+            // default process already owns the shared WebView data directory.
+            val stub = activity.findViewById<ViewStub>(R.id.slingBreakBootOverlayStub)
+            runCatching { stub?.inflate() }
+        }
         slingBreakBootOverlay = activity.findViewById(R.id.slingBreakBootOverlay)
         slingBreakBootGame = activity.findViewById(R.id.slingBreakBootGame)
-        usesSlingBreakBootOverlay =
-            LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK &&
-                slingBreakBootOverlay != null && slingBreakBootGame != null
+        usesSlingBreakBootOverlay = wantsSlingBreakOverlay &&
+            slingBreakBootOverlay != null && slingBreakBootGame != null
         if (bootOverlay == null && !usesSlingBreakBootOverlay) {
             activity.setBootOverlayKeepScreenOn(false)
             return
@@ -301,8 +315,10 @@ class BootOverlayController(
                 addJavascriptInterface(object {
                     @android.webkit.JavascriptInterface
                     fun onPageReady() {
+                        WebViewDiagnosticsLogStore.append(activity, "bridge_page_ready", "launcher=1")
                         activity.runOnUiThread {
                             slingBreakLauncherPageReady = true
+                            slingBreakPageReadyTimeoutScheduled = false
                             pushSlingBreakProgress()
                             if (manualEnterGameReady) {
                                 slingBreakBootGame?.evaluateJavascript(
@@ -315,14 +331,25 @@ class BootOverlayController(
 
                     @android.webkit.JavascriptInterface
                     fun enterGame() {
+                        WebViewDiagnosticsLogStore.append(activity, "bridge_enter_game", "launcher=1")
                         activity.runOnUiThread {
                             if (manualEnterGameReady) {
                                 dismiss()
                             }
                         }
                     }
+
+                    @android.webkit.JavascriptInterface
+                    fun scriptError(detail: String?) {
+                        WebViewDiagnosticsLogStore.append(
+                            activity,
+                            "bridge_script_error",
+                            "launcher=1 detail=${detail.orEmpty().take(MAX_STATUS_LINE_LENGTH)}"
+                        )
+                    }
                 }, "AndroidSlingBreakLauncher")
-                loadUrl("$SLING_BREAK_GAME_URL?launcher=1")
+                loadUrl(slingBreakGameUrl(activity, launcherMode = true))
+                scheduleSlingBreakPageReadyTimeout()
             }
             slingBreakBootOverlay?.visibility = View.VISIBLE
         } else {
@@ -410,6 +437,7 @@ class BootOverlayController(
         slingBreakBootGame?.destroy()
         slingBreakBootGame = null
         slingBreakLauncherPageReady = false
+        slingBreakPageReadyTimeoutScheduled = false
         slingBreakBootOverlay = null
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
@@ -533,6 +561,7 @@ class BootOverlayController(
             }
             slingBreakBootGame = null
             slingBreakLauncherPageReady = false
+            slingBreakPageReadyTimeoutScheduled = false
             slingBreakBootOverlay?.visibility = View.GONE
             slingBreakBootOverlay = null
             activity.finishSlingBreakBoot()
@@ -614,6 +643,21 @@ class BootOverlayController(
             "window.SlingBreakLauncher?.setProgress?.($bootOverlayProgress, $escapedMessage)",
             null
         )
+    }
+
+    private fun scheduleSlingBreakPageReadyTimeout() {
+        if (slingBreakPageReadyTimeoutScheduled) return
+        slingBreakPageReadyTimeoutScheduled = true
+        Handler(Looper.getMainLooper()).postDelayed({
+            slingBreakPageReadyTimeoutScheduled = false
+            if (usesSlingBreakBootOverlay && !slingBreakLauncherPageReady && !bootOverlayDismissed) {
+                WebViewDiagnosticsLogStore.append(
+                    activity,
+                    "bridge_page_ready_timeout",
+                    "launcher=1 progress=$bootOverlayProgress"
+                )
+            }
+        }, 5_000L)
     }
 
     private fun isOutOfMemoryFailure(detail: String?): Boolean {

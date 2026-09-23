@@ -68,9 +68,12 @@
   <dialog id="reset-dialog"><h2>从第一箭重新开始？</h2><p>当前关卡、金币与升级将被清空。</p><div><button class="secondary-button" id="cancel-reset">取消</button><button class="primary-button" id="confirm-reset">重新开始</button></div></dialog>
    <dialog id="skill-draft"><div id="draft-options" class="draft-options"></div></dialog>
    <dialog id="skill-library"><div id="library-grid" class="library-grid"></div></dialog>
+  <!-- Register the native loading bridge before any optional bundle can fail. -->
+  <script src="launcher-mode.js"></script>
   <script src="vendor/matter.min.js"></script>
   <script src="vendor/lucide.min.js"></script>
   <script src="game.js"></script>
+  <script src="audio-diagnostics.js"></script>
   <script src="audio.js"></script>
   <script src="skills.js"></script>
   <script src="achievements.js"></script>
@@ -82,7 +85,7 @@
   <script src="ui.js"></script>
   <script src="skills-ui.js"></script>
   <script src="achievements-ui.js"></script>
-  <script src="launcher-mode.js"></script>
   <script src="intro.js"></script>
+  <script>window.SlingBreakLauncher?.pageReady?.();</script>
 </body>
 </html>

@@ -1,29 +1,45 @@
 (() => {
   'use strict';
   const G=Game;
-  let context,master,mix,echo,noiseBuffer,resumeAttempt=null;
-  const sources=new Set(),last=new Map();
+  const diagnostics=window.SlingAudioDiagnostics;
+  const log=(event,data)=>{if(diagnostics?.enabled)diagnostics.record(event,data);};
+  let soundSequence=0,activeSound=null,requestedHint=null;
+  let context,master,mix,echo,noiseBuffer,keepAlive,resumeAttempt=null;
+  const sources=new Set(),lastRequestMs=new Map();
   let currentType='',priorityVoice=false;
   const intervals={draw:.065,break:.018,boom:.055,lightning:.06,frost:.07,prism:.06,gold:.06,ricochet:.035,tap:.03};
   const ensure=(fromGesture=false)=>{
     if(!context){
       const Audio=window.AudioContext||window.webkitAudioContext;
       if(!Audio)return false;
-      // Request the smallest supported output buffer; keep the device's native
-      // sample rate so the browser does not need an extra resampling stage.
-      try{context=new Audio({latencyHint:0});}catch{
-        try{context=new Audio({latencyHint:'interactive'});}catch{context=new Audio();}
+      // Prefer the standard interactive category; the browser chooses the
+      // actual buffer size, so this hint does not guarantee low latency.
+      // Keep the device's native sample rate to avoid an extra resampling stage.
+      try{context=new Audio({latencyHint:'interactive'});requestedHint='interactive';}catch(error){
+        log('context-fallback',{hint:'interactive',error:diagnostics?.errorInfo(error)});
+        try{context=new Audio({latencyHint:0});requestedHint=0;}catch(error){log('context-fallback',{hint:0,error:diagnostics?.errorInfo(error)});context=new Audio();requestedHint='default';}
       }
+      log('context-created',{requestedHint,state:context.state,sampleRate:context.sampleRate,baseLatency:context.baseLatency??null,outputLatency:context.outputLatency??null,highBaseLatency:Number.isFinite(context.baseLatency)?context.baseLatency>=.05:null,baseLatencyThresholdMs:50});
       master=context.createGain();master.gain.value=G.paused?0:.7;
       mix=context.createGain();
       // Limit peaks without the DynamicsCompressor's mandatory look-ahead delay.
       const ceiling=context.createWaveShaper(),curve=new Float32Array(2048);
       for(let i=0;i<curve.length;i++)curve[i]=.9*Math.tanh((i/(curve.length-1)*2-1)*1.4);
-      ceiling.curve=curve;ceiling.oversample='2x';
+      ceiling.curve=curve;
+      // Avoid additional oversampling work in the limiter.
+      ceiling.oversample='none';
       mix.connect(master);master.connect(ceiling);ceiling.connect(context.destination);
       echo=context.createDelay(.4);echo.delayTime.value=.105;
       const feedback=context.createGain(),wet=context.createGain();feedback.gain.value=.18;wet.gain.value=.16;
-      echo.connect(feedback);feedback.connect(echo);echo.connect(wet);wet.connect(mix);
+       echo.connect(feedback);feedback.connect(echo);echo.connect(wet);wet.connect(mix);
+       // Maintain a low-level source while running. Its effect on backend
+       // suspension and audible latency is device-dependent and unverified.
+       const keepGain=context.createGain();keepGain.gain.value=.00001;
+       if(context.createConstantSource){
+         keepAlive=context.createConstantSource();keepAlive.connect(keepGain);keepGain.connect(mix);keepAlive.start();
+       }else{
+         keepAlive=context.createOscillator();keepAlive.frequency.value=1;keepAlive.connect(keepGain);keepGain.connect(mix);keepAlive.start();
+       }
        noiseBuffer=context.createBuffer(1,Math.ceil(context.sampleRate*.25),context.sampleRate);
       const samples=noiseBuffer.getChannelData(0);for(let i=0;i<samples.length;i++)samples[i]=Math.random()*2-1;
     }
@@ -31,10 +47,16 @@
       // A touch-down resume can stay pending until activation. Always retry
       // synchronously on a later gesture, especially touch-end or click.
       const attempt=context.resume();resumeAttempt=attempt;
-      attempt.then(()=>G.audio.sync()).catch(()=>{}).finally(()=>{
+      const resumeAt=diagnostics?.enabled?performance.now():0;
+      log('resume-request',{fromGesture,state:context.state});
+      attempt.then(()=>{log('resume-success',{durationMs:performance.now()-resumeAt,audio:G.audio.diagnosticSnapshot()});G.audio.sync();}).catch(error=>{log('resume-error',{error:diagnostics?.errorInfo(error)});}).finally(()=>{
         if(resumeAttempt===attempt)resumeAttempt=null;
       });
     }
+    if(!context.onstatechange)context.onstatechange=()=>{
+      log('context-state',{audio:G.audio.diagnosticSnapshot()});
+      if(context.state==='running')G.audio.sync();
+    };
     // Never queue stale impact sounds while the output device is waking up.
     return context.state==='running';
   };
@@ -48,6 +70,7 @@
     source.effectType=currentType;source.priority=priorityVoice;sources.add(source);
     source.onended=()=>{sources.delete(source);source.disconnect();filter?.disconnect();envelope.disconnect();pan.disconnect();};
     source.start(t);source.stop(t+duration+.025);
+    if(diagnostics?.enabled)log('voice-scheduled',{soundId:activeSound?.id,type:currentType,scheduledTime:t,currentTime:context.currentTime,offsetMs:(t-context.currentTime)*1000,durationMs:duration*1000,source:source.buffer?'noise':'tone'});
   }
   const tone=(t,freq,end,duration,volume,type='sine',x=390,spacious=false)=>{
     const osc=context.createOscillator();osc.type=type;osc.frequency.setValueAtTime(freq,t);
@@ -61,15 +84,36 @@
     voice(source,t,duration,volume,x,filter);
   };
   G.audio={
+    diagnosticSnapshot(){
+      if(!context)return {state:'not-created'};
+      const now=performance.now(),currentTime=context.currentTime;
+      let output=null;
+      try{
+        if(context.getOutputTimestamp){
+          const stamp=context.getOutputTimestamp();
+          output={contextTime:stamp.contextTime,performanceTime:stamp.performanceTime};
+          if(Number.isFinite(stamp.performanceTime)&&Number.isFinite(stamp.contextTime)&&stamp.performanceTime>0&&stamp.contextTime>0){
+            // A clock offset is not an end-to-end audio latency measurement.
+            output.timestampOffsetMs=now-stamp.performanceTime;
+            output.timestampInFuture=stamp.performanceTime>now;
+          }
+        }
+      }catch(error){output={error:diagnostics?.errorInfo(error)};}
+      return {state:context.state,currentTime,atMs:now,requestedHint,sampleRate:context.sampleRate,
+        baseLatency:context.baseLatency??null,outputLatency:context.outputLatency??null,output,
+        activeSources:sources.size,resumePending:!!resumeAttempt,masterGain:master?.gain.value,
+        soundEnabled:G.state.sound,paused:G.paused,hidden:document.hidden};
+    },
     get latency(){
       return context?{state:context.state,sampleRate:context.sampleRate,baseLatency:context.baseLatency??null,outputLatency:context.outputLatency??null}:null;
     },
-    unlock(){if(G.state.sound)try{ensure(true);}catch{}},
+    unlock(){if(G.state.sound)try{ensure(true);}catch(error){log('unlock-error',{error:diagnostics?.errorInfo(error)});}},
     sync(){
       if(!context)return;
       const silent=!G.state.sound||G.paused,t=context.currentTime;
+      log('audio-sync',{silent,state:context.state,currentTime:t});
       master.gain.cancelScheduledValues(t);master.gain.setTargetAtTime(silent?0:.7,t,.012);
-      if(silent){for(const source of sources)try{source.stop(t+.04);}catch{}last.clear();}
+        if(silent){for(const source of sources)try{source.stop(t+.04);}catch{}lastRequestMs.clear();}
     }
   };
   const unlock=()=>G.audio.unlock();
@@ -79,10 +123,14 @@
   document.addEventListener('click',unlock,{capture:true,passive:true});
   document.addEventListener('keydown',unlock,{capture:true});
   G.sound=(type,n=1,x=390,priority=false)=>{
-    if(!G.state.sound||G.paused)return;
+    const tracing=diagnostics?.enabled;
+    activeSound=tracing?{id:++soundSequence,type,atMs:performance.now()}:null;
+    if(tracing)log('sound-request',{...activeSound,n,x,priority,lastInput:diagnostics.lastInput,audio:G.audio.diagnosticSnapshot()});
+    const skip=(reason,details)=>{if(tracing)log('sound-skipped',{soundId:activeSound.id,type,reason,...details});};
+    if(!G.state.sound||G.paused){skip(G.paused?'paused':'muted');return;}
     try{
-      if(!ensure())return;
-      const t=context.currentTime;
+      if(!ensure()){skip('context-not-running');return;}
+      const t=context.currentTime,requestMs=performance.now();
        if(priority){
          // Keep decisive destruction cues immediate instead of building an audible backlog.
          const priorityLimit=36;
@@ -91,11 +139,14 @@
            for(const source of victims){if(sources.size<=priorityLimit)break;try{source.stop(context.currentTime+.006);}catch{}sources.delete(source);}
         }
       }else{
-        const interval=intervals[type]||0;
-        if(t-(last.get(type)??-Infinity)<interval)return;
-        last.set(type,t);
+        // Throttle real requests independently of the audio clock's updates.
+        // Keep the audio clock for sample scheduling and envelope timing only.
+        const intervalMs=(intervals[type]||0)*1000;
+        const elapsedMs=requestMs-(lastRequestMs.get(type)??-Infinity);
+        if(elapsedMs<intervalMs){skip('rate-limit',{clock:'performance.now',elapsedMs,intervalMs});return;}
       }
-       if(!priority&&sources.size>28&&type!=='win'&&type!=='core')return;
+       if(!priority&&sources.size>28&&type!=='win'&&type!=='core'){skip('voice-limit');return;}
+      if(!priority)lastRequestMs.set(type,requestMs);
       currentType=type;priorityVoice=priority;
       if(type==='draw'){
         const f=125+n*33;tone(t,f,f*1.16,.09,.075,'triangle');noise(t,.04,.025,1100,'bandpass');
@@ -133,6 +184,7 @@
       }else if(type==='upgrade'){
         [440,554,659,880].forEach((f,i)=>tone(t+i*.065,f,f,.25,.12,'triangle',390,true));
       }
-    }catch{}
+    }catch(error){log('sound-error',{soundId:activeSound?.id,type,error:diagnostics?.errorInfo(error)});}
+    finally{if(tracing)log('sound-dispatch-end',{soundId:activeSound.id,type,durationMs:performance.now()-activeSound.atMs,audio:G.audio.diagnosticSnapshot()});}
   };
 })();

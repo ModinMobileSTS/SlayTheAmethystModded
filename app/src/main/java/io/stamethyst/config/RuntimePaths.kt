@@ -61,6 +61,8 @@ object RuntimePaths {
     private const val LOGCAT_DIR_NAME = "logcat"
     private const val WINDOW_DIAGNOSTICS_DIR_NAME = "window"
     private const val WINDOW_DIAGNOSTICS_LOG_FILE_NAME = "window_diagnostics.log"
+    private const val WEBVIEW_DIAGNOSTICS_DIR_NAME = "webview"
+    private const val WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME = "webview_diagnostics.log"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
     private const val LOGCAT_APP_CAPTURE_FILE_NAME = "logcat_app_capture.log"
     private const val LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "logcat_system_capture.log"
@@ -229,6 +231,30 @@ object RuntimePaths {
     @JvmStatic
     fun agentSmokeTestRunMarker(context: Context): File =
         File(agentSmokeTestDir(context), "run.active")
+
+    /** Verdict of the last smoke test run triggered over adb in a debug build. */
+    @JvmStatic
+    fun agentSmokeTestAdbResultFile(context: Context): File =
+        File(agentSmokeTestDir(context), "adb_result.json")
+
+    /**
+     * Run-scoped MTS mod list for a smoke test.
+     *
+     * The shared `.mts_mod_file_list` is rewritten by other components from the user's enabled-mod
+     * selection, so a smoke run cannot rely on it. This file belongs to the run alone.
+     */
+    @JvmStatic
+    fun agentSmokeTestModFileList(context: Context): File =
+        File(agentSmokeTestDir(context), "mod_file_list.txt")
+
+    /**
+     * What ModTheSpire actually loaded for a smoke run, written by `MtsModFileListOverride`.
+     *
+     * Read back to prove the run used the requested mod set, instead of assuming nothing rewrote it.
+     */
+    @JvmStatic
+    fun agentSmokeTestModFileListAudit(context: Context): File =
+        File(agentSmokeTestDir(context), "mod_file_list_audit.txt")
 
     @JvmStatic
     fun importedBaseModJar(context: Context): File = File(requiredModsDir(context), "BaseMod.jar")
@@ -438,6 +464,31 @@ object RuntimePaths {
     @JvmStatic
     fun windowDiagnosticsLog(context: Context): File =
         File(windowDiagnosticsDir(context), WINDOW_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun webViewDiagnosticsDir(context: Context): File =
+        File(stsRoot(context), WEBVIEW_DIAGNOSTICS_DIR_NAME)
+
+    @JvmStatic
+    fun webViewDiagnosticsLog(context: Context): File =
+        File(webViewDiagnosticsDir(context), WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun listWebViewDiagnosticsFiles(context: Context): List<File> {
+        val directory = webViewDiagnosticsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(webViewDiagnosticsLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isWebViewDiagnosticsFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareWebViewDiagnosticsFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(webViewDiagnosticsLog(context)) }
+    }
 
     @JvmStatic
     fun listWindowDiagnosticsFiles(context: Context): List<File> {
@@ -1043,6 +1094,7 @@ object RuntimePaths {
         jvmHistogramsDir(context).mkdirs()
         logcatDir(context).mkdirs()
         windowDiagnosticsDir(context).mkdirs()
+        webViewDiagnosticsDir(context).mkdirs()
         launcherCrashReportsDir(context).mkdirs()
         bootOverlayImagesDir(context).mkdirs()
         mtsPatchCacheDir(context).mkdirs()
@@ -1089,6 +1141,11 @@ object RuntimePaths {
     internal fun isWindowDiagnosticsFileName(name: String): Boolean {
         return name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME ||
             name.startsWith("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.")
+    }
+
+    internal fun isWebViewDiagnosticsFileName(name: String): Boolean {
+        return name == WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME ||
+            name.startsWith("$WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME.")
     }
 
     internal fun isLauncherCrashReportFileName(name: String): Boolean {
@@ -1144,6 +1201,15 @@ object RuntimePaths {
     internal fun compareWindowDiagnosticsFileNames(left: String, right: String): Int {
         val byRotationIndex = rotationIndexForWindowDiagnosticsFile(left)
             .compareTo(rotationIndexForWindowDiagnosticsFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareWebViewDiagnosticsFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForWebViewDiagnosticsFile(left)
+            .compareTo(rotationIndexForWebViewDiagnosticsFile(right))
         if (byRotationIndex != 0) {
             return byRotationIndex
         }
@@ -1245,6 +1311,18 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForWebViewDiagnosticsFile(name: String): Int {
+        if (!isWebViewDiagnosticsFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

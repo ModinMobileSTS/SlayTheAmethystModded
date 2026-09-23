@@ -378,6 +378,13 @@ internal object DiagnosticsArchiveBuilder {
                 RuntimePaths.jvmSignalDump(context),
                 "sts/logs/${RuntimePaths.jvmSignalDump(context).name}"
             )
+            RuntimePaths.listWebViewDiagnosticsFiles(context).forEach { webViewLogFile ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    webViewLogFile,
+                    "sts/webview/${webViewLogFile.name}"
+                )
+            }
             progress?.onProgress(PROGRESS_LOGS_DONE)
             RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { memoryLogFile ->
                 exportedCount += writeOptionalFile(
@@ -442,7 +449,8 @@ internal object DiagnosticsArchiveBuilder {
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息，以及启动器设置导出（launcher_settings.txt 英文机器键值、launcher_settings.zh.txt 中文可读版，末尾均含原始 SharedPreferences 全量转储）。
         - resource_pack/：资源包 active generation、版本、校验和迁移状态。
-        - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
+         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
+         - webview/：内置小游戏 WebView 的页面生命周期、JavaScript 控制台、资源错误和 Android 桥接日志，最多保留 5 槽位。
         - achievement_sync/：成就请求解析、游戏内弹窗、Steam 查询、上传及失败事件，最多保留 3 槽位，不包含 Steam 凭据。
         - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
         - window/：游戏窗口、viewport、Surface、尺寸同步和触控坐标映射诊断日志，最多保留 3 槽位。

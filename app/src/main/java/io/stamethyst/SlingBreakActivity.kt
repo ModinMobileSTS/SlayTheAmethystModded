@@ -8,7 +8,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -17,8 +21,27 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
+import io.stamethyst.backend.diag.WebViewAudioEnvironment
 
 internal const val SLING_BREAK_GAME_URL = "file:///android_asset/slingbreak/index.html"
+
+internal fun slingBreakGameUrl(audioDebugEnabled: Boolean, launcherMode: Boolean = false): String {
+    val query = buildList {
+        if (launcherMode) add("launcher=1")
+        if (audioDebugEnabled) add("audioDebug=1")
+    }
+    return if (query.isEmpty()) SLING_BREAK_GAME_URL
+    else "$SLING_BREAK_GAME_URL?${query.joinToString("&")}"
+}
+
+internal fun slingBreakGameUrl(context: Context, launcherMode: Boolean = false): String {
+    return slingBreakGameUrl(
+        audioDebugEnabled = io.stamethyst.ui.preferences.LauncherPreferences
+            .isSlingBreakAudioDebugModeEnabled(context),
+        launcherMode = launcherMode,
+    )
+}
 
 /** Clears the WebView state used by both the standalone game and the boot overlay. */
 internal fun clearSlingBreakWebViewData(context: Context, onComplete: () -> Unit) {
@@ -50,6 +73,7 @@ internal fun clearSlingBreakWebViewData(context: Context, onComplete: () -> Unit
 @SuppressLint("SetJavaScriptEnabled", "DEPRECATION")
 @Suppress("DEPRECATION")
 internal fun WebView.configureSlingBreakGame() {
+    val diagnosticContext = context.applicationContext
     setBackgroundColor(Color.rgb(245, 246, 243))
     overScrollMode = WebView.OVER_SCROLL_NEVER
     isVerticalScrollBarEnabled = false
@@ -71,7 +95,38 @@ internal fun WebView.configureSlingBreakGame() {
         allowUniversalAccessFromFileURLs = false
         blockNetworkLoads = true
     }
-    webViewClient = WebViewClient()
+    webChromeClient = object : WebChromeClient() {
+        override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+            WebViewDiagnosticsLogStore.appendConsoleMessage(diagnosticContext, consoleMessage)
+            return true
+        }
+    }
+    webViewClient = object : WebViewClient() {
+        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+            WebViewDiagnosticsLogStore.append(diagnosticContext, "page_started", "url=$url")
+            if (io.stamethyst.ui.preferences.LauncherPreferences
+                    .isSlingBreakAudioDebugModeEnabled(diagnosticContext)) {
+                WebViewAudioEnvironment.record(diagnosticContext)
+            }
+            super.onPageStarted(view, url, favicon)
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            WebViewDiagnosticsLogStore.append(diagnosticContext, "page_finished", "url=$url")
+            super.onPageFinished(view, url)
+        }
+
+        override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?
+        ) {
+            if (error != null) {
+                WebViewDiagnosticsLogStore.appendWebResourceError(diagnosticContext, request, error)
+            }
+            super.onReceivedError(view, request, error)
+        }
+    }
 }
 
 /** Hosts the untouched SlingBreak web bundle packaged under assets/slingbreak. */
@@ -90,7 +145,7 @@ class SlingBreakActivity : AppCompatActivity() {
 
         webView = WebView(this).apply {
             configureSlingBreakGame()
-            loadUrl(SLING_BREAK_GAME_URL)
+            loadUrl(slingBreakGameUrl(this@SlingBreakActivity))
         }
         setContentView(webView)
         hideSystemBars()

@@ -13,6 +13,7 @@
   const waiting = document.getElementById('launcher-waiting');
   const bridge = window.AndroidSlingBreakLauncher;
   let ready = false;
+  let gameEntered = false;
 
   progress.hidden = false;
   const setProgress = (value, message) => {
@@ -25,12 +26,18 @@
     phase.textContent = bounded >= 100 ? '即将就绪' : '正在加载';
   };
   const enterGame = () => {
-    if (!ready) return;
-    Game.paused = false;
-    Game.audio?.sync?.();
-    Game.ui?.();
+    if (!ready || gameEntered || !window.Game) return;
+    gameEntered = true;
+    window.Game.paused = false;
+    window.Game.audio?.sync?.();
+    window.Game.ui?.();
     document.documentElement.classList.add('launcher-entered');
     bridge?.enterGame?.();
+  };
+  const reportScriptFailure = event => {
+    const error = event?.error;
+    const detail = error?.stack || error?.message || event?.message || 'unknown script error';
+    bridge?.scriptError?.(String(detail).slice(0, 500));
   };
   const setReady = () => {
     if (ready) return;
@@ -44,7 +51,10 @@
     readyButton.focus({preventScroll:true});
   };
   readyButton.addEventListener('click', enterGame);
-  window.SlingBreakLauncher = {setProgress, setReady, enterGame};
+  window.SlingBreakLauncher = {setProgress, setReady, enterGame, pageReady: () => bridge?.onPageReady?.()};
+  window.addEventListener('error', reportScriptFailure);
+  window.addEventListener('unhandledrejection', event => {
+    bridge?.scriptError?.(String(event?.reason || 'unhandled promise rejection').slice(0, 500));
+  });
   window.lucide?.createIcons?.();
-  bridge?.onPageReady?.();
 })();

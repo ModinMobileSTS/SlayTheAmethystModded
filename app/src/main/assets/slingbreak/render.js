@@ -201,6 +201,6 @@
     if(e.key===' '&&!e.repeat)G.shoot(-Math.sin(G.keyboardAngle)*100*G.keyboardPower,Math.cos(G.keyboardAngle)*100*G.keyboardPower);
   });
    let last=performance.now(),acc=0;
-   function frame(now){const delta=Math.min((now-last)/1000,.05);last=now;acc+=delta;let steps=0;while(acc>=G.physicsStep&&steps++<4){G.tick(G.physicsStep);acc-=G.physicsStep;}if(steps===4)acc=0;render();requestAnimationFrame(frame);}
+   function frame(now){const gap=now-last;if(gap>50&&window.SlingAudioDiagnostics?.enabled)window.SlingAudioDiagnostics.record('frame-gap',{durationMs:gap,hidden:document.hidden,paused:G.paused});const delta=Math.min(gap/1000,.05);last=now;acc+=delta;let steps=0;while(acc>=G.physicsStep&&steps++<4){G.tick(G.physicsStep);acc-=G.physicsStep;}if(steps===4)acc=0;render();requestAnimationFrame(frame);}
   requestAnimationFrame(frame);
 })();

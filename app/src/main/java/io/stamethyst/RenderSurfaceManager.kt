@@ -749,6 +749,15 @@ class RenderSurfaceManager(
         lockResolution: Boolean = true
     ): io.stamethyst.backend.render.VirtualResolution {
         startupVirtualResolution?.let { return it }
+        if (shouldDeferToDisplayDerivedCanvas(rootWidth, rootHeight)) {
+            // The game always runs landscape. A portrait root only means the window has not
+            // rotated yet (manifest sensorLandscape) or a portrait boot overlay such as the
+            // SlingBreak minigame is up. Deriving the canvas from it would lock the game into a
+            // portrait canvas and leave the real landscape window showing a small centered patch,
+            // so fall back to the display-derived landscape canvas and leave the cache unset for
+            // the post-boot landscape layout to refine.
+            return resolveFullscreenVirtualResolution()
+        }
         if (!avoidDisplayCutout && !cropScreenBottom) {
             return resolveFullscreenVirtualResolution().also { startupVirtualResolution = it }
         }
@@ -1159,6 +1168,15 @@ class RenderSurfaceManager(
             }
             return requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE ||
                 requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+
+        /**
+         * True when the current window is portrait, which for this landscape-only game means the
+         * window is transient: either the initial rotation has not landed yet or a portrait boot
+         * overlay (SlingBreak minigame) is up. The game canvas must not be derived from it.
+         */
+        internal fun shouldDeferToDisplayDerivedCanvas(rootWidth: Int, rootHeight: Int): Boolean {
+            return rootWidth > 0 && rootHeight > 0 && rootWidth < rootHeight
         }
 
         internal fun resolveViewportLayout(

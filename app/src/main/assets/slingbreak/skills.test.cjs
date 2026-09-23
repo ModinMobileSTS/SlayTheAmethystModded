@@ -11,8 +11,8 @@ function ready(id){const result=boot(),G=result.G;G.state.skills=id?{[id]:1}:{};
 function finish(G){for(let i=0;i<1800&&G.phase==='flying';i++)G.tick(1/120);assert.notEqual(G.phase,'flying');if(G.time<G.nextShotAt)G.tick(G.nextShotAt-G.time);}
 function park(G){for(const a of G.arrows){Matter.Body.setPosition(a.body,{x:390,y:1350});Matter.Body.setVelocity(a.body,{x:0,y:0});}}
 function armor(G){G.bricks.forEach(b=>{b.type='normal';b.hp=b.max=100;b.frozen=false;});}
-test('69 single-level choices, stable drafts and one selection per level',()=>{
-  const {G,read}=boot();assert.equal(G.skillCatalog.length,69);assert.ok(G.skillCatalog.every(s=>s.max===1));assert.equal(G.phase,'draft');assert.equal(G.shoot(0,100),false);assert.equal(G.buy('arrow'),false);
+test('81 single-level choices, stable drafts and one selection per level',()=>{
+  const {G,read}=boot();assert.equal(G.skillCatalog.length,81);assert.ok(G.skillCatalog.every(s=>s.max===1));assert.equal(G.phase,'draft');assert.equal(G.shoot(0,100),false);assert.equal(G.buy('arrow'),false);
   assert.equal(JSON.stringify(boot(read()).G.state.draft),JSON.stringify(G.state.draft));
   const id=G.state.draft.options[0];assert.equal(G.chooseSkill('invalid'),false);assert.equal(G.chooseSkill(id),true);assert.equal(G.chooseSkill(id),false);assert.equal(Object.keys(G.state.skills).length,1);assert.equal(boot(read()).G.skillRank(id),1);
 });
@@ -66,7 +66,7 @@ test('ordinary homing prioritizes an exposed nearby core instead of steering awa
 });
 test('weighted draws are unique and observed inclusion matches displayed probabilities',()=>{
   const {G}=boot(),counts=Object.fromEntries(G.skillCatalog.map(s=>[s.id,0])),n=60000;
-  assert.equal(new Set(G.skillCatalog.map(s=>s.weight)).size,69);
+  assert.equal(new Set(G.skillCatalog.map(s=>s.weight)).size,75);
   assert.ok(Math.abs(G.skillCatalog.reduce((sum,s)=>sum+s.chance,0)-3)<1e-10);
   for(let i=0;i<n;i++){const options=G.rollSkills();assert.equal(new Set(options).size,3);for(const id of options)counts[id]++;}
   for(const s of G.skillCatalog){assert.ok(s.tier in G.skillTiers);assert.ok(Math.abs(counts[s.id]/n-s.chance)<.006,s.id);}

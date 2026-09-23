@@ -23,6 +23,11 @@ internal object GameOrientationPolicy {
         applyRequestedOrientation(activity, resolveRequestedOrientation(isInMultiWindowMode))
     }
 
+    /**
+     * The SlingBreak boot overlay is a portrait minigame, so the game window is deliberately
+     * flipped to portrait while the overlay is up. The game canvas itself must never be derived
+     * from that transient window (see RenderSurfaceManager.resolveVirtualResolutionForViewport).
+     */
     fun applyBootOverlayOrientation(activity: Activity, isInMultiWindowMode: Boolean) {
         val requestedOrientation = if (isInMultiWindowMode) {
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

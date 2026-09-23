@@ -11,18 +11,12 @@
         android:layout_height="match_parent"
         android:background="#000000" />
 
-    <FrameLayout
-        android:id="@+id/slingBreakBootOverlay"
+    <ViewStub
+        android:id="@+id/slingBreakBootOverlayStub"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#F5F6F3">
-
-        <WebView
-            android:id="@+id/slingBreakBootGame"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-    </FrameLayout>
+        android:inflatedId="@+id/slingBreakBootOverlay"
+        android:layout="@layout/boot_overlay_sling_break" />
 
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/bootOverlay"

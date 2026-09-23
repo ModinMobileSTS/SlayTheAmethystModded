@@ -46,7 +46,7 @@
             android:enableOnBackInvokedCallback="true"
             android:process=":game"
             android:resizeableActivity="true"
-            android:screenOrientation="unspecified"
+            android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.SlayTheAmethyst.Game"
             tools:targetApi="33">
 
@@ -98,6 +98,16 @@
             android:process=":diag">
             <intent-filter>
                 <action android:name="io.stamethyst.action.ADB_STAGE_JVM_LOG" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Debug-only adb entry point for the AI patch smoke test. Runs in the launcher process,
+             which the smoke test requires, and does nothing in a release build. -->
+        <receiver
+            android:name="io.stamethyst.backend.mods.AgentPatchSmokeTestAdbReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.stamethyst.action.RUN_AGENT_PATCH_SMOKE_TEST" />
             </intent-filter>
         </receiver>
 
