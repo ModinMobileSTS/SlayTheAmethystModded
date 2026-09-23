@@ -1461,7 +1461,6 @@ private fun DependencyFolderListItem(
                             isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                             isDraggedInOverlay = false,
                             showModFileName = showModFileName,
-                            showActionsButton = false,
                             setExpanded = setCardExpanded,
                             selectionEnabled = false,
                             fileActionsEnabled = false,

@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,9 +64,6 @@ internal fun ModCardBodyContent(
     mod: ModItemUi,
     isExpanded: Boolean,
     showModFileName: Boolean,
-    showActionsButton: Boolean,
-    actionsEnabled: Boolean,
-    onActionsClick: () -> Unit,
     modSuggestionText: String? = null,
     suggestionUnread: Boolean = false,
     suggestionBadgeEnabled: Boolean = true,
@@ -111,7 +108,9 @@ internal fun ModCardBodyContent(
             Text(
                 text = stringResource(R.string.main_mod_modid_format, resolvedModId),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             ModCardBadges(
                 mod = mod,
@@ -199,20 +198,6 @@ internal fun ModCardBodyContent(
                     enabled = mod.enabled,
                     onCheckedChange = { enabled -> onSetAgentPatchEnabled(patch, enabled) },
                 )
-            }
-        }
-    }
-    if (showActionsButton && isExpanded) {
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            OutlinedButton(
-                onClick = onActionsClick,
-                enabled = actionsEnabled
-            ) {
-                Text(text = stringResource(R.string.main_mod_actions))
             }
         }
     }
@@ -536,6 +521,32 @@ private fun ModSuggestionBadge(
 }
 
 @Composable
+internal fun ModSuggestionInfoButton(
+    enabled: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(
+                enabled = enabled,
+                onClickLabel = contentDescription,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        ModCardIconBadge(
+            iconResId = R.drawable.ic_error_outline,
+            contentDescription = null,
+            enabled = enabled,
+        )
+    }
+}
+
+@Composable
 private fun WorkshopUpdateBadge(
     enabled: Boolean,
     onClick: () -> Unit,
@@ -626,7 +637,7 @@ private fun PriorityLoadBadge(priority: Int) {
 }
 
 @Composable
-private fun ModCardIconBadge(
+internal fun ModCardIconBadge(
     iconResId: Int,
     contentDescription: String?,
     enabled: Boolean = true,

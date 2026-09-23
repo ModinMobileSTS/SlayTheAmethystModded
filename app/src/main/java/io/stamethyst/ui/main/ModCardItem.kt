@@ -29,6 +29,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,6 +57,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -83,6 +86,7 @@ internal data class ModCardDragStartInfo(
 private val MOD_DRAG_HANDLE_SLOT_WIDTH = 28.dp
 private val MOD_BATCH_CHECKBOX_SLOT_WIDTH = 48.dp
 private val MOD_ENABLE_CHECKBOX_SLOT_WIDTH = 48.dp
+private val MOD_ACTIONS_BUTTON_SLOT_WIDTH = 44.dp
 private val FavoriteCardBorderColor = Color(0xFFF2A8CB)
 private const val WORKSHOP_UPDATE_CHANGE_NOTES_TIMEOUT_MS = 8_000L
 
@@ -128,7 +132,6 @@ internal fun ModCard(
     isExpanded: Boolean,
     isDraggedInOverlay: Boolean,
     showModFileName: Boolean,
-    showActionsButton: Boolean = true,
     setExpanded: (Boolean) -> Unit,
     selectionEnabled: Boolean,
     fileActionsEnabled: Boolean,
@@ -148,6 +151,8 @@ internal fun ModCard(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val actionsContentDescription = stringResource(R.string.main_mod_actions)
+    val showAiEditorNewBadge = AiEditorNewBadgeStore.shouldShow(context)
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
@@ -335,13 +340,6 @@ internal fun ModCard(
             mod = mod,
             isExpanded = isExpanded,
             showModFileName = showModFileName,
-            showActionsButton = showActionsButton,
-            actionsEnabled = actionsEnabled,
-            onActionsClick = {
-                if (actionsEnabled) {
-                    showActionsDialog = true
-                }
-            },
             modSuggestionText = suggestionText,
             suggestionUnread = !suggestionRead,
             suggestionBadgeEnabled = !batchSelectionMode,
@@ -388,6 +386,35 @@ internal fun ModCard(
                 }
             },
             headerTrailing = {
+                Box(
+                    modifier = Modifier
+                        .width(MOD_ACTIONS_BUTTON_SLOT_WIDTH * normalControlProgress)
+                        .clipToBounds()
+                        .graphicsLayer {
+                            alpha = normalControlProgress
+                            scaleX = 0.86f + alpha * 0.14f
+                            scaleY = 0.86f + alpha * 0.14f
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(
+                        onClick = { showActionsDialog = true },
+                        enabled = actionsEnabled && !batchSelectionMode,
+                        modifier = Modifier.semantics {
+                            contentDescription = actionsContentDescription
+                        }
+                    ) {
+                        Text(
+                            text = "⋮",
+                            color = if (actionsEnabled && !batchSelectionMode) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+                            },
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .width(MOD_ENABLE_CHECKBOX_SLOT_WIDTH * normalControlProgress)
@@ -655,7 +682,11 @@ internal fun ModCard(
         onEditPriority = { showPriorityDialog = true },
         showOpenWorkshopDetails = mod.workshop != null,
         onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(mod) },
-        onOpenAiEditor = { callbacks.onOpenAiEditor(mod) },
+        showAiEditorNewBadge = showAiEditorNewBadge,
+        onOpenAiEditor = {
+            AiEditorNewBadgeStore.markSeen(context)
+            callbacks.onOpenAiEditor(mod)
+        },
         onAssociate = { callbacks.onAssociateMod(mod) },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
@@ -803,9 +834,6 @@ internal fun DraggingModCardOverlay(
                 mod = mod,
                 isExpanded = dragSession.isExpanded,
                 showModFileName = showModFileName,
-                showActionsButton = false,
-                actionsEnabled = false,
-                onActionsClick = {},
                 modSuggestionText = null,
                 suggestionBadgeEnabled = false,
                 onSuggestionClick = {},
