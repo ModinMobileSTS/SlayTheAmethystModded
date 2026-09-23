@@ -54,6 +54,8 @@ import io.stamethyst.backend.llm.LlmEndpoint
 import io.stamethyst.backend.llm.LlmSettings
 import io.stamethyst.backend.llm.LlmSettingsRepository
 import io.stamethyst.backend.llm.LlmReasoningEffort
+import io.stamethyst.backend.llm.LlmModelTestService
+import io.stamethyst.backend.llm.OpenAiCompatibleModelConfig
 import io.stamethyst.backend.llm.NewApiModel
 import io.stamethyst.backend.llm.NewApiModelService
 import io.stamethyst.backend.llm.DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
@@ -85,6 +87,14 @@ class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : View
     var remoteModelsEmpty by mutableStateOf(false)
         private set
     var saveError by mutableStateOf(false)
+        private set
+    var testingModel by mutableStateOf(false)
+        private set
+    var modelTestResult by mutableStateOf<String?>(null)
+        private set
+    var modelTestError by mutableStateOf<String?>(null)
+        private set
+    var showModelTestResult by mutableStateOf(false)
         private set
 
     // Drain queued edits even when navigation clears this ViewModel.
@@ -150,6 +160,28 @@ class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : View
                 }
             refreshingModels = false
         }
+    }
+
+    fun testModel(config: OpenAiCompatibleModelConfig) {
+        if (testingModel) return
+        testingModel = true
+        modelTestResult = null
+        modelTestError = null
+        showModelTestResult = true
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { LlmModelTestService().test(config) } }
+                .onSuccess { modelTestResult = it }
+                .onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    modelTestError = error.message?.takeIf(String::isNotBlank)
+                        ?: error.javaClass.simpleName
+                }
+            testingModel = false
+        }
+    }
+
+    fun dismissModelTestResult() {
+        showModelTestResult = false
     }
 
     companion object {
@@ -262,6 +294,25 @@ fun LauncherLlmSettingsScreen(
                     enabled = true,
                     onClick = { showModels = true },
                 )
+                OutlinedButton(
+                    onClick = {
+                        viewModel.testModel(
+                            OpenAiCompatibleModelConfig(
+                                baseUrl = draft.baseUrl,
+                                apiKey = draft.apiKey,
+                                modelName = draft.modelName,
+                                endpoint = draft.endpoint,
+                                requestTimeoutSeconds = draft.requestTimeoutSeconds,
+                                reasoningEffort = draft.reasoningEffort,
+                            ),
+                        )
+                    },
+                    enabled = !viewModel.testingModel && effectiveKey.isNotBlank() && validUrl && modelName.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(painterResource(R.drawable.ic_play_arrow), null, Modifier.size(18.dp))
+                    Text(stringResource(R.string.llm_test_model), Modifier.padding(start = 8.dp))
+                }
                 if (viewModel.refreshingModels) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
@@ -384,6 +435,39 @@ fun LauncherLlmSettingsScreen(
                     }
                 }
             }
+        )
+    }
+
+    if (viewModel.showModelTestResult) {
+        AlertDialog(
+            onDismissRequest = { if (!viewModel.testingModel) viewModel.dismissModelTestResult() },
+            title = { Text(stringResource(R.string.llm_test_model)) },
+            confirmButton = {
+                TextButton(
+                    enabled = !viewModel.testingModel,
+                    onClick = { viewModel.dismissModelTestResult() },
+                ) { Text(stringResource(R.string.llm_done)) }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    when {
+                        viewModel.testingModel -> {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Text(stringResource(R.string.llm_test_model_running))
+                        }
+                        viewModel.modelTestError != null -> {
+                            Text(
+                                stringResource(R.string.llm_test_model_failed, viewModel.modelTestError.orEmpty()),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        else -> {
+                            Text(stringResource(R.string.llm_test_model_success))
+                            Text(viewModel.modelTestResult.orEmpty())
+                        }
+                    }
+                }
+            },
         )
     }
 }

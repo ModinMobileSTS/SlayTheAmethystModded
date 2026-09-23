@@ -23,4 +23,8 @@
     <string name="llm_done">完成</string>
     <string name="llm_retry">重试</string>
     <string name="llm_invalid_url">请输入有效的 HTTP 或 HTTPS API 地址，当前仍使用上一次有效地址。</string>
+    <string name="llm_test_model">测试模型</string>
+    <string name="llm_test_model_running">正在测试模型…</string>
+    <string name="llm_test_model_success">模型响应：</string>
+    <string name="llm_test_model_failed">测试失败：%1$s</string>
 </resources>

@@ -23,4 +23,8 @@
     <string name="llm_done">Done</string>
     <string name="llm_retry">Retry</string>
     <string name="llm_invalid_url">Enter a valid HTTP or HTTPS API address. The last valid address is still in use.</string>
+    <string name="llm_test_model">Test model</string>
+    <string name="llm_test_model_running">Testing the model…</string>
+    <string name="llm_test_model_success">Model response:</string>
+    <string name="llm_test_model_failed">Test failed: %1$s</string>
 </resources>
