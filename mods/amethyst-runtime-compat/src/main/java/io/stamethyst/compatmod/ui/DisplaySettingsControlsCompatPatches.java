@@ -15,6 +15,7 @@ import javassist.CannotCompileException;
 import javassist.expr.ExprEditor;
 import javassist.expr.MethodCall;
 
+import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -23,6 +24,11 @@ public final class DisplaySettingsControlsCompatPatches {
         new WeakHashMap<DropdownMenu, Boolean>();
     private static final Map<ToggleButton, Boolean> DISABLED_TOGGLES =
         new WeakHashMap<ToggleButton, Boolean>();
+    private static Field toggleTypeField;
+    private static boolean toggleTypeFieldResolved;
+    private static Field dropdownListenerField;
+    private static boolean dropdownListenerFieldResolved;
+    private static boolean reflectionFailureLogged;
     private DisplaySettingsControlsCompatPatches() {
     }
 
@@ -30,16 +36,96 @@ public final class DisplaySettingsControlsCompatPatches {
         return dropdown != null && FIXED_DROPDOWNS.containsKey(dropdown);
     }
 
+    private static boolean isPanelDisplayDropdown(DropdownMenu dropdown) {
+        if (dropdown == null) {
+            return false;
+        }
+        Object listener = readField(getDropdownListenerField(), dropdown);
+        if (!(listener instanceof OptionsPanel)) {
+            return false;
+        }
+        OptionsPanel panel = (OptionsPanel) listener;
+        return dropdown == panel.resoDropdown || dropdown == panel.fpsDropdown;
+    }
+
     public static boolean shouldRenderDropdown(DropdownMenu dropdown) {
-        return !isFixedDropdown(dropdown);
+        return !isFixedDropdown(dropdown) && !isPanelDisplayDropdown(dropdown);
     }
 
     private static boolean isDisabledToggle(ToggleButton toggle) {
         return toggle != null && DISABLED_TOGGLES.containsKey(toggle);
     }
 
+    private static boolean isHiddenToggleType(ToggleButton toggle) {
+        if (toggle == null) {
+            return false;
+        }
+        Object type = readField(getToggleTypeField(), toggle);
+        if (!(type instanceof Enum)) {
+            return false;
+        }
+        String name = ((Enum<?>) type).name();
+        return "FULL_SCREEN".equals(name)
+            || "W_FULL_SCREEN".equals(name)
+            || "V_SYNC".equals(name);
+    }
+
     public static boolean shouldRenderToggle(ToggleButton toggle) {
-        return !isDisabledToggle(toggle);
+        return !isDisabledToggle(toggle) && !isHiddenToggleType(toggle);
+    }
+
+    private static Object readField(Field field, Object target) {
+        if (field == null || target == null) {
+            return null;
+        }
+        try {
+            return field.get(target);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static Field getToggleTypeField() {
+        if (toggleTypeFieldResolved) {
+            return toggleTypeField;
+        }
+        toggleTypeFieldResolved = true;
+        try {
+            Field field = ToggleButton.class.getDeclaredField("type");
+            field.setAccessible(true);
+            toggleTypeField = field;
+        } catch (Exception exception) {
+            logReflectionFailure("ToggleButton.type", exception);
+        }
+        return toggleTypeField;
+    }
+
+    private static Field getDropdownListenerField() {
+        if (dropdownListenerFieldResolved) {
+            return dropdownListenerField;
+        }
+        dropdownListenerFieldResolved = true;
+        try {
+            Field field = DropdownMenu.class.getDeclaredField("listener");
+            field.setAccessible(true);
+            dropdownListenerField = field;
+        } catch (Exception exception) {
+            logReflectionFailure("DropdownMenu.listener", exception);
+        }
+        return dropdownListenerField;
+    }
+
+    private static void logReflectionFailure(String fieldName, Exception exception) {
+        if (reflectionFailureLogged) {
+            return;
+        }
+        reflectionFailureLogged = true;
+        System.out.println(
+            "[amethyst-runtime-compat] display settings field lookup failed field="
+                + fieldName
+                + " reason="
+                + exception
+        );
     }
 
     private static void clearHitbox(ToggleButton toggle) {
@@ -175,11 +261,6 @@ public final class DisplaySettingsControlsCompatPatches {
             return new ExprEditor() {
                 @Override
                 public void edit(MethodCall call) throws CannotCompileException {
-                    if (DropdownMenu.class.getName().equals(call.getClassName())
-                        && "render".equals(call.getMethodName())) {
-                        call.replace("{ }");
-                        return;
-                    }
                     if (ToggleButton.class.getName().equals(call.getClassName())
                         && "render".equals(call.getMethodName())) {
                         call.replace(
