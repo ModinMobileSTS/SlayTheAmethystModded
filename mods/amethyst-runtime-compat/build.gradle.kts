@@ -13,7 +13,7 @@ java {
 val appProjectRef = rootProject.project(":app")
 
 dependencies {
-    compileOnly(files(rootProject.file("build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar")))
+    compileOnly(files(rootProject.file("build-deps/desktop.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
     testImplementation(libs.junit4)

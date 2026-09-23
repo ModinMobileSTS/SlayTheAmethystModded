@@ -37,6 +37,46 @@ fun readReleaseSigningProperty(envName: String, gradlePropertyName: String): Str
     providers.environmentVariable(envName).orNull?.trim().orEmpty()
         .ifEmpty { readGradleProperty(gradlePropertyName, readLocalProperty(gradlePropertyName)) }
 
+data class SigningMaterial(
+    val storeFile: File,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String
+)
+
+// The keystore and its credentials live together under build-deps/<kind>-signature/ so a
+// fresh clone only needs one directory per variant. Environment variables and Gradle
+// properties still win for release builds so CI keeps using its stored secrets.
+fun readSignatureDirectory(kind: String): SigningMaterial? {
+    val directory = rootProject.layout.projectDirectory.dir("build-deps/${kind}-signature").asFile
+    if (!directory.isDirectory) {
+        return null
+    }
+
+    val properties = Properties().apply {
+        val file = File(directory, "signing.properties")
+        if (file.isFile) {
+            file.reader(StandardCharsets.UTF_8).use(::load)
+        }
+    }
+
+    fun value(name: String, default: String = ""): String =
+        properties.getProperty(name)?.trim().orEmpty().ifEmpty { default }
+
+    val storeFile = File(directory, value("storeFile", "keystore.jks"))
+    val storePassword = value("storePassword")
+    val keyAlias = value("keyAlias")
+    if (!storeFile.isFile || storePassword.isEmpty() || keyAlias.isEmpty()) {
+        return null
+    }
+    return SigningMaterial(
+        storeFile = storeFile,
+        storePassword = storePassword,
+        keyAlias = keyAlias,
+        keyPassword = value("keyPassword").ifEmpty { storePassword }
+    )
+}
+
 fun String?.toBuildConfigStringLiteral(): String =
     "\"" + (this ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
@@ -51,10 +91,16 @@ fun Iterable<String>.toBuildConfigStringArrayLiteral(): String =
 fun File.normalizedBuildPath(): String =
     absolutePath.replace('\\', '/').lowercase()
 
+val releaseSignature = readSignatureDirectory("release")
+val debugSignature = readSignatureDirectory("debug")
 val releaseStoreFilePath = readReleaseSigningProperty("RELEASE_STORE_FILE", "release.storeFile")
+    .ifEmpty { releaseSignature?.storeFile?.absolutePath.orEmpty() }
 val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", "release.storePassword")
+    .ifEmpty { releaseSignature?.storePassword.orEmpty() }
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
+    .ifEmpty { releaseSignature?.keyAlias.orEmpty() }
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
+    .ifEmpty { releaseSignature?.keyPassword.orEmpty() }
 val defaultResourcePackDownloadUrl =
     "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.6/resources.zip"
 val defaultResourcePackDownloadFallbackUrls = listOf(
@@ -93,17 +139,23 @@ val hasReleaseSigning = listOf(
     releaseKeyAlias,
     releaseKeyPassword
 ).all(String::isNotEmpty)
+// Signing config used when no release keystore is configured: the shared repository debug
+// keystore when present, otherwise AGP's built-in debug config.
+val fallbackSigningConfigName = if (debugSignature != null) "sharedDebug" else "debug"
 val isReleaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
     taskName.contains("Release", ignoreCase = true)
 }
 
 if (hasReleaseSigning && !File(releaseStoreFilePath).isFile) {
-    throw GradleException("RELEASE_STORE_FILE does not exist: $releaseStoreFilePath")
+    throw GradleException(
+        "Release keystore does not exist: $releaseStoreFilePath. " +
+            "Place it under build-deps/release-signature/ or set RELEASE_STORE_FILE."
+    )
 }
 if (isReleaseTaskRequested && !hasReleaseSigning) {
     logger.warn(
         "Release signing configuration missing; falling back to the debug signing config " +
-            "for local release tasks."
+            "for local release tasks. Provide build-deps/release-signature/ or RELEASE_STORE_* env vars."
     )
 }
 
@@ -153,6 +205,16 @@ android {
                 keyPassword = releaseKeyPassword
             }
         }
+        // A repository-local debug keystore so every checkout shares one debug signature.
+        // Left untouched when build-deps/debug-signature/ is absent.
+        debugSignature?.let { signature ->
+            create("sharedDebug") {
+                storeFile = signature.storeFile
+                storePassword = signature.storePassword
+                keyAlias = signature.keyAlias
+                keyPassword = signature.keyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -162,7 +224,7 @@ android {
             signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
-                signingConfigs.getByName("debug")
+                signingConfigs.getByName(fallbackSigningConfigName)
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -185,6 +247,9 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            if (debugSignature != null) {
+                signingConfig = signingConfigs.getByName("sharedDebug")
+            }
         }
     }
 

@@ -66,7 +66,7 @@ def read_gradle_property(name: str, default: str = "") -> str:
     return default
 
 
-def resolve_required_env_value(name: str) -> str:
+def resolve_env_value(name: str, default: str = "") -> str:
     value = os.environ.get(name)
     if value and value.strip():
         return value
@@ -88,7 +88,21 @@ def resolve_required_env_value(name: str) -> str:
                     continue
         except ImportError:
             pass
-    raise RuntimeError(f"Missing environment variable: {name}")
+    return default
+
+
+def read_signing_properties(directory: Path) -> dict[str, str]:
+    properties_file = directory / "signing.properties"
+    if not properties_file.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for line in properties_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
 
 
 def resolve_gradle_user_home() -> Path:
@@ -146,16 +160,48 @@ def clear_release_native_build_cache() -> None:
 
 
 def with_release_env(store_file: str, key_alias: str) -> dict[str, str]:
-    root = repo_root()
-    resolved_store_file = resolve_repo_path(store_file) if store_file.strip() else root / "signing" / "stamethyst-upload.jks"
+    signature_directory = repo_root() / "build-deps" / "release-signature"
+    properties = read_signing_properties(signature_directory)
+
+    if store_file.strip():
+        resolved_store_file = resolve_repo_path(store_file)
+    else:
+        env_store_file = resolve_env_value("RELEASE_STORE_FILE")
+        if env_store_file:
+            resolved_store_file = resolve_repo_path(env_store_file)
+        else:
+            store_file_name = properties.get("storeFile", "").strip() or "keystore.jks"
+            resolved_store_file = (signature_directory / store_file_name).resolve()
+
     if not resolved_store_file.exists():
-        raise RuntimeError(f"Missing release keystore: {resolved_store_file}")
+        raise RuntimeError(
+            f"Missing release keystore: {resolved_store_file}. "
+            "Place it under build-deps/release-signature/ or pass --store-file."
+        )
+
+    store_password = resolve_env_value("RELEASE_STORE_PASSWORD", properties.get("storePassword", "").strip())
+    if not store_password:
+        raise RuntimeError(
+            "Missing release store password: set RELEASE_STORE_PASSWORD or add storePassword to "
+            "build-deps/release-signature/signing.properties."
+        )
+    resolved_key_alias = (
+        key_alias.strip()
+        or resolve_env_value("RELEASE_KEY_ALIAS", properties.get("keyAlias", "").strip())
+        or "upload"
+    )
+    key_password = resolve_env_value(
+        "RELEASE_KEY_PASSWORD",
+        properties.get("keyPassword", "").strip() or store_password,
+    )
+
     env = os.environ.copy()
     env["GRADLE_USER_HOME"] = str(resolve_gradle_user_home())
     env["RELEASE_STORE_FILE"] = str(resolved_store_file)
-    env["RELEASE_STORE_PASSWORD"] = resolve_required_env_value("RELEASE_STORE_PASSWORD")
-    env["RELEASE_KEY_ALIAS"] = key_alias
-    env["RELEASE_KEY_PASSWORD"] = resolve_required_env_value("RELEASE_KEY_PASSWORD")
+    env["RELEASE_STORE_PASSWORD"] = store_password
+    env["RELEASE_KEY_ALIAS"] = resolved_key_alias
+    env["RELEASE_KEY_PASSWORD"] = key_password
+    print(f"Release keystore: {resolved_store_file}")
     print(f"Gradle user home: {env['GRADLE_USER_HOME']}")
     return env
 

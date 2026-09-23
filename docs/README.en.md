@@ -41,7 +41,7 @@
 </p>
 
 > [!IMPORTANT]
-> This repository does **not** ship the Slay the Spire desktop jar. You must provide the game files from your own Steam installation before building.
+> This repository does **not** ship the Slay the Spire desktop jar. Place `desktop.jar` and `jre8-pojav.zip` under `build-deps/` before building.
 
 <a id="highlights"></a>
 
@@ -63,16 +63,40 @@
 
 ### 1. Provide build-time dependencies
 
-Download `build-deps.tar.gz` from the private dependency release and extract it at the
-repository root. The build uses the project-local `build-deps/` directory directly;
-no Steam installation or path environment variable is required.
+The build reads only the repository-local `build-deps/` directory; no Steam installation or path environment variable is required. Required files:
 
-Required files:
-- `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
-- `build-deps/runtime-pack/jre8-pojav.zip`
+| File | Source |
+| --- | --- |
+| `build-deps/desktop.jar` | Copy `steamapps/common/SlayTheSpire/desktop-1.0.jar` from your own Steam installation and rename it to `desktop.jar` |
+| `build-deps/jre8-pojav.zip` | https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/download/pojav-jre8/jre8-pojav.zip |
+
+Both files can be placed under `build-deps/` manually. **When a build finds one missing, the `ensureBuildDependencies` task downloads the dependency bundle and extracts it automatically** (default: `build-deps.tar.gz`, which contains both files):
+
+```
+https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/download/deps-20260305/build-deps.tar.gz
+```
+
+Override the URL with `-PbuildDeps.bundleUrl=<url>`; place the files manually for offline builds.
+
+Optional signing directories (a shared debug signature, and release signing without environment variables):
+
+- `build-deps/debug-signature/`: overrides the AGP default debug keystore.
+- `build-deps/release-signature/`: release signing.
+
+Both directories have the same shape: a keystore file plus a `signing.properties`:
+
+```properties
+# build-deps/release-signature/signing.properties
+storeFile=keystore.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+`storeFile` defaults to `keystore.jks`; `keyPassword` defaults to `storePassword`. Release builds still prefer `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` environment variables and `release.*` Gradle properties, and only fall back to `build-deps/release-signature/` when all of them are empty.
 
 Dependency download sources:
-- Build dependency bundle: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
+- Build dependency bundle (contains `desktop.jar` and `jre8-pojav.zip`): [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
 - Native library market: [ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
 
 > [!NOTE]
@@ -101,7 +125,13 @@ When multiple devices are connected, pass the target device serial:
 > [!IMPORTANT]
 > For `Release` builds, prefer the workflow documented in the [Release Automation Guide](./release-automation/README.md) to avoid signing mismatches.
 
-Use the standard Android signing environment variables:
+Recommended: place the signing material under `build-deps/release-signature/` (see above), then build directly:
+
+```bash
+./gradlew :app:assembleRelease
+```
+
+Or use the standard Android signing environment variables (they take precedence over the signing directory):
 
 ```powershell
 $env:RELEASE_STORE_FILE="C:\path\to\release-signing.jks"

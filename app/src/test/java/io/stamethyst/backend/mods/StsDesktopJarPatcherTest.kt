@@ -359,7 +359,7 @@ class StsDesktopJarPatcherTest {
     fun shouldPatchStsEntry_coversEveryNewClassIntroducedIntoPatchedPackages() {
         val patchJar = File("../patches/gdx-patch/build/libs/gdx-patch.jar")
             .takeIf { it.isFile } ?: return
-        val vanillaJar = File("../build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar")
+        val vanillaJar = File("../build-deps/desktop.jar")
             .takeIf { it.isFile } ?: return
 
         val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(

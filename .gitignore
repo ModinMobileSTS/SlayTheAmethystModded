@@ -22,7 +22,11 @@ build/
 signing/*
 
 # Local build dependency bundle
-build-deps/
+build-deps/*
+# Shared debug signing (public, non-secret debug keystore) is versioned so every
+# checkout and CI share one debug signature. The release keystore stays ignored.
+!build-deps/debug-signature/
+!build-deps/debug-signature/**
 app/src/main/assets/components/jre
 
 # Temporary local workspace files
