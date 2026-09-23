@@ -25,6 +25,7 @@ import io.stamethyst.backend.launch.MainProcessLaunchPreparationCoordinator
 import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
+import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.StsJarValidator
@@ -222,6 +223,7 @@ class LauncherActivity : AppCompatActivity() {
         super.onResume()
         LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
+        WorkshopDownloadProcessService.startNextQueued(this)
         maybeScheduleGameReturnAnalysis()
     }
 
