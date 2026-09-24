@@ -36,6 +36,11 @@ class LauncherConfigTargetFpsTest {
     }
 
     @Test
+    fun normalizeTargetFpsFloat_preservesUnlimitedEndpoint() {
+        assertEquals(0f, LauncherConfig.normalizeTargetFps(0f), 0f)
+    }
+
+    @Test
     fun normalizeTargetFps_stillFallsBackToDefaultForUnsupportedValues() {
         assertEquals(5, LauncherConfig.normalizeTargetFps(4))
         assertEquals(25, LauncherConfig.normalizeTargetFps(24))

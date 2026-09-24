@@ -1339,6 +1339,13 @@ object LauncherConfig {
         return snapped.coerceIn(MIN_TARGET_FPS, MAX_TARGET_FPS)
     }
 
+    internal fun normalizeTargetFps(targetFps: Float): Float {
+        return normalizeTargetFps(
+            targetFps.takeIf { it >= UNLIMITED_TARGET_FPS.toFloat() && !it.isNaN() }
+                ?.roundToInt() ?: DEFAULT_TARGET_FPS
+        ).toFloat()
+    }
+
     fun readTargetFps(context: Context): Int {
         // StsGameActivity runs in the :game process. Reload this value from the shared file so a
         // setting changed in the launcher process cannot leave the game process on an old value.
@@ -1377,9 +1384,7 @@ object LauncherConfig {
     }
 
     fun saveTargetFps(context: Context, targetFps: Float) {
-        val normalizedTargetFps = normalizeTargetFps(
-            targetFps.takeIf { it > 0f && !it.isNaN() }?.roundToInt() ?: DEFAULT_TARGET_FPS
-        ).toFloat()
+        val normalizedTargetFps = normalizeTargetFps(targetFps)
         prefs(context, crossProcess = true).edit(commit = true) {
             putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps.roundToInt())
             putString(PREF_KEY_TARGET_FPS_EXACT, normalizedTargetFps.toString())
