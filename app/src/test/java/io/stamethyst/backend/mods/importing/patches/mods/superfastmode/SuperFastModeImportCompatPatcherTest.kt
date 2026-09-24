@@ -75,6 +75,42 @@ class SuperFastModeImportCompatPatcherTest {
         assertTrue((prefix + postfix).none { it.owner.contains("AbstractDungeon") })
     }
 
+    @Test fun `generated guard runs without loading dungeon classes or new fields`() {
+        val guardName = "skrelpoid.superfastmode.patches.BossRewardLerpGuard"
+        val modName = "skrelpoid.superfastmode.SuperFastMode"
+        val guardBytes = SuperFastModeImportCompatPatcher.createGuardClass()
+        val modWriter = ClassWriter(0)
+        modWriter.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, modName.replace('.', '/'), null,
+            "java/lang/Object", null)
+        modWriter.visitField(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "isInstantLerp", "Z", null, null).visitEnd()
+        modWriter.visitEnd()
+        val classLoader = object : ClassLoader(null) {
+            override fun findClass(name: String): Class<*> {
+                val bytes = when (name) {
+                    guardName -> guardBytes
+                    modName -> modWriter.toByteArray()
+                    else -> throw ClassNotFoundException(name)
+                }
+                return defineClass(name, bytes, 0, bytes.size)
+            }
+        }
+        val mod = classLoader.loadClass(modName)
+        val guard = classLoader.loadClass(guardName)
+        val toggle = mod.getField("isInstantLerp")
+        try {
+            for (before in listOf(true, false)) {
+                toggle.setBoolean(null, before)
+                guard.getMethod("Prefix").invoke(null)
+                assertFalse(toggle.getBoolean(null))
+                guard.getMethod("Postfix").invoke(null)
+                assertEquals(before, toggle.getBoolean(null))
+                assertNull(System.getProperty("amethyst.superfastmode.boss_reward_instant_lerp"))
+            }
+        } finally {
+            System.clearProperty("amethyst.superfastmode.boss_reward_instant_lerp")
+        }
+    }
+
     private fun legacyV2Fixture(
         name: String = "skrelpoid/superfastmode/patches/MathUtilsPatches\$LerpPatch"
     ): ByteArray {

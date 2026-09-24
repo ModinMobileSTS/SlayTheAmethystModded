@@ -26,7 +26,7 @@ internal object SuperFastModeImportCompatPatcher {
     private const val GUARD_ENTRY = "skrelpoid/superfastmode/patches/BossRewardLerpGuard.class"
     private const val GUARD_OWNER = "skrelpoid/superfastmode/patches/BossRewardLerpGuard"
     private const val MOD = "skrelpoid/superfastmode/SuperFastMode"
-    private const val FIELD = "previousInstantLerp"
+    private const val SAVE_KEY = "amethyst.superfastmode.boss_reward_instant_lerp"
 
     @Throws(IOException::class)
     fun patchInPlace(jar: File): Boolean {
@@ -137,11 +137,14 @@ internal object SuperFastModeImportCompatPatcher {
         annotation.visit("clz", Type.getObjectType("com/megacrit/cardcrawl/screens/select/BossRelicSelectScreen"))
         annotation.visit("method", "update")
         annotation.visitEnd()
-        writer.visitField(Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC, FIELD, "Z", null, null).visitEnd()
         val prefix = writer.visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "Prefix", "()V", null, null)
         prefix.visitCode()
+        prefix.visitLdcInsn(SAVE_KEY)
         prefix.visitFieldInsn(Opcodes.GETSTATIC, MOD, "isInstantLerp", "Z")
-        prefix.visitFieldInsn(Opcodes.PUTSTATIC, GUARD_OWNER, FIELD, "Z")
+        prefix.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/String", "valueOf", "(Z)Ljava/lang/String;", false)
+        prefix.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "setProperty",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false)
+        prefix.visitInsn(Opcodes.POP)
         prefix.visitInsn(Opcodes.ICONST_0)
         prefix.visitFieldInsn(Opcodes.PUTSTATIC, MOD, "isInstantLerp", "Z")
         prefix.visitInsn(Opcodes.RETURN)
@@ -149,8 +152,15 @@ internal object SuperFastModeImportCompatPatcher {
         prefix.visitEnd()
         val postfix = writer.visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "Postfix", "()V", null, null)
         postfix.visitCode()
-        postfix.visitFieldInsn(Opcodes.GETSTATIC, GUARD_OWNER, FIELD, "Z")
+        postfix.visitLdcInsn(SAVE_KEY)
+        postfix.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "getProperty",
+            "(Ljava/lang/String;)Ljava/lang/String;", false)
+        postfix.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Boolean", "parseBoolean", "(Ljava/lang/String;)Z", false)
         postfix.visitFieldInsn(Opcodes.PUTSTATIC, MOD, "isInstantLerp", "Z")
+        postfix.visitLdcInsn(SAVE_KEY)
+        postfix.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "clearProperty",
+            "(Ljava/lang/String;)Ljava/lang/String;", false)
+        postfix.visitInsn(Opcodes.POP)
         postfix.visitInsn(Opcodes.RETURN)
         postfix.visitMaxs(1, 0)
         postfix.visitEnd()
