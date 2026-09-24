@@ -1,7 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.Properties
+import java.util.zip.ZipFile
 import org.gradle.api.tasks.PathSensitivity
 
 plugins {
@@ -10,6 +13,49 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     id("io.stamethyst.android-app-build")
+}
+
+// Incremental dex outputs can occasionally go stale while the Java compilation output is intact.
+// Fail the debug build instead of producing an APK that crashes before Application.onCreate.
+val verifyDebugApkEntrypoints = tasks.register("verifyDebugApkEntrypoints") {
+    dependsOn("packageDebug")
+    val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    inputs.file(apk)
+    doLast {
+        val requiredClasses = listOf(
+            "Lio/stamethyst/StsApplication;",
+            "Lio/stamethyst/LauncherActivity;",
+        )
+        ZipFile(apk.get().asFile).use { archive ->
+            val classes = archive.entries().asSequence()
+                .filter { it.name.matches(Regex("classes[0-9]*\\.dex")) }
+                .flatMap { entry ->
+                    val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                    val dex = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                    val stringIdsOffset = dex.getInt(0x3c)
+                    val typeIdsOffset = dex.getInt(0x44)
+                    val classDefsSize = dex.getInt(0x60)
+                    val classDefsOffset = dex.getInt(0x64)
+                    (0 until classDefsSize).asSequence().map { index ->
+                        val typeIndex = dex.getInt(classDefsOffset + index * 32)
+                        val stringIndex = dex.getInt(typeIdsOffset + typeIndex * 4)
+                        var offset = dex.getInt(stringIdsOffset + stringIndex * 4)
+                        while (bytes[offset++].toInt() and 0x80 != 0) Unit // skip ULEB128 length
+                        val start = offset
+                        while (bytes[offset] != 0.toByte()) offset++
+                        String(bytes, start, offset - start, Charsets.UTF_8)
+                    }.toList().asSequence()
+                }.toSet()
+            val missing = requiredClasses.filterNot { it in classes }
+            check(missing.isEmpty()) {
+                "Debug APK is missing startup classes: ${missing.joinToString()}. " +
+                    "Rebuild with :app:assembleDebug --rerun-tasks before installing."
+            }
+        }
+    }
+}
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    dependsOn(verifyDebugApkEntrypoints)
 }
 
 dependencies {
