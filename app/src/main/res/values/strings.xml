@@ -1176,7 +1176,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">Create a new patch workspace; this does not package, install, or enable a mod.</string>
     <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">Create or replace any file in this mod workspace.</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">Delete any file or directory in this mod workspace.</string>
-    <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">Decompile the parent mod under source/ into readable Java.</string>
+    <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">Prepare an on-demand parent JAR source snapshot.</string>
+    <string name="ai_mod_editor_tool_desc_inspect_agent_class">Inspect one parent mod class without extracting the JAR.</string>
+    <string name="ai_mod_editor_tool_desc_decompile_agent_class">Decompile one parent mod class and cache the source.</string>
+    <string name="ai_mod_editor_tool_desc_read_agent_mod_resource">Read one resource entry from the parent JAR.</string>
+    <string name="ai_mod_editor_tool_desc_list_agent_mod_entries">List parent JAR entries without extracting the archive.</string>
     <string name="ai_mod_editor_tool_desc_compile_agent_patch_source">Compile patch/src Java sources into patch classes.</string>
     <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">Package patch/ into a versioned patch mod jar.</string>
     <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">Update a packaged patch mod\'s version in place.</string>

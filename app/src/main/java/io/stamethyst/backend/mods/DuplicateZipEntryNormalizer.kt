@@ -163,4 +163,30 @@ internal object DuplicateZipEntryNormalizer {
             }
         }
     }
+
+    /**
+     * Creates a duplicate-free classpath overlay containing only class entries.
+     *
+     * A parent mod may be hundreds of megabytes because of textures, audio, or other resources.
+     * ECJ and CFR need bytecode for symbol resolution, not those resources, so copying only classes
+     * avoids turning a duplicate-entry workaround into a second full-size archive.
+     */
+    @Throws(IOException::class)
+    fun copyClassEntries(source: File, target: File) {
+        val seenNames = LinkedHashSet<String>()
+        ZipArchiveInputStream(BufferedInputStream(FileInputStream(source))).use { zipInput ->
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(target, false))).use { zipOut ->
+                while (true) {
+                    val entry = zipInput.nextZipEntry ?: break
+                    if (entry.isDirectory || !entry.name.endsWith(".class", ignoreCase = true)) continue
+                    if (!seenNames.add(entry.name)) continue
+                    val outEntry = ZipEntry(entry.name)
+                    if (entry.time >= 0L) outEntry.time = entry.time
+                    zipOut.putNextEntry(outEntry)
+                    JarFileIoUtils.copyStream(zipInput, zipOut)
+                    zipOut.closeEntry()
+                }
+            }
+        }
+    }
 }

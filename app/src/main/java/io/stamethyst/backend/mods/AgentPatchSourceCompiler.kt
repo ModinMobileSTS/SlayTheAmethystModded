@@ -175,20 +175,20 @@ object AgentPatchSourceCompiler {
 
     /**
      * Returns a zip ECJ can index: the jar itself when Android's [ZipFile] accepts it, otherwise a
-     * cached duplicate-free copy. A patched `desktop-1.0.jar` is normally already duplicate-free, so
-     * the common path copies nothing.
+     * cached duplicate-free class-only overlay. A patched `desktop-1.0.jar` is normally already
+     * duplicate-free, so the common path copies nothing and preserves the original JAR untouched.
      */
     private fun resolveCompileClasspathEntry(context: Context, jar: File): File? {
         if (isReadableZip(jar)) {
             return jar
         }
         val cacheDir = resolveAgentPatchCacheDir(context, COMPILE_CLASSPATH_CACHE_DIR) ?: return null
-        val cached = File(cacheDir, "${jar.name}-${jar.length()}-${jar.lastModified()}.jar")
+        val cached = File(cacheDir, "${jar.name}-${jar.length()}-${jar.lastModified()}-classes.jar")
         if (isReadableZip(cached)) {
             return cached
         }
         val copied = runCatching {
-            DuplicateZipEntryNormalizer.copyDeduplicated(jar, cached)
+            DuplicateZipEntryNormalizer.copyClassEntries(jar, cached)
         }.isSuccess
         if (!copied) {
             cached.delete()

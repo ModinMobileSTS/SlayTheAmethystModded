@@ -6,7 +6,6 @@ import org.objectweb.asm.Type
 import org.objectweb.asm.tree.ClassNode
 import java.io.File
 import java.util.Locale
-import java.util.zip.ZipFile
 
 data class AgentPatchMethodSignature(
     val name: String,
@@ -277,11 +276,7 @@ $returnStatement                }
                 return File(entry, "$internalName.class").takeIf(File::isFile)?.readBytes()
             }
             if (!entry.isFile) return null
-            return runCatching {
-                ZipFile(entry).use { zip ->
-                    zip.getEntry("$internalName.class")?.let { zip.getInputStream(it).use { input -> input.readBytes() } }
-                }
-            }.getOrNull()
+            return AgentModJarReader.readClassEntryBytes(entry, internalName)
         }
     }
 

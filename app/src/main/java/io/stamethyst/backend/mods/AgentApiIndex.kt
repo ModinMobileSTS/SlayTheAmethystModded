@@ -6,7 +6,6 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.zip.ZipFile
 
 /** One type found on the compile classpath, without its members. */
 data class ApiTypeSummary(
@@ -83,15 +82,7 @@ object AgentApiIndex {
                 .map { it.removeSuffix(".class").replace(File.separatorChar, '/') }
         }
         if (!entry.isFile || !entry.name.endsWith(".jar", ignoreCase = true)) return emptySequence()
-        val names = ArrayList<String>()
-        runCatching {
-            ZipFile(entry).use { zip ->
-                zip.entries().asSequence()
-                    .filter { !it.isDirectory && it.name.endsWith(".class") && !it.name.startsWith("META-INF/") }
-                    .forEach { names += it.name.removeSuffix(".class") }
-            }
-        }
-        return names.asSequence()
+        return AgentModJarReader.classEntries(entry).asSequence()
     }
 
     private fun readSummary(entry: File, internalName: String, origin: String): ApiTypeSummary? {
@@ -145,11 +136,7 @@ object AgentApiIndex {
             return File(entry, "$internalName.class").takeIf(File::isFile)?.readBytes()
         }
         if (!entry.isFile) return null
-        return runCatching {
-            ZipFile(entry).use { zip ->
-                zip.getEntry("$internalName.class")?.let { zip.getInputStream(it).use { input -> input.readBytes() } }
-            }
-        }.getOrNull()
+        return AgentModJarReader.readClassEntryBytes(entry, internalName)
     }
 
     private fun kindOf(access: Int): String = when {
@@ -299,9 +286,8 @@ object AgentApiIndex {
         classpath.firstOrNull { entry ->
             when {
                 entry.isDirectory -> File(entry, "$internalName.class").isFile
-                entry.isFile && entry.name.endsWith(".jar", ignoreCase = true) -> runCatching {
-                    ZipFile(entry).use { it.getEntry("$internalName.class") != null }
-                }.getOrDefault(false)
+                entry.isFile && entry.name.endsWith(".jar", ignoreCase = true) ->
+                    AgentModJarReader.hasClassEntry(entry, internalName)
                 else -> false
             }
         }

@@ -1181,7 +1181,11 @@
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">创建新的补丁工作区；不会打包、安装或启用模组。</string>
     <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">在此模组工作目录内新建或覆盖任意文件。</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">删除此模组工作目录内的任意文件或目录。</string>
-    <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">将 source/ 下的父模组反编译为可读 Java。</string>
+    <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">准备父模组 JAR 的按需源码快照。</string>
+    <string name="ai_mod_editor_tool_desc_inspect_agent_class">无需解压 JAR 即可检查单个父模组类。</string>
+    <string name="ai_mod_editor_tool_desc_decompile_agent_class">按需反编译单个父模组类并缓存源码。</string>
+    <string name="ai_mod_editor_tool_desc_read_agent_mod_resource">按需读取父模组 JAR 的资源条目。</string>
+    <string name="ai_mod_editor_tool_desc_list_agent_mod_entries">无需解压即可列出父模组 JAR 条目。</string>
     <string name="ai_mod_editor_tool_desc_compile_agent_patch_source">将 patch/src 中的 Java 源码编译为补丁类。</string>
     <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">将 patch/ 打包为带版本的补丁模组 jar。</string>
     <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">原地更新已打包补丁模组的版本。</string>

@@ -82,9 +82,8 @@ object AgentPatchModManager {
         val root = RuntimePaths.agentModWorkspaceRoot(context, parentSegment)
         val sourceRoot = RuntimePaths.agentModSourceRoot(context, parentSegment)
         val patchRoot = RuntimePaths.agentModPatchSourceRoot(context, parentSegment, patchId)
-        sourceRoot.mkdirs()
         patchRoot.mkdirs()
-        extractJar(sourceJar, sourceRoot)
+        val sourceHash = AgentModSourceSnapshot.prepare(root, sourceRoot, sourceJar)
 
         val cleanName = name.trim().ifBlank { "AI Patch: $resolvedParent" }
         val cleanVersion = version.trim().ifBlank { DEFAULT_PATCH_VERSION }
@@ -115,8 +114,10 @@ object AgentPatchModManager {
                 .put("name", cleanName)
                 .put("patch_id", patchId)
                 .put("source_path", sourceJar.canonicalPath)
-                .put("source_sha256", sha256(sourceJar))
+                .put("source_sha256", sourceHash)
                 .put("source_root", "source")
+                .put("source_mode", "on_demand")
+                .put("source_extracted", false)
                 .put("patch_source_root", "patch_source/$patchId")
                 .toString(2),
             StandardCharsets.UTF_8,
@@ -499,39 +500,6 @@ object AgentPatchModManager {
         )
     }
 
-    private fun extractJar(source: File, destination: File) {
-        ZipFile(source).use { zip ->
-            var count = 0
-            var total = 0L
-            zip.entries().asSequence().forEach { entry ->
-                if (entry.isDirectory) return@forEach
-                if (++count > MAX_FILES) throw IOException("The source mod contains too many files.")
-                val name = normalizeEntry(entry.name)
-                val target = destination.resolve(name)
-                target.parentFile?.mkdirs()
-                zip.getInputStream(entry).use { input ->
-                    target.outputStream().use { output ->
-                        val buffer = ByteArray(32 * 1024)
-                        var entryBytes = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            entryBytes += read
-                            total += read
-                            if (entryBytes > MAX_ENTRY_BYTES) {
-                                throw IOException("Source entry is too large: $name")
-                            }
-                            if (total > MAX_JAR_BYTES) {
-                                throw IOException("The source mod is too large.")
-                            }
-                            output.write(buffer, 0, read)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private fun zipDirectory(source: File, output: File) {
         ZipOutputStream(output.outputStream()).use { zip ->
             val files = source.walkTopDown()
@@ -603,16 +571,4 @@ object AgentPatchModManager {
     private fun patchModId(parentModId: String, patchId: String): String =
         "amethyst.ai.patch.${safeSegment(parentModId)}.${safeSegment(patchId)}"
 
-    private fun sha256(file: File): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(32 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
-    }
 }

@@ -4,8 +4,16 @@ import org.benf.cfr.reader.api.CfrDriver
 import org.benf.cfr.reader.api.OutputSinkFactory
 import org.benf.cfr.reader.api.SinkReturns
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
-/** Summary of turning an extracted parent JAR into a readable Java project. */
+data class AgentSingleClassDecompileResult(
+    val requestedClass: String,
+    val classEntry: String,
+    val source: String,
+)
+
+/** Summary of turning an extracted parent JAR into a readable Java project (legacy compatibility). */
 data class AgentPatchJarDecompileResult(
     val totalClasses: Int,
     val decompiledClasses: Int,
@@ -27,6 +35,63 @@ data class AgentPatchJarDecompileResult(
  */
 object AgentPatchClassDecompiler {
     const val DEFAULT_MAX_DECOMPILE_CLASSES = 3000
+
+    /**
+     * Decompiles one class without extracting the parent archive. CFR receives a tiny temporary JAR
+     * containing only the requested class while the original parent JAR remains on its classpath
+     * for reference resolution.
+     */
+    fun decompileClass(
+        jarFile: File,
+        binaryName: String,
+        classpath: String,
+        scratchDir: File? = null,
+    ): AgentSingleClassDecompileResult {
+        val entryName = AgentModJarReader.classEntryName(jarFile, binaryName)
+            ?: throw IllegalArgumentException("Class not found in parent mod: $binaryName")
+        val classBytes = AgentModJarReader.readEntryBytes(jarFile, entryName)
+            ?: throw IllegalArgumentException("Class bytes could not be read: $entryName")
+        val directory = scratchDir?.takeIf { it.isDirectory || it.mkdirs() }
+            ?: jarFile.parentFile?.takeIf { it.isDirectory }
+            ?: File(System.getProperty("java.io.tmpdir") ?: ".")
+        val temporaryJar = File.createTempFile("agent-class-", ".jar", directory)
+        try {
+            ZipOutputStream(temporaryJar.outputStream()).use { zip ->
+                zip.putNextEntry(ZipEntry(entryName))
+                zip.write(classBytes)
+                zip.closeEntry()
+            }
+            val source = StringBuilder()
+            val sink = OutputSinkFactoryAdapter { _, _, java ->
+                if (source.isEmpty()) source.append(java)
+            }
+            val options = buildMap {
+                put("silent", "true")
+                put("hideutf", "true")
+                put("comments", "false")
+                put("showversion", "false")
+                if (classpath.isNotBlank()) put("extraclasspath", classpath)
+            }
+            runCatching {
+                CfrDriver.Builder()
+                    .withOptions(options)
+                    .withOutputSink(sink)
+                    .build()
+                    .analyse(listOf(temporaryJar.absolutePath))
+            }.getOrElse { error ->
+                throw IllegalStateException(
+                    "CFR failed for $binaryName: ${error.message ?: error.javaClass.simpleName}",
+                    error,
+                )
+            }
+            if (source.isEmpty()) {
+                throw IllegalStateException("CFR produced no source for $binaryName")
+            }
+            return AgentSingleClassDecompileResult(binaryName, entryName, source.toString())
+        } finally {
+            temporaryJar.delete()
+        }
+    }
 
     /**
      * Turns an already-extracted JAR into a readable Java project in [sourceDir].

@@ -3,7 +3,8 @@
 ## Scope
 
 The AI mod editor lets the agent build a separate, versioned patch-mod revision for the selected mod.
-The original mod JAR is extracted for inspection and is never rewritten.
+The original mod JAR is held as a read-only, SHA-256-pinned snapshot and is never rewritten. Parent
+classes and resources are read or decompiled on demand; the full archive is not extracted.
 
 The patch-mod workspace is **not** created when the editor opens. It is created on demand by the
 agent through the `create_agent_patch_workspace` tool, and only when the user actually asks for a new change with no existing patch workspace to reuse.
@@ -15,7 +16,7 @@ The launcher stores AI artifacts under the STS runtime root:
 
 ```text
 agent_workspace/<modid>/
-  source/                 # parent mod extracted/decompiled; readable context, agent read-only
+  source/                 # on-demand decompiled class cache; readable context, agent read-only
   source-metadata.json
   patch_source/           # one isolated source tree per patch mod
     <patch_id>/
@@ -95,13 +96,13 @@ and [overflow budgeting](https://github.com/anomalyco/opencode/blob/dev/packages
 
 The editor exposes these tools for the selected mod workspace:
 
-- `list_agent_workspace`: list all extracted and generated files.
+- `list_agent_workspace`: list all materialized and generated files.
 - `read_agent_workspace_file`: read UTF-8 or base64 content from any workspace file.
 - `glob_agent_workspace`: find files by glob pattern (for example `**/*.java`), optionally scoped with `path`.
 - `grep_agent_workspace`: search workspace file contents by regular expression, optionally scoped with `path` and filtered by an `include` glob. Returns file, line number, and a preview of each matching line.
 - `create_agent_patch_workspace`: create and activate a new patch workspace/revision. Required arguments: `name` (the agent
   chooses it), optional `version` and `description`. Extracts the full parent JAR into the shared
-  `source/` tree and seeds a new `patch_source/<patch_id>/` with `ModTheSpire.json` and
+  source snapshot metadata and seeds a new `patch_source/<patch_id>/` with `ModTheSpire.json` and
   `agent-patch.json`. This only prepares a workspace; it does not compile, package, install, or enable a mod.
   Do not call it for changes to an existing patch revision: reuse that revision's `patch_source/<patch_id>/` tree,
   compile it with the same `patch_id`, and call `update_agent_patch_mod`.
@@ -110,8 +111,12 @@ The editor exposes these tools for the selected mod workspace:
   `source/` remains read-only context.
 - `delete_agent_workspace_file`: delete files or, with `recursive=true`, non-empty directories only
   under `patch_source/`. The `source/` tree and `patch_source/` root cannot be deleted.
-- `decompile_agent_mod_source`: extract and decompile the parent mod directly into the shared
-  `source/` tree. The tree is available to the agent through read/list tools and cannot be modified
+- `decompile_agent_mod_source`: prepare the parent JAR snapshot without extracting it.
+- `list_agent_mod_entries`: discover resource or class paths in the parent JAR without extraction.
+- `inspect_agent_class`: inspect one parent class and its exact declared API without extraction.
+- `decompile_agent_class`: decompile one parent class into the shared on-demand `source/` cache.
+- `read_agent_mod_resource`: read a bounded byte range from one parent JAR resource.
+  The `source/` tree is available to the agent through read/list tools and cannot be modified
   through workspace write/delete tools. See "On-device decompilation" below.
 - `read_agent_skill`: return a bundled reference skill, or list the available skills when `name` is
   omitted. The `basemod-and-stslib` skill documents the BaseMod 5.56.0 / StSLib 2.12.0 APIs the agent
@@ -229,13 +234,13 @@ processes the launcher already uses:
 ## Launcher Lifecycle
 
 1. Opening AI Edit creates no workspace. It only prepares the parent's conversation directory.
-2. When the user asks for inspection, the agent calls `decompile_agent_mod_source`, which extracts
-   and decompiles the parent directly into `<modid>/source/`.
+2. When the user asks for inspection, the agent calls `decompile_agent_mod_source`, which records a
+   SHA-256-pinned parent snapshot without extracting the parent into `<modid>/source/`.
 3. When the user asks for a new change and no existing patch revision can be reused, the agent calls
-   `create_agent_patch_workspace`, which prepares the shared `source/`, allocates a `patch_id`, and creates writable
+   `create_agent_patch_workspace`, which prepares the shared on-demand source cache, allocates a `patch_id`, and creates writable
    `<modid>/patch_source/<patch_id>/` for packaging. For follow-up changes, the agent edits the existing
    `patch_source/<patch_id>/` directly and updates that revision instead of creating another workspace.
-4. The agent reads the shared read-only source tree and writes a self-contained patch mod under its
+4. The agent reads selected classes/resources on demand and writes a self-contained patch mod under its
    dedicated `patch_source/<patch_id>/`.
 5. Packaging writes a JAR under `agent_mods/<modid>/` and injects the parent dependency into its manifest.
 6. The agent calls `smoke_test_agent_patch_mod` to prove the revision reaches the main menu.
@@ -285,7 +290,7 @@ APK and may be discarded.
 
 - Workspace paths are canonicalized and reject escapes outside the selected mod workspace. Agent writes
   and deletes are additionally restricted to `patch_source/`; `source/` is read-only agent context.
-- Source extraction, patch packaging, entry count, per-entry size, and total JAR size are bounded.
+- On-demand class/resource reads and patch packaging are bounded by byte limits.
 - A patch package must contain both root `ModTheSpire.json` and `agent-patch.json`.
 - Package output is written through a temporary file and verified as a readable ZIP before replacement.
 - The original parent JAR is never modified by the patch-mod workflow.
@@ -341,33 +346,35 @@ Two Android-specific details make this work:
   ECJ treat the environment as pre-Java-12, which is correct for `-target 1.8`.
 - **Duplicate JAR entries.** The shipped `desktop-1.0.jar` contains duplicate entry names, which
   Android's `java.util.zip.ZipFile` rejects, so ECJ cannot index it directly. `buildClasspath`
-  detects unreadable jars and substitutes a cached, duplicate-free copy produced by
-  `DuplicateZipEntryNormalizer.copyDeduplicated`. A patched `desktop-1.0.jar` is already
-  duplicate-free, so the common path copies nothing. The copy is content-addressed by name, size,
-  and mtime, so it is reused across compiles. It lives under the app cache, falling back to internal
-  storage when `cacheDir` is unusable, and is registered in `LauncherJunkFileCleaner`.
+  detects unreadable jars and substitutes a cached, duplicate-free class-only overlay produced by
+  `DuplicateZipEntryNormalizer.copyClassEntries`. Resources are not copied into this compile cache.
+  The overlay is content-addressed by name, size, and mtime, so it is reused across compiles. It
+  lives under the app cache, falling back to internal storage when `cacheDir` is unusable.
 - When a classpath jar still cannot be indexed (for example no writable scratch directory), the
   compile diagnostics list it under a warning instead of silently dropping it.
 
 Compiling arbitrary Java is intentionally limited to Java 8 language/bytecode and to the bundled
 compile classpath; the workflow does not run Gradle or fetch dependencies on the device.
 
-## On-device decompilation
+## On-device on-demand decompilation
 
-The parent JAR is bytecode, so the agent needs readable source to know what a class does before
-rewriting it. `decompile_agent_mod_source` extracts the parent JAR and decompiles the whole mod into
-`<modid>/source/`; `.java` files are written next to (and replace)
-the raw `.class` files, while resources are kept as-is. Classes CFR could not decompile keep their
-`.class` so nothing is lost. The resulting source tree is readable agent context and is protected from
-workspace writes/deletes. Agent-authored patch sources and generated patch metadata live under the
-separate writable `patch_source/<patch_id>/` tree for each patch mod.
+The parent JAR is bytecode, so the agent needs readable source for a class before rewriting behavior.
+`decompile_agent_mod_source` now only prepares a source snapshot. `decompile_agent_class` reads one
+class directly from the parent JAR, gives CFR a tiny temporary JAR containing that class, and uses the
+resolved compile classpath for references. The resulting `.java` is cached under `source/`; resources
+are read with `read_agent_mod_resource` and are never copied into the workspace by default. The source
+tree remains readable agent context and is protected from workspace writes/deletes. Agent-authored
+patch sources and generated patch metadata live under the separate writable `patch_source/<patch_id>/`
+tree for each patch mod.
 
 - CFR (`org.benf:cfr`, 0.152) is bundled in the APK and invoked through its `CfrDriver` API from the
   launcher process. CFR is compiled to class file 50 and does not execute the class it reads.
-- Decompilation is bounded: above `AgentPatchClassDecompiler.DEFAULT_MAX_DECOMPILE_CLASSES` (3000) the
-  archive is left as raw bytecode so a large parent mod cannot stall the launcher. `source-metadata.json`
-  records `source_decompiled` and the class counts.
-- Decompilation reuses the same deduplicated compile classpath used for ECJ, so references resolve.
+- Decompilation is bounded to one requested class per tool call. `source-metadata.json` records
+  `source_mode: on_demand`, the parent JAR SHA-256, and the number of materialized classes.
+- Class and resource reads use random-access `ZipFile` where possible and a sequential Commons
+  Compress fallback for duplicate-entry archives. If Android cannot index a duplicate-entry parent,
+  the compile cache stores only a deduplicated `.class` overlay rather than a second full-size copy.
+- A changed parent JAR hash clears the old source cache before new classes are materialized.
 
 ## Current Patch-Mod Format
 

@@ -59,6 +59,10 @@ internal fun agentToolDescriptionRes(name: String): Int = when (name) {
     "write_agent_workspace_file" -> R.string.ai_mod_editor_tool_desc_write_agent_workspace_file
     "delete_agent_workspace_file" -> R.string.ai_mod_editor_tool_desc_delete_agent_workspace_file
     "decompile_agent_mod_source" -> R.string.ai_mod_editor_tool_desc_decompile_agent_mod_source
+    "inspect_agent_class" -> R.string.ai_mod_editor_tool_desc_inspect_agent_class
+    "decompile_agent_class" -> R.string.ai_mod_editor_tool_desc_decompile_agent_class
+    "read_agent_mod_resource" -> R.string.ai_mod_editor_tool_desc_read_agent_mod_resource
+    "list_agent_mod_entries" -> R.string.ai_mod_editor_tool_desc_list_agent_mod_entries
     "compile_agent_patch_source" -> R.string.ai_mod_editor_tool_desc_compile_agent_patch_source
     "package_agent_patch_mod" -> R.string.ai_mod_editor_tool_desc_package_agent_patch_mod
     "update_agent_patch_mod" -> R.string.ai_mod_editor_tool_desc_update_agent_patch_mod
