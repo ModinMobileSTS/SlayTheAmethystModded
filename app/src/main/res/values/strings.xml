@@ -504,6 +504,7 @@ Do you still want to continue?</string>
     <string name="main_game_card_visibility_easytier">Virtual LAN</string>
     <string name="main_game_card_visibility_achievements">Achievements</string>
     <string name="main_game_card_visibility_renderer">Graphics renderer</string>
+    <string name="main_game_card_visibility_refresh_rate_detector">Refresh rate detector</string>
     <string name="main_renderer_quick_title">Graphics renderer</string>
     <string name="main_renderer_quick_accessibility">Current %1$s, switch to %2$s</string>
     <string name="main_renderer_quick_saved">Saved, applies next launch</string>

@@ -504,6 +504,7 @@
     <string name="main_game_card_visibility_easytier">虛擬區域網路</string>
     <string name="main_game_card_visibility_achievements">成就</string>
     <string name="main_game_card_visibility_renderer">圖形渲染</string>
+    <string name="main_game_card_visibility_refresh_rate_detector">螢幕更新率檢測</string>
     <string name="main_renderer_quick_title">圖形渲染</string>
     <string name="main_renderer_quick_accessibility">目前 %1$s，切換到 %2$s</string>
     <string name="main_renderer_quick_saved">已儲存，下次啟動生效</string>

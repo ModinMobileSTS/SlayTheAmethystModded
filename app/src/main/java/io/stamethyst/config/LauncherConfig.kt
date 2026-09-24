@@ -54,6 +54,7 @@ object LauncherConfig {
         "built_in_soft_keyboard_enabled"
     private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
     private const val PREF_KEY_HIDDEN_MAIN_CARDS = "hidden_main_cards"
+    private const val PREF_KEY_SHOW_REFRESH_RATE_DETECTOR = "show_refresh_rate_detector"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -340,6 +341,7 @@ object LauncherConfig {
         "wheel",
     )
     val DEFAULT_HIDDEN_MAIN_CARDS: Set<String> = emptySet()
+    const val DEFAULT_SHOW_REFRESH_RATE_DETECTOR = true
     val MAIN_CARD_IDS: List<String> = listOf(
         "overview",
         "feedback",
@@ -843,6 +845,19 @@ object LauncherConfig {
                 PREF_KEY_HIDDEN_MAIN_CARDS,
                 cardIds.intersect(MAIN_CARD_IDS.toSet()).toSet()
             )
+        }
+    }
+
+    fun isRefreshRateDetectorEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_SHOW_REFRESH_RATE_DETECTOR,
+            DEFAULT_SHOW_REFRESH_RATE_DETECTOR,
+        )
+    }
+
+    fun saveRefreshRateDetectorEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SHOW_REFRESH_RATE_DETECTOR, enabled)
         }
     }
 

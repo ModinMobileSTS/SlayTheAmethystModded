@@ -503,6 +503,7 @@
     <string name="main_game_card_visibility_easytier">虚拟局域网</string>
     <string name="main_game_card_visibility_achievements">成就</string>
     <string name="main_game_card_visibility_renderer">图形渲染</string>
+    <string name="main_game_card_visibility_refresh_rate_detector">屏幕刷新率检测</string>
     <string name="main_renderer_quick_title">图形渲染</string>
     <string name="main_renderer_quick_accessibility">当前 %1$s，切换到 %2$s</string>
     <string name="main_renderer_quick_saved">已保存，下次启动生效</string>

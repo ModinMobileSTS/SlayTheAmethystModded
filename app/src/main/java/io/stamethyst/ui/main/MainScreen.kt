@@ -288,6 +288,9 @@ private fun LauncherGamePage(
     var hiddenGameCards by remember {
         mutableStateOf(LauncherPreferences.readHiddenMainCards(context))
     }
+    var showRefreshRateDetector by remember {
+        mutableStateOf(LauncherPreferences.isRefreshRateDetectorEnabled(context))
+    }
     fun isGameCardVisible(card: GamePageCard): Boolean = card.storageId !in hiddenGameCards
     fun toggleGameCardVisibility(storageId: String) {
         val updated = if (storageId in hiddenGameCards) {
@@ -417,9 +420,9 @@ private fun LauncherGamePage(
                         onSelect = actions.onSetQuickRenderer,
                         onRestoreAuto = actions.onRestoreQuickRendererAuto,
                     )
-                    if (refreshRateSnapshot.shouldShowMismatch) {
-                        RefreshRateMismatchCard(snapshot = refreshRateSnapshot)
-                    }
+                }
+                if (showRefreshRateDetector && refreshRateSnapshot.shouldShowMismatch) {
+                    RefreshRateMismatchCard(snapshot = refreshRateSnapshot)
                 }
             }
         }
@@ -444,8 +447,16 @@ private fun LauncherGamePage(
             pinnedContent = {
                 GameHeader(
                     feedbackUnreadCount = feedbackUnreadCount,
+                    showRefreshRateDetector = showRefreshRateDetector,
                     headerActionsEnabled = headerActionsEnabled,
                     hiddenGameCards = hiddenGameCards,
+                    onToggleRefreshRateDetector = {
+                        showRefreshRateDetector = !showRefreshRateDetector
+                        LauncherPreferences.saveRefreshRateDetectorEnabled(
+                            context,
+                            showRefreshRateDetector,
+                        )
+                    },
                     onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                     onToggleCardVisibility = ::toggleGameCardVisibility,
                 )
@@ -457,13 +468,15 @@ private fun LauncherGamePage(
 @Composable
 private fun GameHeader(
     feedbackUnreadCount: Int,
+    showRefreshRateDetector: Boolean,
     headerActionsEnabled: Boolean,
     hiddenGameCards: Set<String>,
+    onToggleRefreshRateDetector: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
     onToggleCardVisibility: (String) -> Unit,
 ) {
     var cardVisibilityMenuExpanded by remember { mutableStateOf(false) }
-    val hasHiddenGameCard = hiddenGameCards.isNotEmpty()
+    val hasHiddenGameCard = hiddenGameCards.isNotEmpty() || !showRefreshRateDetector
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_game,
         iconContentDescription = null,
@@ -518,6 +531,16 @@ private fun GameHeader(
                                 onCheckedChange = null,
                             )
                         },
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_game_card_visibility_refresh_rate_detector)) },
+                    onClick = onToggleRefreshRateDetector,
+                    leadingIcon = {
+                        Checkbox(
+                            checked = showRefreshRateDetector,
+                            onCheckedChange = null,
+                        )
+                    },
+                )
                     )
                 }
             }

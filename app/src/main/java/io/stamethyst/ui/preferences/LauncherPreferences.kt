@@ -114,6 +114,8 @@ object LauncherPreferences {
         get() = LauncherConfig.FLOATING_TOOL_BUTTON_IDS
     val DEFAULT_HIDDEN_MAIN_CARDS: Set<String>
         get() = LauncherConfig.DEFAULT_HIDDEN_MAIN_CARDS
+    val DEFAULT_SHOW_REFRESH_RATE_DETECTOR: Boolean
+        get() = LauncherConfig.DEFAULT_SHOW_REFRESH_RATE_DETECTOR
     val MAIN_CARD_IDS: List<String>
         get() = LauncherConfig.MAIN_CARD_IDS
     val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
@@ -418,6 +420,14 @@ object LauncherPreferences {
 
     fun saveHiddenMainCards(context: Context, cardIds: Set<String>) {
         LauncherConfig.saveHiddenMainCards(context, cardIds)
+    }
+
+    fun isRefreshRateDetectorEnabled(context: Context): Boolean {
+        return LauncherConfig.isRefreshRateDetectorEnabled(context)
+    }
+
+    fun saveRefreshRateDetectorEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.saveRefreshRateDetectorEnabled(context, enabled)
     }
 
     fun isHapticFeedbackEnabled(context: Context): Boolean {
