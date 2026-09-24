@@ -411,14 +411,12 @@ private fun LauncherGamePage(
                 if (isGameCardVisible(GamePageCard.RENDERER)) {
                     RendererQuickSwitchCard(
                         currentBackend = uiState.effectiveRendererBackend,
-                        selectionMode = uiState.rendererSelectionMode,
                         mobileGluesAvailable = uiState.mobileGluesRendererAvailable,
                         enabled = actions.isHostAvailable &&
                             !uiState.busy &&
                             !uiState.gameProcessRunning &&
                             !uiState.launchInFlight,
                         onSelect = actions.onSetQuickRenderer,
-                        onRestoreAuto = actions.onRestoreQuickRendererAuto,
                     )
                 }
                 if (showRefreshRateDetector && refreshRateSnapshot.shouldShowMismatch) {
@@ -447,9 +445,11 @@ private fun LauncherGamePage(
             pinnedContent = {
                 GameHeader(
                     feedbackUnreadCount = feedbackUnreadCount,
-                    showRefreshRateDetector = showRefreshRateDetector,
                     headerActionsEnabled = headerActionsEnabled,
                     hiddenGameCards = hiddenGameCards,
+                    showRefreshRateDetector = showRefreshRateDetector,
+                    onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                    onToggleCardVisibility = ::toggleGameCardVisibility,
                     onToggleRefreshRateDetector = {
                         showRefreshRateDetector = !showRefreshRateDetector
                         LauncherPreferences.saveRefreshRateDetectorEnabled(
@@ -457,8 +457,6 @@ private fun LauncherGamePage(
                             showRefreshRateDetector,
                         )
                     },
-                    onOpenFeedbackUpdates = onOpenFeedbackUpdates,
-                    onToggleCardVisibility = ::toggleGameCardVisibility,
                 )
             },
         )
@@ -468,12 +466,12 @@ private fun LauncherGamePage(
 @Composable
 private fun GameHeader(
     feedbackUnreadCount: Int,
-    showRefreshRateDetector: Boolean,
     headerActionsEnabled: Boolean,
     hiddenGameCards: Set<String>,
-    onToggleRefreshRateDetector: () -> Unit,
+    showRefreshRateDetector: Boolean,
     onOpenFeedbackUpdates: () -> Unit,
     onToggleCardVisibility: (String) -> Unit,
+    onToggleRefreshRateDetector: () -> Unit,
 ) {
     var cardVisibilityMenuExpanded by remember { mutableStateOf(false) }
     val hasHiddenGameCard = hiddenGameCards.isNotEmpty() || !showRefreshRateDetector
@@ -531,6 +529,8 @@ private fun GameHeader(
                                 onCheckedChange = null,
                             )
                         },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.main_game_card_visibility_refresh_rate_detector)) },
                     onClick = onToggleRefreshRateDetector,
@@ -541,8 +541,6 @@ private fun GameHeader(
                         )
                     },
                 )
-                    )
-                }
             }
         }
     }
@@ -1020,11 +1018,9 @@ private fun RefreshRateMismatchCard(
 @Composable
 private fun RendererQuickSwitchCard(
     currentBackend: RendererBackend,
-    selectionMode: RendererSelectionMode,
     mobileGluesAvailable: Boolean,
     enabled: Boolean,
     onSelect: (RendererBackend) -> Unit,
-    onRestoreAuto: () -> Unit,
 ) {
     val selectedBackend = when (currentBackend) {
         RendererBackend.OPENGL_ES_MOBILEGLUES,
@@ -1207,22 +1203,6 @@ private fun RendererQuickSwitchCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            if (selectionMode == RendererSelectionMode.MANUAL) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    IconButton(
-                        onClick = onRestoreAuto,
-                        enabled = enabled,
-                    ) {
-                        Icon(
-                            imageVector = RendererIcons.Restore,
-                            contentDescription = stringResource(R.string.main_renderer_quick_restore_auto),
-                        )
-                    }
-                }
             }
         }
     }
