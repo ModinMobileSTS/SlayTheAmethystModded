@@ -9,6 +9,7 @@ import io.stamethyst.backend.mods.importing.patches.mods.frieren.FrierenImportPa
 import io.stamethyst.backend.mods.importing.patches.mods.firstperson.FirstPersonViewImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko.JacketNoAnoKoImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.mods.ori.OriImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.superfastmode.SuperFastModeImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.mods.vupshion.VupShionImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.structure.DuplicateZipEntryPatchModule
 import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
@@ -40,6 +41,7 @@ internal object ImportPatchRegistry {
         FrierenImportPatchModule,
         DownfallImportPatchModule,
         FirstPersonViewImportPatchModule,
+        SuperFastModeImportPatchModule,
         VupShionImportPatchModule,
         ChaofanModImportPatchModule,
         OriImportPatchModule

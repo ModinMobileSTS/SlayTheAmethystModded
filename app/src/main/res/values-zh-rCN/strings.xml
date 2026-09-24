@@ -893,6 +893,10 @@
     <string name="mod_import_patch_downfall_detail_hexaghost">Hexaghost 身体类：%1$d</string>
     <string name="mod_import_patch_downfall_detail_boss_panel">Boss 机制面板类：%1$d</string>
     <string name="mod_import_patch_firstperson_title">FirstPersonView 陀螺仪视角</string>
+    <string name="mod_import_patch_superfastmode_title">SuperFastMode 首领遗物选择</string>
+    <string name="mod_import_patch_superfastmode_summary">首领遗物选择期间保留正常插值，避免会打开二级界面的遗物所打开的页面被立即关闭。</string>
+    <string name="mod_import_patch_superfastmode_applied">已修复 SuperFastMode 首领遗物选择期间的二级界面时序。</string>
+    <string name="mod_import_patch_superfastmode_noop">该版本的 SuperFastMode 与补丁预期不符，未修改。</string>
     <string name="mod_import_patch_firstperson_summary">使用手机陀螺仪控制第一人称视角，普通点击和触摸输入仍然保留。</string>
     <string name="mod_import_patch_firstperson_applied">已将 FirstPersonView 的视角移动改为使用手机陀螺仪。</string>
     <string name="mod_import_patch_firstperson_noop">FirstPersonView 的视角读取无需修补。</string>

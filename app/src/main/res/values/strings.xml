@@ -894,6 +894,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="mod_import_patch_downfall_detail_hexaghost">Hexaghost body classes: %1$d</string>
     <string name="mod_import_patch_downfall_detail_boss_panel">Boss mechanic panel classes: %1$d</string>
     <string name="mod_import_patch_firstperson_title">FirstPersonView gyro camera</string>
+    <string name="mod_import_patch_superfastmode_title">SuperFastMode boss relic selection</string>
+    <string name="mod_import_patch_superfastmode_summary">Keep normal interpolation during boss relic selection so relics that open a secondary screen do not have that screen closed immediately.</string>
+    <string name="mod_import_patch_superfastmode_applied">Patched SuperFastMode secondary-screen timing during boss relic selection.</string>
+    <string name="mod_import_patch_superfastmode_noop">This SuperFastMode version does not match the supported patch.</string>
     <string name="mod_import_patch_firstperson_summary">Use the phone gyroscope for the first-person view while keeping normal click and touch input.</string>
     <string name="mod_import_patch_firstperson_applied">Patched FirstPersonView to use the phone gyroscope for camera movement.</string>
     <string name="mod_import_patch_firstperson_noop">FirstPersonView camera reads did not need patching.</string>
