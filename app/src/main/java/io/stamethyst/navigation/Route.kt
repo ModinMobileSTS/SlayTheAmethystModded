@@ -42,6 +42,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object SettingsLlm : Route
     @Serializable
+    data object SettingsLlmTutorial : Route
+    @Serializable
     data object SettingsWorkshopAutoImportDefaults : Route
     @Serializable
     data object SettingsFeedback : Route

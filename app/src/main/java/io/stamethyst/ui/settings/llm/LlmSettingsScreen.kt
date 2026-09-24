@@ -15,9 +15,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.delay
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -50,6 +48,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
+import io.stamethyst.navigation.Route
 import io.stamethyst.backend.llm.LlmEndpoint
 import io.stamethyst.backend.llm.LlmSettings
 import io.stamethyst.backend.llm.LlmSettingsRepository
@@ -215,10 +214,10 @@ fun LauncherLlmSettingsScreen(
     var models by rememberSaveable {
         mutableStateOf(current.models)
     }
-    var modelInput by rememberSaveable { mutableStateOf("") }
+    var customModelInput by rememberSaveable { mutableStateOf("") }
     var showModels by rememberSaveable { mutableStateOf(false) }
+    var showAddCustomModel by rememberSaveable { mutableStateOf(false) }
     var modelQuery by rememberSaveable { mutableStateOf("") }
-    val clipboard = LocalClipboardManager.current
     val effectiveKey = apiKey.trim().ifEmpty { current.apiKey }
     val validUrl = baseUrl.trim().toHttpUrlOrNull()?.let {
         it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null
@@ -251,6 +250,14 @@ fun LauncherLlmSettingsScreen(
         spec = SettingsLlmRouteSpec,
         onGoBack = navigator::goBack,
     ) {
+        item {
+            SettingsActionListItem(
+                title = stringResource(R.string.llm_tutorial_title),
+                supportingText = stringResource(R.string.llm_tutorial_entry_hint),
+                enabled = true,
+                onClick = { navigator.push(Route.SettingsLlmTutorial) },
+            )
+        }
         if (viewModel.saveError) {
             item {
                 Text(stringResource(R.string.llm_save_failed), color = MaterialTheme.colorScheme.error)
@@ -360,25 +367,16 @@ fun LauncherLlmSettingsScreen(
                 ) {
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                value = modelInput,
-                                onValueChange = { modelInput = it },
+                            OutlinedButton(
+                                onClick = { showAddCustomModel = true },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text(stringResource(R.string.llm_add_models)) },
-                                supportingText = { Text(stringResource(R.string.llm_models_hint)) },
-                                maxLines = 4,
-                                trailingIcon = {
-                                    IconButton(enabled = modelInput.isNotBlank(), onClick = {
-                                        models = (models + modelInput.split(',', '\n', '\uFF0C')
-                                            .map(String::trim).filter(String::isNotEmpty)).distinct()
-                                        if (modelName.isBlank()) modelName = models.firstOrNull().orEmpty()
-                                        modelInput = ""
-                                        modelQuery = ""
-                                    }) {
-                                        Icon(painterResource(R.drawable.ic_add_circle), stringResource(R.string.llm_add_models))
-                                    }
-                                },
-                            )
+                            ) {
+                                Icon(painterResource(R.drawable.ic_add_circle), null, Modifier.size(18.dp))
+                                Text(
+                                    stringResource(R.string.llm_add_custom_model),
+                                    Modifier.padding(start = 8.dp),
+                                )
+                            }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
                                     onClick = { viewModel.refreshModels(baseUrl, effectiveKey) },
@@ -387,9 +385,6 @@ fun LauncherLlmSettingsScreen(
                                     Icon(painterResource(R.drawable.ic_cloud_sync), null, Modifier.size(18.dp))
                                     Text(stringResource(R.string.llm_fetch_models), Modifier.padding(start = 8.dp))
                                 }
-                                TextButton(enabled = models.isNotEmpty(), onClick = {
-                                    clipboard.setText(AnnotatedString(models.joinToString(", ")))
-                                }) { Text(stringResource(R.string.llm_copy_models)) }
                                 TextButton(enabled = models.isNotEmpty(), onClick = { models = emptyList(); modelName = "" }) {
                                     Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(18.dp))
                                     Text(stringResource(R.string.llm_clear_models), Modifier.padding(start = 8.dp))
@@ -435,6 +430,45 @@ fun LauncherLlmSettingsScreen(
                     }
                 }
             }
+        )
+    }
+
+    if (showAddCustomModel) {
+        AlertDialog(
+            onDismissRequest = {
+                showAddCustomModel = false
+                customModelInput = ""
+            },
+            title = { Text(stringResource(R.string.llm_add_custom_model)) },
+            text = {
+                OutlinedTextField(
+                    value = customModelInput,
+                    onValueChange = { customModelInput = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.llm_custom_model_id)) },
+                    singleLine = true,
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAddCustomModel = false
+                    customModelInput = ""
+                }) { Text(stringResource(R.string.common_action_close)) }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = customModelInput.isNotBlank(),
+                    onClick = {
+                        val model = customModelInput.trim()
+                        if (model.isNotEmpty()) {
+                            models = (models + model).distinct()
+                            if (modelName.isBlank()) modelName = model
+                        }
+                        showAddCustomModel = false
+                        customModelInput = ""
+                    },
+                ) { Text(stringResource(R.string.common_action_save)) }
+            },
         )
     }
 

@@ -140,6 +140,7 @@ import io.stamethyst.ui.settings.core.LauncherSettingsMarketCloudScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsWorkshopAutoImportDefaultsScreen
 import io.stamethyst.ui.settings.llm.LauncherLlmSettingsScreen
+import io.stamethyst.ui.settings.llm.LauncherLlmTutorialScreen
 import io.stamethyst.ui.aimod.LauncherAiModEditorScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudGuardScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginScreen
@@ -802,6 +803,10 @@ fun LauncherContent(
 
                         entry<Route.SettingsLlm> {
                             LauncherLlmSettingsScreen(modifier = Modifier.fillMaxSize(), uiState = settingsUiState)
+                        }
+
+                        entry<Route.SettingsLlmTutorial> {
+                            LauncherLlmTutorialScreen(modifier = Modifier.fillMaxSize(), uiState = settingsUiState)
                         }
 
                         entry<Route.SettingsWorkshopAutoImportDefaults> {
@@ -1640,8 +1645,9 @@ private fun Route?.launcherDockRoute(): Route? {
          Route.SettingsGame,
          Route.SettingsPerformance,
           Route.SettingsMarketCloud,
-          Route.SettingsLlm,
-         Route.SettingsWorkshopAutoImportDefaults,
+           Route.SettingsLlm,
+           Route.SettingsLlmTutorial,
+          Route.SettingsWorkshopAutoImportDefaults,
          Route.SettingsFeedback,
          Route.SettingsAbout -> Route.Settings
         Route.CrashRecovery,
