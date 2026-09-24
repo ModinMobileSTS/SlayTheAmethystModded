@@ -14,7 +14,7 @@ import java.io.File
 
 internal object SuperFastModeImportPatchModule : ImportPatchModule {
     override val id = "mod.superfastmode.boss_relic_selection"
-    override val version = 2
+    override val version = 3
     override val displayNameResId = R.string.mod_import_patch_superfastmode_title
     override val summaryResId = R.string.mod_import_patch_superfastmode_summary
     override val category = ImportPatchCategory.ModSpecific
