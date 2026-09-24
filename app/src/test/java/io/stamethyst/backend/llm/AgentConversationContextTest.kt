@@ -143,6 +143,108 @@ class AgentConversationContextTest {
         assertEquals(repaired, repaired.closeInterruptedTools())
     }
 
+    @Test fun staleToolResultsAreNotReplayedIntoTheNextAssistantTurn() {
+        val state = AgentContextState(messages = listOf(
+            AgentContextMessage(1, "user", "write"),
+            AgentContextMessage(2, "assistant", calls = listOf(
+                AgentContextToolCall("current", "write", "{}"),
+            )),
+            AgentContextMessage(2, "tool", "stale result", callId = "old", toolName = "read"),
+        ))
+
+        val repaired = state.closeInterruptedTools()
+        assertEquals(listOf("user", "assistant", "tool"), repaired.messages.map { it.role })
+        assertEquals("current", repaired.messages[2].callId)
+        assertTrue(repaired.messages[2].text.contains("outcome is unknown"))
+        assertFalse(repaired.messages.any { it.callId == "old" })
+    }
+
+    @Test fun duplicateToolResultsAreCollapsedToOneResultPerCall() {
+        val state = AgentContextState(messages = listOf(
+            AgentContextMessage(1, "user", "write"),
+            AgentContextMessage(2, "assistant", calls = listOf(
+                AgentContextToolCall("current", "write", "{}"),
+            )),
+            AgentContextMessage(2, "tool", "first", callId = "current", toolName = "write"),
+            AgentContextMessage(2, "tool", "duplicate", callId = "current", toolName = "write"),
+        ))
+
+        val repaired = state.closeInterruptedTools()
+        assertEquals(3, repaired.messages.size)
+        assertEquals("first", repaired.messages[2].text)
+    }
+
+    @Test fun summaryBoundaryNeverSplitsAssistantToolGroup() {
+        val state = AgentContextState(
+            messages = listOf(
+                AgentContextMessage(1, "user", "goal"),
+                AgentContextMessage(2, "assistant", calls = listOf(
+                    AgentContextToolCall("current", "write", "{}"),
+                )),
+                AgentContextMessage(2, "tool", "written", callId = "current", toolName = "write"),
+            ),
+            summary = "old memory",
+            summarizedCount = 2,
+        )
+
+        val repaired = state.closeInterruptedTools()
+        assertEquals(0, repaired.summarizedCount)
+        assertEquals("", repaired.summary)
+        val messages = manager(repaired).prepare()
+        assertEquals(4, messages.size)
+        assertEquals("current", (messages[2] as AiMessage).toolExecutionRequests().single().id())
+        assertEquals("current", (messages[3] as ToolExecutionResultMessage).id())
+    }
+
+    @Test fun summaryBoundaryNeverSplitsMultiToolGroupAfterFirstResult() {
+        val state = AgentContextState(
+            messages = listOf(
+                AgentContextMessage(1, "user", "goal"),
+                AgentContextMessage(2, "assistant", calls = listOf(
+                    AgentContextToolCall("first", "write", "{}"),
+                    AgentContextToolCall("second", "read", "{}"),
+                )),
+                AgentContextMessage(2, "tool", "written", callId = "first", toolName = "write"),
+                AgentContextMessage(2, "tool", "read", callId = "second", toolName = "read"),
+            ),
+            summary = "old memory",
+            summarizedCount = 3,
+        )
+
+        val repaired = state.closeInterruptedTools()
+        assertEquals(0, repaired.summarizedCount)
+        assertEquals("", repaired.summary)
+        val messages = manager(repaired).prepare()
+        assertEquals("first", (messages[2] as AiMessage).toolExecutionRequests()[0].id())
+        assertEquals("second", (messages[2] as AiMessage).toolExecutionRequests()[1].id())
+        assertEquals("first", (messages[3] as ToolExecutionResultMessage).id())
+        assertEquals("second", (messages[4] as ToolExecutionResultMessage).id())
+    }
+
+    @Test fun prepareRepairsPersistedSplitBoundaryBeforeBuildingRequest() {
+        val state = AgentContextState(
+            messages = listOf(
+                AgentContextMessage(1, "user", "write"),
+                AgentContextMessage(2, "assistant", calls = listOf(
+                    AgentContextToolCall("current", "write", "{}"),
+                )),
+                AgentContextMessage(2, "tool", "written", callId = "current", toolName = "write"),
+                AgentContextMessage(3, "user", "continue"),
+            ),
+            summary = "stale summary",
+            summarizedCount = 2,
+        )
+        val checkpoints = ArrayList<AgentContextState>()
+        val manager = manager(state, checkpoint = checkpoints::add)
+
+        val prepared = manager.prepare()
+
+        assertEquals(listOf("system", "user", "assistant", "tool", "user"), prepared.map { it.type().name.lowercase() })
+        assertEquals("current", (prepared[2] as AiMessage).toolExecutionRequests().single().id())
+        assertEquals("current", (prepared[3] as ToolExecutionResultMessage).id())
+        assertTrue(checkpoints.any { it.summarizedCount == 0 && it.summary.isEmpty() })
+    }
+
     @Test fun rollbackInvalidatesOnlySummariesCoveringRemovedMessages() {
         val original = longHistory().copy(summary = "memory", summarizedCount = 2)
         assertEquals("memory", original.retainSources(setOf(1, 2)).summary)

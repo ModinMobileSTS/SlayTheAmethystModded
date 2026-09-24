@@ -34,7 +34,10 @@ data class AgentContextMessage(
 ) {
     fun toChatMessage(): ChatMessage = when (role) {
         "user" -> UserMessage.from(text)
-        "assistant" -> AiMessage.builder().text(text.ifBlank { null }).thinking(thinking)
+        // Some OpenAI-compatible gateways translate tool_calls into Anthropic tool_use blocks
+        // only when the assistant message has a concrete content field. Keep an empty string
+        // instead of null for tool-call turns so the preceding tool_use is not dropped.
+        "assistant" -> AiMessage.builder().text(if (calls.isEmpty()) text.ifBlank { null } else text)
             .toolExecutionRequests(calls.map {
                 ToolExecutionRequest.builder().id(it.id).name(it.name).arguments(it.arguments).build()
             }).build()
@@ -82,8 +85,16 @@ data class AgentContextState(
             if (message.calls.isEmpty()) continue
             val results = ArrayList<AgentContextMessage>()
             while (index < messages.size && messages[index].role == "tool") results += messages[index++]
+            // Do not replay a stale result from another assistant turn. Providers that enforce
+            // tool ordering reject an orphaned tool_result when its tool_use is not immediately
+            // present in the preceding assistant message.
+            val callsById = message.calls.associateBy { it.id }
+            val matched = HashSet<String>()
+            results.forEach { result ->
+                if (result.callId in callsById && matched.add(result.callId)) repaired += result
+            }
             message.calls.forEach { call ->
-                repaired += results.firstOrNull { it.callId == call.id } ?: AgentContextMessage(
+                if (call.id !in matched) repaired += AgentContextMessage(
                     sourceMessageId = message.sourceMessageId,
                     role = "tool",
                     callId = call.id,
@@ -92,8 +103,31 @@ data class AgentContextState(
                 )
             }
         }
-        // A changed prefix cannot keep an index-based summary boundary.
-        return if (repaired == messages) this else copy(messages = repaired, summary = "", summarizedCount = 0)
+        // A summary boundary must never split an assistant tool-call group. Otherwise the next
+        // request can contain a tool_result whose preceding message is no longer its tool_use.
+        // That is rejected by Anthropic-compatible gateways even when the durable records looked
+        // valid before the boundary was applied.
+        var safeSummarizedCount = summarizedCount.coerceIn(0, repaired.size)
+        if (safeSummarizedCount < repaired.size && repaired[safeSummarizedCount].role == "tool") {
+            var groupStart = safeSummarizedCount
+            while (groupStart > 0 && repaired[groupStart - 1].role == "tool") groupStart--
+            if (groupStart > 0 && repaired[groupStart - 1].role == "assistant" &&
+                repaired[groupStart - 1].calls.isNotEmpty()
+            ) {
+                safeSummarizedCount = groupStart - 1
+            }
+        }
+        val changedMessages = repaired != messages
+        val changedBoundary = safeSummarizedCount != summarizedCount
+        return if (!changedMessages && !changedBoundary) {
+            this
+        } else {
+            copy(
+                messages = repaired,
+                summary = if (changedMessages || changedBoundary) "" else summary,
+                summarizedCount = if (changedMessages || changedBoundary) 0 else safeSummarizedCount,
+            )
+        }
     }
 
     companion object {
@@ -205,6 +239,14 @@ class AgentContextManager(
 
     fun prepare(force: Boolean = false): List<ChatMessage> {
         checkCancelled()
+        // Re-run repair before every request. A persisted context may have been created by an
+        // older build with a summary boundary between an assistant tool_use and its tool_result,
+        // and a long-running turn may also have changed the active tail since initialization.
+        val repaired = state.closeInterruptedTools()
+        if (repaired != state) {
+            state = repaired
+            persist()
+        }
         if (force || estimate(state) >= budget.inputLimit) compact(force)
         persist()
         if (estimate(state) >= budget.inputLimit) throw AgentContextCapacityException(

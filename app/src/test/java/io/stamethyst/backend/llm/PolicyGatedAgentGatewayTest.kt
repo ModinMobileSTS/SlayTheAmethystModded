@@ -7,6 +7,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.backend.mods.AgentPatchWorkspace
 import dev.langchain4j.agent.tool.ToolSpecification
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ToolExecutionResultMessage
+import dev.langchain4j.data.message.UserMessage
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -64,6 +67,11 @@ class PolicyGatedAgentGatewayTest {
         )
 
         val secondRequest = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
+        val assistantMessage = secondRequest["messages"]!!.jsonArray
+            .first { it.jsonObject["role"]!!.jsonPrimitive.content == "assistant" }
+            .jsonObject
+        assertTrue("assistant tool-call content must be concrete", assistantMessage["content"] != null)
+        assertTrue("assistant tool_calls must be preserved", assistantMessage["tool_calls"] != null)
         val toolMessage = secondRequest["messages"]!!.jsonArray.last().jsonObject
         assertEquals("tool", toolMessage["role"]!!.jsonPrimitive.content)
         assertTrue(toolMessage["content"]!!.jsonPrimitive.content.contains("artifact validation passed"))
@@ -646,6 +654,29 @@ class PolicyGatedAgentGatewayTest {
 
         assertEquals("Recovered via fallback.", reply.text)
         assertTrue("both a streamed and a non-streamed request should have been sent", server.requestCount >= 2)
+    }
+
+    @Test
+    fun sanitizeToolMessageSequence_dropsOrphanedResultsAndKeepsMatchingResults() {
+        val workspace = createTempDirectory("agent-sanitize").toFile()
+        val gateway = newGateway(workspace)
+        val call = dev.langchain4j.agent.tool.ToolExecutionRequest.builder()
+            .id("call-valid")
+            .name("read_workspace_file")
+            .arguments("{}")
+            .build()
+        val messages = gateway.sanitizeToolMessageSequence(listOf(
+            UserMessage.from("inspect"),
+            ToolExecutionResultMessage.from("call-orphan", "read_workspace_file", "stale"),
+            AiMessage.from(call),
+            ToolExecutionResultMessage.from("call-valid", "read_workspace_file", "fresh"),
+            ToolExecutionResultMessage.from("call-duplicate", "read_workspace_file", "stale"),
+        ))
+
+        assertEquals(3, messages.size)
+        assertTrue(messages[0] is UserMessage)
+        assertTrue(messages[1] is AiMessage)
+        assertEquals("call-valid", (messages[2] as ToolExecutionResultMessage).id())
     }
 
     private fun testContext(root: File): android.content.Context {

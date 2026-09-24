@@ -1089,8 +1089,9 @@ class AgentPatchWorkspaceCreateTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("create_agent_patch_workspace")
         .description(
-            "Create a new writable workspace for preparing a patch mod for the selected parent mod. Extracts the " +
-                "complete original mod under source/ and prepares an editable patch_source/<patch_id>/ tree. This does " +
+            "Create a new writable workspace for preparing a patch mod for the selected parent mod. Records an " +
+                "immutable parent JAR snapshot and prepares an editable patch_source/<patch_id>/ tree without " +
+                "extracting the full original mod. This does " +
                 "not compile, package, install, or enable a mod. Call this once only when the user requests a new " +
                 "patch and no existing patch workspace should be reused. For changes to an existing patch, reuse its " +
                 "patch_source/<patch_id>/ tree and update it instead. Call decompile_agent_mod_source independently " +
@@ -1842,7 +1843,7 @@ class PolicyGatedAgentGateway(
                 logAssistantRound(round, "", lastResponse!!.aiMessage(), "non-streaming", lastResponse)
                 throw AgentEmptyResponseException(finishReason(lastResponse))
             }
-            val aiMessage = completed.aiMessage()
+            val aiMessage = normalizeToolCallMessage(completed.aiMessage())
             contextManager?.let { it.observe(completed, it.requestEstimate()) }
             messages += aiMessage
             contextManager?.append(aiMessage)
@@ -1922,7 +1923,7 @@ class PolicyGatedAgentGateway(
                 logAssistantRound(round, "", lastResult!!.response.aiMessage(), "streaming", lastResult.response)
                 throw AgentEmptyResponseException(finishReason(lastResult.response))
             }
-            val aiMessage = result.response.aiMessage()
+            val aiMessage = normalizeToolCallMessage(result.response.aiMessage())
             contextManager?.let { it.observe(result.response, it.requestEstimate()) }
             messages += aiMessage
             contextManager?.append(aiMessage)
@@ -1971,10 +1972,58 @@ class PolicyGatedAgentGateway(
     }
 
     private fun chatRequest(messages: List<ChatMessage>) = ChatRequest.builder()
-        .messages(messages)
+        .messages(sanitizeToolMessageSequence(messages))
         .toolSpecifications(toolRegistry.toolSpecifications())
         .apply { contextManager?.let { maxOutputTokens(it.budget.outputReserve) } }
         .build()
+
+    /**
+     * Never send a tool result unless the immediately preceding assistant turn declared its call.
+     * This is a final network-boundary guard for contexts written by older builds or interrupted
+     * jobs. OpenAI-compatible gateways commonly translate these messages to Anthropic blocks and
+     * reject an orphaned tool_result instead of ignoring it.
+     */
+    internal fun sanitizeToolMessageSequence(messages: List<ChatMessage>): List<ChatMessage> {
+        val sanitized = ArrayList<ChatMessage>(messages.size)
+        var pendingCallIds = emptySet<String>()
+        messages.forEach { message ->
+            when (message) {
+                is AiMessage -> {
+                    val normalized = normalizeToolCallMessage(message)
+                    sanitized += normalized
+                    pendingCallIds = normalized.toolExecutionRequests()
+                        .mapNotNull { it.id()?.takeIf(String::isNotBlank) }
+                        .toSet()
+                }
+                is ToolExecutionResultMessage -> {
+                    val id = message.id()
+                    if (id != null && id in pendingCallIds) {
+                        sanitized += message
+                        pendingCallIds = pendingCallIds - id
+                    } else {
+                        Log.w(TAG, "Dropping orphaned tool result id=$id name=${message.toolName()}")
+                    }
+                }
+                else -> {
+                    sanitized += message
+                    pendingCallIds = emptySet()
+                }
+            }
+        }
+        return sanitized
+    }
+
+    /** Keeps a non-null assistant content field on tool-call turns for strict compatibility bridges. */
+    private fun normalizeToolCallMessage(message: AiMessage): AiMessage =
+        if (!message.hasToolExecutionRequests() || message.text() != null) {
+            message
+        } else {
+            AiMessage.builder()
+                .text("")
+                .thinking(message.thinking())
+                .toolExecutionRequests(message.toolExecutionRequests())
+                .build()
+        }
 
     /**
      * Caps a tool result before it becomes model context, using the same limits as the agent host:
