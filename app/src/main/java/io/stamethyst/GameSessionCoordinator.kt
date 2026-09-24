@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
 import io.stamethyst.backend.audio.ForegroundAudioPolicy
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
+import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.backend.easytier.EasyTierInGameSessionState
 import io.stamethyst.backend.easytier.EasyTierInGameStatusReporter
 import io.stamethyst.backend.launch.progressText
@@ -31,6 +32,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.steamcloud.shouldAutoSyncRuntimeAchievementRequest
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -105,6 +107,7 @@ internal class GameSessionCoordinator(
     private var userLeaveHintReceived = false
 
     private var waitingLandscapeSinceMs = -1L
+    private var lastJvmLaunchGateLogAtMs = -1L
     private var jvmLaunchStartedWallTimeMs = 0L
     private var startCheckPosted = false
     private var lastKeyboardRequestPayload = ""
@@ -123,6 +126,8 @@ internal class GameSessionCoordinator(
     @Volatile
     private var destroyed = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val slingBreakBootMode =
+        LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK
     private val expectedGameExitReturnPolicy = ExpectedGameExitReturnPolicy()
     private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
@@ -507,6 +512,7 @@ internal class GameSessionCoordinator(
         val rawHeight = renderSurfaceManager.resolvePhysicalHeight()
 
         if (rawWidth <= 1 || rawHeight <= 1) {
+            logJvmLaunchGate("waiting_for_size", rawWidth, rawHeight)
             scheduleStartCheck()
             return
         }
@@ -521,6 +527,7 @@ internal class GameSessionCoordinator(
             }
             val waitedMs = now - waitingLandscapeSinceMs
             if (waitedMs < LANDSCAPE_WAIT_TIMEOUT_MS) {
+                logJvmLaunchGate("waiting_for_landscape", rawWidth, rawHeight)
                 scheduleStartCheck()
                 return
             }
@@ -528,7 +535,23 @@ internal class GameSessionCoordinator(
             waitingLandscapeSinceMs = -1L
         }
 
+        logJvmLaunchGate("starting", rawWidth, rawHeight, force = true)
         startJvmOnce()
+    }
+
+    private fun logJvmLaunchGate(reason: String, width: Int, height: Int, force: Boolean = false) {
+        if (!slingBreakBootMode) return
+        val now = SystemClock.uptimeMillis()
+        if (!force && lastJvmLaunchGateLogAtMs >= 0L && now - lastJvmLaunchGateLogAtMs < 5_000L) return
+        lastJvmLaunchGateLogAtMs = now
+        val view = renderSurfaceManager.renderView
+        WebViewDiagnosticsLogStore.append(
+            activity,
+            "jvm_launch_gate",
+            "reason=$reason size=${width}x$height view=${view.width}x${view.height} " +
+                "attached=${view.isAttachedToWindow} visible=${view.visibility} " +
+                "resumed=$activityResumed multiWindow=${isActivityInMultiWindowMode()}"
+        )
     }
 
     private fun startJvmOnce() {
@@ -581,7 +604,7 @@ internal class GameSessionCoordinator(
             return
         }
         startCheckPosted = true
-        renderSurfaceManager.renderView.postDelayed(startCheckRunnable, 120L)
+        mainHandler.postDelayed(startCheckRunnable, 120L)
     }
 
     private fun cancelStartCheck() {
@@ -589,7 +612,7 @@ internal class GameSessionCoordinator(
             return
         }
         startCheckPosted = false
-        renderSurfaceManager.renderView.removeCallbacks(startCheckRunnable)
+        mainHandler.removeCallbacks(startCheckRunnable)
     }
 
     private fun handleJvmExit(exitCode: Int) {

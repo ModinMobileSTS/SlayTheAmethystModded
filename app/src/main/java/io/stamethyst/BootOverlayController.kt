@@ -271,6 +271,7 @@ class BootOverlayController(
             scheduleJvmLogPolling()
         }
     }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     var earlyOverlayDismissOnNextFrame = false
@@ -434,7 +435,10 @@ class BootOverlayController(
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
         bootOverlay?.disposeComposition()
         bootOverlay = null
-        slingBreakBootGame?.destroy()
+        slingBreakBootGame?.let {
+            io.stamethyst.backend.audio.SlingNativeAudioBridge.close(it)
+            it.destroy()
+        }
         slingBreakBootGame = null
         slingBreakLauncherPageReady = false
         slingBreakPageReadyTimeoutScheduled = false
@@ -447,13 +451,19 @@ class BootOverlayController(
 
     fun onActivityResumed() {
         if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
-            slingBreakBootGame?.onResume()
+            slingBreakBootGame?.let {
+                io.stamethyst.backend.audio.SlingNativeAudioBridge.setActive(it, true)
+                it.onResume()
+            }
         }
     }
 
     fun onActivityPaused() {
         if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
-            slingBreakBootGame?.onPause()
+            slingBreakBootGame?.let {
+                io.stamethyst.backend.audio.SlingNativeAudioBridge.setActive(it, false)
+                it.onPause()
+            }
         }
     }
 
@@ -554,6 +564,7 @@ class BootOverlayController(
 
         if (usesSlingBreakBootOverlay) {
             slingBreakBootGame?.apply {
+                io.stamethyst.backend.audio.SlingNativeAudioBridge.close(this)
                 stopLoading()
                 onPause()
                 loadUrl("about:blank")
@@ -638,11 +649,18 @@ class BootOverlayController(
 
     private fun pushSlingBreakProgress() {
         if (!usesSlingBreakBootOverlay || !slingBreakLauncherPageReady) return
+        val progress = bootOverlayProgress
         val escapedMessage = org.json.JSONObject.quote(bootOverlayMessage)
         slingBreakBootGame?.evaluateJavascript(
-            "window.SlingBreakLauncher?.setProgress?.($bootOverlayProgress, $escapedMessage)",
-            null
-        )
+            "(() => { const fn = window.SlingBreakLauncher?.setProgress; " +
+                "if (!fn) return 'missing'; fn($progress, $escapedMessage); return 'ok'; })()"
+        ) { result ->
+            WebViewDiagnosticsLogStore.append(
+                activity,
+                "progress_push",
+                "percent=$progress result=$result"
+            )
+        }
     }
 
     private fun scheduleSlingBreakPageReadyTimeout() {
@@ -683,18 +701,17 @@ class BootOverlayController(
     }
 
     private fun scheduleJvmLogPolling(initial: Boolean = false) {
-        val overlay = bootOverlay ?: return
         if (bootOverlayDismissed) return
-        overlay.removeCallbacks(jvmLogPollRunnable)
+        mainHandler.removeCallbacks(jvmLogPollRunnable)
         if (initial) {
-            overlay.post(jvmLogPollRunnable)
+            mainHandler.post(jvmLogPollRunnable)
         } else {
-            overlay.postDelayed(jvmLogPollRunnable, JVM_LOG_POLL_INTERVAL_MS)
+            mainHandler.postDelayed(jvmLogPollRunnable, JVM_LOG_POLL_INTERVAL_MS)
         }
     }
 
     private fun stopJvmLogPolling() {
-        bootOverlay?.removeCallbacks(jvmLogPollRunnable)
+        mainHandler.removeCallbacks(jvmLogPollRunnable)
     }
 
     private fun pollJvmLogSnapshot() {
