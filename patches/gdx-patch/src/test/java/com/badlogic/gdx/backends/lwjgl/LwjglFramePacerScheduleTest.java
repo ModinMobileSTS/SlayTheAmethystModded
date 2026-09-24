@@ -99,10 +99,11 @@ public class LwjglFramePacerScheduleTest {
 	}
 
 	@Test
-	public void shouldCapToActiveRefreshRate_offModeSkipsOnlyTheActiveFrameCap () {
+	public void shouldCapToActiveRefreshRate_offModeAlwaysSkipsTheActiveFrameCap () {
 		assertFalse(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, true, true, true));
-		assertTrue(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, false, true, true));
-		assertTrue(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, true, false, false));
+		// Lifecycle state can still be transiently inactive while returning from another screen.
+		assertFalse(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, false, true, true));
+		assertFalse(LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(true, true, false, false));
 	}
 
 	@Test

@@ -1958,7 +1958,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_frame_pacing_mode_built_in">Built-in pacing</string>
     <string name="settings_frame_pacing_mode_swappy">Swappy pacing</string>
     <string name="settings_frame_pacing_mode_off">Off</string>
-    <string name="settings_frame_pacing_mode_hint">If you notice screen tearing, turn on frame pacing.</string>
+    <string name="settings_frame_pacing_mode_hint">If you notice screen tearing, turn on frame pacing. Once enabled, the frame rate is capped at the current refresh rate.</string>
     <string name="settings_frame_pacing_mode_built_in_desc">Uses the built-in frame pacing strategy and the selected target FPS.</string>
     <string name="settings_frame_pacing_mode_swappy_desc">Uses Google Swappy for presentation pacing. Unsupported devices may stutter.</string>
     <string name="settings_frame_pacing_mode_off_desc">Disables frame pacing. The game is no longer limited by the selected target FPS.</string>

@@ -421,6 +421,28 @@ class RenderSurfaceManagerPolicyTest {
     }
 
     @Test
+    fun shouldDeferToDisplayDerivedCanvas_rejectsDegenerateMeasuredSize() {
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1,
+                rootHeight = 1
+            )
+        )
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1,
+                rootHeight = 1920
+            )
+        )
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1920,
+                rootHeight = 1
+            )
+        )
+    }
+
+    @Test
     fun resolveViewportLayout_keepsLeftAndRightCropsSeparate() {
         assertEquals(
             RenderViewportLayout(

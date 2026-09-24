@@ -42,10 +42,14 @@ final class LwjglFramePacerSchedule {
 		return Math.min(frameRate, refreshRate);
 	}
 
-	/** Off disables the display-rate cap for active frames, but keeps the user FPS limit in force. */
+	/** Off disables the display-rate cap for every frame, but keeps the user FPS limit in force. */
 	static boolean shouldCapToActiveRefreshRate (boolean framePacingOff, boolean shouldRender,
 		boolean isActive, boolean runtimeForeground) {
-		return !framePacingOff || !shouldRender || !isActive || !runtimeForeground;
+		// The lifecycle flags can briefly be false while returning from another screen. They must not
+		// turn OFF mode back into a refresh-rate cap, otherwise a 130 FPS target becomes 90 FPS on
+		// a 90Hz display until the next rate transition.
+		if (framePacingOff) return false;
+		return true;
 	}
 
 	/**

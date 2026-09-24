@@ -832,6 +832,11 @@ class RenderSurfaceManager(
             return
         }
         bootOverlayActive = active
+        if (!active) {
+            // A portrait SlingBreak boot window can produce a transient 1x1 layout before
+            // orientation settles. Do not carry that startup canvas into the real game window.
+            startupVirtualResolution = null
+        }
         applyImmersiveMode()
         applyViewportLayout()
     }
@@ -1180,12 +1185,14 @@ class RenderSurfaceManager(
         }
 
         /**
-         * True when the current window is portrait, which for this landscape-only game means the
-         * window is transient: either the initial rotation has not landed yet or a portrait boot
-         * overlay (SlingBreak minigame) is up. The game canvas must not be derived from it.
+         * True when the current window is transient or degenerate. A portrait window means the
+         * initial rotation has not landed yet or a portrait boot overlay (SlingBreak minigame) is
+         * up; a 1-pixel dimension means Android has not completed the first layout pass. In both
+         * cases the game canvas must not be derived from the current view or cached as startup size.
          */
         internal fun shouldDeferToDisplayDerivedCanvas(rootWidth: Int, rootHeight: Int): Boolean {
-            return rootWidth > 0 && rootHeight > 0 && rootWidth < rootHeight
+            return rootWidth > 0 && rootHeight > 0 &&
+                (rootWidth <= 1 || rootHeight <= 1 || rootWidth < rootHeight)
         }
 
         internal fun resolveViewportLayout(

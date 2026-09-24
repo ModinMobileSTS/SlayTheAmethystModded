@@ -2257,7 +2257,7 @@
     <string name="settings_frame_pacing_mode_built_in">内置同步策略</string>
     <string name="settings_frame_pacing_mode_swappy">Swappy同步策略</string>
     <string name="settings_frame_pacing_mode_off">关闭</string>
-    <string name="settings_frame_pacing_mode_hint">如果出现画面撕裂的问题，请开启帧同步。</string>
+    <string name="settings_frame_pacing_mode_hint">如果出现画面撕裂的问题，请开启帧同步。开启后，将最高帧数限制为当前刷新率。</string>
     <string name="settings_frame_pacing_mode_built_in_desc">使用内置帧同步策略，并按照所选目标帧率限制帧数。</string>
     <string name="settings_frame_pacing_mode_swappy_desc">使用 Google Swappy 进行显示同步，不支持的设备可能出现卡顿。</string>
     <string name="settings_frame_pacing_mode_off_desc">关闭帧同步，不再受所选目标帧率限制。</string>
