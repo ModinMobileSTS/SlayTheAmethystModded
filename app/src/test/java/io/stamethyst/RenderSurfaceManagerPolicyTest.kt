@@ -216,6 +216,7 @@ class RenderSurfaceManagerPolicyTest {
             RenderSurfaceManager.resolveWindowConstrainedCropHint(
                 rootLeft = 0,
                 rootWidth = 2304,
+                rootHeight = 1080,
                 displayWidth = 2400
             )
         )
@@ -224,6 +225,7 @@ class RenderSurfaceManagerPolicyTest {
             RenderSurfaceManager.resolveWindowConstrainedCropHint(
                 rootLeft = 96,
                 rootWidth = 2304,
+                rootHeight = 1080,
                 displayWidth = 2400
             )
         )
@@ -232,6 +234,42 @@ class RenderSurfaceManagerPolicyTest {
             RenderSurfaceManager.resolveWindowConstrainedCropHint(
                 rootLeft = 0,
                 rootWidth = 2400,
+                rootHeight = 1080,
+                displayWidth = 2400
+            )
+        )
+    }
+
+    @Test
+    fun resolveWindowConstrainedCropHint_doesNotTreatPortraitBootWindowAsCutout() {
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 1080,
+                rootHeight = 2400,
+                displayWidth = 2400
+            )
+        )
+        val viewport = RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+            rootWidth = 1080,
+            rootHeight = 2400,
+            cropInsets = RenderViewportInsets(),
+            virtualWidth = 1920,
+            virtualHeight = 1080
+        )
+        assertEquals(1080, viewport?.width)
+        assertTrue((viewport?.height ?: 0) > 1)
+    }
+
+    @Test
+    fun resolveWindowConstrainedCropHint_rejectsGapLargerThanLandscapeWindow() {
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 1000,
+                rootHeight = 600,
                 displayWidth = 2400
             )
         )

@@ -1041,6 +1041,7 @@ class RenderSurfaceManager(
         return resolveWindowConstrainedCropHint(
             rootLeft = location[0],
             rootWidth = root.width,
+            rootHeight = root.height,
             displayWidth = displayWidth
         )
     }
@@ -1325,13 +1326,23 @@ class RenderSurfaceManager(
         internal fun resolveWindowConstrainedCropHint(
             rootLeft: Int,
             rootWidth: Int,
+            rootHeight: Int,
             displayWidth: Int
         ): RenderViewportCropHint? {
-            if (rootWidth <= 0 || displayWidth <= 0 || rootWidth >= displayWidth) {
+            // The display canvas is normalized to landscape, but SlingBreak deliberately holds
+            // the window in portrait. Comparing their widths invents a huge one-sided cutout
+            // and can leave the render view permanently measured at 1x1 before JVM launch.
+            if (rootWidth <= 1 || rootHeight <= 1 || rootWidth < rootHeight ||
+                displayWidth <= 0 || rootWidth >= displayWidth
+            ) {
                 return null
             }
             val leftGap = rootLeft.coerceAtLeast(0)
             val rightGap = (displayWidth - leftGap - rootWidth).coerceAtLeast(0)
+            if (maxOf(leftGap, rightGap) >= rootWidth) {
+                // A gap as wide as the window is not a cutout; never crop away the entire view.
+                return null
+            }
             return when {
                 rightGap > leftGap + 2 -> RenderViewportCropHint(
                     side = HorizontalCropSide.LEFT,
