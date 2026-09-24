@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>What's New · 1.6.1 原型</title>
+  <link rel="stylesheet" href="../../design-systems/launcher-product/tokens/colors_and_type.css">
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; --canvas: #dee5ef; --scrim: #121b2baf; --surface: #fafbff; --surface-low: #eff3f9; --surface-high: #e5ecf5; --ink: #1a2534; --muted: #4b5c6f; --accent: #2a5e96; --accent-soft: #dceafa; --line: #ccd7e4; --shadow: 0 20px 65px #14233835; }
+    body.dark { color-scheme: dark; --canvas: #171e28; --scrim: #03070cc9; --surface: #1b222d; --surface-low: #252f3c; --surface-high: #2b3746; --ink: #eaf0f8; --muted: #b9c8d8; --accent: #a9ccff; --accent-soft: #253e59; --line: #3c4d61; --shadow: 0 24px 76px #02050a88; }
+    body { margin: 0; font-family: var(--font-ui), system-ui, sans-serif; color: var(--ink); background: #e7ebf0; }
+    button, select, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+    .workspace { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(310px, 390px); gap: 36px; padding: 30px clamp(20px, 5vw, 76px); align-items: start; max-width: 1540px; margin: auto; }
+    .controls { padding-top: 52px; max-width: 650px; }
+    .eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700; color: #4b6890; }
+    h1 { font-size: clamp(32px, 4vw, 52px); letter-spacing: -.04em; line-height: 1.14; margin: 12px 0 16px; }
+    .intro { font-size: 16px; color: #4e5c69; line-height: 1.75; max-width: 58ch; }
+    .switches { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 26px 0 34px; }
+    .switches select, .switches button { border: 1px solid #b8c5d4; background: #fff; border-radius: 10px; min-height: 44px; padding: 8px 14px; color: #26374b; }
+    .switches button.active { background: #284f78; color: white; border-color: #284f78; }
+    .spec { border-top: 1px solid #c4cfda; padding-top: 22px; color: #435364; line-height: 1.7; }
+    .spec h2 { font-size: 15px; color: #203146; margin: 0 0 8px; }
+    .spec ul { padding-left: 20px; margin: 0 0 22px; }
+    .spec code { background: #dbe4ef; padding: 2px 5px; border-radius: 4px; }
+    .stage { background: #d1d9e4; border-radius: 32px; padding: 12px; box-shadow: 0 16px 52px #27395028; width: min(100%, 414px); position: sticky; top: 22px; justify-self: center; }
+    .device { height: 790px; background: var(--canvas); border-radius: 23px; overflow: hidden; position: relative; isolation: isolate; }
+    .mock-nav { height: 64px; padding: 27px 18px 0; font-weight: 700; font-size: 17px; }
+    .mock-content { padding: 16px; display: grid; gap: 13px; }
+    .mock-card { background: var(--surface); border-radius: 13px; padding: 16px; min-height: 100px; }
+    .mock-card:first-child { min-height: 145px; }
+    .mock-bar { height: 11px; border-radius: 10px; background: var(--line); width: 70%; margin-top: 16px; }
+    .mock-bar.short { width: 38%; }
+    .mock-bottom { position: absolute; bottom: 0; width: 100%; height: 67px; background: var(--surface); display: flex; align-items: center; justify-content: space-around; color: var(--muted); font-size: 12px; }
+    .overlay { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 15px; }
+    .overlay.hidden { display: none; }
+    .dialog { width: 100%; max-width: 356px; max-height: calc(100% - 26px); border-radius: 19px; background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+    .dialog-body { overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--line) transparent; }
+    .hero { padding: 24px 23px 20px; background: linear-gradient(150deg, var(--accent-soft), var(--surface) 84%); position: relative; overflow: hidden; }
+    .hero:after { content: ''; position: absolute; width: 192px; height: 192px; right: -97px; top: -114px; border: 1px solid var(--accent); border-radius: 50%; opacity: .22; box-shadow: 0 0 0 33px var(--accent-soft), 0 0 0 34px var(--accent); }
+    .hero-top { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+    .version { font-size: 11px; letter-spacing: .07em; font-weight: 800; color: var(--accent); text-transform: uppercase; }
+    .icon-close { border: 0; background: transparent; color: var(--muted); border-radius: 50%; width: 44px; height: 44px; font-size: 27px; display: grid; place-items: center; line-height: 1; margin: -10px -11px 0 0; }
+    .icon-close:hover { background: var(--surface-high); }
+    .hero h2 { font-size: 27px; line-height: 1.22; letter-spacing: -.028em; margin: 27px 0 10px; max-width: 260px; }
+    .hero p { color: var(--muted); line-height: 1.55; font-size: 13px; margin: 0; max-width: 278px; }
+    .feature { padding: 22px 23px; border-top: 1px solid var(--line); }
+    .feature-heading { display: flex; align-items: center; gap: 10px; }
+    .feature-icon { width: 35px; height: 35px; border-radius: 10px; color: var(--accent); display: grid; place-items: center; background: var(--accent-soft); flex: none; }
+    .feature-icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .feature h3 { font-size: 16px; line-height: 1.3; margin: 0; }
+    .feature p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 12px 0 0; }
+    .feature ul { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 9px; }
+    .feature li { font-size: 12.5px; line-height: 1.45; padding-left: 15px; position: relative; }
+    .feature li:before { content: ''; position: absolute; left: 1px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+    .feature-link { border: 0; background: none; color: var(--accent); padding: 12px 0 0; min-height: 48px; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700; }
+    .feature-link:hover { text-decoration: underline; }
+    .feature-note { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-high); color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .more { padding: 22px 23px 26px; border-top: 1px solid var(--line); }
+    .more h3 { font-size: 16px; line-height: 1.3; margin: 0; }
+    .more-intro { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 8px 0 0; }
+    .more-group { margin-top: 19px; }
+    .more-group h4 { font-size: 11px; font-weight: 800; letter-spacing: .04em; color: var(--accent); margin: 0 0 10px; }
+    .more-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+    .more-list li { padding: 9px 0; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.5; }
+    .more-list li:first-child { border-top: none; }
+    .dialog-footer { border-top: 1px solid var(--line); background: var(--surface); padding: 10px 16px 16px; flex: none; }
+    .check-row { display: flex; align-items: center; gap: 9px; min-height: 48px; font-size: 12.5px; cursor: pointer; color: var(--muted); }
+    .check-row input { appearance: none; width: 19px; height: 19px; flex: none; border: 2px solid var(--muted); border-radius: 4px; margin: 0 3px; display: grid; place-items: center; }
+    .check-row input:checked { background: var(--accent); border-color: var(--accent); }
+    .check-row input:checked:after { content: '✓'; color: var(--surface); font-size: 13px; font-weight: 800; }
+    .primary { border: 0; min-height: 48px; width: 100%; border-radius: 12px; background: var(--accent); color: var(--surface); font-weight: 700; font-size: 14px; }
+    .primary:hover { filter: brightness(1.13); }
+    .reopen { position: absolute; top: 52%; left: 50%; transform: translate(-50%, -50%); border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 12px 18px; min-height: 48px; box-shadow: var(--shadow); }
+    .reopen.hidden { display: none; }
+    .toast { position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 3; border-radius: 10px; padding: 12px; color: white; background: #223a54; font-size: 12px; box-shadow: var(--shadow); display: none; }
+    .toast.show { display: block; }
+    .stage.wide { width: min(100%, 720px); }
+    .stage.wide .device { height: 690px; }
+    .stage.wide .dialog { max-width: 570px; }
+    .stage.wide .hero, .stage.wide .feature, .stage.wide .more { padding-left: 32px; padding-right: 32px; }
+    .stage.wide .hero h2 { max-width: unset; }
+    .workspace:has(.stage.wide) { grid-template-columns: minmax(0, 1fr) minmax(510px, 720px); }
+    @media (max-width: 950px) { .workspace, .workspace:has(.stage.wide) { display: flex; flex-direction: column; align-items: center; padding: 24px 14px 60px; gap: 26px; } .controls { padding-top: 0; width: min(100%, 690px); } .stage { position: static; } .stage.wide { max-width: 720px; } }
+    @media (max-width: 520px) { .controls { padding: 0 6px; } h1 { font-size: 30px; } .intro { font-size: 14px; } .stage { padding: 7px; border-radius: 24px; } .device { height: 760px; border-radius: 19px; } .stage.wide { width: 100%; } .stage.wide .dialog { max-width: 356px; } .stage.wide .hero, .stage.wide .feature, .stage.wide .more { padding-left: 23px; padding-right: 23px; } }
+    @media (prefers-reduced-motion: no-preference) { .overlay { animation: veil .18s ease-out; } .dialog { animation: appear .25s ease-out; } @keyframes veil { from { opacity: 0; } } @keyframes appear { from { opacity: 0; transform: translateY(12px) scale(.98); } } }
+  </style>
+</head>
+<body>
+  <div class="workspace">
+    <section class="controls" aria-label="原型说明">
+      <div class="eyebrow">Slay the Amethyst / Design prototype</div>
+      <h1>版本新内容，<br>先看重点。</h1>
+      <p class="intro">把 KDE 式的版本亮点叙事压缩为适合手机的单页阅读：先讲两项重点功能，再在“更多内容”里列出本版其他更新与修复。右侧是可操作原型，不连接真实功能。</p>
+      <div class="switches">
+        <select id="language" aria-label="原型语言"><option value="zh">简体中文</option><option value="tw">繁體中文</option><option value="en">English</option></select>
+        <button type="button" id="light" class="active">浅色</button>
+        <button type="button" id="dark">深色</button>
+        <button type="button" id="phone" class="active">手机</button>
+        <button type="button" id="wide">宽屏</button>
+      </div>
+      <div class="spec">
+        <h2>设计意图</h2>
+        <ul>
+          <li>独立于 <code>docs/release</code> 的版本内容；1.6.1 仅用于正式版和 hotfix。</li>
+          <li>不使用进度条或强制分页；重点功能与“更多内容”自然滚动，底部决定是否再次显示。</li>
+          <li>“浏览我的模组”是可选深链；“进入启动器”只负责关闭。关闭图标和返回键等价。</li>
+          <li>留有图像插槽但当前用抽象图标占位，避免伪造真实功能截图。</li>
+        </ul>
+        <h2>Android 落地建议</h2>
+        <p>Material 3 Dialog；内容区独立滚动，底部选择和主按钮固定。小屏可切换为全屏 Dialog，宽屏最大宽约 560dp。文字放大后允许正文滚动，不裁剪按钮；焦点先到版本标题，图片若仅装饰则不朗读。</p>
+      </div>
+    </section>
+    <div class="stage" id="stage">
+      <div class="device">
+        <div class="mock-nav">Slay the Amethyst</div>
+        <div class="mock-content"><div class="mock-card"><strong>游戏概览</strong><div class="mock-bar"></div><div class="mock-bar short"></div></div><div class="mock-card"><strong>模组</strong><div class="mock-bar"></div></div><div class="mock-card"><strong>启动游戏</strong><div class="mock-bar short"></div></div></div>
+        <div class="mock-bottom"><span>游戏</span><span>模组</span><span>市场</span><span>设置</span></div>
+        <button type="button" class="reopen hidden" id="reopen">再次预览版本新内容</button>
+        <div class="overlay" id="overlay">
+          <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="release-title">
+            <div class="dialog-body" id="dialogBody">
+              <header class="hero"><div class="hero-top"><span class="version" data-copy="version"></span><button type="button" class="icon-close" id="close" aria-label="关闭">×</button></div><h2 id="release-title" data-copy="title"></h2></header>
+              <article class="feature"><div class="feature-heading"><span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 6 3 12l5 6M16 6l5 6-5 6M14 4l-4 16"/></svg></span><h3 data-copy="agentTitle"></h3></div><p data-copy="agentBody"></p><ul><li data-copy="agentPoint1"></li><li data-copy="agentPoint2"></li><li data-copy="agentPoint3"></li><li data-copy="agentPoint4"></li></ul><p class="feature-note" data-copy="agentEntry"></p><button type="button" class="feature-link" id="action" data-copy="agentAction"></button></article>
+              <article class="feature"><div class="feature-heading"><span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v3m-8 6h3m10 0h3m-8 6v3M12 8l1.7 3.3L17 13l-3.3 1.7L12 18l-1.7-3.3L7 13l3.3-1.7z"/></svg></span><h3 data-copy="slingTitle"></h3></div><p data-copy="slingBody"></p><ul><li data-copy="slingPoint1"></li><li data-copy="slingPoint2"></li></ul></article>
+              <section class="more" aria-labelledby="more-title"><h3 id="more-title" data-copy="moreTitle"></h3><p class="more-intro" data-copy="moreIntro"></p><div class="more-group"><h4 data-copy="moreFeatures"></h4><ul class="more-list"><li data-copy="extra1"></li><li data-copy="extra2"></li><li data-copy="extra3"></li><li data-copy="extra4"></li><li data-copy="extra5"></li><li data-copy="extra6"></li><li data-copy="extra7"></li></ul></div><div class="more-group"><h4 data-copy="moreFixes"></h4><ul class="more-list"><li data-copy="fix1"></li><li data-copy="fix2"></li><li data-copy="fix3"></li><li data-copy="fix4"></li><li data-copy="fix5"></li></ul></div></section>
+            </div>
+            <footer class="dialog-footer"><label class="check-row"><input type="checkbox" id="never"><span data-copy="never"></span></label><button type="button" class="primary" id="done" data-copy="done"></button></footer>
+          </section>
+        </div>
+        <div class="toast" role="status" id="toast"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const copy = {
+      zh: { version:'1.6.1', title:'来看看有哪些新内容', agentTitle:'使用 AI 来编辑模组', agentBody:'想更改模组内容但苦于不会编译模组？让 AI 来帮你！该版本新增了自然语言编辑模组的功能，进行相应配置后，可以用自然语言完成但不限于以下的修改。', agentPoint1:'查看模组的内容和玩法，了解不懂的机制。', agentPoint2:'翻译任意语言的模组。', agentPoint3:'为模组新添加机制，更改数值。', agentPoint4:'以及更多你能想到的内容！', agentEntry:'入口：模组卡片 - 更多 - 使用 AI 编辑', agentAction:'前往配置大模型支持', slingTitle:'内置小游戏', slingBody:'集成了一个小游戏在启动器中，修复了等待加载时无聊的 bug！', slingPoint1:'设置页“启用界面样式”中的 Sling Break 示例。', slingPoint2:'游戏加载时可游玩，同时查看启动进度。', moreTitle:'更多内容', moreIntro:'本版的其他改进与问题修复。', moreFeatures:'功能与体验', extra1:'设置中可以解除帧率上限。', extra2:'优化游戏页冷加载，减少卡顿。', extra3:'调整了部分图标的外观。', extra4:'游戏页可直接选择渲染后端。', extra5:'游戏页加入卡片动效。', extra6:'联机房间支持查看密码和分享房间。', extra7:'优化了市场加速链路的处理。', moreFixes:'问题修复', fix1:'修复被踢出联机房间后重复弹窗。', fix2:'修复市场下载的模组有时被识别为外部导入。', fix3:'EasyTier 连接失败信息不再持久保存。', fix4:'修复动态刷新率设备的最高 FPS 意外变为 60。', fix5:'修复启动器中的部分性能问题。', never:'不再显示 1.6.1 的版本新内容', done:'进入启动器', reopen:'再次预览版本新内容', actionToast:'原型演示：这里将打开「我的模组」。', close:'关闭版本新内容' },
+      tw: { version:'1.6.1', title:'來看看有哪些新內容', agentTitle:'使用 AI 來編輯模組', agentBody:'想更改模組內容卻苦於不會編譯模組？讓 AI 來幫你！此版本新增了自然語言編輯模組的功能，完成相應設定後，可以用自然語言完成但不限於以下修改。', agentPoint1:'查看模組內容和玩法，了解不熟悉的機制。', agentPoint2:'將模組翻譯成任意語言。', agentPoint3:'為模組新增機制或修改數值。', agentPoint4:'以及更多你能想到的內容！', agentEntry:'入口：模組卡片 - 更多 - 使用 AI 編輯', agentAction:'前往設定大型語言模型支援', slingTitle:'內建小遊戲', slingBody:'啟動器中整合了一款小遊戲，修復等待載入時無聊的 bug！', slingPoint1:'設定頁「啟用界面樣式」中的 Sling Break 範例。', slingPoint2:'載入遊戲時可以遊玩並查看啟動進度。', moreTitle:'更多內容', moreIntro:'此版本的其他改進與問題修復。', moreFeatures:'功能與體驗', extra1:'設定中可以解除幀率上限。', extra2:'改善遊戲頁冷載入，減少卡頓。', extra3:'調整了部分圖示外觀。', extra4:'遊戲頁可直接選擇渲染後端。', extra5:'遊戲頁加入卡片動效。', extra6:'連線房間支援檢視密碼與分享房間。', extra7:'最佳化市場加速線路的處理。', moreFixes:'問題修復', fix1:'修復被踢出連線房間後重複顯示對話框。', fix2:'修復市場下載的模組偶爾被識別為外部匯入。', fix3:'EasyTier 連線失敗資訊不再永久儲存。', fix4:'修復動態更新率裝置的最高 FPS 意外變為 60。', fix5:'修復啟動器中的部分效能問題。', never:'不再顯示 1.6.1 的版本新內容', done:'進入啟動器', reopen:'再次預覽版本新內容', actionToast:'原型演示：這裡將開啟「我的模組」。', close:'關閉版本新內容' },
+      en: { version:'1.6.1', title:'See what’s new', agentTitle:'Use AI to edit mods', agentBody:'Want to change a mod but not sure how to compile it? Let AI help. This release adds natural-language mod editing. After configuration, use natural language to make changes such as:', agentPoint1:'Explore a mod’s content and gameplay to understand unfamiliar mechanics.', agentPoint2:'Translate mods into any language.', agentPoint3:'Add new mechanics to a mod or change its values.', agentPoint4:'And more—whatever you can imagine.', agentEntry:'Find it at: Mod card → More → Edit with AI', agentAction:'Configure LLM support', slingTitle:'Built-in mini-game', slingBody:'A mini-game is now built into the launcher, fixing the boring wait while the game loads!', slingPoint1:'See the Sling Break sample in Settings under Enable interface style.', slingPoint2:'Play while the game loads and keep track of startup progress.', moreTitle:'More in this update', moreIntro:'Other improvements and fixes in 1.6.1.', moreFeatures:'Features and polish', extra1:'Remove the FPS cap from settings.', extra2:'Reduce stutter during cold loading of the game page.', extra3:'Refreshed the appearance of several icons.', extra4:'Select the rendering backend on the game page.', extra5:'Added card animations to the game page.', extra6:'View room passwords and share multiplayer rooms.', extra7:'Improved the Workshop acceleration routing logic.', moreFixes:'Fixes', fix1:'Prevent repeated dialogs after being kicked from a room.', fix2:'Keep Workshop downloads from appearing as externally imported mods.', fix3:'EasyTier connection failures are no longer saved persistently.', fix4:'Fix the maximum FPS dropping to 60 on variable-refresh-rate devices.', fix5:'Fixed several launcher performance issues.', never:'Don’t show what’s new for 1.6.1 again', done:'Continue to launcher', reopen:'Preview what’s new again', actionToast:'Prototype: this opens My mods.', close:'Close what’s new' }
+    };
+    const $ = id => document.getElementById(id);
+    function translate() { const lang = $('language').value, strings = copy[lang]; document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang === 'tw' ? 'zh-TW' : 'en'; document.querySelectorAll('[data-copy]').forEach(el => { el.textContent = strings[el.dataset.copy]; }); $('close').setAttribute('aria-label', strings.close); $('reopen').textContent = strings.reopen; }
+    function dismiss() { $('overlay').classList.add('hidden'); $('reopen').classList.remove('hidden'); $('toast').classList.remove('show'); }
+    $('language').addEventListener('change', translate);
+    ['light','dark'].forEach(id => $(id).addEventListener('click', () => { document.body.classList.toggle('dark', id === 'dark'); $('light').classList.toggle('active', id === 'light'); $('dark').classList.toggle('active', id === 'dark'); }));
+    ['phone','wide'].forEach(id => $(id).addEventListener('click', () => { $('stage').classList.toggle('wide', id === 'wide'); $('phone').classList.toggle('active', id === 'phone'); $('wide').classList.toggle('active', id === 'wide'); }));
+    $('close').addEventListener('click', dismiss); $('done').addEventListener('click', dismiss);
+    $('reopen').addEventListener('click', () => { $('never').checked = false; $('dialogBody').scrollTop = 0; $('overlay').classList.remove('hidden'); $('reopen').classList.add('hidden'); });
+    $('action').addEventListener('click', () => { $('toast').textContent = copy[$('language').value].actionToast; $('toast').classList.add('show'); setTimeout(() => $('toast').classList.remove('show'), 3000); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('overlay').classList.contains('hidden')) dismiss(); });
+    translate();
+  </script>
+</body>
+</html>

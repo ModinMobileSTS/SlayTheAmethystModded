@@ -50,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -86,6 +87,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
+import io.stamethyst.BuildConfig
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.backend.workshop.WorkshopItemSummary
@@ -126,6 +128,9 @@ import io.stamethyst.ui.quickstart.QuickStartScreen
 import io.stamethyst.ui.quickstart.QuickStartAutomaticImportScreen
 import io.stamethyst.ui.quickstart.QuickStartJarImportScreen
 import io.stamethyst.ui.quickstart.QuickStartSteamDownloadScreen
+import io.stamethyst.ui.whatsnew.WhatsNewScreen
+import io.stamethyst.ui.whatsnew.WhatsNewContent
+import io.stamethyst.ui.whatsnew.WhatsNewActionRoute
 import io.stamethyst.ui.settings.first_run.LauncherFirstRunSetupScreen
 import io.stamethyst.ui.settings.core.LauncherDeveloperSettingsScreen
 import io.stamethyst.ui.settings.baidu.LauncherBaiduTranslationCredentialsScreen
@@ -252,6 +257,9 @@ fun LauncherContent(
     var pendingDockRoute by remember { mutableStateOf<Route?>(null) }
     var dockNavigationRequestId by remember { mutableStateOf(0) }
     var dockNavigationJob by remember { mutableStateOf<Job?>(null) }
+    val whatsNewRelease = remember { WhatsNewContent.releaseFor(BuildConfig.VERSION_NAME) }
+    var showWhatsNew by rememberSaveable { mutableStateOf(false) }
+    var whatsNewDismissedThisSession by rememberSaveable { mutableStateOf(false) }
     val dockPageRoute = pendingDockRoute ?: dockPagerState.currentLauncherDockRoute()
     val showDockPager = rootRoute.launcherDockIndex() != null || currentRoute.launcherDockIndex() != null
     val showOverlayNav = currentRoute.launcherDockIndex() == null || navigator.stackSize > 1
@@ -409,6 +417,14 @@ fun LauncherContent(
         onCurrentDockRouteChanged(currentRoute.launcherDockRoute())
         if (currentRoute != Route.Mods) {
             modsBatchSelectionMode = false
+        }
+    }
+
+    LaunchedEffect(activity, whatsNewRelease?.id) {
+        if (whatsNewRelease != null && !whatsNewDismissedThisSession &&
+            LauncherPreferences.lastSeenWhatsNewVersion(activity) != whatsNewRelease.id
+        ) {
+            showWhatsNew = true
         }
     }
 
@@ -1302,6 +1318,37 @@ fun LauncherContent(
                 )
             }
         }
+        if (showWhatsNew && whatsNewRelease != null) {
+            WhatsNewScreen(
+                release = whatsNewRelease,
+                onClose = { suppressFutureDisplay ->
+                    if (suppressFutureDisplay) {
+                        LauncherPreferences.markWhatsNewSeen(activity, whatsNewRelease.id)
+                    }
+                    whatsNewDismissedThisSession = true
+                    showWhatsNew = false
+                },
+                onAction = { route, suppressFutureDisplay ->
+                    if (suppressFutureDisplay) {
+                        LauncherPreferences.markWhatsNewSeen(activity, whatsNewRelease.id)
+                    }
+                    whatsNewDismissedThisSession = true
+                    showWhatsNew = false
+                    if (route == WhatsNewActionRoute.SETTINGS_LLM) {
+                        navigator.push(Route.SettingsLlm)
+                    } else {
+                        selectDockRoute(
+                            when (route) {
+                                WhatsNewActionRoute.SETTINGS -> Route.Settings
+                                WhatsNewActionRoute.WORKSHOP -> Route.Workshop
+                                WhatsNewActionRoute.MODS -> Route.Mods
+                                WhatsNewActionRoute.SETTINGS_LLM -> Route.SettingsLlm
+                            }
+                        )
+                    }
+                },
+            )
+        }
     }
     }
 }
@@ -1675,10 +1722,10 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.Feedback,
         Route.FeedbackSubscriptions,
         Route.FeedbackIssueBrowser,
-         is Route.FeedbackConversation,
-         is Route.FeedbackIssuePreview,
-         is Route.AiModEditor,
-         null -> null
+          is Route.FeedbackConversation,
+          is Route.FeedbackIssuePreview,
+          is Route.AiModEditor,
+          null -> null
     }
 }
 

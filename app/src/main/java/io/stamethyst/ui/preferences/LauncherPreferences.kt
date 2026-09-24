@@ -36,6 +36,20 @@ import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.backend.workshop.WorkshopBrowseSort
 
 object LauncherPreferences {
+    private const val PREF_WHATS_NEW = "whats_new"
+    private const val KEY_LAST_SEEN_VERSION = "last_seen_version"
+
+    fun lastSeenWhatsNewVersion(context: Context): String? =
+        context.getSharedPreferences(PREF_WHATS_NEW, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_SEEN_VERSION, null)
+
+    fun markWhatsNewSeen(context: Context, version: String) {
+        context.getSharedPreferences(PREF_WHATS_NEW, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_SEEN_VERSION, version)
+            .apply()
+    }
+
     val DEFAULT_BACK_BEHAVIOR: BackBehavior
         get() = LauncherConfig.DEFAULT_BACK_BEHAVIOR
     val DEFAULT_BACK_IMMEDIATE_EXIT: Boolean
