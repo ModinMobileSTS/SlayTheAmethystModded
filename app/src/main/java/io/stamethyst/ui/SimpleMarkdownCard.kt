@@ -71,6 +71,7 @@ private val htmlAttributeRegex =
 private val bareUrlRegex =
     Regex("""https?://[^\s<>()]+(?:\([^\s<>()]*\)[^\s<>()]*)*""", RegexOption.IGNORE_CASE)
 private val markdownTableSeparatorRegex = Regex(":?-{3,}:?")
+private val markdownOrderedListLineRegex = Regex("^\\d+[.)]\\s+.*")
 
 /** `---`, `***`, `___` (with optional spaces) on a line of their own. */
 private val markdownHorizontalRuleRegex =
@@ -111,7 +112,13 @@ internal fun SimpleMarkdownContent(
     imageShowOpenButton: Boolean = true,
     onImageClick: ((String) -> Unit)? = null,
 ) {
-    val blocks = remember(markdown) { parseSimpleMarkdown(markdown) }
+    val normalizedMarkdown = remember(markdown) {
+        markdown.replace("\r\n", "\n").replace('\r', '\n').trim()
+    }
+    val plainText = remember(normalizedMarkdown) { isPlainMarkdownText(normalizedMarkdown) }
+    val blocks = remember(normalizedMarkdown, plainText) {
+        if (plainText) emptyList() else parseSimpleMarkdown(normalizedMarkdown)
+    }
     val content: @Composable () -> Unit = {
         Column(
             modifier = modifier,
@@ -122,6 +129,13 @@ internal fun SimpleMarkdownContent(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium,
                     color = textColor
+                )
+            }
+            if (plainText) {
+                Text(
+                    text = normalizedMarkdown,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = textColor,
                 )
             }
             blocks.forEach { block ->
@@ -246,6 +260,24 @@ internal fun SimpleMarkdownContent(
         content()
     }
 }
+
+/** Avoid the parser and annotated-string builder for the common plain-text response. */
+private fun isPlainMarkdownText(markdown: String): Boolean {
+    if (markdown.isBlank()) return false
+    if (markdown.lineSequence().any { line ->
+            val trimmed = line.trimStart()
+            trimmed.startsWith("#") || trimmed.startsWith(">") || trimmed.startsWith("```") ||
+                trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("+ ") ||
+                markdownOrderedListLineRegex.matches(trimmed)
+        }
+    ) return false
+    return !markdown.containsAny(
+        "**", "~~", "`", "![", "](", "http://", "https://", "<img", "<image", "|",
+        "*", "_", "[",
+    )
+}
+
+private fun String.containsAny(vararg values: String): Boolean = values.any(::contains)
 
 @Composable
 private fun MarkdownTable(
