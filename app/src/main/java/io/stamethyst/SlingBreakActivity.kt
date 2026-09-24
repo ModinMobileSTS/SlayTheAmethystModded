@@ -23,6 +23,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.backend.diag.WebViewAudioEnvironment
+import io.stamethyst.backend.audio.SlingNativeAudioBridge
 
 internal const val SLING_BREAK_GAME_URL = "file:///android_asset/slingbreak/index.html"
 
@@ -74,6 +75,7 @@ internal fun clearSlingBreakWebViewData(context: Context, onComplete: () -> Unit
 @Suppress("DEPRECATION")
 internal fun WebView.configureSlingBreakGame() {
     val diagnosticContext = context.applicationContext
+    SlingNativeAudioBridge.attach(this)
     setBackgroundColor(Color.rgb(245, 246, 243))
     overScrollMode = WebView.OVER_SCROLL_NEVER
     isVerticalScrollBarEnabled = false
@@ -103,6 +105,7 @@ internal fun WebView.configureSlingBreakGame() {
     }
     webViewClient = object : WebViewClient() {
         override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+            view?.let { SlingNativeAudioBridge.pageStarted(it) }
             WebViewDiagnosticsLogStore.append(diagnosticContext, "page_started", "url=$url")
             if (io.stamethyst.ui.preferences.LauncherPreferences
                     .isSlingBreakAudioDebugModeEnabled(diagnosticContext)) {
@@ -156,16 +159,19 @@ class SlingBreakActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        SlingNativeAudioBridge.setActive(webView, true)
         webView.onResume()
         hideSystemBars()
     }
 
     override fun onPause() {
+        SlingNativeAudioBridge.setActive(webView, false)
         webView.onPause()
         super.onPause()
     }
 
     override fun onDestroy() {
+        SlingNativeAudioBridge.close(webView)
         webView.destroy()
         super.onDestroy()
     }

@@ -9,6 +9,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
+add_library(sling_audio SHARED sling_audio.cpp)
+target_link_libraries(sling_audio PRIVATE aaudio dl)
+
 find_package(bytehook REQUIRED CONFIG)
 find_package(games-frame-pacing REQUIRED CONFIG)
 find_package(zstd REQUIRED CONFIG)
