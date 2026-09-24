@@ -1,8 +1,11 @@
 package io.stamethyst.backend.mods.importing.patches.mods.superfastmode
 
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.file.Files
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -63,9 +66,66 @@ class SuperFastModeImportCompatPatcherTest {
         assertNull(SuperFastModeImportCompatPatcher.inspectClassBytes(legacyV2Fixture("other/Mod")))
     }
 
+    @Test fun `previous imported jar with old guard is migrated on reimport`() {
+        val target = Files.createTempFile("superfastmode-legacy-test", ".jar").toFile()
+        val guard = "skrelpoid/superfastmode/patches/BossRewardLerpGuard.class"
+        try {
+            ZipOutputStream(FileOutputStream(target)).use { zip ->
+                zip.putNextEntry(ZipEntry(entry))
+                zip.write(legacyV2Fixture())
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry(guard))
+                zip.write(byteArrayOf(1, 2, 3))
+                zip.closeEntry()
+            }
+            assertTrue(SuperFastModeImportCompatPatcher.patchInPlace(target))
+            assertFalse(SuperFastModeImportCompatPatcher.patchInPlace(target))
+            ZipFile(target).use { zip ->
+                val repaired = zip.getInputStream(zip.getEntry(entry)).use { it.readBytes() }
+                assertNull(SuperFastModeImportCompatPatcher.inspectClassBytes(repaired)?.replacement)
+                val guardBytes = zip.getInputStream(zip.getEntry(guard)).use { it.readBytes() }
+                assertArrayEquals(SuperFastModeImportCompatPatcher.createGuardClass(), guardBytes)
+            }
+        } finally {
+            target.delete()
+        }
+    }
+
+    @Test fun `legacy v1 dungeon read is removed during migration`() {
+        val node = ClassNode()
+        ClassReader(legacyV2Fixture()).accept(node, 0)
+        node.fields.clear()
+        val replace = node.methods.single { it.name == "Replace" }
+        val flag = replace.instructions.toArray().filterIsInstance<FieldInsnNode>().single {
+            it.name == "bossRewardUpdating"
+        }
+        val end = (flag.next as JumpInsnNode).label
+        replace.instructions.insertBefore(flag, FieldInsnNode(Opcodes.GETSTATIC,
+            "com/megacrit/cardcrawl/dungeons/AbstractDungeon", "screen",
+            "Lcom/megacrit/cardcrawl/dungeons/AbstractDungeon\$CurrentScreen;"))
+        replace.instructions.insertBefore(flag, FieldInsnNode(Opcodes.GETSTATIC,
+            "com/megacrit/cardcrawl/dungeons/AbstractDungeon\$CurrentScreen", "BOSS_REWARD",
+            "Lcom/megacrit/cardcrawl/dungeons/AbstractDungeon\$CurrentScreen;"))
+        replace.instructions.insertBefore(flag, JumpInsnNode(Opcodes.IF_ACMPEQ, end))
+        replace.instructions.remove(flag.next)
+        replace.instructions.remove(flag)
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
+        val repaired = SuperFastModeImportCompatPatcher.inspectClassBytes(writer.toByteArray())?.replacement
+        assertNotNull(repaired)
+        val result = ClassNode()
+        ClassReader(repaired).accept(result, 0)
+        assertEquals(listOf("isInstantLerp"), result.methods.single { it.name == "Replace" }
+            .instructions.toArray().filterIsInstance<FieldInsnNode>().map { it.name })
+    }
+
     @Test fun `boss guard saves and restores the existing switch and never reads dungeon state`() {
         val node = ClassNode()
         ClassReader(SuperFastModeImportCompatPatcher.createGuardClass()).accept(node, 0)
+        val patch = node.visibleAnnotations.single {
+            it.desc == "Lcom/evacipated/cardcrawl/modthespire/lib/SpirePatch;"
+        }
+        assertTrue(patch.values.contains("update"))
         assertEquals(setOf("Prefix", "Postfix"), node.methods.map { it.name }.toSet())
         val prefix = node.methods.single { it.name == "Prefix" }.instructions.toArray().filterIsInstance<FieldInsnNode>()
         val postfix = node.methods.single { it.name == "Postfix" }.instructions.toArray().filterIsInstance<FieldInsnNode>()
