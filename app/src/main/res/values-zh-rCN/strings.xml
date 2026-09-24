@@ -448,6 +448,7 @@
     <string name="whats_new_more_rooms">联机房间支持查看密码和分享房间。</string>
     <string name="whats_new_more_workshop">优化了市场加速链路的处理。</string>
     <string name="whats_new_more_fixes">问题修复</string>
+    <string name="whats_new_more_superfastmode">提供了修复 SuperFastMode 模组无法抓鸟笼等问题的补丁（需要重新导入模组）。</string>
     <string name="whats_new_more_kicked">修复被踢出联机房间后重复弹窗。</string>
     <string name="whats_new_more_mod_origin">修复市场下载的模组有时被识别为外部导入。</string>
     <string name="whats_new_more_easytier">EasyTier 连接失败信息不再持久保存。</string>

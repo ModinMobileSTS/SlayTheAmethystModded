@@ -449,6 +449,7 @@
     <string name="whats_new_more_rooms">View room passwords and share multiplayer rooms.</string>
     <string name="whats_new_more_workshop">Improved the Workshop acceleration routing logic.</string>
     <string name="whats_new_more_fixes">FIXES</string>
+    <string name="whats_new_more_superfastmode">Added a patch for SuperFastMode issues such as being unable to bottle cards (re-import the mod to apply it).</string>
     <string name="whats_new_more_kicked">Prevent repeated dialogs after being kicked from a room.</string>
     <string name="whats_new_more_mod_origin">Keep Workshop downloads from appearing as externally imported mods.</string>
     <string name="whats_new_more_easytier">EasyTier connection failures are no longer saved persistently.</string>

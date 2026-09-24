@@ -449,6 +449,7 @@
     <string name="whats_new_more_rooms">連線房間支援檢視密碼與分享房間。</string>
     <string name="whats_new_more_workshop">最佳化市場加速線路的處理。</string>
     <string name="whats_new_more_fixes">問題修復</string>
+    <string name="whats_new_more_superfastmode">提供了修復 SuperFastMode 模組無法抓鳥籠等問題的補丁（需要重新匯入模組）。</string>
     <string name="whats_new_more_kicked">修復被踢出連線房間後重複顯示對話框。</string>
     <string name="whats_new_more_mod_origin">修復市場下載的模組偶爾被識別為外部匯入。</string>
     <string name="whats_new_more_easytier">EasyTier 連線失敗資訊不再永久儲存。</string>

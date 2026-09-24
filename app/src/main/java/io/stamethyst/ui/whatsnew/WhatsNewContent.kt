@@ -88,6 +88,7 @@ object WhatsNewContent {
             WhatsNewMoreGroup(
                 titleRes = R.string.whats_new_more_fixes,
                 itemsRes = listOf(
+                    R.string.whats_new_more_superfastmode,
                     R.string.whats_new_more_kicked,
                     R.string.whats_new_more_mod_origin,
                     R.string.whats_new_more_easytier,
