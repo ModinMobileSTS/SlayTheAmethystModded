@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,15 +64,20 @@ internal fun BootOverlayStyleAnimatedPreview(
     style: BootOverlayStyle,
     imageConfig: BootOverlayImageConfig,
     loadingAnimation: BootOverlayAnimation,
+    animated: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val transition = rememberInfiniteTransition(label = "boot_style_preview")
-    val clock = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing)),
-        label = "preview_launch_cycle",
-    )
+    val clock: State<Float> = if (animated) {
+        val transition = rememberInfiniteTransition(label = "boot_style_preview")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing)),
+            label = "preview_launch_cycle",
+        )
+    } else {
+        remember { mutableStateOf(0.55f) }
+    }
     // A fixed miniature viewport keeps all five previews legible and proportional.
     // Semantics belong to the option label, not to the simulated progress/log output.
     Layout(
@@ -263,11 +270,15 @@ private fun SlingBreakPreview(progress: Float, cycle: Float, status: String) {
                     Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(green))
                 }
             }
-            if (progress >= 1f) {
-                // Deliberately not clickable: tapping anywhere still selects this style.
-                PreviewText(stringResource(R.string.main_launch_game), Color(0xFFC4F589),
-                    Modifier.background(ink, RoundedCornerShape(6.dp)).padding(10.dp))
-            }
+            // Always reserve the ready-action slot so progress changes cannot resize the header.
+            PreviewText(
+                stringResource(R.string.main_launch_game),
+                Color(0xFFC4F589),
+                Modifier
+                    .graphicsLayer { alpha = if (progress >= 1f) 1f else 0f }
+                    .background(ink, RoundedCornerShape(6.dp))
+                    .padding(10.dp),
+            )
         }
         Canvas(Modifier.fillMaxWidth().weight(1f)) {
             val sx = size.width / 480f
