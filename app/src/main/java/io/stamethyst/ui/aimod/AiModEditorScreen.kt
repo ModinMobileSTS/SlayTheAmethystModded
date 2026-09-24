@@ -6,10 +6,6 @@ import android.content.Context
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -92,6 +88,7 @@ import io.stamethyst.backend.llm.JarPatch
 import io.stamethyst.backend.llm.JarPatchApplier
 import io.stamethyst.backend.llm.JarPatchCodec
 import io.stamethyst.backend.llm.LlmReasoningEffort
+import io.stamethyst.backend.llm.LlmSettings
 import io.stamethyst.backend.llm.LlmSettingsRepository
 import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.config.RuntimePaths
@@ -190,12 +187,12 @@ internal class AiModEditorViewModel(
         private set
     var appliedBackupPath by mutableStateOf<String?>(null)
         private set
-    var reasoningEffort by mutableStateOf(LlmSettingsRepository(context).get().reasoningEffort)
+    var reasoningEffort by mutableStateOf(LlmReasoningEffort.OFF)
         private set
 
     private var nextMessageId = 1L
     private val settingsRepository = LlmSettingsRepository(context)
-    var llmSettings by mutableStateOf(settingsRepository.get())
+    var llmSettings by mutableStateOf(LlmSettings())
         private set
     private val parentModSegment = AgentPatchModManager.parentModSegment(modId)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(context, parentModSegment)
@@ -209,10 +206,31 @@ internal class AiModEditorViewModel(
 
     val history: List<AiEditorSession> get() = sessions.filter { it.hasUserPrompt() }
 
+    private var toolInfo by mutableStateOf<List<AiToolInfo>>(emptyList())
+
     init {
-        workspaceAccessRoot.mkdirs()
-        conversationsRoot.mkdirs()
-        viewModelScope.launch(storageDispatcher) { loadConversation() }
+        // Directory creation, encrypted preference initialization, and tool construction can all
+        // touch disk or initialize providers. Keep them out of the first composition frame.
+        viewModelScope.launch(storageDispatcher) {
+            workspaceAccessRoot.mkdirs()
+            conversationsRoot.mkdirs()
+            val loadedSettings = settingsRepository.get()
+            withContext(Dispatchers.Main.immediate) {
+                llmSettings = loadedSettings
+                reasoningEffort = loadedSettings.reasoningEffort
+            }
+            loadConversation()
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            val loadedTools = AiModAgentExecutor(
+                context,
+                storagePath,
+                modName,
+                modId,
+                LlmReasoningEffort.OFF,
+            ).availableTools()
+            withContext(Dispatchers.Main.immediate) { toolInfo = loadedTools }
+        }
         startConversationPolling()
     }
 
@@ -366,16 +384,17 @@ internal class AiModEditorViewModel(
 
     fun updateReasoningEffort(value: LlmReasoningEffort) {
         reasoningEffort = value
-        val updated = settingsRepository.get().copy(reasoningEffort = value)
-        settingsRepository.set(updated)
-        llmSettings = settingsRepository.get()
+        val updated = llmSettings.copy(reasoningEffort = value)
+        llmSettings = updated
+        launchStorage { settingsRepository.set(updated) }
     }
 
     fun selectModel(modelName: String) {
         val trimmed = modelName.trim()
         if (trimmed.isEmpty() || trimmed == llmSettings.modelName) return
-        settingsRepository.set(llmSettings.copy(modelName = trimmed))
-        llmSettings = settingsRepository.get()
+        val updated = llmSettings.copy(modelName = trimmed)
+        llmSettings = updated
+        launchStorage { settingsRepository.set(updated) }
     }
 
     fun send(prompt: String, attachments: List<AiAttachment> = emptyList()) {
@@ -479,7 +498,7 @@ internal class AiModEditorViewModel(
                 val id = (session.messages.maxOfOrNull { it.id } ?: 0L) + 1
                 assistantId = id
                 session.copy(messages = session.messages + AiEditorMessage(
-                    id, false, "", streaming = true, modelName = settingsRepository.get().modelName,
+                    id, false, "", streaming = true, modelName = llmSettings.modelName,
                 ))
             }
             val job = AiAgentJobRecord(
@@ -526,10 +545,6 @@ internal class AiModEditorViewModel(
                 busy = false
                 error = message
             }
-    }
-
-    private val toolInfo by lazy {
-        AiModAgentExecutor(context, storagePath, modName, modId, reasoningEffort).availableTools()
     }
 
     fun availableTools(): List<AiToolInfo> = toolInfo
@@ -657,7 +672,8 @@ fun LauncherAiModEditorScreen(
 
     // Entering the screen (or switching conversations) lands on the newest message without
     // animating up from the top; later appends keep the smooth auto-scroll.
-    LaunchedEffect(viewModel.currentSessionId, allMessages.size) {
+    LaunchedEffect(viewModel.currentSessionId, allMessages.size, viewModel.storageReady) {
+        if (!viewModel.storageReady) return@LaunchedEffect
         if (allMessages.isEmpty()) {
             initialScrollApplied = true
             return@LaunchedEffect
@@ -711,16 +727,8 @@ fun LauncherAiModEditorScreen(
             }
     }
 
-    AnimatedVisibility(
-        visible = true,
+    Scaffold(
         modifier = modifier,
-        enter = fadeIn(animationSpec = tween(260)) +
-            slideInVertically(
-                animationSpec = tween(320),
-                initialOffsetY = { fullHeight -> fullHeight / 14 },
-            ),
-    ) {
-        Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopAppBar(
@@ -802,7 +810,7 @@ fun LauncherAiModEditorScreen(
                 },
                 )
             },
-        ) { paddingValues ->
+    ) { paddingValues ->
         if (!configured) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
@@ -959,7 +967,6 @@ fun LauncherAiModEditorScreen(
                 draftAttachments.clear()
             },
         )
-        }
     }
     if (showApplyConfirmation) {
         AlertDialog(
