@@ -10,6 +10,7 @@ data class WhatsNewRelease(
     val matchesVersion: (String) -> Boolean,
     @StringRes val titleRes: Int,
     val entries: List<WhatsNewEntry>,
+    @StringRes val noticeRes: Int? = null,
     val moreTitleRes: Int? = null,
     val moreIntroductionRes: Int? = null,
     val moreGroups: List<WhatsNewMoreGroup> = emptyList(),
@@ -44,7 +45,8 @@ enum class WhatsNewActionRoute {
 }
 
 object WhatsNewContent {
-    private val version161Pattern = Regex("^1\\.6\\.1(?:-hotfix[0-9]+)?$")
+    private val version161Pattern = Regex("^1\\.6\\.1(?:(?:-RC[0-9]+)|(?:-hotfix[0-9]+))?$")
+    private val version161RcPattern = Regex("^1\\.6\\.1-RC[0-9]+$")
     private val release161 = WhatsNewRelease(
         id = "1.6.1",
         matchesVersion = version161Pattern::matches,
@@ -101,6 +103,12 @@ object WhatsNewContent {
 
     private val releases = listOf(release161)
 
-    fun releaseFor(versionName: String): WhatsNewRelease? =
-        releases.firstOrNull { it.matchesVersion(versionName) }
+    fun releaseFor(versionName: String): WhatsNewRelease? {
+        val release = releases.firstOrNull { it.matchesVersion(versionName) } ?: return null
+        return if (version161RcPattern.matches(versionName)) {
+            release.copy(noticeRes = R.string.whats_new_prerelease_notice)
+        } else {
+            release
+        }
+    }
 }

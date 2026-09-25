@@ -600,7 +600,7 @@ private fun WorkshopBadge(
     onClick: () -> Unit,
 ) {
     ModCardIconBadge(
-        iconResId = R.drawable.ic_dock_market,
+        iconResId = R.drawable.ic_settings_market,
         contentDescription = stringResource(R.string.main_mod_workshop_badge_content_description),
         enabled = enabled,
         onClick = onClick

@@ -21,10 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,8 +41,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -65,7 +61,6 @@ fun WhatsNewScreen(
     if (release.entries.isEmpty() && release.moreGroups.isEmpty()) return
 
     var suppressFutureDisplay by rememberSaveable(release.id) { mutableStateOf(false) }
-    val closeDescription = stringResource(R.string.whats_new_close)
     val configuration = LocalConfiguration.current
     val dialogWidth = (configuration.screenWidthDp.dp * 0.92f).coerceAtMost(560.dp)
     val dialogHeight = (configuration.screenHeightDp.dp * 0.88f).coerceAtMost(760.dp)
@@ -95,24 +90,12 @@ fun WhatsNewScreen(
                             .background(MaterialTheme.colorScheme.primaryContainer)
                             .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.whats_new_version, release.id),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            IconButton(
-                                onClick = { onClose(suppressFutureDisplay) },
-                                modifier = Modifier.semantics { contentDescription = closeDescription },
-                            ) {
-                                Text("×", style = MaterialTheme.typography.headlineSmall)
-                            }
-                        }
+                        Text(
+                            text = stringResource(R.string.whats_new_version, release.id),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                        )
                         Spacer(Modifier.height(12.dp))
                         Text(
                             text = stringResource(release.titleRes),
@@ -120,6 +103,15 @@ fun WhatsNewScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
+                    }
+
+                    release.noticeRes?.let { notice ->
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Column(
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                        ) {
+                            WhatsNewHintCard(notice)
+                        }
                     }
 
                     release.entries.forEachIndexed { index, entry ->
@@ -184,27 +176,29 @@ fun WhatsNewScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                value = suppressFutureDisplay,
-                                role = Role.Checkbox,
-                                onValueChange = { suppressFutureDisplay = it },
-                            ),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Checkbox(checked = suppressFutureDisplay, onCheckedChange = null)
-                        Text(
-                            text = stringResource(R.string.whats_new_do_not_show_again, release.id),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = { onClose(suppressFutureDisplay) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.whats_new_done))
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .toggleable(
+                                    value = suppressFutureDisplay,
+                                    role = Role.Checkbox,
+                                    onValueChange = { suppressFutureDisplay = it },
+                                ),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = suppressFutureDisplay, onCheckedChange = null)
+                            Text(
+                                text = stringResource(R.string.whats_new_do_not_show_again, release.id),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(onClick = { onClose(suppressFutureDisplay) }) {
+                            Text(stringResource(R.string.whats_new_confirm))
+                        }
                     }
                 }
             }

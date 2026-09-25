@@ -72,6 +72,27 @@ class LauncherUpdateVersioningTest {
     }
 
     @Test
+    fun isRemoteNewer_ordersDevRcStableAndHotfixStages() {
+        val versions = listOf(
+            "1.6.1-dev1",
+            "1.6.1-dev2",
+            "1.6.1-RC1",
+            "1.6.1-RC2",
+            "1.6.1-RC10",
+            "1.6.1",
+            "1.6.1-hotfix1",
+            "1.6.2-dev1"
+        )
+        versions.zipWithNext().forEach { (older, newer) ->
+            assertEquals(-1, LauncherUpdateVersioning.compareReleaseVersions(older, newer))
+            assertTrue(LauncherUpdateVersioning.isRemoteNewer(older, newer))
+            assertFalse(LauncherUpdateVersioning.isRemoteNewer(newer, older))
+        }
+        assertEquals(-1, LauncherUpdateVersioning.compareReleaseVersions("v1.6.1-RC1", "1.6.1"))
+        assertEquals(0, LauncherUpdateVersioning.compareReleaseVersions("v1.6.1-RC2", "1.6.1-RC2"))
+    }
+
+    @Test
     fun compareReleaseVersions_ordersReleaseTagsAndReturnsNullForUnknownTags() {
         assertEquals(
             -1,
@@ -89,9 +110,10 @@ class LauncherUpdateVersioningTest {
     }
 
     @Test
-    fun releaseVersionFamilyKey_ignoresHotfixSuffix() {
+    fun releaseVersionFamilyKey_ignoresStageSuffix() {
         assertEquals("1.3.2", LauncherUpdateVersioning.releaseVersionFamilyKey("v1.3.2"))
         assertEquals("1.3.2", LauncherUpdateVersioning.releaseVersionFamilyKey("1.3.2-dev1"))
+        assertEquals("1.3.2", LauncherUpdateVersioning.releaseVersionFamilyKey("v1.3.2-RC1"))
         assertEquals("1.3.2", LauncherUpdateVersioning.releaseVersionFamilyKey("1.3.2-hotfix2"))
         assertNull(LauncherUpdateVersioning.releaseVersionFamilyKey("nightly"))
     }

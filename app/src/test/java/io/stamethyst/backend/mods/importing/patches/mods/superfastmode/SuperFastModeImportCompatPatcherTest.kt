@@ -12,6 +12,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
@@ -23,15 +24,45 @@ import org.objectweb.asm.tree.JumpInsnNode
 class SuperFastModeImportCompatPatcherTest {
     private val entry = "skrelpoid/superfastmode/patches/MathUtilsPatches\$LerpPatch.class"
 
-    @Test fun `original lerp class is unchanged and second import is a no-op`() {
-        val original = sequenceOf(File("../agent-tmp/SuperFastMode.jar"), File("agent-tmp/SuperFastMode.jar"))
-            .firstOrNull { it.isFile } ?: error("Place the original SuperFastMode.jar in agent-tmp")
-        val target = Files.createTempFile("superfastmode-patch-test", ".jar").toFile()
+    @Test fun `clean import requires no external SuperFastMode jar`() {
+        val original = Files.createTempFile("superfastmode-source-test", ".jar").toFile()
+        val target = Files.createTempFile("superfastmode-import-test", ".jar").toFile()
         try {
+            val classBytes = originalFixture()
+            val resourceBytes = "untouched".toByteArray()
+            ZipOutputStream(FileOutputStream(original)).use { zip ->
+                zip.putNextEntry(ZipEntry(entry))
+                zip.write(classBytes)
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("img/test.txt"))
+                zip.write(resourceBytes)
+                zip.closeEntry()
+            }
             original.copyTo(target, overwrite = true)
             assertTrue(SuperFastModeImportCompatPatcher.patchInPlace(target))
             assertFalse(SuperFastModeImportCompatPatcher.patchInPlace(target))
-            ZipFile(original).use { source ->
+            ZipFile(target).use { zip ->
+                assertArrayEquals(classBytes, zip.getInputStream(zip.getEntry(entry)).use { it.readBytes() })
+                assertArrayEquals(resourceBytes, zip.getInputStream(zip.getEntry("img/test.txt")).use { it.readBytes() })
+                assertNotNull(zip.getEntry("skrelpoid/superfastmode/patches/BossRewardLerpGuard.class"))
+            }
+        } finally {
+            original.delete()
+            target.delete()
+        }
+    }
+
+    @Test fun `optional real SuperFastMode jar is unchanged and second import is a no-op`() {
+        val original = sequenceOf(File("../agent-tmp/SuperFastMode.jar"), File("agent-tmp/SuperFastMode.jar"))
+            .firstOrNull { it.isFile }
+        assumeTrue("Optional real-JAR integration test", original != null)
+        val sourceJar = original!!
+        val target = Files.createTempFile("superfastmode-patch-test", ".jar").toFile()
+        try {
+            sourceJar.copyTo(target, overwrite = true)
+            assertTrue(SuperFastModeImportCompatPatcher.patchInPlace(target))
+            assertFalse(SuperFastModeImportCompatPatcher.patchInPlace(target))
+            ZipFile(sourceJar).use { source ->
                 ZipFile(target).use { patched ->
                     assertNotNull(patched.getEntry("skrelpoid/superfastmode/patches/BossRewardLerpGuard.class"))
                     val entries = source.entries()
@@ -197,6 +228,21 @@ class SuperFastModeImportCompatPatcherTest {
         method.visitMaxs(3, 4)
         method.visitEnd()
         writer.visitEnd()
+        return writer.toByteArray()
+    }
+
+    private fun originalFixture(): ByteArray {
+        val node = ClassNode()
+        ClassReader(legacyV2Fixture()).accept(node, 0)
+        node.fields.clear()
+        val replace = node.methods.single { it.name == "Replace" }
+        val flag = replace.instructions.toArray().filterIsInstance<FieldInsnNode>().single {
+            it.name == "bossRewardUpdating"
+        }
+        replace.instructions.remove(flag.next)
+        replace.instructions.remove(flag)
+        val writer = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        node.accept(writer)
         return writer.toByteArray()
     }
 }

@@ -199,6 +199,12 @@ internal fun SettingsPerformanceSection(
         modifier = Modifier.fillMaxWidth()
     )
 
+    val sliderTargetFps = targetFpsFromSliderValue(targetFpsSliderValue)
+    val targetFpsDescription = if (sliderTargetFps == LauncherConfig.UNLIMITED_TARGET_FPS) {
+        stringResource(R.string.settings_target_fps_unlimited)
+    } else {
+        stringResource(R.string.settings_target_fps_option, sliderTargetFps)
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -211,17 +217,12 @@ internal fun SettingsPerformanceSection(
             )
             ModSuggestionInfoButton(
                 enabled = !uiState.busy && displayRefreshRateHz > 0f,
-                contentDescription = context.getString(R.string.settings_target_fps_recommendation_button),
+                contentDescription = stringResource(R.string.settings_target_fps_recommendation_button),
                 onClick = { showFpsRecommendationDialog = true },
             )
         }
-        val sliderTargetFps = targetFpsFromSliderValue(targetFpsSliderValue)
         SlidingTextSwap(
-            text = if (sliderTargetFps == LauncherConfig.UNLIMITED_TARGET_FPS) {
-                stringResource(R.string.settings_target_fps_unlimited)
-            } else {
-                stringResource(R.string.settings_target_fps_option, sliderTargetFps)
-            },
+            text = targetFpsDescription,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -238,16 +239,7 @@ internal fun SettingsPerformanceSection(
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                stateDescription = if (
-                    targetFpsFromSliderValue(targetFpsSliderValue) == LauncherConfig.UNLIMITED_TARGET_FPS
-                ) {
-                    context.getString(R.string.settings_target_fps_unlimited)
-                } else {
-                    context.getString(
-                        R.string.settings_target_fps_option,
-                        targetFpsFromSliderValue(targetFpsSliderValue),
-                    )
-                }
+                stateDescription = targetFpsDescription
             },
     )
     if (showFpsRecommendationDialog) {

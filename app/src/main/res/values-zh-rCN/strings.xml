@@ -426,6 +426,7 @@
     <string name="main_app_title">杀戮尖塔模组启动器</string>
     <string name="whats_new_version">%1$s</string>
     <string name="whats_new_release_161_title">来看看有哪些新内容</string>
+    <string name="whats_new_prerelease_notice">您现在使用的是预发布版本，稳定性趋近于正式版，如果您在本版本发现问题，请报告给开发者，非常感谢您的测试！</string>
     <string name="whats_new_ai_title">使用 AI 来编辑模组</string>
     <string name="whats_new_ai_description">想更改模组内容但苦于不会编译模组？让 AI 来帮你！该版本新增了自然语言编辑模组的功能，进行相应配置后，可以用自然语言完成但不限于以下的修改。</string>
     <string name="whats_new_ai_detail_inspect">查看模组的内容和玩法，了解不懂的机制。</string>
@@ -454,8 +455,7 @@
     <string name="whats_new_more_easytier">EasyTier 连接失败信息不再持久保存。</string>
     <string name="whats_new_more_refresh_rate">修复动态刷新率设备的最高 FPS 意外变为 60。</string>
     <string name="whats_new_more_performance">修复启动器中的部分性能问题。</string>
-    <string name="whats_new_done">进入启动器</string>
-    <string name="whats_new_close">关闭版本新内容</string>
+    <string name="whats_new_confirm">确定</string>
                     <string name="whats_new_do_not_show_again">不再显示 %1$s 的版本新内容</string>
     <string name="main_open_settings">打开设置</string>
     <string name="main_action_add_folder">新建文件夹</string>

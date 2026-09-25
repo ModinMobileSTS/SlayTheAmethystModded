@@ -1607,7 +1607,7 @@ private val WorkshopModDownloadState.actionIconRes: Int
         WorkshopModDownloadState.Paused -> R.drawable.ic_workshop_paused
         WorkshopModDownloadState.Cancelling -> R.drawable.ic_workshop_cancelling
         WorkshopModDownloadState.DownloadFailed -> R.drawable.ic_workshop_retry
-        WorkshopModDownloadState.Unavailable -> R.drawable.ic_workshop_cancelling
+        WorkshopModDownloadState.Unavailable -> R.drawable.ic_workshop_installed
     }
 
 @Composable

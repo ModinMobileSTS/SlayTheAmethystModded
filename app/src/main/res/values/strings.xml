@@ -427,6 +427,7 @@
     <string name="main_app_title">Slay the Spire Mod Launcher</string>
     <string name="whats_new_version">%1$s</string>
     <string name="whats_new_release_161_title">See what’s new</string>
+    <string name="whats_new_prerelease_notice">You are using a pre-release version. Its stability is close to the stable release. If you find any issues in this version, please report them to the developers. Thank you very much for testing!</string>
     <string name="whats_new_ai_title">Use AI to edit mods</string>
     <string name="whats_new_ai_description">Want to change a mod but not sure how to compile it? Let AI help. This release adds natural-language mod editing. After configuration, use natural language to make changes such as:</string>
     <string name="whats_new_ai_detail_inspect">Explore a mod’s content and gameplay to understand unfamiliar mechanics.</string>
@@ -455,8 +456,7 @@
     <string name="whats_new_more_easytier">EasyTier connection failures are no longer saved persistently.</string>
     <string name="whats_new_more_refresh_rate">Fix the maximum FPS dropping to 60 on variable-refresh-rate devices.</string>
     <string name="whats_new_more_performance">Fixed several launcher performance issues.</string>
-    <string name="whats_new_done">Continue to launcher</string>
-    <string name="whats_new_close">Close What’s new</string>
+    <string name="whats_new_confirm">OK</string>
     <string name="whats_new_do_not_show_again">Don’t show what’s new for %1$s again</string>
     <string name="main_open_settings">Open settings</string>
     <string name="main_action_add_folder">New folder</string>
