@@ -54,6 +54,7 @@ class JvmLaunchController(
     private val onRuntimeCrashDetected: (detail: String) -> Unit,
     private val onRuntimeReady: () -> Unit,
     private val onSurfaceSizeSync: () -> Unit,
+    private val onJvmLaunchSurfaceSizeSync: (() -> Unit)? = null,
     private val getWindowWidth: () -> Int,
     private val getWindowHeight: () -> Int,
     /**
@@ -365,7 +366,7 @@ class JvmLaunchController(
                 // fixed fullscreen-priority canvas after chdir, immediately before JVM launch, so
                 // DisplayConfig.readConfig cannot observe an old/default window size.
                 measureStartupStep("sync_display_config_before_jvm") {
-                    onSurfaceSizeSync()
+                    (onJvmLaunchSurfaceSizeSync ?: onSurfaceSizeSync).invoke()
                 }
 
                 throwIfCancelled()

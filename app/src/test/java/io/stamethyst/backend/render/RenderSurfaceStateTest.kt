@@ -96,4 +96,31 @@ class RenderSurfaceStateTest {
         assertEquals(960, plan.windowWidth)
         assertEquals(540, plan.windowHeight)
     }
+
+    @Test
+    fun buildApplyPlan_keepsLogicalWindowStableWhenPhysicalViewChanges() {
+        val state = RenderSurfaceState()
+        state.markSurfaceAvailable(generation = 1, width = 2400, height = 1080)
+        val firstPlan = state.buildApplyPlan(
+            viewWidth = 2400,
+            viewHeight = 1080,
+            virtualWidth = 2319,
+            virtualHeight = 1080
+        )
+        state.recordBufferApply(firstPlan, applied = true, incrementsHolderResize = true)
+        state.recordWindowSizeDispatch(firstPlan, dispatched = true)
+
+        val laterPlan = state.buildApplyPlan(
+            viewWidth = 2319,
+            viewHeight = 1080,
+            virtualWidth = 2319,
+            virtualHeight = 1080
+        )
+
+        assertEquals(2319, laterPlan.windowWidth)
+        assertEquals(1080, laterPlan.windowHeight)
+        assertEquals(2319, laterPlan.physicalWidth)
+        assertEquals(1080, laterPlan.physicalHeight)
+        assertFalse(laterPlan.shouldDispatchWindowSize)
+    }
 }

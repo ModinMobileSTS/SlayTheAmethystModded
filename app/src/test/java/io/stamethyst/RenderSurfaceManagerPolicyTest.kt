@@ -276,6 +276,27 @@ class RenderSurfaceManagerPolicyTest {
     }
 
     @Test
+    fun resolveFixedVirtualViewportLayout_keepsLockedCroppedWindowAlignedWithView() {
+        assertEquals(
+            RenderViewportLayout(
+                width = 2319,
+                height = 1080,
+                leftMargin = 81,
+                topMargin = 0,
+                rightMargin = 0,
+                bottomMargin = 0
+            ),
+            RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+                rootWidth = 2400,
+                rootHeight = 1080,
+                cropInsets = RenderViewportInsets(left = 81),
+                virtualWidth = 2319,
+                virtualHeight = 1080
+            )
+        )
+    }
+
+    @Test
     fun resolveScreenBottomCropInsets_usesReliableInsetsOnly() {
         assertEquals(
             RenderViewportInsets(right = 48),

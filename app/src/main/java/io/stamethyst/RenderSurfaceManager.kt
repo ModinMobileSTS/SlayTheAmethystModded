@@ -98,6 +98,7 @@ class RenderSurfaceManager(
     private var bootOverlayActive = true
     private var fullscreenVirtualResolution: io.stamethyst.backend.render.VirtualResolution? = null
     private var startupVirtualResolution: io.stamethyst.backend.render.VirtualResolution? = null
+    private var logicalWindowLockedForJvmStartup = false
 
     private val foregroundResyncRunnable = Runnable {
         applyQueuedResync()
@@ -341,6 +342,46 @@ class RenderSurfaceManager(
             return
         }
         dispatchWindowSize(buildApplyPlan(renderView.width, renderView.height))
+    }
+
+    /**
+     * Freezes the logical game window immediately before the JVM is launched.
+     *
+     * Insets and freeform window geometry can settle after the first layout pass. The JVM/GDX
+     * side reads the logical dimensions only during startup, so allowing Android to publish a
+     * later cropped size would make rendering and touch mapping use different coordinate spaces.
+     */
+    fun lockWindowSizeForJvmStartup() {
+        if (!::renderView.isInitialized) {
+            return
+        }
+        if (startupVirtualResolution != null) {
+            logicalWindowLockedForJvmStartup = true
+            return
+        }
+        val root = renderRoot
+        val rootWidth = root?.width ?: renderView.width
+        val rootHeight = root?.height ?: renderView.height
+        if (rootWidth <= 0 || rootHeight <= 0) {
+            return
+        }
+        val insets = currentWindowInsets()
+        val windowCropHint = root?.let { resolveWindowConstrainedCropHint(it) }
+        val cropInsets = resolveViewportCropInsets(insets, windowCropHint)
+        val resolution = resolveVirtualResolutionForViewport(
+            rootWidth = rootWidth,
+            rootHeight = rootHeight,
+            cropInsets = cropInsets,
+            lockResolution = true
+        )
+        logicalWindowLockedForJvmStartup = startupVirtualResolution != null
+        println(
+            "RenderSurfaceLogicalWindow: locked " +
+                "window=${resolution.width}x${resolution.height}, " +
+                "root=${rootWidth}x${rootHeight}, " +
+                "insets=${insets != null}, " +
+                "crop=${cropInsets.left},${cropInsets.top},${cropInsets.right},${cropInsets.bottom}"
+        )
     }
 
     fun schedulePostBootSurfaceSoftRefresh(triggerReason: String) {
@@ -762,10 +803,14 @@ class RenderSurfaceManager(
             // The game always runs landscape. A portrait root only means the window has not
             // rotated yet (manifest sensorLandscape) or a portrait boot overlay such as the
             // SlingBreak minigame is up. Deriving the canvas from it would lock the game into a
-            // portrait canvas and leave the real landscape window showing a small centered patch,
-            // so fall back to the display-derived landscape canvas and leave the cache unset for
-            // the post-boot landscape layout to refine.
-            return resolveFullscreenVirtualResolution()
+            // portrait canvas and leave the real landscape window showing a small centered patch.
+            // Before JVM launch, the display-derived landscape size is still the only stable
+            // logical size available, so lock it when the caller explicitly finalizes startup.
+            val resolution = resolveFullscreenVirtualResolution()
+            if (lockResolution) {
+                startupVirtualResolution = resolution
+            }
+            return resolution
         }
         if (!avoidDisplayCutout && !cropScreenBottom) {
             return resolveFullscreenVirtualResolution().also { startupVirtualResolution = it }
@@ -832,9 +877,10 @@ class RenderSurfaceManager(
             return
         }
         bootOverlayActive = active
-        if (!active) {
-            // A portrait SlingBreak boot window can produce a transient 1x1 layout before
-            // orientation settles. Do not carry that startup canvas into the real game window.
+        if (!active && !logicalWindowLockedForJvmStartup) {
+            // A portrait SlingBreak boot window can produce a transient startup resolution before
+            // the landscape layout settles. It is safe to discard that pre-launch value, but never
+            // discard the logical size once the JVM has been given its startup dimensions.
             startupVirtualResolution = null
         }
         applyImmersiveMode()

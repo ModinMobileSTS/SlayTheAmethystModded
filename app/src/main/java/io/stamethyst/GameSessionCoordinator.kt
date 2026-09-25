@@ -281,6 +281,12 @@ internal class GameSessionCoordinator(
             renderSurfaceManager.logRenderInfo()
             renderSurfaceManager.syncDisplayConfigToSurfaceSize()
         },
+        onJvmLaunchSurfaceSizeSync = {
+            renderSurfaceManager.lockWindowSizeForJvmStartup()
+            renderSurfaceManager.updateWindowSize()
+            renderSurfaceManager.logRenderInfo()
+            renderSurfaceManager.syncDisplayConfigToSurfaceSize()
+        },
         getWindowWidth = { renderSurfaceManager.resolvePhysicalWidth() },
         getWindowHeight = { renderSurfaceManager.resolvePhysicalHeight() }
     )
