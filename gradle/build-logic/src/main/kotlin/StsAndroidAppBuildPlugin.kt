@@ -364,9 +364,6 @@ private fun Project.registerPackagedRuntimeAssetTasks(
                 )
             }
         }
-        doLast {
-            patchSlingBreakRenderCompat(packagedCommonAssetsDir.get().asFile)
-        }
     }
 
     val prepareExternalizedAssets = tasks.register<Sync>("prepareExternalizedRuntimeAssets") {
@@ -388,57 +385,6 @@ private fun Project.registerPackagedRuntimeAssetTasks(
         prepareCommonAssets = prepareCommonAssets,
         prepareExternalizedAssets = prepareExternalizedAssets
     )
-}
-
-private const val SLING_BREAK_FORCE_COMPAT_MARKER =
-    "const slingBreakForceCompat = new URLSearchParams(location.search).get('forceCompat') === '1';"
-
-private const val SLING_BREAK_ROUNDED_RECT_SOURCE =
-    "  const rounded=(x,y,w,h,r,color)=>{ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();};"
-
-private fun patchSlingBreakRenderCompat(packagedCommonAssetsDir: File) {
-    val renderFile = File(packagedCommonAssetsDir, "slingbreak/render.js")
-    if (!renderFile.isFile) {
-        throw GradleException("Sling Break render.js is missing from packaged assets: $renderFile")
-    }
-
-    val source = renderFile.readText(StandardCharsets.UTF_8)
-    if (source.contains(SLING_BREAK_FORCE_COMPAT_MARKER)) {
-        return
-    }
-
-    val replacement = """
-          $SLING_BREAK_FORCE_COMPAT_MARKER
-          const slingBreakUseRoundedRectFallback = slingBreakForceCompat || typeof ctx.roundRect !== 'function';
-          const rounded=(x,y,w,h,r,color)=>{
-            ctx.fillStyle=color;ctx.beginPath();
-            const radius=Math.max(0,Math.min(r,Math.abs(w)/2,Math.abs(h)/2));
-            if(!slingBreakUseRoundedRectFallback){
-              ctx.roundRect(x,y,w,h,radius);
-            }else if(radius===0){
-              ctx.rect(x,y,w,h);
-            }else{
-              ctx.moveTo(x+radius,y);ctx.lineTo(x+w-radius,y);
-              ctx.arcTo(x+w,y,x+w,y+radius,radius);
-              ctx.lineTo(x+w,y+h-radius);ctx.arcTo(x+w,y+h,x+w-radius,y+h,radius);
-              ctx.lineTo(x+radius,y+h);ctx.arcTo(x,y+h,x,y+h-radius,radius);
-              ctx.lineTo(x,y+radius);ctx.arcTo(x,y,x+radius,y,radius);
-              ctx.closePath();
-            }
-            ctx.fill();
-          };
-          if(slingBreakUseRoundedRectFallback){
-            console.info('[SlingBreak] rounded rectangle compatibility mode enabled');
-          }
-    """.trimIndent()
-    val patched = source.replace(SLING_BREAK_ROUNDED_RECT_SOURCE, replacement)
-    if (patched == source) {
-        throw GradleException(
-            "Sling Break render.js no longer matches the expected rounded rectangle source; " +
-                "update the compatibility patch before packaging."
-        )
-    }
-    renderFile.writeText(patched, StandardCharsets.UTF_8)
 }
 
 private fun Project.registerExternalResourceZipTasks(

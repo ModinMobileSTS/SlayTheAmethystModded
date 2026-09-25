@@ -26,32 +26,21 @@ import io.stamethyst.backend.diag.WebViewAudioEnvironment
 import io.stamethyst.backend.audio.SlingNativeAudioBridge
 
 internal const val SLING_BREAK_GAME_URL = "file:///android_asset/slingbreak/index.html"
-internal const val SLING_BREAK_FORCE_COMPAT_QUERY = "forceCompat"
 
-internal fun slingBreakGameUrl(
-    audioDebugEnabled: Boolean,
-    launcherMode: Boolean = false,
-    forceCompat: Boolean = false
-): String {
+internal fun slingBreakGameUrl(audioDebugEnabled: Boolean, launcherMode: Boolean = false): String {
     val query = buildList {
         if (launcherMode) add("launcher=1")
         if (audioDebugEnabled) add("audioDebug=1")
-        if (forceCompat) add("$SLING_BREAK_FORCE_COMPAT_QUERY=1")
     }
     return if (query.isEmpty()) SLING_BREAK_GAME_URL
     else "$SLING_BREAK_GAME_URL?${query.joinToString("&")}"
 }
 
-internal fun slingBreakGameUrl(
-    context: Context,
-    launcherMode: Boolean = false,
-    forceCompat: Boolean = false
-): String {
+internal fun slingBreakGameUrl(context: Context, launcherMode: Boolean = false): String {
     return slingBreakGameUrl(
         audioDebugEnabled = io.stamethyst.ui.preferences.LauncherPreferences
             .isSlingBreakAudioDebugModeEnabled(context),
         launcherMode = launcherMode,
-        forceCompat = forceCompat,
     )
 }
 
