@@ -269,6 +269,9 @@ Keeps `ModTheSpire.json`, the startup log in `CompatRuntimeState`, and the launc
 70. `TogetherInSpireLanGameStatePatches` asynchronous state writer
 Moves Together in Spire game-state request writes, including their filesystem `sync()` calls, off the game update thread and coalesces newer pending states while a write is in progress. This addresses intermittent frame stalls caused by synchronous launcher-bridge disk flushes during multiplayer state changes or heartbeats. Type: runtime performance fix implemented by `TogetherInSpireLanGameStatePatches`.
 
+71. `AchievementBridge` lock-command polling throttle
+Caches the launcher lock-command path and checks it at most twice per second instead of performing a filesystem existence query on every game update. This addresses unnecessary per-frame file-system polling during normal play while retaining bounded latency for launcher-confirmed achievement locks and retrying failed commands. Type: runtime performance fix implemented by `AchievementBridge` and invoked by `AchievementLockCommandPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

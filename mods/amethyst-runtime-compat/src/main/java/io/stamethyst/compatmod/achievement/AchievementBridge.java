@@ -21,14 +21,21 @@ import com.megacrit.cardcrawl.unlock.UnlockTracker;
 public final class AchievementBridge {
     private static final String REQUEST_PATH_PROP = "amethyst.achievement.request_path";
     private static final String LOCK_COMMAND_PATH_PROP = "amethyst.achievement.lock_command_path";
+    private static final long LOCK_COMMAND_POLL_INTERVAL_MS = 500L;
     private static final Set<String> SENT = new HashSet<String>();
     private static boolean initialized;
+    private static long nextLockCommandPollAtNanos;
+    private static File cachedLockCommandFile;
+    private static boolean lockCommandFileResolved;
 
     private AchievementBridge() {
     }
 
     public static void initialize() {
         initialized = true;
+        nextLockCommandPollAtNanos = 0L;
+        cachedLockCommandFile = null;
+        lockCommandFileResolved = false;
         System.out.println(
             "[amethyst-achievement] bridge initialized requestPathConfigured="
                 + Boolean.toString(requestFile() != null)
@@ -50,7 +57,11 @@ public final class AchievementBridge {
     /** Called on the game thread to apply launcher-confirmed remote locks to the active cache. */
     public static void pollLockCommand() {
         if (!initialized || UnlockTracker.achievementPref == null) return;
-        File commandFile = lockCommandFile();
+        long nowNanos = System.nanoTime();
+        if (nextLockCommandPollAtNanos != 0L && nowNanos < nextLockCommandPollAtNanos) return;
+        nextLockCommandPollAtNanos = nowNanos + LOCK_COMMAND_POLL_INTERVAL_MS * 1_000_000L;
+
+        File commandFile = resolveLockCommandFile();
         if (commandFile == null || !commandFile.isFile()) return;
         java.util.List<String> ids;
         byte[] commandBytes;
@@ -152,9 +163,13 @@ public final class AchievementBridge {
         return path.length() == 0 ? null : new File(path);
     }
 
-    private static File lockCommandFile() {
-        String path = System.getProperty(LOCK_COMMAND_PATH_PROP, "").trim();
-        return path.length() == 0 ? null : new File(path);
+    private static synchronized File resolveLockCommandFile() {
+        if (!lockCommandFileResolved) {
+            lockCommandFileResolved = true;
+            String path = System.getProperty(LOCK_COMMAND_PATH_PROP, "").trim();
+            cachedLockCommandFile = path.length() == 0 ? null : new File(path);
+        }
+        return cachedLockCommandFile;
     }
 
     private static String sanitize(String value) {
