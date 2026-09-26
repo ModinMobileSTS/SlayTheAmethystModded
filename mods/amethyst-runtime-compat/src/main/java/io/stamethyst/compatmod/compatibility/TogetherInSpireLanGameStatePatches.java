@@ -8,6 +8,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class TogetherInSpireLanGameStatePatches {
     private static final String MOD_ID = "spireTogether";
@@ -21,6 +23,9 @@ public final class TogetherInSpireLanGameStatePatches {
     private static volatile long nextStatePollAtMs;
     private static volatile long lastGameStateReportAtMs;
     private static volatile boolean previouslyConnected;
+    private static final AtomicReference<String> PENDING_GAME_STATE_REQUEST =
+        new AtomicReference<String>();
+    private static final AtomicBoolean GAME_STATE_WRITER_RUNNING = new AtomicBoolean();
 
     private TogetherInSpireLanGameStatePatches() {
     }
@@ -48,11 +53,11 @@ public final class TogetherInSpireLanGameStatePatches {
         boolean connected = isConnectedToTogetherInSpireGame();
         if (connected) {
             if (!previouslyConnected || nowMs - lastGameStateReportAtMs >= GAME_STATE_HEARTBEAT_INTERVAL_MS) {
-                writeGameStateRequest("game", nowMs);
+                enqueueGameStateRequest("game", nowMs);
                 lastGameStateReportAtMs = nowMs;
             }
         } else if (previouslyConnected) {
-            writeGameStateRequest("online", nowMs);
+            enqueueGameStateRequest("online", nowMs);
             lastGameStateReportAtMs = 0L;
         }
         previouslyConnected = connected;
@@ -75,7 +80,43 @@ public final class TogetherInSpireLanGameStatePatches {
         }
     }
 
-    private static void writeGameStateRequest(String state, long nowMs) {
+    private static void enqueueGameStateRequest(String state, long nowMs) {
+        PENDING_GAME_STATE_REQUEST.set(state + "\n" + nowMs + "\n");
+        startGameStateWriterIfNeeded();
+    }
+
+    private static void startGameStateWriterIfNeeded() {
+        if (!GAME_STATE_WRITER_RUNNING.compareAndSet(false, true)) {
+            return;
+        }
+        Thread writer = new Thread(
+            TogetherInSpireLanGameStatePatches::drainGameStateRequests,
+            "STS-TogetherInSpireStateWriter"
+        );
+        writer.setDaemon(true);
+        try {
+            writer.start();
+        } catch (Throwable ignored) {
+            GAME_STATE_WRITER_RUNNING.set(false);
+        }
+    }
+
+    private static void drainGameStateRequests() {
+        while (true) {
+            String request = PENDING_GAME_STATE_REQUEST.getAndSet(null);
+            if (request != null) {
+                writeGameStateRequest(request);
+            }
+
+            GAME_STATE_WRITER_RUNNING.set(false);
+            if (PENDING_GAME_STATE_REQUEST.get() == null
+                || !GAME_STATE_WRITER_RUNNING.compareAndSet(false, true)) {
+                return;
+            }
+        }
+    }
+
+    private static void writeGameStateRequest(String request) {
         String path = System.getProperty(GAME_STATE_REQUEST_PROPERTY, "").trim();
         if (path.isEmpty()) {
             return;
@@ -88,12 +129,12 @@ public final class TogetherInSpireLanGameStatePatches {
         File temporaryFile = new File(requestFile.getParentFile(), "." + requestFile.getName() + ".tmp");
         try {
             try (FileOutputStream output = new FileOutputStream(temporaryFile, false)) {
-                output.write((state + "\n" + nowMs + "\n").getBytes(StandardCharsets.UTF_8));
+                output.write(request.getBytes(StandardCharsets.UTF_8));
                 output.getFD().sync();
             }
             if (!temporaryFile.renameTo(requestFile)) {
                 try (FileOutputStream output = new FileOutputStream(requestFile, false)) {
-                    output.write((state + "\n" + nowMs + "\n").getBytes(StandardCharsets.UTF_8));
+                    output.write(request.getBytes(StandardCharsets.UTF_8));
                     output.getFD().sync();
                 }
             }

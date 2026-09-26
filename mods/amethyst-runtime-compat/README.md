@@ -266,6 +266,9 @@ Saves whether the room immediately before the pending question-mark transition w
 69. Bundled runtime-compat version `1.0.39`
 Keeps `ModTheSpire.json`, the startup log in `CompatRuntimeState`, and the launcher validator `ModJarSupport.validateAmethystRuntimeCompatJar()` on the same version string. This addresses the symptom where launching failed with `version is 1.0.39, expected 1.0.38` after the bundled jar was bumped. Type: compatibility workaround implemented by aligning `EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION` with the shipped manifest.
 
+70. `TogetherInSpireLanGameStatePatches` asynchronous state writer
+Moves Together in Spire game-state request writes, including their filesystem `sync()` calls, off the game update thread and coalesces newer pending states while a write is in progress. This addresses intermittent frame stalls caused by synchronous launcher-bridge disk flushes during multiplayer state changes or heartbeats. Type: runtime performance fix implemented by `TogetherInSpireLanGameStatePatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:
