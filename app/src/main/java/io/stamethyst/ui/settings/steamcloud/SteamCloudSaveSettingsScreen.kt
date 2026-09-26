@@ -31,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.config.SteamCloudSaveMode
@@ -51,6 +53,9 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import kotlinx.coroutines.delay
+
+private const val FORCE_OVERWRITE_CONFIRM_COUNTDOWN_SECONDS = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,6 +122,21 @@ internal fun SteamCloudSaveSettingsCards(
 ) {
     val loggedIn = uiState.steamCloudRefreshTokenConfigured
     var showForceOverwriteConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var overwriteConfirmCountdownSeconds by rememberSaveable { mutableStateOf(0) }
+
+    LaunchedEffect(showForceOverwriteConfirmDialog) {
+        if (!showForceOverwriteConfirmDialog) {
+            overwriteConfirmCountdownSeconds = 0
+            return@LaunchedEffect
+        }
+        overwriteConfirmCountdownSeconds = FORCE_OVERWRITE_CONFIRM_COUNTDOWN_SECONDS
+        while (overwriteConfirmCountdownSeconds > 0) {
+            delay(1_000L)
+            overwriteConfirmCountdownSeconds -= 1
+        }
+    }
+    val overwriteConfirmEnabled =
+        !uiState.busy && overwriteConfirmCountdownSeconds <= 0
 
     SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_save_settings_title)) {
         SteamCloudSaveSettingsContent(
@@ -127,6 +147,7 @@ internal fun SteamCloudSaveSettingsCards(
     }
 
     if (loggedIn && uiState.steamCloudSaveMode == SteamCloudSaveMode.STEAM_CLOUD) {
+        SteamCloudHistorySyncNoticeCard()
         SettingsSectionCard(
             title = stringResource(
                 R.string.settings_steam_cloud_force_independent_override_card_title
@@ -153,7 +174,7 @@ internal fun SteamCloudSaveSettingsCards(
             },
             confirmButton = {
                 Button(
-                    enabled = !uiState.busy,
+                    enabled = overwriteConfirmEnabled,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
@@ -163,7 +184,16 @@ internal fun SteamCloudSaveSettingsCards(
                         onForceIndependentSaveOverwriteCloud()
                     },
                 ) {
-                    Text(stringResource(R.string.settings_steam_cloud_force_independent_override_confirm_action))
+                    Text(
+                        if (overwriteConfirmCountdownSeconds <= 0) {
+                            stringResource(R.string.settings_steam_cloud_force_independent_override_confirm_action)
+                        } else {
+                            stringResource(
+                                R.string.settings_steam_cloud_force_independent_override_confirm_action_countdown,
+                                overwriteConfirmCountdownSeconds,
+                            )
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -266,6 +296,32 @@ private fun SteamCloudSaveModeOptionRow(
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SteamCloudHistorySyncNoticeCard() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "ⓘ",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.clearAndSetSemantics { },
+            )
+            Text(
+                text = stringResource(R.string.settings_steam_cloud_history_sync_notice),
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

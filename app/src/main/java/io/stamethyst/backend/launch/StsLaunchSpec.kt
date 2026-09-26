@@ -60,7 +60,6 @@ object StsLaunchSpec {
         "amethyst.gdx.debug_leak_interval_frames",
         "amethyst.gdx.debug_leak_max_bytes",
         "amethyst.gdx.debug_leak_texture_size",
-        "amethyst.runtime_compat.loadout_monster_scan_probe",
         "amethyst.runtime_compat.class_finder_scan_cache_profile",
         "amethyst.gdx.gpu_guardian_soft_budget_bytes",
         "amethyst.gdx.gpu_guardian_hard_budget_bytes",

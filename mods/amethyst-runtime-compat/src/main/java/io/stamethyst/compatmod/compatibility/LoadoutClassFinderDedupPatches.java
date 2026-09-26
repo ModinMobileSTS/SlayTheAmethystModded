@@ -98,13 +98,6 @@ public final class LoadoutClassFinderDedupPatches {
         }
     }
 
-    // Deliberately no instrumentation of LoadoutMod.addBaseGameMonsters here: that
-    // method is instrumented by the diagnostic LoadoutMonsterScanProbePatches instead,
-    // and two ExprEditors rewriting the same call site would interfere. The probe's
-    // wrapper routes through findClassesShared as well, so the monster scan still
-    // benefits from the shared archive walk whenever it is probed. The method has a
-    // single findClasses call per launch, so skipping it here costs no deduplication.
-
     private static ExprEditor instrumentFindClasses(final String ownerClassName) {
         return new ExprEditor() {
             @Override

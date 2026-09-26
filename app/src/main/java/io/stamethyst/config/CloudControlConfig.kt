@@ -43,6 +43,7 @@ data class CloudControlSettings(
     val heartbeatIntervalSeconds: Int,
     val heartbeatWsUrl: String,
     val qqGroupNumber: String = DEFAULT_QQ_GROUP_NUMBER_VALUE,
+    val onlineGroupNumber: String = DEFAULT_QQ_GROUP_NUMBER_VALUE,
     val steamDepotKeys: List<CloudControlSteamDepotKey> = emptyList(),
     val easyTier: CloudControlEasyTierSettings = CloudControlEasyTierSettings(),
 ) {
@@ -51,6 +52,9 @@ data class CloudControlSettings(
 
     val qqGroupUrl: String
         get() = CloudControlConfig.qqGroupUrlFor(qqGroupNumber)
+
+    val onlineGroupUrl: String
+        get() = CloudControlConfig.qqGroupUrlFor(onlineGroupNumber)
 
     fun steamDepotKeyBytes(appId: UInt, depotId: UInt): ByteArray? =
         steamDepotKeys
@@ -173,7 +177,8 @@ object CloudControlConfig {
         CloudControlSettings(
             heartbeatIntervalSeconds = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
             heartbeatWsUrl = defaultHeartbeatWsUrl(),
-            qqGroupNumber = DEFAULT_QQ_GROUP_NUMBER
+            qqGroupNumber = DEFAULT_QQ_GROUP_NUMBER,
+            onlineGroupNumber = DEFAULT_QQ_GROUP_NUMBER,
         )
 
     @JvmStatic
@@ -478,6 +483,10 @@ object CloudControlConfig {
                 ?: defaults.qqGroupNumber,
             defaults.qqGroupNumber
         )
+        val onlineGroupNumber = normalizeQqGroupNumber(
+            firstNonBlankString(root, "onlineGroupNumber") ?: defaults.onlineGroupNumber,
+            defaults.onlineGroupNumber,
+        )
         val steamDepotKeys = parseSteamDepotKeys(root)
             .ifEmpty { defaults.steamDepotKeys }
         val easyTier = parseEasyTier(root, defaults.easyTier)
@@ -486,6 +495,7 @@ object CloudControlConfig {
             heartbeatIntervalSeconds = intervalSeconds,
             heartbeatWsUrl = wsUrl,
             qqGroupNumber = qqGroupNumber,
+            onlineGroupNumber = onlineGroupNumber,
             steamDepotKeys = steamDepotKeys,
             easyTier = easyTier,
         )

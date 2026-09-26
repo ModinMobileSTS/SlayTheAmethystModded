@@ -123,6 +123,22 @@ internal object SteamCloudSaveProfileManager {
         }
     }
 
+    /**
+     * Marks a profile as available after an archive has populated it directly.
+     *
+     * Imports can target the profile that is not currently active, so the normal
+     * active-profile save path is not involved in that case.
+     */
+    fun markProfileInitialized(context: Context, mode: SteamCloudSaveMode) {
+        SteamCloudOperationMutex.runExclusive(context) {
+            migrateLegacyProfilesExclusive(context)
+            SteamCloudAtomicFileStore.writeTextWithoutBackup(
+                File(profileRoot(context, mode), PROFILE_INITIALIZED_FILE_NAME),
+                "import-v1\n",
+            )
+        }
+    }
+
     private fun saveActiveProfileExclusive(
         context: Context,
         mode: SteamCloudSaveMode,

@@ -3211,7 +3211,7 @@ private fun EasyTierCreateRoomPanel(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .clickable {
-                        uriHandler.openUri(cloudControlSettings.qqGroupUrl)
+                        uriHandler.openUri(cloudControlSettings.onlineGroupUrl)
                 },
                 style = MaterialTheme.typography.labelMedium.copy(
                     color = MaterialTheme.colorScheme.primary,
@@ -3551,7 +3551,7 @@ internal fun EasyTierBottomSheetContent(
                 }
                 if (targetPage == EasyTierRoomSheetPage.Rooms) {
                     OutlinedButton(
-                        onClick = { uriHandler.openUri(cloudControlSettings.qqGroupUrl) },
+                        onClick = { uriHandler.openUri(cloudControlSettings.onlineGroupUrl) },
                         modifier = Modifier.heightIn(min = 40.dp),
                         shape = CircleShape,
                         border = BorderStroke(

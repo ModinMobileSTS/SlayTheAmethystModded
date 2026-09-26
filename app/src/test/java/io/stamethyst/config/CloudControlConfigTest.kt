@@ -144,6 +144,31 @@ class CloudControlConfigTest {
     }
 
     @Test
+    fun parseSettings_readsSeparateOnlineGroupNumberAndFallsBackToDefault() {
+        val parsed = CloudControlConfig.parseSettings(
+            """
+            {
+              "qqGroup": {
+                "number": "2233445566"
+              },
+              "onlineGroupNumber": "9988776655"
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals("2233445566", parsed?.qqGroupNumber)
+        assertEquals("9988776655", parsed?.onlineGroupNumber)
+        assertEquals(
+            "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=9988776655&card_type=group&source=qrcode",
+            parsed?.onlineGroupUrl,
+        )
+
+        val missing = CloudControlConfig.parseSettings("{}")
+        assertEquals("675545914", missing?.onlineGroupNumber)
+    }
+
+    @Test
     fun parseSettings_readsNestedSteamDepotKeyHex() {
         val parsed = CloudControlConfig.parseSettings(
             """

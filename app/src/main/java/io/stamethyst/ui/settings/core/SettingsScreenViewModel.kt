@@ -16,6 +16,10 @@ import android.app.ActivityManager
 import android.os.Build
 import android.net.Uri
 import android.text.format.Formatter
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.CheckedTextView
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
@@ -184,6 +188,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 private const val STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR = "SlayTheAmethystBackup"
 
 private const val STEAM_CLOUD_PROFILE_BACKFILL_INTERVAL_MS = 6L * 60L * 60L * 1000L
+
+private const val CLOUD_SAVE_IMPORT_TARGET_INDEX = 0
+private const val INDEPENDENT_SAVE_IMPORT_TARGET_INDEX = 1
+private const val DISABLED_SAVE_IMPORT_TARGET_ALPHA = 0.38f
 
 private enum class QuickStartSteamImportMode {
     AUTHENTICATED,
@@ -4652,35 +4660,88 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        if (LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD) {
-            showSteamCloudSaveImportNoticeDialog(host, uri)
-            return
-        }
-        importSavesArchive(
-            host = host,
-            uri = uri,
-            targetMode = SteamCloudSaveMode.INDEPENDENT,
-            targetLabel = SteamCloudSaveMode.INDEPENDENT.displayName(host),
-        )
+        showSaveImportTargetDialog(host, uri)
     }
 
-    private fun showSteamCloudSaveImportNoticeDialog(host: Activity, uri: Uri) {
+    private fun showSaveImportTargetDialog(host: Activity, uri: Uri) {
         if (host.isFinishing || host.isDestroyed) {
             return
+        }
+        val cloudAvailable = runCatching {
+            SteamCloudAuthStore.readSnapshot(host).isComplete
+        }.getOrDefault(false)
+        val targetOptions = arrayOf(
+            host.getString(
+                if (cloudAvailable) {
+                    R.string.settings_save_import_target_cloud_action
+                } else {
+                    R.string.settings_save_import_target_cloud_action_disabled
+                }
+            ),
+            host.getString(R.string.settings_save_import_target_independent_action),
+        )
+        val targetAdapter = SaveImportTargetAdapter(
+            host = host,
+            cloudAvailable = cloudAvailable,
+            values = targetOptions,
+        )
+        val checkedTarget = if (
+            cloudAvailable &&
+            LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD
+        ) {
+            CLOUD_SAVE_IMPORT_TARGET_INDEX
+        } else {
+            INDEPENDENT_SAVE_IMPORT_TARGET_INDEX
         }
         AlertDialog.Builder(host)
             .setTitle(R.string.settings_save_import_target_dialog_title)
             .setMessage(R.string.settings_save_import_target_dialog_message)
-            .setPositiveButton(R.string.settings_save_import_target_independent_action) { _, _ ->
+            .setSingleChoiceItems(targetAdapter, checkedTarget) { dialog, which ->
+                val targetMode = when (which) {
+                    CLOUD_SAVE_IMPORT_TARGET_INDEX -> {
+                        if (!cloudAvailable) {
+                            return@setSingleChoiceItems
+                        }
+                        SteamCloudSaveMode.STEAM_CLOUD
+                    }
+
+                    INDEPENDENT_SAVE_IMPORT_TARGET_INDEX -> SteamCloudSaveMode.INDEPENDENT
+                    else -> return@setSingleChoiceItems
+                }
+                dialog.dismiss()
                 importSavesArchive(
                     host = host,
                     uri = uri,
-                    targetMode = SteamCloudSaveMode.INDEPENDENT,
-                    targetLabel = SteamCloudSaveMode.INDEPENDENT.displayName(host),
+                    targetMode = targetMode,
+                    targetLabel = targetMode.displayName(host),
                 )
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private class SaveImportTargetAdapter(
+        host: Activity,
+        private val cloudAvailable: Boolean,
+        values: Array<String>,
+    ) : ArrayAdapter<String>(
+        host,
+        android.R.layout.simple_list_item_single_choice,
+        android.R.id.text1,
+        values,
+    ) {
+        override fun isEnabled(position: Int): Boolean {
+            return cloudAvailable || position != CLOUD_SAVE_IMPORT_TARGET_INDEX
+        }
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val view = super.getView(position, convertView, parent)
+            val enabled = isEnabled(position)
+            view.isEnabled = enabled
+            view.alpha = if (enabled) 1f else DISABLED_SAVE_IMPORT_TARGET_ALPHA
+            (view as? CheckedTextView)?.isEnabled = enabled
+            return view
+        }
     }
 
     private fun importSavesArchive(
@@ -4697,6 +4758,14 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val result = SteamCloudOperationMutex.runExclusive(host) {
+                    if (
+                        targetMode == SteamCloudSaveMode.STEAM_CLOUD &&
+                        !SteamCloudAuthStore.readSnapshot(host).isComplete
+                    ) {
+                        throw SteamCloudCredentialsMissingException(
+                            host.getString(R.string.settings_steam_cloud_credentials_missing)
+                        )
+                    }
                     val targetRoot = if (
                         LauncherPreferences.readSteamCloudSaveMode(host) == targetMode
                     ) {
@@ -4704,7 +4773,11 @@ class SettingsScreenViewModel : ViewModel() {
                     } else {
                         SteamCloudSaveProfileManager.profileRoot(host, targetMode)
                     }
-                    SettingsFileService.importSaveArchive(host, uri, targetRoot)
+                    val result = SettingsFileService.importSaveArchive(host, uri, targetRoot)
+                    if (targetRoot.canonicalFile != RuntimePaths.stsRoot(host).canonicalFile) {
+                        SteamCloudSaveProfileManager.markProfileInitialized(host, targetMode)
+                    }
+                    result
                 }
                 host.runOnUiThread {
                     val message = if (result.backupLabel.isNullOrEmpty()) {

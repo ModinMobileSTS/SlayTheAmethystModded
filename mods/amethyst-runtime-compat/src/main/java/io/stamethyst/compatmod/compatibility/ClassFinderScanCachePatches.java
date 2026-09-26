@@ -193,12 +193,6 @@ public final class ClassFinderScanCachePatches {
         }
     }
 
-    /**
-     * Number of distinct archive sets currently held by the in-memory shared scan cache.
-     * Exposed for the LoadoutMonsterScanProbePatches diagnostics so a device run can tell
-     * "dedup engaged" (entries appear) from "call sites fell back to native scans"
-     * (count stays zero).
-     */
     public static int sharedCacheEntryCount() {
         synchronized (ClassFinderScanCachePatches.class) {
             return CACHE.size();

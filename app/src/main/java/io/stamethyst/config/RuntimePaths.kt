@@ -13,6 +13,7 @@ object RuntimePaths {
     private const val STS_DIR_NAME = "sts"
     private const val LATEST_LOG_FILE_NAME = "latest.log"
     private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
+    private const val LOG4J2_RUNTIME_CONFIG_FILE_NAME = "log4j2-amethyst-runtime.xml"
     private const val MTS_MOD_FILE_LIST_FILE_NAME = ".mts_mod_file_list"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
     private const val WORKSHOP_AUTO_IMPORT_PATCH_LOG_DIR_NAME = "workshop_auto_import_patch_logs"
@@ -401,6 +402,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun bootBridgeEventsLog(context: Context): File = File(stsRoot(context), BOOT_BRIDGE_EVENTS_FILE_NAME)
+
+    @JvmStatic
+    fun log4j2RuntimeConfigFile(context: Context): File =
+        File(stsRoot(context), LOG4J2_RUNTIME_CONFIG_FILE_NAME)
 
     @JvmStatic
     fun jvmLogsDir(context: Context): File = File(stsRoot(context), JVM_LOG_DIR_NAME)
