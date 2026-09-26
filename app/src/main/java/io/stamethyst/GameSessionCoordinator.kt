@@ -1,6 +1,7 @@
 package io.stamethyst
 
 import android.os.Handler
+import android.os.FileObserver
 import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -58,12 +59,9 @@ internal class GameSessionCoordinator(
         private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
         private const val BACK_EXIT_CONFIRMATION_WINDOW_MS = 2000L
         private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
-        private const val KEYBOARD_REQUEST_POLL_MS = 120L
-        private const val LAN_GAME_STATE_REQUEST_POLL_MS = 300L
-        private const val FILE_PICKER_REQUEST_POLL_MS = 120L
-        private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
-        private const val ACHIEVEMENT_REQUEST_POLL_MS = 120L
-        private const val HARNESS_EXIT_REQUEST_POLL_MS = 120L
+        private const val REQUEST_CHANGE_SETTLE_MS = 40L
+        private const val REQUEST_FOREGROUND_FALLBACK_POLL_MS = 1000L
+        private const val REQUEST_BACKGROUND_FALLBACK_POLL_MS = 2000L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
         private const val LANDSCAPE_WAIT_TIMEOUT_MS = 4000L
@@ -114,18 +112,27 @@ internal class GameSessionCoordinator(
     private var lastLanGameStateRequestPayload = ""
     private var lastFilePickerRequestPayload = ""
     private var lastRescueToastRequestPayload = ""
-    private var keyboardRequestPollStarted = false
-    private var lanGameStateRequestPollStarted = false
-    private var filePickerRequestPollStarted = false
-    private var rescueToastRequestPollStarted = false
-    private var achievementRequestPollStarted = false
+    private var requestPollingStarted = false
+    private var requestPollingInitialized = false
     private var lastAchievementRequestKey = ""
     private var lastInvalidAchievementPayload = ""
-    private var harnessExitRequestPollStarted = false
     private var rescueToastShown = false
     @Volatile
     private var destroyed = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val requestFileReader = RuntimeRequestFileReader()
+    private val pendingRequestFileNames = mutableSetOf<String>()
+    private val watchedRequestFileNames by lazy {
+        setOf(
+            RuntimePaths.inGameKeyboardRequestFile(activity).name,
+            RuntimePaths.inGameLanGameStateRequestFile(activity).name,
+            RuntimePaths.inGameFilePickerRequestFile(activity).name,
+            RuntimePaths.runtimeRescueToastRequestFile(activity).name,
+            RuntimePaths.achievementRequestFile(activity).name,
+            RuntimePaths.harnessExitRequestFile(activity).name,
+        )
+    }
+    private var requestFileObserver: FileObserver? = null
     private val slingBreakBootMode =
         LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK
     private val expectedGameExitReturnPolicy = ExpectedGameExitReturnPolicy()
@@ -155,51 +162,23 @@ internal class GameSessionCoordinator(
             pollExpectedGameExitReturn()
         }
     }
-    private val keyboardRequestPollRunnable = object : Runnable {
+    private val requestPollRunnable = object : Runnable {
         override fun run() {
-            pollInGameKeyboardRequest()
-            if (!destroyed && keyboardRequestPollStarted) {
-                mainHandler.postDelayed(this, KEYBOARD_REQUEST_POLL_MS)
-            }
-        }
-    }
-    private val filePickerRequestPollRunnable = object : Runnable {
-        override fun run() {
-            pollInGameFilePickerRequest()
-            if (!destroyed && filePickerRequestPollStarted) {
-                mainHandler.postDelayed(this, FILE_PICKER_REQUEST_POLL_MS)
-            }
-        }
-    }
-    private val lanGameStateRequestPollRunnable = object : Runnable {
-        override fun run() {
-            pollInGameLanGameStateRequest()
-            if (!destroyed && lanGameStateRequestPollStarted) {
-                mainHandler.postDelayed(this, LAN_GAME_STATE_REQUEST_POLL_MS)
-            }
-        }
-    }
-    private val rescueToastRequestPollRunnable = object : Runnable {
-        override fun run() {
-            pollRuntimeRescueToastRequest()
-            if (!destroyed && rescueToastRequestPollStarted) {
-                mainHandler.postDelayed(this, RESCUE_TOAST_REQUEST_POLL_MS)
-            }
-        }
-    }
-    private val harnessExitRequestPollRunnable = object : Runnable {
-        override fun run() {
-            pollHarnessExitRequest()
-            if (!destroyed && harnessExitRequestPollStarted) {
-                mainHandler.postDelayed(this, HARNESS_EXIT_REQUEST_POLL_MS)
-            }
-        }
-    }
-    private val achievementRequestPollRunnable = object : Runnable {
-        override fun run() {
-            pollAchievementRequest()
-            if (!destroyed && achievementRequestPollStarted) {
-                mainHandler.postDelayed(this, ACHIEVEMENT_REQUEST_POLL_MS)
+            if (!requestPollingStarted || destroyed) return
+            val changedFiles = pendingRequestFileNames.toSet()
+            pendingRequestFileNames.clear()
+            pollInGameKeyboardRequest(changedFiles)
+            pollInGameFilePickerRequest(changedFiles)
+            pollInGameLanGameStateRequest(changedFiles)
+            pollRuntimeRescueToastRequest(changedFiles)
+            pollHarnessExitRequest(changedFiles)
+            pollAchievementRequest(changedFiles)
+            if (!destroyed && requestPollingStarted) {
+                mainHandler.postDelayed(
+                    this,
+                    if (resolveRuntimeVisible()) REQUEST_FOREGROUND_FALLBACK_POLL_MS
+                    else REQUEST_BACKGROUND_FALLBACK_POLL_MS,
+                )
             }
         }
     }
@@ -265,11 +244,7 @@ internal class GameSessionCoordinator(
                 startExpectedGameExitReturnWatchdog()
                 applyForegroundWindowState()
                 updateFloatingMouseVisibility()
-                startKeyboardRequestPolling()
-                startLanGameStateRequestPolling()
-                startFilePickerRequestPolling()
-                startRescueToastRequestPolling()
-                startAchievementRequestPolling()
+                startRuntimeRequestPolling()
                 SteamGamePresenceService.startIfEnabled(activity)
                 updatePerformanceOverlayVisibility()
                 updateSystemGameState()
@@ -326,12 +301,7 @@ internal class GameSessionCoordinator(
         cancelStartCheck()
         cancelBackExitForceRestart()
         cancelExpectedGameExitReturnWatchdog()
-        stopKeyboardRequestPolling()
-        stopLanGameStateRequestPolling()
-        stopFilePickerRequestPolling()
-        stopRescueToastRequestPolling()
-        stopAchievementRequestPolling()
-        stopHarnessExitRequestPolling()
+        stopRuntimeRequestPolling()
         inGameEasyTierOverlayController.onDestroy()
         inGameAchievementOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
@@ -356,6 +326,9 @@ internal class GameSessionCoordinator(
         activityResumed = true
         activityStopped = false
         userLeaveHintReceived = false
+        if (jvmLaunchController.runtimeLifecycleReady && !backExitRequested) {
+            resumeRuntimeRequestPolling()
+        }
         foregroundAudioPolicy.markActivityResumed(true)
         performanceOverlayController?.onResume()
         syncRuntimeForegroundState(true)
@@ -375,9 +348,11 @@ internal class GameSessionCoordinator(
         foregroundAudioPolicy.markActivityResumed(runtimeVisible)
         performanceOverlayController?.onPause()
         if (runtimeVisible) {
+            resumeRuntimeRequestPolling()
             updateSystemGameState()
             return
         }
+        stopRuntimeRequestPolling()
         cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
@@ -387,6 +362,7 @@ internal class GameSessionCoordinator(
     fun onStop() {
         activityStopped = true
         activityResumed = false
+        stopRuntimeRequestPolling()
         foregroundAudioPolicy.markActivityResumed(false)
         cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
@@ -405,6 +381,7 @@ internal class GameSessionCoordinator(
         }
         userLeaveHintReceived = true
         activityResumed = false
+        stopRuntimeRequestPolling()
         foregroundAudioPolicy.markActivityResumed(false)
         cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
@@ -808,6 +785,7 @@ internal class GameSessionCoordinator(
         )
         backExitRequested = true
         backExitLauncherShown = false
+        stopRuntimeRequestPolling()
         cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
         setRuntimeAudioMuted(true)
@@ -1193,97 +1171,86 @@ internal class GameSessionCoordinator(
         )
     }
 
-    private fun startKeyboardRequestPolling() {
-        if (keyboardRequestPollStarted) {
-            return
+    private fun startRuntimeRequestPolling() {
+        if (requestPollingStarted || destroyed) return
+        if (!requestPollingInitialized) {
+            requestPollingInitialized = true
+            lastKeyboardRequestPayload = ""
+            RuntimePaths.inGameKeyboardRequestFile(activity).delete()
+            RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
+            lastLanGameStateRequestPayload = ""
+            RuntimePaths.inGameLanGameStateRequestFile(activity).delete()
+            lastFilePickerRequestPayload = ""
+            RuntimePaths.inGameFilePickerRequestFile(activity).delete()
+            RuntimePaths.inGameFilePickerResultFile(activity).delete()
+            RuntimePaths.inGameFilePickerSelectionFile(activity).delete()
+            rescueToastShown = false
+            lastRescueToastRequestPayload = ""
+            RuntimePaths.runtimeRescueToastRequestFile(activity).delete()
+            lastAchievementRequestKey = ""
+            lastInvalidAchievementPayload = ""
+            AchievementSyncLogStore.append(activity, "polling_started")
+            requestFileReader.clear()
+            pendingRequestFileNames.clear()
         }
-        keyboardRequestPollStarted = true
-        lastKeyboardRequestPayload = ""
-        RuntimePaths.inGameKeyboardRequestFile(activity).delete()
-        RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
-        mainHandler.post(keyboardRequestPollRunnable)
+        resumeRuntimeRequestPolling()
     }
 
-    private fun startLanGameStateRequestPolling() {
-        if (lanGameStateRequestPollStarted) {
-            return
-        }
-        lanGameStateRequestPollStarted = true
-        lastLanGameStateRequestPayload = ""
-        RuntimePaths.inGameLanGameStateRequestFile(activity).delete()
-        mainHandler.post(lanGameStateRequestPollRunnable)
+    private fun resumeRuntimeRequestPolling() {
+        if (requestPollingStarted || destroyed || !requestPollingInitialized) return
+        requestPollingStarted = true
+        pendingRequestFileNames.clear()
+        val watchedNames = watchedRequestFileNames
+        requestFileObserver = object : FileObserver(
+            RuntimePaths.stsRoot(activity).absolutePath,
+            CLOSE_WRITE or MOVED_TO or CREATE or DELETE,
+        ) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path == null) {
+                    mainHandler.post {
+                        if (destroyed || !requestPollingStarted) return@post
+                        requestFileReader.clear()
+                        pendingRequestFileNames.clear()
+                        scheduleRequestPoll(REQUEST_CHANGE_SETTLE_MS)
+                    }
+                    return
+                }
+                if (path !in watchedNames) return
+                mainHandler.post {
+                    if (destroyed || !requestPollingStarted) return@post
+                    pendingRequestFileNames.add(path)
+                    scheduleRequestPoll(REQUEST_CHANGE_SETTLE_MS)
+                }
+            }
+        }.also { it.startWatching() }
+        scheduleRequestPoll(0L)
     }
 
-    private fun startFilePickerRequestPolling() {
-        if (filePickerRequestPollStarted) {
-            return
-        }
-        filePickerRequestPollStarted = true
-        lastFilePickerRequestPayload = ""
-        RuntimePaths.inGameFilePickerRequestFile(activity).delete()
-        RuntimePaths.inGameFilePickerResultFile(activity).delete()
-        RuntimePaths.inGameFilePickerSelectionFile(activity).delete()
-        mainHandler.post(filePickerRequestPollRunnable)
-    }
-
-    private fun startRescueToastRequestPolling() {
-        if (rescueToastRequestPollStarted) {
-            return
-        }
-        rescueToastRequestPollStarted = true
-        rescueToastShown = false
-        lastRescueToastRequestPayload = ""
-        RuntimePaths.runtimeRescueToastRequestFile(activity).delete()
-        mainHandler.post(rescueToastRequestPollRunnable)
-        startHarnessExitRequestPolling()
-    }
-
-    private fun startHarnessExitRequestPolling() {
-        if (harnessExitRequestPollStarted) return
-        harnessExitRequestPollStarted = true
-        mainHandler.post(harnessExitRequestPollRunnable)
-    }
-
-    private fun stopKeyboardRequestPolling() {
-        keyboardRequestPollStarted = false
-        mainHandler.removeCallbacks(keyboardRequestPollRunnable)
-    }
-
-    private fun stopLanGameStateRequestPolling() {
-        lanGameStateRequestPollStarted = false
-        mainHandler.removeCallbacks(lanGameStateRequestPollRunnable)
-    }
-
-    private fun stopFilePickerRequestPolling() {
-        filePickerRequestPollStarted = false
-        mainHandler.removeCallbacks(filePickerRequestPollRunnable)
-    }
-
-    private fun stopRescueToastRequestPolling() {
-        rescueToastRequestPollStarted = false
-        mainHandler.removeCallbacks(rescueToastRequestPollRunnable)
-    }
-
-    private fun startAchievementRequestPolling() {
-        if (achievementRequestPollStarted) return
-        achievementRequestPollStarted = true
-        lastAchievementRequestKey = ""
-        lastInvalidAchievementPayload = ""
-        AchievementSyncLogStore.append(activity, "polling_started")
-        mainHandler.post(achievementRequestPollRunnable)
-    }
-
-    private fun stopAchievementRequestPolling() {
-        achievementRequestPollStarted = false
-        mainHandler.removeCallbacks(achievementRequestPollRunnable)
+    private fun stopRuntimeRequestPolling() {
+        if (!requestPollingStarted) return
+        requestPollingStarted = false
+        requestFileObserver?.stopWatching()
+        requestFileObserver = null
+        mainHandler.removeCallbacks(requestPollRunnable)
+        pendingRequestFileNames.clear()
         AchievementSyncLogStore.append(activity, "polling_stopped")
     }
 
-    private fun pollAchievementRequest() {
+    private fun scheduleRequestPoll(delayMs: Long) {
+        if (destroyed || !requestPollingStarted) return
+        mainHandler.removeCallbacks(requestPollRunnable)
+        mainHandler.postDelayed(requestPollRunnable, delayMs)
+    }
+
+    private fun readChangedRuntimeRequest(file: File, changedFiles: Set<String>): String {
+        return requestFileReader.readChanged(file, force = file.name in changedFiles)
+    }
+
+    private fun pollAchievementRequest(changedFiles: Set<String>) {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
         val requestFile = RuntimePaths.achievementRequestFile(activity)
         val payload = try {
-            if (requestFile.isFile) requestFile.readText().trim() else ""
+            readChangedRuntimeRequest(requestFile, changedFiles)
         } catch (error: Throwable) {
             AchievementSyncLogStore.append(
                 activity,
@@ -1344,18 +1311,13 @@ internal class GameSessionCoordinator(
         }
     }
 
-    private fun stopHarnessExitRequestPolling() {
-        harnessExitRequestPollStarted = false
-        mainHandler.removeCallbacks(harnessExitRequestPollRunnable)
-    }
-
-    private fun pollInGameKeyboardRequest() {
+    private fun pollInGameKeyboardRequest(changedFiles: Set<String>) {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) {
             return
         }
         val requestFile = RuntimePaths.inGameKeyboardRequestFile(activity)
         val payload = try {
-            if (requestFile.isFile) requestFile.readText().trim() else ""
+            readChangedRuntimeRequest(requestFile, changedFiles)
         } catch (_: Throwable) {
             ""
         }
@@ -1382,13 +1344,13 @@ internal class GameSessionCoordinator(
         }
     }
 
-    private fun pollInGameLanGameStateRequest() {
+    private fun pollInGameLanGameStateRequest(changedFiles: Set<String>) {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) {
             return
         }
         val requestFile = RuntimePaths.inGameLanGameStateRequestFile(activity)
         val payload = try {
-            if (requestFile.isFile) requestFile.readText().trim() else ""
+            readChangedRuntimeRequest(requestFile, changedFiles)
         } catch (_: Throwable) {
             ""
         }
@@ -1412,13 +1374,13 @@ internal class GameSessionCoordinator(
         }
     }
 
-    private fun pollInGameFilePickerRequest() {
+    private fun pollInGameFilePickerRequest(changedFiles: Set<String>) {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) {
             return
         }
         val requestFile = RuntimePaths.inGameFilePickerRequestFile(activity)
         val payload = try {
-            if (requestFile.isFile) requestFile.readText().trim() else ""
+            readChangedRuntimeRequest(requestFile, changedFiles)
         } catch (_: Throwable) {
             ""
         }
@@ -1434,13 +1396,13 @@ internal class GameSessionCoordinator(
         }
     }
 
-    private fun pollRuntimeRescueToastRequest() {
+    private fun pollRuntimeRescueToastRequest(changedFiles: Set<String>) {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested || rescueToastShown) {
             return
         }
         val requestFile = RuntimePaths.runtimeRescueToastRequestFile(activity)
         val payload = try {
-            if (requestFile.isFile) requestFile.readText().trim() else ""
+            readChangedRuntimeRequest(requestFile, changedFiles)
         } catch (_: Throwable) {
             ""
         }
@@ -1456,10 +1418,10 @@ internal class GameSessionCoordinator(
         )
     }
 
-    private fun pollHarnessExitRequest() {
+    private fun pollHarnessExitRequest(changedFiles: Set<String>) {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
         val requestFile = RuntimePaths.harnessExitRequestFile(activity)
-        val requested = try { requestFile.isFile && requestFile.readText().trim().isNotEmpty() } catch (_: Throwable) { false }
+        val requested = try { readChangedRuntimeRequest(requestFile, changedFiles).isNotEmpty() } catch (_: Throwable) { false }
         if (!requested) return
         requestFile.delete()
         requestBackExitToLauncher()
