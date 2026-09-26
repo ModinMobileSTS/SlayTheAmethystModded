@@ -56,6 +56,7 @@ public final class TouchscreenCardInputRuntime {
     private static File cardHoldStateFile;
     private static boolean cardHoldStateFileResolved;
     private static boolean cardHoldStateMarked;
+    private static boolean cardHoldStateCleanupAttempted;
     private static long lastCardHoldStateWriteMs;
     private static boolean cardHoldRightClickGuardEnabledResolved;
     private static boolean cardHoldRightClickGuardEnabled;
@@ -846,16 +847,22 @@ public final class TouchscreenCardInputRuntime {
     }
 
     private static void clearCardHoldState() {
+        if (!cardHoldStateMarked && cardHoldStateCleanupAttempted) {
+            return;
+        }
         File file = getCardHoldStateFile();
         if (file == null) {
+            cardHoldStateCleanupAttempted = true;
+            cardHoldStateMarked = false;
+            lastCardHoldStateWriteMs = 0L;
             return;
         }
         try {
-            if (file.isFile()) {
-                file.delete();
-            }
+            // delete() is sufficient here; avoid an existence query on every game update.
+            file.delete();
         } catch (SecurityException ignored) {
         }
+        cardHoldStateCleanupAttempted = true;
         cardHoldStateMarked = false;
         lastCardHoldStateWriteMs = 0L;
     }

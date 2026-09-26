@@ -272,6 +272,9 @@ Moves Together in Spire game-state request writes, including their filesystem `s
 71. `AchievementBridge` lock-command polling throttle
 Caches the launcher lock-command path and checks it at most twice per second instead of performing a filesystem existence query on every game update. This addresses unnecessary per-frame file-system polling during normal play while retaining bounded latency for launcher-confirmed achievement locks and retrying failed commands. Type: runtime performance fix implemented by `AchievementBridge` and invoked by `AchievementLockCommandPatches`.
 
+72. `TouchscreenCardInputRuntime` card-hold marker cleanup guard
+Avoids repeated `File.isFile()` and `delete()` calls while no touchscreen card-hold marker is active, while preserving one startup/stale-marker cleanup and deletion when a marker is known to be active. This addresses unnecessary game-thread filesystem work caused by the prefix/postfix card-input bridge hooks during normal play. Type: runtime performance fix implemented by `TouchscreenCardInputRuntime` and `TouchscreenCardHoldRightClickGuardPatches`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:
