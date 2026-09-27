@@ -246,6 +246,8 @@ object LauncherPreferences {
         get() = LauncherConfig.MAX_JVM_HEAP_MAX_MB
     val JVM_HEAP_STEP_MB: Int
         get() = LauncherConfig.JVM_HEAP_STEP_MB
+    val DEFAULT_JVM_TIERED_STOP_AT_LEVEL: Int
+        get() = LauncherConfig.DEFAULT_JVM_TIERED_STOP_AT_LEVEL
     val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED
     val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED: Boolean
@@ -1036,6 +1038,13 @@ object LauncherPreferences {
 
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {
         LauncherConfig.saveJvmHeapMaxMb(context, heapMaxMb)
+    }
+
+    fun readJvmTieredStopAtLevel(context: Context): Int =
+        LauncherConfig.readJvmTieredStopAtLevel(context)
+
+    fun saveJvmTieredStopAtLevel(context: Context, level: Int) {
+        LauncherConfig.saveJvmTieredStopAtLevel(context, level)
     }
 
     fun isJvmCompressedPointersEnabled(context: Context): Boolean {

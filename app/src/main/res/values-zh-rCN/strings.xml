@@ -2241,6 +2241,10 @@
     <string name="settings_renderer_surface_forced">当前后端会强制使用 %1$s。</string>
     <string name="settings_jvm_heap_title">JVM 堆上限</string>
     <string name="settings_jvm_heap_desc">除非你清楚自己在做什么，否则不要修改此项。如果遇到黑屏之类的问题，适当调大可能有帮助，但设得过高也可能导致游戏无法启动。为减少大堆内存带来的启动失败，启动流程会先以较小的初始堆启动，再按需扩容。</string>
+    <string name="settings_jvm_tiered_stop_at_level_title">JVM 编译等级（TieredStopAtLevel）</string>
+    <string name="settings_jvm_tiered_stop_at_level_value">等级 %1$d</string>
+    <string name="settings_jvm_tiered_stop_at_level_default">等级 %1$d（默认，包含 C2）</string>
+    <string name="settings_jvm_tiered_stop_at_level_desc">设置下次启动游戏时允许的最高 JIT 编译等级。等级 4 启用 C2；等级 2 保持先前仅使用 C1 的行为。更高等级可能增加启动耗时和内存占用。不保证能解决模组反复报错导致的卡顿；如等级 4 出现问题，可切回等级 2。解释执行兼容模式会覆盖此设置。</string>
     <string name="settings_jvm_compressed_pointers_enabled">压缩 Oops / 类指针</string>
     <string name="settings_jvm_compressed_pointers_disabled">压缩 Oops / 类指针：关闭</string>
     <string name="settings_jvm_compressed_pointers_desc">控制 64 位 JVM 是否使用压缩对象指针和类指针。默认关闭以优先兼容性。开启后可能降低内存占用，但也可能带来特定设备上的启动问题。</string>
@@ -2452,6 +2456,7 @@
     <string name="settings_status_runtime_downscale_materials">运行时降采样素材白名单：%1$s</string>
     <string name="settings_status_import_downscale_materials">导入时降采样素材白名单：%1$s</string>
     <string name="settings_status_jvm_heap">JVM 初始 / 最大堆：%1$d/%2$d MB</string>
+    <string name="settings_status_jvm_tiered_stop_at_level">JVM 编译等级（TieredStopAtLevel）：%1$d</string>
     <string name="settings_status_compressed_pointers">压缩 Oops / 类指针：%1$s</string>
     <string name="settings_status_string_dedup">字符串去重：%1$s</string>
     <string name="settings_status_acceleration_strategy">加速线路选择：%1$s</string>

@@ -385,6 +385,7 @@ class SettingsScreenViewModel : ViewModel() {
             mode = LauncherPreferences.DEFAULT_BOOT_OVERLAY_IMAGE_MODE
         ),
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
+        val jvmTieredStopAtLevel: Int = LauncherPreferences.DEFAULT_JVM_TIERED_STOP_AT_LEVEL,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
         val stringDeduplicationEnabled: Boolean =
             LauncherPreferences.DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED,
@@ -3444,6 +3445,19 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onJvmTieredStopAtLevelChanged(host: Activity, level: Int) {
+        if (uiState.busy) {
+            return
+        }
+        val normalized = LauncherConfig.normalizeJvmTieredStopAtLevel(level)
+        if (normalized == uiState.jvmTieredStopAtLevel) {
+            return
+        }
+        uiState = uiState.copy(jvmTieredStopAtLevel = normalized)
+        LauncherPreferences.saveJvmTieredStopAtLevel(host, normalized)
+        refreshStatus(host)
+    }
+
     fun onJvmCompressedPointersChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -4537,6 +4551,7 @@ class SettingsScreenViewModel : ViewModel() {
                 rendering.gpuResourceGuardianPressureDownscaleEnabled,
             accelerationStrategy = LauncherPreferences.readAccelerationStrategy(host),
             selectedJvmHeapMaxMb = jvm.heapMaxMb,
+            jvmTieredStopAtLevel = jvm.tieredStopAtLevel,
             compressedPointersEnabled = jvm.compressedPointersEnabled,
             stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
             backBehavior = input.backBehavior,
@@ -5280,6 +5295,7 @@ class SettingsScreenViewModel : ViewModel() {
             jvm.heapStartMb,
             jvm.heapMaxMb
         )
+        lines += host.getString(R.string.settings_status_jvm_tiered_stop_at_level, jvm.tieredStopAtLevel)
         lines += host.getString(
             R.string.settings_status_compressed_pointers,
             toggleStateText(host, jvm.compressedPointersEnabled)

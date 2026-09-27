@@ -86,6 +86,7 @@ internal data class AdvancedRenderSettingsActions(
     val onGpuResourceGuardianModeChanged: (GpuResourceGuardianMode) -> Unit,
     val onGpuResourceGuardianPressureDownscaleChanged: (Boolean) -> Unit,
     val onJvmHeapMaxSelected: (Int) -> Unit,
+    val onJvmTieredStopAtLevelChanged: (Int) -> Unit,
     val onJvmCompressedPointersChanged: (Boolean) -> Unit,
     val onJvmStringDeduplicationChanged: (Boolean) -> Unit,
 )
@@ -126,6 +127,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onGpuResourceGuardianModeChanged: (GpuResourceGuardianMode) -> Unit = {},
     onGpuResourceGuardianPressureDownscaleChanged: (Boolean) -> Unit = {},
     onJvmHeapMaxSelected: (Int) -> Unit = {},
+    onJvmTieredStopAtLevelChanged: (Int) -> Unit = {},
     onJvmCompressedPointersChanged: (Boolean) -> Unit = {},
     onJvmStringDeduplicationChanged: (Boolean) -> Unit = {},
     onOpenCompatibility: () -> Unit = {},
@@ -325,6 +327,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onGpuResourceGuardianPressureDownscaleChanged =
                             onGpuResourceGuardianPressureDownscaleChanged,
                         onJvmHeapMaxSelected = onJvmHeapMaxSelected,
+                        onJvmTieredStopAtLevelChanged = onJvmTieredStopAtLevelChanged,
                         onJvmCompressedPointersChanged = onJvmCompressedPointersChanged,
                         onJvmStringDeduplicationChanged = onJvmStringDeduplicationChanged,
                     ),
@@ -971,6 +974,33 @@ internal fun SettingsAdvancedRenderSection(
     Text(
         text = stringResource(R.string.settings_jvm_heap_desc),
         style = MaterialTheme.typography.bodySmall
+    )
+
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_jvm_tiered_stop_at_level_title),
+            valueText = if (uiState.jvmTieredStopAtLevel == 4) {
+                stringResource(R.string.settings_jvm_tiered_stop_at_level_default, 4)
+            } else {
+                stringResource(
+                    R.string.settings_jvm_tiered_stop_at_level_value,
+                    uiState.jvmTieredStopAtLevel
+                )
+            },
+            enabled = !uiState.busy,
+            selectedValue = uiState.jvmTieredStopAtLevel,
+            options = listOf(1, 2, 3, 4),
+            optionLabel = { level ->
+                if (level == 4) {
+                    stringResource(R.string.settings_jvm_tiered_stop_at_level_default, level)
+                } else {
+                    stringResource(R.string.settings_jvm_tiered_stop_at_level_value, level)
+                }
+            },
+            onOptionSelected = actions.onJvmTieredStopAtLevelChanged,
+            description = stringResource(R.string.settings_jvm_tiered_stop_at_level_desc),
+            dialogDescription = null,
+        )
     )
 
     SettingsSwitchItem(

@@ -138,14 +138,20 @@ internal object MtsLoaderCrashPatcher {
             ?: throw IOException("Invalid ModTheSpire.jar: missing $PACKAGE_JAR_CLASS_ENTRY")
         val originalPrepackagedLauncherBytes = JarFileIoUtils.readJarEntryBytes(mtsJar, PREPACKAGED_LAUNCHER_CLASS_ENTRY)
             ?: throw IOException("Invalid ModTheSpire.jar: missing $PREPACKAGED_LAUNCHER_CLASS_ENTRY")
+        val originalMessageConsoleBytes = JarFileIoUtils.readJarEntryBytes(
+            mtsJar,
+            MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY
+        ) ?: throw IOException("Invalid ModTheSpire.jar: missing MessageConsole.class")
         val patchedLoaderBytes = patchLoaderBytes(originalLoaderBytes)
         val patchedPatcherBytes = patchPatcherBytes(originalPatcherBytes)
         val patchedPackageJarBytes = patchPackageJarBytes(originalPackageJarBytes)
         val patchedPrepackagedLauncherBytes = patchPrepackagedLauncherBytes(originalPrepackagedLauncherBytes)
+        val patchedMessageConsoleBytes = MtsConsoleLogPatcher.patchMessageConsoleBytes(originalMessageConsoleBytes)
         if (patchedLoaderBytes.contentEquals(originalLoaderBytes) &&
             patchedPatcherBytes.contentEquals(originalPatcherBytes) &&
             patchedPackageJarBytes.contentEquals(originalPackageJarBytes) &&
-            patchedPrepackagedLauncherBytes.contentEquals(originalPrepackagedLauncherBytes)
+            patchedPrepackagedLauncherBytes.contentEquals(originalPrepackagedLauncherBytes) &&
+            patchedMessageConsoleBytes.contentEquals(originalMessageConsoleBytes)
         ) {
             return false
         }
@@ -176,6 +182,8 @@ internal object MtsLoaderCrashPatcher {
                                 zipOut.write(patchedPackageJarBytes)
                             } else if (name == PREPACKAGED_LAUNCHER_CLASS_ENTRY) {
                                 zipOut.write(patchedPrepackagedLauncherBytes)
+                            } else if (name == MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY) {
+                                zipOut.write(patchedMessageConsoleBytes)
                             } else {
                                 JarFileIoUtils.copyStream(zipIn, zipOut)
                             }
@@ -226,6 +234,16 @@ internal object MtsLoaderCrashPatcher {
                 tempJar.delete()
             }
             throw IOException("Failed to patch ModTheSpire prepackaged launcher cache handling")
+        }
+        if (!MtsConsoleLogPatcher.isPatchedMessageConsoleClass(
+                JarFileIoUtils.readJarEntryBytes(tempJar, MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY)
+                    ?: throw IOException("Patched MTS jar is missing MessageConsole.class")
+            )
+        ) {
+            if (tempJar.exists()) {
+                tempJar.delete()
+            }
+            throw IOException("Failed to bypass ModTheSpire Swing log console")
         }
 
         if (mtsJar.exists() && !mtsJar.delete()) {

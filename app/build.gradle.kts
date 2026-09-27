@@ -297,6 +297,10 @@ android {
                 signingConfig = signingConfigs.getByName("sharedDebug")
             }
         }
+        create("fullDebug") {
+            initWith(getByName("debug"))
+            matchingFallbacks += "debug"
+        }
     }
 
     compileOptions {

@@ -442,6 +442,9 @@ fun LauncherDeveloperSettingsScreen(
             viewModel.onAccelerationStrategyChanged(activity, strategy)
         },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
+        onJvmTieredStopAtLevelChanged = { level ->
+            viewModel.onJvmTieredStopAtLevelChanged(activity, level)
+        },
         onJvmCompressedPointersChanged = { enabled ->
             viewModel.onJvmCompressedPointersChanged(activity, enabled)
         },

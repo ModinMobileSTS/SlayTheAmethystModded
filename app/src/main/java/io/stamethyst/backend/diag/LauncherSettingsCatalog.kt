@@ -677,6 +677,7 @@ private fun advancedRenderSection(
     val accelerationStrategy = LauncherConfig.readAccelerationStrategy(context)
     val heapMaxMb = LauncherConfig.readJvmHeapMaxMb(context)
     val heapStartMb = LauncherConfig.resolveJvmHeapStartMb(heapMaxMb)
+    val tieredStopAtLevel = LauncherConfig.readJvmTieredStopAtLevel(context).toString()
 
     return section(
         "Developer / Advanced rendering",
@@ -730,6 +731,13 @@ private fun advancedRenderSection(
                 R.string.settings_jvm_heap_title,
                 heapMaxMb.toString(),
                 heapMaxMb.toString(),
+                zh,
+            ),
+            textField(
+                "jvm.tieredStopAtLevel",
+                R.string.settings_jvm_tiered_stop_at_level_title,
+                tieredStopAtLevel,
+                tieredStopAtLevel,
                 zh,
             ),
             boolField(

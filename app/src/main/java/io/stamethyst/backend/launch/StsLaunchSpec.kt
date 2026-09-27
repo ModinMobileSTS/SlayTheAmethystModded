@@ -46,7 +46,6 @@ object StsLaunchSpec {
         "amethyst.runtime_compat.together_in_spire_easytier_autofill"
     private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 80
     private const val DEFAULT_ACTIVE_PROCESSOR_COUNT = 3
-    private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
     private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
     private val EFFECTIVE_PERFORMANCE_PROPERTY_KEYS = listOf(
         "amethyst.gdx.frame_ring",
@@ -151,6 +150,9 @@ object StsLaunchSpec {
         }
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
+        // Temporary runtime provenance probe.  This is intentionally file-gated so a diagnostic
+        // APK can collect nmethod addresses without changing normal launches.
+        val compilationTraceFlag = File(stsRoot, "jvm_compilation_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
         val requestedPerformanceDeepDiagnostics = performanceDeepDiagnosticsOverride
@@ -169,7 +171,7 @@ object StsLaunchSpec {
             args.add("-Xint")
         } else {
             args.add("-XX:+TieredCompilation")
-            args.add("-XX:TieredStopAtLevel=$DEFAULT_TIERED_STOP_AT_LEVEL")
+            args.add(tieredStopAtLevelArg(LauncherConfig.readJvmTieredStopAtLevel(context)))
         }
         if (is64BitRuntime) {
             val useCompressedPointers = LauncherConfig.isJvmCompressedPointersEnabled(context)
@@ -221,6 +223,13 @@ object StsLaunchSpec {
             args.add("-Damethyst.gdx.frame_ring=true")
             val budgetMs = (1000f / effectiveTargetFps.coerceAtLeast(1f)).roundToInt()
             args.add("-Damethyst.gdx.frame_ring.budget_ms=$budgetMs")
+        }
+        if (compilationTraceFlag.isFile) {
+            args.add("-XX:+UnlockDiagnosticVMOptions")
+            args.add("-XX:+LogCompilation")
+            args.add(
+                "-XX:LogFile=${File(RuntimePaths.jvmLogsDir(context), "jvm_compilation.log").absolutePath}"
+            )
         }
         if (isMtsLaunchMode(launchMode)) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
@@ -947,6 +956,9 @@ object StsLaunchSpec {
         return performanceDeepDiagnostics && arthasAnalysisEnabled &&
             !(autoplay && autoplayMode == AutoplayMode.SINGLE_ROOM)
     }
+
+    internal fun tieredStopAtLevelArg(level: Int): String =
+        "-XX:TieredStopAtLevel=${LauncherConfig.normalizeJvmTieredStopAtLevel(level)}"
 
     internal fun resolveTexturePressureDownscaleEnabled(
         ramSaverEnabled: Boolean,

@@ -1940,6 +1940,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_renderer_surface_forced">The current backend forces %1$s.</string>
     <string name="settings_jvm_heap_title">JVM heap limit</string>
     <string name="settings_jvm_heap_desc">Do not change this unless you know what you are doing. If you hit black screens or similar issues, increasing it may help, but setting it too high can also stop the game from starting. To reduce large-heap startup failures, launch starts with a smaller initial heap and expands on demand.</string>
+    <string name="settings_jvm_tiered_stop_at_level_title">JVM compilation level (TieredStopAtLevel)</string>
+    <string name="settings_jvm_tiered_stop_at_level_value">Level %1$d</string>
+    <string name="settings_jvm_tiered_stop_at_level_default">Level %1$d (default, includes C2)</string>
+    <string name="settings_jvm_tiered_stop_at_level_desc">Controls the highest JIT compilation level for the next game launch. Level 4 enables C2; level 2 keeps the previous C1-only behavior. Higher levels may increase startup time and memory use. This is not a guaranteed fix for recurring mod errors; use level 2 if level 4 causes problems. Interpreter compatibility mode overrides this setting.</string>
     <string name="settings_jvm_compressed_pointers_enabled">Compressed Oops / Class Pointers</string>
     <string name="settings_jvm_compressed_pointers_disabled">Compressed Oops / Class Pointers: Disabled</string>
     <string name="settings_jvm_compressed_pointers_desc">Controls whether the 64-bit JVM uses compressed object pointers and class pointers. Off by default for compatibility. Enabling it may reduce memory usage, but can also introduce device-specific startup issues.</string>
@@ -2453,6 +2457,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_status_runtime_downscale_materials">Runtime downscale material allowlist: %1$s</string>
     <string name="settings_status_import_downscale_materials">Import-time downscale material allowlist: %1$s</string>
     <string name="settings_status_jvm_heap">JVM heap start/max: %1$d/%2$d MB</string>
+    <string name="settings_status_jvm_tiered_stop_at_level">JVM compilation level (TieredStopAtLevel): %1$d</string>
     <string name="settings_status_compressed_pointers">Compressed Oops / Class Pointers: %1$s</string>
     <string name="settings_status_string_dedup">String Deduplication: %1$s</string>
     <string name="settings_status_acceleration_strategy">Accelerated route selection: %1$s</string>

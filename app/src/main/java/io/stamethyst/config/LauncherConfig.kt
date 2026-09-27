@@ -116,6 +116,7 @@ object LauncherConfig {
     private const val PREF_KEY_TARGET_FPS_EXACT = "target_fps_exact"
     private const val PREF_KEY_NON_RECOMMENDED_FPS_ENABLED = "non_recommended_fps_enabled"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
+    private const val PREF_KEY_JVM_TIERED_STOP_AT_LEVEL = "jvm_tiered_stop_at_level"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
     private const val PREF_KEY_JVM_STRING_DEDUPLICATION_ENABLED =
         "jvm_string_deduplication_enabled"
@@ -402,6 +403,9 @@ object LauncherConfig {
     const val DEFAULT_FIRST_RUN_SETUP_COMPLETED = false
 
     const val DEFAULT_JVM_HEAP_MAX_MB = 512
+    const val DEFAULT_JVM_TIERED_STOP_AT_LEVEL = 4
+    const val MIN_JVM_TIERED_STOP_AT_LEVEL = 1
+    const val MAX_JVM_TIERED_STOP_AT_LEVEL = 4
     const val MIN_JVM_HEAP_MAX_MB = 256
     const val MAX_JVM_HEAP_MAX_MB = 2048
     const val JVM_HEAP_STEP_MB = 128
@@ -1435,6 +1439,20 @@ object LauncherConfig {
     fun saveJvmHeapMaxMb(context: Context, heapMaxMb: Int) {
         prefs(context).edit {
             putInt(PREF_KEY_JVM_HEAP_MAX_MB, normalizeJvmHeapMaxMb(heapMaxMb))
+        }
+    }
+
+    fun normalizeJvmTieredStopAtLevel(level: Int): Int =
+        level.coerceIn(MIN_JVM_TIERED_STOP_AT_LEVEL, MAX_JVM_TIERED_STOP_AT_LEVEL)
+
+    fun readJvmTieredStopAtLevel(context: Context): Int =
+        normalizeJvmTieredStopAtLevel(
+            prefs(context).getInt(PREF_KEY_JVM_TIERED_STOP_AT_LEVEL, DEFAULT_JVM_TIERED_STOP_AT_LEVEL)
+        )
+
+    fun saveJvmTieredStopAtLevel(context: Context, level: Int) {
+        prefs(context).edit {
+            putInt(PREF_KEY_JVM_TIERED_STOP_AT_LEVEL, normalizeJvmTieredStopAtLevel(level))
         }
     }
 

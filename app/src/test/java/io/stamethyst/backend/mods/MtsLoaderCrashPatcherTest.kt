@@ -6,6 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 class MtsLoaderCrashPatcherTest {
     @Test
@@ -27,6 +30,10 @@ class MtsLoaderCrashPatcherTest {
             )
             requireNotNull(originalLoaderBytes)
             assertFalse(MtsLoaderCrashPatcher.isPatchedLoaderClass(originalLoaderBytes))
+            val originalConsoleBytes = requireNotNull(
+                JarFileIoUtils.readJarEntryBytes(tempJar, MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY)
+            )
+            assertFalse(MtsConsoleLogPatcher.isPatchedMessageConsoleClass(originalConsoleBytes))
 
             assertTrue(MtsLoaderCrashPatcher.ensurePatchedMtsJar(tempJar))
 
@@ -56,6 +63,13 @@ class MtsLoaderCrashPatcherTest {
             assertTrue(MtsLoaderCrashPatcher.hasPackageDirOverride(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPackageJarFastPathHook(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPrepackagedLauncherClass(patchedPrepackagedLauncherBytes))
+            assertTrue(
+                MtsConsoleLogPatcher.isPatchedMessageConsoleClass(
+                    requireNotNull(
+                        JarFileIoUtils.readJarEntryBytes(tempJar, MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY)
+                    )
+                )
+            )
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheLaunchHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHookWithCompiledClassPathArg(patchedLoaderBytes))
@@ -207,6 +221,59 @@ class MtsLoaderCrashPatcherTest {
 
         val patchedLoaderBytes = MtsLoaderCrashPatcher.patchLoaderBytes(originalLoaderBytes)
         assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))
+    }
+
+    @Test
+    fun ensurePatchedMtsJar_upgradesCurrentStartupHooksWithOriginalSwingConsole() {
+        val sourceJar = sequenceOf(
+            File("src/main/assets/components/mods/ModTheSpire.jar"),
+            File("app/src/main/assets/components/mods/ModTheSpire.jar")
+        ).firstOrNull { it.isFile } ?: error("Missing test fixture jar: ModTheSpire.jar")
+        val originalConsoleBytes = requireNotNull(
+            JarFileIoUtils.readJarEntryBytes(sourceJar, MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY)
+        )
+        val tempJar = Files.createTempFile("mts-console-patch-upgrade-", ".jar").toFile()
+        val olderJar = Files.createTempFile("mts-console-patch-older-", ".jar").toFile()
+        try {
+            JarFileIoUtils.copyFileReplacing(sourceJar, tempJar)
+            assertTrue(MtsLoaderCrashPatcher.ensurePatchedMtsJar(tempJar))
+            // Model an installed jar whose existing startup/cache fixes are current, but whose
+            // console predates this fix. It must not be skipped by the jar-level idempotency check.
+            ZipFile(tempJar).use { zipFile ->
+                ZipOutputStream(olderJar.outputStream()).use { zipOut ->
+                    for (entry in zipFile.entries().asSequence()) {
+                        zipOut.putNextEntry(ZipEntry(entry.name))
+                        if (entry.name == MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY) {
+                            zipOut.write(originalConsoleBytes)
+                        } else {
+                            zipFile.getInputStream(entry).use { JarFileIoUtils.copyStream(it, zipOut) }
+                        }
+                        zipOut.closeEntry()
+                    }
+                }
+            }
+            val oldLoaderBytes = requireNotNull(
+                JarFileIoUtils.readJarEntryBytes(olderJar, "com/evacipated/cardcrawl/modthespire/Loader.class")
+            )
+            assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(oldLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.ensurePatchedMtsJar(olderJar))
+            assertTrue(
+                requireNotNull(
+                    JarFileIoUtils.readJarEntryBytes(olderJar, "com/evacipated/cardcrawl/modthespire/Loader.class")
+                ).contentEquals(oldLoaderBytes)
+            )
+            assertTrue(
+                MtsConsoleLogPatcher.isPatchedMessageConsoleClass(
+                    requireNotNull(
+                        JarFileIoUtils.readJarEntryBytes(olderJar, MtsConsoleLogPatcher.MESSAGE_CONSOLE_CLASS_ENTRY)
+                    )
+                )
+            )
+            assertFalse(MtsLoaderCrashPatcher.ensurePatchedMtsJar(olderJar))
+        } finally {
+            tempJar.delete()
+            olderJar.delete()
+        }
     }
 
     @Test

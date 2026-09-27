@@ -90,6 +90,7 @@ internal object SettingsRepository {
     data class JvmSnapshot(
         val heapMaxMb: Int,
         val heapStartMb: Int,
+        val tieredStopAtLevel: Int,
         val compressedPointersEnabled: Boolean,
         val stringDeduplicationEnabled: Boolean
     )
@@ -236,6 +237,7 @@ internal object SettingsRepository {
             jvm = JvmSnapshot(
                 heapMaxMb = heapMaxMb,
                 heapStartMb = LauncherPreferences.resolveJvmHeapStartMb(heapMaxMb),
+                tieredStopAtLevel = LauncherPreferences.readJvmTieredStopAtLevel(context),
                 compressedPointersEnabled = LauncherPreferences.isJvmCompressedPointersEnabled(context),
                 stringDeduplicationEnabled = LauncherPreferences.isJvmStringDeduplicationEnabled(context)
             ),
@@ -496,6 +498,10 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG
         )
         LauncherPreferences.saveJvmHeapMaxMb(context, LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB)
+        LauncherPreferences.saveJvmTieredStopAtLevel(
+            context,
+            LauncherPreferences.DEFAULT_JVM_TIERED_STOP_AT_LEVEL
+        )
         LauncherPreferences.setJvmCompressedPointersEnabled(
             context,
             LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED

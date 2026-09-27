@@ -62,6 +62,7 @@ Verified against implementation on 2026-03-08:
   - `RuntimePaths.ensureBaseDirs(...)`
   - `StsJarValidator.validate(...)`
   - MTS mode: `ModJarSupport.validate*` + `ModJarSupport.prepareMtsClasspath(...)` + `ModManager.resolveLaunchModIds(...)` + desktop jar/body patch cache warmup
+- MTS component preparation also applies `MtsConsoleLogPatcher` through `MtsLoaderCrashPatcher.ensurePatchedMtsJar(...)`, including on already-installed jars. It bypasses the unbounded Swing console tee before Log4j initializes, preserving stdio/BootBridge/file logging. See [MTS console logging](mts-console-logging.md).
 
 5. Runtime bootstrap
 - Resolve `javaHome` under `files/runtimes/Internal`

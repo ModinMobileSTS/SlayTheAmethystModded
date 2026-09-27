@@ -163,6 +163,8 @@ private fun Project.configureStsAndroidAppBuild() {
         it.name in setOf(
             "generateFullReleaseAssets",
             "mergeFullReleaseAssets",
+            "generateFullDebugAssets",
+            "mergeFullDebugAssets",
             "generateFastFullReleaseAssets",
             "mergeFastFullReleaseAssets",
             "generateFullReleaseLintVitalReportModel",
@@ -249,7 +251,7 @@ private fun Project.configureGeneratedAndroidSources(
         }
         // Full APKs are offline-capable slim packages: carry one archive and let the
         // runtime installer unpack it into the same persistent store used by slim APKs.
-        listOf("fastFullRelease", "fullRelease").forEach { sourceSetName ->
+        listOf("fastFullRelease", "fullRelease", "fullDebug").forEach { sourceSetName ->
             sourceSets.maybeCreate(sourceSetName).assets.srcDir(embeddedResourcePackAssetsDir)
         }
     }
@@ -293,7 +295,7 @@ private fun Project.configureApkOutput(appVersionName: String) {
 
 private fun Project.configureExternalResourceNativePackaging() {
     val components = androidComponents()
-    listOf("debug", "release", "fastSlimRelease", "fastFullRelease", "fullRelease").forEach { buildTypeName ->
+    listOf("debug", "fullDebug", "release", "fastSlimRelease", "fastFullRelease", "fullRelease").forEach { buildTypeName ->
         components.onVariants(components.selector().withBuildType(buildTypeName)) { variant ->
             externalizedNativeLibraries.forEach { libraryName ->
                 variant.packaging.jniLibs.excludes.add("**/$libraryName")
