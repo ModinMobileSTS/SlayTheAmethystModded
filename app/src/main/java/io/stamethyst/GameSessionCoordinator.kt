@@ -1326,6 +1326,9 @@ internal class GameSessionCoordinator(
         }
         lastKeyboardRequestPayload = payload
         val source = payload.lineSequence().firstOrNull()?.trim().orEmpty()
+        if (source.startsWith("input_processor:") && !config.autoPopupKeyboardEnabled) {
+            return
+        }
         if (source.startsWith("online_panel:")) {
             inGameEasyTierOverlayController.show()
         } else if (source.startsWith("custom_button:")) {

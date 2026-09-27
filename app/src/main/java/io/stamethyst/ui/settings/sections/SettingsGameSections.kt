@@ -85,6 +85,7 @@ internal data class InputSettingsActions(
     val onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     val onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit,
     val onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    val onAutoPopupKeyboardChanged: (Boolean) -> Unit,
     val onFloatingToolButtonChanged: (String, Boolean) -> Unit,
     val onHapticFeedbackChanged: (Boolean) -> Unit,
     val onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
@@ -104,6 +105,7 @@ internal data class FloatingMouseSettingsActions(
     val onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     val onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     val onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    val onAutoPopupKeyboardChanged: (Boolean) -> Unit,
     val onFloatingToolButtonChanged: (String, Boolean) -> Unit,
     val onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
 )
@@ -520,6 +522,7 @@ internal fun SettingsInputSection(
                 onSpecialKeyInputModeChanged = actions.onSpecialKeyInputModeChanged,
                 onTouchMouseInteractionModeChanged = actions.onTouchMouseInteractionModeChanged,
                 onBuiltInSoftKeyboardChanged = actions.onBuiltInSoftKeyboardChanged,
+                onAutoPopupKeyboardChanged = actions.onAutoPopupKeyboardChanged,
                 onFloatingToolButtonChanged = actions.onFloatingToolButtonChanged,
                 onAutoSwitchLeftAfterRightClickChanged = actions.onAutoSwitchLeftAfterRightClickChanged,
             ),
@@ -635,6 +638,16 @@ internal fun SettingsFloatingMouseSection(
                 title = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
                 description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
                 onCheckedChange = actions.onBuiltInSoftKeyboardChanged
+            )
+        )
+
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.autoPopupKeyboardEnabled,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_auto_popup_keyboard_enabled),
+                description = stringResource(R.string.settings_auto_popup_keyboard_desc),
+                onCheckedChange = actions.onAutoPopupKeyboardChanged
             )
         )
 

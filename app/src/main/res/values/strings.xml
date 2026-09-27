@@ -246,10 +246,13 @@
     <string name="settings_built_in_soft_keyboard_enabled">Built-in in-game keyboard</string>
     <string name="settings_built_in_soft_keyboard_disabled">Built-in in-game keyboard: Disabled</string>
     <string name="settings_built_in_soft_keyboard_desc">When enabled, the floating menu keyboard button opens a built-in keyboard instead of the system keyboard. Disable this if you need the system IME again.</string>
+    <string name="settings_auto_popup_keyboard_enabled">Auto-popup keyboard</string>
+    <string name="settings_auto_popup_keyboard_desc">When enabled, the keyboard automatically pops up when appropriate.</string>
     <string name="settings_haptic_feedback_enabled">Vibration feedback</string>
     <string name="settings_haptic_feedback_disabled">Vibration feedback: Disabled</string>
     <string name="settings_haptic_feedback_desc">Controls launcher and in-game overlay vibration feedback, including taps, switches, sliders, and mod toggles.</string>
     <string name="status_built_in_soft_keyboard_format">Built-in in-game keyboard: %1$s</string>
+    <string name="status_auto_popup_keyboard_format">Auto-popup keyboard: %1$s</string>
     <string name="status_haptic_feedback_format">Vibration feedback: %1$s</string>
     <string name="settings_compendium_upgrade_touch_fix_enabled">Pre-click hitbox hover refresh</string>
     <string name="settings_compendium_upgrade_touch_fix_disabled">Pre-click hitbox hover refresh: Disabled</string>

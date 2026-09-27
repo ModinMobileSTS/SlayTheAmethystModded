@@ -45,6 +45,7 @@ internal data class GameSessionConfig(
     val touchDoubleClickAsRightClick: Boolean,
     val ignoreLongPressRightClickWhilePlayingCard: Boolean,
     val builtInSoftKeyboardEnabled: Boolean,
+    val autoPopupKeyboardEnabled: Boolean,
     val autoSwitchLeftAfterRightClick: Boolean,
     val requestedRenderSurfaceBackend: RenderSurfaceBackend,
     val rendererDecision: RendererDecision,
@@ -142,6 +143,7 @@ internal data class GameSessionConfig(
                 ignoreLongPressRightClickWhilePlayingCard =
                     LauncherConfig.readIgnoreLongPressRightClickWhilePlayingCard(context),
                 builtInSoftKeyboardEnabled = LauncherConfig.isBuiltInSoftKeyboardEnabled(context),
+                autoPopupKeyboardEnabled = LauncherConfig.isAutoPopupKeyboardEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
                 requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,
                 rendererDecision = rendererDecision,

@@ -405,6 +405,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD,
         val builtInSoftKeyboardEnabled: Boolean =
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
+        val autoPopupKeyboardEnabled: Boolean =
+            LauncherPreferences.DEFAULT_AUTO_POPUP_KEYBOARD_ENABLED,
         val floatingToolButtons: Set<String> = LauncherPreferences.DEFAULT_FLOATING_TOOL_BUTTONS,
         val hapticFeedbackEnabled: Boolean = LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
@@ -3564,6 +3566,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onAutoPopupKeyboardChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(autoPopupKeyboardEnabled = enabled)
+        saveAutoPopupKeyboardSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onFloatingToolButtonChanged(host: Activity, buttonId: String, enabled: Boolean) {
         if (uiState.busy || buttonId !in LauncherPreferences.FLOATING_TOOL_BUTTON_IDS) {
             return
@@ -4562,6 +4573,7 @@ class SettingsScreenViewModel : ViewModel() {
             touchDoubleClickAsRightClick = input.touchDoubleClickAsRightClick,
             ignoreLongPressRightClickWhilePlayingCard = input.ignoreLongPressRightClickWhilePlayingCard,
             builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
+            autoPopupKeyboardEnabled = input.autoPopupKeyboardEnabled,
             floatingToolButtons = input.floatingToolButtons,
             hapticFeedbackEnabled = input.hapticFeedbackEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
@@ -5385,6 +5397,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, input.builtInSoftKeyboardEnabled)
         )
         lines += host.getString(
+            R.string.status_auto_popup_keyboard_format,
+            toggleStateText(host, input.autoPopupKeyboardEnabled)
+        )
+        lines += host.getString(
             R.string.status_haptic_feedback_format,
             toggleStateText(host, input.hapticFeedbackEnabled)
         )
@@ -5927,6 +5943,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveBuiltInSoftKeyboardSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setBuiltInSoftKeyboardEnabled(host, enabled)
+    }
+
+    private fun saveAutoPopupKeyboardSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setAutoPopupKeyboardEnabled(host, enabled)
     }
 
     private fun saveHapticFeedbackSelection(host: Activity, enabled: Boolean) {

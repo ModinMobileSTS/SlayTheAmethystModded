@@ -246,10 +246,13 @@
     <string name="settings_built_in_soft_keyboard_enabled">游戏内置软键盘</string>
     <string name="settings_built_in_soft_keyboard_disabled">游戏内置软键盘：禁用</string>
     <string name="settings_built_in_soft_keyboard_desc">启用后，悬浮菜单中的打开键盘操作会改为打开一个内置键盘，而不是系统输入法。若仍需系统输入法，可关闭此项。</string>
+    <string name="settings_auto_popup_keyboard_enabled">自动弹出键盘</string>
+    <string name="settings_auto_popup_keyboard_desc">启用后，将在合适的时候自动弹出键盘。</string>
     <string name="settings_haptic_feedback_enabled">震动反馈</string>
     <string name="settings_haptic_feedback_disabled">震动反馈：禁用</string>
     <string name="settings_haptic_feedback_desc">统一控制启动器与游戏内悬浮层的震动反馈的开关，包括点击、开关、滑条和模组启用切换。</string>
     <string name="status_built_in_soft_keyboard_format">游戏内置软键盘：%1$s</string>
+    <string name="status_auto_popup_keyboard_format">自动弹出键盘：%1$s</string>
     <string name="status_haptic_feedback_format">震动反馈：%1$s</string>
     <string name="settings_compendium_upgrade_touch_fix_enabled">点击前刷新 hitbox 悬停</string>
     <string name="settings_compendium_upgrade_touch_fix_disabled">点击前刷新 hitbox 悬停：禁用</string>

@@ -104,6 +104,7 @@ internal object SettingsRepository {
         val touchDoubleClickAsRightClick: Boolean,
         val ignoreLongPressRightClickWhilePlayingCard: Boolean,
         val builtInSoftKeyboardEnabled: Boolean,
+        val autoPopupKeyboardEnabled: Boolean,
         val floatingToolButtons: Set<String>,
         val hapticFeedbackEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
@@ -252,6 +253,8 @@ internal object SettingsRepository {
                     LauncherPreferences.readIgnoreLongPressRightClickWhilePlayingCard(context),
                 builtInSoftKeyboardEnabled =
                     LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
+                autoPopupKeyboardEnabled =
+                    LauncherPreferences.isAutoPopupKeyboardEnabled(context),
                 floatingToolButtons = LauncherPreferences.readFloatingToolButtons(context),
                 hapticFeedbackEnabled = LauncherPreferences.isHapticFeedbackEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherPreferences.readAutoSwitchLeftAfterRightClick(context),

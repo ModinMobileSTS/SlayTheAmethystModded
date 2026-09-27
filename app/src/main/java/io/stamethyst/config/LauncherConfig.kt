@@ -52,6 +52,8 @@ object LauncherConfig {
     private const val PREF_KEY_TOUCH_MOUSE_NEW_INTERACTION = "touch_mouse_new_interaction"
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
+    private const val PREF_KEY_AUTO_POPUP_KEYBOARD_ENABLED =
+        "auto_popup_keyboard_enabled"
     private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
     private const val PREF_KEY_HIDDEN_MAIN_CARDS = "hidden_main_cards"
     private const val PREF_KEY_SHOW_REFRESH_RATE_DETECTOR = "show_refresh_rate_detector"
@@ -332,6 +334,7 @@ object LauncherConfig {
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode =
         TouchMouseInteractionMode.OPEN_MENU_ON_TAP
     const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
+    const val DEFAULT_AUTO_POPUP_KEYBOARD_ENABLED = false
     val DEFAULT_FLOATING_TOOL_BUTTONS: Set<String> = emptySet()
     val FLOATING_TOOL_BUTTON_IDS: List<String> = listOf(
         "ctrl",
@@ -819,6 +822,19 @@ object LauncherConfig {
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED, enabled)
+        }
+    }
+
+    fun isAutoPopupKeyboardEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_AUTO_POPUP_KEYBOARD_ENABLED,
+            DEFAULT_AUTO_POPUP_KEYBOARD_ENABLED
+        )
+    }
+
+    fun setAutoPopupKeyboardEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_AUTO_POPUP_KEYBOARD_ENABLED, enabled)
         }
     }
 

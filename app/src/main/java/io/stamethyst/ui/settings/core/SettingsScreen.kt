@@ -156,6 +156,9 @@ fun LauncherSettingsGameScreen(
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
         },
+        onAutoPopupKeyboardChanged = { enabled ->
+            viewModel.onAutoPopupKeyboardChanged(activity, enabled)
+        },
         onFloatingToolButtonChanged = { buttonId, enabled ->
             viewModel.onFloatingToolButtonChanged(activity, buttonId, enabled)
         },

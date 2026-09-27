@@ -246,10 +246,13 @@
     <string name="settings_built_in_soft_keyboard_enabled">遊戲內建軟鍵盤</string>
     <string name="settings_built_in_soft_keyboard_disabled">遊戲內建軟鍵盤：禁用</string>
     <string name="settings_built_in_soft_keyboard_desc">啟用後，懸浮選單中的開啟鍵盤操作會改為開啟一個內建鍵盤，而不是系統輸入法。若仍需系統輸入法，可關閉此項。</string>
+    <string name="settings_auto_popup_keyboard_enabled">自動彈出鍵盤</string>
+    <string name="settings_auto_popup_keyboard_desc">啟用後，將在適當的時候自動彈出鍵盤。</string>
     <string name="settings_haptic_feedback_enabled">震動反饋</string>
     <string name="settings_haptic_feedback_disabled">震動反饋：禁用</string>
     <string name="settings_haptic_feedback_desc">統一控制啟動器與遊戲內懸浮層的震動反饋，包括點選、開關、滑條和模組啟用切換。</string>
     <string name="status_built_in_soft_keyboard_format">遊戲內建軟鍵盤：%1$s</string>
+    <string name="status_auto_popup_keyboard_format">自動彈出鍵盤：%1$s</string>
     <string name="status_haptic_feedback_format">震動反饋：%1$s</string>
     <string name="settings_compendium_upgrade_touch_fix_enabled">點擊前刷新 hitbox 懸停</string>
     <string name="settings_compendium_upgrade_touch_fix_disabled">點擊前刷新 hitbox 懸停：停用</string>

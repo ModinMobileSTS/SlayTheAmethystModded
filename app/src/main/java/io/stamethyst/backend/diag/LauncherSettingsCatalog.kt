@@ -399,6 +399,12 @@ private fun inputSection(
                 LauncherConfig.isBuiltInSoftKeyboardEnabled(context),
                 zh,
             ),
+            boolField(
+                "autoPopupKeyboardEnabled",
+                R.string.settings_auto_popup_keyboard_enabled,
+                LauncherConfig.isAutoPopupKeyboardEnabled(context),
+                zh,
+            ),
             textField(
                 "floatingToolButtons",
                 R.string.settings_floating_tool_buttons_title,

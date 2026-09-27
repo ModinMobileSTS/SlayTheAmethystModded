@@ -149,6 +149,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsGame,
     ),
     entry(
+        titleResId = R.string.settings_auto_popup_keyboard_enabled,
+        subtitleResId = R.string.settings_auto_popup_keyboard_desc,
+        categoryTitleResId = R.string.settings_category_game_title,
+        route = Route.SettingsGame,
+    ),
+    entry(
         titleResId = R.string.settings_auto_switch_left_enabled,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,

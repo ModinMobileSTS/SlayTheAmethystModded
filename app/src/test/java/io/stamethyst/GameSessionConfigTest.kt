@@ -91,6 +91,7 @@ class GameSessionConfigTest {
             touchDoubleClickAsRightClick = false,
             ignoreLongPressRightClickWhilePlayingCard = true,
             builtInSoftKeyboardEnabled = true,
+            autoPopupKeyboardEnabled = false,
             autoSwitchLeftAfterRightClick = false,
             requestedRenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             rendererDecision = RendererDecision(

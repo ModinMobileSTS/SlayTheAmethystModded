@@ -122,6 +122,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_CARD_PLAY_OPTIMIZATION_MODE
     val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
+    val DEFAULT_AUTO_POPUP_KEYBOARD_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_AUTO_POPUP_KEYBOARD_ENABLED
     val DEFAULT_FLOATING_TOOL_BUTTONS: Set<String>
         get() = LauncherConfig.DEFAULT_FLOATING_TOOL_BUTTONS
     val FLOATING_TOOL_BUTTON_IDS: List<String>
@@ -420,6 +422,14 @@ object LauncherPreferences {
 
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setBuiltInSoftKeyboardEnabled(context, enabled)
+    }
+
+    fun isAutoPopupKeyboardEnabled(context: Context): Boolean {
+        return LauncherConfig.isAutoPopupKeyboardEnabled(context)
+    }
+
+    fun setAutoPopupKeyboardEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setAutoPopupKeyboardEnabled(context, enabled)
     }
 
     fun readFloatingToolButtons(context: Context): Set<String> {

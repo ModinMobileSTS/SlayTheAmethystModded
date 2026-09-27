@@ -92,6 +92,7 @@ internal fun LauncherSettingsScreenPreview() {
             showFloatingMouseWindow = false,
             touchMouseInteractionMode = TouchMouseInteractionMode.OPEN_MENU_ON_TAP,
             builtInSoftKeyboardEnabled = true,
+            autoPopupKeyboardEnabled = false,
             hapticFeedbackEnabled = true,
             autoSwitchLeftAfterRightClick = true,
             showModFileName = false,
@@ -448,6 +449,7 @@ internal fun LauncherSettingsGameScreenContent(
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit = {},
     onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
+    onAutoPopupKeyboardChanged: (Boolean) -> Unit = {},
     onFloatingToolButtonChanged: (String, Boolean) -> Unit = { _, _ -> },
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
@@ -486,6 +488,7 @@ internal fun LauncherSettingsGameScreenContent(
                         onIgnoreLongPressRightClickWhilePlayingCardChanged =
                             onIgnoreLongPressRightClickWhilePlayingCardChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
+                        onAutoPopupKeyboardChanged = onAutoPopupKeyboardChanged,
                         onFloatingToolButtonChanged = onFloatingToolButtonChanged,
                         onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
