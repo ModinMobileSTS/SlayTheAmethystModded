@@ -1,0 +1,4 @@
+interface:
+  display_name: "TDD Development"
+  short_description: "Develop code with a red-green-refactor loop"
+  default_prompt: "Use $tdd-development to implement the requested change with strict TDD: write a failing behavior test first, verify Red, implement minimally, verify Green, refactor only when useful, and report commands run."
