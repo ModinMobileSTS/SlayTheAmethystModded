@@ -79,6 +79,18 @@ class ConsoleExecTest(unittest.TestCase):
             self.assertEqual(ctx.result["status"], "ERROR")
             self.assertIn("connection failed", ctx.result["message"])
 
+    def test_non_executed_result_is_failure(self):
+        ctx = self._make_ctx("help")
+        mock_client = self._make_mock_client(
+            {"executed": False, "error": "BaseMod DevConsole is unavailable"})
+
+        with patch("scripts.tools.harness.console._connect_agent", return_value=mock_client):
+            run_console(ctx, Path("/tmp/test"))
+
+        self.assertFalse(ctx.result["success"])
+        self.assertEqual(ctx.result["status"], "ERROR")
+        self.assertIn("BaseMod DevConsole is unavailable", ctx.result["message"])
+
     def test_handles_generic_exception(self):
         ctx = self._make_ctx("gold 999")
         mock_client = MagicMock(spec=AgentClient)

@@ -36,6 +36,7 @@ def _execute_and_print(client: AgentClient, command_text: str) -> None:
     else:
         error = result.get("error", "unknown error")
         print(f"  error: {error}")
+        raise AgentError(str(error))
 
 
 def _interactive_repl(client: AgentClient) -> None:
