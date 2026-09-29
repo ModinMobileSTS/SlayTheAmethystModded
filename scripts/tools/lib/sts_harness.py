@@ -1552,7 +1552,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             elif command == "console":
                 from scripts.tools.harness.console import run_console
                 run_console(ctx, resolved_out_dir)
-                return 0
+                return 1 if ctx.result.get("success") is False else 0
             elif command == "hotreload":
                 from scripts.tools.harness.hotreload import run_hotreload
                 run_hotreload(ctx, resolved_out_dir)

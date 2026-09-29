@@ -43,6 +43,18 @@ class ConsoleExecTest(unittest.TestCase):
             self.assertTrue(ctx.result["success"])
             self.assertEqual(ctx.result["status"], "CONSOLE_EXECUTED")
 
+    def test_one_shot_rejected_command_reports_error(self):
+        ctx = self._make_ctx("gold 999")
+        mock_client = self._make_mock_client(
+            {"executed": False, "error": "BaseMod not loaded"})
+        with patch("scripts.tools.harness.console._connect_agent", return_value=mock_client):
+            run_console(ctx, Path("/tmp/test"))
+        mock_client.console_exec.assert_called_once_with("gold 999")
+        self.assertFalse(ctx.result["success"])
+        self.assertEqual(ctx.result["status"], "ERROR")
+        self.assertIn("BaseMod not loaded", ctx.result["message"])
+        mock_client.close.assert_called_once()
+
     def test_default_port_uses_agent_client(self):
         from scripts.tools.harness.agent import _connect_agent
 

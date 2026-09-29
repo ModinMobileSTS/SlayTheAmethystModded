@@ -11,8 +11,12 @@ def run_console(ctx: HarnessContext, resolved_out_dir: Path) -> None:
     client = _connect_agent(ctx)
     try:
         if command_text:
-            _execute_and_print(client, command_text)
-            set_result_success(ctx, True, "CONSOLE_EXECUTED", f"Console command executed: {command_text}")
+            result = _execute_and_print(client, command_text)
+            if result.get("executed"):
+                set_result_success(ctx, True, "CONSOLE_EXECUTED", f"Console command executed: {command_text}")
+            else:
+                error = result.get("error", "unknown error")
+                set_result_success(ctx, False, "ERROR", f"Console command failed: {error}")
         else:
             _interactive_repl(client)
             set_result_success(ctx, True, "CONSOLE_SESSION_COMPLETE", "Interactive console session finished.")
@@ -24,7 +28,7 @@ def run_console(ctx: HarnessContext, resolved_out_dir: Path) -> None:
         client.close()
 
 
-def _execute_and_print(client: AgentClient, command_text: str) -> None:
+def _execute_and_print(client: AgentClient, command_text: str) -> dict:
     print(f"console> {command_text}")
     result = client.console_exec(command_text)
     if result.get("executed"):
@@ -36,6 +40,7 @@ def _execute_and_print(client: AgentClient, command_text: str) -> None:
     else:
         error = result.get("error", "unknown error")
         print(f"  error: {error}")
+    return result
 
 
 def _interactive_repl(client: AgentClient) -> None:
