@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,6 +218,9 @@ class HarnessOptions:
     single_room_character: str = ""
     single_room_monster: str = ""
     single_room_cards: str = ""
+    single_room_entry: str = "first"
+    single_room_dungeon: str = ""
+    single_room_seed: str = ""
     disable_card_obtain_effect_ownership_compat: bool = False
     decompil_targets: list[str] = field(default_factory=list)
     agent_command: str = ""
@@ -908,6 +912,11 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             f"character={encode_properties_value(character)}",
             f"monster={encode_properties_value(monster)}",
             f"cards={encode_properties_value(','.join(cards))}",
+            f"entry={encode_properties_value(getattr(self.options, 'single_room_entry', '') or 'first')}",
+            *([f"dungeon={encode_properties_value(self.options.single_room_dungeon.strip())}"]
+              if getattr(self.options, 'single_room_dungeon', '').strip() else []),
+            *([f"seed={encode_properties_value(self.options.single_room_seed.strip())}"]
+              if getattr(self.options, 'single_room_seed', '').strip() else []),
             "",
         ]
         return "\n".join(lines)
@@ -1805,6 +1814,9 @@ rm -rf files/sts/package files/sts/mts_patch_cache
                 "character": self.options.single_room_character,
                 "monster": self.options.single_room_monster,
                 "cards": split_csv_tokens(self.options.single_room_cards),
+                "entry": getattr(self.options, "single_room_entry", "first"),
+                "dungeon": getattr(self.options, "single_room_dungeon", ""),
+                "seed": getattr(self.options, "single_room_seed", ""),
                 "spec": self.options.single_room_spec,
                 "deviceSpec": self.options.single_room_device_spec,
             },

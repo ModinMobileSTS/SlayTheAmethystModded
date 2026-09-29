@@ -46,6 +46,13 @@ Harness.run()
 
 每个命令函数签名为 `(ctx: HarnessContext, ...) -> None` 或返回 `int`。
 
+`single-room` 默认在首个普通战斗房间运行；需要验证真实 Act Boss 进入路径时使用
+`-SingleRoomEntry boss`。该模式跳过中间普通战斗，仍通过真实地图选择和 `MonsterRoomBoss`
+过渡进入 Boss，并在日志中输出 `single_room boss_entry verified` 及原生 Boss 怪物 ID。
+spec 还可写 `dungeon=ruina:Asiyah` 等已注册 Act ID；可同时写 `seed=<signed 64-bit integer>`
+固定自定义 Act 的地图和原生 Boss 随机序列，保证开关 Together 的 A/B 使用同一 encounter；runner 会在首个 gameplay tick
+通过 BaseMod `act` 命令切换到该自定义 Act，再验证其原生 Boss。
+
 ## game-probe 连接
 
 `agent-*`、`play`、`console`、`hotreload` 和 `perf` 通过 `AgentClient(connector=…)` + `connect_stream` 连接 game-probe（默认端口 `9099`）。可用 `-AgentPort` 覆盖。

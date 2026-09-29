@@ -413,6 +413,24 @@ final class AutoplayDungeonActions {
             AbstractRoom.waitTimer = 0.0F;
             AutoplayLog.info("map: completed skipped neow room before first-node selection");
         }
+        // ActLikeIt-backed dungeons can use their own introductory EventRoom instead of
+        // NeowRoom (for example Ruina's NeowAngela entry). It is still the synthetic room at
+        // (0,-1), not a playable map node, so the first generated node must be selectable before
+        // the normal room-complete guard is applied.
+        if (room != null
+            && !(room instanceof NeowRoom)
+            && room.phase != AbstractRoom.RoomPhase.COMPLETE
+            && !AbstractDungeon.firstRoomChosen
+            && AbstractDungeon.screen == AbstractDungeon.CurrentScreen.MAP
+            && safeGetCurrentMapNode() != null
+            && safeGetCurrentMapNode().y < 0) {
+            room.phase = AbstractRoom.RoomPhase.COMPLETE;
+            AbstractRoom.waitTimer = 0.0F;
+            AutoplayLog.info(
+                "map: completed skipped synthetic startup room class="
+                    + room.getClass().getSimpleName()
+            );
+        }
     }
 
     private static boolean isRoomCompleteForMapSelection(AbstractRoom room, MapRoomNode node) {

@@ -6,6 +6,7 @@ import com.megacrit.cardcrawl.cards.AbstractCard;
 import com.megacrit.cardcrawl.cards.CardGroup;
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
+import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.helpers.CardLibrary;
 import com.megacrit.cardcrawl.helpers.MonsterHelper;
@@ -14,6 +15,8 @@ import com.megacrit.cardcrawl.monsters.AbstractMonster;
 import com.megacrit.cardcrawl.monsters.MonsterGroup;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
 import com.megacrit.cardcrawl.rooms.MonsterRoom;
+import com.megacrit.cardcrawl.rooms.MonsterRoomBoss;
+import basemod.DevConsole;
 import com.megacrit.cardcrawl.saveAndContinue.SaveAndContinue;
 import com.megacrit.cardcrawl.screens.charSelect.CharacterOption;
 import com.megacrit.cardcrawl.screens.charSelect.CharacterSelectScreen;
@@ -39,6 +42,7 @@ final class AutoplaySingleRoomRunner {
     private static boolean roomConfigurationStarted;
     private static boolean roomConfigurationFailed;
     private static boolean resultLogged;
+    private static boolean customDungeonRequested;
 
     private AutoplaySingleRoomRunner() {
     }
@@ -69,6 +73,9 @@ final class AutoplaySingleRoomRunner {
                 "single_room spec loaded character=" + spec.characterId
                     + " monster=" + spec.monsterId
                     + " cards=" + spec.describeCards()
+                    + " entry=" + (spec.bossEntry ? "boss" : "first")
+                    + " dungeon=" + normalizeLogToken(spec.dungeonId)
+                    + " seed=" + (spec.dungeonSeed == null ? "<random>" : spec.dungeonSeed)
             );
         } catch (Throwable t) {
             AutoplayLog.warn("single_room failed to load spec", t);
@@ -139,7 +146,15 @@ final class AutoplaySingleRoomRunner {
         if (room == null || player == null) {
             return;
         }
+        if (!customDungeonRequested && activeSpec.dungeonId.length() > 0) {
+            requestCustomDungeon(activeSpec.dungeonId, activeSpec.dungeonSeed);
+            return;
+        }
         if (!roomConfigured && (roomConfigurationStarted || roomConfigurationFailed)) {
+            return;
+        }
+        if (!roomConfigured && activeSpec.bossEntry) {
+            handleBossEntry(player, room, activeSpec);
             return;
         }
         if (!roomConfigured && room instanceof MonsterRoom) {
@@ -175,6 +190,95 @@ final class AutoplaySingleRoomRunner {
             handleCombat(player, room);
         } else if (room.phase == AbstractRoom.RoomPhase.COMPLETE) {
             logResult("monsters_defeated", player, room);
+        }
+    }
+
+    private static void requestCustomDungeon(String dungeonId, Long dungeonSeed) {
+        customDungeonRequested = true;
+        try {
+            if (dungeonSeed != null) {
+                // ActLikeIt constructs the requested dungeon after the console command returns.
+                // Set the game seed first so enabled/disabled A/B launches generate the same
+                // custom Act map and native boss selection.
+                Settings.seed = dungeonSeed;
+            }
+            DevConsole.currentText = "act " + dungeonId;
+            DevConsole.execute();
+            AutoplayLog.info(
+                "single_room requested dungeon=" + normalizeLogToken(dungeonId)
+                    + " seed=" + (dungeonSeed == null ? "<random>" : dungeonSeed)
+            );
+        } catch (Throwable t) {
+            AutoplayLog.warn("single_room failed to request dungeon=" + dungeonId, t);
+            logConfigError("custom_dungeon_request_failed");
+        }
+    }
+
+    /**
+     * Walks the real map to the act boss instead of replacing the first generated monster room.
+     * This is deliberately harness-only: normal gameplay never enables the single-room driver.
+     */
+    private static void handleBossEntry(
+        AbstractPlayer player,
+        AbstractRoom room,
+        AutoplaySingleRoomSpec activeSpec
+    ) {
+        if (room instanceof MonsterRoomBoss) {
+            configureBossRoom((MonsterRoomBoss) room, player, activeSpec);
+            return;
+        }
+        if (room instanceof MonsterRoom) {
+            skipIntermediateMonsterRoom((MonsterRoom) room);
+            return;
+        }
+        AutoplayDungeonActions.tick();
+    }
+
+    private static void skipIntermediateMonsterRoom(MonsterRoom room) {
+        if (room.phase != AbstractRoom.RoomPhase.COMPLETE) {
+            room.phase = AbstractRoom.RoomPhase.COMPLETE;
+            room.rewardAllowed = false;
+            room.rewardTime = false;
+            room.isBattleOver = true;
+            AbstractRoom.waitTimer = 0.0F;
+            AutoplayLog.info(
+                "single_room boss_entry skipped intermediate room="
+                    + room.getClass().getSimpleName()
+            );
+            return;
+        }
+        AutoplayDungeonActions.tick();
+    }
+
+    private static void configureBossRoom(
+        MonsterRoomBoss room,
+        AbstractPlayer player,
+        AutoplaySingleRoomSpec activeSpec
+    ) {
+        if (room.monsters == null || room.monsters.monsters == null || room.monsters.monsters.isEmpty()) {
+            return;
+        }
+        roomConfigurationStarted = true;
+        try {
+            if (!replaceHand(player, activeSpec)) {
+                logConfigError("boss_entry_card_not_found");
+                return;
+            }
+            room.rewardAllowed = false;
+            room.rewardTime = false;
+            room.isBattleOver = false;
+            roomConfigured = true;
+            AutoplayLog.info(
+                "single_room boss_entry verified room=" + room.getClass().getSimpleName()
+                    + " map=" + describeCurrentMapNode()
+                    + " monsters=" + describeMonsters(room.monsters)
+                    + " expected=" + normalizeLogToken(activeSpec.monsterId)
+                    + " dungeon=" + normalizeLogToken(activeSpec.dungeonId)
+                    + " phase=" + room.phase
+            );
+        } catch (Throwable t) {
+            AutoplayLog.warn("single_room failed to configure boss entry", t);
+            logConfigError("configure_boss_entry_failed");
         }
     }
 
@@ -696,6 +800,35 @@ final class AutoplaySingleRoomRunner {
                 + " playerHp=" + (player == null ? -1 : player.currentHealth)
                 + " monsterHp=" + remainingMonsterHp(monsters)
         );
+    }
+
+    private static String describeCurrentMapNode() {
+        try {
+            com.megacrit.cardcrawl.map.MapRoomNode node = AbstractDungeon.getCurrMapNode();
+            if (node == null) {
+                return "<null>";
+            }
+            return "(" + node.x + "," + node.y + ")";
+        } catch (Throwable ignored) {
+            return "<unavailable>";
+        }
+    }
+
+    private static String describeMonsters(MonsterGroup monsters) {
+        if (monsters == null || monsters.monsters == null || monsters.monsters.isEmpty()) {
+            return "<none>";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (AbstractMonster monster : monsters.monsters) {
+            if (monster == null) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(',');
+            }
+            builder.append(normalizeLogToken(monster.id));
+        }
+        return builder.length() == 0 ? "<none>" : builder.toString();
     }
 
     private static void logConfigError(String detail) {

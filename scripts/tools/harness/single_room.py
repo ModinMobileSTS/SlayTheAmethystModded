@@ -37,6 +37,11 @@ def build_single_room_spec_text(ctx: HarnessContext) -> str:
         f"character={encode_properties_value(character)}",
         f"monster={encode_properties_value(monster)}",
         f"cards={encode_properties_value(','.join(cards))}",
+        f"entry={encode_properties_value(getattr(ctx.options, 'single_room_entry', '') or 'first')}",
+        *([f"dungeon={encode_properties_value(ctx.options.single_room_dungeon.strip())}"]
+          if getattr(ctx.options, "single_room_dungeon", "").strip() else []),
+        *([f"seed={encode_properties_value(ctx.options.single_room_seed.strip())}"]
+          if getattr(ctx.options, "single_room_seed", "").strip() else []),
         "",
     ]
     return "\n".join(lines)

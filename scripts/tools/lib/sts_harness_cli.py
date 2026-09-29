@@ -97,6 +97,28 @@ def create_parser() -> argparse.ArgumentParser:
         help="Comma- or newline-separated card ids for the initial hand in single-room mode, including modded cards.",
     )
     parser.add_argument(
+        "-SingleRoomEntry",
+        "--single-room-entry",
+        dest="single_room_entry",
+        choices=("first", "boss"),
+        default="first",
+        help="Enter the first generated monster room (default) or walk the map to the real act boss room.",
+    )
+    parser.add_argument(
+        "-SingleRoomDungeon",
+        "--single-room-dungeon",
+        dest="single_room_dungeon",
+        default="",
+        help="Registered Act/dungeon ID to request before single-room entry, for example ruina:Asiyah.",
+    )
+    parser.add_argument(
+        "-SingleRoomSeed",
+        "--single-room-seed",
+        dest="single_room_seed",
+        default="",
+        help="Signed 64-bit seed for deterministic custom-Act map/boss A/B trials.",
+    )
+    parser.add_argument(
         "-DisableCardObtainEffectOwnershipCompat",
         "--disable-card-obtain-effect-ownership-compat",
         dest="disable_card_obtain_effect_ownership_compat",
@@ -292,6 +314,9 @@ def main(argv: list[str] | None = None) -> int:
         single_room_character=args.single_room_character,
         single_room_monster=args.single_room_monster,
         single_room_cards=args.single_room_cards,
+        single_room_entry=args.single_room_entry,
+        single_room_dungeon=args.single_room_dungeon,
+        single_room_seed=args.single_room_seed,
         disable_card_obtain_effect_ownership_compat=args.disable_card_obtain_effect_ownership_compat,
         skip_install=args.skip_install,
         no_stop_after_smoke=args.no_stop_after_smoke,

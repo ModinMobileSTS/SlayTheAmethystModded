@@ -38,6 +38,20 @@ class DecompilCliTest(unittest.TestCase):
         self.assertEqual(args.command, "decompil")
         self.assertEqual(args.decompil_targets, [])
 
+
+class SingleRoomCliTest(unittest.TestCase):
+    def test_single_room_boss_dungeon_options(self):
+        parser = create_parser()
+        args = parser.parse_args([
+            "-Command", "single-room",
+            "-SingleRoomEntry", "boss",
+            "-SingleRoomDungeon", "ruina:Asiyah",
+            "-SingleRoomSeed", "123456789",
+        ])
+        self.assertEqual(args.single_room_entry, "boss")
+        self.assertEqual(args.single_room_dungeon, "ruina:Asiyah")
+        self.assertEqual(args.single_room_seed, "123456789")
+
 class StartupCacheProfileCliTest(unittest.TestCase):
 
     def test_startup_cache_profile_command_in_choices(self):
