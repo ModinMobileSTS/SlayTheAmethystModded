@@ -229,21 +229,36 @@ public class AgentSession implements Runnable {
     }
 
     private void handleReady() {
-        Class<?> devConsole = ReflectionUtil.forName("basemod.DevConsole");
+        Class<?> devConsole;
+        try {
+            devConsole = resolveDevConsoleClass();
+        } catch (LinkageError e) {
+            // Scanning loaded copies can trip a failed <clinit> in a duplicate; report it
+            // instead of letting the Error escape and kill the session thread.
+            writer.println(AgentResponse.error("BaseMod DevConsole initialization failed: " + e));
+            return;
+        }
         if (devConsole == null) {
             writer.println(AgentResponse.error("BaseMod DevConsole not loaded"));
             return;
         }
         try {
             devConsole.getMethod("execute");
-            Class<?> consoleCommand = findConsoleCommandClass("art");
-            if (consoleCommand == null) {
+            if (!devConsoleInitialized(devConsole)) {
+                writer.println(AgentResponse.error("BaseMod DevConsole not ready: console unpublished"));
+                return;
+            }
+            if (findConsoleCommandClass("art") == null) {
                 writer.println(AgentResponse.error("ArtFramework console command not registered"));
                 return;
             }
             writer.println("READY");
         } catch (NoSuchMethodException e) {
             writer.println(AgentResponse.error("BaseMod DevConsole execute() unavailable"));
+        } catch (IllegalAccessException e) {
+            writer.println(AgentResponse.error("BaseMod DevConsole readiness unavailable: " + e.getMessage()));
+        } catch (LinkageError e) {
+            writer.println(AgentResponse.error("BaseMod DevConsole initialization failed: " + e));
         }
     }
 
@@ -266,6 +281,11 @@ public class AgentSession implements Runnable {
             String result = invokeDevConsole(commandText.trim());
             writer.println(AgentResponse.result("{\"executed\":true,\"command\":\"" + escapeJson(commandText.trim()) +
                 "\",\"output\":\"" + escapeJson(result) + "\"}"));
+        } catch (LinkageError e) {
+            // A failed DevConsole <clinit> during resolution is a LinkageError, not an
+            // Exception; surface it as a normal failed RESULT so the session survives.
+            String msg = e.getMessage() != null ? e.getMessage() : String.valueOf(e);
+            writer.println(AgentResponse.result("{\"executed\":false,\"error\":\"" + escapeJson(msg) + "\"}"));
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
             writer.println(AgentResponse.result("{\"executed\":false,\"error\":\"" + escapeJson(msg) + "\"}"));
@@ -280,6 +300,17 @@ public class AgentSession implements Runnable {
 
         try {
             Method executeMethod = devConsoleClass.getMethod("execute", String.class);
+            // A released DevConsole may expose execute(String) while still unconstructed.
+            // Require the constructor markers before running it; shims without
+            // priorCommands keep their old behaviour.
+            try {
+                if (!devConsoleInitialized(devConsoleClass)) {
+                    throw new IllegalStateException("BaseMod DevConsole not ready: console unpublished");
+                }
+            } catch (LinkageError initializationFailure) {
+                throw new IllegalStateException("BaseMod DevConsole initialization failed: "
+                    + initializationFailure, initializationFailure);
+            }
             Object result = executeMethod.invoke(null, commandText);
             return result != null ? result.toString() : "ok";
         } catch (NoSuchMethodException e) {
@@ -287,9 +318,27 @@ public class AgentSession implements Runnable {
             // that native entry point first so the command and ConsoleCommand registry stay
             // in the same game classloader. Older/probe test shims may still expose the
             // commands-map API below.
+            //
+            // ReflectionUtil may hand back an unconstructed duplicate whose constructor
+            // markers are null; prefer the initialized copy the instrumentation reports,
+            // falling back to ReflectionUtil for shims that do not expose priorCommands.
+            Class<?> resolved = resolveDevConsoleClass();
+            if (resolved != null) {
+                devConsoleClass = resolved;
+            } else {
+                devConsoleClass = ReflectionUtil.forName("basemod.DevConsole");
+            }
             try {
                 Field currentText = devConsoleClass.getField("currentText");
                 Method executeMethod = devConsoleClass.getMethod("execute");
+                try {
+                    if (!devConsoleInitialized(devConsoleClass)) {
+                        throw new IllegalStateException("BaseMod DevConsole not ready: console unpublished");
+                    }
+                } catch (LinkageError initializationFailure) {
+                    throw new IllegalStateException("BaseMod DevConsole initialization failed: "
+                        + initializationFailure, initializationFailure);
+                }
                 currentText.set(null, commandText);
                 try {
                     executeMethod.invoke(null);
@@ -344,6 +393,74 @@ public class AgentSession implements Runnable {
         return "ok";
     }
 
+    private static boolean devConsoleInitialized(Class<?> devConsoleClass) throws IllegalAccessException {
+        try {
+            devConsoleClass.getField("priorCommands");
+        } catch (NoSuchFieldException ignored) {
+            // Older shims do not expose the released DevConsole's constructor markers.
+            return true;
+        }
+        // priorCommands, log and prompted are published one by one inside the DevConsole
+        // constructor, not by <clinit>. A class whose <clinit> has completed (or whose
+        // currentText is set) is therefore not necessarily constructed: execute()
+        // dereferences all three markers, so the console is only safe to drive once all
+        // three are non-null.
+        return staticFieldNonNull(devConsoleClass, "priorCommands")
+            && staticFieldNonNull(devConsoleClass, "log")
+            && staticFieldNonNull(devConsoleClass, "prompted");
+    }
+
+    private static boolean staticFieldNonNull(Class<?> type, String name) throws IllegalAccessException {
+        try {
+            return type.getField(name).get(null) != null;
+        } catch (NoSuchFieldException ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Resolve the basemod.DevConsole copy that the game actually constructed.
+     *
+     * <p>Two copies of {@code basemod.DevConsole} can be present in the JVM: the
+     * game-loaded copy whose constructor published {@code priorCommands}, {@code log}
+     * and {@code prompted}, and a stale copy returned by {@link ReflectionUtil#forName}
+     * that was never constructed (its markers stay {@code null} forever). Driving the
+     * stale copy raises "console unpublished", so prefer an initialized copy from the
+     * instrumentation's loaded-class set, matching the classloader that owns the
+     * {@code art} console command when possible.</p>
+     */
+    private Class<?> resolveDevConsoleClass() {
+        Instrumentation inst = instrumentation != null ? instrumentation : GameProbe.getInstrumentation();
+        if (inst != null) {
+            List<Class<?>> initialized = new ArrayList<Class<?>>();
+            for (Class<?> loaded : inst.getAllLoadedClasses()) {
+                if (!"basemod.DevConsole".equals(loaded.getName())) continue;
+                try {
+                    if (devConsoleInitialized(loaded)) {
+                        initialized.add(loaded);
+                    }
+                } catch (IllegalAccessException | LinkageError ignored) {
+                    // Inaccessible or failed-initialization duplicate: skip it rather than
+                    // aborting resolution. Reading the markers can run <clinit>, which may
+                    // throw ExceptionInInitializerError / NoClassDefFoundError.
+                }
+            }
+            if (!initialized.isEmpty()) {
+                Class<?> commandClass = findConsoleCommandClass("art");
+                ClassLoader commandLoader = commandClass != null ? commandClass.getClassLoader() : null;
+                if (commandLoader != null) {
+                    for (Class<?> candidate : initialized) {
+                        if (candidate.getClassLoader() == commandLoader) {
+                            return candidate;
+                        }
+                    }
+                }
+                return initialized.get(0);
+            }
+        }
+        return ReflectionUtil.forName("basemod.DevConsole");
+    }
+
     private Class<?> findConsoleCommandClass(String commandName) {
         String className = "basemod.devcommands.ConsoleCommand";
         Class<?> resolved = ReflectionUtil.forName(className);
@@ -370,7 +487,11 @@ public class AgentSession implements Runnable {
             rootField.setAccessible(true);
             Object root = rootField.get(null);
             return root instanceof Map && ((Map<?, ?>) root).containsKey(commandName);
-        } catch (ReflectiveOperationException e) {
+        } catch (ReflectiveOperationException | LinkageError e) {
+            // Reading root can run ConsoleCommand.<clinit> on a duplicate copy. A failed
+            // copy raises ExceptionInInitializerError / NoClassDefFoundError (LinkageError),
+            // matching DevConsole scanning: treat it as "no command here" and let the
+            // caller skip the candidate instead of aborting the whole search.
             return false;
         }
     }

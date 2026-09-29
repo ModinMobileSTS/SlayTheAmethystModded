@@ -19,6 +19,7 @@ import java.lang.instrument.Instrumentation;
 import java.lang.instrument.UnmodifiableClassException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -261,6 +262,137 @@ public class AgentSessionTest {
     }
 
     @Test
+    public void releasedConsoleStaysNotReadyUntilAllConstructorMarkersPublished() throws Exception {
+        GameProbe.GAME_CLASSLOADER = releasedConsoleLoader();
+        Class<?> console = Class.forName("basemod.DevConsole", true, GameProbe.GAME_CLASSLOADER);
+        assertEquals("initial", console.getField("currentText").get(null));
+        assertNull(console.getField("priorCommands").get(null));
+        assertNull(console.getField("log").get(null));
+        assertNull(console.getField("prompted").get(null));
+
+        BufferedReader serverReader = startSession();
+        writer.println("READY");
+        String beforeReady = serverReader.readLine();
+        assertTrue(beforeReady, beforeReady.startsWith("ERROR "));
+        assertTrue(beforeReady, beforeReady.contains("not ready"));
+
+        writer.println("CONSOLE art status");
+        String beforeConsole = serverReader.readLine();
+        assertTrue(beforeConsole, beforeConsole.contains("\"executed\":false"));
+        assertTrue(beforeConsole, beforeConsole.contains("not ready"));
+        assertEquals("initial", console.getField("currentText").get(null));
+        assertEquals(0, console.getField("executions").getInt(null));
+
+        // DevConsole's constructor assigns priorCommands, then commandPos, log, prompted.
+        // Simulate the half-constructed window after priorCommands is set but before the
+        // remaining markers are published: execute() would NPE, so the probe must refuse
+        // and must not overwrite currentText.
+        console.getField("priorCommands").set(null, new ArrayList<String>());
+        writer.println("READY");
+        String partialReady = serverReader.readLine();
+        assertTrue(partialReady, partialReady.startsWith("ERROR "));
+        assertTrue(partialReady, partialReady.contains("not ready"));
+
+        writer.println("CONSOLE art status");
+        String partialConsole = serverReader.readLine();
+        assertTrue(partialConsole, partialConsole.contains("\"executed\":false"));
+        assertTrue(partialConsole, partialConsole.contains("not ready"));
+        assertEquals("initial", console.getField("currentText").get(null));
+        assertEquals(0, console.getField("executions").getInt(null));
+
+        // log published, prompted still missing -> still not ready.
+        console.getField("log").set(null, new ArrayList<String>());
+        writer.println("READY");
+        assertTrue(serverReader.readLine().startsWith("ERROR "));
+
+        // All three constructor markers published -> ready and executable.
+        console.getField("prompted").set(null, Boolean.TRUE);
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+        writer.println("CONSOLE art status");
+        String afterConsole = serverReader.readLine();
+        assertTrue(afterConsole, afterConsole.contains("\"executed\":true"));
+        assertEquals("art status", console.getField("currentText").get(null));
+        assertEquals(1, console.getField("executions").getInt(null));
+    }
+
+    @Test
+    public void failedDevConsoleInitializationDoesNotEndSessionOrReportExecution() throws Exception {
+        GameProbe.GAME_CLASSLOADER = new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                if (!"basemod.DevConsole".equals(name)) return super.findClass(name);
+                byte[] bytes = releasedDevConsoleClassBytes(true);
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+        clientSide.setSoTimeout(2000);
+        BufferedReader serverReader = startSession();
+        writer.println("READY");
+        String firstReady = serverReader.readLine();
+        assertTrue(firstReady, firstReady.startsWith("ERROR "));
+        assertTrue(firstReady, firstReady.contains("ExceptionInInitializerError"));
+
+        writer.println("CONSOLE art status");
+        String console = serverReader.readLine();
+        assertTrue(console, console.startsWith("RESULT "));
+        assertTrue(console, console.contains("\"executed\":false"));
+        assertTrue(console, console.contains("NoClassDefFoundError"));
+
+        writer.println("READY");
+        String secondReady = serverReader.readLine();
+        assertTrue(secondReady, secondReady.startsWith("ERROR "));
+        assertTrue(secondReady, secondReady.contains("NoClassDefFoundError"));
+        writer.println("QUIT");
+        assertEquals("BYE", serverReader.readLine());
+    }
+
+    private static ClassLoader releasedConsoleLoader() {
+        return releasedConsoleLoader("art");
+    }
+
+    private static ClassLoader releasedConsoleLoader(final String rootCommand) {
+        return new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                byte[] bytes;
+                if ("basemod.DevConsole".equals(name)) {
+                    bytes = releasedDevConsoleClassBytes();
+                } else if ("basemod.devcommands.ConsoleCommand".equals(name)) {
+                    bytes = consoleCommandClassBytes(rootCommand);
+                } else {
+                    return super.findClass(name);
+                }
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+    }
+
+    @Test
+    public void readyAllowsOldShimWithoutPriorCommands() throws Exception {
+        GameProbe.GAME_CLASSLOADER = new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                byte[] bytes;
+                if ("basemod.DevConsole".equals(name)) {
+                    bytes = noArgDevConsoleClassBytes();
+                } else if ("basemod.devcommands.ConsoleCommand".equals(name)) {
+                    bytes = consoleCommandClassBytes("art");
+                } else {
+                    return super.findClass(name);
+                }
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+        BufferedReader serverReader = startSession();
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.contains("\"executed\":true"));
+    }
+
+    @Test
     public void consoleUsesBaseModConsoleCommandApi() throws Exception {
         GameProbe.GAME_CLASSLOADER = new ClassLoader(null) {
             @Override
@@ -322,6 +454,236 @@ public class AgentSessionTest {
         assertTrue(response, response.contains("unknown console command: missing"));
     }
 
+    @Test
+    public void readyAndConsolePreferConstructedDevConsoleOverUninitializedDuplicate() throws Exception {
+        // B: the copy the game actually constructed -- all three constructor markers published.
+        ClassLoader initializedLoader = releasedConsoleLoader("art");
+        Class<?> consoleB = Class.forName("basemod.DevConsole", true, initializedLoader);
+        consoleB.getDeclaredConstructor().newInstance();
+        assertNotNull(consoleB.getField("priorCommands").get(null));
+        assertNotNull(consoleB.getField("log").get(null));
+        assertNotNull(consoleB.getField("prompted").get(null));
+        Class<?> commandB = initializedLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        // A: the stale duplicate -- never constructed, so its markers stay null. Its loader
+        // is captured as GAME_CLASSLOADER, so ReflectionUtil.forName keeps returning it.
+        ClassLoader staleLoader = releasedConsoleLoader(null);
+        Class<?> consoleA = Class.forName("basemod.DevConsole", true, staleLoader);
+        assertNull(consoleA.getField("priorCommands").get(null));
+        assertNull(consoleA.getField("log").get(null));
+        assertNull(consoleA.getField("prompted").get(null));
+        GameProbe.GAME_CLASSLOADER = staleLoader;
+
+        BufferedReader serverReader = startSession(new FakeInstrumentation(consoleA, consoleB, commandB));
+
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+
+        // execute() ran against B, not the unconstructed A.
+        assertEquals("art status", consoleB.getField("currentText").get(null));
+        assertEquals(1, consoleB.getField("executions").getInt(null));
+        assertEquals(0, consoleA.getField("executions").getInt(null));
+    }
+
+    @Test
+    public void linkageErrorDuplicateDoesNotEndSession() throws Exception {
+        // Broken copy: touching its static fields runs a <clinit> that throws, so every
+        // later access raises NoClassDefFoundError. Both are LinkageErrors.
+        ClassLoader brokenLoader = brokenConsoleLoader();
+        Class<?> brokenConsole = Class.forName("basemod.DevConsole", false, brokenLoader);
+        brokenLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        // Good copy: constructed, and its loader owns the art console command.
+        ClassLoader goodLoader = releasedConsoleLoader("art");
+        Class<?> goodConsole = Class.forName("basemod.DevConsole", true, goodLoader);
+        goodConsole.getDeclaredConstructor().newInstance();
+        Class<?> goodCommand = goodLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        // ReflectionUtil resolves to the broken copy, so only the scan can find the good one.
+        GameProbe.GAME_CLASSLOADER = brokenLoader;
+        clientSide.setSoTimeout(2000);
+
+        BufferedReader serverReader = startSession(
+            new FakeInstrumentation(brokenConsole, goodConsole, goodCommand));
+
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+
+        // The constructed copy ran; the broken copy was never selected/driven.
+        assertEquals("art status", goodConsole.getField("currentText").get(null));
+        assertEquals(1, goodConsole.getField("executions").getInt(null));
+
+        // The session survived touching the broken copy and still serves commands.
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+        writer.println("QUIT");
+        assertEquals("BYE", serverReader.readLine());
+    }
+
+    @Test
+    public void linkageErrorDuplicateConsoleCommandIsSkippedInScan() throws Exception {
+        // Resolved console + command come from a loader whose command registry lacks art,
+        // so resolution must fall through to the loaded-class scan.
+        ClassLoader resolvedLoader = releasedConsoleLoader(null);
+        resolvedLoader.loadClass("basemod.devcommands.ConsoleCommand");
+        GameProbe.GAME_CLASSLOADER = resolvedLoader;
+
+        // Broken duplicate: reading ConsoleCommand.root runs a <clinit> that throws, so the
+        // access raises ExceptionInInitializerError / NoClassDefFoundError (both LinkageError).
+        ClassLoader brokenLoader = brokenConsoleCommandLoader();
+        Class<?> brokenCommand = brokenLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        // Good duplicate: its loader owns the constructed console and the art command.
+        ClassLoader goodLoader = releasedConsoleLoader("art");
+        Class<?> goodConsole = Class.forName("basemod.DevConsole", true, goodLoader);
+        goodConsole.getDeclaredConstructor().newInstance();
+        Class<?> goodCommand = goodLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        clientSide.setSoTimeout(2000);
+
+        // The broken candidate is listed first: the scan must skip it, not abort.
+        BufferedReader serverReader = startSession(
+            new FakeInstrumentation(brokenCommand, goodConsole, goodCommand));
+
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+
+        // The constructed art-loader console ran; the broken duplicate was never driven.
+        assertEquals("art status", goodConsole.getField("currentText").get(null));
+        assertEquals(1, goodConsole.getField("executions").getInt(null));
+
+        writer.println("QUIT");
+        assertEquals("BYE", serverReader.readLine());
+    }
+
+    @Test
+    public void resolveFallsBackToReflectionWhenInstrumentationSeesNoLoadedClasses() throws Exception {
+        ClassLoader consoleLoader = releasedConsoleLoader("art");
+        Class<?> console = Class.forName("basemod.DevConsole", true, consoleLoader);
+        console.getDeclaredConstructor().newInstance();
+        consoleLoader.loadClass("basemod.devcommands.ConsoleCommand");
+        GameProbe.GAME_CLASSLOADER = consoleLoader;
+
+        BufferedReader serverReader = startSession(new FakeInstrumentation());
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+        assertEquals(1, console.getField("executions").getInt(null));
+    }
+
+    @Test
+    public void resolvePrefersInitializedCopySharingArtCommandLoader() throws Exception {
+        // Both copies are constructed; only the classloader owning the art command
+        // distinguishes them.
+        ClassLoader otherLoader = releasedConsoleLoader(null);
+        Class<?> otherConsole = Class.forName("basemod.DevConsole", true, otherLoader);
+        otherConsole.getDeclaredConstructor().newInstance();
+        Class<?> otherCommand = otherLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        ClassLoader artLoader = releasedConsoleLoader("art");
+        Class<?> artConsole = Class.forName("basemod.DevConsole", true, artLoader);
+        artConsole.getDeclaredConstructor().newInstance();
+        Class<?> artCommand = artLoader.loadClass("basemod.devcommands.ConsoleCommand");
+
+        // ReflectionUtil resolves to the non-art copy; selection must come from the scan.
+        GameProbe.GAME_CLASSLOADER = otherLoader;
+
+        // The non-art copy is listed first, so only the loader-match priority branch
+        // makes the probe drive artConsole.
+        BufferedReader serverReader = startSession(
+            new FakeInstrumentation(otherConsole, otherCommand, artConsole, artCommand));
+
+        writer.println("READY");
+        assertEquals("READY", serverReader.readLine());
+
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+
+        assertEquals(1, artConsole.getField("executions").getInt(null));
+        assertEquals(0, otherConsole.getField("executions").getInt(null));
+    }
+
+    @Test
+    public void consoleMainBranchRefusesUnconstructedReleasedConsole() throws Exception {
+        // This released-style copy also exposes execute(String), so invokeDevConsole takes
+        // its main branch. Without the initialization gate it would run on an
+        // unconstructed console.
+        ClassLoader loader = new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                byte[] bytes;
+                if ("basemod.DevConsole".equals(name)) {
+                    bytes = releasedDevConsoleWithArgExecuteClassBytes();
+                } else if ("basemod.devcommands.ConsoleCommand".equals(name)) {
+                    bytes = consoleCommandClassBytes("art");
+                } else {
+                    return super.findClass(name);
+                }
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+        Class<?> console = Class.forName("basemod.DevConsole", true, loader);
+        loader.loadClass("basemod.devcommands.ConsoleCommand");
+        GameProbe.GAME_CLASSLOADER = loader;
+
+        BufferedReader serverReader = startSession();
+        writer.println("CONSOLE art status");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":false"));
+        assertTrue(response, response.contains("not ready"));
+        assertEquals(0, console.getField("executions").getInt(null));
+    }
+
+    private static ClassLoader brokenConsoleLoader() {
+        return new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                byte[] bytes;
+                if ("basemod.DevConsole".equals(name)) {
+                    bytes = releasedDevConsoleClassBytes(true);
+                } else if ("basemod.devcommands.ConsoleCommand".equals(name)) {
+                    bytes = consoleCommandClassBytes(null);
+                } else {
+                    return super.findClass(name);
+                }
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+    }
+
+    private static ClassLoader brokenConsoleCommandLoader() {
+        return new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                if (!"basemod.devcommands.ConsoleCommand".equals(name)) return super.findClass(name);
+                byte[] bytes = consoleCommandClassBytes(null, true);
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+    }
+
     private static ClassLoader consoleClassLoader(final String rootCommand) {
         return new ClassLoader(null) {
             @Override
@@ -358,6 +720,149 @@ public class AgentSessionTest {
         return writer.toByteArray();
     }
 
+    private static byte[] releasedDevConsoleClassBytes() {
+        return releasedDevConsoleClassBytes(false);
+    }
+
+    private static byte[] releasedDevConsoleClassBytes(boolean failInitialization) {
+        String owner = "basemod/DevConsole";
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "currentText", "Ljava/lang/String;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "priorCommands", "Ljava/lang/Object;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "log", "Ljava/lang/Object;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "prompted", "Ljava/lang/Object;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "executions", "I", null, null).visitEnd();
+
+        MethodVisitor initializer = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        initializer.visitCode();
+        if (failInitialization) {
+            initializer.visitTypeInsn(Opcodes.NEW, "java/lang/IllegalStateException");
+            initializer.visitInsn(Opcodes.DUP);
+            initializer.visitLdcInsn("broken console initialization");
+            initializer.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>",
+                "(Ljava/lang/String;)V", false);
+            initializer.visitInsn(Opcodes.ATHROW);
+        } else {
+            initializer.visitLdcInsn("initial");
+            initializer.visitFieldInsn(Opcodes.PUTSTATIC, owner, "currentText", "Ljava/lang/String;");
+            initializer.visitInsn(Opcodes.RETURN);
+        }
+        initializer.visitMaxs(3, 0);
+        initializer.visitEnd();
+
+        MethodVisitor constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        constructor.visitCode();
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        constructor.visitTypeInsn(Opcodes.NEW, "java/util/ArrayList");
+        constructor.visitInsn(Opcodes.DUP);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/ArrayList", "<init>", "()V", false);
+        constructor.visitFieldInsn(Opcodes.PUTSTATIC, owner, "priorCommands", "Ljava/lang/Object;");
+        constructor.visitTypeInsn(Opcodes.NEW, "java/util/ArrayList");
+        constructor.visitInsn(Opcodes.DUP);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/ArrayList", "<init>", "()V", false);
+        constructor.visitFieldInsn(Opcodes.PUTSTATIC, owner, "log", "Ljava/lang/Object;");
+        constructor.visitInsn(Opcodes.ICONST_1);
+        constructor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+        constructor.visitFieldInsn(Opcodes.PUTSTATIC, owner, "prompted", "Ljava/lang/Object;");
+        constructor.visitInsn(Opcodes.RETURN);
+        constructor.visitMaxs(2, 1);
+        constructor.visitEnd();
+
+        MethodVisitor execute = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "execute", "()V", null, null);
+        execute.visitCode();
+        execute.visitFieldInsn(Opcodes.GETSTATIC, owner, "executions", "I");
+        execute.visitInsn(Opcodes.ICONST_1);
+        execute.visitInsn(Opcodes.IADD);
+        execute.visitFieldInsn(Opcodes.PUTSTATIC, owner, "executions", "I");
+        execute.visitFieldInsn(Opcodes.GETSTATIC, owner, "priorCommands", "Ljava/lang/Object;");
+        execute.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "toString", "()Ljava/lang/String;", false);
+        execute.visitInsn(Opcodes.POP);
+        execute.visitFieldInsn(Opcodes.GETSTATIC, owner, "log", "Ljava/lang/Object;");
+        execute.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "toString", "()Ljava/lang/String;", false);
+        execute.visitInsn(Opcodes.POP);
+        execute.visitFieldInsn(Opcodes.GETSTATIC, owner, "prompted", "Ljava/lang/Object;");
+        execute.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "toString", "()Ljava/lang/String;", false);
+        execute.visitInsn(Opcodes.POP);
+        execute.visitInsn(Opcodes.RETURN);
+        execute.visitMaxs(2, 0);
+        execute.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] releasedDevConsoleWithArgExecuteClassBytes() {
+        String owner = "basemod/DevConsole";
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "currentText", "Ljava/lang/String;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "priorCommands", "Ljava/lang/Object;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "log", "Ljava/lang/Object;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "prompted", "Ljava/lang/Object;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "executions", "I", null, null).visitEnd();
+
+        MethodVisitor initializer = writer.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+        initializer.visitCode();
+        initializer.visitLdcInsn("initial");
+        initializer.visitFieldInsn(Opcodes.PUTSTATIC, owner, "currentText", "Ljava/lang/String;");
+        initializer.visitInsn(Opcodes.RETURN);
+        initializer.visitMaxs(1, 0);
+        initializer.visitEnd();
+
+        MethodVisitor constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        constructor.visitCode();
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        constructor.visitTypeInsn(Opcodes.NEW, "java/util/ArrayList");
+        constructor.visitInsn(Opcodes.DUP);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/ArrayList", "<init>", "()V", false);
+        constructor.visitFieldInsn(Opcodes.PUTSTATIC, owner, "priorCommands", "Ljava/lang/Object;");
+        constructor.visitTypeInsn(Opcodes.NEW, "java/util/ArrayList");
+        constructor.visitInsn(Opcodes.DUP);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/ArrayList", "<init>", "()V", false);
+        constructor.visitFieldInsn(Opcodes.PUTSTATIC, owner, "log", "Ljava/lang/Object;");
+        constructor.visitInsn(Opcodes.ICONST_1);
+        constructor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+        constructor.visitFieldInsn(Opcodes.PUTSTATIC, owner, "prompted", "Ljava/lang/Object;");
+        constructor.visitInsn(Opcodes.RETURN);
+        constructor.visitMaxs(2, 1);
+        constructor.visitEnd();
+
+        // execute(String) records that it ran but never touches the constructor-published
+        // markers, modelling a released console that would silently run before construction.
+        MethodVisitor argExecute = writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "execute",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            null,
+            null);
+        argExecute.visitCode();
+        argExecute.visitFieldInsn(Opcodes.GETSTATIC, owner, "executions", "I");
+        argExecute.visitInsn(Opcodes.ICONST_1);
+        argExecute.visitInsn(Opcodes.IADD);
+        argExecute.visitFieldInsn(Opcodes.PUTSTATIC, owner, "executions", "I");
+        argExecute.visitLdcInsn("ok");
+        argExecute.visitInsn(Opcodes.ARETURN);
+        argExecute.visitMaxs(2, 1);
+        argExecute.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] noArgDevConsoleClassBytes() {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "basemod/DevConsole", null, "java/lang/Object", null);
+        writer.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "currentText", "Ljava/lang/String;", null, null).visitEnd();
+        MethodVisitor execute = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "execute", "()V", null, null);
+        execute.visitCode();
+        execute.visitInsn(Opcodes.RETURN);
+        execute.visitMaxs(0, 0);
+        execute.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
     private static byte[] emptyClassBytes(String internalName) {
         ClassWriter writer = new ClassWriter(0);
         writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
@@ -366,6 +871,10 @@ public class AgentSessionTest {
     }
 
     private static byte[] consoleCommandClassBytes(String rootCommand) {
+        return consoleCommandClassBytes(rootCommand, false);
+    }
+
+    private static byte[] consoleCommandClassBytes(String rootCommand, boolean failInitialization) {
         ClassWriter writer = new ClassWriter(0);
         writer.visit(
             Opcodes.V1_8,
@@ -390,34 +899,45 @@ public class AgentSessionTest {
             null
         );
         initializer.visitCode();
-        initializer.visitTypeInsn(Opcodes.NEW, "java/util/HashMap");
-        initializer.visitInsn(Opcodes.DUP);
-        initializer.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
-        initializer.visitFieldInsn(
-            Opcodes.PUTSTATIC,
-            "basemod/devcommands/ConsoleCommand",
-            "root",
-            "Ljava/util/Map;"
-        );
-        if (rootCommand != null) {
+        if (failInitialization) {
+            // Modelled after a duplicate copy whose <clinit> failed: the first reflective
+            // read raises ExceptionInInitializerError, later reads NoClassDefFoundError.
+            initializer.visitTypeInsn(Opcodes.NEW, "java/lang/IllegalStateException");
+            initializer.visitInsn(Opcodes.DUP);
+            initializer.visitLdcInsn("broken console command initialization");
+            initializer.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>",
+                "(Ljava/lang/String;)V", false);
+            initializer.visitInsn(Opcodes.ATHROW);
+        } else {
+            initializer.visitTypeInsn(Opcodes.NEW, "java/util/HashMap");
+            initializer.visitInsn(Opcodes.DUP);
+            initializer.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
             initializer.visitFieldInsn(
-                Opcodes.GETSTATIC,
+                Opcodes.PUTSTATIC,
                 "basemod/devcommands/ConsoleCommand",
                 "root",
                 "Ljava/util/Map;"
             );
-            initializer.visitLdcInsn(rootCommand);
-            initializer.visitInsn(Opcodes.ACONST_NULL);
-            initializer.visitMethodInsn(
-                Opcodes.INVOKEINTERFACE,
-                "java/util/Map",
-                "put",
-                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
-                true
-            );
-            initializer.visitInsn(Opcodes.POP);
+            if (rootCommand != null) {
+                initializer.visitFieldInsn(
+                    Opcodes.GETSTATIC,
+                    "basemod/devcommands/ConsoleCommand",
+                    "root",
+                    "Ljava/util/Map;"
+                );
+                initializer.visitLdcInsn(rootCommand);
+                initializer.visitInsn(Opcodes.ACONST_NULL);
+                initializer.visitMethodInsn(
+                    Opcodes.INVOKEINTERFACE,
+                    "java/util/Map",
+                    "put",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                    true
+                );
+                initializer.visitInsn(Opcodes.POP);
+            }
+            initializer.visitInsn(Opcodes.RETURN);
         }
-        initializer.visitInsn(Opcodes.RETURN);
         initializer.visitMaxs(3, 0);
         initializer.visitEnd();
         MethodVisitor method = writer.visitMethod(
